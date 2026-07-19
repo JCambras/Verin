@@ -4,11 +4,11 @@
     {
       "id": 1,
       "title": "Fence every invariant in the same PR that states it",
-      "status": "planned",
+      "status": "enforced",
       "phase": "B",
       "mechanisms": [
         { "type": "procedure", "ref": "docs/fences/proof-log.md" },
-        { "type": "fitness-suite", "ref": "src/__tests__/fitness" }
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-bare-throw.test.ts" }
       ]
     },
     {
@@ -31,7 +31,7 @@
     {
       "id": 4,
       "title": "Detection is not verification",
-      "status": "planned",
+      "status": "enforced",
       "phase": "B",
       "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/detection-not-verification.test.ts" }]
     },
@@ -59,11 +59,12 @@
       "id": 7,
       "title": "Multi-tenancy and config hygiene from day one",
       "status": "planned",
-      "phase": "B",
+      "phase": "B/E",
       "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-process-env.test.ts", "status": "enforced" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts", "status": "enforced" },
         { "type": "fitness", "ref": "src/__tests__/fitness/org-id-required.test.ts" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-client-role-header.test.ts" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts" }
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-client-role-header.test.ts" }
       ]
     },
     {
@@ -89,8 +90,9 @@
       "status": "planned",
       "phase": "A/D",
       "mechanisms": [
-        { "type": "adr", "ref": "docs/adr/0012-presentation-tier-and-budgets.md" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/line-budget.test.ts" }
+        { "type": "adr", "ref": "docs/adr/0012-presentation-tier-and-budgets.md", "status": "enforced" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/line-budget.test.ts", "status": "enforced" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/max-file-size.test.ts", "status": "enforced" }
       ]
     },
     {
@@ -126,6 +128,7 @@
       "status": "planned",
       "phase": "E",
       "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-console.test.ts", "status": "enforced" },
         { "type": "fitness", "ref": "src/__tests__/fitness/observability-coverage.test.ts" },
         { "type": "ci-gate", "ref": "unit" }
       ]
@@ -192,7 +195,7 @@
       "phase": "0",
       "mechanisms": [
         { "type": "config", "ref": "eslint.config.mjs" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/dependency-rule.test.ts", "status": "planned" }
+        { "type": "fitness", "ref": "src/__tests__/fitness/dependency-rule.test.ts", "status": "enforced" }
       ]
     }
   ]

@@ -15,6 +15,9 @@ import { fileURLToPath } from "node:url";
  * Companion (detection-is-not-verification) lives in
  * detection-not-verification.test.ts and proves this fence FAILS when a mapped
  * mechanism is removed — so a green charter-drift check cannot be vacuous.
+ *
+ * @companion:proof-log — adversarial proof PF-001 in docs/fences/proof-log.md
+ * (a self-referential meta fence proves itself via the log, not an inline fixture).
  */
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const p = (rel: string) => root + rel;
