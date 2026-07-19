@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requirePrincipal, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
 import { listHouseholds, createHousehold, updateHouseholdName } from "@infra/crm/house-crm";
+import { writeActorOf } from "@contracts/principal";
 import { appError } from "@contracts/errors";
 
 export const runtime = "nodejs";
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const name = parsed.value.name;
   if (!isName(name)) return errorResponse(appError("VALIDATION", `Household name is required (a string of at most ${MAX_NAME_LENGTH} characters).`));
   const db = await getDb();
-  const r = await createHousehold(db, p.value, { name });
+  const r = await createHousehold(db, writeActorOf(p.value), { name });
   if (!r.ok) return errorResponse(r.error);
   return NextResponse.json({ household: r.value });
 }
@@ -46,7 +47,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return errorResponse(appError("VALIDATION", `id and name are required (strings; name at most ${MAX_NAME_LENGTH} characters).`));
   }
   const db = await getDb();
-  const r = await updateHouseholdName(db, p.value, b.id, b.name);
+  const r = await updateHouseholdName(db, writeActorOf(p.value), b.id, b.name);
   if (!r.ok) return errorResponse(r.error);
   return NextResponse.json({ household: r.value });
 }

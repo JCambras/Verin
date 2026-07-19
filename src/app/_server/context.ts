@@ -8,7 +8,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDb } from "@infra/store/db";
 import { getConfig } from "@infra/config";
 import { resolveSession, SESSION_COOKIE, requireRole } from "@infra/identity/session";
-import { type Result, err } from "@contracts/result";
+import { type Result, ok, err } from "@contracts/result";
 import { appError, toResponse, type AppError } from "@contracts/errors";
 import type { Principal } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
@@ -72,7 +72,7 @@ export async function readJsonBody<T = Record<string, unknown>>(
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       return err(appError("VALIDATION", "Request body must be a JSON object."));
     }
-    return { ok: true, value: parsed as T };
+    return ok(parsed as T);
   } catch {
     return err(appError("VALIDATION", "Invalid JSON body."));
   }

@@ -21,6 +21,7 @@ interface Entry {
 export default function AuditPage() {
   const [verdict, setVerdict] = useState<Verdict | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -32,6 +33,7 @@ export default function AuditPage() {
           const body = await res.json();
           setVerdict(body.verdict);
           setEntries(body.entries);
+          setTotal(body.total);
         } else if (res.status === 403) {
           setError("You do not have permission to view the audit trail (requires ops role or higher).");
         } else {
@@ -72,30 +74,48 @@ export default function AuditPage() {
       ) : null}
 
       {entries.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Audit log entries</caption>
-            <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-              <tr>
-                <th scope="col" className="px-3 py-2">#</th>
-                <th scope="col" className="px-3 py-2">Actor</th>
-                <th scope="col" className="px-3 py-2">Action</th>
-                <th scope="col" className="px-3 py-2">Detail</th>
-                <th scope="col" className="px-3 py-2">Hash</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {entries.map((e) => (
-                <tr key={e.sequence}>
-                  <td className="px-3 py-2 text-slate-600">{e.sequence}</td>
-                  <td className="px-3 py-2 text-slate-800">{e.actor}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-800">{e.action}</td>
-                  <td className="px-3 py-2 text-slate-700">{e.detail}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-500">{e.entryHash}…</td>
+        <div className="flex flex-col gap-2">
+          {total > entries.length ? (
+            <p className="text-sm text-slate-600">
+              Showing the latest {entries.length} of {total} entries (the integrity verdict covers all {total}).
+            </p>
+          ) : null}
+          {/* Scrollable region (the When column can overflow): keyboard-focusable
+              with an accessible name, per axe scrollable-region-focusable. */}
+          <div
+            role="region"
+            aria-label="Audit log entries"
+            tabIndex={0}
+            className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
+          >
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Audit log entries, newest first</caption>
+              <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th scope="col" className="px-3 py-2">#</th>
+                  <th scope="col" className="px-3 py-2">When</th>
+                  <th scope="col" className="px-3 py-2">Actor</th>
+                  <th scope="col" className="px-3 py-2">Action</th>
+                  <th scope="col" className="px-3 py-2">Detail</th>
+                  <th scope="col" className="px-3 py-2">Hash</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {entries.map((e) => (
+                  <tr key={e.sequence}>
+                    <td className="px-3 py-2 text-slate-600">{e.sequence}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-700">
+                      <time dateTime={e.createdAt}>{new Date(e.createdAt).toLocaleString()}</time>
+                    </td>
+                    <td className="px-3 py-2 text-slate-800">{e.actor}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-800">{e.action}</td>
+                    <td className="px-3 py-2 text-slate-700">{e.detail}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{e.entryHash}…</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
     </div>

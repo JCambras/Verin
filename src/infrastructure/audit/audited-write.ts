@@ -11,11 +11,20 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, isAppError, type AppError } from "@contracts/errors";
+import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
 import { log } from "@infra/observability/logger";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
+
+/** SQLSTATE class 23 = integrity constraint violation (23502/23503/23505/23514…). */
+function isDriverConstraintError(e: unknown): boolean {
+  return (
+    typeof e === "object" && e !== null && "code" in e &&
+    typeof (e as { code: unknown }).code === "string" &&
+    /^23\d{3}$/.test((e as { code: string }).code)
+  );
+}
 
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
@@ -27,6 +36,8 @@ export interface AuditedWriteOpts<T> {
   idempotencyKey?: string;
   before?: unknown;
   after?: unknown;
+  /** Late-bound before-snapshot: called AFTER perform, so the pre-image can be read inside the transaction (no stale-snapshot race). */
+  buildBefore?: () => unknown;
   buildAfter?: (result: T) => unknown;
   detail: string;
   perform: (tx: SqlQueryable) => Promise<T>;
@@ -58,6 +69,13 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       }
       const r = await opts.perform(tx);
       if (idempotencyKey) {
+        // A void perform cannot be cached (JSON.stringify(undefined) becomes a NULL
+        // result_json → constraint failure that rolls the business write back with a
+        // misleading error) AND its replay could never be detected by the cache-hit
+        // sentinel. Fail as an explicit invariant instead of a disguised 409.
+        if (r === undefined) {
+          throw appError("INTERNAL", "auditedWrite: perform returned undefined but an idempotencyKey requires a serializable result");
+        }
         // The UNIQUE(org_id, idempotency_key) constraint is the real guard against a race.
         await tx.query(
           "INSERT INTO crm_write_cache (org_id, idempotency_key, result_json, created_at) VALUES ($1,$2,$3,$4)",
@@ -70,7 +88,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId ?? null,
-        before: opts.before,
+        before: opts.buildBefore ? opts.buildBefore() : opts.before,
         after: opts.buildAfter ? opts.buildAfter(r) : opts.after,
         detail: opts.detail,
       };
@@ -85,14 +103,25 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       const hit = await cachedResult<T>(db, orgId, idempotencyKey);
       if (hit !== undefined) return ok(hit);
     }
-    // Genuine failure: business rolled back; record the failed attempt in its own tx.
+    // Genuine failure: business rolled back. Log the REAL error before mapping —
+    // this helper is the single write chokepoint, the worst place to fly blind
+    // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
+    const known: AppError | null = isAppError(e) ? e : null;
+    log[known ? logLevelFor(known.code) : "error"](
+      {
+        orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null,
+        code: known?.code ?? null,
+        reason: e instanceof Error ? `${e.name}: ${e.message}` : known ? known.message : String(e),
+      },
+      "audited write failed",
+    );
     const failIntent: AuditIntent = {
       orgId,
       actor: opts.actor,
       action: opts.action,
       entityType: opts.entityType,
       entityId: opts.entityId ?? null,
-      before: opts.before,
+      before: opts.buildBefore ? opts.buildBefore() : opts.before,
       detail: `${opts.detail} [attempt failed]`,
     };
     await db
@@ -106,11 +135,16 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
           "failure-audit entry could not be recorded",
         );
       });
-    const error: AppError = isAppError(e)
-      ? e
+    // Unknown failures default to INTERNAL (500) — STORE_CONSTRAINT (409) is
+    // reserved for real driver integrity-constraint codes, so a plain bug in
+    // perform is never mislabeled as a client-resolvable conflict.
+    const error: AppError = known
+      ? known
       : e instanceof Error && e.name === "PIIViolation"
         ? appError("PII_VIOLATION", "write refused: PII would have reached the audit boundary")
-        : appError("STORE_CONSTRAINT", "write failed");
+        : isDriverConstraintError(e)
+          ? appError("STORE_CONSTRAINT", "write failed: store constraint violated")
+          : appError("INTERNAL", "write failed");
     return err(error);
   }
 }

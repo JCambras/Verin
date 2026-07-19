@@ -16,6 +16,10 @@ export default function AccountOpeningPage() {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // One UUID per form session (D-027): the server uses it as the executionId, so
+  // a double-submit (network retry, second tab re-posting the same session)
+  // replays the same execution instead of creating duplicate households.
+  const [clientRequestId] = useState(() => crypto.randomUUID());
 
   function steps(): ProgressStep[] {
     return [
@@ -38,6 +42,7 @@ export default function AccountOpeningPage() {
       lastName: String(fd.get("lastName") ?? ""),
       email: String(fd.get("email") ?? ""),
       accountType: String(fd.get("accountType") ?? ""),
+      clientRequestId,
     };
     try {
       const res = await fetch("/api/flows/account-opening", {

@@ -15,7 +15,7 @@ export interface AccountOpeningDeps {
   createContact(input: { householdId: string; firstName: string; lastName: string; email: string | null }): Promise<{ id: string }>;
   createApplication(input: { householdId: string; contactId: string; accountType: AccountType }): Promise<{ id: string; idempotencyKey: string }>;
   requestEsign(applicationId: string): Promise<{ token: string }>;
-  finalize(input: { applicationId: string; householdId: string; accountType: AccountType; idempotencyKey: string; actor: string }): Promise<void>;
+  finalize(input: { applicationId: string; householdId: string; accountType: AccountType; idempotencyKey: string; actor: string; signedAt: string }): Promise<void>;
 }
 
 const createHousehold: FlowStep<AccountOpeningDeps> = {
@@ -68,13 +68,17 @@ const finalize: FlowStep<AccountOpeningDeps> = {
   id: "finalize",
   name: "Finalize account opening",
   async execute(ctx, deps) {
-    // Runs on RESUME (after the signature webhook). Idempotent + audited.
+    // Runs on RESUME (after the signature webhook). Idempotent + audited. The
+    // signature moment opens the account (finding #2): signedAt comes from the
+    // server-constructed webhook payload, falling back to now if a caller resumed
+    // without one — the account's openDate must never be missing.
     await deps.finalize({
       applicationId: String(ctx.applicationId),
       householdId: String(ctx.householdId),
       accountType: ctx.accountType as AccountType,
       idempotencyKey: String(ctx.finalizeIdempotencyKey),
       actor: String(ctx.initiatedBy),
+      signedAt: typeof ctx.signedAt === "string" && ctx.signedAt ? ctx.signedAt : new Date().toISOString(),
     });
     return { kind: "continue", patch: { finalized: true } };
   },

@@ -16,7 +16,11 @@ export const log = pino({
   redact: {
     // Defence-in-depth only — the real guarantee is that callers log identifiers,
     // not PII (audit actor is an opaque userId per ADR-0006/0007).
-    paths: PII_LOG_FIELDS.flatMap((f) => [f, `*.${f}`, `*.*.${f}`]),
+    // DEPTH LIMIT (documented, D-028): pino redact paths cannot express
+    // arbitrary-depth wildcards, so this covers PII field names to nesting depth 4.
+    // Callers log FLAT identifier objects ({ orgId, action, code, reason }); a
+    // deeper structure is a caller bug the audit-boundary scrubber still catches.
+    paths: PII_LOG_FIELDS.flatMap((f) => [f, `*.${f}`, `*.*.${f}`, `*.*.*.${f}`]),
     censor: "[REDACTED]",
   },
 });

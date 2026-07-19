@@ -49,7 +49,15 @@ Pairs with ADR-0009 (idempotent resume) and ADR-0007 (audited finalize). Charter
 
 Pre-suspend writes (`createHousehold`/`createContact`/`createApplication`/`setEsignRequested`) carry
 per-execution idempotency keys (`<step>:<executionId>`), so retrying the SAME execution replays its
-committed writes instead of duplicating them. Two recovery paths remain deferred:
+committed writes instead of duplicating them.
+
+**Cross-submit dedup: UN-DEFERRED (D-027).** The flow-start route now requires a client-minted
+per-form-session UUID (`clientRequestId`), used as the executionId: a double-submit (network retry,
+second tab) resolves to the SAME execution — the route reports its current state (org-checked) instead
+of starting a duplicate. Locked by an integration spec (same id → one household + the same resume
+token; a different id → a genuinely new execution).
+
+Two recovery paths remain deferred:
 
 - **Compensation** — a transient failure after `createHousehold` commits still leaves the created rows
   behind if the user abandons and re-submits (a NEW execution mints new keys); no automatic rollback of

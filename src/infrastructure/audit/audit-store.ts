@@ -272,23 +272,7 @@ export async function listOrgChain(db: SqlDb, orgId: string): Promise<ChainRow[]
   return res.rows.map(toChainRow);
 }
 
-/**
- * Re-verify an org's audit chain integrity (charter #13): internal hash-chain
- * consistency AND agreement with the out-of-band anchor, so tail-truncation or full
- * deletion is DETECTED (Vale V1 / Sable F4).
- */
-export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
-  // Chain rows and the anchor are read in ONE transaction: a drain committing
-  // between two separate reads would otherwise raise a false "rows removed /
-  // truncated" tamper alarm (anchor ahead of the rows snapshot).
-  const { rows, anchor } = await db.transaction(async (tx) => {
-    const chainRes = await tx.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [orgId]);
-    const anchorRes = await tx.query<{ max_sequence: number | string; entry_count: number | string }>(
-      "SELECT max_sequence, entry_count FROM audit_anchor WHERE org_id = $1",
-      [orgId],
-    );
-    return { rows: chainRes.rows.map(toChainRow), anchor: anchorRes.rows[0] };
-  });
+function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; entry_count: number | string } | undefined): ChainVerdict {
   const verdict = verifyChain(rows);
   if (!verdict.ok) return verdict;
   if (!anchor) {
@@ -309,4 +293,29 @@ export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVer
     return { ok: false, entriesChecked: rows.length, brokenAtSequence: expectedMax, reason: `max sequence ${rows[rows.length - 1]!.sequence} != anchor ${expectedMax}` };
   }
   return verdict;
+}
+
+/**
+ * Re-verify an org's audit chain integrity (charter #13) AND return the verified
+ * rows, so a caller that also lists the chain (the audit view) pays for ONE scan,
+ * not two: internal hash-chain consistency plus agreement with the out-of-band
+ * anchor, so tail-truncation or full deletion is DETECTED (Vale V1 / Sable F4).
+ */
+export async function verifyAndListOrgChain(db: SqlDb, orgId: string): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+  // Chain rows and the anchor are read in ONE transaction: a drain committing
+  // between two separate reads would otherwise raise a false "rows removed /
+  // truncated" tamper alarm (anchor ahead of the rows snapshot).
+  const { rows, anchor } = await db.transaction(async (tx) => {
+    const chainRes = await tx.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [orgId]);
+    const anchorRes = await tx.query<{ max_sequence: number | string; entry_count: number | string }>(
+      "SELECT max_sequence, entry_count FROM audit_anchor WHERE org_id = $1",
+      [orgId],
+    );
+    return { rows: chainRes.rows.map(toChainRow), anchor: anchorRes.rows[0] };
+  });
+  return { verdict: verdictFor(rows, anchor), rows };
+}
+
+export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
+  return (await verifyAndListOrgChain(db, orgId)).verdict;
 }

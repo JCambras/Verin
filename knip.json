@@ -12,7 +12,7 @@
   "ignore": [],
   "ignoreExportsUsedInFile": true,
   "rules": {
-    "dependencies": "off",
+    "dependencies": "error",
     "devDependencies": "off",
     "optionalPeerDependencies": "off",
     "unlisted": "off",

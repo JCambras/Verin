@@ -43,9 +43,19 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // The e-sign webhook resumes the flow.
     const token = started.token!;
-    const resumed = await resumeAccountOpeningByToken(db, token, { signedAt: new Date().toISOString() });
+    const signedAt = new Date().toISOString();
+    const resumed = await resumeAccountOpeningByToken(db, token, { signedAt });
     expect("status" in resumed && resumed.status).toBe("completed");
     expect(await accountCount(db)).toBe(1); // finalized exactly once
+
+    // Finding #2 lock: the e-signature OPENS the account — the store must agree
+    // with the product's "Account opened" (never 'pending' forever, openDate set).
+    const acct = await db.query<{ status: string; open_date: string | null }>(
+      "SELECT status, open_date FROM financial_accounts WHERE org_id = $1",
+      [ORG],
+    );
+    expect(acct.rows[0]!.status).toBe("open");
+    expect(acct.rows[0]!.open_date).toBe(signedAt);
 
     // Audit chain intact end-to-end and attributes to the initiating advisor's
     // opaque userId (ADR-0006/0007: never the raw email at the audit boundary).
@@ -76,6 +86,31 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE org_id=$1", [ORG]);
     expect(Number(tasks.rows[0]!.n)).toBe(1);
     expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+  });
+
+  it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {
+    const clientRequestId = "3f1f9c2e-8f7a-4b6e-9e2d-1a2b3c4d5e6f";
+    const input = {
+      householdName: "Dupe Household", firstName: "Do", lastName: "Uble", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    const first = await startAccountOpening(db, advisor, input);
+    const second = await startAccountOpening(db, advisor, input); // double-submit (retry / second tab)
+
+    expect(first.status).toBe("suspended");
+    expect(second.status).toBe("suspended");
+    expect(second.executionId).toBe(first.executionId);
+    expect(second.token).toBe(first.token); // the SAME awaiting-signature session reattaches
+
+    const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(households.rows[0]!.n)).toBe(1); // one household, not two
+
+    // Companion (charter #4): a DIFFERENT request id is a genuinely new submission
+    // and does start a second execution — dedup is by the minted id, not always-once.
+    const third = await startAccountOpening(db, advisor, { ...input, clientRequestId: "9d8c7b6a-5f4e-4d3c-9b1a-0f9e8d7c6b5a" });
+    expect(third.executionId).not.toBe(first.executionId);
+    const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(after.rows[0]!.n)).toBe(2);
   });
 
   it("a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)", async () => {

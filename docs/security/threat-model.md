@@ -30,8 +30,11 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   *Control:* cookie HMAC-signed with `SESSION_SECRET`; server-side session record with expiry and a
   revocation list; opaque id. *Fence:* `auth-enforcement`.
 - **T-S3 (High): spoof the e-sign webhook.** *Exploit:* attacker POSTs a fake "signed" callback to finalize
-  a flow. *Control:* webhook verifies an HMAC signature over the payload with `ESIGN_WEBHOOK_SECRET`;
-  resume token must match a suspended flow. *Fence:* webhook-signature test (Phase E).
+  a flow. *Control:* webhook verifies an HMAC signature over the TOKEN with `ESIGN_WEBHOOK_SECRET`
+  (`esign.ts` signs the token string alone); the payload is server-constructed (`{ signedAt }`) and never
+  trusted — trusted flow state takes precedence over the payload on resume (`engine.ts`), and the resume
+  token must match a suspended flow. A real e-sign vendor integration must sign token+payload; until then
+  this wording matches the code exactly (no overclaim). *Fence:* webhook-signature test (Phase E).
 
 ### T — Tampering
 - **T-T1 (Critical): edit/delete an audit record.** *Exploit:* attacker/insider `UPDATE`/`DELETE`s
