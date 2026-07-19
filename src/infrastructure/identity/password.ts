@@ -31,25 +31,11 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split("$");
-  if (parts[0] !== "scrypt") return false;
-  let params: { N: number; r: number; p: number };
-  let saltHex: string;
-  let hashHex: string;
-  if (parts.length === 6) {
-    params = { N: Number(parts[1]), r: Number(parts[2]), p: Number(parts[3]) };
-    if (![params.N, params.r, params.p].every((n) => Number.isInteger(n) && n > 0)) return false;
-    saltHex = parts[4]!;
-    hashHex = parts[5]!;
-  } else if (parts.length === 3) {
-    // Legacy format predating encoded params: Node's scrypt defaults.
-    params = { N: 16384, r: 8, p: 1 };
-    saltHex = parts[1]!;
-    hashHex = parts[2]!;
-  } else {
-    return false;
-  }
-  const salt = Buffer.from(saltHex, "hex");
-  const expected = Buffer.from(hashHex, "hex");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const params = { N: Number(parts[1]), r: Number(parts[2]), p: Number(parts[3]) };
+  if (![params.N, params.r, params.p].every((n) => Number.isInteger(n) && n > 0)) return false;
+  const salt = Buffer.from(parts[4]!, "hex");
+  const expected = Buffer.from(parts[5]!, "hex");
   const derived = await derive(password, salt, params);
   return derived.length === expected.length && timingSafeEqual(derived, expected);
 }

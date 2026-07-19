@@ -10,6 +10,7 @@ import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError } from "@contracts/errors";
+import { log } from "@infra/observability/logger";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -81,6 +82,13 @@ interface HeadRow {
 /** A claim older than this is presumed crashed and returns to 'pending' (at-least-once). */
 const CLAIM_TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * A row failing delivery this many times is a poison row (corrupt payload, persistent
+ * constraint failure): it is parked as a dead-letter (excluded from every later drain
+ * and from the readiness backlog) and surfaced via log/alert, never silently churned.
+ */
+const MAX_DELIVERY_ATTEMPTS = 5;
+
 /** Drain pending outbox rows for an org into the append-only, hash-chained log. */
 export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
   // Reclaim stale claims first: a crash between claim and delete must not leave a
@@ -103,11 +111,21 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
     try {
       await deliverClaimedRow(db, orgId, row.id, JSON.parse(row.payload_json) as OutboxPayload);
       drained += 1;
-    } catch {
-      // release the claim; a later drain retries (at-least-once).
-      await db
-        .query("UPDATE audit_outbox SET status = 'pending', attempts = attempts + 1, claimed_at = NULL WHERE id = $1", [row.id])
-        .catch(() => undefined);
+    } catch (err) {
+      // Release the claim so a later drain retries (at-least-once), unless the
+      // attempts cap is reached, in which case the row parks as a dead-letter.
+      const updated = await db
+        .query<{ status: string; attempts: number | string }>(
+          "UPDATE audit_outbox SET attempts = attempts + 1, claimed_at = NULL, status = CASE WHEN attempts + 1 >= $2 THEN 'parked' ELSE 'pending' END WHERE id = $1 RETURNING status, attempts",
+          [row.id, MAX_DELIVERY_ATTEMPTS],
+        )
+        .catch(() => null);
+      if (updated?.rows[0]?.status === "parked") {
+        log.error(
+          { outboxRowId: row.id, orgId, attempts: Number(updated.rows[0].attempts), reason: err instanceof Error ? err.message : String(err) },
+          "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
+        );
+      }
     }
   }
   return drained;

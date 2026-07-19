@@ -25,7 +25,9 @@ integrity layers:
    table (verified working in PGlite).
 2. **Transactional outbox** — the audit entry is enqueued in the same transaction as the business write;
    a drainer moves it to the append-only log at-least-once (survives crashes), claiming rows atomically to
-   avoid double-write.
+   avoid double-write. A row failing delivery 5 consecutive times parks as a `parked` dead-letter that no
+   later drain re-claims, surfaced by a pino error with the row id (D-024) - a poison row is visible, never
+   silent churn.
 3. **Hash chain** — each entry stores `prev_hash` and `entry_hash = sha256(canonical(entry) || prev_hash)`,
    computed in the app over a canonical serialization. A **scheduled CI/ops job re-verifies the whole chain**
    (`scripts/audit-chain-verify.ts`) and fails on any break — producing dated evidence over time.

@@ -52,8 +52,10 @@ flow concern. SSO/OIDC adapter is deferred with a trigger.
   guessing is bounded only by scrypt cost. **Trigger:** before the first pilot with real users.
 - **Org-qualified login (Sable F3).** `findUserByEmail` resolves deterministically (oldest account
   wins, `ORDER BY created_at, id`) so an email collision across orgs cannot lock out the original
-  user; a login that carries the org explicitly is the real fix. **Trigger:** the first customer org
-  whose users share emails with another org.
+  user; a login that carries the org explicitly is the real fix. Emails are canonicalized (trim +
+  lowercase) at write and lookup (D-023), so a case-variant of one mailbox cannot split into two
+  identities or destabilize this resolution. **Trigger:** the first customer org whose users share
+  emails with another org.
 
 ## Revisit When
 

@@ -156,3 +156,18 @@ engineered away. Captain chose EQUALIZE over accept-and-document: the unknown-em
 delivery at the real claim-lost guard), so both failure branches cost the same and NOTHING is persisted
 (no audit entry may attribute a failure to a nonexistent user). Proven by the audit-chain integration
 test (mirror persists zero outbox/chain/anchor rows) and an unknown-email e2e failure-path spec.
+
+### D-023 · 2026-07-19 · captain-decision · Emails canonicalized to lowercase at write and lookup
+`createUser` and `findUserByEmail` normalize emails (trim + lowercase), so a case-variant of the same
+mailbox can neither split into two identities under `UNIQUE(org_id, email)` nor fail sign-in
+(`Alex@Firm.com` registered, `alex@firm.com` typed). This also keeps the deterministic
+oldest-account-wins cross-org resolution (ADR-0008) stable. The login-escape SQL in the org-id fence is
+unchanged (only the bound parameter is normalized). Proven by the identity integration test.
+
+### D-024 · 2026-07-19 · captain-decision · Poison outbox rows park as dead-letters after 5 failed deliveries
+`drainOutbox` retries a failed delivery at-least-once, but a row failing 5 consecutive attempts (corrupt
+payload, persistent constraint failure) now moves to a `parked` status that no later drain re-claims,
+with a pino error carrying the row id - visible instead of silently churning forever (Vale V14's
+dead-letter half; the scheduled drainer remains deferred). Parked rows are excluded from the `/ready`
+backlog (they are stuck, not pending delivery); the backlog counts `pending` + `claimed` explicitly.
+Proven by the audit-chain integration test (poison row parks at the cap and is excluded thereafter).

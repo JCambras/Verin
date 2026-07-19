@@ -157,6 +157,32 @@ describe("tamper-evident audit chain (integration)", () => {
     expect(Number(left.rows[0]!.n)).toBe(0);
   });
 
+  it("a poison outbox row parks at the attempts cap and is excluded from later drains (dead-letter, no silent churn)", async () => {
+    await db.query(
+      "INSERT INTO audit_outbox (id, org_id, payload_json, status, attempts, created_at) VALUES ($1,$2,$3,'pending',0,$4)",
+      ["ob-poison", ORG, "{corrupt-json", new Date().toISOString()],
+    );
+
+    for (let i = 0; i < 5; i++) expect(await drainOutbox(db, ORG)).toBe(0);
+    const parked = await db.query<{ status: string; attempts: number | string }>(
+      "SELECT status, attempts FROM audit_outbox WHERE id = 'ob-poison'",
+    );
+    expect(parked.rows[0]!.status).toBe("parked");
+    expect(Number(parked.rows[0]!.attempts)).toBe(5);
+
+    // Parked = excluded: a further drain neither delivers the row nor touches it,
+    // and it no longer counts toward the readiness backlog (pending + claimed).
+    expect(await drainOutbox(db, ORG)).toBe(0);
+    const after = await db.query<{ status: string; attempts: number | string }>(
+      "SELECT status, attempts FROM audit_outbox WHERE id = 'ob-poison'",
+    );
+    expect(after.rows[0]!.status).toBe("parked");
+    expect(Number(after.rows[0]!.attempts)).toBe(5);
+    const backlog = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE status IN ('pending','claimed')");
+    expect(Number(backlog.rows[0]!.n)).toBe(0);
+    expect((await listOrgChain(db, ORG)).length).toBe(0);
+  });
+
   it("the constant-work login mirror runs the audit pipeline but persists NOTHING (Vale V6)", async () => {
     const count = async (table: "audit_outbox" | "audit_log" | "audit_anchor") =>
       Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]!.n);

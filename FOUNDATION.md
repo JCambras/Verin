@@ -127,7 +127,8 @@ valuable — it caught issues the walkthrough could not, including two false-pas
 
 **Deferred (with triggers) — also in the gap list below:** meta-fence efficacy / mutation testing (V9);
 knip `domain/schema` exemption for forward-looking vocabulary (V11 / D-013); the displayed-metric→source
-trace (V12); a scheduled outbox drainer + dead-letter (V14); org-qualified login (Sable F3); axe on the
+trace (V12); a scheduled outbox drainer (V14; the dead-letter half has since landed, D-024: poison rows
+park after 5 failed deliveries); org-qualified login (Sable F3); axe on the
 post-submit account-opening states (Wren meta).
 
 ---
@@ -150,7 +151,7 @@ date/trigger), never omitted:
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
 | Displayed-metric→source provenance trace (Vale V12) | — | founder | before any synthetic/estimated value renders |
-| Scheduled outbox drainer + dead-letter (Vale V14) | CC7.1 | founder | deploy-target selection |
+| Scheduled outbox drainer (Vale V14; dead-letter parking landed, D-024) | CC7.1 | founder | deploy-target selection |
 | Org-qualified login (Sable F3) | CC6.1 | red-team | self-registration / multi-org email collision |
 | Auth fail-closed when its audit cannot be recorded (today: pino error + proceed) | CC7.4 | founder | SOC 2 Type II evidence window / first regulated-customer review (ADR-0007) |
 | External audit-anchor witness / HMAC-signed chain (anchor shares the DB; hash is unkeyed) | CC7.4 | founder | production deploy (D-006) or first examiner/WORM requirement (ADR-0007/0019) |

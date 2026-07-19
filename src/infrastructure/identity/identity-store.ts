@@ -27,20 +27,28 @@ export interface SessionRow {
   revoked_at: string | null;
 }
 
+// Emails are canonicalized (trimmed, lowercased) at write AND lookup: case-variants
+// of one mailbox cannot split into two identities under UNIQUE(org_id, email), and
+// sign-in is not case-fragile.
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export async function createUser(
   db: SqlDb,
   input: { orgId: string; email: string; displayName: string; role: Role; password: string },
 ): Promise<UserRow> {
   const id = randomUUID();
+  const email = normalizeEmail(input.email);
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.query(
       "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')",
-      [id, input.orgId, input.email, input.displayName, input.role, now],
+      [id, input.orgId, email, input.displayName, input.role, now],
     );
     await tx.query("INSERT INTO credentials (user_id, password_hash) VALUES ($1,$2)", [id, await hashPassword(input.password)]);
   });
-  return { id, org_id: input.orgId, email: input.email, display_name: input.displayName, role: input.role, status: "active" };
+  return { id, org_id: input.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
 }
 
 export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow | null> {
@@ -50,7 +58,7 @@ export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow
   // displace (lock out) org A's user.
   const res = await db.query<UserRow>(
     "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 ORDER BY created_at ASC, id ASC LIMIT 1",
-    [email],
+    [normalizeEmail(email)],
   );
   return res.rows[0] ?? null;
 }
