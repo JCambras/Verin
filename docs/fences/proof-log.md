@@ -245,3 +245,56 @@ the file → revert → green):
   (`src/app/proof-inject-action.ts :: wipeAll`) — the fence failed naming all three; reverted; green.
   Each evasion (plus imported-identifier, local-alias, unresolvable and wildcard re-exports) is also
   companion-proven in `describe("detects (companion)")`.
+
+---
+
+## Wave-1 prerequisite fences (2026-07-19) — executed injection proofs
+
+### PF-018 · metric-provenance · `src/__tests__/fitness/metric-provenance.test.ts`
+**Invariant (charter #3 / ADR-0022; closes Vale V12):** every metric-class value renders with provenance —
+the sanctioned renderers (`<Metric>`, `<FreshValue>`) keep their provenance prop REQUIRED (RULE A), and no
+metric-class field (derived from the dictionary `display:"metric"` flag) is rendered in JSX child position
+outside a sanctioned renderer (RULE B).
+
+**RULE B injection:** created `src/app/app/_adv-metric/page.tsx` rendering `<span>{account.balanceMinorUnits}</span>`.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/metric-provenance.test.ts > metric-provenance fence > RULE B: no metric field is rendered in JSX without provenance
+AssertionError: naked metric renders (charter #3 / Vale V12):
+src/app/app/_adv-metric/page.tsx:3 :: metric field 'balanceMinorUnits' rendered without provenance (route it through <Metric>/<FreshValue>)
+```
+**Revert:** deleted the file; `pnpm exec vitest run …/metric-provenance.test.ts` → `Tests 12 passed`.
+
+**RULE A injection:** made `FreshValue`'s `provenance` prop optional (`provenance?: RecordProvenance`).
+**Observed failure (verbatim):**
+```
+FAIL … > RULE A: every sanctioned metric renderer keeps its provenance prop REQUIRED
+AssertionError: renderer contract broken:
+FreshValue: 'provenance' prop is OPTIONAL — a metric could render without provenance
+```
+**Revert:** restored the required prop; suite green. Naked member-access, destructured, one-hop-alias, and
+attribute-passing cases are all companion-proven in `describe("detects (companion)")`.
+
+**Date:** 2026-07-19 (Wave-1 prereq).
+
+### PF-019 · derived-provenance · `src/__tests__/fitness/derived-provenance.test.ts`
+**Invariant (charter #3 EXTENSION / ADR-0022):** a value derived from any synthetic input is itself a
+demonstration and can never feed a compliance decision (`deriveArtifactProvenance` +
+`canFeedComplianceDecision`).
+
+**Injection:** weakened `canFeedComplianceDecision` back to `return !isSyntheticSource(p.source);` (dropping
+`&& !isDemonstration(p)`), so a demonstration artifact derived from synthetic input would be allowed to feed
+compliance.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/derived-provenance.test.ts > … > enforces: the derivation law holds for the real contract functions
+AssertionError: derivation-law violations:
+a demonstration derived from 'estimate' must NOT feed a compliance decision
+a demonstration derived from 'default' must NOT feed a compliance decision
+a demonstration derived from 'fixture' must NOT feed a compliance decision
+```
+**Revert:** restored the `&& !isDemonstration(p)` clause; suite green. A broken derivation (never marks
+synthetic-derived artifacts as demonstrations) and a `canFeed` that ignores `demonstration` are both
+companion-proven rejected.
+
+**Date:** 2026-07-19 (Wave-1 prereq).

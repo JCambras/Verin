@@ -8,8 +8,9 @@ import { isSyntheticSource } from "@contracts/provenance";
  * (estimate/default/fixture) MUST NOT be allowed to feed a compliance decision.
  * The DISPLAY-level half shipped in Phase E: FreshValue (app/presentation)
  * requires a provenance prop, so every rendered value carries its source/asOf
- * label. The CI displayed-metric->source trace remains deferred (Vale V12;
- * trigger: before any synthetic/estimated value renders).
+ * label. The CI displayed-metric->source trace (Vale V12) is now CLOSED by the
+ * `metric-provenance` and `derived-provenance` fences (ADR-0022), which run beside
+ * this one in the `provenance-trace` CI gate.
  */
 
 export function checkSyntheticLabeling(

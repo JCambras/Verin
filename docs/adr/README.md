@@ -36,6 +36,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0019](./0019-backup-dr-audit-retention.md) | Backup/DR (RPO/RTO) and audit-log retention (SEC 17a-4 aware) | Accepted (design contract) |
 | [0020](./0020-sacrificial-components.md) | Sacrificial-component discipline with a written register | Accepted |
 | [0021](./0021-content-security-policy-deferral.md) | Content-Security-Policy — deliberate deferral with a deployment trigger | Accepted |
+| [0022](./0022-derived-compliance-artifacts-demonstration.md) | Charter #3 extension — derived compliance artifacts are demonstrations (watermarked, excluded from examiner-export) | Accepted (charter amendment) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

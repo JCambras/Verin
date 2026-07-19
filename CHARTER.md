@@ -67,6 +67,11 @@ NON-NEGOTIABLES - each ships as a machine-enforced rule from commit #1, never pr
    on any entity field lacking a provenance annotation.
 3. NO UNLABELED SYNTHETIC DATA, EVER. Every estimated, defaulted, or fixture value renders with a
    visible source/asOf label and can never feed a compliance decision. CI trace: displayed metric -> source.
+   EXTENSION (ADR-0022): the rule runs end-to-end through DERIVED artifacts - a value computed from any
+   synthetic input (a health score or compliance-scan result over a labeled-synthetic/demo household) is
+   itself synthetic: a "demonstration" artifact, watermarked "demonstration - not a compliance record,"
+   written under a demo audit class, and excluded from the real examiner-export. This is an extension, never
+   a weakening.
 4. DETECTION IS NOT VERIFICATION. Every automated check that can emit PASS gets a companion test proving
    incomplete or not-started work CANNOT pass it.
 5. NOTHING BUILT-BUT-NOT-SHIPPED. Every capability that merges is reachable from the UI or a public API

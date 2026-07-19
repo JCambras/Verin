@@ -52,12 +52,68 @@ export function isSyntheticSource(source: SourceSystem): boolean {
 }
 
 /**
- * Charter #3: a synthetic (estimated/defaulted/fixture) value can NEVER feed a
- * compliance decision. Use this at any compliance decision point to refuse
- * synthetic inputs.
+ * Charter #3 (+ ADR-0022 extension): a value can feed a real compliance decision
+ * only if it is neither synthetic (estimated/defaulted/fixture) NOR a demonstration
+ * artifact DERIVED from synthetic input. Use this at any compliance decision point
+ * to refuse both. Accepts a plain RecordProvenance or a DerivedProvenance.
  */
-export function canFeedComplianceDecision(p: RecordProvenance): boolean {
-  return !isSyntheticSource(p.source);
+export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenance): boolean {
+  return !isSyntheticSource(p.source) && !isDemonstration(p);
+}
+
+// ── Charter #3 EXTENSION (ADR-0022): derived compliance artifacts ────────────────
+// A value DERIVED from one or more inputs is only as trustworthy as its
+// least-trustworthy input. If ANY input is synthetic, the derived value is itself
+// synthetic — a "demonstration" artifact (a health score or compliance-scan result
+// computed over a labeled-synthetic/demo household). It must render/record as a
+// demonstration (watermarked, demo audit class, excluded from the real
+// examiner-export) and can never feed a real compliance decision. This makes charter
+// #3's displayed-metric->source trace run end-to-end THROUGH derived artifacts,
+// closing the hole the charter's prose leaves open. It is an EXTENSION, never a
+// weakening: a NEW class of value is brought under the existing rule; nothing
+// previously forbidden is now permitted.
+
+/** The visible label a demonstration-derived artifact must carry (charter #3 / ADR-0022). */
+export const DEMO_WATERMARK = "Demonstration — not a compliance record" as const;
+
+/** Provenance of a value computed FROM other provenanced inputs (the derivation trace). */
+export interface DerivedProvenance extends RecordProvenance {
+  /** True iff any input was synthetic: the derived artifact is itself synthetic. */
+  readonly demonstration: boolean;
+  /** The input sources this artifact was derived from (the displayed-metric->source trace). */
+  readonly derivedFrom: readonly SourceSystem[];
+}
+
+const CONFIDENCE_RANK: Record<Confidence, number> = { high: 2, medium: 1, low: 0 };
+
+/** The least-confident input governs a derived value's confidence. */
+function lowestConfidence(inputs: readonly RecordProvenance[]): Confidence {
+  return inputs.reduce<Confidence>(
+    (lowest, i) => (CONFIDENCE_RANK[i.confidence] < CONFIDENCE_RANK[lowest] ? i.confidence : lowest),
+    "high",
+  );
+}
+
+/**
+ * Provenance of a value computed from `inputs` (ADR-0022). source = "computed";
+ * `demonstration` is true iff ANY input is synthetic, so a value derived from even
+ * one labeled-synthetic/demo input is itself a demonstration artifact that
+ * `canFeedComplianceDecision` refuses.
+ */
+export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {
+  const demonstration = inputs.some((i) => isSyntheticSource(i.source));
+  return {
+    source: "computed",
+    asOf,
+    confidence: demonstration ? "low" : lowestConfidence(inputs),
+    demonstration,
+    derivedFrom: inputs.map((i) => i.source),
+  };
+}
+
+/** True iff `p` is a demonstration-derived artifact (charter #3 / ADR-0022). */
+export function isDemonstration(p: RecordProvenance | DerivedProvenance): boolean {
+  return "demonstration" in p && p.demonstration === true;
 }
 
 /** A short, human-visible source/asOf label for the UI (charter #3). */

@@ -59,6 +59,12 @@ behind the store interface (`SqlDb` in `src/infrastructure/store/db.ts`), manage
 - Fences prefer AST (`ts-morph`) over regex; a weak/tautological fence is worse than none — the self-audit
   caught two of my own fences passing vacuously (`no-pii-in-audit-store`, `org-id-required`). When adding a
   fence, prove its companion actually rejects a real violation.
+- **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
+  (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
+  build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered
+  in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
+  "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
+  (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
 
 ## Maintaining this file
 

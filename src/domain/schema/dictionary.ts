@@ -23,6 +23,13 @@ export interface FieldSpec {
   readonly nullable: boolean;
   readonly unit?: string;
   readonly provenance: FieldProvenancePolicy;
+  /**
+   * A "metric-class" displayed value (a balance, health score, AUM, count) — the
+   * estimated/derived numbers charter #3's displayed-metric->source trace governs.
+   * The metric-provenance fence (Vale V12) derives its registry from this flag and
+   * fails the build if such a field is rendered in the UI without provenance.
+   */
+  readonly display?: "metric";
 }
 
 // Provenance presets.
@@ -32,6 +39,12 @@ const MONEY: FieldProvenancePolicy = { defaultSource: "verin-crm", survivorship:
 
 const s = (type: string, nullable: boolean, provenance: FieldProvenancePolicy, unit?: string): FieldSpec =>
   unit ? { type, nullable, unit, provenance } : { type, nullable, provenance };
+
+/** Same as `s`, but marks the field as a metric-class displayed value (charter #3 / Vale V12). */
+const metricField = (type: string, nullable: boolean, provenance: FieldProvenancePolicy, unit?: string): FieldSpec => ({
+  ...s(type, nullable, provenance, unit),
+  display: "metric",
+});
 
 export const DATA_DICTIONARY: Record<EntityName, Record<string, FieldSpec>> = {
   Org: {
@@ -82,7 +95,7 @@ export const DATA_DICTIONARY: Record<EntityName, Record<string, FieldSpec>> = {
     householdId: s("EntityId", false, SYS),
     accountType: s("AccountType", false, USER),
     custodian: s("string", true, USER),
-    balanceMinorUnits: s("number", true, MONEY, "USD-minor"),
+    balanceMinorUnits: metricField("number", true, MONEY, "USD-minor"),
     currency: s("string", false, SYS),
     status: s("FinancialAccountStatus", false, SYS),
     openDate: s("IsoTimestamp", true, SYS),
