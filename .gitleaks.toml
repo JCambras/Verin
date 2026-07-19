@@ -1,0 +1,26 @@
+title = "Verin gitleaks configuration"
+
+# Charter non-negotiable #15: secret scanning is a CI gate (gitleaks-class),
+# failing (not advisory). Extends the default ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder templates and test-only non-secrets (not real credentials)"
+# .env.example is placeholder-only and separately enforced by the
+# no-secret-fallback / no-live-org-domain fitness fence.
+paths = [
+  '''\.env\.example$''',
+  '''playwright\.config\.ts$''',
+]
+regexes = [
+  '''CHANGEME_[A-Za-z0-9_]+''',
+  '''e2e-only-[a-z-]+-not-a-real-secret-0+''',
+  # Deliberately secret-shaped fixture in the no-secret-fallback fence test
+  # (src/__tests__/fitness/no-secret-fallback.test.ts) — proves the placeholder
+  # check rejects a real-looking value. Not a live credential. Allowlisted by the
+  # exact literal (not the file) so a genuine secret added to that file is still
+  # caught. A `gitleaks:allow` inline comment cannot cover it: the value was
+  # introduced in an earlier commit and gitleaks scans the whole PR range.
+  '''sk_live_51H8xQ2eZvKYlo2C''',
+]

@@ -1,0 +1,26 @@
+# dependencies
+/node_modules
+
+# next
+/.next
+/out
+
+# test + build artifacts
+/coverage
+/playwright-report
+/test-results
+*.tsbuildinfo
+next-env.d.ts
+/sbom.json
+
+# local house-CRM store data (PGlite persists here in dev/CI/e2e)
+/.verin-data*
+/.verin-data-*
+
+# env — everything except the committed placeholder template
+.env
+.env.*
+!.env.example
+
+# os / editor
+.DS_Store
