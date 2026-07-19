@@ -26,18 +26,23 @@ const DATA_TABLES = [
 const CAPABILITY_KEYS = ["esign_token", "resume_token", "idempotency_key"];
 
 // Reviewed escapes — queries that legitimately cannot carry an org_id filter.
-// Matched against whitespace-normalized SQL; each carries its justification.
+// Each entry is the FULL whitespace-normalized statement and must match the
+// normalized SQL exactly: a substring/containment match would silently exempt
+// any superset query (e.g. the login query grown an "OR role = $2" arm).
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
   {
-    sql: "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1",
+    sql:
+      "SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at, " +
+      "u.id AS user_id, u.email, u.status AS user_status " +
+      "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1",
     why: "session resolution: the unguessable session id is the capability; org_id comes FROM this row",
   },
   {
-    sql: "FROM users WHERE email = $1",
+    sql: "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 LIMIT 1",
     why: "login by email — org-qualified login is an explicit deferral (Sable F3, FOUNDATION gap list)",
   },
   {
-    sql: "FROM credentials WHERE user_id = $1",
+    sql: "SELECT password_hash FROM credentials WHERE user_id = $1",
     why: "credentials has no org_id column; keyed by the user PK resolved during authentication",
   },
 ];
@@ -54,7 +59,7 @@ export function detectMissingOrgId(sql: string): boolean {
   if (!touchesData) return false;
   if (CAPABILITY_KEYS.some((k) => new RegExp(`\\b${k}\\b`).test(sql))) return false; // capability-keyed access
   const normalized = normalizeSql(sql);
-  if (REVIEWED_ESCAPES.some((e) => normalized.includes(e.sql))) return false;
+  if (REVIEWED_ESCAPES.some((e) => normalized === e.sql)) return false;
   // Vale V4: org_id must appear as a FILTER predicate (org_id = / org_id IN),
   // not merely anywhere in the string (e.g. in the SELECT projection).
   return !/\borg_id\s*(=|\bin\b)/i.test(sql);
@@ -105,6 +110,11 @@ describe("org-id-required fence", () => {
     });
     it("ignores trigger DDL mentioning a data table (BEFORE UPDATE ON audit_log)", () => {
       expect(detectMissingOrgId("CREATE TRIGGER t BEFORE UPDATE ON audit_log FOR EACH ROW EXECUTE FUNCTION f()")).toBe(false);
+    });
+    it("allows the exact reviewed login escape but flags a superset of it (escapes are exact-match)", () => {
+      const escaped = "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 LIMIT 1";
+      expect(detectMissingOrgId(escaped)).toBe(false);
+      expect(detectMissingOrgId(escaped.replace("WHERE email = $1", "WHERE email = $1 OR role = $2"))).toBe(true);
     });
     it("catches SQL assigned to a variable before .query() (literal sweep, not call-site only)", () => {
       const project = inMemoryProject({

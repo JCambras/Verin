@@ -59,5 +59,10 @@ describe("no-pii-in-audit-store fence", () => {
     it("a raw email is detected as a PII value", () => {
       expect(looksLikePIIValue("reach me at zeph@example.com")).toBe(true);
     });
+    it("phones need a phone-ish context: separated and E.164 forms match, a bare 10-digit ID does not", () => {
+      expect(looksLikePIIValue("212-555-0142")).toBe(true);
+      expect(looksLikePIIValue("+12125550142")).toBe(true);
+      expect(looksLikePIIValue("external ref 2125550142")).toBe(false);
+    });
   });
 });

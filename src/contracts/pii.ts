@@ -9,14 +9,15 @@ export const PII_FIELD_RE =
 
 // Value patterns kept conservative to avoid over-redacting IDs / ISO timestamps.
 // The audit backstop THROWS on a match (rolling back the business write), so a
-// false positive here kills legitimate writes: the phone pattern requires
-// separators/parens (a bare 10-digit number is an ID or an epoch, not "a phone"),
-// and the unseparated 9-digit SSN form requires an SSN-ish label nearby.
+// false positive here kills legitimate writes: the phone pattern requires a
+// phone-ish context (an E.164 "+1" prefix, separators, or parens; a bare
+// 10-digit number is an ID or an epoch, not "a phone"), and the unseparated
+// 9-digit SSN form requires an SSN-ish label nearby.
 export const PII_VALUE_PATTERNS: RegExp[] = [
   /\b\d{3}-\d{2}-\d{4}\b/, // SSN with separators
   /\b(?:ssn|social\s?security(?:\s?(?:number|no\.?|#))?|tax\s?id|tin)\b\D{0,10}\d{3}[ .]?\d{2}[ .]?\d{4}(?!\d)/i, // labeled SSN, incl. unseparated 9 digits
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/, // email
-  /(?<![\w-])(?:\+?1[-.\s]?)?(?:\(\d{3}\)[-.\s]?|\d{3}[-.\s])\d{3}[-.\s]?\d{4}(?![\w-])/, // NANP phone (separators/parens required)
+  /(?<![\w-])(?:\+1\d{10}|(?:\+?1[-.\s]?)?(?:\(\d{3}\)[-.\s]?|\d{3}[-.\s])\d{3}[-.\s]?\d{4})(?![\w-])/, // NANP phone (E.164 +1 or separators/parens required)
 ];
 
 export function isPIIField(name: string): boolean {
