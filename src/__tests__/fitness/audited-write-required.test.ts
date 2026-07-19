@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readShipped } from "./_fence-utils";
+import { join } from "node:path";
+import { readShipped, SRC_ROOT } from "./_fence-utils";
 
 /**
  * AUDITED-WRITE-REQUIRED + ANTI-FORK FENCE (ADR-0007/0009, charter #13). Every
@@ -11,9 +12,9 @@ import { readShipped } from "./_fence-utils";
 
 // The ONLY files allowed to call enqueueAudit: the helper + its own definition.
 const AUDIT_CALLER_ALLOW = ["src/infrastructure/audit/audited-write.ts", "src/infrastructure/audit/audit-store.ts"];
-// The CRM data adapters — their mutations must go through auditedWrite (tx inside perform),
-// never a direct db.query mutation.
-const CRM_ADAPTERS = ["src/infrastructure/crm/house-crm.ts", "src/infrastructure/crm/application-store.ts"];
+// EVERY file in the CRM adapter directory is swept — a fixed file list went stale
+// silently (a renamed/new adapter escaped the fence).
+const CRM_ADAPTER_DIR = "src/infrastructure/crm/";
 
 export function detectHandRolledAudit(rel: string, text: string): boolean {
   if (AUDIT_CALLER_ALLOW.includes(rel.replace(/\\/g, "/"))) return false;
@@ -38,13 +39,18 @@ describe("audited-write-required fence", () => {
   });
 
   it("enforces: CRM data adapters have no direct db.query mutation (must use auditedWrite)", () => {
+    const adapters = readShipped().filter(({ rel }) => rel.replace(/\\/g, "/").startsWith(CRM_ADAPTER_DIR));
+    // Staleness guard (charter #4): if the adapter directory moved/emptied, this
+    // fence must FAIL loudly instead of passing vacuously over zero files.
+    expect(adapters.length, `no CRM adapters found under ${join(SRC_ROOT, "infrastructure", "crm")} — fence target went stale`).toBeGreaterThan(0);
     const offenders: string[] = [];
-    for (const { rel, text } of readShipped()) {
-      if (!CRM_ADAPTERS.includes(rel.replace(/\\/g, "/"))) continue;
+    for (const { rel, text } of adapters) {
       const verbs = detectUnauditedMutation(text);
       if (verbs.length) offenders.push(`${rel}: ${verbs.join(",")}`);
-      // and it must actually use the helper (allowing a generic type argument)
-      if (!/\bauditedWrite\s*(<[^>]*>)?\s*\(/.test(text)) offenders.push(`${rel}: no auditedWrite call`);
+      // any file issuing mutation SQL must actually use the helper (allowing a generic type argument)
+      if (/\b(INSERT|UPDATE|DELETE)\b/i.test(text) && !/\bauditedWrite\s*(<[^>]*>)?\s*\(/.test(text)) {
+        offenders.push(`${rel}: no auditedWrite call`);
+      }
     }
     expect(offenders, `unaudited mutations:\n${offenders.join("\n")}`).toEqual([]);
   });

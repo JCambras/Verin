@@ -8,10 +8,15 @@ export const PII_FIELD_RE =
   /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|\bname\b|email|phone)/i;
 
 // Value patterns kept conservative to avoid over-redacting IDs / ISO timestamps.
+// The audit backstop THROWS on a match (rolling back the business write), so a
+// false positive here kills legitimate writes: the phone pattern requires
+// separators/parens (a bare 10-digit number is an ID or an epoch, not "a phone"),
+// and the unseparated 9-digit SSN form requires an SSN-ish label nearby.
 export const PII_VALUE_PATTERNS: RegExp[] = [
   /\b\d{3}-\d{2}-\d{4}\b/, // SSN with separators
+  /\b(?:ssn|social\s?security(?:\s?(?:number|no\.?|#))?|tax\s?id|tin)\b\D{0,10}\d{3}[ .]?\d{2}[ .]?\d{4}(?!\d)/i, // labeled SSN, incl. unseparated 9 digits
   /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/, // email
-  /\b\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/, // NANP phone
+  /(?<![\w-])(?:\+?1[-.\s]?)?(?:\(\d{3}\)[-.\s]?|\d{3}[-.\s])\d{3}[-.\s]?\d{4}(?![\w-])/, // NANP phone (separators/parens required)
 ];
 
 export function isPIIField(name: string): boolean {
@@ -23,7 +28,8 @@ export function looksLikePIIValue(value: string): boolean {
 }
 
 export function maskValue(value: string): string {
-  if (value.length <= 4) return "****";
+  // Never reveal a majority of a short value (a 5-char value would be 80% exposed).
+  if (value.length <= 8) return "****";
   return `${value.slice(0, 2)}****${value.slice(-2)}`;
 }
 

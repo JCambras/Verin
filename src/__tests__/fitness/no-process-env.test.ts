@@ -45,5 +45,9 @@ describe("no-process-env fence", () => {
       const offenders = detectProcessEnv([{ rel: "src/domain/ok.ts", text: `// never read process.env here\nexport const y = 1;` }]);
       expect(offenders).toEqual([]);
     });
+    it("catches a read hidden after a // inside a string literal (stripComments is string-aware)", () => {
+      const offenders = detectProcessEnv([{ rel: "src/domain/evil.ts", text: `const u = "http://x"; const k = process.env.SECRET;` }]);
+      expect(offenders).toEqual(["src/domain/evil.ts:1"]);
+    });
   });
 });

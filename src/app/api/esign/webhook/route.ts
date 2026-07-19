@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, readJsonBody } from "@app/_server/context";
 import { esignCallback } from "@infra/wire";
+import { appError, toResponse } from "@contracts/errors";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (result.status === "not-found") {
     return NextResponse.json({ error: { code: "NOT_FOUND", message: "Unknown signing token." } }, { status: 404 });
+  }
+  if (result.status === "failed") {
+    // A 5xx tells the provider the callback was NOT delivered, so it redelivers and
+    // resumeFlow retries the failed execution idempotently from its saved cursor.
+    const mapped = toResponse(result.error ?? appError("INTERNAL", "Finalizing the account opening failed."));
+    return NextResponse.json(mapped.body, { status: mapped.status >= 500 ? mapped.status : 500 });
   }
   return NextResponse.json({ status: result.status });
 }

@@ -26,17 +26,22 @@ export default function AuditPage() {
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch("/api/audit");
-      if (res.ok) {
-        const body = await res.json();
-        setVerdict(body.verdict);
-        setEntries(body.entries);
-      } else if (res.status === 403) {
-        setError("You do not have permission to view the audit trail (requires ops role or higher).");
-      } else {
-        setError("Could not load the audit trail.");
+      try {
+        const res = await fetch("/api/audit");
+        if (res.ok) {
+          const body = await res.json();
+          setVerdict(body.verdict);
+          setEntries(body.entries);
+        } else if (res.status === 403) {
+          setError("You do not have permission to view the audit trail (requires ops role or higher).");
+        } else {
+          setError("Could not load the audit trail.");
+        }
+      } catch {
+        setError("Could not load the audit trail. Check your connection and reload.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 

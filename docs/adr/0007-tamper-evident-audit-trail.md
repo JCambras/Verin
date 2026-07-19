@@ -50,6 +50,22 @@ Fences: audited-write-required + anti-fork (audits callable only inside the help
 gate, tampered-chain-detected companion. Retention/WORM in ADR-0019. The house-CRM console (Phase E) is the
 first live demo of the trail.
 
+## Deferred hardening (explicit, with triggers — charter: deferrals are named, never silent)
+
+- **Auth fails closed when its audit cannot be recorded.** Today a failed security-event audit
+  (`auditEvent` in `src/infrastructure/wire.ts` — login/logout/session records) is logged as a pino
+  error and the auth operation proceeds: availability over completeness, so an outbox hiccup cannot
+  lock every user out. DEFERRED: make the auth operation itself fail when its audit write fails.
+  **Trigger:** the SOC 2 Type II evidence-collection window opens (a Type II auditor requires
+  complete session-lifecycle records), or the first regulated customer's security review.
+- **Externalize the audit anchor / HMAC-sign the chain.** The `audit_anchor` table lives in the same
+  database as the chain and the entry hash is unkeyed SHA-256, so an adversary WITH DB write access
+  can rewrite entries, recompute hashes, and update the anchor — the anchor detects accidental
+  truncation, bad restores, and naive edits, not that adversary. DEFERRED: export each org's anchor
+  head to an external witness (object storage / signed log) or HMAC the chain with a KMS-held
+  secret. **Trigger:** production deploy (the same milestone as the managed-Postgres adapter,
+  D-006), or the first SEC-examiner/WORM conversation (ADR-0019).
+
 ## Revisit When
 
 Write volume makes per-write hashing a latency problem (batch/merkle the chain), or a regulated customer

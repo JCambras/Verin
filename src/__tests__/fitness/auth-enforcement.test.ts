@@ -17,7 +17,6 @@ const RESOLVES_SESSION = /require(?:Principal|PrincipalWithRole)\s*\(|resolveSes
 const UNAUTHENTICATED = new Set([
   "src/app/health/route.ts", // liveness
   "src/app/ready/route.ts", // readiness
-  "src/app/api/auth/login/route.ts", // does its own credential check
   "src/app/api/esign/webhook/route.ts", // HMAC token auth (external provider)
 ]);
 

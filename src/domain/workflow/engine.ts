@@ -7,7 +7,7 @@
  * Resume is idempotent at the write layer (auditedWrite), so a doubly-fired
  * webhook has exactly-once effect (charter #16).
  */
-import type { AppError } from "@contracts/errors";
+import { isAppError, type AppError } from "@contracts/errors";
 
 export type FlowData = Record<string, unknown>;
 
@@ -70,7 +70,11 @@ async function drive<D>(
     try {
       result = await step.execute(data, deps);
     } catch (e) {
-      const error = (typeof e === "object" && e && "code" in e ? e : { code: "INTERNAL", message: "Step threw" }) as AppError;
+      // Only a real AppError (in-taxonomy code) passes through; anything else —
+      // driver errors with a `code` like '23505'/'ENOENT' included — becomes a
+      // vetted INTERNAL so downstream statusFor/toResponse never sees an unknown
+      // code or leaks an unvetted message.
+      const error: AppError = isAppError(e) ? e : { code: "INTERNAL", message: "Step threw" };
       result = { kind: "fail", error };
     }
 

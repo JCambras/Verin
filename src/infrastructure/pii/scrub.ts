@@ -13,7 +13,10 @@ export function scrub(value: unknown, keyIsPII = false): unknown {
   if (typeof value === "string") {
     if (keyIsPII) return REDACTED;
     let out = value;
-    for (const re of PII_VALUE_PATTERNS) out = out.replace(new RegExp(re, "g"), REDACTED);
+    // Preserve each pattern's own flags (e.g. /i) and add /g — `new RegExp(re, "g")`
+    // silently DROPS the source flags, so scrub would miss what the fail-closed
+    // backstop then throws on.
+    for (const re of PII_VALUE_PATTERNS) out = out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), REDACTED);
     return out;
   }
   if (Array.isArray(value)) return value.map((v) => scrub(v));

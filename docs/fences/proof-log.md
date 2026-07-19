@@ -143,3 +143,31 @@ charter's exact "detection is not verification" failure, applied to my own work:
   require `org_id` as a `WHERE` predicate; companion added for the evasion (Vale V4).
 
 Both fixes are re-verified green and their companions now reject the previously-passing violation.
+
+## Independent-review hardening (post-Phase G) — fence gaps closed
+
+An independent gate review of the foundation branch found four more weak/vacuous spots in the
+enforcement layer itself; each is fixed with a companion that rejects the previously-passing evasion:
+
+- **`org-id-required` scan escapes (3):** the fence only scanned string literals passed DIRECTLY to
+  `.query(…)`, only under `src/infrastructure/`, and its `DATA_TABLES` omitted the org-scoped `users`,
+  `credentials`, and `audit_log`. It now sweeps EVERY string/template literal (AST) in EVERY shipped
+  src file — SQL held in a variable or issued from an app route handler is caught — with the three
+  tables added, statement-shaped matching (so trigger DDL like `BEFORE UPDATE ON audit_log` is not a
+  false positive), and three justification-carrying reviewed escapes (session-id capability lookup,
+  the deferred org-qualified login, org-column-less `credentials`). **Adversarial proof (executed):**
+  planted `const evilSql = "SELECT actor, detail FROM audit_log ORDER BY sequence"; await db.query(evilSql);`
+  in `src/app/ready/route.ts` → fence failed naming `src/app/ready/route.ts` and the SQL; reverted; green.
+- **`stripComments` string-blindness:** every content-scan fence (no-process-env, no-console,
+  no-bare-throw, no-client-role-header, no-secret-fallback) truncated lines at the first `//` even
+  inside string literals, so `const u = "http://x"; const k = process.env.SECRET;` passed. Now
+  string-aware; companion in `no-process-env.test.ts` proves the evasion is caught.
+- **`audited-write-required` stale target list:** the fence looped over two hardcoded adapter paths and
+  never asserted they exist — renaming an adapter made the loop body never run (vacuous pass). It now
+  sweeps `src/infrastructure/crm/` and FAILS if the directory yields zero adapters.
+- **`audit-chain-verify` gate was vacuous:** the seed wrote no audit entries, so the blocking CI gate
+  verified one 0-entry chain and printed OK. The seed now writes ONE idempotent audited entry
+  (`org.seed`), and the script exits non-zero when it finds no orgs OR verifies zero entries.
+  **Executed proof:** unseeded store → exit 1 ("no orgs found"); seeded → OK (1 entries); re-seed →
+  still exactly 1 entry (idempotency-key replay). `verifyOrgChain` also now returns BROKEN when
+  entries exist without an anchor row (anchor-removal cover-up), covered in the integration suite.

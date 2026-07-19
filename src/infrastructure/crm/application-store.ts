@@ -64,13 +64,20 @@ export async function getApplicationByToken(db: SqlDb, token: string): Promise<A
 }
 
 /** Mark an application completed (audited with the initiating advisor's actor). */
-export async function completeApplication(db: SqlDb, orgId: string, actor: string, applicationId: string): Promise<Result<{ id: string }>> {
+export async function completeApplication(
+  db: SqlDb, orgId: string, actor: string, applicationId: string, idempotencyKey: string,
+): Promise<Result<{ id: string }>> {
   return auditedWrite<{ id: string }>({
     db, orgId, actor, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
-    idempotencyKey: `complete:${applicationId}`, detail: "Account opening completed (e-signature received)",
+    idempotencyKey, detail: "Account opening completed (e-signature received)",
     buildAfter: () => ({ status: "completed" }),
     perform: async (tx) => {
-      await tx.query("UPDATE account_opening_applications SET status='completed', updated_at=$3 WHERE id=$1 AND org_id=$2", [applicationId, orgId, new Date().toISOString()]);
+      const res = await tx.query<{ id: string }>(
+        "UPDATE account_opening_applications SET status='completed', updated_at=$3 WHERE id=$1 AND org_id=$2 RETURNING id",
+        [applicationId, orgId, new Date().toISOString()],
+      );
+      // Vale V15: a wrong id/org affects 0 rows — fail instead of silently "succeeding".
+      if (res.rows.length !== 1) throw { code: "NOT_FOUND", message: "Application not found." };
       return { id: applicationId };
     },
   });

@@ -63,8 +63,10 @@ export function resolveConflict<T>(rule: SurvivorshipRule, candidates: readonly 
       )[0]!;
       return { winner, needsManual: false, rule };
     }
-    case "manual":
+    case "manual": {
       // A human must resolve; surface the highest-precedence value as the provisional winner.
-      return { winner: first, needsManual: true, rule };
+      const winner = [...candidates].sort((a, b) => precedenceIndex(a.provenance.source) - precedenceIndex(b.provenance.source))[0]!;
+      return { winner, needsManual: true, rule };
+    }
   }
 }

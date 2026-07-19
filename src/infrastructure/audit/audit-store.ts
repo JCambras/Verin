@@ -73,8 +73,17 @@ interface HeadRow {
   entry_hash: string;
 }
 
+/** A claim older than this is presumed crashed and returns to 'pending' (at-least-once). */
+const CLAIM_TIMEOUT_MS = 5 * 60_000;
+
 /** Drain pending outbox rows for an org into the append-only, hash-chained log. */
 export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
+  // Reclaim stale claims first: a crash between claim and delete must not leave a
+  // committed business write permanently unaudited.
+  await db.query(
+    "UPDATE audit_outbox SET status = 'pending', claimed_at = NULL WHERE org_id = $1 AND status = 'claimed' AND claimed_at < $2",
+    [orgId, new Date(Date.now() - CLAIM_TIMEOUT_MS).toISOString()],
+  );
   const pending = await db.query<OutboxRow>(
     "SELECT id, payload_json FROM audit_outbox WHERE org_id = $1 AND status = 'pending' ORDER BY created_at ASC, id ASC",
     [orgId],
@@ -87,42 +96,49 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
     );
     if (claimed.rows.length !== 1) continue; // someone else claimed it
     try {
-      const head = await db.query<HeadRow>(
-        "SELECT sequence, entry_hash FROM audit_log WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
-        [orgId],
-      );
-      const prevHash = head.rows.length ? head.rows[0]!.entry_hash : GENESIS_HASH;
-      const sequence = head.rows.length ? Number(head.rows[0]!.sequence) + 1 : 0;
       const p = JSON.parse(row.payload_json) as OutboxPayload;
-      const entry = {
-        orgId: p.orgId,
-        sequence,
-        actor: p.actor,
-        action: p.result === "failure" ? `${p.action}.failed` : p.action,
-        entityType: p.entityType,
-        entityId: p.entityId,
-        beforeJson: p.beforeJson,
-        afterJson: p.afterJson,
-        detail: p.detail,
-        createdAt: p.createdAt,
-      };
-      const entryHash = computeEntryHash(entry, prevHash);
-      await db.query(
-        `INSERT INTO audit_log (id, org_id, sequence, actor, action, entity_type, entity_id, before_json, after_json, detail, created_at, prev_hash, entry_hash)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [randomUUID(), entry.orgId, entry.sequence, entry.actor, entry.action, entry.entityType, entry.entityId, entry.beforeJson, entry.afterJson, entry.detail, entry.createdAt, prevHash, entryHash],
-      );
-      // Advance the out-of-band anchor (Vale V1): expected max_sequence + count.
-      await db.query(
-        `INSERT INTO audit_anchor (org_id, max_sequence, entry_count, updated_at) VALUES ($1,$2,1,$3)
-         ON CONFLICT (org_id) DO UPDATE SET max_sequence = $2, entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
-        [orgId, entry.sequence, new Date().toISOString()],
-      );
-      await db.query("DELETE FROM audit_outbox WHERE id = $1", [row.id]);
+      // One transaction for head-read → insert → anchor → delete: a partial
+      // failure can never append a chain entry the anchor does not count, and
+      // interleaved drains can never regress the anchor.
+      await db.transaction(async (tx) => {
+        const head = await tx.query<HeadRow>(
+          "SELECT sequence, entry_hash FROM audit_log WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
+          [orgId],
+        );
+        const prevHash = head.rows.length ? head.rows[0]!.entry_hash : GENESIS_HASH;
+        const sequence = head.rows.length ? Number(head.rows[0]!.sequence) + 1 : 0;
+        const entry = {
+          orgId: p.orgId,
+          sequence,
+          actor: p.actor,
+          action: p.result === "failure" ? `${p.action}.failed` : p.action,
+          entityType: p.entityType,
+          entityId: p.entityId,
+          beforeJson: p.beforeJson,
+          afterJson: p.afterJson,
+          detail: p.detail,
+          createdAt: p.createdAt,
+        };
+        const entryHash = computeEntryHash(entry, prevHash);
+        await tx.query(
+          `INSERT INTO audit_log (id, org_id, sequence, actor, action, entity_type, entity_id, before_json, after_json, detail, created_at, prev_hash, entry_hash)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [randomUUID(), entry.orgId, entry.sequence, entry.actor, entry.action, entry.entityType, entry.entityId, entry.beforeJson, entry.afterJson, entry.detail, entry.createdAt, prevHash, entryHash],
+        );
+        // Advance the out-of-band anchor (Vale V1): expected max_sequence + count.
+        await tx.query(
+          `INSERT INTO audit_anchor (org_id, max_sequence, entry_count, updated_at) VALUES ($1,$2,1,$3)
+           ON CONFLICT (org_id) DO UPDATE SET max_sequence = GREATEST(audit_anchor.max_sequence, $2), entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
+          [orgId, entry.sequence, new Date().toISOString()],
+        );
+        await tx.query("DELETE FROM audit_outbox WHERE id = $1", [row.id]);
+      });
       drained += 1;
     } catch {
       // release the claim; a later drain retries (at-least-once).
-      await db.query("UPDATE audit_outbox SET status = 'pending', attempts = attempts + 1, claimed_at = NULL WHERE id = $1", [row.id]);
+      await db
+        .query("UPDATE audit_outbox SET status = 'pending', attempts = attempts + 1, claimed_at = NULL WHERE id = $1", [row.id])
+        .catch(() => undefined);
     }
   }
   return drained;
@@ -181,7 +197,15 @@ export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVer
     [orgId],
   );
   const anchor = anchorRes.rows[0];
-  if (!anchor) return verdict; // no anchor yet (org has never written) — chain must be empty, which it is
+  if (!anchor) {
+    // No anchor is legitimate ONLY for an org that has never written. Entries
+    // without an anchor mean the anchor row was removed — the full-deletion /
+    // truncation cover-up the anchor exists to detect (Vale V1 / Sable F4).
+    if (rows.length > 0) {
+      return { ok: false, entriesChecked: rows.length, brokenAtSequence: null, reason: `${rows.length} entries but no anchor row (anchor removed)` };
+    }
+    return verdict;
+  }
   const expectedCount = Number(anchor.entry_count);
   const expectedMax = Number(anchor.max_sequence);
   if (rows.length !== expectedCount) {

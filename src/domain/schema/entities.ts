@@ -15,14 +15,21 @@ export type IsoTimestamp = string;
 
 export type UserStatus = "active" | "disabled";
 export type HouseholdStatus = "prospect" | "active" | "inactive";
-export type AccountType =
-  | "individual"
-  | "joint"
-  | "ira-traditional"
-  | "ira-roth"
-  | "rollover-ira"
-  | "trust"
-  | "entity";
+export const ACCOUNT_TYPES = [
+  "individual",
+  "joint",
+  "ira-traditional",
+  "ira-roth",
+  "rollover-ira",
+  "trust",
+  "entity",
+] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
+/** Server-side guard: client-supplied account types must be in the canonical set. */
+export function isAccountType(value: unknown): value is AccountType {
+  return typeof value === "string" && (ACCOUNT_TYPES as readonly string[]).includes(value);
+}
 export type FinancialAccountStatus = "pending" | "open" | "closed";
 export type ApplicationStatus =
   | "draft"

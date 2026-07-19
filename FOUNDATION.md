@@ -150,6 +150,8 @@ date/trigger), never omitted:
 | Displayed-metric→source provenance trace (Vale V12) | — | founder | before any synthetic/estimated value renders |
 | Scheduled outbox drainer + dead-letter (Vale V14) | CC7.1 | founder | deploy-target selection |
 | Org-qualified login (Sable F3) | CC6.1 | red-team | self-registration / multi-org email collision |
+| Auth fail-closed when its audit cannot be recorded (today: pino error + proceed) | CC7.4 | founder | SOC 2 Type II evidence window / first regulated-customer review (ADR-0007) |
+| External audit-anchor witness / HMAC-signed chain (anchor shares the DB; hash is unkeyed) | CC7.4 | founder | production deploy (D-006) or first examiner/WORM requirement (ADR-0007/0019) |
 
 ---
 

@@ -38,7 +38,9 @@ const MAX_BODY_BYTES = 64 * 1024;
 /**
  * Bounded JSON body reader (STRIDE T-D1 / Sable F2). App-Router handlers do NOT
  * inherit a body-size limit, so an unbounded `req.json()` is a memory-pressure DoS.
- * Rejects oversized bodies before/after buffering.
+ * Reads the body stream incrementally with a byte cap — content-length is absent
+ * under chunked transfer encoding, so the cap must be enforced while reading,
+ * never after buffering.
  */
 export async function readJsonBody<T = Record<string, unknown>>(
   req: NextRequest,
@@ -46,8 +48,23 @@ export async function readJsonBody<T = Record<string, unknown>>(
 ): Promise<Result<T, AppError>> {
   const declared = Number(req.headers.get("content-length") ?? "0");
   if (declared > maxBytes) return err(appError("VALIDATION", "Request body too large."));
-  const text = await req.text();
-  if (text.length > maxBytes) return err(appError("VALIDATION", "Request body too large."));
+  let text = "";
+  if (req.body) {
+    const reader = req.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return err(appError("VALIDATION", "Request body too large."));
+      }
+      chunks.push(value);
+    }
+    text = Buffer.concat(chunks).toString("utf8");
+  }
   try {
     return { ok: true, value: (text ? JSON.parse(text) : {}) as T };
   } catch {
@@ -60,9 +77,11 @@ export function sessionCookieOptions() {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    // Real production only (APP_ENV); e2e runs `next start` (NODE_ENV=production)
-    // over http on localhost, where a secure cookie would never be sent.
-    secure: cfg.appEnv === "production",
+    // Secure everywhere except local dev/e2e: staging and production are real
+    // HTTPS environments. Keyed on APP_ENV because e2e runs `next start`
+    // (NODE_ENV=production) over http on localhost, where a secure cookie would
+    // never be sent.
+    secure: cfg.appEnv !== "development",
     path: "/",
     maxAge: cfg.session.ttlMinutes * 60,
   };

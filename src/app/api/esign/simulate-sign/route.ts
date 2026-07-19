@@ -30,5 +30,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const result = await esignCallback(db, b.token, signature, { signedAt: new Date().toISOString() });
   if (result.status === "not-found") return errorResponse(appError("NOT_FOUND", "Unknown signing token."));
   if (result.status === "invalid-signature") return errorResponse(appError("INTERNAL", "signature mismatch"));
+  if (result.status === "failed") {
+    return errorResponse(result.error ?? appError("INTERNAL", "Finalizing the account opening failed."));
+  }
   return NextResponse.json({ status: result.status });
 }

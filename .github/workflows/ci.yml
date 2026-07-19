@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+# Least-privilege token (charter #15): every job reads the repo, nothing writes.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -99,6 +103,8 @@ jobs:
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
+          # Required on pull_request events: the action fetches PR commits via the API.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
   sast:

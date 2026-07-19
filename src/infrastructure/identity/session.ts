@@ -30,8 +30,12 @@ export function parseSignedCookie(value: string | undefined): string | null {
   const id = value.slice(0, dot);
   const mac = value.slice(dot + 1);
   const expected = sign(id);
-  if (mac.length !== expected.length) return null;
-  if (!timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return null;
+  // Compare BYTE lengths: a multibyte char makes string length != byte length,
+  // and timingSafeEqual throws (a 500 on every request) on unequal buffers.
+  const macBuf = Buffer.from(mac);
+  const expectedBuf = Buffer.from(expected);
+  if (macBuf.length !== expectedBuf.length) return null;
+  if (!timingSafeEqual(macBuf, expectedBuf)) return null;
   return id;
 }
 

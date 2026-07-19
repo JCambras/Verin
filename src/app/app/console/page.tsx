@@ -15,7 +15,7 @@ interface Household {
 
 async function fetchHouseholds(): Promise<Household[]> {
   const res = await fetch("/api/crm/households");
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error(`households request failed (${res.status})`);
   const body = await res.json();
   return body.households as Household[];
 }
@@ -27,48 +27,66 @@ export default function ConsolePage() {
 
   useEffect(() => {
     let active = true;
-    void fetchHouseholds().then((h) => {
-      if (active) setHouseholds(h);
-    });
+    fetchHouseholds().then(
+      (h) => {
+        if (active) setHouseholds(h);
+      },
+      () => {
+        if (active) setError("Could not load households. Check your connection and reload.");
+      },
+    );
     return () => {
       active = false;
     };
   }, []);
 
   async function reload() {
-    setHouseholds(await fetchHouseholds());
+    try {
+      setHouseholds(await fetchHouseholds());
+    } catch {
+      setError("Could not refresh the household list.");
+    }
   }
 
   async function create(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const form = e.currentTarget;
     setError(null);
-    const name = String(new FormData(e.currentTarget).get("name") ?? "");
-    const res = await fetch("/api/crm/households", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (res.ok) {
-      e.currentTarget.reset();
-      await reload();
-    } else {
-      const body = await res.json().catch(() => ({}));
-      setError(body?.error?.message ?? "Could not create household.");
+    const name = String(new FormData(form).get("name") ?? "");
+    try {
+      const res = await fetch("/api/crm/households", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        form.reset();
+        await reload();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error?.message ?? "Could not create household.");
+      }
+    } catch {
+      setError("Could not create household. Check your connection and try again.");
     }
   }
 
   async function rename(id: string, current: string) {
     const next = window.prompt("New household name", current);
     if (!next || next === current) return;
-    const res = await fetch("/api/crm/households", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, name: next }),
-    });
-    if (res.ok) await reload();
-    else {
-      const body = await res.json().catch(() => ({}));
-      setError(body?.error?.message ?? "Could not rename (needs ops role or higher).");
+    try {
+      const res = await fetch("/api/crm/households", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, name: next }),
+      });
+      if (res.ok) await reload();
+      else {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.error?.message ?? "Could not rename (needs ops role or higher).");
+      }
+    } catch {
+      setError("Could not rename the household. Check your connection and try again.");
     }
   }
 
@@ -97,7 +115,7 @@ export default function ConsolePage() {
       ) : null}
 
       {households === null ? (
-        <p className="text-sm text-slate-600">Loading…</p>
+        error ? null : <p className="text-sm text-slate-600">Loading…</p>
       ) : households.length === 0 ? (
         <EmptyState title="No households yet" description="Create your first household above, or open an account to create one through the flow." />
       ) : (

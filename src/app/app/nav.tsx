@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Wordmark } from "@app/presentation/brand";
@@ -8,9 +9,16 @@ import { Button } from "@app/presentation/ui";
 export function AppNav({ actor, role }: { actor: string; role: string }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [error, setError] = useState<string | null>(null);
   async function signOut() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (!res.ok) throw new Error(`logout failed (${res.status})`);
+      router.push("/login");
+    } catch {
+      setError("Sign-out failed. Check your connection and try again.");
+    }
   }
   const links = [
     { href: "/app/account-opening", label: "Open account" },
@@ -35,6 +43,11 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
         ))}
       </nav>
       <div className="flex items-center gap-3 text-sm">
+        {error ? (
+          <span role="alert" className="text-destructive">
+            {error}
+          </span>
+        ) : null}
         <span className="text-slate-600">
           {actor} · <span className="font-medium text-slate-800">{role}</span>
         </span>

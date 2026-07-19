@@ -8,7 +8,7 @@
  * infrastructure) — the flow stays in the domain layer, adapters are wired in app.
  */
 import type { FlowDefinition, FlowStep } from "../engine";
-import type { AccountType } from "@domain/schema/entities";
+import { ACCOUNT_TYPES, type AccountType } from "@domain/schema/entities";
 
 export interface AccountOpeningDeps {
   createHousehold(name: string): Promise<{ id: string }>;
@@ -94,6 +94,7 @@ export interface FlowFieldSpec {
   required: boolean;
   hint?: string;
   options?: readonly string[];
+  defaultValue?: string;
 }
 
 export const accountOpeningView: { title: string; regulation: string; fields: FlowFieldSpec[] } = {
@@ -109,7 +110,8 @@ export const accountOpeningView: { title: string; regulation: string; fields: Fl
       label: "Account type",
       type: "select",
       required: true,
-      options: ["individual", "joint", "ira-traditional", "ira-roth", "rollover-ira", "trust", "entity"],
+      options: ACCOUNT_TYPES,
+      defaultValue: "ira-roth",
     },
   ],
 };

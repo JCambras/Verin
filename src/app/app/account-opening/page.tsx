@@ -39,31 +39,41 @@ export default function AccountOpeningPage() {
       email: String(fd.get("email") ?? ""),
       accountType: String(fd.get("accountType") ?? ""),
     };
-    const res = await fetch("/api/flows/account-opening", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const body = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) return setError(body?.error?.message ?? "Could not start the flow.");
-    setToken(body.token);
-    setPhase("awaiting");
+    try {
+      const res = await fetch("/api/flows/account-opening", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(body?.error?.message ?? "Could not start the flow.");
+      setToken(body.token);
+      setPhase("awaiting");
+    } catch {
+      setError("Could not start the flow. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function sign() {
     if (!token) return;
     setBusy(true);
     setError(null);
-    const res = await fetch("/api/esign/simulate-sign", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const body = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) return setError(body?.error?.message ?? "Signing failed.");
-    setPhase("completed");
+    try {
+      const res = await fetch("/api/esign/simulate-sign", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(body?.error?.message ?? "Signing failed.");
+      setPhase("completed");
+    } catch {
+      setError("Signing failed. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -84,7 +94,7 @@ export default function AccountOpeningPage() {
                 {accountOpeningView.fields.map((f) => (
                   <Field key={f.name} label={f.label} htmlFor={f.name} hint={f.hint}>
                     {f.type === "select" ? (
-                      <SelectField id={f.name} name={f.name} defaultValue="ira-roth">
+                      <SelectField id={f.name} name={f.name} defaultValue={f.defaultValue ?? f.options?.[0]}>
                         {(f.options ?? []).map((o) => (
                           <option key={o} value={o}>
                             {o}

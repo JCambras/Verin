@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { listOrgChain, verifyOrgChain } from "@infra/audit/audit-store";
+import { listOrgChain, verifyOrgChain, drainOutbox } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
 
 const ORG = "org-1";
@@ -127,5 +127,33 @@ describe("tamper-evident audit chain (integration)", () => {
   it("TRUNCATE on audit_log is blocked by the append-only trigger", async () => {
     await auditedWrite({ db, orgId: ORG, actor: "a@test", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
     await expect(db.exec("TRUNCATE audit_log")).rejects.toThrow(/append-only/);
+  });
+
+  it("detects entries WITHOUT an anchor row (anchor removed to cover a deletion)", async () => {
+    await auditedWrite({ db, orgId: ORG, actor: "a@test", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+
+    await db.query("DELETE FROM audit_anchor WHERE org_id = $1", [ORG]);
+
+    const verdict = await verifyOrgChain(db, ORG);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toMatch(/anchor/i);
+  });
+
+  it("reclaims a stale 'claimed' outbox row (a crash between claim and delete must not lose the entry)", async () => {
+    const payload = {
+      orgId: ORG, actor: "a@test", action: "x.create", entityType: "X", entityId: "x1",
+      beforeJson: null, afterJson: null, detail: "d", createdAt: new Date().toISOString(), result: "success",
+    };
+    await db.query(
+      "INSERT INTO audit_outbox (id, org_id, payload_json, status, attempts, created_at, claimed_at) VALUES ($1,$2,$3,'claimed',1,$4,$5)",
+      ["ob-stale", ORG, JSON.stringify(payload), new Date().toISOString(), new Date(Date.now() - 10 * 60_000).toISOString()],
+    );
+
+    expect(await drainOutbox(db, ORG)).toBe(1);
+    expect((await listOrgChain(db, ORG)).length).toBe(1);
+    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+    const left = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE org_id = $1", [ORG]);
+    expect(Number(left.rows[0]!.n)).toBe(0);
   });
 });

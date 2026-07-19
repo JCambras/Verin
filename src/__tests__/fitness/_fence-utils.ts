@@ -160,8 +160,35 @@ export function readShipped(): Array<{ path: string; rel: string; text: string }
   }));
 }
 
-/** Strip line comments and block-comment lines so prose does not trip content scans. */
+/**
+ * Strip line comments and block-comment lines so prose does not trip content
+ * scans. String-aware: a `//` INSIDE a string literal (e.g. "http://x") is code,
+ * not a comment — truncating there would let everything after it evade the fence.
+ */
 export function stripComments(line: string): string {
-  return line.replace(/\/\/.*$/, "").replace(/^\s*\*.*$/, "").replace(/^\s*\/\*.*$/, "");
+  if (/^\s*\*/.test(line) || /^\s*\/\*/.test(line)) return "";
+  let out = "";
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quote) {
+      out += ch;
+      if (ch === "\\") {
+        out += line[i + 1] ?? "";
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      out += ch;
+      continue;
+    }
+    if (ch === "/" && line[i + 1] === "/") break;
+    out += ch;
+  }
+  return out;
 }
 

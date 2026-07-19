@@ -24,7 +24,7 @@
     "db:seed": "tsx scripts/db-seed.ts",
     "audit:chain": "tsx scripts/audit-chain-verify.ts",
     "load:smoke": "tsx scripts/load-smoke.ts",
-    "sbom": "cyclonedx-npm --output-file sbom.json"
+    "sbom": "cdxgen -t pnpm --no-install-deps -o sbom.json ."
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.4",
@@ -51,7 +51,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
-    "@cyclonedx/cyclonedx-npm": "6.0.0",
+    "@cyclonedx/cdxgen": "12.7.1",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.3.3",

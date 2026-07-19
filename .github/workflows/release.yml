@@ -6,6 +6,10 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Least-privilege token (charter #15).
+permissions:
+  contents: read
+
 jobs:
   sbom:
     name: sbom (CycloneDX)

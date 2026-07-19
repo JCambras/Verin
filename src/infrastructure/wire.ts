@@ -45,9 +45,12 @@ function makeDeps(db: SqlDb, starter: Principal): AccountOpeningDeps {
       withSpan("account-opening.finalize", { orgId: starter.orgId, applicationId: input.applicationId }, async () => {
         const actorP = principalForActor(starter.orgId, input.actor);
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
-        must(await createFinancialAccount(db, actorP, { householdId: input.householdId, accountType: input.accountType }, `account:${input.applicationId}`));
-        must(await createTask(db, actorP, { householdId: input.householdId, subject: `Fund the new ${input.accountType} account` }, `task:${input.applicationId}`));
-        must(await completeApplication(db, starter.orgId, input.actor, input.applicationId));
+        // Per-write keys derive from the application's minted idempotency key
+        // (threaded through the flow context), so the key the application row
+        // records is the one that actually guards finalize.
+        must(await createFinancialAccount(db, actorP, { householdId: input.householdId, accountType: input.accountType }, `account:${input.idempotencyKey}`));
+        must(await createTask(db, actorP, { householdId: input.householdId, subject: `Fund the new ${input.accountType} account` }, `task:${input.idempotencyKey}`));
+        must(await completeApplication(db, starter.orgId, input.actor, input.applicationId, `complete:${input.idempotencyKey}`));
       }),
   };
 }
@@ -119,8 +122,16 @@ export async function auditEvent(
   db: SqlDb,
   opts: { orgId: string; actor: string; action: string; entityType: string; entityId: string; detail: string },
 ): Promise<void> {
-  await auditedWrite({
+  const recorded = await auditedWrite({
     db, orgId: opts.orgId, actor: opts.actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
   });
+  if (!recorded.ok) {
+    // The auth operation proceeds (availability over completeness — an explicit
+    // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
+    log.error(
+      { orgId: opts.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
+      "security-event audit could not be recorded",
+    );
+  }
 }

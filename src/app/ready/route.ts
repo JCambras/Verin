@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Readiness (charter #11/#14): store reachable, outbox backlog bounded, audit
- * chain head present. Distinct from /health (liveness).
+ * Readiness (charter #11/#14): store reachable, outbox backlog bounded. Distinct
+ * from /health (liveness). Unauthenticated, so failures return NO internal detail
+ * (contracts/errors.ts toResponse policy) — operators read the reason from logs.
  */
 export async function GET(): Promise<NextResponse> {
   try {
@@ -16,7 +17,7 @@ export async function GET(): Promise<NextResponse> {
     const pending = Number(backlog.rows[0]?.n ?? 0);
     const ready = pending < 1000;
     return NextResponse.json({ status: ready ? "ready" : "degraded", store: "ok", outboxPending: pending }, { status: ready ? 200 : 503 });
-  } catch (e) {
-    return NextResponse.json({ status: "not-ready", error: e instanceof Error ? e.message : "unknown" }, { status: 503 });
+  } catch {
+    return NextResponse.json({ status: "not-ready" }, { status: 503 });
   }
 }

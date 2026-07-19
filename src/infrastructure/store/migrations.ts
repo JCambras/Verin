@@ -191,9 +191,12 @@ DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log;
 CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log
   FOR EACH STATEMENT EXECUTE FUNCTION audit_log_append_only();
 
--- Out-of-band anchor: the expected count + max sequence per org, so tail-truncation
--- or full deletion is DETECTED by verifyChain (the append-only trigger is bypassable
--- by a DBA; the anchor is a second, independent witness).
+-- Out-of-band anchor: the expected count + max sequence per org, so ACCIDENTAL
+-- tail-truncation, a bad restore, or a naive edit that removes rows is DETECTED by
+-- verifyChain. NOT proof against an adversary with DB write access: this table
+-- lives in the same database and the chain hash is unkeyed, so such an adversary
+-- could rewrite entries, recompute hashes, and update this row. Externalizing the
+-- anchor (or HMAC-signing the chain) is an explicit ADR-0007 deferred-hardening item.
 CREATE TABLE IF NOT EXISTS audit_anchor (
   org_id text PRIMARY KEY,
   max_sequence bigint NOT NULL,
