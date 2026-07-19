@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (180 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (183 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
@@ -110,7 +110,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 180 / knip / e2e 12 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 183 / knip / e2e 12 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.
