@@ -1,4 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { fileURLToPath } from "node:url";
+
+// Absolute so the seed process and the `next start` server resolve the SAME
+// PGlite store regardless of each process's working directory.
+const DATA_DIR = fileURLToPath(new URL(".verin-data-e2e", import.meta.url));
 
 /**
  * E2E is a CI gate from the first UI commit (charter #8) — the capability Iris
@@ -25,17 +30,17 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // Build once, then run the production server so specs exercise the real build.
-    command: `corepack pnpm build && corepack pnpm exec next start -p ${PORT}`,
+    // Clean store, build, seed the demo users, then run the real production server.
+    command: `rm -rf "${DATA_DIR}" && corepack pnpm build && corepack pnpm db:seed && corepack pnpm exec next start -p ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 180_000,
     env: {
       TZ: "America/New_York",
       NODE_ENV: "production",
       APP_ENV: "development",
       VERIN_STORE_DRIVER: "pglite",
-      VERIN_DATA_DIR: ".verin-data-e2e",
+      VERIN_DATA_DIR: DATA_DIR,
       SESSION_SECRET: "e2e-only-session-secret-not-a-real-secret-000000",
       ESIGN_WEBHOOK_SECRET: "e2e-only-webhook-secret-not-a-real-secret-000000",
       APP_URL: BASE_URL,

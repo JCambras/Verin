@@ -13,8 +13,9 @@
 next-env.d.ts
 /sbom.json
 
-# local house-CRM store data (PGlite persists here in dev)
-/.verin-data
+# local house-CRM store data (PGlite persists here in dev/CI/e2e)
+/.verin-data*
+/.verin-data-*
 
 # env — everything except the committed placeholder template
 .env

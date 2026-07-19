@@ -48,7 +48,7 @@
     {
       "id": 6,
       "title": "Human-in-the-loop is in the core contract (FlowStep suspend/resume)",
-      "status": "planned",
+      "status": "enforced",
       "phase": "A/E",
       "mechanisms": [
         { "type": "adr", "ref": "docs/adr/0011-flowstep-suspend-resume.md" },
@@ -58,11 +58,11 @@
     {
       "id": 7,
       "title": "Multi-tenancy and config hygiene from day one",
-      "status": "planned",
+      "status": "enforced",
       "phase": "B/E",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-process-env.test.ts", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts", "status": "enforced" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-process-env.test.ts" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts" },
         { "type": "fitness", "ref": "src/__tests__/fitness/org-id-required.test.ts" },
         { "type": "fitness", "ref": "src/__tests__/fitness/no-client-role-header.test.ts" }
       ]
@@ -108,7 +108,7 @@
     {
       "id": 12,
       "title": "Identity is foundation, not a milestone (real auth, RBAC at port)",
-      "status": "planned",
+      "status": "enforced",
       "phase": "E",
       "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/auth-enforcement.test.ts" }]
     },
@@ -118,7 +118,8 @@
       "status": "planned",
       "phase": "B/E/F",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/audited-write-required.test.ts" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/audited-write-required.test.ts", "status": "enforced" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-pii-in-audit-store.test.ts", "status": "enforced" },
         { "type": "ci-gate", "ref": "audit-chain-verify" }
       ]
     },
@@ -129,7 +130,7 @@
       "phase": "E",
       "mechanisms": [
         { "type": "fitness", "ref": "src/__tests__/fitness/no-console.test.ts", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/observability-coverage.test.ts" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/observability-coverage.test.ts", "status": "enforced" },
         { "type": "ci-gate", "ref": "unit" }
       ]
     },
@@ -148,7 +149,7 @@
     {
       "id": 16,
       "title": "External writes are idempotent and retry-safe",
-      "status": "planned",
+      "status": "enforced",
       "phase": "E",
       "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts" }]
     }

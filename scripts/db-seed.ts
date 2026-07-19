@@ -1,0 +1,39 @@
+/**
+ * Minimal, clearly-labeled functional seed (captain D-005: port the feel, DEFER
+ * the populated demo world). Seeds ONLY what the walking skeleton, its Playwright
+ * specs, and the console need: one org and two demo users. Every row is labeled
+ * source=verin-crm (charter #3). The demo password is a sacrificial DEMO credential
+ * (ADR-0020), never a production secret. Idempotent.
+ */
+import { createDb } from "../src/infrastructure/store/db";
+import { createUser, findUserByEmail } from "../src/infrastructure/identity/identity-store";
+
+export const DEMO_ORG_ID = "org-verin-demo";
+export const DEMO_PASSWORD = "verin-demo-pass-12345678"; // DEMO ONLY — not a production secret
+export const DEMO_USERS = [
+  { email: "principal@verin.test", displayName: "Priya Nair (Principal)", role: "principal" as const },
+  { email: "advisor@verin.test", displayName: "Alex Rivera (Advisor)", role: "advisor" as const },
+];
+
+export async function seed(): Promise<void> {
+  const db = await createDb();
+  const now = new Date().toISOString();
+  await db.query(
+    "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,'verin-crm',$3,'high') ON CONFLICT (id) DO NOTHING",
+    [DEMO_ORG_ID, "Verin Demo Firm", now],
+  );
+  for (const u of DEMO_USERS) {
+    if (await findUserByEmail(db, u.email)) continue;
+    await createUser(db, { orgId: DEMO_ORG_ID, email: u.email, displayName: u.displayName, role: u.role, password: DEMO_PASSWORD });
+  }
+  await db.close();
+}
+
+seed()
+  .then(() => {
+    process.stdout.write(`seeded org ${DEMO_ORG_ID} with ${DEMO_USERS.length} demo users\n`);
+  })
+  .catch((e) => {
+    process.stderr.write(`seed failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.exit(1);
+  });

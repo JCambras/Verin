@@ -9,8 +9,9 @@ import { readShipped, stripComments } from "./_fence-utils";
  * returns Result instead of throwing.
  */
 const BARE_THROW_RE = /\bthrow\s+new\s+(Error|TypeError|RangeError|SyntaxError)\s*\(/;
-// contracts may define AppError helpers and result.ts throws in unwrap() at boundaries.
-const ALLOW = ["src/contracts/result.ts", "src/contracts/errors.ts"];
+// contracts may define AppError helpers and result.ts throws in unwrap() at boundaries;
+// the config module throws a FATAL at boot by design (ADR-0003 fail-closed).
+const ALLOW = ["src/contracts/result.ts", "src/contracts/errors.ts", "src/infrastructure/config/index.ts"];
 
 function detectBareThrow(files: Array<{ rel: string; text: string }>): string[] {
   const offenders: string[] = [];

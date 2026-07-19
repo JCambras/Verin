@@ -24,7 +24,16 @@ export default defineConfig({
     globals: true,
     // Default node; component tests opt into jsdom with `// @vitest-environment jsdom`.
     environment: "node",
-    env: { TZ: "America/New_York" },
+    env: {
+      TZ: "America/New_York",
+      NODE_ENV: "test",
+      APP_ENV: "development",
+      VERIN_STORE_DRIVER: "pglite",
+      SESSION_SECRET: "test-only-session-secret-not-a-real-secret-000000",
+      ESIGN_WEBHOOK_SECRET: "test-only-webhook-secret-not-a-real-secret-000000",
+      FIRM_TIMEZONE: "America/New_York",
+      LOG_LEVEL: "error",
+    },
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],

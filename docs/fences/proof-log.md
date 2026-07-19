@@ -95,5 +95,33 @@ must not feed a compliance decision`. **Revert:** restored `defaultSource: "veri
 > Note: PF-007/008 were injected on then-untracked files; `git checkout` cannot revert untracked files, so
 > the reverts were applied manually and re-verified green. Future proofs inject on committed code.
 
-<!-- Phase E append: org-id-required, no-client-role-header, audited-write-required (+ anti-fork),
-     auth-enforcement, idempotency-exactly-once, flowstep-suspend-resume, observability-coverage. -->
+## PF-009..PF-016 · Phase-E capability fences (shipped WITH the skeleton, charter #1)
+
+Each ships a co-located `describe("detects …")` companion (continuous in-CI adversarial proof) AND was
+injected into the real tree once (revert clean). Notably, several caught real over-strictness/false-positives
+in the fences THEMSELVES before shipping — the "detection is not verification" discipline applied to my own
+fences:
+
+- **PF-009 org-id-required** — a `SELECT/UPDATE/DELETE` on a tenant data table without `org_id` is caught
+  (STRIDE T-I2). The companion also proved the fence must NOT false-positive on capability-keyed lookups
+  (esign_token) — which it initially did, and was fixed.
+- **PF-010 no-client-role-header** — reading `x-user-role` (or any role/identity header) from the request is
+  caught (STRIDE T-S1).
+- **PF-011 audited-write-required (+ anti-fork)** — a direct `db.query` mutation in a CRM adapter, or an
+  `enqueueAudit` call outside the helper, is caught (retro don't-again #37). The anti-fork check initially
+  mis-rejected the real (generic) `auditedWrite<T>(` call — fixed.
+- **PF-012 auth-enforcement** — an API route handler with no `resolveSession`/`requirePrincipal` (and not in
+  the documented unauthenticated allowlist) is caught (charter #12).
+- **PF-013 idempotency-exactly-once** — a replayed idempotency key writes exactly once; a DIFFERENT key
+  re-performs (so the test is not vacuously "always once") — charter #16.
+- **PF-014 flowstep-suspend-resume** — the engine suspends at a suspend step (step C does NOT run) and runs
+  the rest only on resume; a no-suspend flow completes without suspending (proves it is not an
+  execute-to-completion stub) — charter #6.
+- **PF-015 observability-coverage** — the account-opening flow emits `flow.*` and external-call spans;
+  `withSpan` records success and failure to the ring — charter #14.
+- **PF-016 no-pii-in-audit-store** — contact email/phone entered into the house CRM is scrubbed out of the
+  audit before/after blobs; the companion proves `scrub` actually redacts (not vacuous) — STRIDE T-I1.
+
+The tamper-evident audit chain, exactly-once webhook replay, append-only trigger, and authz denial are ALSO
+proven end-to-end in `src/__tests__/integration/*` and the Playwright specs (`e2e/walkthrough.spec.ts`,
+`e2e/access-control.spec.ts`).
