@@ -106,4 +106,26 @@ describe("tamper-evident audit chain (integration)", () => {
     expect(verdict.ok).toBe(false);
     expect(verdict.brokenAtSequence).toBe(1);
   });
+
+  it("detects TAIL-TRUNCATION and full deletion via the out-of-band anchor (Vale V1)", async () => {
+    for (let i = 0; i < 4; i++) {
+      await auditedWrite({ db, orgId: ORG, actor: "a@test", action: `e${i}.create`, entityType: "E", entityId: `e${i}`, detail: `entry ${i}`, perform: async () => ({ i }) });
+    }
+    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+
+    // Bypass the delete trigger and truncate the newest rows — the remaining rows
+    // (seq 0,1) are internally consistent, so the hash chain alone would say OK.
+    await db.exec("ALTER TABLE audit_log DISABLE TRIGGER audit_log_no_delete");
+    await db.query("DELETE FROM audit_log WHERE org_id = $1 AND sequence >= 2", [ORG]);
+    await db.exec("ALTER TABLE audit_log ENABLE TRIGGER audit_log_no_delete");
+
+    const verdict = await verifyOrgChain(db, ORG);
+    expect(verdict.ok).toBe(false); // anchor count (4) != rows (2)
+    expect(verdict.reason).toMatch(/count|truncat/i);
+  });
+
+  it("TRUNCATE on audit_log is blocked by the append-only trigger", async () => {
+    await auditedWrite({ db, orgId: ORG, actor: "a@test", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    await expect(db.exec("TRUNCATE audit_log")).rejects.toThrow(/append-only/);
+  });
 });

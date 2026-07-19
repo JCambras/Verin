@@ -41,7 +41,8 @@ test("key skeleton pages have no serious/critical axe violations (WCAG 2.2 AA)",
   await page.goto("/login");
   await checkAxe(page, "/login");
   await login(page, PRINCIPAL); // authenticate once; the session persists across navigations
-  for (const url of ["/app", "/app/account-opening", "/app/console"]) {
+  // Includes /app/audit (Wren axe-gate blind spot) — principal can view the trail.
+  for (const url of ["/app", "/app/account-opening", "/app/console", "/app/audit"]) {
     await page.goto(url);
     await checkAxe(page, url);
   }

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipalWithRole, errorResponse } from "@app/_server/context";
+import { getDb, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
 import { startAccountOpening } from "@infra/wire";
 import { appError } from "@contracts/errors";
 
@@ -9,7 +9,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const p = await requirePrincipalWithRole(req, ["advisor", "ops", "principal", "admin"]);
   if (!p.ok) return errorResponse(p.error);
 
-  const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const parsed = await readJsonBody(req);
+  if (!parsed.ok) return errorResponse(parsed.error);
+  const b = parsed.value;
   if (!b.householdName || !b.firstName || !b.lastName || !b.accountType) {
     return errorResponse(appError("VALIDATION", "Household name, contact name, and account type are required."));
   }

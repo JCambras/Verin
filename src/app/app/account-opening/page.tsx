@@ -104,7 +104,7 @@ export default function AccountOpeningPage() {
           ) : null}
 
           {phase === "awaiting" ? (
-            <div className="flex flex-col gap-4" data-testid="ao-awaiting">
+            <div className="flex flex-col gap-4" data-testid="ao-awaiting" role="status">
               <div className="flex items-center gap-3">
                 <StatusBadge status="awaiting-signature" label="Awaiting client e-signature" />
               </div>
@@ -125,7 +125,7 @@ export default function AccountOpeningPage() {
           ) : null}
 
           {phase === "completed" ? (
-            <div className="flex flex-col gap-3" data-testid="ao-completed">
+            <div className="flex flex-col gap-3" data-testid="ao-completed" role="status">
               <div className="flex items-center gap-2">
                 <span aria-hidden className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-green-600 text-white animate-check-pop">
                   ✓

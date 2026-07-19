@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
+import { assertNoPIIValues } from "@contracts/pii";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -49,10 +50,14 @@ export async function enqueueAudit(
     entityId: intent.entityId,
     beforeJson: intent.before == null ? null : JSON.stringify(scrub(intent.before)),
     afterJson: intent.after == null ? null : JSON.stringify(scrub(intent.after)),
-    detail: intent.detail,
+    // detail is free text — scrub value-pattern PII (email/phone/SSN) at the boundary.
+    detail: String(scrub(intent.detail)),
     createdAt: now,
     result,
   };
+  // Fail-closed backstop (Vale V3): if a PII-shaped value survived scrubbing, refuse
+  // to persist it — the business write rolls back rather than leaking PII to the audit.
+  assertNoPIIValues({ before: payload.beforeJson, after: payload.afterJson, detail: payload.detail }, "audit");
   await tx.query(
     "INSERT INTO audit_outbox (id, org_id, payload_json, status, attempts, created_at) VALUES ($1,$2,$3,'pending',0,$4)",
     [randomUUID(), intent.orgId, JSON.stringify(payload), now],
@@ -107,6 +112,12 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [randomUUID(), entry.orgId, entry.sequence, entry.actor, entry.action, entry.entityType, entry.entityId, entry.beforeJson, entry.afterJson, entry.detail, entry.createdAt, prevHash, entryHash],
       );
+      // Advance the out-of-band anchor (Vale V1): expected max_sequence + count.
+      await db.query(
+        `INSERT INTO audit_anchor (org_id, max_sequence, entry_count, updated_at) VALUES ($1,$2,1,$3)
+         ON CONFLICT (org_id) DO UPDATE SET max_sequence = $2, entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
+        [orgId, entry.sequence, new Date().toISOString()],
+      );
       await db.query("DELETE FROM audit_outbox WHERE id = $1", [row.id]);
       drained += 1;
     } catch {
@@ -155,7 +166,29 @@ export async function listOrgChain(db: SqlDb, orgId: string): Promise<ChainRow[]
   return res.rows.map(toChainRow);
 }
 
-/** Re-verify an org's audit chain integrity (charter #13). */
+/**
+ * Re-verify an org's audit chain integrity (charter #13): internal hash-chain
+ * consistency AND agreement with the out-of-band anchor, so tail-truncation or full
+ * deletion is DETECTED (Vale V1 / Sable F4).
+ */
 export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
-  return verifyChain(await listOrgChain(db, orgId));
+  const rows = await listOrgChain(db, orgId);
+  const verdict = verifyChain(rows);
+  if (!verdict.ok) return verdict;
+
+  const anchorRes = await db.query<{ max_sequence: number | string; entry_count: number | string }>(
+    "SELECT max_sequence, entry_count FROM audit_anchor WHERE org_id = $1",
+    [orgId],
+  );
+  const anchor = anchorRes.rows[0];
+  if (!anchor) return verdict; // no anchor yet (org has never written) — chain must be empty, which it is
+  const expectedCount = Number(anchor.entry_count);
+  const expectedMax = Number(anchor.max_sequence);
+  if (rows.length !== expectedCount) {
+    return { ok: false, entriesChecked: rows.length, brokenAtSequence: null, reason: `entry count ${rows.length} != anchor ${expectedCount} (rows removed / truncated)` };
+  }
+  if (rows.length > 0 && rows[rows.length - 1]!.sequence !== expectedMax) {
+    return { ok: false, entriesChecked: rows.length, brokenAtSequence: expectedMax, reason: `max sequence ${rows[rows.length - 1]!.sequence} != anchor ${expectedMax}` };
+  }
+  return verdict;
 }

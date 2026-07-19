@@ -185,4 +185,19 @@ CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log
 DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log;
 CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
   FOR EACH ROW EXECUTE FUNCTION audit_log_append_only();
+
+-- Truncation would wipe a chain WITHOUT leaving a gap (Vale V1 / Sable F4).
+DROP TRIGGER IF EXISTS audit_log_no_truncate ON audit_log;
+CREATE TRIGGER audit_log_no_truncate BEFORE TRUNCATE ON audit_log
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_log_append_only();
+
+-- Out-of-band anchor: the expected count + max sequence per org, so tail-truncation
+-- or full deletion is DETECTED by verifyChain (the append-only trigger is bypassable
+-- by a DBA; the anchor is a second, independent witness).
+CREATE TABLE IF NOT EXISTS audit_anchor (
+  org_id text PRIMARY KEY,
+  max_sequence bigint NOT NULL,
+  entry_count bigint NOT NULL,
+  updated_at text NOT NULL
+);
 `;

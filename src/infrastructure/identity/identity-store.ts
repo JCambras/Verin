@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import type { Role } from "@contracts/roles";
-import { hashPassword } from "./password";
+import { hashPassword, verifyPassword } from "./password";
 
 export interface UserRow {
   id: string;
@@ -51,6 +51,26 @@ export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow
 export async function getPasswordHash(db: SqlDb, userId: string): Promise<string | null> {
   const res = await db.query<{ password_hash: string }>("SELECT password_hash FROM credentials WHERE user_id = $1", [userId]);
   return res.rows[0]?.password_hash ?? null;
+}
+
+// Cached dummy hash so the unknown-user path does the SAME scrypt work as a real
+// user (Vale V6: no user-enumeration timing oracle).
+let dummyHashCache: string | null = null;
+async function dummyHash(): Promise<string> {
+  if (!dummyHashCache) dummyHashCache = await hashPassword("verin-constant-work-not-a-real-password");
+  return dummyHashCache;
+}
+
+/**
+ * Verify credentials in constant work (scrypt runs whether or not the user exists),
+ * returning the active user on success or null otherwise. Removes the timing oracle.
+ */
+export async function authenticate(db: SqlDb, email: string, password: string): Promise<UserRow | null> {
+  const user = await findUserByEmail(db, email);
+  const hash = (user ? await getPasswordHash(db, user.id) : null) ?? (await dummyHash());
+  const ok = await verifyPassword(password, hash);
+  if (!user || !ok || user.status !== "active") return null;
+  return user;
 }
 
 export async function createSession(

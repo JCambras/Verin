@@ -3,9 +3,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb, sessionCookieOptions } from "@app/_server/context";
-import { findUserByEmail, getPasswordHash, createSession } from "@infra/identity/identity-store";
-import { verifyPassword } from "@infra/identity/password";
+import { authenticate, createSession } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
+import { auditEvent } from "@infra/wire";
 import { getConfig } from "@infra/config";
 
 export interface LoginState {
@@ -24,11 +24,8 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   if (!email || !password) return { error: "Email and password are required." };
 
   const db = await getDb();
-  const user = await findUserByEmail(db, email);
-  const hash = user ? await getPasswordHash(db, user.id) : null;
-  const okPassword = hash ? await verifyPassword(password, hash) : false;
-  if (!user || !okPassword) return { error: "Incorrect email or password." };
-  if (user.status !== "active") return { error: "Account is disabled." };
+  const user = await authenticate(db, email, password);
+  if (!user) return { error: "Incorrect email or password." };
 
   const session = await createSession(db, {
     userId: user.id,
@@ -36,6 +33,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     role: user.role,
     ttlMinutes: getConfig().session.ttlMinutes,
   });
+  await auditEvent(db, { orgId: user.org_id, actor: user.email, action: "session.create", entityType: "Session", entityId: session.id, detail: "Signed in" });
   (await cookies()).set(SESSION_COOKIE, signSessionCookie(session.id), sessionCookieOptions());
   redirect("/app");
 }

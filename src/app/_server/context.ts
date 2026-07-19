@@ -33,6 +33,28 @@ export function errorResponse(error: AppError): NextResponse {
   return NextResponse.json(body, { status });
 }
 
+const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * Bounded JSON body reader (STRIDE T-D1 / Sable F2). App-Router handlers do NOT
+ * inherit a body-size limit, so an unbounded `req.json()` is a memory-pressure DoS.
+ * Rejects oversized bodies before/after buffering.
+ */
+export async function readJsonBody<T = Record<string, unknown>>(
+  req: NextRequest,
+  maxBytes: number = MAX_BODY_BYTES,
+): Promise<Result<T, AppError>> {
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > maxBytes) return err(appError("VALIDATION", "Request body too large."));
+  const text = await req.text();
+  if (text.length > maxBytes) return err(appError("VALIDATION", "Request body too large."));
+  try {
+    return { ok: true, value: (text ? JSON.parse(text) : {}) as T };
+  } catch {
+    return err(appError("VALIDATION", "Invalid JSON body."));
+  }
+}
+
 export function sessionCookieOptions() {
   const cfg = getConfig();
   return {

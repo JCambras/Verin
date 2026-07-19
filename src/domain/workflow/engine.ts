@@ -125,10 +125,18 @@ export async function resumeFlow<D>(
 ): Promise<FlowRunResult | { status: "not-found" }> {
   const state = await store.loadByToken(token);
   if (!state) return { status: "not-found" };
-  if (state.status !== "suspended") {
-    // Already resumed (idempotent): report current state without re-running.
+  if (state.status === "completed") {
+    // Already finalized (idempotent): report without re-running.
+    return { executionId: state.id, status: "completed", data: state.data };
+  }
+  if (state.status !== "suspended" && state.status !== "failed") {
     return { executionId: state.id, status: state.status, data: state.data };
   }
-  const resumed: ExecutionState = { ...state, status: "running", data: { ...state.data, ...payload } };
+  // A "failed" execution is RETRIED from its saved cursor (Vale V7): the per-write
+  // idempotency keys make the already-committed writes replay safely, so a transient
+  // mid-finalize error is recoverable instead of permanently wedged.
+  // Trusted flow context takes precedence over the (HMAC-token-authed but
+  // unsigned) webhook payload, so a payload cannot override accountType/actor (Vale V18).
+  const resumed: ExecutionState = { ...state, status: "running", data: { ...payload, ...state.data } };
   return drive(def, store, deps, resumed);
 }

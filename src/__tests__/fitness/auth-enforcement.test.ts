@@ -9,7 +9,8 @@ import { relative } from "node:path";
  * requirePrincipalWithRole / resolveSession) — unless it is in the explicit
  * UNAUTHENTICATED allowlist. No route may silently skip auth.
  */
-const HANDLER_RE = /export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b/;
+// Match function AND const-arrow handlers (Vale V10: `export const POST = …` evaded).
+const HANDLER_RE = /export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\b|export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=/;
 const RESOLVES_SESSION = /require(?:Principal|PrincipalWithRole)\s*\(|resolveSession\s*\(/;
 
 // Deliberately unauthenticated (each documented in the route + threat model):

@@ -46,11 +46,12 @@ export async function setEsignRequested(db: SqlDb, p: Principal, applicationId: 
     db, orgId: p.orgId, actor: p.actor, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
     detail: "Sent application for e-signature", buildAfter: () => ({ status: "awaiting-signature" }),
     perform: async (tx) => {
-      const res = await tx.query(
-        "UPDATE account_opening_applications SET status='awaiting-signature', esign_token=$3, updated_at=$4 WHERE id=$1 AND org_id=$2",
+      const res = await tx.query<{ id: string }>(
+        "UPDATE account_opening_applications SET status='awaiting-signature', esign_token=$3, updated_at=$4 WHERE id=$1 AND org_id=$2 RETURNING id",
         [applicationId, p.orgId, token, new Date().toISOString()],
       );
-      void res;
+      // Vale V15: a wrong id/org affects 0 rows — fail instead of silently "succeeding".
+      if (res.rows.length !== 1) throw { code: "NOT_FOUND", message: "Application not found." };
       return { token };
     },
   });

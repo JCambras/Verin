@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb } from "@app/_server/context";
+import { getDb, readJsonBody } from "@app/_server/context";
 import { esignCallback } from "@infra/wire";
 
 export const runtime = "nodejs";
@@ -14,7 +14,9 @@ export const runtime = "nodejs";
  * token-authenticated, not session-authenticated.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const b = (await req.json().catch(() => ({}))) as { token?: string; signature?: string };
+  const parsed = await readJsonBody<{ token?: string; signature?: string }>(req);
+  if (!parsed.ok) return NextResponse.json({ error: { code: "VALIDATION", message: parsed.error.message } }, { status: 400 });
+  const b = parsed.value;
   if (!b.token || !b.signature) {
     return NextResponse.json({ error: { code: "VALIDATION", message: "token and signature required" } }, { status: 400 });
   }

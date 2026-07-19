@@ -177,6 +177,10 @@
         {
           "type": "procedure",
           "ref": "docs/runbooks/backup-and-restore.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/bounded-request-body.test.ts"
         }
       ]
     },

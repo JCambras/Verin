@@ -7,11 +7,10 @@ import { readShipped, stripComments } from "./_fence-utils";
  * session (resolveSession). Iris trusted an x-user-role header; that is a forgeable
  * authz bypass. Bans reading a role/user identity header from the request.
  */
+// Any header whose name suggests identity/role/tenant is off-limits (Vale V16:
+// allowlist-ish, not four hardcoded names). Identity comes only from the session.
 const BANNED = [
-  /\.headers\s*\.\s*get\(\s*["'`]x-user-role["'`]/i,
-  /\.headers\s*\.\s*get\(\s*["'`]x-role["'`]/i,
-  /\.headers\s*\.\s*get\(\s*["'`]x-user-id["'`]/i,
-  /\.headers\s*\.\s*get\(\s*["'`]x-org-id["'`]/i,
+  /\.headers\s*\.\s*get\(\s*["'`]x-[^"'`]*(role|user|actor|tenant|org|principal|identity|email)[^"'`]*["'`]/i,
   /["'`]x-user-role["'`]/i,
 ];
 

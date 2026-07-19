@@ -57,7 +57,9 @@
  * slate-800). Applied as utilities so the rest of the scale is untouched.
  */
 @layer utilities {
-  .text-slate-400 { color: oklch(0.58 0.04 256.788); }
+  /* Both darkened to clear the WCAG 1.4.3 4.5:1 floor for normal text on white
+     (Wren W5): slate-400 was 4.27:1, now ~5.0:1; slate-500 ~6.8:1. */
+  .text-slate-400 { color: oklch(0.5 0.045 257.417); }
   .text-slate-500 { color: oklch(0.47 0.046 257.417); }
 }
 

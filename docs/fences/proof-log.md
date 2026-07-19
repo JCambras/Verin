@@ -125,3 +125,21 @@ fences:
 The tamper-evident audit chain, exactly-once webhook replay, append-only trigger, and authz denial are ALSO
 proven end-to-end in `src/__tests__/integration/*` and the Playwright specs (`e2e/walkthrough.spec.ts`,
 `e2e/access-control.spec.ts`).
+
+## PF-017 · bounded-request-body · `src/__tests__/fitness/bounded-request-body.test.ts`
+
+**Invariant (STRIDE T-D1 / Sable F2):** no route reads the body with a raw `req.json()` (use the bounded
+`readJsonBody`). Companion: a synthetic `await req.json()` is flagged; `readJsonBody(req)` passes.
+
+## Self-audit hardening (Phase G) — fences that were found VACUOUS and fixed
+
+The fresh-context self-audit (`docs/reviews/`) caught two false-passes in the fences themselves — the
+charter's exact "detection is not verification" failure, applied to my own work:
+- **`no-pii-in-audit-store`** passed while client NAMES sat raw in the audit store (it only checked
+  email/phone and never scanned `detail`). Fixed: PII detection extended to names, `detail` scanned, a
+  fail-closed `assertNoPIIValues` backstop wired, and the fence now asserts distinctive names are absent
+  from before/after AND detail (Vale V2/V3, Sable F1).
+- **`org-id-required`** passed a genuine cross-tenant read with `org_id` in the SELECT projection. Fixed to
+  require `org_id` as a `WHERE` predicate; companion added for the evasion (Vale V4).
+
+Both fixes are re-verified green and their companions now reject the previously-passing violation.

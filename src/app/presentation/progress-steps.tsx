@@ -12,7 +12,7 @@ export function ProgressSteps({ steps }: { steps: ProgressStep[] }) {
   return (
     <ol className="flex flex-col gap-2">
       {steps.map((s, i) => (
-        <li key={s.id} className="flex items-center gap-3">
+        <li key={s.id} className="flex items-center gap-3" aria-current={s.state === "active" ? "step" : undefined}>
           <span
             aria-hidden
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${

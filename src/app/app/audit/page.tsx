@@ -58,7 +58,7 @@ export default function AuditPage() {
       ) : null}
 
       {verdict ? (
-        <div className="flex items-center gap-3" data-testid="audit-verdict">
+        <div className="flex items-center gap-3" data-testid="audit-verdict" role={verdict.ok ? "status" : "alert"}>
           <StatusBadge status={verdict.ok ? "done" : "failed"} label={verdict.ok ? "Chain verified" : "Chain BROKEN"} />
           <span className="text-sm text-slate-600">
             {verdict.entriesChecked} entries checked{verdict.reason ? ` · ${verdict.reason}` : ""}
@@ -69,13 +69,14 @@ export default function AuditPage() {
       {entries.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-left text-sm">
+            <caption className="sr-only">Audit log entries</caption>
             <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
               <tr>
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Actor</th>
-                <th className="px-3 py-2">Action</th>
-                <th className="px-3 py-2">Detail</th>
-                <th className="px-3 py-2">Hash</th>
+                <th scope="col" className="px-3 py-2">#</th>
+                <th scope="col" className="px-3 py-2">Actor</th>
+                <th scope="col" className="px-3 py-2">Action</th>
+                <th scope="col" className="px-3 py-2">Detail</th>
+                <th scope="col" className="px-3 py-2">Hash</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

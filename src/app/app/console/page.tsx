@@ -110,7 +110,7 @@ export default function ConsolePage() {
                 </FreshValue>
                 <StatusBadge status={h.status} />
               </span>
-              <Button variant="secondary" onClick={() => rename(h.id, h.name)}>
+              <Button variant="secondary" aria-label={`Rename ${h.name}`} onClick={() => rename(h.id, h.name)}>
                 Rename
               </Button>
             </li>

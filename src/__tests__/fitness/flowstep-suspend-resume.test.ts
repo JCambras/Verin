@@ -55,6 +55,34 @@ describe("flowstep suspend/resume fence", () => {
     expect(deps.hits).toEqual(["a", "b", "c"]); // c ran on resume
   });
 
+  it("enforces: a FAILED execution is retried from its cursor, not permanently wedged (Vale V7)", async () => {
+    const store = makeStore();
+    const deps: Deps = { hits: [] };
+    let attempts = 0;
+    const flaky: FlowDefinition<Deps> = {
+      id: "flaky",
+      name: "flaky",
+      steps: [
+        { id: "s", name: "s", async execute() { return { kind: "suspend", token: "tk", awaiting: "x" }; } },
+        {
+          id: "finalize",
+          name: "finalize",
+          async execute() {
+            attempts += 1;
+            if (attempts === 1) return { kind: "fail", error: { code: "STORE_UNAVAILABLE", message: "transient" } };
+            return { kind: "continue" };
+          },
+        },
+      ],
+    };
+    await startFlow(flaky, store, deps, { executionId: "ef", orgId: "o", data: {} });
+    const first = await resumeFlow(flaky, store, deps, "tk", {});
+    expect("status" in first && first.status).toBe("failed");
+    const retry = await resumeFlow(flaky, store, deps, "tk", {}); // retried, not wedged
+    expect("status" in retry && retry.status).toBe("completed");
+    expect(attempts).toBe(2);
+  });
+
   describe("detects (companion): the engine is not an execute-to-completion stub", () => {
     it("a flow with NO suspend step completes without ever suspending (contrast)", async () => {
       const store = makeStore();

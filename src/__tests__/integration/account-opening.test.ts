@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
+import { startAccountOpening, resumeAccountOpeningByToken, esignCallback, computeEsignSignature } from "@infra/wire";
 import { verifyOrgChain } from "@infra/audit/audit-store";
 import { recentSpans } from "@infra/observability/tracer";
 import type { Principal } from "@contracts/principal";
@@ -76,9 +76,23 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
   });
 
-  it("a forged webhook is rejected before resume (STRIDE T-S3)", async () => {
-    // (signature verification is enforced at the route; here we assert the token
-    // is required — an unknown token resolves to not-found.)
+  it("a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)", async () => {
+    const started = await startAccountOpening(db, advisor, {
+      householdName: "Sig Household", firstName: "S", lastName: "T", email: null, accountType: "individual",
+    });
+    const token = started.token!;
+
+    // Forged: a bad HMAC is rejected BEFORE any resume.
+    const forged = await esignCallback(db, token, "deadbeef-not-a-valid-hmac", {});
+    expect(forged.status).toBe("invalid-signature");
+    expect(await accountCount(db)).toBe(0); // nothing finalized
+
+    // Valid HMAC finalizes.
+    const good = await esignCallback(db, token, computeEsignSignature(token), {});
+    expect("status" in good && good.status).toBe("completed");
+    expect(await accountCount(db)).toBe(1);
+
+    // Unknown token → not-found.
     const bogus = await resumeAccountOpeningByToken(db, "not-a-real-token", {});
     expect(bogus.status).toBe("not-found");
   });

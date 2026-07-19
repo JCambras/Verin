@@ -5,7 +5,7 @@
  * boundaries must never see raw PII — scrub() (infrastructure/pii) enforces that.
  */
 export const PII_FIELD_RE =
-  /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential)/i;
+  /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|\bname\b|email|phone)/i;
 
 // Value patterns kept conservative to avoid over-redacting IDs / ISO timestamps.
 export const PII_VALUE_PATTERNS: RegExp[] = [
@@ -44,6 +44,23 @@ export function assertNoPII(payload: unknown, boundary: string, seen = new WeakS
     if (isPIIField(key)) throw pii(boundary, `field '${key}'`);
     assertNoPII(value, boundary, seen);
   }
+}
+
+/**
+ * Fail-closed backstop for the AUDIT boundary: after scrubbing, assert no PII-shaped
+ * VALUES survive (field NAMES may remain — e.g. a redacted `firstName` key). If a raw
+ * SSN/email/phone slipped past the scrubber, throw rather than persist it.
+ */
+export function assertNoPIIValues(payload: unknown, boundary: string, seen = new WeakSet<object>()): void {
+  if (payload == null) return;
+  if (typeof payload === "string") {
+    if (looksLikePIIValue(payload)) throw pii(boundary, "value pattern");
+    return;
+  }
+  if (typeof payload !== "object") return;
+  if (seen.has(payload)) return;
+  seen.add(payload);
+  for (const value of Object.values(payload)) assertNoPIIValues(value, boundary, seen);
 }
 
 function pii(boundary: string, what: string): Error {

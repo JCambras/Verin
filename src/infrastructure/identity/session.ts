@@ -55,7 +55,9 @@ export async function resolveSession(db: SqlDb, cookieValue: string | undefined)
   if (!sessionId) return err(appError("AUTH_FAILED", "Not signed in."));
 
   const res = await db.query<JoinedRow>(
-    `SELECT s.id AS session_id, s.org_id, s.role, s.expires_at, s.revoked_at,
+    // role comes from the LIVE users row (u.role), not the session snapshot, so a
+    // demotion/promotion takes effect on the next request (Vale V8), not at expiry.
+    `SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at,
             u.id AS user_id, u.email, u.status AS user_status
      FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1`,
     [sessionId],

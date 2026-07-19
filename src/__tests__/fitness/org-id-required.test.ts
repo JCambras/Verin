@@ -29,7 +29,9 @@ export function detectMissingOrgId(sql: string): boolean {
   const touchesData = DATA_TABLES.some((t) => new RegExp(`\\b${t}\\b`).test(sql));
   if (!touchesData) return false;
   if (CAPABILITY_KEYS.some((k) => new RegExp(`\\b${k}\\b`).test(sql))) return false; // capability-keyed access
-  return !/\borg_id\b/.test(sql);
+  // Vale V4: org_id must appear as a FILTER predicate (org_id = / org_id IN),
+  // not merely anywhere in the string (e.g. in the SELECT projection).
+  return !/\borg_id\s*(=|\bin\b)/i.test(sql);
 }
 
 describe("org-id-required fence", () => {
@@ -53,6 +55,9 @@ describe("org-id-required fence", () => {
     });
     it("allows a query that filters by org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE org_id = $1 AND id = $2")).toBe(false);
+    });
+    it("flags org_id in the projection but NOT the filter (Vale V4 evasion)", () => {
+      expect(detectMissingOrgId("SELECT id, org_id FROM households WHERE id = $1")).toBe(true);
     });
     it("ignores non-data tables (capability-keyed)", () => {
       expect(detectMissingOrgId("SELECT * FROM sessions WHERE id = $1")).toBe(false);

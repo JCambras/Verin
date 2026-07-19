@@ -7,7 +7,8 @@ import { readShipped, stripComments } from "./_fence-utils";
  * leaked through: a domain process.env read "walked past" the import-only
  * dependency check.
  */
-const ENV_RE = /process\s*\.\s*env\b/;
+// Catch dotted AND bracket access (Vale V16): process.env, process["env"], process['env'].
+const ENV_RE = /process\s*(\.\s*env\b|\[\s*["']env["']\s*\])/;
 const ALLOWED = "src/infrastructure/config";
 
 function detectProcessEnv(files: Array<{ rel: string; text: string }>): string[] {

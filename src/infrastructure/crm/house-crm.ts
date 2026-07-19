@@ -37,8 +37,9 @@ export async function createHousehold(
   const prov = houseProv();
   const status: HouseholdStatus = input.status ?? "prospect";
   return auditedWrite<Household>({
+    // detail is PII-minimized (no client name); entityId identifies the record.
     db, orgId: p.orgId, actor: p.actor, action: "household.create", entityType: "Household", entityId: id,
-    idempotencyKey, detail: `Created household ${input.name}`,
+    idempotencyKey, detail: "Created a household",
     buildAfter: (h) => ({ id: h.id, name: h.name, status: h.status }),
     perform: async (tx) => {
       await tx.query(
@@ -55,7 +56,7 @@ export async function updateHouseholdName(db: SqlDb, p: Principal, id: string, n
   return auditedWrite<Household>({
     db, orgId: p.orgId, actor: p.actor, action: "household.update", entityType: "Household", entityId: id,
     before: existing ? { name: existing.name } : undefined,
-    buildAfter: () => ({ name }), detail: `Renamed household to ${name}`,
+    buildAfter: () => ({ name }), detail: "Renamed a household",
     perform: async (tx) => {
       const res = await tx.query<HouseholdRow>(
         "UPDATE households SET name = $3 WHERE id = $1 AND org_id = $2 RETURNING *",

@@ -8,7 +8,8 @@ import { readShipped, stripComments } from "./_fence-utils";
  * failure becomes a 400, not a 500 (retro-r7 don't-again #36). Business logic
  * returns Result instead of throwing.
  */
-const BARE_THROW_RE = /\bthrow\s+new\s+(Error|TypeError|RangeError|SyntaxError)\s*\(/;
+// All built-in Error subclasses (Vale V16: AggregateError/EvalError/URIError evaded before).
+const BARE_THROW_RE = /\bthrow\s+new\s+(Error|TypeError|RangeError|SyntaxError|EvalError|URIError|AggregateError|ReferenceError)\s*\(/;
 // contracts may define AppError helpers and result.ts throws in unwrap() at boundaries;
 // the config module throws a FATAL at boot by design (ADR-0003 fail-closed).
 const ALLOW = ["src/contracts/result.ts", "src/contracts/errors.ts", "src/infrastructure/config/index.ts"];

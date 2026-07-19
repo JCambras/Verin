@@ -11,6 +11,7 @@ import type { AppError } from "@contracts/errors";
 import { startFlow, resumeFlow, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
 import { makeExecutionStore } from "@infra/store/execution-store";
+import { auditedWrite } from "@infra/audit/audited-write";
 import { createHousehold, createContact, createFinancialAccount, createTask } from "@infra/crm/house-crm";
 import { createApplication, setEsignRequested, completeApplication, getApplicationByToken } from "@infra/crm/application-store";
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
@@ -106,4 +107,20 @@ export async function esignCallback(
 /** The server-side "e-sign provider" that computes a valid signature (simulation). */
 export function computeEsignSignature(token: string): string {
   return signCallback(token);
+}
+
+/**
+ * Record a non-CRM security event (login/logout/session lifecycle) in the
+ * tamper-evident hash chain (Vale V5 / Sable F6 — repudiation coverage). Routes
+ * through auditedWrite (no-op perform) so the anti-fork invariant holds: audits are
+ * only ever enqueued inside the helper.
+ */
+export async function auditEvent(
+  db: SqlDb,
+  opts: { orgId: string; actor: string; action: string; entityType: string; entityId: string; detail: string },
+): Promise<void> {
+  await auditedWrite({
+    db, orgId: opts.orgId, actor: opts.actor, action: opts.action, entityType: opts.entityType,
+    entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
+  });
 }

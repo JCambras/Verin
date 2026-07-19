@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipal, errorResponse } from "@app/_server/context";
+import { getDb, requirePrincipal, readJsonBody, errorResponse } from "@app/_server/context";
 import { computeEsignSignature, esignCallback } from "@infra/wire";
+import { getApplicationByToken } from "@infra/crm/application-store";
 import { appError } from "@contracts/errors";
 
 export const runtime = "nodejs";
@@ -15,10 +16,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const p = await requirePrincipal(req);
   if (!p.ok) return errorResponse(p.error);
 
-  const b = (await req.json().catch(() => ({}))) as { token?: string };
+  const parsed = await readJsonBody<{ token?: string }>(req);
+  if (!parsed.ok) return errorResponse(parsed.error);
+  const b = parsed.value;
   if (!b.token) return errorResponse(appError("VALIDATION", "token required"));
 
   const db = await getDb();
+  // Defense-in-depth (Sable F5): this authenticated affordance must not let a user
+  // in org A sign org B's application — the unguessable token is not the sole guard.
+  const app = await getApplicationByToken(db, b.token);
+  if (!app || app.org_id !== p.value.orgId) return errorResponse(appError("NOT_FOUND", "Unknown signing token."));
   const signature = computeEsignSignature(b.token);
   const result = await esignCallback(db, b.token, signature, { signedAt: new Date().toISOString() });
   if (result.status === "not-found") return errorResponse(appError("NOT_FOUND", "Unknown signing token."));
