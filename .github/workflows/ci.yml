@@ -115,7 +115,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: semgrep
-        run: semgrep ci --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --error
+        # `semgrep scan --error` is the self-contained blocking SAST gate: exit
+        # non-zero on any finding. (`semgrep ci` targets the Semgrep AppSec
+        # Platform — it needs SEMGREP_APP_TOKEN and rejects `--error`.)
+        # `regex_dos` (njsscan) is a purely syntactic heuristic that flags EVERY
+        # `regexp.test(x)` — it cannot tell user input from build-time source text
+        # or startup config, and produced only false positives here (ADR-0017).
+        # All other njsscan rules stay blocking; specific instances are triaged
+        # in-code with `// nosemgrep: <rule> -- <reason>`.
+        run: >-
+          semgrep scan
+          --config p/typescript --config p/react --config p/nodejsscan --config p/secrets
+          --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos
+          --error
 
   dependency-audit:
     name: dependency-audit (pnpm audit + license/vuln review)
@@ -130,6 +142,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: pnpm audit (high+)
         run: pnpm audit --audit-level=high
+      - name: license audit (reviewed allowlist, deny GPL/AGPL/unknown)
+        run: pnpm license:audit
 
   provenance-trace:
     name: provenance-trace (displayed metric -> source, charter #3)

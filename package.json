@@ -23,6 +23,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "audit:chain": "tsx scripts/audit-chain-verify.ts",
+    "license:audit": "tsx scripts/license-audit.ts",
     "load:smoke": "tsx scripts/load-smoke.ts",
     "sbom": "cdxgen -t pnpm --no-install-deps -o sbom.json ."
   },

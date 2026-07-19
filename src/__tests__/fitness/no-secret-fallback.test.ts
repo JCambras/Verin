@@ -96,7 +96,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     });
     it("catches a non-placeholder env value shape", () => {
       // simulate the parser directly on a suspicious value
-      const suspicious = "sk_live_51H8xQ2eZvKYlo2C";
+      const suspicious = "sk_live_51H8xQ2eZvKYlo2C"; // gitleaks:allow — deliberately secret-shaped test fixture, not a real key
       expect(PLACEHOLDER_VALUE.test(suspicious)).toBe(false);
     });
   });

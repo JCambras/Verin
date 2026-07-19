@@ -11,8 +11,9 @@ days. Please allow coordinated disclosure before any public write-up.
 
 ## Controls in force (foundation)
 
-- **Supply chain:** pinned lockfile; `pnpm audit` (high+) and dependency-review (license + vuln) as
-  blocking CI gates; secret scanning (gitleaks) and SAST (semgrep) as blocking CI gates; SBOM on release.
+- **Supply chain:** pinned lockfile; `pnpm audit` (high+, vulnerabilities) and a self-contained
+  license audit (`pnpm license:audit` — reviewed allowlist, denies GPL/AGPL/unknown) as blocking CI
+  gates; secret scanning (gitleaks) and SAST (semgrep) as blocking CI gates; SBOM on release.
   Install scripts are blocked by default (pnpm), allowed only for an explicit, reviewed list.
 - **Secrets & tenancy hygiene:** `process.env` is read only in `src/infrastructure/config` (fenced);
   `.env.example` is placeholder-only; CI fails on any live org domain, username, or credential in

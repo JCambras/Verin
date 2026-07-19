@@ -24,6 +24,8 @@ function makeStore(): ExecutionStore {
       return rows.get(id) ?? null;
     },
     async loadByToken(token) {
+      // In-memory TEST FAKE lookup; the production token/HMAC comparison uses timingSafeEqual (esign.ts).
+      // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack
       return [...rows.values()].find((r) => r.resumeToken === token) ?? null;
     },
   };

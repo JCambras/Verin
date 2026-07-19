@@ -12,7 +12,8 @@ import { createUser, findUserByEmail } from "../src/infrastructure/identity/iden
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 
 export const DEMO_ORG_ID = "org-verin-demo";
-export const DEMO_PASSWORD = "verin-demo-pass-12345678"; // DEMO ONLY — not a production secret
+// DEMO ONLY (labeled local/CI seed) — not a production secret.
+export const DEMO_PASSWORD = "verin-demo-pass-12345678"; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password
 export const DEMO_USERS = [
   { email: "principal@verin.test", displayName: "Priya Nair (Principal)", role: "principal" as const },
   { email: "advisor@verin.test", displayName: "Alex Rivera (Advisor)", role: "advisor" as const },
