@@ -7,10 +7,13 @@ const DATA_DIR = fileURLToPath(new URL(".verin-data-e2e", import.meta.url));
 
 /**
  * E2E is a CI gate from the first UI commit (charter #8) — the capability Iris
- * regressed on (0 E2E at HEAD). Specs run against a real dev server on a NON-UTC
- * machine (TZ pinned here and in CI). Every flow ships one happy-path and one
+ * regressed on (0 E2E at HEAD). Specs run against a real production server
+ * (`next build` + `next start`, see webServer below) on a NON-UTC machine (TZ
+ * pinned here and in CI). Every flow ships one happy-path and one
  * failure/interruption spec, green on main.
  */
+// VERIN_E2E_PORT is a test-harness-only override; deliberately not app config
+// (.env.example covers only keys read by src/infrastructure/config).
 const PORT = Number(process.env.VERIN_E2E_PORT ?? 3100);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 

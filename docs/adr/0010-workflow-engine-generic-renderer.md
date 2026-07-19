@@ -15,9 +15,12 @@ hardest workflow will try to become a bespoke screen — budget and fence it fro
 
 ## Decision
 
-A `FlowDefinition` (declarative: id, steps, inputs, view, compliance mapping, allowed roles) is executed by
-a generic engine (`domain/workflow`) and rendered by a **generic renderer** driven by a display-component
-registry (adding a display is a file drop + one registry line). The walking skeleton's ACCOUNT OPENING is a
+A flow is declarative: a `FlowDefinition` (`id`, `name`, `steps`) executed by a generic engine
+(`domain/workflow`), plus a per-flow declarative **view** export (fields + compliance mapping, e.g.
+`accountOpeningView`) that the screen renders by iterating; allowed roles are declared at the route
+boundary. The full **generic renderer** driven by a display-component registry (adding a display is a
+file drop + one registry line) is the target once a second flow lands; today, with one flow, the
+account-opening screen is that view's only consumer. The walking skeleton's ACCOUNT OPENING is a
 flow definition, not a bespoke screen. Flow steps support suspend/resume (ADR-0011). Per-file and per-layer
 line ceilings (ADR-0018, ratchet-down) keep any one flow from becoming a god component; if a flow genuinely
 needs bespoke richness, it gets an explicit, ADR-fenced budget (as Iris did for fact-find) — never a silent
@@ -37,9 +40,9 @@ exception.
 
 ## Consequences
 
-The generic renderer + shared shell primitives get accessibility + provenance once and multiply everywhere
-(charter #9, #3). Registry completeness is fenced (every flow's view components exist). Presentation-tier
-budget is separate (ADR-0012).
+The view-driven form + shared shell primitives get accessibility + provenance once and multiply everywhere
+(charter #9, #3). Registry completeness gets a fence (every flow's view components exist) when the
+registry lands with the second flow. Presentation-tier budget is separate (ADR-0012).
 
 ## Revisit When
 

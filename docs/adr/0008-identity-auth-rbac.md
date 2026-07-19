@@ -14,10 +14,12 @@ client-trusted. Iris trusted a client-controlled role header and had RBAC that "
 
 ## Decision
 
-Build real credential + server-side session auth now, **behind an `IdentityPort`** (captain D-002), so a
+Build real credential + server-side session auth now, **behind an identity port** (captain D-002; today
+the `src/infrastructure/identity` module boundary; a named `IdentityPort` interface is extracted with
+the first alternative provider), so a
 WorkOS/Auth0 swap later is an adapter change. Passwords hashed with Node `crypto.scrypt` (D-007). Sessions
-are server-side records keyed by an opaque id in a **secure, httpOnly, SameSite** cookie signed/encrypted
-with `SESSION_SECRET` (32+ chars, no fallback); sessions have server-enforced **expiry + rotation** and a
+are server-side records keyed by an opaque id in a **secure, httpOnly, SameSite** cookie HMAC-signed
+with `SESSION_SECRET` (32+ chars, no fallback); sessions have server-enforced **expiry** and a
 **revocation** list (logout). Identity is resolved in exactly one place (`resolveSession`) from the cookie,
 never from a client-supplied role/identity header. **RBAC is enforced server-side at the port**: the roles
 enum lives in `contracts/roles.ts`; port calls check `requireRole`. Design is SSO/OIDC-ready (the port
@@ -59,5 +61,5 @@ flow concern. SSO/OIDC adapter is deferred with a trigger.
 
 ## Revisit When
 
-The first enterprise customer requires SAML/SSO (build the federated adapter behind `IdentityPort`), or a
+The first enterprise customer requires SAML/SSO (build the federated adapter behind the identity port), or a
 password-policy/MFA requirement lands (extend the credential adapter).

@@ -19,7 +19,7 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 
 > **Current state (Phase D/E — live):** the presentation tier now exists at `src/app/presentation/`:
 > the `Verin.` wordmark (`brand.tsx`), the full OKLCH slate tokens + Geist + keyframes + reduced-motion
-> (`globals.css`), and the micro-components the skeleton renders — WhyBubble (`why-bubble.tsx`),
+> (`src/app/globals.css`), and the micro-components the skeleton renders — WhyBubble (`why-bubble.tsx`),
 > StepInfoCard, ProgressSteps, FreshValue (`fresh-value.tsx`, with provenance labels), StatusBadge,
 > EmptyState, Field/TextInput/SelectField/Button (`ui.tsx`). All are rendered by the login /
 > account-opening / console / audit screens and are axe-clean (WCAG 2.2 AA, enforced in CI). Everything

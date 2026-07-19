@@ -24,11 +24,11 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 ### S — Spoofing
 - **T-S1 (High): forge identity by supplying a role/identity header.** *Exploit:* attacker sends
   `x-user-role: principal` or a crafted identity header to a port call. *Control:* identity resolved only
-  from the signed/encrypted server-side session; no client-supplied role/identity is ever trusted
+  from the HMAC-signed cookie + server-side session; no client-supplied role/identity is ever trusted
   (ADR-0008). *Fence:* `no-client-role-header`, `auth-enforcement`.
 - **T-S2 (High): forge/replay a session cookie.** *Exploit:* attacker crafts or replays a cookie.
-  *Control:* cookie signed/encrypted with `SESSION_SECRET`; server-side session record with expiry,
-  rotation, and a revocation list; opaque id. *Fence:* `auth-enforcement`.
+  *Control:* cookie HMAC-signed with `SESSION_SECRET`; server-side session record with expiry and a
+  revocation list; opaque id. *Fence:* `auth-enforcement`.
 - **T-S3 (High): spoof the e-sign webhook.** *Exploit:* attacker POSTs a fake "signed" callback to finalize
   a flow. *Control:* webhook verifies an HMAC signature over the payload with `ESIGN_WEBHOOK_SECRET`;
   resume token must match a suspended flow. *Fence:* webhook-signature test (Phase E).

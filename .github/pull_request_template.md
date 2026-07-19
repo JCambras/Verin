@@ -13,7 +13,7 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 
 - [ ] **Fence in the same PR (charter #1).** Every invariant this PR states ships with a build-failing fence, proven adversarially (violation injected, failed with `file:line`, reverted, logged in `docs/fences/proof-log.md`).
 - [ ] **Detection is not verification (charter #4).** Any new PASS-emitting check has a companion proving incomplete/not-started work cannot pass it.
-- [ ] **Nothing built-but-not-shipped (charter #5).** Every capability here is reachable from the UI or a public API in this PR. No dead exports outside `contracts/` (knip is green).
+- [ ] **Nothing built-but-not-shipped (charter #5).** Every capability here is reachable from the UI or a public API in this PR. No dead exports outside the declared vocabulary roots, `contracts/` and `domain/schema/` (D-013) (knip is green).
 - [ ] **No unlabeled synthetic data (charter #3).** Any displayed/seeded value carries `source`/`asOf`/provenance and cannot feed a compliance decision.
 - [ ] **Reversible decisions logged in `DECISIONS.md`; irreversible/architectural ones went through a `needs-decision`.**
 

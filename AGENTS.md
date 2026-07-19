@@ -15,7 +15,7 @@ Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what w
 - **Detection is not verification.** Every PASS-emitting check needs a companion proving incomplete
   work cannot pass it.
 - **Nothing built-but-not-shipped.** A capability merges only if reachable from UI/API in the same PR;
-  `knip` fails the build on dead exports outside `contracts/`.
+  `knip` fails the build on dead exports outside `contracts/` (and the `domain/schema` vocabulary, D-013).
 - **No unlabeled synthetic data.** Every displayed/seeded value carries provenance (`source`/`asOf`).
 - Reversible decisions proceed but are logged in `DECISIONS.md`; irreversible/architectural ones stop
   and ask (a `needs-decision`).
@@ -37,8 +37,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
 (Playwright + axe) · `pnpm knip`. All gates also run in `.github/workflows/ci.yml` (blocking, never
-advisory). Node 22; the house-CRM store is PGlite (real Postgres) in dev/CI behind `StorePort`,
-managed Postgres in prod.
+advisory). Node 22 in CI (`engines` floor ≥20); the house-CRM store is PGlite (real Postgres) in dev/CI
+behind the store interface (`SqlDb` in `src/infrastructure/store/db.ts`), managed Postgres in prod.
 
 ## Sharp edges (hard-won — read before touching these areas)
 

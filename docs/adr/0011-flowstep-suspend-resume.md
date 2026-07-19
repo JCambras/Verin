@@ -18,9 +18,9 @@ suspend/await-external-input/resume **before any flow is authored**, proven end-
 The `FlowStep` / execution model has a first-class **suspended** state and a persisted continuation:
 
 - A step may return `suspend({ token, awaiting })` instead of completing. The engine persists the flow's
-  execution state (a durable `flow_execution` record with `status = 'suspended'`, the resume `token`, and
+  execution state (a durable `flow_executions` record with `status = 'suspended'`, the resume `token`, and
   the accumulated context) and returns to the caller (HTTP 202 / `FLOW_SUSPENDED`).
-- An external event (a webhook, an approval, a signature) calls **`resume(token, payload)`**; the engine
+- An external event (a webhook, an approval, a signature) calls **`resumeFlow(token, payload)`**; the engine
   loads the persisted continuation, validates the token, and runs the remaining steps.
 - Resume is **idempotent** (ADR-0009): resuming with the same token/payload twice yields exactly-once effect.
 

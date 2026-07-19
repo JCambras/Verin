@@ -14,7 +14,8 @@ Practice intelligence for registered investment advisers. The third and final bu
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript 6 · Tailwind v4 · Vitest 4 · Playwright ·
-PGlite/PostgreSQL behind `StorePort` · pnpm (via corepack) · Node 22.
+PGlite/PostgreSQL behind the store interface (`SqlDb`, `src/infrastructure/store/db.ts`) · pnpm (via
+corepack) · Node 22 in CI (`engines` floor ≥20).
 
 ## Develop
 
@@ -29,7 +30,8 @@ corepack pnpm knip           # dead-export / dead-code
 corepack pnpm build
 ```
 
-Every command above is also a **blocking** CI gate (`.github/workflows/`), never advisory.
+Every command above except `dev` is also a **blocking** CI gate (`.github/workflows/ci.yml`), never
+advisory.
 
 ## Architecture
 

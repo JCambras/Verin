@@ -6,10 +6,11 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (144 unit/integration/fitness, non-UTC clock) ·
-> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (11 specs) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (158 unit/integration/fitness, non-UTC clock) ·
+> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
-> `pnpm db:seed && pnpm audit:chain`. Every one is also a blocking CI job (`.github/workflows/`).
+> `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
+> job (`.github/workflows/ci.yml`); the drill runs nightly in `scheduled.yml`.
 
 ---
 
@@ -28,7 +29,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 
 **Walking skeleton (`src/app`, `src/domain/workflow`, `src/infrastructure`):**
 - **Real auth:** login server action (atomic cookie + redirect), server-side sessions with expiry /
-  rotation / revocation, RBAC enforced at the port; identity is never client-trusted.
+  revocation, RBAC enforced at the port; identity is never client-trusted.
 - **Account opening** through the generic engine + a view-driven form; the engine **suspends** at a
   simulated e-sign step (fire-and-return) and **resumes** via an HMAC-authenticated webhook; one **audited,
   idempotent** house-CRM write, **exactly-once** under replay.
@@ -37,11 +38,11 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **House-CRM console:** RBAC-gated CRUD; every edit through the audited-write helper.
 - **Observability:** OpenTelemetry spans on every flow step + external call; pino structured logs;
   `/health` + `/ready`.
-- **House-CRM store:** PGlite (real Postgres) behind `StorePort` in dev/CI; managed Postgres in prod
+- **House-CRM store:** PGlite (real Postgres) behind the store interface (`SqlDb`) in dev/CI; managed Postgres in prod
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 11
+- **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 12
   tests) plus axe, green on a non-UTC clock.
 
 **Governance:** 21 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
@@ -71,7 +72,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
 | `org-id-required` | every tenant query filters org_id (#7) | PF-009 + companion |
-| `no-client-role-header` | identity never from a header (#12) | PF-010 |
+| `no-client-role-header` | identity never from a header (#7) | PF-010 |
 | `audited-write-required` (+ anti-fork) | every write audited, no hand-rolled audit (#13) | PF-011 |
 | `auth-enforcement` (AST, per exported handler, incl. Server Actions) | every handler/action resolves a session (#12) | PF-012 + companions |
 | `idempotency-exactly-once` | replay = exactly once (#16) | PF-013 |
@@ -107,7 +108,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 144 / knip / e2e 11 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 158 / knip / e2e 12 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.

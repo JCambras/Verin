@@ -20,7 +20,9 @@ which throws `PII_VIOLATION` on any residue. PII is scrubbed
 at three enforcement points: (1) the **audit write** boundary (before every audit entry is persisted —
 so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (deferred until an AI
 surface is wired — no AI scaffolding now, charter #5); (3) the **API response** boundary (client bodies
-carry masked PII, never raw). The house-CRM store holds identity PII (it is the SoR); the audit/analytics
+carry masked PII, never raw; the `maskValue` helper in `contracts/pii.ts` is not yet wired at this edge, and
+today responses are RBAC-gated and limited to the identity fields the advisor UI displays by design).
+The house-CRM store holds identity PII (it is the SoR); the audit/analytics
 stores never do (a fence rejects PII-named columns there). Masked PII is allowed in the advisor UI by
 design.
 

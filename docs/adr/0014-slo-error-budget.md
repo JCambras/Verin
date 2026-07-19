@@ -22,8 +22,9 @@ Foundation SLO targets (measured via OTel):
 - **Workflow success:** > 95% of started flows complete or suspend cleanly (no crash).
 
 **Error-budget policy:** > 50% budget remaining → ship freely; 20-50% → caution (no risky changes); < 20% →
-freeze features, spend the budget on reliability. Latency targets are asserted in the load gate (ADR-0018,
-charter #11) so a regression fails CI — the budget is owned, not aspirational.
+freeze features, spend the budget on reliability. The load gate (`scripts/load-smoke.ts`, charter #11)
+asserts a store-read p95 threshold so a latency regression fails CI — the budget is owned, not
+aspirational; the step/LCP/health SLO numbers above are telemetry targets (ADR-0013), not gate assertions.
 
 ## Alternatives Rejected
 

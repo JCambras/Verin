@@ -6,9 +6,10 @@ import { isSyntheticSource } from "@contracts/provenance";
  * NO-UNLABELED-SYNTHETIC FENCE (ADR-0005, charter #3). Schema-level half of "no
  * unlabeled synthetic data, ever": any field whose source is synthetic
  * (estimate/default/fixture) MUST NOT be allowed to feed a compliance decision.
- * The DISPLAY-level half (every rendered synthetic value carries a visible
- * source/asOf label, and the CI displayed-metric->source trace) lands in Phase E/F
- * with the metric components.
+ * The DISPLAY-level half shipped in Phase E: FreshValue (app/presentation)
+ * requires a provenance prop, so every rendered value carries its source/asOf
+ * label. The CI displayed-metric->source trace remains deferred (Vale V12;
+ * trigger: before any synthetic/estimated value renders).
  */
 
 export function checkSyntheticLabeling(

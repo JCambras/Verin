@@ -14,8 +14,10 @@ Observability must exist from commit #1, not be retrofitted.
 ## Decision
 
 Wire OpenTelemetry (`@opentelemetry/*`) so every flow step and every external/store call emits a **trace
-span**; key operations emit **metrics** (step latency, flow outcomes, audit-outbox depth, external-call
-duration); and all logs are **structured** via `pino` with PII scrubbed (ADR-0006) — raw `console.*` is
+span** carrying latency + outcome attributes (`durationMs`, `ok`); a dedicated OTel **metrics** pipeline
+(step-latency / flow-outcome / outbox-depth instruments) is deferred to the deploy target; today those
+signals live on spans and in `/ready`'s backlog query; and all logs are **structured** via `pino` with
+PII scrubbed (ADR-0006) — raw `console.*` is
 banned outside a small allowlist (only the logger scrubs PII). A dev/test exporter keeps spans in-process
 (no external collector required); production points OTLP at a collector via config (ADR-0003). Correlation
 ids thread from the HTTP boundary through the engine to the store/webhook. **Health + readiness endpoints**

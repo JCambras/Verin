@@ -24,7 +24,8 @@ Five test tiers, all CI gates on a **non-UTC clock** (`vitest.config.ts`, CI `TZ
    Critical-path tests exercise the real engine (charter #5).
 4. **E2E (Playwright + axe)** — **from flow #1** (charter #8). Every flow merges with one happy-path and
    one failure/interruption browser spec, green on main, non-UTC.
-5. **Accessibility** — axe on every shared shell primitive (charter #9), in the E2E gate and component tests.
+5. **Accessibility** — axe on every shared shell primitive (charter #9), in the E2E gate (component-level
+   jsdom axe tests are wired into the toolchain but not yet written).
 
 No flow ships without its E2E spec in the same PR. Fences must be non-tautological (a weak fence is worse
 than none) and AST-based where feasible.

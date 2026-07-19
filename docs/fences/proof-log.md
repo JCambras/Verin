@@ -121,6 +121,8 @@ fences:
   `withSpan` records success and failure to the ring — charter #14.
 - **PF-016 no-pii-in-audit-store** — contact email/phone entered into the house CRM is scrubbed out of the
   audit before/after blobs; the companion proves `scrub` actually redacts (not vacuous) — STRIDE T-I1.
+  The value backstop also catches E.164-format phones (`+12125550142`), companion-proven; a bare 10-digit
+  id without phone context is not a false positive.
 
 The tamper-evident audit chain, exactly-once webhook replay, append-only trigger, and authz denial are ALSO
 proven end-to-end in `src/__tests__/integration/*` and the Playwright specs (`e2e/walkthrough.spec.ts`,
@@ -155,7 +157,9 @@ enforcement layer itself; each is fixed with a companion that rejects the previo
   src file — SQL held in a variable or issued from an app route handler is caught — with the three
   tables added, statement-shaped matching (so trigger DDL like `BEFORE UPDATE ON audit_log` is not a
   false positive), and three justification-carrying reviewed escapes (session-id capability lookup,
-  the deferred org-qualified login, org-column-less `credentials`). **Adversarial proof (executed):**
+  the deferred org-qualified login, org-column-less `credentials`). Reviewed escapes are exact-match
+  against the whole normalized statement, so a superset of an escaped query (e.g. the login SQL grown an
+  `OR role = $2` arm) is still flagged, companion-proven. **Adversarial proof (executed):**
   planted `const evilSql = "SELECT actor, detail FROM audit_log ORDER BY sequence"; await db.query(evilSql);`
   in `src/app/ready/route.ts` → fence failed naming `src/app/ready/route.ts` and the SQL; reverted; green.
 - **`stripComments` string-blindness:** every content-scan fence (no-process-env, no-console,
