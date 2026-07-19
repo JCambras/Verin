@@ -80,6 +80,20 @@ flags any real fence file missing a companion. Self-referential; carries `@compa
 
 ---
 
-<!-- Phase C/E append: provenance-required, org-id-required, no-client-role-header, no-unlabeled-synthetic,
-     audited-write-required (+ anti-fork), auth-enforcement, idempotency-exactly-once, flowstep-suspend-resume,
-     observability-coverage — each proven the same two ways. -->
+## PF-007 · provenance-required · `src/__tests__/fitness/provenance-required.test.ts`
+**Invariant (ADR-0005, charter #2):** every modeled entity field has a provenance annotation in the data
+dictionary; no drift either way. **Injection:** added `readonly secretUnlabeled: string;` to the
+`Household` interface in `entities.ts` (no dictionary entry). **Observed:** `Household.secretUnlabeled: no
+provenance annotation in the data dictionary`. **Revert:** removed the field; green (61 tests).
+
+## PF-008 · no-unlabeled-synthetic · `src/__tests__/fitness/no-unlabeled-synthetic.test.ts`
+**Invariant (ADR-0005, charter #3):** a synthetic-sourced field may not feed a compliance decision.
+**Injection:** changed the `MONEY` provenance preset's `defaultSource` to `"estimate"` while keeping
+`canFeedCompliance: true`. **Observed:** `FinancialAccount.balanceMinorUnits: synthetic source 'estimate'
+must not feed a compliance decision`. **Revert:** restored `defaultSource: "verin-crm"`; green.
+
+> Note: PF-007/008 were injected on then-untracked files; `git checkout` cannot revert untracked files, so
+> the reverts were applied manually and re-verified green. Future proofs inject on committed code.
+
+<!-- Phase E append: org-id-required, no-client-role-header, audited-write-required (+ anti-fork),
+     auth-enforcement, idempotency-exactly-once, flowstep-suspend-resume, observability-coverage. -->

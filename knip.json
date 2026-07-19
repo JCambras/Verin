@@ -7,7 +7,8 @@
     "scripts/**/*.ts",
     "e2e/**/*.spec.ts",
     "src/__tests__/**/*.{test,spec}.{ts,tsx}",
-    "src/contracts/**/*.ts"
+    "src/contracts/**/*.ts",
+    "src/domain/schema/**/*.ts"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "e2e/**/*.ts"],
   "ignore": [],

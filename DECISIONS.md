@@ -86,6 +86,15 @@ scale-ladder ADR documents 10×/100×. **Revert:** adjust the seed size + cadenc
 **Why:** self-contained (no build-time Google Fonts fetch) → reproducible, network-free builds — the
 enterprise/supply-chain posture. **Revert:** switch to `next/font/google` (one file).
 
+### D-013 · 2026-07-18 · reversible · Dead-export gate treats `domain/schema` as vocabulary (like `contracts/`)
+The canonical schema (`src/domain/schema/*`: entity types, data dictionary, SF mapping, survivorship) is
+declarative shared vocabulary consumed flow-by-flow — the same character as `contracts/`, which the charter
+explicitly exempts from the dead-export check. So `knip` treats it as an entry root. The gate still fully
+covers all business logic and UI in `app/`, `infrastructure/`, and non-schema `domain/` (the real
+built-but-not-shipped risk). **Why:** the entities are forward-referenced within the foundation (Phase E
+store/flow/console consume them); flagging vocabulary as dead is a false positive. **Revert:** remove the
+`src/domain/schema/**` entry from `knip.json` once every entity has a runtime consumer.
+
 ### D-012 · 2026-07-18 · reversible · SAST = semgrep; secret scan = gitleaks; both blocking
 Charter #15 says "SAST (semgrep-class)" and "secret scanning (gitleaks-class)", "none advisory". Both are
 hard CI gates (no `continue-on-error`), unlike Iris's advisory CodeQL. **Revert:** swap rulesets/tools.
