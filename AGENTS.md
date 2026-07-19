@@ -40,13 +40,25 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 advisory). Node 22; the house-CRM store is PGlite (real Postgres) in dev/CI behind `StorePort`,
 managed Postgres in prod.
 
-## Sharp edges
+## Sharp edges (hard-won — read before touching these areas)
 
+- **Store singleton:** `getDb()` caches on `globalThis`, NOT a module-local var — Next bundles route
+  handlers and server components/actions separately, so a module-local singleton opens TWO PGlite
+  instances (writes to one invisible to the other → "session not found"). PGlite is single-connection;
+  `db.ts` serializes all ops with a mutex.
+- **Prod guards key on `APP_ENV`, never `NODE_ENV`:** `next build`/`next start` force `NODE_ENV=production`
+  even in dev/CI, so the config fail-closed guards and the secure-cookie flag use `APP_ENV` (real
+  deployment env). Same for the e2e webserver.
+- **Auth uses a Server Action** (`src/app/login/actions.ts`): it sets the cookie + redirects atomically,
+  avoiding the client Set-Cookie/navigate race and hydration race. Client forms are uncontrolled
+  (FormData) and gate submit on `useHydrated()` so a pre-hydration click can't do a native submit.
 - Tests must run on a non-UTC TZ (`vitest.config.ts` pins `America/New_York`); `src/__tests__/setup.ts`
   fails loudly if the clock is UTC.
-- ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API).
-- TypeScript pinned to 6.x (not the new Go-based TS 7) for tooling compatibility.
-- Fences prefer AST (`ts-morph`) over regex where feasible; a weak/tautological fence is worse than none.
+- ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API);
+  TypeScript pinned to 6.x (not the Go-based TS 7) for tooling compatibility.
+- Fences prefer AST (`ts-morph`) over regex; a weak/tautological fence is worse than none — the self-audit
+  caught two of my own fences passing vacuously (`no-pii-in-audit-store`, `org-id-required`). When adding a
+  fence, prove its companion actually rejects a real violation.
 
 ## Maintaining this file
 
