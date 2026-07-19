@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
+import { REDACTED } from "@contracts/pii";
 import { log } from "@infra/observability/logger";
 
 /**
@@ -104,5 +105,19 @@ describe("auditedWrite failure paths (finding #3)", () => {
     );
     expect(call, "expected a log.error carrying the real underlying error").toBeTruthy();
     expect(call![1]).toBe("audited write failed");
+  });
+
+  it("a driver message quoting a PII-shaped row VALUE is redacted from the failure log (name-based redaction cannot see into free text)", async () => {
+    const db = await seed();
+    const errorSpy = vi.spyOn(log, "error");
+    await auditedWrite<{ id: string }>({
+      db, ...base,
+      perform: async () => {
+        throw new Error('duplicate key value violates unique constraint "users_email_unique": Key (email)=(ada@example.test) already exists');
+      },
+    });
+    const call = errorSpy.mock.calls.find((c) => c[1] === "audited write failed");
+    expect(call, "expected the chokepoint failure log").toBeTruthy();
+    expect((call![0] as { reason?: unknown }).reason).toBe(REDACTED);
   });
 });

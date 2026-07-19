@@ -54,8 +54,12 @@ committed writes instead of duplicating them.
 **Cross-submit dedup: UN-DEFERRED (D-027).** The flow-start route now requires a client-minted
 per-form-session UUID (`clientRequestId`), used as the executionId: a double-submit (network retry,
 second tab) resolves to the SAME execution — the route reports its current state (org-checked) instead
-of starting a duplicate. Locked by an integration spec (same id → one household + the same resume
-token; a different id → a genuinely new execution).
+of starting a duplicate. A replayed id whose execution FAILED is re-driven from its saved cursor
+(`retryFlow` — the start-path mirror of resume's Vale V7 retry; the per-write keys make it replay-safe),
+so a transient mid-start failure is recoverable by resubmitting instead of dead-ending. Only the
+concurrent race loser's own PK conflict (SQLSTATE 23505) resolves as a replay; any other start failure
+surfaces as a typed error. Locked by an integration spec (same id → one household + the same resume
+token; a different id → a genuinely new execution; a failed start → re-driven, still one household).
 
 Two recovery paths remain deferred:
 

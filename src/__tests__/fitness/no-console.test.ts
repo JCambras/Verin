@@ -9,6 +9,10 @@ import { readShipped, stripComments } from "./_fence-utils";
  * to server stdout. Use the structured logger. Files carrying a "use client"
  * directive are exempt: the browser console is a different, lower-stakes surface
  * (no server log aggregation), and Next strips server-only paths from them.
+ * Known, accepted gap: client components ALSO execute server-side during
+ * SSR/prerender, so a console call in module scope or the render body can still
+ * reach server stdout — the browser-console rationale fully holds only for event
+ * handlers/effects (which never run on the server). See PF-020.
  */
 const CONSOLE_RE = /\bconsole\s*\.\s*(log|info|warn|error|debug|trace|dir)\s*\(/;
 
@@ -44,7 +48,8 @@ function detectConsole(files: Array<{ rel: string; text: string }>): string[] {
     // The logger module itself is the one place allowed to touch the console transport.
     if (r.startsWith("src/infrastructure/observability/")) continue;
     if (REVIEWED_CONSOLE_FILES.has(r)) continue;
-    // Client components log to the BROWSER console — a different surface.
+    // Client components log to the BROWSER console — a different surface
+    // (accepted gap: SSR/prerender still runs module scope + render body on the server).
     if (r.startsWith("src/app/") && isClientFile(text)) continue;
     text.split("\n").forEach((line, i) => {
       if (CONSOLE_RE.test(stripComments(line))) offenders.push(`${rel}:${i + 1}`);

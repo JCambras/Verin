@@ -365,4 +365,10 @@ a server route handler AND a directive-less server component, allows a leading `
 and refuses a buried directive; the reviewed-allowlist carries a staleness guard (an entry pointing at
 a missing file fails).
 
+**Accepted gap (recorded):** the `"use client"` exemption is broader than the invariant strictly
+needs — client components ALSO execute server-side during SSR/prerender, so a `console.*` in module
+scope or the render body still writes to server stdout; the browser-console rationale fully holds only
+for event handlers/effects (which never run on the server). A stricter handlers-only variant was
+considered and deliberately not implemented (practical trade-off; the fence text carries the same note).
+
 **Date:** 2026-07-19 (deep-review r6 quality sweep, finding #12).

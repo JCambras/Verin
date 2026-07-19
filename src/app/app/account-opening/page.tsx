@@ -52,6 +52,13 @@ export default function AccountOpeningPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) return setError(body?.error?.message ?? "Could not start the flow.");
+      // Render what the server reports: a replayed submit can reattach to an
+      // execution that already completed, or one still mid-flight (multi-tab
+      // race) with nothing to sign yet — never a dead "awaiting" screen.
+      if (body.status === "completed") return setPhase("completed");
+      if (body.status !== "suspended" || !body.token) {
+        return setError("This request is still being processed. Wait a moment, then submit again to check its status.");
+      }
       setToken(body.token);
       setPhase("awaiting");
     } catch {

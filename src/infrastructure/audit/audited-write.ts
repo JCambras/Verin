@@ -12,10 +12,21 @@
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
+import { looksLikePIIValue, REDACTED } from "@contracts/pii";
 import { log } from "@infra/observability/logger";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
+
+/**
+ * Driver/exception text can quote row values (a unique-violation detail may embed
+ * an email); the pino redaction is field-NAME-based and cannot see into free text,
+ * so a PII-shaped reason is replaced wholesale before it reaches the log.
+ */
+function logSafeReason(e: unknown): string {
+  const raw = e instanceof Error ? `${e.name}: ${e.message}` : isAppError(e) ? e.message : String(e);
+  return looksLikePIIValue(raw) ? REDACTED : raw;
+}
 
 /** SQLSTATE class 23 = integrity constraint violation (23502/23503/23505/23514…). */
 function isDriverConstraintError(e: unknown): boolean {
@@ -111,7 +122,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       {
         orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null,
         code: known?.code ?? null,
-        reason: e instanceof Error ? `${e.name}: ${e.message}` : known ? known.message : String(e),
+        reason: logSafeReason(e),
       },
       "audited write failed",
     );
@@ -131,7 +142,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
         // The business failure is already being reported; the audit-of-failure loss
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
-          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: auditErr instanceof Error ? auditErr.message : String(auditErr) },
+          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: logSafeReason(auditErr) },
           "failure-audit entry could not be recorded",
         );
       });

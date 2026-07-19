@@ -113,6 +113,69 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(Number(after.rows[0]!.n)).toBe(2);
   });
 
+  it("a FAILED start is re-driven from its saved cursor when the same client request id is resubmitted (Vale V7 on the start path)", async () => {
+    const clientRequestId = "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const input = {
+      householdName: "Retry Household", firstName: "Re", lastName: "Try", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    // Transient mid-flow failure: the application step's table vanishes, so the
+    // execution persists as 'failed' AFTER the household/contact writes committed.
+    await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
+    const first = await startAccountOpening(db, advisor, input);
+    expect(first.status).toBe("failed");
+    const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(households.rows[0]!.n)).toBe(1);
+    await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
+
+    // The user resubmits the SAME form session: the replay re-drives from the
+    // saved cursor instead of dead-ending on the persisted failure.
+    const second = await startAccountOpening(db, advisor, input);
+    expect(second.status).toBe("suspended");
+    expect(second.token).toBeTruthy();
+    expect(second.executionId).toBe(clientRequestId);
+
+    // No duplicated pre-failure writes: still exactly one household.
+    const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(after.rows[0]!.n)).toBe(1);
+    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+  });
+
+  it("a real storage failure mid-start is NOT masked as a double-submit replay (only SQLSTATE 23505 resolves as one)", async () => {
+    // The execution row INSERTs fine; the post-step save (UPDATE) blows up — the
+    // pre-fix catch would have reported this as a 'running' replay with no token.
+    const failing: SqlDb = {
+      ...db,
+      query: <T,>(sql: string, params?: unknown[]) =>
+        sql.startsWith("UPDATE flow_executions") ? Promise.reject(new Error("disk full")) : db.query<T>(sql, params),
+    };
+    const result = await startAccountOpening(failing, advisor, {
+      householdName: "Mask Household", firstName: "Ma", lastName: "Sk", email: null,
+      accountType: "individual", clientRequestId: "5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b",
+    });
+    expect(result.status).toBe("failed"); // a typed failure, never a fake started flow
+    expect(result.error?.code).toBe("INTERNAL");
+    expect(result.token).toBeUndefined();
+  });
+
+  it("a client request id colliding with ANOTHER org's execution fails clean and leaks nothing", async () => {
+    const clientRequestId = "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e";
+    const started = await startAccountOpening(db, advisor, {
+      householdName: "Victim Household", firstName: "Vi", lastName: "Ctim", email: null,
+      accountType: "individual", clientRequestId,
+    });
+    expect(started.status).toBe("suspended");
+
+    const intruder: Principal = { userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" };
+    const result = await startAccountOpening(db, intruder, {
+      householdName: "Intruder Household", firstName: "E", lastName: "Ve", email: null,
+      accountType: "individual", clientRequestId, // the PK conflict is a 23505, but not the caller's own execution
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INTERNAL"); // a clean AppError, not a raw driver error
+    expect(result.token).toBeUndefined(); // org-1's resume token never leaks
+  });
+
   it("a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)", async () => {
     const started = await startAccountOpening(db, advisor, {
       householdName: "Sig Household", firstName: "S", lastName: "T", email: null, accountType: "individual",
