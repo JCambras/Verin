@@ -1,0 +1,19 @@
+title = "Verin gitleaks configuration"
+
+# Charter non-negotiable #15: secret scanning is a CI gate (gitleaks-class),
+# failing (not advisory). Extends the default ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder templates and test-only non-secrets (not real credentials)"
+# .env.example is placeholder-only and separately enforced by the
+# no-secret-fallback / no-live-org-domain fitness fence.
+paths = [
+  '''\.env\.example$''',
+  '''playwright\.config\.ts$''',
+]
+regexes = [
+  '''CHANGEME_[A-Za-z0-9_]+''',
+  '''e2e-only-[a-z-]+-not-a-real-secret-0+''',
+]

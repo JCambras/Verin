@@ -1,0 +1,126 @@
+name: ci
+
+# Charter non-negotiables enforced here. Every gate is BLOCKING (never advisory —
+# charter #15). Tests and E2E run on a NON-UTC clock (charter #8; retro #39).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: America/New_York
+  # App-boot vars the config module requires (placeholders; never real secrets).
+  APP_ENV: development
+  APP_URL: http://localhost:3000
+  FIRM_TIMEZONE: America/New_York
+  VERIN_STORE_DRIVER: pglite
+  VERIN_DATA_DIR: .verin-data-ci
+  SESSION_SECRET: ci-only-session-secret-not-a-real-secret-0000000000
+  ESIGN_WEBHOOK_SECRET: ci-only-webhook-secret-not-a-real-secret-0000000000
+  LOG_LEVEL: error
+
+jobs:
+  quality:
+    name: quality (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
+
+  test:
+    name: test (unit, integration, fitness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: unit + integration + fitness
+        run: pnpm test
+
+  knip:
+    name: knip (dead-export / dead-code)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: knip
+        run: pnpm knip
+
+  e2e:
+    name: e2e (Playwright + axe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: e2e + axe
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  secret-scan:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  sast:
+    name: sast (semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: semgrep
+        run: semgrep ci --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --error
+
+  dependency-audit:
+    name: dependency-audit (pnpm audit + license/vuln review)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (high+)
+        run: pnpm audit --audit-level=high

@@ -1,0 +1,11 @@
+# Every change requires review by a code owner (SOC 2 CC8.1 change control).
+# The founder owns the repo; the compensating control for a solo founder is the
+# independent gate review (no self-approval; the persona board's fresh-context
+# rule + the no-mistakes pipeline). See docs/compliance/controls.md.
+* @JCambras
+
+# The constitution and its enforcement map get extra scrutiny.
+/CHARTER.md @JCambras
+/charter-map.json @JCambras
+/src/__tests__/fitness/ @JCambras
+/docs/adr/ @JCambras

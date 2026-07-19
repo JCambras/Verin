@@ -1,0 +1,199 @@
+{
+  "description": "CHARTER-DRIFT FENCE data (charter operating model). Maps each charter non-negotiable ID to the fence / CI gate / procedure that enforces it. The charter-drift fence (src/__tests__/fitness/charter-drift.test.ts) FAILS THE BUILD if any 'enforced' mapping points at a mechanism that no longer exists or is disabled, if any fitness fence is disabled (.skip), or if any non-negotiable ID is missing. 'planned' entries name the phase where enforcement lands; they are documentation until then. The constitution enforces its own enforcement.",
+  "nonNegotiables": [
+    {
+      "id": 1,
+      "title": "Fence every invariant in the same PR that states it",
+      "status": "planned",
+      "phase": "B",
+      "mechanisms": [
+        { "type": "procedure", "ref": "docs/fences/proof-log.md" },
+        { "type": "fitness-suite", "ref": "src/__tests__/fitness" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Canonical schema + provenance before any adapter",
+      "status": "planned",
+      "phase": "C",
+      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/provenance-required.test.ts" }]
+    },
+    {
+      "id": 3,
+      "title": "No unlabeled synthetic data, ever",
+      "status": "planned",
+      "phase": "B/F",
+      "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-unlabeled-synthetic.test.ts" },
+        { "type": "ci-gate", "ref": "provenance-trace" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Detection is not verification",
+      "status": "planned",
+      "phase": "B",
+      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/detection-not-verification.test.ts" }]
+    },
+    {
+      "id": 5,
+      "title": "Nothing built-but-not-shipped (dead-export check)",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [
+        { "type": "ci-gate", "ref": "knip" },
+        { "type": "config", "ref": "knip.json" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Human-in-the-loop is in the core contract (FlowStep suspend/resume)",
+      "status": "planned",
+      "phase": "A/E",
+      "mechanisms": [
+        { "type": "adr", "ref": "docs/adr/0011-flowstep-suspend-resume.md" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/flowstep-suspend-resume.test.ts" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Multi-tenancy and config hygiene from day one",
+      "status": "planned",
+      "phase": "B",
+      "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/org-id-required.test.ts" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-client-role-header.test.ts" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "E2E from flow #1 (Playwright CI gate)",
+      "status": "planned",
+      "phase": "E",
+      "mechanisms": [
+        { "type": "ci-gate", "ref": "e2e" },
+        { "type": "config", "ref": "playwright.config.ts" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Accessibility from the first primitive (axe)",
+      "status": "planned",
+      "phase": "D/E",
+      "mechanisms": [{ "type": "ci-gate", "ref": "axe" }]
+    },
+    {
+      "id": 10,
+      "title": "Presentation tier is a first-class product surface with its own budget",
+      "status": "planned",
+      "phase": "A/D",
+      "mechanisms": [
+        { "type": "adr", "ref": "docs/adr/0012-presentation-tier-and-budgets.md" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/line-budget.test.ts" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Non-functionals measured, not modeled",
+      "status": "planned",
+      "phase": "E/F",
+      "mechanisms": [
+        { "type": "ci-gate", "ref": "load-smoke" },
+        { "type": "procedure", "ref": "docs/runbooks/backup-and-restore.md" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Identity is foundation, not a milestone (real auth, RBAC at port)",
+      "status": "planned",
+      "phase": "E",
+      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/auth-enforcement.test.ts" }]
+    },
+    {
+      "id": 13,
+      "title": "The audit trail is tamper-evident (hash-chained), not conventional",
+      "status": "planned",
+      "phase": "B/E/F",
+      "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/audited-write-required.test.ts" },
+        { "type": "ci-gate", "ref": "audit-chain-verify" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Observability from commit #1 (OpenTelemetry)",
+      "status": "planned",
+      "phase": "E",
+      "mechanisms": [
+        { "type": "fitness", "ref": "src/__tests__/fitness/observability-coverage.test.ts" },
+        { "type": "ci-gate", "ref": "unit" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Supply-chain and security scanning as CI gates",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [
+        { "type": "ci-gate", "ref": "secret-scan" },
+        { "type": "ci-gate", "ref": "sast" },
+        { "type": "ci-gate", "ref": "dependency-audit" },
+        { "type": "config", "ref": ".gitleaks.toml" }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "External writes are idempotent and retry-safe",
+      "status": "planned",
+      "phase": "E",
+      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts" }]
+    }
+  ],
+  "operatingModel": [
+    {
+      "id": "charter-as-code",
+      "title": "Charter committed verbatim as CHARTER.md; AGENTS.md points to it first",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [
+        { "type": "file", "ref": "CHARTER.md" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/charter-drift.test.ts" }
+      ]
+    },
+    {
+      "id": "charter-amended-by-adr-only",
+      "title": "CHARTER.md changes only via an amending ADR referenced in the PR",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [{ "type": "procedure", "ref": ".github/pull_request_template.md" }]
+    },
+    {
+      "id": "charter-drift-fence",
+      "title": "CI fails if a mapping points at a fence that no longer exists or is disabled",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/charter-drift.test.ts" }]
+    },
+    {
+      "id": "non-utc-clock",
+      "title": "Tests and E2E run on a non-UTC clock",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [
+        { "type": "config", "ref": "vitest.config.ts" },
+        { "type": "file", "ref": "src/__tests__/setup.ts" }
+      ]
+    },
+    {
+      "id": "dependency-rule",
+      "title": "Four-layer dependency rule (edit-time ESLint + authoritative fitness fence)",
+      "status": "enforced",
+      "phase": "0",
+      "mechanisms": [
+        { "type": "config", "ref": "eslint.config.mjs" },
+        { "type": "fitness", "ref": "src/__tests__/fitness/dependency-rule.test.ts", "status": "planned" }
+      ]
+    }
+  ]
+}
