@@ -17,12 +17,15 @@ import { DATA_DICTIONARY, type FieldSpec } from "@domain/schema/dictionary";
  *    type enforcement itself).
  *
  *  RULE B — no naked metric render. A metric-class field (derived from the data
- *    dictionary's `display: "metric"` flag) may NOT appear in JSX child position
- *    (rendered as text) anywhere in the app EXCEPT inside a sanctioned renderer.
- *    Extracting a metric out of its provenance envelope and rendering it naked
+ *    dictionary's `display: "metric"` flag) may NOT appear in a JSX expression
+ *    anywhere in the app: not in child position (rendered as text), and not in an
+ *    attribute of anything but a sanctioned renderer. Extracting a metric out of
+ *    its provenance envelope and rendering it naked
  *    (`<td>{account.balanceMinorUnits}</td>`) is the exact bypass Vale V12 named;
- *    this rule catches it with file:line. Metric values pass provenance because they
- *    flow to `<Metric metric={…}>` as an ATTRIBUTE, never as a naked child.
+ *    forwarding it as a prop to an unsanctioned component or a plain element
+ *    (`<Cell v={account.balanceMinorUnits}/>`, `title={…}`) escapes just the same,
+ *    so only attributes on `<Metric>`/`<FreshValue>` are exempt: that is precisely
+ *    where provenance is preserved.
  *
  * The type system carries the primary guarantee (a `DisplayMetric` is not a
  * `ReactNode`, and `<Metric>` requires provenance); this fence guards the two seams
@@ -44,6 +47,8 @@ const SANCTIONED_RENDERERS: readonly RendererSpec[] = [
 ];
 // Files exempt from RULE B — the sanctioned renderers themselves must read the value.
 const EXEMPT_FILES = new Set(SANCTIONED_RENDERERS.map((r) => r.file));
+// Tags whose ATTRIBUTES are exempt from RULE B - only the sanctioned renderers preserve provenance.
+const SANCTIONED_TAGS = new Set(SANCTIONED_RENDERERS.map((r) => r.component));
 
 /** The metric-class field registry, DERIVED from the dictionary's `display` flag (not hand-listed). */
 export function metricFieldNames(dictionary: Record<string, Record<string, FieldSpec>>): Set<string> {
@@ -108,14 +113,22 @@ function referencesMetricField(node: Node, locals: Map<string, Node>, metric: Se
   return null;
 }
 
-/** RULE B: metric fields rendered in JSX child position (not through a sanctioned renderer). */
+/** RULE B: metric fields in JSX child position or in an attribute of a non-sanctioned element. */
 export function nakedMetricRenders(sf: SourceFile, rel: string, metric: Set<string>): string[] {
   const out: string[] = [];
   const locals = localInitializers(sf);
   for (const jsxExpr of sf.getDescendantsOfKind(SyntaxKind.JsxExpression)) {
     const parentKind = jsxExpr.getParent()?.getKind();
-    // Skip attribute positions (`prop={…}` / `{...spread}`) — only rendered CHILDREN count.
-    if (parentKind === SyntaxKind.JsxAttribute || parentKind === SyntaxKind.JsxSpreadAttribute) continue;
+    // Attribute positions (`prop={…}` / `{...spread}`) are exempt ONLY on a sanctioned
+    // renderer (`<Metric metric={…}>`); on any other tag they are checked like children.
+    if (parentKind === SyntaxKind.JsxAttribute || parentKind === SyntaxKind.JsxSpreadAttribute) {
+      const opening = jsxExpr.getParent()?.getParent()?.getParent();
+      const tag =
+        opening && (Node.isJsxOpeningElement(opening) || Node.isJsxSelfClosingElement(opening))
+          ? opening.getTagNameNode().getText()
+          : null;
+      if (tag !== null && SANCTIONED_TAGS.has(tag)) continue;
+    }
     const inner = jsxExpr.getExpression();
     if (!inner) continue;
     const hit = referencesMetricField(inner, locals, metric, new Set());
@@ -191,6 +204,18 @@ describe("metric-provenance fence", () => {
     it("RULE B PASSES a metric passed as an attribute to <Metric> (provenance preserved)", () => {
       const sf = file(`export default function P(){ const a = {} as any; return <Metric metric={metric(a.balanceMinorUnits, "currency-minor", a.provenance)} />; }`);
       expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric)).toEqual([]);
+    });
+    it("RULE B PASSES a metric passed as an attribute to <FreshValue> (sanctioned renderer)", () => {
+      const sf = file(`export default function P(){ const a = {} as any; return <FreshValue value={a.balanceMinorUnits} provenance={a.provenance} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric)).toEqual([]);
+    });
+    it("RULE B flags a metric forwarded as an attribute to a NON-sanctioned component (<Cell v={…}/>)", () => {
+      const sf = file(`export default function P(){ const account = {} as any; return <Cell v={account.balanceMinorUnits} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric).length).toBe(1);
+    });
+    it("RULE B flags a metric displayed via a plain element's title attribute", () => {
+      const sf = file(`export default function P(){ const a = {} as any; return <span title={a.balanceMinorUnits} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric).length).toBe(1);
     });
     it("RULE B ignores a non-metric child (<span>{a.name}</span>)", () => {
       const sf = file(`export default function P(){ const a = {} as any; return <span>{a.name}</span>; }`);

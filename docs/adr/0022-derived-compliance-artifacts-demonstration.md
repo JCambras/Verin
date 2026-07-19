@@ -29,10 +29,11 @@ record") that fails a SOC 2 Type II audit.
 
 **Extend charter #3 so the "synthetic can never feed a compliance decision" rule runs end-to-end through
 DERIVED artifacts.** A value derived from one or more inputs is only as trustworthy as its
-least-trustworthy input: **if any input is synthetic, the derived value is itself synthetic — a
-"demonstration" artifact.** A demonstration artifact:
+least-trustworthy input: **if any input is synthetic, or itself a demonstration, the derived value is
+itself synthetic - a "demonstration" artifact** (the flag is transitive through chained derivations, so
+two derivation hops cannot launder synthetic data). A demonstration artifact:
 
-1. **is watermarked** `"Demonstration — not a compliance record"` wherever it renders (charter #3 display
+1. **is watermarked** `"Demonstration - not a compliance record"` wherever it renders (charter #3 display
    half, now via `<Metric>`);
 2. **can never feed a real compliance decision** — `canFeedComplianceDecision` refuses it, even though its
    own `source` is `computed`;
@@ -48,14 +49,15 @@ just leaf fields.
 
 **What ships in this PR (enforced now):**
 - The derivation vocabulary in `contracts/provenance.ts`: `deriveArtifactProvenance(inputs, asOf)` returns
-  `DerivedProvenance` with `demonstration = any input synthetic`, `source = "computed"`, and a
-  `derivedFrom` trace; `isDemonstration`; the `DEMO_WATERMARK` constant.
+  `DerivedProvenance` with `demonstration = any input synthetic or itself a demonstration` (transitive),
+  `source = "computed"`, and a `derivedFrom` trace flattened through nested derivations to leaf sources;
+  `isDemonstration`; the `DEMO_WATERMARK` constant.
 - `canFeedComplianceDecision` extended to refuse demonstration artifacts (rule 2 above).
 - The `DisplayMetric`/`<Metric>` surface (`contracts/metric.ts`, `app/presentation/metric.tsx`) renders the
   watermark whenever `isDemonstration` is true, so a metric derived from a demo household self-labels.
 - Two build-failing fences under charter-map #3, both run in the `provenance-trace` CI job:
   `metric-provenance` (no metric-class field renders without provenance — Vale V12) and `derived-provenance`
-  (the derivation law: synthetic input ⇒ demonstration ⇒ cannot feed compliance).
+  (the derivation law: synthetic or demonstration input ⇒ demonstration ⇒ cannot feed compliance).
 
 **What is deferred with a trigger (design contract):**
 - Rule 3 (demo audit class on persisted artifacts) lands with the first flow that computes and persists a

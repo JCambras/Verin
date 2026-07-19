@@ -74,13 +74,13 @@ export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenanc
 // previously forbidden is now permitted.
 
 /** The visible label a demonstration-derived artifact must carry (charter #3 / ADR-0022). */
-export const DEMO_WATERMARK = "Demonstration — not a compliance record" as const;
+export const DEMO_WATERMARK = "Demonstration - not a compliance record" as const;
 
 /** Provenance of a value computed FROM other provenanced inputs (the derivation trace). */
 export interface DerivedProvenance extends RecordProvenance {
-  /** True iff any input was synthetic: the derived artifact is itself synthetic. */
+  /** True iff any input was synthetic or itself a demonstration: the derived artifact is itself synthetic. */
   readonly demonstration: boolean;
-  /** The input sources this artifact was derived from (the displayed-metric->source trace). */
+  /** The input sources this artifact was derived from, flattened through nested derivations to leaf sources (deduped). */
   readonly derivedFrom: readonly SourceSystem[];
 }
 
@@ -94,20 +94,27 @@ function lowestConfidence(inputs: readonly RecordProvenance[]): Confidence {
   );
 }
 
+function isDerived(p: RecordProvenance): p is DerivedProvenance {
+  return "derivedFrom" in p;
+}
+
 /**
  * Provenance of a value computed from `inputs` (ADR-0022). source = "computed";
- * `demonstration` is true iff ANY input is synthetic, so a value derived from even
- * one labeled-synthetic/demo input is itself a demonstration artifact that
- * `canFeedComplianceDecision` refuses.
+ * `demonstration` is true iff ANY input is synthetic OR itself a demonstration, so
+ * the flag is TRANSITIVE through chained derivations: a value derived, at any depth,
+ * from even one labeled-synthetic/demo input is itself a demonstration artifact that
+ * `canFeedComplianceDecision` refuses. `derivedFrom` flattens nested traces so the
+ * displayed-metric->source trace always reaches leaf sources.
  */
 export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {
-  const demonstration = inputs.some((i) => isSyntheticSource(i.source));
+  const demonstration = inputs.some((i) => isSyntheticSource(i.source) || isDemonstration(i));
+  const derivedFrom = [...new Set(inputs.flatMap((i) => (isDerived(i) ? [i.source, ...i.derivedFrom] : [i.source])))];
   return {
     source: "computed",
     asOf,
     confidence: demonstration ? "low" : lowestConfidence(inputs),
     demonstration,
-    derivedFrom: inputs.map((i) => i.source),
+    derivedFrom,
   };
 }
 

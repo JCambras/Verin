@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (175 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (180 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
@@ -71,8 +71,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
-| `metric-provenance` (AST: renderer contract + no naked metric render) | every displayed metric carries source/asOf (#3, Vale V12) | PF-018 + companions |
-| `derived-provenance` | a synthetic-derived artifact is a demonstration, can't feed compliance (#3, ADR-0022) | PF-019 + companions |
+| `metric-provenance` (AST: renderer contract + no metric field in a child or non-sanctioned attribute) | every displayed metric carries source/asOf (#3, Vale V12) | PF-018 + companions |
+| `derived-provenance` | a synthetic- or demonstration-derived artifact is a demonstration (transitive), can't feed compliance (#3, ADR-0022) | PF-019 + companions |
 | `org-id-required` | every tenant query filters org_id (#7) | PF-009 + companion |
 | `no-client-role-header` | identity never from a header (#7) | PF-010 |
 | `audited-write-required` (+ anti-fork) | every write audited, no hand-rolled audit (#13) | PF-011 |
@@ -110,7 +110,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 175 / knip / e2e 12 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 180 / knip / e2e 12 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.
