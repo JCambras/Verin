@@ -16,8 +16,10 @@ re-verifiable — "we promise we didn't edit it" is not an answer.
 ## Decision
 
 Every write to a CRM/house-CRM entity goes through the **audited-write helper** (ADR-0009 wraps it),
-recording `org_id`, `actor` (threaded from the session — never defaulted to "system"), `action`, and
-`before`/`after` snapshots (scrubbed per ADR-0006). Three integrity layers:
+recording `org_id`, `actor` (the session principal's opaque **userId** — never defaulted to "system",
+and never the raw email: the audit boundary must not see PII, ADR-0006/D-014; views resolve
+userId → email at render), `action`, and `before`/`after` snapshots (scrubbed per ADR-0006). Three
+integrity layers:
 
 1. **Append-only** — Postgres `BEFORE UPDATE`/`BEFORE DELETE` triggers `RAISE EXCEPTION` on the audit
    table (verified working in PGlite).

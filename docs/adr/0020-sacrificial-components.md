@@ -22,6 +22,11 @@ and the **PGlite dev/CI store adapter** (production swaps to managed Postgres â€
 posture). No sacrificial component may be built unless it is reachable and used now (charter #5); nothing is
 scaffolded empty.
 
+**Production guardrails are IN CODE, not just registered:** the simulate-sign route refuses
+`APP_ENV=production` (a server that forges valid client e-signatures must never exist where signatures
+carry legal weight), and `db-seed` refuses production explicitly (its demo credential is publicly
+committed).
+
 ## Alternatives Rejected
 
 | Alternative | Why Rejected |

@@ -8,11 +8,15 @@ import { getConfig } from "@infra/config";
 
 const cfg = getConfig();
 
+const PII_LOG_FIELDS = ["ssn", "password", "email", "phone", "dob", "firstName", "lastName", "name", "displayName"];
+
 export const log = pino({
   level: cfg.log.level,
   base: { service: cfg.otel.serviceName },
   redact: {
-    paths: ["ssn", "*.ssn", "password", "*.password", "email", "*.email", "phone", "*.phone", "dob", "*.dob"],
+    // Defence-in-depth only — the real guarantee is that callers log identifiers,
+    // not PII (audit actor is an opaque userId per ADR-0006/0007).
+    paths: PII_LOG_FIELDS.flatMap((f) => [f, `*.${f}`, `*.*.${f}`]),
     censor: "[REDACTED]",
   },
 });

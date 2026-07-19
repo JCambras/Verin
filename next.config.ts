@@ -9,6 +9,9 @@ import type { NextConfig } from "next";
  * dev/CI, managed Postgres in prod) is a server-only native module, so it is
  * marked external and every route that touches it runs on the Node runtime.
  */
+// No Content-Security-Policy YET: a real one needs a per-request nonce strategy
+// (deliberate work), and a decorative unsafe-inline policy would be theater —
+// recorded deferral ADR-0021 / D-020, trigger = before the first real deployment.
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },

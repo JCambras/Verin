@@ -3,6 +3,11 @@
  * (dev/CI) and managed Postgres (prod) unchanged. The audit_log is append-only
  * (BEFORE UPDATE/DELETE triggers RAISE EXCEPTION) and hash-chained per org; the
  * outbox delivers audit entries at-least-once; crm_write_cache gives idempotency.
+ *
+ * CREATE IF NOT EXISTS only, NO schema-version table — acceptable greenfield, but
+ * a column change silently no-ops on an already-initialized dataDir. Recorded
+ * deferral (D-016): the FIRST real schema change introduces a versioned migration
+ * mechanism instead of editing this DDL in place.
  */
 export const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS orgs (
@@ -105,6 +110,10 @@ CREATE TABLE IF NOT EXISTS account_opening_applications (
   prov_confidence text NOT NULL
 );
 CREATE INDEX IF NOT EXISTS applications_org ON account_opening_applications(org_id);
+-- The e-sign token is the webhook's capability: UNIQUE makes the exactly-once
+-- token resolution structural (rows[0] can never be an ambiguous match) and kills
+-- the per-webhook full scan. Multiple NULLs are fine (draft applications).
+CREATE UNIQUE INDEX IF NOT EXISTS applications_esign_token_unique ON account_opening_applications(esign_token);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id text PRIMARY KEY,
@@ -132,7 +141,9 @@ CREATE TABLE IF NOT EXISTS flow_executions (
   created_at text NOT NULL,
   updated_at text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS flow_exec_token ON flow_executions(resume_token);
+-- UNIQUE: the resume token is the webhook's capability — token-based resume must
+-- never resolve an ambiguous match. Multiple NULLs (pre-suspend executions) are fine.
+CREATE UNIQUE INDEX IF NOT EXISTS flow_exec_token_unique ON flow_executions(resume_token);
 
 -- Idempotency for external/CRM writes (ADR-0009).
 CREATE TABLE IF NOT EXISTS crm_write_cache (

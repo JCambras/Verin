@@ -9,8 +9,12 @@ import { readShipped, stripComments } from "./_fence-utils";
  */
 // Any header whose name suggests identity/role/tenant is off-limits (Vale V16:
 // allowlist-ish, not four hardcoded names). Identity comes only from the session.
+// Covers BOTH access shapes: `req.headers.get(…)` and next/headers'
+// `(await headers()).get(…)`.
+const IDENTITY_HEADER = `["'\`]x-[^"'\`]*(role|user|actor|tenant|org|principal|identity|email)[^"'\`]*["'\`]`;
 const BANNED = [
-  /\.headers\s*\.\s*get\(\s*["'`]x-[^"'`]*(role|user|actor|tenant|org|principal|identity|email)[^"'`]*["'`]/i,
+  new RegExp(`\\.headers\\s*\\.\\s*get\\(\\s*${IDENTITY_HEADER}`, "i"),
+  new RegExp(`\\bheaders\\s*\\(\\s*\\)\\s*\\)?\\s*\\.\\s*get\\(\\s*${IDENTITY_HEADER}`, "i"),
   /["'`]x-user-role["'`]/i,
 ];
 
@@ -37,8 +41,13 @@ describe("no-client-role-header fence", () => {
     it("flags reading x-user-role from headers", () => {
       expect(detectClientRoleHeader(`const role = req.headers.get("x-user-role");`)).toBe(1);
     });
+    it("flags next/headers' headers().get() shape (with and without await)", () => {
+      expect(detectClientRoleHeader(`const role = (await headers()).get("x-org-id");`)).toBe(1);
+      expect(detectClientRoleHeader(`const role = headers().get("x-actor-email");`)).toBe(1);
+    });
     it("ignores legitimate header reads", () => {
       expect(detectClientRoleHeader(`const ct = req.headers.get("content-type");`)).toBe(0);
+      expect(detectClientRoleHeader(`const ua = (await headers()).get("user-agent");`)).toBe(0);
     });
   });
 });

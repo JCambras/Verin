@@ -109,7 +109,15 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
 // there is exactly ONE store per process.
 const globalStore = globalThis as unknown as { __verinDb?: Promise<SqlDb> };
 export function getDb(): Promise<SqlDb> {
-  if (!globalStore.__verinDb) globalStore.__verinDb = createDb();
+  if (!globalStore.__verinDb) {
+    const creating = createDb();
+    globalStore.__verinDb = creating;
+    // A rejected promise must not be memoized: a transient startup failure (dataDir
+    // lock held by a finishing seed) would otherwise fail every request until restart.
+    creating.catch(() => {
+      if (globalStore.__verinDb === creating) globalStore.__verinDb = undefined;
+    });
+  }
   return globalStore.__verinDb;
 }
 

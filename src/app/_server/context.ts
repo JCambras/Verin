@@ -66,7 +66,13 @@ export async function readJsonBody<T = Record<string, unknown>>(
     text = Buffer.concat(chunks).toString("utf8");
   }
   try {
-    return { ok: true, value: (text ? JSON.parse(text) : {}) as T };
+    const parsed: unknown = text ? JSON.parse(text) : {};
+    // Callers destructure an object: a body of literal null / "x" / 3 / [] would
+    // otherwise pass the cast and throw an unhandled 500 at the property access.
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return err(appError("VALIDATION", "Request body must be a JSON object."));
+    }
+    return { ok: true, value: parsed as T };
   } catch {
     return err(appError("VALIDATION", "Invalid JSON body."));
   }

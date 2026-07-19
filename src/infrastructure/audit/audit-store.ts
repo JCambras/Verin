@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
+import { appError } from "@contracts/errors";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -42,22 +43,26 @@ export async function enqueueAudit(
   result: "success" | "failure",
   now: string,
 ): Promise<void> {
+  const scrubbedBefore = intent.before == null ? null : scrub(intent.before);
+  const scrubbedAfter = intent.after == null ? null : scrub(intent.after);
   const payload: OutboxPayload = {
     orgId: intent.orgId,
     actor: intent.actor,
     action: intent.action,
     entityType: intent.entityType,
     entityId: intent.entityId,
-    beforeJson: intent.before == null ? null : JSON.stringify(scrub(intent.before)),
-    afterJson: intent.after == null ? null : JSON.stringify(scrub(intent.after)),
+    beforeJson: scrubbedBefore == null ? null : JSON.stringify(scrubbedBefore),
+    afterJson: scrubbedAfter == null ? null : JSON.stringify(scrubbedAfter),
     // detail is free text — scrub value-pattern PII (email/phone/SSN) at the boundary.
     detail: String(scrub(intent.detail)),
     createdAt: now,
     result,
   };
-  // Fail-closed backstop (Vale V3): if a PII-shaped value survived scrubbing, refuse
-  // to persist it — the business write rolls back rather than leaking PII to the audit.
-  assertNoPIIValues({ before: payload.beforeJson, after: payload.afterJson, detail: payload.detail }, "audit");
+  // Fail-closed backstop (Vale V3): if PII survived scrubbing, refuse to persist it —
+  // the business write rolls back rather than leaking PII to the audit. Asserted on
+  // the STRUCTURED snapshots (not their JSON strings) so a raw number/boolean under a
+  // PII key ({ phone: 5551234567 }) is caught, not just PII-shaped substrings.
+  assertNoPIIValues({ before: scrubbedBefore, after: scrubbedAfter, detail: payload.detail }, "audit");
   await tx.query(
     "INSERT INTO audit_outbox (id, org_id, payload_json, status, attempts, created_at) VALUES ($1,$2,$3,'pending',0,$4)",
     [randomUUID(), intent.orgId, JSON.stringify(payload), now],
@@ -131,7 +136,17 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
            ON CONFLICT (org_id) DO UPDATE SET max_sequence = GREATEST(audit_anchor.max_sequence, $2), entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
           [orgId, entry.sequence, new Date().toISOString()],
         );
-        await tx.query("DELETE FROM audit_outbox WHERE id = $1", [row.id]);
+        // The claim must still be OURS at delivery time. A worker stalled past
+        // CLAIM_TIMEOUT_MS whose row was reclaimed and delivered by another worker
+        // would otherwise append the same event a second time at the next sequence —
+        // an undetectable duplicate in the append-only chain. 0 rows → abort the tx.
+        const deleted = await tx.query<{ id: string }>(
+          "DELETE FROM audit_outbox WHERE id = $1 AND status = 'claimed' RETURNING id",
+          [row.id],
+        );
+        if (deleted.rows.length !== 1) {
+          throw appError("CONFLICT", "outbox claim lost before delivery (reclaimed by another worker)");
+        }
       });
       drained += 1;
     } catch {
@@ -188,15 +203,19 @@ export async function listOrgChain(db: SqlDb, orgId: string): Promise<ChainRow[]
  * deletion is DETECTED (Vale V1 / Sable F4).
  */
 export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
-  const rows = await listOrgChain(db, orgId);
+  // Chain rows and the anchor are read in ONE transaction: a drain committing
+  // between two separate reads would otherwise raise a false "rows removed /
+  // truncated" tamper alarm (anchor ahead of the rows snapshot).
+  const { rows, anchor } = await db.transaction(async (tx) => {
+    const chainRes = await tx.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [orgId]);
+    const anchorRes = await tx.query<{ max_sequence: number | string; entry_count: number | string }>(
+      "SELECT max_sequence, entry_count FROM audit_anchor WHERE org_id = $1",
+      [orgId],
+    );
+    return { rows: chainRes.rows.map(toChainRow), anchor: anchorRes.rows[0] };
+  });
   const verdict = verifyChain(rows);
   if (!verdict.ok) return verdict;
-
-  const anchorRes = await db.query<{ max_sequence: number | string; entry_count: number | string }>(
-    "SELECT max_sequence, entry_count FROM audit_anchor WHERE org_id = $1",
-    [orgId],
-  );
-  const anchor = anchorRes.rows[0];
   if (!anchor) {
     // No anchor is legitimate ONLY for an org that has never written. Entries
     // without an anchor mean the anchor row was removed — the full-deletion /

@@ -21,8 +21,18 @@ function committedTextFiles(): Array<{ rel: string; text: string }> {
     .map((f) => ({ rel: relative(REPO_ROOT, f), text: readFileSync(f, "utf8") }));
 }
 
-const SECRET_FALLBACK_RE =
-  /process\s*\.\s*env\s*\.\s*[A-Z0-9_]*(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL)[A-Z0-9_]*\s*(\|\||\?\?)\s*["'`]/i;
+const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL)";
+// Applied to the comment-stripped WHOLE file (\s spans newlines), so wrapping the
+// `??`/`||` fallback across lines is not an evasion.
+const SECRET_FALLBACK_RE = new RegExp(
+  `process\\s*\\.\\s*env\\s*\\.\\s*[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*\\s*(\\|\\||\\?\\?)\\s*["'\`]`,
+  "i",
+);
+// Destructuring default: `const { X_SECRET = "…" } = process.env`.
+const SECRET_DESTRUCTURE_RE = new RegExp(
+  `\\{[^{}]*[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*\\s*=\\s*["'\`][^{}]*\\}\\s*=\\s*process\\s*\\.\\s*env`,
+  "i",
+);
 const LIVE_ORG_RE = /[a-z0-9][a-z0-9-]*\.(my\.salesforce\.com|lightning\.force\.com|my\.site\.com)/i;
 
 export function detectSecretFallback(files: Array<{ rel: string; text: string }>): string[] {
@@ -30,9 +40,8 @@ export function detectSecretFallback(files: Array<{ rel: string; text: string }>
   for (const { rel, text } of files) {
     // The fence's own companion fixtures contain the pattern as a literal.
     if (rel.endsWith("no-secret-fallback.test.ts")) continue;
-    text.split("\n").forEach((line, i) => {
-      if (SECRET_FALLBACK_RE.test(stripComments(line))) out.push(`${rel}:${i + 1}`);
-    });
+    const stripped = text.split("\n").map(stripComments).join("\n");
+    if (SECRET_FALLBACK_RE.test(stripped) || SECRET_DESTRUCTURE_RE.test(stripped)) out.push(rel);
   }
   return out;
 }
@@ -90,6 +99,18 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
   describe("detects (companion): planted violations are caught", () => {
     it("catches a secret fallback", () => {
       expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text: `const s = process.env.SF_COOKIE_SECRET || "change-in-prod!!";` }]).length).toBe(1);
+    });
+    it("catches a fallback WRAPPED across lines (?? on the next line)", () => {
+      const text = `const s =\n  process.env.SESSION_SECRET\n  ?? "dev-secret";`;
+      expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text }]).length).toBe(1);
+    });
+    it("catches a destructuring default (const { X_SECRET = \"…\" } = process.env)", () => {
+      const text = `const { SESSION_SECRET = "dev-secret" } = process.env;`;
+      expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text }]).length).toBe(1);
+    });
+    it("does not flag a commented-out fallback", () => {
+      const text = `// const s = process.env.SESSION_SECRET ?? "dev-secret";`;
+      expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text }]).length).toBe(0);
     });
     it("catches a live Salesforce org domain", () => {
       expect(detectLiveOrgDomain([{ rel: "docs/HANDOFF.md", text: `Login at https://acme-corp.my.salesforce.com` }]).length).toBe(1);

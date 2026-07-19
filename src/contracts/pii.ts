@@ -4,6 +4,9 @@
  * store holds identity PII (it is the system of record); the AUDIT and log
  * boundaries must never see raw PII — scrub() (infrastructure/pii) enforces that.
  */
+/** The one redaction sentinel — scrub() writes it; assertNoPIIValues accepts it. */
+export const REDACTED = "[REDACTED]";
+
 export const PII_FIELD_RE =
   /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|\bname\b|email|phone)/i;
 
@@ -56,7 +59,10 @@ export function assertNoPII(payload: unknown, boundary: string, seen = new WeakS
 /**
  * Fail-closed backstop for the AUDIT boundary: after scrubbing, assert no PII-shaped
  * VALUES survive (field NAMES may remain — e.g. a redacted `firstName` key). If a raw
- * SSN/email/phone slipped past the scrubber, throw rather than persist it.
+ * SSN/email/phone slipped past the scrubber, throw rather than persist it. Post-scrub,
+ * a PII-named key may only map to the REDACTED sentinel, null, or a container whose
+ * leaves are themselves redacted — any other primitive (a raw string, number, bigint,
+ * or boolean) means the scrubber was bypassed, so throw rather than persist.
  */
 export function assertNoPIIValues(payload: unknown, boundary: string, seen = new WeakSet<object>()): void {
   if (payload == null) return;
@@ -64,10 +70,19 @@ export function assertNoPIIValues(payload: unknown, boundary: string, seen = new
     if (looksLikePIIValue(payload)) throw pii(boundary, "value pattern");
     return;
   }
+  if (typeof payload === "number" || typeof payload === "bigint") {
+    if (looksLikePIIValue(String(payload))) throw pii(boundary, "value pattern");
+    return;
+  }
   if (typeof payload !== "object") return;
   if (seen.has(payload)) return;
   seen.add(payload);
-  for (const value of Object.values(payload)) assertNoPIIValues(value, boundary, seen);
+  for (const [key, value] of Object.entries(payload)) {
+    if (isPIIField(key) && value != null && typeof value !== "object" && value !== REDACTED) {
+      throw pii(boundary, `unredacted value under PII field '${key}'`);
+    }
+    assertNoPIIValues(value, boundary, seen);
+  }
 }
 
 function pii(boundary: string, what: string): Error {

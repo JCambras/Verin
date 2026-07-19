@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { relative } from "node:path";
 import { SyntaxKind, type SourceFile } from "ts-morph";
 import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
+import { MIGRATION_SQL } from "@infra/store/migrations";
 
 /**
  * ORG-ID-REQUIRED FENCE (ADR-0004, charter #7). Every SELECT/UPDATE/DELETE on a
@@ -22,8 +23,26 @@ const DATA_TABLES = [
   "credentials",
   "audit_log",
 ];
+// Reviewed NON-tenant tables (each with the reason it needs no org_id filter). The
+// derivation check below proves DATA_TABLES + NON_TENANT_TABLES = exactly the
+// tables in migrations.ts, so a NEW table cannot ship silently unfenced.
+const NON_TENANT_TABLES = [
+  "orgs", // the tenant table itself — keyed by its own id
+  "sessions", // capability-keyed by the unguessable session id; org_id comes FROM the row
+  "flow_executions", // capability-keyed by the resume token / engine-held execution id
+  "crm_write_cache", // idempotency cache, PK (org_id, idempotency_key) — always key-scoped
+  "audit_outbox", // internal delivery queue, keyed by row id claims
+  "audit_anchor", // one integrity row per org, keyed by org_id PK upserts
+];
 // Columns that are themselves an unguessable capability (scope the row without org_id).
 const CAPABILITY_KEYS = ["esign_token", "resume_token", "idempotency_key"];
+
+/** Tables present in DDL but classified in neither list (must be empty). */
+export function unclassifiedTables(ddl: string, dataTables: readonly string[], nonTenant: readonly string[]): string[] {
+  const inDdl = [...ddl.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
+  const classified = new Set([...dataTables, ...nonTenant]);
+  return inDdl.filter((t) => !classified.has(t));
+}
 
 // Reviewed escapes — queries that legitimately cannot carry an org_id filter.
 // Each entry is the FULL whitespace-normalized statement and must match the
@@ -38,8 +57,8 @@ const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
     why: "session resolution: the unguessable session id is the capability; org_id comes FROM this row",
   },
   {
-    sql: "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 LIMIT 1",
-    why: "login by email — org-qualified login is an explicit deferral (Sable F3, FOUNDATION gap list)",
+    sql: "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 ORDER BY created_at ASC, id ASC LIMIT 1",
+    why: "login by email — org-qualified login is an explicit deferral (Sable F3, FOUNDATION gap list); deterministic ORDER BY so an email collision cannot resolve arbitrarily",
   },
   {
     sql: "SELECT password_hash FROM credentials WHERE user_id = $1",
@@ -75,6 +94,15 @@ export function sqlLiterals(sf: SourceFile): string[] {
 }
 
 describe("org-id-required fence", () => {
+  it("enforces: the table classification is DERIVED-complete against migrations.ts (a new table cannot ship unfenced)", () => {
+    const unclassified = unclassifiedTables(MIGRATION_SQL, DATA_TABLES, NON_TENANT_TABLES);
+    expect(unclassified, `tables in migrations.ts with no org-scoping classification (add to DATA_TABLES or review into NON_TENANT_TABLES):\n${unclassified.join("\n")}`).toEqual([]);
+    // No stale entries either: a renamed/dropped table must leave the lists.
+    const inDdl = new Set([...MIGRATION_SQL.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!));
+    const stale = [...DATA_TABLES, ...NON_TENANT_TABLES].filter((t) => !inDdl.has(t));
+    expect(stale, `classified tables no longer in migrations.ts:\n${stale.join("\n")}`).toEqual([]);
+  });
+
   it("enforces: every read/write on a tenant data table filters by org_id (all layers, all literals)", () => {
     const offenders: string[] = [];
     for (const sf of realProject().getSourceFiles()) {
@@ -112,9 +140,13 @@ describe("org-id-required fence", () => {
       expect(detectMissingOrgId("CREATE TRIGGER t BEFORE UPDATE ON audit_log FOR EACH ROW EXECUTE FUNCTION f()")).toBe(false);
     });
     it("allows the exact reviewed login escape but flags a superset of it (escapes are exact-match)", () => {
-      const escaped = "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 LIMIT 1";
+      const escaped = "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 ORDER BY created_at ASC, id ASC LIMIT 1";
       expect(detectMissingOrgId(escaped)).toBe(false);
       expect(detectMissingOrgId(escaped.replace("WHERE email = $1", "WHERE email = $1 OR role = $2"))).toBe(true);
+    });
+    it("a NEW table added to migrations.ts without a classification is caught", () => {
+      const ddl = `${MIGRATION_SQL}\nCREATE TABLE IF NOT EXISTS client_notes (id text PRIMARY KEY, body text);`;
+      expect(unclassifiedTables(ddl, DATA_TABLES, NON_TENANT_TABLES)).toEqual(["client_notes"]);
     });
     it("catches SQL assigned to a variable before .query() (literal sweep, not call-site only)", () => {
       const project = inMemoryProject({

@@ -8,8 +8,9 @@ import { readShipped, stripComments } from "./_fence-utils";
  * failure becomes a 400, not a 500 (retro-r7 don't-again #36). Business logic
  * returns Result instead of throwing.
  */
-// All built-in Error subclasses (Vale V16: AggregateError/EvalError/URIError evaded before).
-const BARE_THROW_RE = /\bthrow\s+new\s+(Error|TypeError|RangeError|SyntaxError|EvalError|URIError|AggregateError|ReferenceError)\s*\(/;
+// ANY *Error class — built-ins AND custom subclasses (`class MyError extends
+// Error`), which the previous fixed name list let straight through.
+const BARE_THROW_RE = /\bthrow\s+new\s+[A-Z][A-Za-z0-9_]*Error\s*\(|\bthrow\s+new\s+Error\s*\(/;
 // contracts may define AppError helpers and result.ts throws in unwrap() at boundaries;
 // the config module throws a FATAL at boot by design (ADR-0003 fail-closed).
 const ALLOW = ["src/contracts/result.ts", "src/contracts/errors.ts", "src/infrastructure/config/index.ts"];
@@ -38,6 +39,14 @@ describe("no-bare-throw fence", () => {
     it("catches throw new Error in an infrastructure adapter", () => {
       const offenders = detectBareThrow([{ rel: "src/infrastructure/crm/adapter.ts", text: `export function f() { throw new Error("boom"); }` }]);
       expect(offenders).toEqual(["src/infrastructure/crm/adapter.ts:1"]);
+    });
+    it("catches a CUSTOM Error subclass (class StoreCorruptError extends Error)", () => {
+      const offenders = detectBareThrow([{ rel: "src/infrastructure/crm/adapter.ts", text: `throw new StoreCorruptError("boom");` }]);
+      expect(offenders).toEqual(["src/infrastructure/crm/adapter.ts:1"]);
+    });
+    it("still catches the built-in subclasses that evaded a fixed list before", () => {
+      const offenders = detectBareThrow([{ rel: "src/domain/x.ts", text: `throw new AggregateError([], "boom");` }]);
+      expect(offenders).toEqual(["src/domain/x.ts:1"]);
     });
     it("allows throwing a typed AppError object", () => {
       const offenders = detectBareThrow([{ rel: "src/infrastructure/crm/adapter.ts", text: `throw { code: "VALIDATION", message: "x" } satisfies AppError;` }]);

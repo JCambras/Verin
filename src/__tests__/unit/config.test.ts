@@ -48,4 +48,18 @@ describe("config fail-closed guards", () => {
     withEnv({ APP_ENV: "development", VERIN_STORE_DRIVER: "pglite", SESSION_SECRET: "short", ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(() => getConfig()).toThrow(/at least 32/);
   });
+
+  it("refuses to boot when NODE_ENV=production and APP_ENV is unset (no silent development default)", () => {
+    // NODE_ENV is typed read-only; mutate through an indexable view (test-only).
+    const env = process.env as Record<string, string | undefined>;
+    const savedNodeEnv = env.NODE_ENV;
+    try {
+      withEnv({ VERIN_STORE_DRIVER: "pglite", SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
+      env.NODE_ENV = "production";
+      expect(() => getConfig()).toThrow(/APP_ENV must be set explicitly/);
+    } finally {
+      env.NODE_ENV = savedNodeEnv;
+      resetConfigForTests();
+    }
+  });
 });

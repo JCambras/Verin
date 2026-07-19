@@ -38,9 +38,20 @@ abstracts credential vs. federated identity).
 
 ## Consequences
 
-Fences (Phase B/E): auth-enforcement (every mutating route resolves a session; no fallback role),
-no-client-role-header, org-id-required. Step-up auth for sensitive actions is a later flow concern.
-SSO/OIDC adapter is deferred with a trigger.
+Fences (Phase B/E): auth-enforcement (every exported HTTP handler AND Server Action resolves a session;
+no fallback role), no-client-role-header, org-id-required. Step-up auth for sensitive actions is a later
+flow concern. SSO/OIDC adapter is deferred with a trigger.
+
+## Deferred hardening (explicit, with triggers)
+
+- **Login rate limiting / lockout / per-IP throttling (D-015).** Failed authentications ARE audited now
+  (`session.login_failed`, attributed to the matched account's org and userId; unknown emails are
+  logged without the email), so credential-stuffing attempts leave a record — but online guessing is
+  bounded only by scrypt cost. **Trigger:** before the first pilot with real users.
+- **Org-qualified login (Sable F3).** `findUserByEmail` resolves deterministically (oldest account
+  wins, `ORDER BY created_at, id`) so an email collision across orgs cannot lock out the original
+  user; a login that carries the org explicitly is the real fix. **Trigger:** the first customer org
+  whose users share emails with another org.
 
 ## Revisit When
 

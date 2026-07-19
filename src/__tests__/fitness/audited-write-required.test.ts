@@ -15,6 +15,14 @@ const AUDIT_CALLER_ALLOW = ["src/infrastructure/audit/audited-write.ts", "src/in
 // EVERY file in the CRM adapter directory is swept — a fixed file list went stale
 // silently (a renamed/new adapter escaped the fence).
 const CRM_ADAPTER_DIR = "src/infrastructure/crm/";
+// Reviewed direct writers OUTSIDE the CRM dir: every OTHER shipped src file with a
+// direct db.query mutation must appear here with the reason it may bypass
+// auditedWrite. A new direct writer anywhere in src/ fails the sweep.
+const REVIEWED_DIRECT_WRITERS = new Map<string, string>([
+  ["src/infrastructure/audit/audit-store.ts", "the audit pipeline itself (outbox claims/deliveries, chain, anchor)"],
+  ["src/infrastructure/identity/identity-store.ts", "identity/session lifecycle (users, credentials, sessions); session create/revoke are audited via auditEvent in wire.ts"],
+  ["src/infrastructure/store/execution-store.ts", "workflow-engine continuation state (flow_executions), not CRM business data"],
+]);
 
 export function detectHandRolledAudit(rel: string, text: string): boolean {
   if (AUDIT_CALLER_ALLOW.includes(rel.replace(/\\/g, "/"))) return false;
@@ -55,6 +63,21 @@ describe("audited-write-required fence", () => {
     expect(offenders, `unaudited mutations:\n${offenders.join("\n")}`).toEqual([]);
   });
 
+  it("enforces: direct db.query mutations ANYWHERE in src/ are reviewed (allowlisted with a reason) or absent", () => {
+    const offenders: string[] = [];
+    for (const { rel, text } of readShipped()) {
+      const norm = rel.replace(/\\/g, "/");
+      if (norm.startsWith(CRM_ADAPTER_DIR)) continue; // covered (stricter) above
+      if (detectUnauditedMutation(text).length === 0) continue;
+      if (!REVIEWED_DIRECT_WRITERS.has(norm)) offenders.push(norm);
+    }
+    expect(offenders, `unreviewed direct db.query mutations (route through auditedWrite or review into the allowlist):\n${offenders.join("\n")}`).toEqual([]);
+    // Staleness guard: allowlist entries must still be direct writers.
+    const byRel = new Map(readShipped().map(({ rel, text }) => [rel.replace(/\\/g, "/"), text]));
+    const stale = [...REVIEWED_DIRECT_WRITERS.keys()].filter((rel) => !byRel.has(rel) || detectUnauditedMutation(byRel.get(rel)!).length === 0);
+    expect(stale, `REVIEWED_DIRECT_WRITERS entries that are no longer direct writers:\n${stale.join("\n")}`).toEqual([]);
+  });
+
   describe("detects (companion): planted violations are caught", () => {
     it("flags enqueueAudit outside the helper", () => {
       expect(detectHandRolledAudit("src/infrastructure/crm/evil.ts", `await enqueueAudit(tx, intent, "success", now);`)).toBe(true);
@@ -64,6 +87,11 @@ describe("audited-write-required fence", () => {
     });
     it("allows enqueueAudit inside the helper itself", () => {
       expect(detectHandRolledAudit("src/infrastructure/audit/audited-write.ts", `await enqueueAudit(tx, intent, "success", now);`)).toBe(false);
+    });
+    it("a direct mutation OUTSIDE the CRM dir and off the reviewed allowlist is caught by the global sweep", () => {
+      const rel = "src/infrastructure/notes/notes-store.ts";
+      expect(detectUnauditedMutation(`await db.query("INSERT INTO client_notes (id, body) VALUES ($1,$2)", [i, b]);`)).toEqual(["INSERT"]);
+      expect(REVIEWED_DIRECT_WRITERS.has(rel)).toBe(false);
     });
   });
 });

@@ -3,6 +3,7 @@ import { getDb, requirePrincipal, readJsonBody, errorResponse } from "@app/_serv
 import { computeEsignSignature, esignCallback } from "@infra/wire";
 import { getApplicationByToken } from "@infra/crm/application-store";
 import { appError } from "@contracts/errors";
+import { getConfig } from "@infra/config";
 
 export const runtime = "nodejs";
 
@@ -10,9 +11,14 @@ export const runtime = "nodejs";
  * The "click to sign" affordance for the demo (sacrificial component — ADR-0020).
  * Stands in for the e-sign provider: authenticated by the advisor's session, it
  * computes the valid HMAC signature server-side and drives the same webhook path
- * (which still verifies the signature). Not a legally valid signature.
+ * (which still verifies the signature). Not a legally valid signature. REFUSED in
+ * production (ADR-0020 guardrail): a server that forges valid client e-signatures
+ * must never exist where signatures carry legal weight.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  if (getConfig().appEnv === "production") {
+    return errorResponse(appError("NOT_FOUND", "Simulated signing is not available in production."));
+  }
   const p = await requirePrincipal(req);
   if (!p.ok) return errorResponse(p.error);
 

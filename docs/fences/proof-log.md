@@ -181,3 +181,44 @@ hundreds of filler lines to breach a ceiling. Their proof is the co-located
 `describe("detects (companion)")` blocks, which feed the same check functions synthetic over-budget
 totals / over-ceiling files and assert they fail (charter #4); FOUNDATION.md §2 records "companions"
 as their proof in the fence table.
+
+---
+
+## Review-round fence hardening (2026-07-19) — executed injection proofs
+
+Each hardened fence was proven against the exact evasion the review named (inject → fence fails naming
+the file → revert → green):
+
+- **`auth-enforcement` per-handler + Server Actions:** planted an unauthenticated
+  `export async function DELETE` in `src/app/api/audit/route.ts` (whose POST-equivalent GET IS
+  authenticated — the old per-file check passed this) → fence failed naming
+  `src/app/api/audit/route.ts :: DELETE`; reverted; green. Server-Action coverage and the
+  comment-cannot-satisfy property are companion-proven (AST call detection).
+- **`charter-drift` ratchet + ci.yml scoping + self-scan:** flipped charter-map id 12 from `enforced`
+  to `planned` → the new ratchet check (e) failed with `12: status flipped to 'planned'`; reverted;
+  green. The ci-gate presence check now reads ONLY the blocking `ci.yml`, and the disabled-fence scan
+  includes `charter-drift.test.ts` itself (matchers assembled at runtime so the patterns cannot
+  self-trigger).
+- **`bounded-request-body` string-aware + all body readers:** planted
+  `const u = "http://example.com"; const evil = await req.json();` in a route (the `//` inside the URL
+  literal truncated the old regex's line) → fence failed naming `src/app/api/audit/route.ts`;
+  reverted; green. `req.text()/formData()/arrayBuffer()/blob()` coverage is companion-proven.
+- **`org-id-required` derived table classification:** added `CREATE TABLE IF NOT EXISTS client_notes`
+  to `migrations.ts` with no classification → the new derivation check failed naming `client_notes`;
+  reverted; green. `provenance-required` gained the mirror-image check (every exported interface in
+  `entities.ts` must be in ENTITY_NAMES), companion-proven.
+- **`line-budget` de-tautologized:** the companion now routes synthetic over-budget AND empty-bucket
+  measurements through the REAL `budgetViolations` check (the old companion asserted
+  `N + 1 <= N === false`, an arithmetic tautology touching nothing).
+- **`detection-not-verification` anti-hollow:** the companion requirement is now AST — a
+  `describe("detects…")` block must contain at least one live (non-skipped, non-commented) test case;
+  empty-stub, commented-out, and skipped-only companions are companion-proven rejected.
+- **PII scrub non-string fix (the round's ERROR):** `scrub` now propagates `keyIsPII` through arrays
+  and objects and redacts non-string primitives under PII keys; `assertNoPIIValues` throws on any
+  unredacted primitive under a PII-named key and pattern-checks numbers. Proven in the
+  `no-pii-in-audit-store` companions ({ phone: 5551234567 }, { name: { first: "John" } },
+  { phones: [...] } all redacted; the backstop throws when fed the unscrubbed shapes).
+- **`license-audit` SPDX parser:** recursive-descent with parens + AND-over-OR precedence, fail-closed
+  on unparseable expressions. Executed check: `(MIT OR GPL-2.0-only) AND OpenSSL` → DENIED,
+  `(GPL-2.0-only OR MIT) AND (Apache-2.0 OR ISC)` → allowed, unbalanced parens → DENIED; all 598
+  installed deps still pass.

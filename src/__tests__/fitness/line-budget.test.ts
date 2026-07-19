@@ -40,21 +40,37 @@ export function measureBudgets(): Record<keyof typeof CEILINGS, number> {
   return totals;
 }
 
+/** The real budget check, callable with synthetic totals by the companion. */
+export function budgetViolations(totals: Record<keyof typeof CEILINGS, number>): string[] {
+  const out: string[] = [];
+  for (const layer of Object.keys(CEILINGS) as (keyof typeof CEILINGS)[]) {
+    // A ZERO total means the bucket's path pattern went stale (a renamed layer
+    // path silently drops its envelope) — fail loudly, never pass vacuously.
+    if (totals[layer] === 0) out.push(`${layer}: 0 lines measured — bucket path went stale (charter #4)`);
+    if (totals[layer] > CEILINGS[layer]) out.push(`${layer}: ${totals[layer]} lines exceed ceiling ${CEILINGS[layer]} — shrink or amend ADR-0018`);
+  }
+  return out;
+}
+
 describe("line-budget fence (per-layer)", () => {
   const totals = measureBudgets();
 
-  for (const layer of Object.keys(CEILINGS) as (keyof typeof CEILINGS)[]) {
-    it(`enforces: ${layer} <= ${CEILINGS[layer]} [now ${totals[layer]}]`, () => {
-      expect(
-        totals[layer],
-        `${layer} lines ${totals[layer]} exceed ceiling ${CEILINGS[layer]} — shrink or amend ADR-0018`,
-      ).toBeLessThanOrEqual(CEILINGS[layer]);
-    });
-  }
+  it(`enforces: every layer is measured (non-zero) and within its ceiling [now ${JSON.stringify(totals)}]`, () => {
+    const violations = budgetViolations(totals);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
 
-  describe("detects (companion): the budget math catches an over-budget layer", () => {
-    it("an over-budget total fails its ceiling", () => {
-      expect(CEILINGS.contracts + 1 <= CEILINGS.contracts).toBe(false);
+  describe("detects (companion): the REAL check fails synthetic violations", () => {
+    it("an over-budget layer total fails through budgetViolations", () => {
+      const v = budgetViolations({ ...totals, contracts: CEILINGS.contracts + 1 });
+      expect(v.some((m) => m.startsWith("contracts:") && m.includes("exceed"))).toBe(true);
+    });
+    it("an EMPTY bucket (renamed layer path) fails instead of passing vacuously", () => {
+      const v = budgetViolations({ ...totals, presentation: 0 });
+      expect(v.some((m) => m.startsWith("presentation:") && m.includes("stale"))).toBe(true);
+    });
+    it("the current real measurement passes (the companion is not asserting on a broken baseline)", () => {
+      expect(budgetViolations(totals)).toEqual([]);
     });
     it("presentation growth is charged only to presentation, never the platform layers", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");

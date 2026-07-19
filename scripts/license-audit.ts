@@ -55,16 +55,60 @@ const PACKAGE_EXCEPTIONS: Array<{ match: RegExp; license: string; reason: string
   },
 ];
 
-/** Evaluate an SPDX-style license expression against the allowlist. */
+/**
+ * Evaluate an SPDX-style license expression against the allowlist with a tiny
+ * recursive-descent parser that respects PARENTHESES and operator precedence
+ * (AND binds tighter than OR), so "(MIT OR GPL-2.0-only) AND OpenSSL" is denied —
+ * stripping parens would mis-evaluate it as "MIT OR (GPL-2.0-only AND OpenSSL)".
+ * FAIL CLOSED: any expression that does not parse cleanly is denied.
+ */
 function licenseAllowed(expr: string): boolean {
   const e = expr.trim();
   if (ALLOWED.has(e)) return true; // atomic id incl. multi-word strings ("SIL OPEN FONT LICENSE")
   // SPDX operators are ALWAYS uppercase (case-sensitive), so "-or-later" in an id
   // like "GPL-3.0-or-later" is NOT treated as an OR operator.
-  const stripped = e.replace(/[()]/g, " ").trim();
-  if (/\bOR\b/.test(stripped)) return stripped.split(/\bOR\b/).some((part) => licenseAllowed(part));
-  if (/\bAND\b/.test(stripped)) return stripped.split(/\bAND\b/).every((part) => licenseAllowed(part));
-  return false;
+  const tokens = e.split(/(\(|\))|\s+(OR|AND)\s+/).filter((t): t is string => t !== undefined && t.trim() !== "");
+  let pos = 0;
+  const peek = () => tokens[pos];
+  // or := and (OR and)* ; and := atom (AND atom)* ; atom := "(" or ")" | id
+  function parseOr(): boolean {
+    let ok = parseAnd();
+    while (peek() === "OR") {
+      pos += 1;
+      ok = parseAnd() || ok;
+    }
+    return ok;
+  }
+  function parseAnd(): boolean {
+    let ok = parseAtom();
+    while (peek() === "AND") {
+      pos += 1;
+      ok = parseAtom() && ok;
+    }
+    return ok;
+  }
+  function parseAtom(): boolean {
+    const t = peek();
+    if (t === "(") {
+      pos += 1;
+      const inner = parseOr();
+      if (peek() !== ")") throw new SyntaxError(`unbalanced parenthesis in "${expr}"`);
+      pos += 1;
+      return inner;
+    }
+    if (t === undefined || t === ")" || t === "OR" || t === "AND") {
+      throw new SyntaxError(`malformed SPDX expression "${expr}"`);
+    }
+    pos += 1;
+    return ALLOWED.has(t.trim());
+  }
+  try {
+    const ok = parseOr();
+    if (pos !== tokens.length) return false; // trailing junk → deny
+    return ok;
+  } catch {
+    return false; // unparseable → deny (never fail open in a compliance gate)
+  }
 }
 
 function exceptionFor(pkg: string, license: string): boolean {

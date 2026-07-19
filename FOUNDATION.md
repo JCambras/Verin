@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (118 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (144 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (11 specs) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one is also a blocking CI job (`.github/workflows/`).
@@ -44,7 +44,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 11
   tests) plus axe, green on a non-UTC clock.
 
-**Governance:** 20 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 21 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, and the charter-as-code enforcement (`charter-map.json` + charter-drift fence).
 
@@ -73,16 +73,17 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `org-id-required` | every tenant query filters org_id (#7) | PF-009 + companion |
 | `no-client-role-header` | identity never from a header (#12) | PF-010 |
 | `audited-write-required` (+ anti-fork) | every write audited, no hand-rolled audit (#13) | PF-011 |
-| `auth-enforcement` | every route resolves a session (#12) | PF-012 |
+| `auth-enforcement` (AST, per exported handler, incl. Server Actions) | every handler/action resolves a session (#12) | PF-012 + companions |
 | `idempotency-exactly-once` | replay = exactly once (#16) | PF-013 |
 | `flowstep-suspend-resume` | engine really suspends/resumes (#6) | PF-014 |
 | `observability-coverage` | flow steps + external calls emit spans (#14) | PF-015 |
 | `no-pii-in-audit-store` | PII scrubbed from the audit trail (#3,#13) | PF-016 |
-| `bounded-request-body` | no unbounded `req.json()` (DoS) (#11/#14) | PF-017 |
+| `bounded-request-body` | no unbounded body reader — json/text/formData/arrayBuffer/blob (DoS) (#11/#14) | PF-017 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
-the build if any enforced CI gate is not declared in a workflow, any enforced fence/file is missing, or any
-fence is disabled.
+the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
+missing, any fence (itself included) is disabled, or any entry that ever shipped as `enforced` is flipped
+back to `planned` (a monotonic ratchet).
 
 ### Falsifier proof-of-life (reproduce without asking me)
 
@@ -106,7 +107,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 118 / knip / e2e 11 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 144 / knip / e2e 11 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.
@@ -153,6 +154,12 @@ date/trigger), never omitted:
 | Org-qualified login (Sable F3) | CC6.1 | red-team | self-registration / multi-org email collision |
 | Auth fail-closed when its audit cannot be recorded (today: pino error + proceed) | CC7.4 | founder | SOC 2 Type II evidence window / first regulated-customer review (ADR-0007) |
 | External audit-anchor witness / HMAC-signed chain (anchor shares the DB; hash is unkeyed) | CC7.4 | founder | production deploy (D-006) or first examiner/WORM requirement (ADR-0007/0019) |
+| Content-Security-Policy (nonce strategy) | CC6.6 | founder | before first real deployment (ADR-0021 / D-020) |
+| Login rate limiting / lockout (failed logins ARE audited) | CC6.1 | red-team | before first pilot with real users (ADR-0008 / D-015) |
+| SHA/digest-pinned CI actions + semgrep image | CC8.1 | founder | SOC 2 Type II window or first production deploy (ADR-0017 / D-019) |
+| Versioned schema-migration mechanism (DDL is CREATE IF NOT EXISTS) | CC8.1 | founder | first real schema change (D-016) |
+| Scheduled chain-verify against a PERSISTENT store (today: seeded per-run) | CC7.4 | founder | managed Postgres lands (D-017) |
+| Flow compensation + retry-by-execution-id recovery | CC7.1 | founder | first flow with external obligations / first manual-recovery incident (ADR-0011 / D-021) |
 
 ---
 
@@ -161,7 +168,10 @@ date/trigger), never omitted:
 Full journal: [`DECISIONS.md`](./DECISIONS.md). Captain decisions (D-001..D-005): PostgreSQL behind the
 store port; build real auth behind an identity port; container hosting; keep "Verin."; port the feel but
 DEFER the populated demo world (un-defer trigger = first demo milestone). Reversible decisions (D-006..D-013)
-logged with rationale + revert path.
+logged with rationale + revert path. Review-round captain decisions (D-014..D-021): audit/OTel actor =
+opaque userId; failed-login auditing now with rate limiting deferred; schema versioning, persistent-store
+chain verification, nightly load scale-up, action/image pinning, and CSP recorded as triggered deferrals;
+pre-suspend idempotency keys with compensation deferred.
 
 ---
 

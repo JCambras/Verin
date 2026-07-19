@@ -35,9 +35,13 @@ export function checkProvenanceCoverage(
   return out;
 }
 
-function readEntityFields(): Record<string, string[]> {
+function entitiesSourceFile() {
   const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
-  const sf = project.addSourceFileAtPath(join(SRC_ROOT, "domain/schema/entities.ts"));
+  return project.addSourceFileAtPath(join(SRC_ROOT, "domain/schema/entities.ts"));
+}
+
+function readEntityFields(): Record<string, string[]> {
+  const sf = entitiesSourceFile();
   const result: Record<string, string[]> = {};
   for (const name of ENTITY_NAMES) {
     const iface = sf.getInterface(name);
@@ -47,7 +51,21 @@ function readEntityFields(): Record<string, string[]> {
   return result;
 }
 
+/** Exported interfaces in entities.ts that ENTITY_NAMES does not fence (must be empty). */
+export function unfencedInterfaces(exported: readonly string[], fenced: readonly string[]): string[] {
+  return exported.filter((n) => !fenced.includes(n));
+}
+
 describe("provenance-required fence", () => {
+  it("enforces: ENTITY_NAMES is DERIVED-complete — every exported interface in entities.ts is fenced", () => {
+    const exported = entitiesSourceFile()
+      .getInterfaces()
+      .filter((i) => i.isExported())
+      .map((i) => i.getName());
+    const unfenced = unfencedInterfaces(exported, ENTITY_NAMES);
+    expect(unfenced, `interfaces in entities.ts missing from ENTITY_NAMES (silently unfenced):\n${unfenced.join("\n")}`).toEqual([]);
+  });
+
   it("enforces: every entity field has a provenance annotation; no dictionary drift", () => {
     const entityFields = readEntityFields();
     // Sanity: all declared entity names were found as interfaces.
@@ -72,6 +90,9 @@ describe("provenance-required fence", () => {
     it("a fully-annotated entity passes", () => {
       const v = checkProvenanceCoverage({ Foo: ["id", "provenance"] }, { Foo: { id: {} } });
       expect(v).toEqual([]);
+    });
+    it("a NEW exported interface missing from ENTITY_NAMES is caught (derived, not hand-listed)", () => {
+      expect(unfencedInterfaces(["Org", "ClientNote"], ["Org"])).toEqual(["ClientNote"]);
     });
   });
 });

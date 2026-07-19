@@ -1,7 +1,10 @@
 /**
- * Scheduled audit-chain integrity job (charter #13). Re-verifies every org's
- * hash-chain and exits non-zero on any break — producing dated evidence over time
- * (SOC 2 CC7.4). Wired as the `audit-chain-verify` CI gate.
+ * Audit-chain integrity verifier (charter #13). Re-verifies every org's hash-chain
+ * in the configured store and exits non-zero on any break. Wired as the
+ * `audit-chain-verify` CI gate and the scheduled job — both run it against a store
+ * SEEDED in the same job, so today it proves the verifier EXECUTES correctly, not
+ * the integrity of any long-lived store. Producing dated SOC 2 CC7.4 evidence for
+ * a persistent store is a recorded deferral (D-017, trigger = managed Postgres).
  */
 import { createDb } from "../src/infrastructure/store/db";
 import { verifyOrgChain } from "../src/infrastructure/audit/audit-store";

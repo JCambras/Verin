@@ -61,6 +61,15 @@ Charter-map id 15 (`secret-scan`, `sast`, `dependency-audit`, `.gitleaks.toml`).
 `.github/workflows/ci.yml` (the `dependency-audit` job runs both `pnpm audit` and `pnpm license:audit`).
 SBOM on release job (Phase F).
 
+## Deferred hardening (explicit, with a trigger — D-019)
+
+**Pin CI actions + the semgrep image by SHA/digest.** Every `uses:` across ci/release/scheduled is a
+mutable major tag (`actions/checkout@v4`) and the SAST container floats `semgrep/semgrep:latest`, so gate
+behavior can change underneath us and a compromised tag is a supply-chain vector into the gates
+themselves. Pin all of them to commit SHAs / image digests, with dependabot keeping the pins bumped.
+**Trigger:** the SOC 2 Type II evidence-collection window opens, or the first production deploy —
+whichever comes first.
+
 ## Revisit When
 
 A false-positive rate makes a gate noisy (tune rules, never disable the gate), or a secrets manager / SCA

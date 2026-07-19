@@ -45,6 +45,24 @@ a simulated e-sign **webhook** resumes it, and the finalize write is audited + e
 Fence: `flowstep-suspend-resume` proves the engine has a suspended state and a resume path (not a stub).
 Pairs with ADR-0009 (idempotent resume) and ADR-0007 (audited finalize). Charter-map id 6.
 
+## Deferred hardening (explicit, with triggers — D-021)
+
+Pre-suspend writes (`createHousehold`/`createContact`/`createApplication`/`setEsignRequested`) carry
+per-execution idempotency keys (`<step>:<executionId>`), so retrying the SAME execution replays its
+committed writes instead of duplicating them. Two recovery paths remain deferred:
+
+- **Compensation** — a transient failure after `createHousehold` commits still leaves the created rows
+  behind if the user abandons and re-submits (a NEW execution mints new keys); no automatic rollback of
+  a partially-created execution exists.
+- **Retry-by-execution-id** — resume is token-keyed only. A crash in the window between the suspending
+  step's commit (`setEsignRequested`) and the suspended-state save leaves the execution `running` with a
+  NULL resume_token: the webhook finds the application but `loadByToken` returns null, and `resumeFlow`
+  refuses `running` — wedged until a retry-by-execution-id path (which the per-write keys already make
+  replay-safe) exists.
+
+**Un-defer trigger:** the first flow whose pre-suspend writes create externally-visible obligations
+(real custodian/e-sign vendors), or the first production incident requiring manual flow recovery.
+
 ## Revisit When
 
 Resume needs to survive very long waits with SLAs (add scheduled reminders/escalation), or a durable

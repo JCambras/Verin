@@ -24,22 +24,28 @@ function must<T>(r: Result<T>): T {
   throw r.error as AppError;
 }
 
-function principalForActor(orgId: string, actor: string): Principal {
-  return { userId: "esign-webhook", orgId, role: "ops", actor, sessionId: "esign-webhook" };
+function principalForActor(orgId: string, actorUserId: string): Principal {
+  return { userId: actorUserId, orgId, role: "ops", actor: actorUserId, sessionId: "esign-webhook" };
 }
 
-function makeDeps(db: SqlDb, starter: Principal): AccountOpeningDeps {
+/**
+ * `executionId` scopes the pre-suspend idempotency keys: a retry of the SAME
+ * execution (after a transient failure mid-flow) replays the already-committed
+ * writes instead of duplicating households/contacts/applications. Cross-submit
+ * dedup and retry-by-execution-id recovery are a recorded ADR-0011 deferral.
+ */
+function makeDeps(db: SqlDb, starter: Principal, executionId: string): AccountOpeningDeps {
   return {
     createHousehold: (name) =>
-      withSpan("crm.household.create", { orgId: starter.orgId }, async () => must(await createHousehold(db, starter, { name }))),
+      withSpan("crm.household.create", { orgId: starter.orgId }, async () => must(await createHousehold(db, starter, { name }, `household:${executionId}`))),
     createContact: (input) =>
-      withSpan("crm.contact.create", { orgId: starter.orgId }, async () => must(await createContact(db, starter, input))),
+      withSpan("crm.contact.create", { orgId: starter.orgId }, async () => must(await createContact(db, starter, input, `contact:${executionId}`))),
     createApplication: (input) =>
-      withSpan("crm.application.create", { orgId: starter.orgId }, async () => must(await createApplication(db, starter, input))),
+      withSpan("crm.application.create", { orgId: starter.orgId }, async () => must(await createApplication(db, starter, input, `application:${executionId}`))),
     requestEsign: (applicationId) =>
       withSpan("esign.request", { orgId: starter.orgId }, async () => {
         const token = newEsignToken();
-        return must(await setEsignRequested(db, starter, applicationId, token));
+        return must(await setEsignRequested(db, starter, applicationId, token, `esign:${executionId}`));
       }),
     finalize: (input) =>
       withSpan("account-opening.finalize", { orgId: starter.orgId, applicationId: input.applicationId }, async () => {
@@ -65,12 +71,15 @@ export interface StartAccountOpeningInput {
 
 export async function startAccountOpening(db: SqlDb, principal: Principal, input: StartAccountOpeningInput): Promise<FlowRunResult> {
   const store = makeExecutionStore(db);
-  const deps = makeDeps(db, principal);
-  return withSpan("flow.account-opening.start", { orgId: principal.orgId, actor: principal.actor }, async () => {
+  const executionId = randomUUID();
+  const deps = makeDeps(db, principal, executionId);
+  // Span attribution is the opaque userId, never the email — OTel attributes are
+  // exported to the OTLP endpoint and must not carry PII (ADR-0006/0013).
+  return withSpan("flow.account-opening.start", { orgId: principal.orgId, actor: principal.userId }, async () => {
     const result = await startFlow(accountOpeningFlow, store, deps, {
-      executionId: randomUUID(),
+      executionId,
       orgId: principal.orgId,
-      data: { ...input, initiatedBy: principal.actor },
+      data: { ...input, initiatedBy: principal.userId },
     });
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.
     log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow started");
@@ -87,8 +96,9 @@ export async function resumeAccountOpeningByToken(
   if (!app) return { status: "not-found" };
   const store = makeExecutionStore(db);
   // The starter principal is a placeholder here; finalize attributes audit to the
-  // initiating advisor threaded through the flow context (ctx.initiatedBy).
-  const deps = makeDeps(db, principalForActor(app.org_id, "esign-webhook"));
+  // initiating advisor's userId threaded through the flow context (ctx.initiatedBy).
+  // Resume only runs post-suspend steps, so the pre-suspend key scope is inert.
+  const deps = makeDeps(db, principalForActor(app.org_id, "esign-webhook"), `resume:${token}`);
   return withSpan("flow.account-opening.resume", { orgId: app.org_id }, () => resumeFlow(accountOpeningFlow, store, deps, token, payload));
 }
 

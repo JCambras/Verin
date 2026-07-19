@@ -77,10 +77,12 @@ Reconciles charter #13 (tamper-evident, hash-chained) with report do-again #34 (
 outbox). Both: DB-level UPDATE/DELETE forbidden AND an app-computed hash-chain re-verified by a scheduled
 CI job. **Revert:** the chain columns are additive; triggers stand alone if the chain is dropped.
 
-### D-010 · 2026-07-18 · reversible · Load-gate interpretation of "1,000 households × 2,000 accounts"
-Read as 1,000 households and ~2,000 accounts total (≈2/household) for the CI pilot-scale gate. A fast
-subset runs as the PR "load smoke"; the full pilot-scale p95 assertion runs scheduled/nightly. The
-scale-ladder ADR documents 10×/100×. **Revert:** adjust the seed size + cadence (config).
+### D-010 · 2026-07-18 (corrected 2026-07-19) · reversible · Load-gate interpretation of "1,000 households × 2,000 accounts"
+Read as 1,000 households and ~2,000 accounts total (≈2/household) for the CI pilot-scale gate. The PR
+gate AND the nightly scheduled job currently run the SAME pilot-scale `pnpm load:smoke` (the earlier
+wording claiming a fast-subset/full-scale split described a split that was never built — corrected here
+and in `scheduled.yml`; nightly scale-up is deferred as D-018). The scale-ladder ADR documents 10×/100×.
+**Revert:** adjust the seed size + cadence (config).
 
 ### D-011 · 2026-07-18 · reversible · `geist` font package instead of `next/font/google`
 **Why:** self-contained (no build-time Google Fonts fetch) → reproducible, network-free builds — the
@@ -98,3 +100,50 @@ store/flow/console consume them); flagging vocabulary as dead is a false positiv
 ### D-012 · 2026-07-18 · reversible · SAST = semgrep; secret scan = gitleaks; both blocking
 Charter #15 says "SAST (semgrep-class)" and "secret scanning (gitleaks-class)", "none advisory". Both are
 hard CI gates (no `continue-on-error`), unlike Iris's advisory CodeQL. **Revert:** swap rulesets/tools.
+
+### D-014 · 2026-07-19 · captain-decision · Audit/OTel actor = opaque userId; email resolved at render
+The audit trail and OTel span attributes attribute actions to the user's opaque `userId`, never the raw
+email (ADR-0006: "the AUDIT and log boundaries must never see raw PII"). Display surfaces (console,
+audit view, nav) resolve userId → email at render time. Recorded in ADR-0006/0007. **Revert:** a mapping
+pass over new entries (old entries keep their persisted actor — the chain is append-only).
+
+### D-015 · 2026-07-19 · captain-decision · Login rate-limiting/lockout DEFERRED; failed logins audited NOW
+Failed authentications are recorded through `auditEvent` (`session.login_failed`, attributed to the
+matched account's org/userId; unknown emails are logged), closing the repudiation gap. Rate limiting,
+lockout, and per-IP throttling are deferred per ADR-0008. **Un-defer trigger:** before the first pilot
+with real users.
+
+### D-016 · 2026-07-19 · captain-decision · Schema versioning DEFERRED (CREATE IF NOT EXISTS is acceptable greenfield)
+`migrations.ts` stays a single idempotent DDL script with no schema-version table. **Un-defer trigger:**
+the FIRST real schema change (any column add/alter on an existing table) introduces a versioned migration
+mechanism instead of editing the DDL in place — noted in the file header.
+
+### D-017 · 2026-07-19 · captain-decision · Scheduled chain-verify runs against a seeded store (persistent-store evidence deferred)
+The scheduled `audit-chain-verify` job seeds a fresh store on an ephemeral runner, so it proves the
+verifier executes — not the integrity of any long-lived store. Comments/job names now say so honestly.
+**Un-defer trigger:** managed Postgres lands (point the job at the persistent store for dated SOC 2
+CC7.4 evidence).
+
+### D-018 · 2026-07-19 · captain-decision · Nightly load scale-up DEFERRED (nightly = the same pilot-scale smoke as the PR gate)
+Both runs execute `pnpm load:smoke` at pilot scale (D-010). **Un-defer trigger:** the scale-ladder's
+first 10× milestone (ADR-0015) — the nightly job then runs the larger profile the PR gate cannot afford.
+
+### D-019 · 2026-07-19 · captain-decision · SHA/digest-pinning of CI actions + semgrep image DEFERRED (SOC 2 hardening item)
+GitHub actions are referenced by major tag and the semgrep container floats `latest`. Pin all actions and
+the semgrep image by commit SHA / digest (dependabot keeps them bumped) as a SOC 2 supply-chain hardening
+item, recorded in ADR-0017. **Un-defer trigger:** SOC 2 Type II evidence-collection window opens, or the
+first production deploy — whichever comes first.
+
+### D-020 · 2026-07-19 · captain-decision · Content-Security-Policy DEFERRED via ADR-0021
+No CSP header ships this round (a real CSP in Next.js needs a per-request nonce strategy — deliberate
+work, not a header one-liner). Recorded in [ADR-0021](docs/adr/0021-content-security-policy-deferral.md).
+**Un-defer trigger:** before the first real (internet-facing) deployment.
+
+### D-021 · 2026-07-19 · captain-decision · Pre-suspend flow writes carry idempotency keys; compensation/retry-by-execution-id DEFERRED
+`createHousehold`/`createContact`/`createApplication`/`setEsignRequested` now take per-execution
+idempotency keys (`<step>:<executionId>`), so a retry of the SAME execution replays committed writes
+instead of duplicating them. Full compensation (rolling back a partially-created execution) and a
+retry-by-execution-id recovery path (which would also unwedge the crash window between the suspending
+step's commit and the suspended-state save) are deferred in ADR-0011. **Un-defer trigger:** the first
+flow whose pre-suspend writes create externally-visible obligations (real custodian/e-sign vendors), or
+the first production incident requiring manual flow recovery.

@@ -12,6 +12,7 @@
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
+import { log } from "@infra/observability/logger";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
@@ -97,8 +98,19 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     await db
       .transaction(async (tx) => enqueueAudit(tx, failIntent, "failure", now))
       .then(() => drainOutbox(db, orgId))
-      .catch(() => undefined);
-    const error: AppError = isAppError(e) ? e : appError("STORE_CONSTRAINT", "write failed");
+      .catch((auditErr: unknown) => {
+        // The business failure is already being reported; the audit-of-failure loss
+        // must never be silent (same policy as auditEvent in wire.ts).
+        log.error(
+          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: auditErr instanceof Error ? auditErr.message : String(auditErr) },
+          "failure-audit entry could not be recorded",
+        );
+      });
+    const error: AppError = isAppError(e)
+      ? e
+      : e instanceof Error && e.name === "PIIViolation"
+        ? appError("PII_VIOLATION", "write refused: PII would have reached the audit boundary")
+        : appError("STORE_CONSTRAINT", "write failed");
     return err(error);
   }
 }

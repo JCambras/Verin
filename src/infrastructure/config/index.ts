@@ -91,6 +91,15 @@ function readEnv(): unknown {
 /** Validated config, cached. Throws FATAL at boot on invalid config. */
 export function getConfig(): Config {
   if (cached) return cached;
+  // Fail closed on the ONE var the whole guard stack keys on: `next start` forces
+  // NODE_ENV=production, and an APP_ENV left unset would default to "development" —
+  // silently skipping every production superRefine guard and issuing the session
+  // cookie with secure:false. Dev/test (NODE_ENV != production) keep the default.
+  if (process.env.NODE_ENV === "production" && !process.env.APP_ENV) {
+    throw new Error(
+      "FATAL: APP_ENV must be set explicitly (development|staging|production) when NODE_ENV=production — refusing to default to development",
+    );
+  }
   const parsed = schema.safeParse(readEnv());
   if (!parsed.success) {
     const detail = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");

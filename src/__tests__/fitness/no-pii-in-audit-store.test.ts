@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createContact, createHousehold } from "@infra/crm/house-crm";
 import { unwrap } from "@contracts/result";
-import { looksLikePIIValue, isPIIField } from "@contracts/pii";
+import { looksLikePIIValue, isPIIField, assertNoPIIValues, REDACTED } from "@contracts/pii";
 import { scrub } from "@infra/pii/scrub";
 import type { Principal } from "@contracts/principal";
 
@@ -63,6 +63,20 @@ describe("no-pii-in-audit-store fence", () => {
       expect(looksLikePIIValue("212-555-0142")).toBe(true);
       expect(looksLikePIIValue("+12125550142")).toBe(true);
       expect(looksLikePIIValue("external ref 2125550142")).toBe(false);
+    });
+    it("NON-STRING values under a PII key are redacted ({ phone: 5551234567 } cannot survive)", () => {
+      expect(scrub({ phone: 5551234567 })).toEqual({ phone: REDACTED });
+      expect(scrub({ dob: true })).toEqual({ dob: REDACTED });
+    });
+    it("keyIsPII propagates through nested OBJECTS and ARRAYS under a PII key", () => {
+      expect(scrub({ name: { first: "John", suffix: 3 } })).toEqual({ name: { first: REDACTED, suffix: REDACTED } });
+      expect(scrub({ phones: [5551234567, "212-555-0142"] })).toEqual({ phones: [REDACTED, REDACTED] });
+    });
+    it("the fail-closed backstop THROWS on non-string PII that a bypassed scrubber would leak", () => {
+      expect(() => assertNoPIIValues({ phone: 5551234567 }, "audit")).toThrow(/PII_VIOLATION/);
+      expect(() => assertNoPIIValues({ firstName: "John" }, "audit")).toThrow(/PII_VIOLATION/);
+      // …and accepts the legitimately-scrubbed shape.
+      expect(() => assertNoPIIValues({ firstName: REDACTED, phone: null, note: "id 42" }, "audit")).not.toThrow();
     });
   });
 });

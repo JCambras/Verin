@@ -38,7 +38,7 @@ export async function createHousehold(
   const status: HouseholdStatus = input.status ?? "prospect";
   return auditedWrite<Household>({
     // detail is PII-minimized (no client name); entityId identifies the record.
-    db, orgId: p.orgId, actor: p.actor, action: "household.create", entityType: "Household", entityId: id,
+    db, orgId: p.orgId, actor: p.userId, action: "household.create", entityType: "Household", entityId: id,
     idempotencyKey, detail: "Created a household",
     buildAfter: (h) => ({ id: h.id, name: h.name, status: h.status }),
     perform: async (tx) => {
@@ -54,7 +54,7 @@ export async function createHousehold(
 export async function updateHouseholdName(db: SqlDb, p: Principal, id: string, name: string): Promise<Result<Household>> {
   const existing = await getHousehold(db, p, id);
   return auditedWrite<Household>({
-    db, orgId: p.orgId, actor: p.actor, action: "household.update", entityType: "Household", entityId: id,
+    db, orgId: p.orgId, actor: p.userId, action: "household.update", entityType: "Household", entityId: id,
     before: existing ? { name: existing.name } : undefined,
     buildAfter: () => ({ name }), detail: "Renamed a household",
     perform: async (tx) => {
@@ -79,14 +79,14 @@ export async function getHousehold(db: SqlDb, p: Principal, id: string): Promise
 }
 
 export async function createContact(
-  db: SqlDb, p: Principal, input: { householdId: string; firstName: string; lastName: string; email?: string | null; phone?: string | null },
+  db: SqlDb, p: Principal, input: { householdId: string; firstName: string; lastName: string; email?: string | null; phone?: string | null }, idempotencyKey?: string,
 ): Promise<Result<Contact>> {
   const id = randomUUID();
   const createdAt = nowIso();
   const prov = houseProv();
   return auditedWrite<Contact>({
-    db, orgId: p.orgId, actor: p.actor, action: "contact.create", entityType: "Contact", entityId: id,
-    detail: `Added contact to household`,
+    db, orgId: p.orgId, actor: p.userId, action: "contact.create", entityType: "Contact", entityId: id,
+    idempotencyKey, detail: `Added contact to household`,
     // NOTE: before/after are scrubbed by the audit boundary, so PII (name/email) is redacted in the trail.
     buildAfter: (c) => ({ id: c.id, householdId: c.householdId, firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone }),
     perform: async (tx) => {
@@ -107,7 +107,7 @@ export async function createFinancialAccount(
   const prov = houseProv();
   const currency = input.currency ?? "USD";
   return auditedWrite<FinancialAccount>({
-    db, orgId: p.orgId, actor: p.actor, action: "financial_account.create", entityType: "FinancialAccount", entityId: id,
+    db, orgId: p.orgId, actor: p.userId, action: "financial_account.create", entityType: "FinancialAccount", entityId: id,
     idempotencyKey, detail: `Opened ${input.accountType} account`,
     buildAfter: (a) => ({ id: a.id, householdId: a.householdId, accountType: a.accountType, status: a.status }),
     perform: async (tx) => {
@@ -127,7 +127,7 @@ export async function createTask(
   const createdAt = nowIso();
   const prov = houseProv();
   return auditedWrite<Task>({
-    db, orgId: p.orgId, actor: p.actor, action: "task.create", entityType: "Task", entityId: id,
+    db, orgId: p.orgId, actor: p.userId, action: "task.create", entityType: "Task", entityId: id,
     idempotencyKey, detail: `Created task: ${input.subject}`,
     buildAfter: (t) => ({ id: t.id, subject: t.subject, status: t.status }),
     perform: async (tx) => {

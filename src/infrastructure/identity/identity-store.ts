@@ -44,7 +44,14 @@ export async function createUser(
 }
 
 export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow | null> {
-  const res = await db.query<UserRow>("SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 LIMIT 1", [email]);
+  // Org-qualified login is a recorded deferral (Sable F3): the same email may exist
+  // in several orgs (UNIQUE(org_id,email)). Until then, resolution is DETERMINISTIC —
+  // the oldest account wins, so org B registering an existing email later cannot
+  // displace (lock out) org A's user.
+  const res = await db.query<UserRow>(
+    "SELECT id, org_id, email, display_name, role, status FROM users WHERE email = $1 ORDER BY created_at ASC, id ASC LIMIT 1",
+    [email],
+  );
   return res.rows[0] ?? null;
 }
 

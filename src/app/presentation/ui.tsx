@@ -1,10 +1,11 @@
 /**
  * Shared shell primitives (ADR-0012). Accessible by construction (WCAG 2.2 AA):
- * every field has an associated <label>, errors use aria-describedby + role=alert,
- * status uses text + colour (never colour alone). These primitives render across
- * every flow, so a11y here multiplies (charter #9).
+ * every field has an associated <label>, hints/errors are ATTACHED to the control
+ * via aria-describedby (+ aria-invalid and role=alert for errors), status uses
+ * text + colour (never colour alone). These primitives render across every flow,
+ * so a11y here multiplies (charter #9).
  */
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 
 export function Field({
   label,
@@ -21,6 +22,13 @@ export function Field({
 }) {
   const errId = `${htmlFor}-error`;
   const hintId = `${htmlFor}-hint`;
+  const describedBy = [hint ? hintId : null, error ? errId : null].filter(Boolean).join(" ") || undefined;
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        "aria-describedby": describedBy,
+        "aria-invalid": error ? true : undefined,
+      })
+    : children;
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">
@@ -31,7 +39,7 @@ export function Field({
           {hint}
         </span>
       ) : null}
-      {children}
+      {control}
       {error ? (
         <span id={errId} role="alert" className="text-sm text-destructive">
           {error}

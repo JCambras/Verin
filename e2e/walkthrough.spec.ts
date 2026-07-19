@@ -41,9 +41,19 @@ test("key skeleton pages have no serious/critical axe violations (WCAG 2.2 AA)",
   await page.goto("/login");
   await checkAxe(page, "/login");
   await login(page, PRINCIPAL); // authenticate once; the session persists across navigations
+  // /app/console and /app/audit render their content from a client-side fetch, so
+  // axe must wait for the LOADED state — scanning the "Loading…" placeholder would
+  // let an inaccessible table ship while the gate stays green.
+  const readyWhen: Record<string, (p: import("@playwright/test").Page) => Promise<void>> = {
+    "/app": async (p) => expect(p.getByRole("heading", { name: "What do you want to do?" })).toBeVisible(),
+    "/app/account-opening": async (p) => expect(p.getByLabel("Household name")).toBeVisible(),
+    "/app/console": async (p) => expect(p.getByText("Loading…")).toHaveCount(0),
+    "/app/audit": async (p) => expect(p.getByTestId("audit-verdict")).toBeVisible(),
+  };
   // Includes /app/audit (Wren axe-gate blind spot) — principal can view the trail.
   for (const url of ["/app", "/app/account-opening", "/app/console", "/app/audit"]) {
     await page.goto(url);
+    await readyWhen[url]!(page);
     await checkAxe(page, url);
   }
 });

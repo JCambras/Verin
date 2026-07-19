@@ -54,7 +54,10 @@ export function resolveConflict<T>(rule: SurvivorshipRule, candidates: readonly 
       return { winner, needsManual: false, rule };
     }
     case "most-recent": {
-      const winner = [...candidates].sort((a, b) => b.provenance.asOf.localeCompare(a.provenance.asOf))[0]!;
+      // Compare INSTANTS, not strings: sources emit differing UTC offsets, and
+      // lexicographic order ranks "…T08:00:00-04:00" (12:00Z) before "…T11:00:00Z".
+      const epoch = (c: Candidate<T>) => Date.parse(c.provenance.asOf);
+      const winner = [...candidates].sort((a, b) => epoch(b) - epoch(a))[0]!;
       return { winner, needsManual: false, rule };
     }
     case "highest-confidence": {

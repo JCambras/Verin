@@ -12,7 +12,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const principal = await resolveSession(db, cookie);
   if (principal.ok) {
     await revokeSession(db, principal.value.sessionId);
-    await auditEvent(db, { orgId: principal.value.orgId, actor: principal.value.actor, action: "session.revoke", entityType: "Session", entityId: principal.value.sessionId, detail: "Signed out" });
+    await auditEvent(db, { orgId: principal.value.orgId, actor: principal.value.userId, action: "session.revoke", entityType: "Session", entityId: principal.value.sessionId, detail: "Signed out" });
   }
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });

@@ -24,6 +24,11 @@ carry masked PII, never raw). The house-CRM store holds identity PII (it is the 
 stores never do (a fence rejects PII-named columns there). Masked PII is allowed in the advisor UI by
 design.
 
+**Actor attribution (D-014):** the audit `actor` and OTel span attribution are the user's opaque
+`userId`, never the raw email — an email in the append-only audit_log or an exported span attribute
+would be un-deletable PII at exactly the boundaries this ADR closes. Display surfaces (audit view,
+console, nav) resolve userId → email at render time.
+
 ## Alternatives Rejected
 
 | Alternative | Why Rejected |

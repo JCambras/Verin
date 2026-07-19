@@ -47,11 +47,13 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect("status" in resumed && resumed.status).toBe("completed");
     expect(await accountCount(db)).toBe(1); // finalized exactly once
 
-    // Audit chain intact end-to-end and attributes to the initiating advisor.
+    // Audit chain intact end-to-end and attributes to the initiating advisor's
+    // opaque userId (ADR-0006/0007: never the raw email at the audit boundary).
     const verdict = await verifyOrgChain(db, ORG);
     expect(verdict.ok).toBe(true);
     const chain = await db.query<{ actor: string; action: string }>("SELECT actor, action FROM audit_log WHERE org_id=$1 ORDER BY sequence", [ORG]);
-    expect(chain.rows.some((r) => r.action === "financial_account.create" && r.actor === "advisor@firm.test")).toBe(true);
+    expect(chain.rows.some((r) => r.action === "financial_account.create" && r.actor === "u1")).toBe(true);
+    expect(chain.rows.some((r) => r.actor === "advisor@firm.test")).toBe(false);
 
     // Observability: the flow steps and external calls emitted spans.
     expect(recentSpans().some((s) => s.name === "flow.account-opening.start")).toBe(true);

@@ -10,6 +10,7 @@
 import { createDb } from "../src/infrastructure/store/db";
 import { createUser, findUserByEmail } from "../src/infrastructure/identity/identity-store";
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
+import { getConfig } from "../src/infrastructure/config";
 
 export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
@@ -20,6 +21,12 @@ export const DEMO_USERS = [
 ];
 
 export async function seed(): Promise<void> {
+  // The seed's demo credential is publicly committed: refuse production explicitly,
+  // not merely transitively (today the postgres driver is deferred and throws, but
+  // this guard must survive the day the production adapter lands).
+  if (getConfig().appEnv === "production") {
+    throw new Error("db-seed: refusing to run against APP_ENV=production (demo users carry a publicly committed password)");
+  }
   const db = await createDb();
   const now = new Date().toISOString();
   await db.query(
@@ -35,7 +42,7 @@ export async function seed(): Promise<void> {
   const audited = await auditedWrite({
     db,
     orgId: DEMO_ORG_ID,
-    actor: "seed@verin.test",
+    actor: "seed",
     action: "org.seed",
     entityType: "Org",
     entityId: DEMO_ORG_ID,
