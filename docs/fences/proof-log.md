@@ -245,3 +245,102 @@ the file → revert → green):
   (`src/app/proof-inject-action.ts :: wipeAll`) — the fence failed naming all three; reverted; green.
   Each evasion (plus imported-identifier, local-alias, unresolvable and wildcard re-exports) is also
   companion-proven in `describe("detects (companion)")`.
+
+---
+
+## Wave-1 prerequisite fences (2026-07-19) — executed injection proofs
+
+### PF-018 · metric-provenance · `src/__tests__/fitness/metric-provenance.test.ts`
+**Invariant (charter #3 / ADR-0022; closes Vale V12):** every metric-class value renders with provenance —
+the sanctioned renderers (`<Metric>`, `<FreshValue>`) keep their provenance prop REQUIRED (RULE A), and no
+metric-class field (derived from the dictionary `display:"metric"` flag) appears in a JSX expression, in
+child position or in an attribute/spread of anything but a sanctioned renderer (RULE B).
+
+**RULE B injection:** created `src/app/app/_adv-metric/page.tsx` rendering `<span>{account.balanceMinorUnits}</span>`.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/metric-provenance.test.ts > metric-provenance fence > RULE B: no metric field is rendered in JSX without provenance
+AssertionError: naked metric renders (charter #3 / Vale V12):
+src/app/app/_adv-metric/page.tsx:3 :: metric field 'balanceMinorUnits' rendered without provenance (route it through <Metric>/<FreshValue>)
+```
+**Revert:** deleted the file; `pnpm exec vitest run …/metric-provenance.test.ts` → `Tests 12 passed`.
+
+**RULE A injection:** made `FreshValue`'s `provenance` prop optional (`provenance?: RecordProvenance`).
+**Observed failure (verbatim):**
+```
+FAIL … > RULE A: every sanctioned metric renderer keeps its provenance prop REQUIRED
+AssertionError: renderer contract broken:
+FreshValue: 'provenance' prop is OPTIONAL — a metric could render without provenance
+```
+**Revert:** restored the required prop; suite green. Naked member-access, destructured, one-hop-alias, and
+attribute-passing cases are all companion-proven in `describe("detects (companion)")`.
+
+**RULE B attribute-forwarding injection (strengthening, same PR):** RULE B originally exempted ALL JSX
+attribute positions, so a metric field forwarded as a prop to a non-sanctioned component (or shown via
+`title={…}` on a plain element) escaped the fence. Tightened: attributes are exempt only when the enclosing
+element is `<Metric>`/`<FreshValue>`. Injected `src/app/app/_adv-metric/page.tsx` rendering
+`<Cell v={account.balanceMinorUnits} />`.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/metric-provenance.test.ts > metric-provenance fence > RULE B: no metric field is rendered in JSX without provenance
+AssertionError: naked metric renders (charter #3 / Vale V12):
+src/app/app/_adv-metric/page.tsx:6 :: metric field 'balanceMinorUnits' rendered without provenance (route it through <Metric>/<FreshValue>)
+```
+**Revert:** deleted the file; suite green (`Tests 15 passed`). Non-sanctioned-component attribute,
+plain-element `title={…}`, and sanctioned `<Metric>`/`<FreshValue>` attribute cases are all
+companion-proven.
+
+**RULE B spread-attribute injection (strengthening, same PR):** a JSX spread attribute contains NO
+`JsxExpression` node (verified with a ts-morph probe), so the JsxExpression-only scan never saw spreads
+at all - the `{...spread}` exemption branch was dead code and a metric field spread onto ANY element
+escaped the fence while the comment claimed otherwise. Fixed: `JsxSpreadAttribute` nodes are scanned
+directly, exempt only on `<Metric>`/`<FreshValue>`. Injected `src/app/app/_adv-metric/page.tsx` rendering
+`const props = { v: account.balanceMinorUnits }; return <Cell {...props} />;`.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/metric-provenance.test.ts > metric-provenance fence > RULE B: no metric field is rendered in JSX without provenance
+AssertionError: naked metric renders (charter #3 / Vale V12):
+src/app/app/_adv-metric/page.tsx:4 :: metric field 'balanceMinorUnits' rendered without provenance (route it through <Metric>/<FreshValue>)
+```
+**Revert:** deleted the file; suite green (`Tests 18 passed`). Inline-object spread, aliased-props-object
+spread, and sanctioned `<Metric {...props}/>` cases are companion-proven.
+
+**Date:** 2026-07-19 (Wave-1 prereq; RULE B strengthened same PR, review rounds 2 and 3).
+
+### PF-019 · derived-provenance · `src/__tests__/fitness/derived-provenance.test.ts`
+**Invariant (charter #3 EXTENSION / ADR-0022):** a value derived from any synthetic input, at any depth
+(the demonstration flag is TRANSITIVE through chained derivations), is itself a demonstration and can never
+feed a compliance decision (`deriveArtifactProvenance` + `canFeedComplianceDecision`).
+
+**Injection:** weakened `canFeedComplianceDecision` back to `return !isSyntheticSource(p.source);` (dropping
+`&& !isDemonstration(p)`), so a demonstration artifact derived from synthetic input would be allowed to feed
+compliance.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/derived-provenance.test.ts > … > enforces: the derivation law holds for the real contract functions
+AssertionError: derivation-law violations:
+a demonstration derived from 'estimate' must NOT feed a compliance decision
+a demonstration derived from 'default' must NOT feed a compliance decision
+a demonstration derived from 'fixture' must NOT feed a compliance decision
+```
+**Revert:** restored the `&& !isDemonstration(p)` clause; suite green. A broken derivation (never marks
+synthetic-derived artifacts as demonstrations) and a `canFeed` that ignores `demonstration` are both
+companion-proven rejected.
+
+**Transitivity injection (strengthening, same PR):** the derivation originally checked only leaf
+`isSyntheticSource(i.source)`, so deriving over a demonstration-derived input (source `computed`,
+`demonstration: true`) laundered synthetic data into a compliance-eligible value in two hops. Fixed
+(`isSyntheticSource(i.source) || isDemonstration(i)`; `derivedFrom` flattened through nested derivations to
+leaf sources) and the law gained a CHAINED clause built from a literal demonstration input. Injected:
+reverted the derivation to the leaf-only check.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/derived-provenance.test.ts > … > enforces: the derivation law holds for the real contract functions
+AssertionError: derivation-law violations:
+deriving over a demonstration-derived input must yield a demonstration (transitivity)
+a chained demonstration derivation must NOT feed a compliance decision
+```
+**Revert:** restored the transitive check; suite green (`Tests 7 passed`). A derivation that handles leaf
+synthetics but ignores demonstration inputs (chained laundering) is companion-proven rejected.
+
+**Date:** 2026-07-19 (Wave-1 prereq; transitivity strengthened same PR, review round 2).

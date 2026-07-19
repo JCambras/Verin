@@ -171,3 +171,29 @@ with a pino error carrying the row id - visible instead of silently churning for
 dead-letter half; the scheduled drainer remains deferred). Parked rows are excluded from the `/ready`
 backlog (they are stuck, not pending delivery); the backlog counts `pending` + `claimed` explicitly.
 Proven by the audit-chain integration test (poison row parks at the cap and is excluded thereafter).
+
+### D-025 · 2026-07-19 · captain-decision · Vale V12 CLOSED — displayed-metric→source provenance trace shipped (Wave-1 prereq)
+The deferred displayed-metric→source trace (`FOUNDATION.md`; trigger "before any synthetic/estimated value
+renders") is closed ahead of the Wave-1 populated-world seed. Mechanism: a `DisplayMetric` type
+(`contracts/metric.ts`) that cannot be constructed without provenance and is not a `ReactNode` (so it can
+only reach the screen through `<Metric>`), the `<Metric>` surface (`app/presentation/metric.tsx`), and the
+build-failing `metric-provenance` fence (RULE A: sanctioned renderers keep provenance required; RULE B: no
+metric-class field — derived from the dictionary `display:"metric"` flag — renders in JSX without
+provenance). Run in the `provenance-trace` CI gate. **Why:** the populated world renders estimated/derived
+values (balances, health scores); charter #3 requires each to trace to a source. **Revert path:** remove
+the two fences from `charter-map.json` #3 + `ci.yml`, delete `metric.tsx`/`contracts/metric.ts`, revert the
+console metric render; V12 reverts to deferred. Proven adversarially (proof-log PF-018).
+
+### D-026 · 2026-07-19 · captain-decision · Charter #3 EXTENDED to derived compliance artifacts (ADR-0022)
+Per the POC strategy directive ("the charter-#3 extension … is non-negotiable"), charter #3 is amended
+(additively) so its "synthetic can never feed a compliance decision" rule runs through DERIVED artifacts: a
+value computed from any synthetic input is itself a "demonstration" artifact — watermarked, demo-audit-class,
+excluded from the real examiner-export. Enforced now: `deriveArtifactProvenance`/`isDemonstration`/
+`DEMO_WATERMARK` in `contracts/provenance.ts`, `canFeedComplianceDecision` refuses demonstrations, and the
+`derived-provenance` fence proves the law. Demo-audit-class persistence and examiner-export exclusion are the
+design contract, deferred to compliance-scan (Wave 1) and examiner-export (Wave 3) respectively, each fenced
+in its PR. **Why:** the pre-mortem leak "a demo compliance figure in a real examiner-export." **Un-defer
+trigger (watermark removal):** a consenting real design partner supplies real data (ADR-0022 Revisit-When).
+**Revert path:** this amends CHARTER.md — reverting requires a superseding ADR (charter operating model);
+the code revert is removing the derivation vocabulary + fence and restoring the prior
+`canFeedComplianceDecision`. Proven adversarially (proof-log PF-019).

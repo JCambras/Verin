@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (158 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (183 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
@@ -20,7 +20,7 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPII` + scrub); 20 build-failing fitness
+Zod config module that fails closed at boot; PII boundary (`assertNoPII` + scrub); 22 build-failing fitness
 fences; ratchet-down line budgets + a separate presentation budget.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
@@ -53,7 +53,7 @@ PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT
 
 ## 2. Every fence, with its proof
 
-20 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
+22 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
@@ -71,6 +71,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
+| `metric-provenance` (AST: renderer contract + no metric field in a child or non-sanctioned attribute/spread) | every displayed metric carries source/asOf (#3, Vale V12) | PF-018 + companions |
+| `derived-provenance` | a synthetic- or demonstration-derived artifact is a demonstration (transitive), can't feed compliance (#3, ADR-0022) | PF-019 + companions |
 | `org-id-required` | every tenant query filters org_id (#7) | PF-009 + companion |
 | `no-client-role-header` | identity never from a header (#7) | PF-010 |
 | `audited-write-required` (+ anti-fork) | every write audited, no hand-rolled audit (#13) | PF-011 |
@@ -108,7 +110,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 158 / knip / e2e 12 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 183 / knip / e2e 12 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.
@@ -128,7 +130,8 @@ valuable — it caught issues the walkthrough could not, including two false-pas
 
 **Deferred (with triggers) — also in the gap list below:** meta-fence efficacy / mutation testing (V9);
 knip `domain/schema` exemption for forward-looking vocabulary (V11 / D-013); the displayed-metric→source
-trace (V12); a scheduled outbox drainer (V14; the dead-letter half has since landed, D-024: poison rows
+trace (V12 — **now CLOSED**: Wave-1 prereq, ADR-0022, `metric-provenance` + `derived-provenance` fences,
+D-025/D-026); a scheduled outbox drainer (V14; the dead-letter half has since landed, D-024: poison rows
 park after 5 failed deliveries); org-qualified login (Sable F3); axe on the
 post-submit account-opening states (Wren meta).
 
@@ -151,7 +154,7 @@ date/trigger), never omitted:
 | Managed-Postgres (`node-postgres`) store adapter | — | founder | production deploy (D-006; PGlite is dev/CI) |
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
-| Displayed-metric→source provenance trace (Vale V12) | — | founder | before any synthetic/estimated value renders |
+| Displayed-metric→source provenance trace (Vale V12) — **CLOSED** (Wave-1 prereq: ADR-0022, `metric-provenance` + `derived-provenance` fences in the `provenance-trace` gate; D-025/D-026) | #3 | — | done |
 | Scheduled outbox drainer (Vale V14; dead-letter parking landed, D-024) | CC7.1 | founder | deploy-target selection |
 | Org-qualified login (Sable F3) | CC6.1 | red-team | self-registration / multi-org email collision |
 | Auth fail-closed when its audit cannot be recorded (today: pino error + proceed) | CC7.4 | founder | SOC 2 Type II evidence window / first regulated-customer review (ADR-0007) |

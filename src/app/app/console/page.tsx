@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { Field, TextInput, Button, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { FreshValue } from "@app/presentation/fresh-value";
+import { Metric } from "@app/presentation/metric";
 import { useHydrated } from "@app/presentation/use-hydrated";
-import type { RecordProvenance } from "@contracts/provenance";
+import { metric } from "@contracts/metric";
+import { deriveArtifactProvenance, type RecordProvenance } from "@contracts/provenance";
 
 interface Household {
   id: string;
@@ -23,13 +25,19 @@ async function fetchHouseholds(): Promise<Household[]> {
 export default function ConsolePage() {
   const hydrated = useHydrated();
   const [households, setHouseholds] = useState<Household[] | null>(null);
+  const [asOf, setAsOf] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function load(list: Household[]) {
+    setHouseholds(list);
+    setAsOf(new Date().toISOString()); // the derived-count metric is "computed" as of this read
+  }
 
   useEffect(() => {
     let active = true;
     fetchHouseholds().then(
       (h) => {
-        if (active) setHouseholds(h);
+        if (active) load(h);
       },
       () => {
         if (active) setError("Could not load households. Check your connection and reload.");
@@ -42,7 +50,7 @@ export default function ConsolePage() {
 
   async function reload() {
     try {
-      setHouseholds(await fetchHouseholds());
+      load(await fetchHouseholds());
     } catch {
       setError("Could not refresh the household list.");
     }
@@ -98,6 +106,12 @@ export default function ConsolePage() {
           Plain internal tooling. Every create and edit flows through the audited-write helper, so this
           console is the first live demo of the tamper-evident audit trail.
         </p>
+        {households !== null && asOf !== null ? (
+          <p className="mt-3 text-sm text-slate-700">
+            Households in your book:{" "}
+            <Metric metric={metric(households.length, "count", deriveArtifactProvenance(households.map((h) => h.provenance), asOf))} />
+          </p>
+        ) : null}
       </div>
 
       <form onSubmit={create} className="flex items-end gap-3" aria-label="Create household">
