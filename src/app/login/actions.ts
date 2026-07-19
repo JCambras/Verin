@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getDb, sessionCookieOptions } from "@app/_server/context";
 import { authenticate, createSession, findUserByEmail } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
+import { discardedAuditEventWork } from "@infra/audit/audit-store";
 import { auditEvent } from "@infra/wire";
 import { getConfig } from "@infra/config";
 import { log } from "@infra/observability/logger";
@@ -29,11 +30,17 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   if (!user) {
     // Repudiation coverage (ADR-0008): failed authentications are audited to the
     // account's org when the email resolves to a user; an unknown email has no org
-    // chain to attribute to, so the attempt is logged (no PII — the email stays out).
+    // chain to attribute to, so the attempt is logged (no PII — the email stays out)
+    // after the SAME audit-pipeline DB work runs and is discarded — both failure
+    // branches cost the same, so the audit cannot become an enumeration timing
+    // oracle (the invariant `authenticate` preserves with its dummy scrypt hash).
     const known = await findUserByEmail(db, email);
     if (known) {
       await auditEvent(db, { orgId: known.org_id, actor: known.id, action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
     } else {
+      await discardedAuditEventWork(db).catch((e: unknown) =>
+        log.warn({ reason: e instanceof Error ? e.message : String(e) }, "constant-work audit mirror failed"),
+      );
       log.warn({ reason: "unknown-email" }, "failed sign-in attempt for an unknown email");
     }
     return { error: "Incorrect email or password." };

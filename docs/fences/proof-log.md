@@ -222,3 +222,22 @@ the file → revert → green):
   on unparseable expressions. Executed check: `(MIT OR GPL-2.0-only) AND OpenSSL` → DENIED,
   `(GPL-2.0-only OR MIT) AND (Apache-2.0 OR ISC)` → allowed, unbalanced parens → DENIED; all 598
   installed deps still pass.
+
+---
+
+## Review-round 3 fence hardening (2026-07-19) — executed injection proofs
+
+- **`auth-enforcement` identifier initializers + re-exports + function-level `"use server"`:** the
+  hardened per-handler fence skipped any exported variable whose initializer was not a literal
+  arrow/function expression (`export const POST = impl` passed silently), never walked
+  ExportDeclarations (`export { POST } from "./impl"` / `export { impl as GET }`), and detected only
+  file-level directives. It now follows initializer chains (parens/as/satisfies/local identifiers) to
+  the handler body, checks re-exports against the target module (per-handler when analyzable),
+  detects function-level `"use server"` directives in any app file, and FAILS CLOSED on unanalyzable
+  bodies (resolver required in the enclosing/target module), unresolvable re-exports, and wildcard
+  re-exports in route files. **Executed proof:** planted three real-tree evasions in one run — an
+  identifier-initializer route (`src/app/api/proof-inject/route.ts :: POST`), a cross-module
+  re-export (`src/app/api/proof-reexport/route.ts :: DELETE`), and a function-level use-server action
+  (`src/app/proof-inject-action.ts :: wipeAll`) — the fence failed naming all three; reverted; green.
+  Each evasion (plus imported-identifier, local-alias, unresolvable and wildcard re-exports) is also
+  companion-proven in `describe("detects (companion)")`.

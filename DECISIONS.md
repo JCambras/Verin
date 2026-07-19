@@ -147,3 +147,12 @@ retry-by-execution-id recovery path (which would also unwedge the crash window b
 step's commit and the suspended-state save) are deferred in ADR-0011. **Un-defer trigger:** the first
 flow whose pre-suspend writes create externally-visible obligations (real custodian/e-sign vendors), or
 the first production incident requiring manual flow recovery.
+
+### D-022 · 2026-07-19 · captain-decision · Failed-login timing equalized with a discarded audit-pipeline mirror (no residual enumeration oracle)
+Auditing known-account login failures (D-015) added several audit-pipeline DB round-trips that only ran
+when the email matched a user — a failure-path timing differential the identity store had deliberately
+engineered away. Captain chose EQUALIZE over accept-and-document: the unknown-email branch now runs
+`discardedAuditEventWork` (the same enqueue + drain work, rolled back — the enqueue via a sentinel, the
+delivery at the real claim-lost guard), so both failure branches cost the same and NOTHING is persisted
+(no audit entry may attribute a failure to a nonexistent user). Proven by the audit-chain integration
+test (mirror persists zero outbox/chain/anchor rows) and an unknown-email e2e failure-path spec.

@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
-import { appError } from "@contracts/errors";
+import { appError, isAppError } from "@contracts/errors";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -101,53 +101,7 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
     );
     if (claimed.rows.length !== 1) continue; // someone else claimed it
     try {
-      const p = JSON.parse(row.payload_json) as OutboxPayload;
-      // One transaction for head-read → insert → anchor → delete: a partial
-      // failure can never append a chain entry the anchor does not count, and
-      // interleaved drains can never regress the anchor.
-      await db.transaction(async (tx) => {
-        const head = await tx.query<HeadRow>(
-          "SELECT sequence, entry_hash FROM audit_log WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
-          [orgId],
-        );
-        const prevHash = head.rows.length ? head.rows[0]!.entry_hash : GENESIS_HASH;
-        const sequence = head.rows.length ? Number(head.rows[0]!.sequence) + 1 : 0;
-        const entry = {
-          orgId: p.orgId,
-          sequence,
-          actor: p.actor,
-          action: p.result === "failure" ? `${p.action}.failed` : p.action,
-          entityType: p.entityType,
-          entityId: p.entityId,
-          beforeJson: p.beforeJson,
-          afterJson: p.afterJson,
-          detail: p.detail,
-          createdAt: p.createdAt,
-        };
-        const entryHash = computeEntryHash(entry, prevHash);
-        await tx.query(
-          `INSERT INTO audit_log (id, org_id, sequence, actor, action, entity_type, entity_id, before_json, after_json, detail, created_at, prev_hash, entry_hash)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-          [randomUUID(), entry.orgId, entry.sequence, entry.actor, entry.action, entry.entityType, entry.entityId, entry.beforeJson, entry.afterJson, entry.detail, entry.createdAt, prevHash, entryHash],
-        );
-        // Advance the out-of-band anchor (Vale V1): expected max_sequence + count.
-        await tx.query(
-          `INSERT INTO audit_anchor (org_id, max_sequence, entry_count, updated_at) VALUES ($1,$2,1,$3)
-           ON CONFLICT (org_id) DO UPDATE SET max_sequence = GREATEST(audit_anchor.max_sequence, $2), entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
-          [orgId, entry.sequence, new Date().toISOString()],
-        );
-        // The claim must still be OURS at delivery time. A worker stalled past
-        // CLAIM_TIMEOUT_MS whose row was reclaimed and delivered by another worker
-        // would otherwise append the same event a second time at the next sequence —
-        // an undetectable duplicate in the append-only chain. 0 rows → abort the tx.
-        const deleted = await tx.query<{ id: string }>(
-          "DELETE FROM audit_outbox WHERE id = $1 AND status = 'claimed' RETURNING id",
-          [row.id],
-        );
-        if (deleted.rows.length !== 1) {
-          throw appError("CONFLICT", "outbox claim lost before delivery (reclaimed by another worker)");
-        }
-      });
+      await deliverClaimedRow(db, orgId, row.id, JSON.parse(row.payload_json) as OutboxPayload);
       drained += 1;
     } catch {
       // release the claim; a later drain retries (at-least-once).
@@ -157,6 +111,109 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
     }
   }
   return drained;
+}
+
+/**
+ * Deliver ONE claimed outbox row into the hash chain. One transaction for
+ * head-read → insert → anchor → delete: a partial failure can never append a chain
+ * entry the anchor does not count, and interleaved drains can never regress the anchor.
+ */
+async function deliverClaimedRow(db: SqlDb, orgId: string, rowId: string, p: OutboxPayload): Promise<void> {
+  await db.transaction(async (tx) => {
+    const head = await tx.query<HeadRow>(
+      "SELECT sequence, entry_hash FROM audit_log WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
+      [orgId],
+    );
+    const prevHash = head.rows.length ? head.rows[0]!.entry_hash : GENESIS_HASH;
+    const sequence = head.rows.length ? Number(head.rows[0]!.sequence) + 1 : 0;
+    const entry = {
+      orgId: p.orgId,
+      sequence,
+      actor: p.actor,
+      action: p.result === "failure" ? `${p.action}.failed` : p.action,
+      entityType: p.entityType,
+      entityId: p.entityId,
+      beforeJson: p.beforeJson,
+      afterJson: p.afterJson,
+      detail: p.detail,
+      createdAt: p.createdAt,
+    };
+    const entryHash = computeEntryHash(entry, prevHash);
+    await tx.query(
+      `INSERT INTO audit_log (id, org_id, sequence, actor, action, entity_type, entity_id, before_json, after_json, detail, created_at, prev_hash, entry_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [randomUUID(), entry.orgId, entry.sequence, entry.actor, entry.action, entry.entityType, entry.entityId, entry.beforeJson, entry.afterJson, entry.detail, entry.createdAt, prevHash, entryHash],
+    );
+    // Advance the out-of-band anchor (Vale V1): expected max_sequence + count.
+    await tx.query(
+      `INSERT INTO audit_anchor (org_id, max_sequence, entry_count, updated_at) VALUES ($1,$2,1,$3)
+       ON CONFLICT (org_id) DO UPDATE SET max_sequence = GREATEST(audit_anchor.max_sequence, $2), entry_count = audit_anchor.entry_count + 1, updated_at = $3`,
+      [orgId, entry.sequence, new Date().toISOString()],
+    );
+    // The claim must still be OURS at delivery time. A worker stalled past
+    // CLAIM_TIMEOUT_MS whose row was reclaimed and delivered by another worker
+    // would otherwise append the same event a second time at the next sequence —
+    // an undetectable duplicate in the append-only chain. 0 rows → abort the tx.
+    const deleted = await tx.query<{ id: string }>(
+      "DELETE FROM audit_outbox WHERE id = $1 AND status = 'claimed' RETURNING id",
+      [rowId],
+    );
+    if (deleted.rows.length !== 1) {
+      throw appError("CONFLICT", "outbox claim lost before delivery (reclaimed by another worker)");
+    }
+  });
+}
+
+// Reserved org id for the constant-work login mirror — never a real tenant, and
+// nothing written under it ever commits.
+const CONSTANT_WORK_ORG = "00000000-0000-0000-0000-000000000000";
+const DISCARD = Symbol("constant-work-discard");
+
+/**
+ * Constant-work twin of a one-event security audit (enqueue + drain) that persists
+ * NOTHING. The login boundary runs this on the unknown-email branch so a failed
+ * sign-in costs the same audit-pipeline DB work whether or not the email resolves
+ * to a user — auditing known-account failures (ADR-0008) must not reintroduce the
+ * user-enumeration timing oracle `authenticate` was built without (Vale V6). The
+ * enqueue transaction rolls back via a sentinel; delivery runs the REAL per-row
+ * transaction, which aborts at its own claim-lost guard (the claimed row never
+ * exists), so no audit entry can ever attribute a failure to a nonexistent user.
+ */
+export async function discardedAuditEventWork(db: SqlDb): Promise<void> {
+  const now = new Date().toISOString();
+  const p: OutboxPayload = {
+    orgId: CONSTANT_WORK_ORG,
+    actor: CONSTANT_WORK_ORG,
+    action: "session.login_failed",
+    entityType: "User",
+    entityId: CONSTANT_WORK_ORG,
+    beforeJson: null,
+    afterJson: null,
+    detail: "Failed sign-in attempt",
+    createdAt: now,
+    result: "success",
+  };
+  await db
+    .transaction(async (tx) => {
+      await enqueueAudit(
+        tx,
+        { orgId: p.orgId, actor: p.actor, action: p.action, entityType: p.entityType, entityId: p.entityId, detail: p.detail },
+        "success",
+        now,
+      );
+      throw DISCARD;
+    })
+    .catch((e: unknown) => {
+      if (e !== DISCARD) throw e;
+    });
+  await drainOutbox(db, CONSTANT_WORK_ORG);
+  await db.query(
+    "UPDATE audit_outbox SET status = 'claimed', claimed_at = $2 WHERE id = $1 AND status = 'pending' RETURNING id",
+    [randomUUID(), new Date().toISOString()],
+  );
+  await deliverClaimedRow(db, CONSTANT_WORK_ORG, randomUUID(), p).catch((e: unknown) => {
+    if (!isAppError(e) || e.code !== "CONFLICT") throw e;
+  });
 }
 
 interface AuditLogRow {

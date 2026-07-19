@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { listOrgChain, verifyOrgChain, drainOutbox } from "@infra/audit/audit-store";
+import { listOrgChain, verifyOrgChain, drainOutbox, discardedAuditEventWork } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
 
 const ORG = "org-1";
@@ -155,5 +155,23 @@ describe("tamper-evident audit chain (integration)", () => {
     expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
     const left = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE org_id = $1", [ORG]);
     expect(Number(left.rows[0]!.n)).toBe(0);
+  });
+
+  it("the constant-work login mirror runs the audit pipeline but persists NOTHING (Vale V6)", async () => {
+    const count = async (table: "audit_outbox" | "audit_log" | "audit_anchor") =>
+      Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]!.n);
+    const counts = async () => ({ outbox: await count("audit_outbox"), chain: await count("audit_log"), anchor: await count("audit_anchor") });
+
+    // On an empty store: no outbox row, no chain entry, no anchor survives the mirror.
+    await discardedAuditEventWork(db);
+    expect(await counts()).toEqual({ outbox: 0, chain: 0, anchor: 0 });
+
+    // With a real chain present: the mirror adds nothing anywhere and the real
+    // org's chain still verifies (no dummy entry may attribute a failed login).
+    await auditedWrite({ db, orgId: ORG, actor: "u-1", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    const before = await counts();
+    await discardedAuditEventWork(db);
+    expect(await counts()).toEqual(before);
+    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
   });
 });

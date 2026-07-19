@@ -45,3 +45,13 @@ test("a wrong password shows a friendly error (no user enumeration)", async ({ p
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText(/incorrect email or password/i)).toBeVisible();
 });
+
+test("an UNKNOWN email shows the same friendly error (constant-work branch, no enumeration)", async ({ page }) => {
+  // Exercises the unknown-email failure branch end-to-end: the discarded
+  // audit-pipeline mirror must run without surfacing an error to the user.
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("nobody@verin.test");
+  await page.getByLabel("Password").fill("wrong-password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText(/incorrect email or password/i)).toBeVisible();
+});
