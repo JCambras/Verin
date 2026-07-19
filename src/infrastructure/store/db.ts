@@ -21,6 +21,8 @@ export interface SqlQueryable {
 export interface SqlDb extends SqlQueryable {
   exec(sql: string): Promise<void>;
   transaction<T>(fn: (tx: SqlQueryable) => Promise<T>): Promise<T>;
+  /** Dump the whole store for backup (ADR-0019). */
+  dump(): Promise<Blob>;
   close(): Promise<void>;
 }
 
@@ -64,10 +66,23 @@ function wrap(pg: PGlite): SqlDb {
         }) as Promise<T>,
       );
     },
+    dump(): Promise<Blob> {
+      return serialize(async () => {
+        const file = await pg.dumpDataDir("none");
+        return file as Blob;
+      });
+    },
     async close(): Promise<void> {
       await pg.close();
     },
   };
+}
+
+/** Restore a store from a backup dump (ADR-0019 — used by the backup-restore drill). */
+export async function createDbFromDump(dump: Blob): Promise<SqlDb> {
+  const pg = new PGlite({ loadDataDir: dump });
+  await pg.waitReady;
+  return wrap(pg);
 }
 
 /** Create a fresh in-memory store (tests) or a directory-backed store (dev). */

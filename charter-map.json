@@ -7,8 +7,14 @@
       "status": "enforced",
       "phase": "B",
       "mechanisms": [
-        { "type": "procedure", "ref": "docs/fences/proof-log.md" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-bare-throw.test.ts" }
+        {
+          "type": "procedure",
+          "ref": "docs/fences/proof-log.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-bare-throw.test.ts"
+        }
       ]
     },
     {
@@ -16,16 +22,27 @@
       "title": "Canonical schema + provenance before any adapter",
       "status": "enforced",
       "phase": "C",
-      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/provenance-required.test.ts" }]
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/provenance-required.test.ts"
+        }
+      ]
     },
     {
       "id": 3,
       "title": "No unlabeled synthetic data, ever",
-      "status": "planned",
+      "status": "enforced",
       "phase": "C/F",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-unlabeled-synthetic.test.ts", "status": "enforced" },
-        { "type": "ci-gate", "ref": "provenance-trace" }
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-unlabeled-synthetic.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "provenance-trace"
+        }
       ]
     },
     {
@@ -33,7 +50,12 @@
       "title": "Detection is not verification",
       "status": "enforced",
       "phase": "B",
-      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/detection-not-verification.test.ts" }]
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/detection-not-verification.test.ts"
+        }
+      ]
     },
     {
       "id": 5,
@@ -41,8 +63,14 @@
       "status": "enforced",
       "phase": "0",
       "mechanisms": [
-        { "type": "ci-gate", "ref": "knip" },
-        { "type": "config", "ref": "knip.json" }
+        {
+          "type": "ci-gate",
+          "ref": "knip"
+        },
+        {
+          "type": "config",
+          "ref": "knip.json"
+        }
       ]
     },
     {
@@ -51,8 +79,14 @@
       "status": "enforced",
       "phase": "A/E",
       "mechanisms": [
-        { "type": "adr", "ref": "docs/adr/0011-flowstep-suspend-resume.md" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/flowstep-suspend-resume.test.ts" }
+        {
+          "type": "adr",
+          "ref": "docs/adr/0011-flowstep-suspend-resume.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/flowstep-suspend-resume.test.ts"
+        }
       ]
     },
     {
@@ -61,48 +95,89 @@
       "status": "enforced",
       "phase": "B/E",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-process-env.test.ts" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-secret-fallback.test.ts" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/org-id-required.test.ts" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-client-role-header.test.ts" }
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-process-env.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-secret-fallback.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/org-id-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-client-role-header.test.ts"
+        }
       ]
     },
     {
       "id": 8,
       "title": "E2E from flow #1 (Playwright CI gate)",
-      "status": "planned",
+      "status": "enforced",
       "phase": "E",
       "mechanisms": [
-        { "type": "ci-gate", "ref": "e2e" },
-        { "type": "config", "ref": "playwright.config.ts" }
+        {
+          "type": "ci-gate",
+          "ref": "e2e"
+        },
+        {
+          "type": "config",
+          "ref": "playwright.config.ts"
+        }
       ]
     },
     {
       "id": 9,
       "title": "Accessibility from the first primitive (axe)",
-      "status": "planned",
+      "status": "enforced",
       "phase": "D/E",
-      "mechanisms": [{ "type": "ci-gate", "ref": "axe" }]
+      "mechanisms": [
+        {
+          "type": "ci-gate",
+          "ref": "axe"
+        }
+      ]
     },
     {
       "id": 10,
       "title": "Presentation tier is a first-class product surface with its own budget",
-      "status": "planned",
+      "status": "enforced",
       "phase": "A/D",
       "mechanisms": [
-        { "type": "adr", "ref": "docs/adr/0012-presentation-tier-and-budgets.md", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/line-budget.test.ts", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/max-file-size.test.ts", "status": "enforced" }
+        {
+          "type": "adr",
+          "ref": "docs/adr/0012-presentation-tier-and-budgets.md",
+          "status": "enforced"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/line-budget.test.ts",
+          "status": "enforced"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/max-file-size.test.ts",
+          "status": "enforced"
+        }
       ]
     },
     {
       "id": 11,
       "title": "Non-functionals measured, not modeled",
-      "status": "planned",
+      "status": "enforced",
       "phase": "E/F",
       "mechanisms": [
-        { "type": "ci-gate", "ref": "load-smoke" },
-        { "type": "procedure", "ref": "docs/runbooks/backup-and-restore.md" }
+        {
+          "type": "ci-gate",
+          "ref": "load-smoke"
+        },
+        {
+          "type": "procedure",
+          "ref": "docs/runbooks/backup-and-restore.md"
+        }
       ]
     },
     {
@@ -110,28 +185,53 @@
       "title": "Identity is foundation, not a milestone (real auth, RBAC at port)",
       "status": "enforced",
       "phase": "E",
-      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/auth-enforcement.test.ts" }]
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/auth-enforcement.test.ts"
+        }
+      ]
     },
     {
       "id": 13,
       "title": "The audit trail is tamper-evident (hash-chained), not conventional",
-      "status": "planned",
+      "status": "enforced",
       "phase": "B/E/F",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/audited-write-required.test.ts", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-pii-in-audit-store.test.ts", "status": "enforced" },
-        { "type": "ci-gate", "ref": "audit-chain-verify" }
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/audited-write-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-pii-in-audit-store.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "audit-chain-verify"
+        }
       ]
     },
     {
       "id": 14,
       "title": "Observability from commit #1 (OpenTelemetry)",
-      "status": "planned",
+      "status": "enforced",
       "phase": "E",
       "mechanisms": [
-        { "type": "fitness", "ref": "src/__tests__/fitness/no-console.test.ts", "status": "enforced" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/observability-coverage.test.ts", "status": "enforced" },
-        { "type": "ci-gate", "ref": "unit" }
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/no-console.test.ts",
+          "status": "enforced"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/observability-coverage.test.ts",
+          "status": "enforced"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "unit"
+        }
       ]
     },
     {
@@ -140,10 +240,22 @@
       "status": "enforced",
       "phase": "0",
       "mechanisms": [
-        { "type": "ci-gate", "ref": "secret-scan" },
-        { "type": "ci-gate", "ref": "sast" },
-        { "type": "ci-gate", "ref": "dependency-audit" },
-        { "type": "config", "ref": ".gitleaks.toml" }
+        {
+          "type": "ci-gate",
+          "ref": "secret-scan"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "sast"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "dependency-audit"
+        },
+        {
+          "type": "config",
+          "ref": ".gitleaks.toml"
+        }
       ]
     },
     {
@@ -151,7 +263,12 @@
       "title": "External writes are idempotent and retry-safe",
       "status": "enforced",
       "phase": "E",
-      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts" }]
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts"
+        }
+      ]
     }
   ],
   "operatingModel": [
@@ -161,8 +278,14 @@
       "status": "enforced",
       "phase": "0",
       "mechanisms": [
-        { "type": "file", "ref": "CHARTER.md" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/charter-drift.test.ts" }
+        {
+          "type": "file",
+          "ref": "CHARTER.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/charter-drift.test.ts"
+        }
       ]
     },
     {
@@ -170,14 +293,24 @@
       "title": "CHARTER.md changes only via an amending ADR referenced in the PR",
       "status": "enforced",
       "phase": "0",
-      "mechanisms": [{ "type": "procedure", "ref": ".github/pull_request_template.md" }]
+      "mechanisms": [
+        {
+          "type": "procedure",
+          "ref": ".github/pull_request_template.md"
+        }
+      ]
     },
     {
       "id": "charter-drift-fence",
       "title": "CI fails if a mapping points at a fence that no longer exists or is disabled",
       "status": "enforced",
       "phase": "0",
-      "mechanisms": [{ "type": "fitness", "ref": "src/__tests__/fitness/charter-drift.test.ts" }]
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/charter-drift.test.ts"
+        }
+      ]
     },
     {
       "id": "non-utc-clock",
@@ -185,8 +318,14 @@
       "status": "enforced",
       "phase": "0",
       "mechanisms": [
-        { "type": "config", "ref": "vitest.config.ts" },
-        { "type": "file", "ref": "src/__tests__/setup.ts" }
+        {
+          "type": "config",
+          "ref": "vitest.config.ts"
+        },
+        {
+          "type": "file",
+          "ref": "src/__tests__/setup.ts"
+        }
       ]
     },
     {
@@ -195,8 +334,15 @@
       "status": "enforced",
       "phase": "0",
       "mechanisms": [
-        { "type": "config", "ref": "eslint.config.mjs" },
-        { "type": "fitness", "ref": "src/__tests__/fitness/dependency-rule.test.ts", "status": "enforced" }
+        {
+          "type": "config",
+          "ref": "eslint.config.mjs"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/dependency-rule.test.ts",
+          "status": "enforced"
+        }
       ]
     }
   ]

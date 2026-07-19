@@ -124,3 +124,47 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: pnpm audit (high+)
         run: pnpm audit --audit-level=high
+
+  provenance-trace:
+    name: provenance-trace (displayed metric -> source, charter #3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: provenance-trace
+        run: pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts
+
+  audit-chain-verify:
+    name: audit-chain-verify (charter #13)
+    runs-on: ubuntu-latest
+    env:
+      VERIN_DATA_DIR: .verin-data-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: seed + verify org audit chains
+        run: pnpm db:seed && pnpm audit:chain
+
+  load-smoke:
+    name: load-smoke (p95 regression gate, charter #11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: load-smoke
+        run: pnpm load:smoke
