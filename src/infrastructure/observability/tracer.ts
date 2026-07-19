@@ -1,10 +1,10 @@
 /**
  * Tracing (ADR-0013, charter #14). withSpan wraps every flow step and every
  * external/store call so latency and failures are observable. Spans go to the
- * OpenTelemetry API (a NodeTracerProvider exports them in prod) AND to an
- * in-memory ring the tests + /health assert on — so "traces exist" is verifiable,
- * not modeled. The observability-coverage fence checks the engine + external
- * calls are wrapped.
+ * OpenTelemetry API (the deploy target registers an exporting provider, pointed
+ * at a collector via OTEL_EXPORTER_OTLP_ENDPOINT) AND to an in-memory ring the
+ * tests assert on — so "traces exist" is verifiable, not modeled. The
+ * observability-coverage fence checks the engine + external calls are wrapped.
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";

@@ -6,8 +6,8 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (109 unit/integration/fitness, non-UTC clock) ·
-> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (9 specs) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (118 unit/integration/fitness, non-UTC clock) ·
+> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (11 specs) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one is also a blocking CI job (`.github/workflows/`).
 
@@ -41,7 +41,8 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Two Playwright specs** (happy walkthrough + failure/access-control) + axe, green on a non-UTC clock.
+- **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 11
+  tests) plus axe, green on a non-UTC clock.
 
 **Governance:** 20 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
@@ -105,7 +106,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 109 / knip / e2e 9 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 118 / knip / e2e 11 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.

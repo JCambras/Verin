@@ -44,7 +44,8 @@ Enforced three ways (defense in depth): ESLint `no-restricted-imports` at edit t
 ## Consequences
 
 The `dependency-rule` fence (charter-map: dependency-rule) is authoritative; ESLint is fast feedback.
-Cross-layer type leaks (CRM-native types above the port) are a separate fence (ADR-0004). This does NOT
+Cross-layer type leaks (CRM-native types above the port) are ADR-0004's concern; its dedicated fence
+lands with the first external-CRM adapter. This does NOT
 split the repo into physical packages.
 
 ## Revisit When

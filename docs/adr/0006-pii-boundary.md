@@ -14,8 +14,9 @@ and scrubbing at three crossings. The domain keeps precise PII for the UI; it is
 
 ## Decision
 
-`contracts/pii.ts` defines field-name and value patterns (SSN, DOB, PAN with a Luhn backstop, phone,
-email) and `assertNoPII(payload, boundary)` which throws `PII_VIOLATION` on any residue. PII is scrubbed
+`contracts/pii.ts` defines field-name and value patterns (field names: SSN, DOB, names, account/routing
+numbers; values: separated or labeled SSN, email, NANP/E.164 phone) and `assertNoPII(payload, boundary)`
+which throws `PII_VIOLATION` on any residue. PII is scrubbed
 at three enforcement points: (1) the **audit write** boundary (before every audit entry is persisted —
 so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (deferred until an AI
 surface is wired — no AI scaffolding now, charter #5); (3) the **API response** boundary (client bodies

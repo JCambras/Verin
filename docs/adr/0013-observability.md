@@ -19,7 +19,7 @@ duration); and all logs are **structured** via `pino` with PII scrubbed (ADR-000
 banned outside a small allowlist (only the logger scrubs PII). A dev/test exporter keeps spans in-process
 (no external collector required); production points OTLP at a collector via config (ADR-0003). Correlation
 ids thread from the HTTP boundary through the engine to the store/webhook. **Health + readiness endpoints**
-(`/health`, `/ready`) report liveness and store/outbox/chain-head readiness (charter #11). A fitness fence
+(`/health`, `/ready`) report liveness and store/outbox readiness (charter #11). A fitness fence
 asserts the engine step path and external calls are instrumented (not silently un-traced).
 
 ## Alternatives Rejected

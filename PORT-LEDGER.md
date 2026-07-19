@@ -33,7 +33,6 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 | **FreshValue** (freshness-as-opacity) | `src/components/shared/FreshValue.tsx:56` | Port-live; pervasive usage grows flow-by-flow |
 | **StatusBadge** | `src/components/shared/StatusBadge.tsx` | Port-live |
 | **EmptyState** | `src/components/shared/EmptyState.tsx` | Port-live; `action` on-ramps grow per surface |
-| **ConfirmAction** | `src/components/shared/ConfirmAction.tsx` | Port-live (confirm gates) |
 | **FormControls** | `src/components/shared/FormControls.tsx` | Port-live (shared inputs) |
 | **`Verin.` wordmark + design tokens** | wordmark treatment from `BrandReveal.tsx`; OKLCH slate + Geist | Live now (wordmark/fonts/seed tokens); full token set Phase D |
 
@@ -65,7 +64,7 @@ populated world together (captain D-005 / ADR-0012).
 | 16 | **Brand identity & reveal + brand-voice copy** — animated wordmark/tagline/splash + full voice pass | reveal `src/app/home/components/BrandReveal.tsx:60-69`; voice ROADMAP Priority 12 | **`Verin.` wordmark + tokens LIVE**; animated brand-reveal splash + full voice pass: first demo milestone |
 | 17 | **Demo-mode ergonomics** — `Ctrl+Shift+D` toggle, `?mode=demo`, booth attract mode, `data-autopilot` CSS hooks | Meridian demo-mode plumbing | First demo milestone |
 | 18 | **Presenter tooling** — cheatsheet, kill-lines, checklist | `DEMO_CHEATSHEET.md:122-137` | First demo milestone |
-| 19 | **Step-up / confirmation quality** — a wizard confirm gate that confirms the **payload**, not metadata (vs. `window.prompt`) | Meridian confirm gates | When a sensitive/irreversible action flow ships (money movement / wire) needing step-up auth |
+| 19 | **Step-up / confirmation quality** — a wizard confirm gate that confirms the **payload**, not metadata (vs. `window.prompt`) | Meridian confirm gates (`src/components/shared/ConfirmAction.tsx`) | When a sensitive/irreversible action flow ships (money movement / wire) needing step-up auth |
 | 20 | **Surfaced integration breadth** — multi-CRM (Redtail, Wealthbox), custodial (Schwab, Pershing, BridgeFT), DocuSign, PDF export, SF-Flow across 52 API routes | Meridian's surfaced adapters | Per integration, when each is wired as a **real** adapter behind its port (never scaffolded empty — charter #5) |
 
 ---

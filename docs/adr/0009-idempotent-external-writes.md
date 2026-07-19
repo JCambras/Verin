@@ -17,7 +17,7 @@ applied it inconsistently; the strongest idea was making "audit both paths" true
 
 Every external/house-CRM mutation goes through a single **`auditedWrite`** helper that: times the op,
 performs it, and audits **both** success and failure paths by construction (ADR-0007). Idempotency is a
-`(org_id, idempotency_key)` unique record (`crm_write_cache`-style): `replayOrPerform` returns the cached
+`(org_id, idempotency_key)` unique record (`crm_write_cache`-style): `auditedWrite` returns the cached
 result on replay instead of re-performing — so a webhook fired twice yields exactly-once effect. A fence
 (audited-write-required + **anti-fork**: the audit call may appear only inside the helper) makes hand-rolled
 or unaudited writes fail the build. Long-running / fire-and-return work (the simulated e-sign) uses the

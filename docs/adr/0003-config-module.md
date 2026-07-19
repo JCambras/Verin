@@ -16,7 +16,7 @@ imports, not raw env reads.
 ## Decision
 
 All environment access lives in `src/infrastructure/config` and nowhere else (fence: `no-process-env`,
-scans file *contents*, Phase B). One `configSchema` (Zod) validates and caches config; `getConfig()`
+scans file *contents*, Phase B). One Zod schema validates and caches config; `getConfig()`
 throws `FATAL: invalid configuration` at boot on any invalid/missing value. Production-specific
 `superRefine` guards refuse to boot when a dangerous config is present (e.g. demo auth provider in
 production, missing session secret, missing store DSN). No secret has a hardcoded fallback. Domain code

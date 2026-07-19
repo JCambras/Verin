@@ -1,7 +1,6 @@
 /**
- * Liveness endpoint (charter #11/#14). Readiness (store reachability, outbox
- * backlog, audit-chain head) is layered on in Phase E. Runs on the Node runtime
- * because later it touches the house-CRM store.
+ * Liveness endpoint (charter #11/#14). Distinct from /ready, which reports
+ * readiness (store reachability, outbox backlog).
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

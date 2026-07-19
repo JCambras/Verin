@@ -41,8 +41,8 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 - **T-T2 (High): bypass the audited-write helper.** *Exploit:* a new mutation writes without an audit entry.
   *Control:* the anti-fork fence — a mutation must route through `auditedWrite`, and audit calls may appear
   only inside the helper. *Fence:* `audited-write-required` (+ anti-fork).
-- **T-T3 (Medium): SQL injection via inputs.** *Control:* parameterized queries only; a fence bans string-
-  concatenated SQL. *Fence:* injection-defense (Phase B/E).
+- **T-T3 (Medium): SQL injection via inputs.** *Control:* parameterized queries only (every adapter binds
+  `$n` placeholders). *Fence:* none yet; an injection-defense fence is an explicit gap (see Gaps).
 
 ### R — Repudiation
 - **T-R1 (High): "I didn't make that change."** *Control:* every write records `org_id` + `actor` (threaded
@@ -54,7 +54,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   boundaries; logs via pino with scrubbing; raw `console.*` banned. *Fence:* PII-not-in-audit-store,
   no-console (ADR-0006).
 - **T-I2 (High): cross-tenant read.** *Exploit:* org A reads org B's rows. *Control:* `org_id` filter on
-  every query + access scope. *Fence:* `org-id-required`, tenant-isolation (Phase B).
+  every query + access scope. *Fence:* `org-id-required` (Phase B).
 - **T-I3 (Medium): internal error detail leaks to clients.** *Control:* `toResponse` returns code+message
   only, no stack/context (ADR-0002).
 - **T-I4 (High): a secret is committed or a live org domain ships in a doc.** *Control:* gitleaks + the
@@ -72,9 +72,10 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 - **T-E1 (High): a low-privilege actor performs a high-privilege action.** *Exploit:* an `advisor` calls a
   `principal`-only port. *Control:* server-side RBAC at the port (`requireRole`); roles enum in contracts.
   *Fence:* `auth-enforcement` (routes resolve a session and check role).
-- **T-E2 (High): demo/seed affordance reachable in production.** *Control:* demo-mode isolation — the
-  config refuses a demo provider in production (ADR-0003); a fence checks demo affordances cannot run in
-  prod. *Fence:* demo-mode-prod-isolation (Phase E).
+- **T-E2 (High): demo/seed affordance reachable in production.** *Control:* the config fail-closed guards
+  refuse a non-postgres driver or placeholder secrets in production (ADR-0003); the populated demo world
+  is deferred (D-005), so no demo affordance ships yet. *Fence:* the config superRefine guards; a
+  dedicated demo-mode fence lands with the demo milestone.
 
 ## Gaps (explicit, owned, dated)
 
@@ -83,6 +84,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 | Per-tenant rate limiting | red-team persona | scale-ladder trigger | ADR-0015; blunted by idempotency + size limits now. |
 | Field-level PII-at-rest encryption | red-team persona | WISP technical control | House-CRM PII relies on transport + access control now. |
 | Full DSAR workflow | compliance persona | design contract | ADR-0019 retention hold defined; workflow deferred. |
+| Injection-defense fence (T-T3: ban string-built SQL) | founder | next adapter / query surface | Parameterized-only today; not machine-enforced. |
 
 ## Attack-round checklist (each audit)
 

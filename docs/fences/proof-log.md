@@ -171,3 +171,13 @@ enforcement layer itself; each is fixed with a companion that rejects the previo
   **Executed proof:** unseeded store → exit 1 ("no orgs found"); seeded → OK (1 entries); re-seed →
   still exactly 1 entry (idempotency-key replay). `verifyOrgChain` also now returns BROKEN when
   entries exist without an anchor row (anchor-removal cover-up), covered in the integration suite.
+
+---
+
+## Companion-proven fences (no real-tree injection entry)
+
+`line-budget` and `max-file-size` carry no PF entry: a real-tree injection would mean committing
+hundreds of filler lines to breach a ceiling. Their proof is the co-located
+`describe("detects (companion)")` blocks, which feed the same check functions synthetic over-budget
+totals / over-ceiling files and assert they fail (charter #4); FOUNDATION.md §2 records "companions"
+as their proof in the fence table.

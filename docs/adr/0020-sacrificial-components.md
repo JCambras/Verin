@@ -37,8 +37,8 @@ scaffolded empty.
 ## Consequences
 
 Charter #5 (nothing built-but-not-shipped): the register's components are all reachable and used now; the
-knip dead-export gate backs this mechanically. Demo-mode isolation (a fence, Phase E) ensures sacrificial
-demo affordances cannot run in production.
+knip dead-export gate backs this mechanically. Demo-mode isolation rests on the config fail-closed
+production guards (ADR-0003) until a dedicated fence lands with the demo milestone (D-005).
 
 ## Revisit When
 

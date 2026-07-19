@@ -24,8 +24,8 @@ All security gates are **blocking** (no `continue-on-error`):
 - **SAST** — semgrep (`p/typescript p/react p/nodejsscan p/secrets`), `--error`.
 - **SBOM** — CycloneDX generated on release.
 
-A backstop `no-secrets` fitness fence (Phase B) also catches key-shaped strings locally so a leak fails fast
-even without the CI tool.
+A backstop `no-secret-fallback` fitness fence (Phase B) also catches secret fallbacks, live org domains,
+and non-placeholder `.env.example` values locally so a leak fails fast even without the CI tool.
 
 ## Alternatives Rejected
 

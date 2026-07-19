@@ -16,7 +16,9 @@ a client-side shadow world, a single global custodian switch, and one-Salesforce
 ## Decision
 
 Domain defines a `CRMPort` (and a lower-level `StorePort` for persistence). No CRM-native types, field
-names, or SDK imports cross the port (fence: no-CRM-types-above-port, Phase B). The house CRM is the
+names, or SDK imports cross the port (enforced today by the dependency-rule fence and the deliberate
+absence of any external-CRM adapter code; a dedicated CRM-type-leak fence lands with the first
+external-CRM adapter). The house CRM is the
 port's first real adapter: genuine persistence, real CRUD, canonical schema as its schema. The store is
 **PostgreSQL** — **PGlite** (real Postgres, WASM, durable) in dev/CI behind `StorePort`, managed Postgres
 via `node-postgres` in production (D-006); DDL/triggers are portable Postgres. Every query filters by

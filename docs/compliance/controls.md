@@ -34,7 +34,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | CC5.x | Control activities | the fitness-fence suite | `pnpm test:fitness` | ADR-0016 | CI gate results + `docs/fences/proof-log.md` |
 | **CC6.1** | Logical access | auth + RBAC at port | `auth-enforcement` | ADR-0008 | session records; CI |
 | CC6.2/6.3 | Access provisioning/removal | session revocation, RBAC | `auth-enforcement` | ADR-0008 | revoked-sessions store |
-| CC6.6 | Boundary protection | security headers, CSRF | e2e/headers test | `next.config.ts` | CI |
+| CC6.6 | Boundary protection | security headers, CSRF | none yet (explicit gap below) | `next.config.ts` | CI |
 | CC6.7 | Confidentiality of data | PII boundary | PII fences | ADR-0006 | scrub coverage; CI |
 | CC7.1/7.2 | Detect anomalies | OTel metrics/logs | `observability-coverage` | ADR-0013 | telemetry |
 | **CC7.4** | Records integrity | append-only + hash chain | `audited-write-required`, `audit-chain-verify` | ADR-0007 | scheduled chain-verify evidence |
@@ -67,5 +67,6 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | Formal org-policy set (12 policies) & vendor risk register | CC1/CC9 | founder | pre-audit (Vanta/Drata/Secureframe templates) |
 | Per-tenant rate limiting | A1.1 | red-team persona | scale-ladder trigger (ADR-0015) |
 | Alerting rules as code | CC7.2 | founder | deploy-target selection (ADR-0003/0013) |
+| Security-headers test (declared in `next.config.ts`, asserted nowhere) | CC6.6 | founder | pre-audit |
 
 Gaps are tracked here, not hidden. Each closes into a Code/Test/Doc/Op row when implemented.
