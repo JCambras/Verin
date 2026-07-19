@@ -2,8 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/app/**/{page,layout,route,loading,error,not-found,default,template,global-error,sitemap,robots,icon,apple-icon,opengraph-image}.{ts,tsx}",
-    "middleware.ts",
-    "next.config.ts",
     "scripts/**/*.ts",
     "e2e/**/*.spec.ts",
     "src/__tests__/**/*.{test,spec}.{ts,tsx}",
