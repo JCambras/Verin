@@ -254,7 +254,7 @@ the file → revert → green):
 **Invariant (charter #3 / ADR-0022; closes Vale V12):** every metric-class value renders with provenance —
 the sanctioned renderers (`<Metric>`, `<FreshValue>`) keep their provenance prop REQUIRED (RULE A), and no
 metric-class field (derived from the dictionary `display:"metric"` flag) appears in a JSX expression, in
-child position or in an attribute of anything but a sanctioned renderer (RULE B).
+child position or in an attribute/spread of anything but a sanctioned renderer (RULE B).
 
 **RULE B injection:** created `src/app/app/_adv-metric/page.tsx` rendering `<span>{account.balanceMinorUnits}</span>`.
 **Observed failure (verbatim):**
@@ -290,7 +290,22 @@ src/app/app/_adv-metric/page.tsx:6 :: metric field 'balanceMinorUnits' rendered 
 plain-element `title={…}`, and sanctioned `<Metric>`/`<FreshValue>` attribute cases are all
 companion-proven.
 
-**Date:** 2026-07-19 (Wave-1 prereq; RULE B strengthened same PR, review round 2).
+**RULE B spread-attribute injection (strengthening, same PR):** a JSX spread attribute contains NO
+`JsxExpression` node (verified with a ts-morph probe), so the JsxExpression-only scan never saw spreads
+at all - the `{...spread}` exemption branch was dead code and a metric field spread onto ANY element
+escaped the fence while the comment claimed otherwise. Fixed: `JsxSpreadAttribute` nodes are scanned
+directly, exempt only on `<Metric>`/`<FreshValue>`. Injected `src/app/app/_adv-metric/page.tsx` rendering
+`const props = { v: account.balanceMinorUnits }; return <Cell {...props} />;`.
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/metric-provenance.test.ts > metric-provenance fence > RULE B: no metric field is rendered in JSX without provenance
+AssertionError: naked metric renders (charter #3 / Vale V12):
+src/app/app/_adv-metric/page.tsx:4 :: metric field 'balanceMinorUnits' rendered without provenance (route it through <Metric>/<FreshValue>)
+```
+**Revert:** deleted the file; suite green (`Tests 18 passed`). Inline-object spread, aliased-props-object
+spread, and sanctioned `<Metric {...props}/>` cases are companion-proven.
+
+**Date:** 2026-07-19 (Wave-1 prereq; RULE B strengthened same PR, review rounds 2 and 3).
 
 ### PF-019 · derived-provenance · `src/__tests__/fitness/derived-provenance.test.ts`
 **Invariant (charter #3 EXTENSION / ADR-0022):** a value derived from any synthetic input, at any depth

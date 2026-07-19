@@ -23,9 +23,10 @@ import { DATA_DICTIONARY, type FieldSpec } from "@domain/schema/dictionary";
  *    its provenance envelope and rendering it naked
  *    (`<td>{account.balanceMinorUnits}</td>`) is the exact bypass Vale V12 named;
  *    forwarding it as a prop to an unsanctioned component or a plain element
- *    (`<Cell v={account.balanceMinorUnits}/>`, `title={…}`) escapes just the same,
- *    so only attributes on `<Metric>`/`<FreshValue>` are exempt: that is precisely
- *    where provenance is preserved.
+ *    (`<Cell v={account.balanceMinorUnits}/>`, `title={…}`), or spreading it in
+ *    (`<Cell {...props}/>`), escapes just the same, so only attributes and spreads
+ *    on `<Metric>`/`<FreshValue>` are exempt: that is precisely where provenance
+ *    is preserved.
  *
  * The type system carries the primary guarantee (a `DisplayMetric` is not a
  * `ReactNode`, and `<Metric>` requires provenance); this fence guards the two seams
@@ -113,26 +114,35 @@ function referencesMetricField(node: Node, locals: Map<string, Node>, metric: Se
   return null;
 }
 
-/** RULE B: metric fields in JSX child position or in an attribute of a non-sanctioned element. */
+/** Is `node` the opening/self-closing element of a sanctioned renderer tag? */
+function onSanctionedTag(opening: Node | undefined): boolean {
+  return (
+    opening !== undefined &&
+    (Node.isJsxOpeningElement(opening) || Node.isJsxSelfClosingElement(opening)) &&
+    SANCTIONED_TAGS.has(opening.getTagNameNode().getText())
+  );
+}
+
+/** RULE B: metric fields in JSX child position or in an attribute/spread of a non-sanctioned element. */
 export function nakedMetricRenders(sf: SourceFile, rel: string, metric: Set<string>): string[] {
   const out: string[] = [];
   const locals = localInitializers(sf);
+  const flag = (expr: Node, line: number): void => {
+    const hit = referencesMetricField(expr, locals, metric, new Set());
+    if (hit) out.push(`${rel}:${line} :: metric field '${hit}' rendered without provenance (route it through <Metric>/<FreshValue>)`);
+  };
   for (const jsxExpr of sf.getDescendantsOfKind(SyntaxKind.JsxExpression)) {
-    const parentKind = jsxExpr.getParent()?.getKind();
-    // Attribute positions (`prop={…}` / `{...spread}`) are exempt ONLY on a sanctioned
-    // renderer (`<Metric metric={…}>`); on any other tag they are checked like children.
-    if (parentKind === SyntaxKind.JsxAttribute || parentKind === SyntaxKind.JsxSpreadAttribute) {
-      const opening = jsxExpr.getParent()?.getParent()?.getParent();
-      const tag =
-        opening && (Node.isJsxOpeningElement(opening) || Node.isJsxSelfClosingElement(opening))
-          ? opening.getTagNameNode().getText()
-          : null;
-      if (tag !== null && SANCTIONED_TAGS.has(tag)) continue;
-    }
+    // An attribute (`prop={…}`) is exempt ONLY on a sanctioned renderer
+    // (`<Metric metric={…}>`); on any other tag it is checked like a child.
+    if (jsxExpr.getParent()?.getKind() === SyntaxKind.JsxAttribute && onSanctionedTag(jsxExpr.getParent()?.getParent()?.getParent())) continue;
     const inner = jsxExpr.getExpression();
-    if (!inner) continue;
-    const hit = referencesMetricField(inner, locals, metric, new Set());
-    if (hit) out.push(`${rel}:${jsxExpr.getStartLineNumber()} :: metric field '${hit}' rendered without provenance (route it through <Metric>/<FreshValue>)`);
+    if (inner) flag(inner, jsxExpr.getStartLineNumber());
+  }
+  // A spread attribute (`{...props}`) wraps its expression directly - it contains
+  // NO JsxExpression node - so it needs its own scan; same sanctioned-tag exemption.
+  for (const spread of sf.getDescendantsOfKind(SyntaxKind.JsxSpreadAttribute)) {
+    if (onSanctionedTag(spread.getParent()?.getParent())) continue;
+    flag(spread.getExpression(), spread.getStartLineNumber());
   }
   return out;
 }
@@ -216,6 +226,18 @@ describe("metric-provenance fence", () => {
     it("RULE B flags a metric displayed via a plain element's title attribute", () => {
       const sf = file(`export default function P(){ const a = {} as any; return <span title={a.balanceMinorUnits} />; }`);
       expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric).length).toBe(1);
+    });
+    it("RULE B flags a metric spread onto a NON-sanctioned component (inline object)", () => {
+      const sf = file(`export default function P(){ const account = {} as any; return <Cell {...{ v: account.balanceMinorUnits }} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric).length).toBe(1);
+    });
+    it("RULE B flags a metric spread onto a NON-sanctioned component via an aliased props object", () => {
+      const sf = file(`export default function P(){ const a = {} as any; const props = { v: a.balanceMinorUnits }; return <Cell {...props} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric).length).toBe(1);
+    });
+    it("RULE B PASSES a spread on a sanctioned renderer (<Metric {...props} />)", () => {
+      const sf = file(`export default function P(){ const a = {} as any; const props = { metric: metric(a.balanceMinorUnits, "currency-minor", a.provenance) }; return <Metric {...props} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric)).toEqual([]);
     });
     it("RULE B ignores a non-metric child (<span>{a.name}</span>)", () => {
       const sf = file(`export default function P(){ const a = {} as any; return <span>{a.name}</span>; }`);

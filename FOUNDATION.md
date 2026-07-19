@@ -71,7 +71,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
-| `metric-provenance` (AST: renderer contract + no metric field in a child or non-sanctioned attribute) | every displayed metric carries source/asOf (#3, Vale V12) | PF-018 + companions |
+| `metric-provenance` (AST: renderer contract + no metric field in a child or non-sanctioned attribute/spread) | every displayed metric carries source/asOf (#3, Vale V12) | PF-018 + companions |
 | `derived-provenance` | a synthetic- or demonstration-derived artifact is a demonstration (transitive), can't feed compliance (#3, ADR-0022) | PF-019 + companions |
 | `org-id-required` | every tenant query filters org_id (#7) | PF-009 + companion |
 | `no-client-role-header` | identity never from a header (#7) | PF-010 |

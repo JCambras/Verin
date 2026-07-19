@@ -4,7 +4,7 @@
  * Metric — the sanctioned metric-class UI surface (charter #3; ADR-0022; closes
  * Vale V12). Renders a `DisplayMetric`'s formatted value with its source/asOf
  * provenance label (via FreshValue, so freshness/staleness apply too), plus the
- * "demonstration — not a compliance record" watermark when the metric was derived
+ * "Demonstration - not a compliance record" watermark when the metric was derived
  * from synthetic input.
  *
  * A metric cannot be rendered here without provenance: the prop IS a `DisplayMetric`,
