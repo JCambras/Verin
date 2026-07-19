@@ -21,7 +21,9 @@ function committedTextFiles(): Array<{ rel: string; text: string }> {
     .map((f) => ({ rel: relative(REPO_ROOT, f), text: readFileSync(f, "utf8") }));
 }
 
-const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL)";
+// Alternation fragment of this fence's own detection regex, not a credential
+// (njsscan's node_secret heuristic flags any *SECRET* variable holding a string).
+const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL)"; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_secret
 // Applied to the comment-stripped WHOLE file (\s spans newlines), so wrapping the
 // `??`/`||` fallback across lines is not an evasion.
 const SECRET_FALLBACK_RE = new RegExp(
