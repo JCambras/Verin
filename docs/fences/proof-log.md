@@ -392,7 +392,7 @@ canonical UTC ISO-8601 string, and the `contacts.household_id` / `financial_acco
 # sessions.org_id REFERENCES orgs(id) removed:
   × sessions.org_id must reference an existing org
 ```
-**Revert:** restored the DDL; `pnpm test` → `Tests 202 passed` (store-schema file: `Tests 10 passed`).
+**Revert:** restored the DDL; `pnpm test` → `Tests 212 passed` (store-schema file: `Tests 10 passed`).
 Each test asserts BOTH halves (the violation is rejected AND the valid row is accepted), so it cannot pass
 by always-throwing. The `financial_accounts.household_id` FK is the same REFERENCES mechanism as the
 `contacts` one, proven by the same test shape.
