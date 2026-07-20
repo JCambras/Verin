@@ -49,7 +49,24 @@ Pairs with ADR-0009 (idempotent resume) and ADR-0007 (audited finalize). Charter
 
 Pre-suspend writes (`createHousehold`/`createContact`/`createApplication`/`setEsignRequested`) carry
 per-execution idempotency keys (`<step>:<executionId>`), so retrying the SAME execution replays its
-committed writes instead of duplicating them. Two recovery paths remain deferred:
+committed writes instead of duplicating them.
+
+**Cross-submit dedup: UN-DEFERRED (D-027).** The flow-start route now requires a client-minted
+per-form-session UUID (`clientRequestId`), used as the executionId: a double-submit (network retry,
+second tab) resolves to the SAME execution — the route reports its current state (org-checked) instead
+of starting a duplicate. A replayed id whose execution FAILED is re-driven from its saved cursor
+(`retryFlow` — the start-path mirror of resume's Vale V7 retry; the per-write keys make it replay-safe),
+so a transient mid-start failure is recoverable by resubmitting instead of dead-ending. Only the
+concurrent race loser's own PK conflict (SQLSTATE 23505) resolves as a replay; any other start failure
+surfaces as a typed error, including a storage throw during the re-drive itself (mapped to a typed
+AppError, never an unenveloped 500). A replayed id is honored only for an IDENTICAL payload: a resubmit
+with edited input under the same id is rejected with a typed `CONFLICT` instead of silently replaying
+the stale submission, and the client re-mints its request id after any failed response, so an edited
+resubmit becomes a genuinely new execution. Locked by integration specs (same id → one household + the
+same resume token; a different id → a genuinely new execution; a failed start → re-driven, still one
+household; an edited resubmit → CONFLICT, no stale write, no duplicate).
+
+Two recovery paths remain deferred:
 
 - **Compensation** — a transient failure after `createHousehold` commits still leaves the created rows
   behind if the user abandons and re-submits (a NEW execution mints new keys); no automatic rollback of

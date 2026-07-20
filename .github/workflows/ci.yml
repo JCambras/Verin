@@ -100,12 +100,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      # Run the pinned gitleaks CLI directly over the full local history instead
+      # of gitleaks-action@v2: on pull_request events the action first fetches
+      # the PR's commits from the GitHub REST API, so a transient API 5xx crashes
+      # the check before any scanning happens. Scanning the whole clone locally
+      # needs no API token and covers a superset of the PR range.
+      - name: Install gitleaks
         env:
-          # Required on pull_request events: the action fetches PR commits via the API.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_VERSION: 8.24.3
+          GITLEAKS_SHA256: 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: gitleaks
+        run: gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 .
 
   sast:
     name: sast (semgrep)

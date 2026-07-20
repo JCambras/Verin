@@ -1,13 +1,14 @@
 /**
  * Tracing (ADR-0013, charter #14). withSpan wraps every flow step and every
  * external/store call so latency and failures are observable. Spans go to the
- * OpenTelemetry API (the deploy target registers an exporting provider, pointed
- * at a collector via OTEL_EXPORTER_OTLP_ENDPOINT) AND to an in-memory ring the
- * tests assert on — so "traces exist" is verifiable, not modeled. The
+ * OpenTelemetry API — exported over OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set
+ * (otel-provider.ts registers the NodeTracerProvider) — AND to an in-memory ring
+ * the tests assert on, so "traces exist" is verifiable, not modeled. The
  * observability-coverage fence checks the engine + external calls are wrapped.
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";
+import { registerOtelProviderIfConfigured } from "./otel-provider";
 
 export interface RecordedSpan {
   name: string;
@@ -29,6 +30,7 @@ function record(s: RecordedSpan): void {
   if (ring.length > RING_MAX) ring.shift();
 }
 
+registerOtelProviderIfConfigured();
 const tracer = trace.getTracer(getConfig().otel.serviceName);
 
 /** Run `fn` inside a span. Records to OTel and the in-memory ring. */

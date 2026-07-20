@@ -18,8 +18,11 @@ span** carrying latency + outcome attributes (`durationMs`, `ok`); a dedicated O
 (step-latency / flow-outcome / outbox-depth instruments) is deferred to the deploy target; today those
 signals live on spans and in `/ready`'s backlog query; and all logs are **structured** via `pino` with
 PII scrubbed (ADR-0006) — raw `console.*` is
-banned outside a small allowlist (only the logger scrubs PII). A dev/test exporter keeps spans in-process
-(no external collector required); production points OTLP at a collector via config (ADR-0003). Correlation
+banned outside a small allowlist (only the logger scrubs PII). Span export is WIRED, not modeled
+(finding #9): when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (ADR-0003 config), `otel-provider.ts` registers a
+`NodeTracerProvider` with a batching OTLP/HTTP exporter pointed at that collector; without an endpoint no
+provider is registered and the OTel API is a no-op — dev/test rely on the in-process span ring
+(`tracer.ts`), which records in BOTH modes so tests stay exporter-independent. Correlation
 ids thread from the HTTP boundary through the engine to the store/webhook. **Health + readiness endpoints**
 (`/health`, `/ready`) report liveness and store/outbox readiness (charter #11). A fitness fence
 asserts the engine step path and external calls are instrumented (not silently un-traced).
@@ -40,7 +43,9 @@ asserts the engine step path and external calls are instrumented (not silently u
 ## Consequences
 
 Feeds the SLO/error-budget policy (ADR-0014) and health checks (charter #11). Alerting rules as code land
-with the deploy target. Fence: observability-coverage (engine + external calls instrumented).
+with the deploy target. Fences: observability-coverage (engine + external calls instrumented); no-console
+(all server-side layers — domain, infrastructure, AND app; `"use client"` files excepted because the
+browser console is a different, lower-stakes surface).
 
 ## Revisit When
 

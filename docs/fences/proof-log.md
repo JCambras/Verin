@@ -344,3 +344,31 @@ a chained demonstration derivation must NOT feed a compliance decision
 synthetics but ignores demonstration inputs (chained laundering) is companion-proven rejected.
 
 **Date:** 2026-07-19 (Wave-1 prereq; transitivity strengthened same PR, review round 2).
+
+### PF-020 · no-console (extended to the app layer) · `src/__tests__/fitness/no-console.test.ts`
+**Invariant (ADR-0013 / charter #14, deep-review #12):** raw `console.*` is banned in ALL shipped
+server-side code — domain, infrastructure, AND `src/app/` (route handlers, server actions, server
+components handle raw PII like login email/password; only the pino logger scrubs). Files whose FIRST
+statement is a `"use client"` directive are exempt (browser console — a different, lower-stakes
+surface); a directive buried after real code does NOT exempt.
+
+**Injection:** planted `console.log("PII leak:", req.headers);` in the app-layer route handler
+`src/app/api/audit/route.ts` (previously OUTSIDE the fence's sweep — the exact gap #12 named).
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/no-console.test.ts > no-console fence > enforces: no raw console.* in server-side code (domain/infrastructure/app)
+AssertionError: raw console.* (use the pino logger):
+src/app/api/audit/route.ts:24: expected [ 'src/app/api/audit/route.ts:24' ] to deeply equal []
+```
+**Revert:** removed the planted line; suite green (`Tests 8 passed`). Companions prove the fence catches
+a server route handler AND a directive-less server component, allows a leading `"use client"` file,
+and refuses a buried directive; the reviewed-allowlist carries a staleness guard (an entry pointing at
+a missing file fails).
+
+**Accepted gap (recorded):** the `"use client"` exemption is broader than the invariant strictly
+needs — client components ALSO execute server-side during SSR/prerender, so a `console.*` in module
+scope or the render body still writes to server stdout; the browser-console rationale fully holds only
+for event handlers/effects (which never run on the server). A stricter handlers-only variant was
+considered and deliberately not implemented (practical trade-off; the fence text carries the same note).
+
+**Date:** 2026-07-19 (deep-review r6 quality sweep, finding #12).

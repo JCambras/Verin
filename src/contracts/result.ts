@@ -37,10 +37,3 @@ export function unwrap<T, E>(r: Result<T, E>): T {
 export function map<T, U, E>(r: Result<T, E>, fn: (value: T) => U): Result<U, E> {
   return r.ok ? ok(fn(r.value)) : r;
 }
-
-export async function flatMapAsync<T, U, E>(
-  r: Result<T, E>,
-  fn: (value: T) => Promise<Result<U, E>>,
-): Promise<Result<U, E>> {
-  return r.ok ? fn(r.value) : r;
-}

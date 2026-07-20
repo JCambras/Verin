@@ -197,3 +197,57 @@ trigger (watermark removal):** a consenting real design partner supplies real da
 **Revert path:** this amends CHARTER.md — reverting requires a superseding ADR (charter operating model);
 the code revert is removing the derivation vocabulary + fence and restoring the prior
 `canFeedComplianceDecision`. Proven adversarially (proof-log PF-019).
+
+### D-027 · 2026-07-19 · captain-decision · Cross-submit dedup UN-DEFERRED: flow start keys on a client-minted request id (deep-review #10)
+The ADR-0011 deferral "cross-submit dedup" is closed: `/api/flows/account-opening` now REQUIRES a
+client-minted per-form-session UUID (`clientRequestId`), which becomes the executionId. A double-submit
+(network retry, second tab) therefore resolves to the SAME execution — the route returns its current
+state (org- and flow-checked, so a guessed foreign id can never leak another tenant's state; the
+concurrent-race loser resolves the flow_executions PK conflict the same way) — instead of creating
+duplicate households/contacts/applications. Same-execution replay semantics were already in place
+(D-021); this puts a stable key in the client's hands. **Alternatives:** a `start:<uuid>` idempotency
+scope wrapping only the first write (leaves the application/contact unscoped); server-side payload
+hashing (false-dedups two genuinely different submissions with identical fields). **Revert path:** make
+`clientRequestId` optional in the route and mint server-side; the wire replay path is inert without a
+client id. Proven by the double-submit integration spec (same id → one household + same resume token;
+different id → a new execution).
+**Final replay semantics (review follow-up):** a replayed id is honored only for an IDENTICAL payload -
+a suspended/completed execution reports its current state, and a FAILED one is re-driven from its saved
+cursor (`retryFlow`, with any storage throw during the re-drive mapped to a typed AppError, never an
+unenveloped 500). A resubmit whose input fields (householdName/firstName/lastName/email/accountType)
+differ from the persisted submission is rejected with a typed `CONFLICT` (409) instead of silently
+writing the stale values, and the client re-mints its request id after any failed response, so a user
+who edits the form and resubmits starts a genuinely fresh execution. Locked by the edited-resubmit
+integration specs (CONFLICT on mismatch, no stale write, no duplicate; identical payload still re-drives).
+
+### D-028 · 2026-07-19 · captain-decision · Deep-review quality sweep (r6 findings #2-#5, #9-#14) shipped as one batch
+Captain-authorized batch, one PR, each item test- or fence-locked:
+- **#2** Finalize OPENS the account: `createFinancialAccount` takes `openDate` (the e-sign `signedAt`
+  threaded through the flow payload) and derives `status='open'`; the store now agrees with the UI's
+  "Account opened". Locked by integration assertions (`status='open'`, `open_date=signedAt`).
+- **#3** `auditedWrite` failure paths: the caught error is logged (with `logLevelFor`) before mapping;
+  unknown errors map to INTERNAL/500 (STORE_CONSTRAINT/409 reserved for SQLSTATE class-23 driver codes);
+  a void `perform` under an idempotencyKey fails as an explicit invariant (it can neither be cached nor
+  replay-detected). Locked by `src/__tests__/integration/audited-write.test.ts`.
+- **#4** Audit view: "When" column, newest-first, response capped to the latest 200 + total; the API
+  verifies the WHOLE chain and lists from the SAME single scan (`verifyAndListOrgChain`).
+- **#5+#9** Observability wired, not ripped out: `otel-provider.ts` registers a NodeTracerProvider +
+  OTLP/HTTP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (ADR-0013 updated); the genuinely-dead
+  `lucide-react` removed; knip `dependencies` flipped to `error` (dead deps now fail the build).
+- **#11** Threat model T-S3 corrected: HMAC covers the TOKEN; the payload is server-constructed and
+  never trusted (doc now matches `esign.ts`/`engine.ts` exactly).
+- **#12** no-console fence extended to `src/app/` (server-side files; `"use client"` exempt with the
+  browser-console rationale; reviewed-allowlist + staleness guard). Companion cases added; proof PF-020.
+- **#13** No fabricated Principal: CRM/application mutations take a narrow `WriteActor`
+  (`{orgId, actorUserId}`); the webhook/finalize paths construct one honestly ("this write was driven by
+  an external event on behalf of user X") instead of a costume `role:"ops"` Principal that would become
+  a forged credential the day port-level role checks land.
+- **#14** Housekeeping: `updateHouseholdName` reads its before-snapshot INSIDE the write tx
+  (`FOR UPDATE` + late-bound `buildBefore`); speculative exports pruned (`assertNoPII`, `maskValue`,
+  `flatMapAsync`, `hasAtLeastRole`+rank table, `isRetryable`; `getHousehold` became dead and was pruned
+  too) while `logLevelFor` gained its first real consumer (#3's failure log) — the ERROR_MAP metadata
+  stays as the ADR-0002 taxonomy spec; pino redact widened to depth 4 with the limit documented; logout
+  reissues the clearing cookie via `sessionCookieOptions()` + `maxAge:0`; `readJsonBody` uses `ok()`.
+**Revert path:** each item is a small, independently revertable change; none is schema- or
+contract-breaking (the `WriteActor` narrowing is adapter-internal; routes still resolve full Principals
+for RBAC).

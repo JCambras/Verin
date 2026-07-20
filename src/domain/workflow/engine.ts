@@ -120,6 +120,22 @@ export async function startFlow<D>(
   return drive(def, store, deps, state);
 }
 
+/**
+ * Re-drive a FAILED execution from its saved cursor — the start-path mirror of
+ * resumeFlow's Vale V7 retry (D-027): writes committed before the failure sit
+ * behind per-write idempotency keys, so re-running the failed step is safe and a
+ * resubmit of the same client request id recovers instead of dead-ending on the
+ * persisted failure. Callers gate on status === "failed".
+ */
+export async function retryFlow<D>(
+  def: FlowDefinition<D>,
+  store: ExecutionStore,
+  deps: D,
+  state: ExecutionState,
+): Promise<FlowRunResult> {
+  return drive(def, store, deps, { ...state, status: "running" });
+}
+
 export async function resumeFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,

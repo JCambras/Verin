@@ -90,10 +90,6 @@ export function logLevelFor(code: ErrorCode): CodeMeta["logLevel"] {
   return ERROR_MAP[code].logLevel;
 }
 
-export function isRetryable(error: AppError): boolean {
-  return ERROR_MAP[error.code].retryable;
-}
-
 /** Client-safe HTTP response body — no stack traces, no internal context. */
 export function toResponse(error: AppError): { status: number; body: { error: { code: ErrorCode; message: string } } } {
   return {

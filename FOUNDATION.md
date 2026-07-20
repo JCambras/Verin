@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (183 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (202 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
@@ -20,7 +20,7 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPII` + scrub); 22 build-failing fitness
+Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 22 build-failing fitness
 fences; ratchet-down line budgets + a separate presentation budget.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
@@ -36,8 +36,8 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Tamper-evident, hash-chained audit trail** (append-only Postgres triggers + transactional outbox +
   per-org hash chain), re-verifiable (`/api/audit`, `scripts/audit-chain-verify.ts`).
 - **House-CRM console:** RBAC-gated CRUD; every edit through the audited-write helper.
-- **Observability:** OpenTelemetry spans on every flow step + external call; pino structured logs;
-  `/health` + `/ready`.
+- **Observability:** OpenTelemetry spans on every flow step + external call, exported over OTLP/HTTP
+  when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (ADR-0013); pino structured logs; `/health` + `/ready`.
 - **House-CRM store:** PGlite (real Postgres) behind the store interface (`SqlDb`) in dev/CI; managed Postgres in prod
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
@@ -57,7 +57,7 @@ PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-017).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-020).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -65,7 +65,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `dependency-rule` (ts-morph: static+relative+dynamic+require) | layer boundary (#1) | PF-002 + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
-| `no-console` | PII-safe logging only (#14) | PF-005 |
+| `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
 | `no-secret-fallback` / no-live-org-domain / placeholder-.env | config hygiene (#7) | PF-006 |
 | `line-budget` (platform ratchet + separate presentation) / `max-file-size` | budgets (#1,#10) | companions |
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
@@ -110,7 +110,7 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 183 / knip / e2e 12 green):**
+**Highest-impact fixes (re-verified: typecheck / lint / test 202 / knip / e2e 12 green):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.

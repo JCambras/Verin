@@ -16,6 +16,13 @@ export default function AccountOpeningPage() {
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // One UUID per form session (D-027): the server uses it as the executionId, so
+  // a double-submit (network retry, second tab re-posting the same session)
+  // replays the same execution instead of creating duplicate households. A
+  // FAILED response burns the id (re-minted in start()), so a user who edits the
+  // form and resubmits gets a genuinely fresh execution - the server refuses to
+  // replay a used id with different input.
+  const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
   function steps(): ProgressStep[] {
     return [
@@ -38,6 +45,7 @@ export default function AccountOpeningPage() {
       lastName: String(fd.get("lastName") ?? ""),
       email: String(fd.get("email") ?? ""),
       accountType: String(fd.get("accountType") ?? ""),
+      clientRequestId,
     };
     try {
       const res = await fetch("/api/flows/account-opening", {
@@ -46,7 +54,17 @@ export default function AccountOpeningPage() {
         body: JSON.stringify(payload),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) return setError(body?.error?.message ?? "Could not start the flow.");
+      if (!res.ok) {
+        setClientRequestId(crypto.randomUUID());
+        return setError(body?.error?.message ?? "Could not start the flow.");
+      }
+      // Render what the server reports: a replayed submit can reattach to an
+      // execution that already completed, or one still mid-flight (multi-tab
+      // race) with nothing to sign yet — never a dead "awaiting" screen.
+      if (body.status === "completed") return setPhase("completed");
+      if (body.status !== "suspended" || !body.token) {
+        return setError("This request is still being processed. Wait a moment, then submit again to check its status.");
+      }
       setToken(body.token);
       setPhase("awaiting");
     } catch {
