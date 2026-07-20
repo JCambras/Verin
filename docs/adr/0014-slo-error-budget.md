@@ -22,9 +22,17 @@ Foundation SLO targets (measured via OTel):
 - **Workflow success:** > 95% of started flows complete or suspend cleanly (no crash).
 
 **Error-budget policy:** > 50% budget remaining → ship freely; 20-50% → caution (no risky changes); < 20% →
-freeze features, spend the budget on reliability. The load gate (`scripts/load-smoke.ts`, charter #11)
-asserts a store-read p95 threshold so a latency regression fails CI — the budget is owned, not
-aspirational; the step/LCP/health SLO numbers above are telemetry targets (ADR-0013), not gate assertions.
+freeze features, spend the budget on reliability. The load gate (`scripts/load-smoke.ts`, charter #11) is
+the enforcement boundary for the interactive-step budget. Against a pilot-scale seed it drives N
+account-opening flows end-to-end through `startAccountOpening`/resume - the real hot path, where each
+interactive step runs ~7-SQL audited writes plus a full outbox drain and a tamper-evident hash-chain append
+- and asserts flow-step p95 < 2s. It then fires a batch of concurrent flows and reads to exercise the
+single-connection serialize mutex (db.ts) and asserts that contended step p95 < 2s as well, surfacing lock
+contention a sequential loop never sees. It still keeps a tighter store-read p95 threshold. So an
+audited-write regression, a hash-chain slowdown, or mutex contention now fails CI: the step budget is
+measured, not modeled. N and the concurrency factor are sized for demo scale so the gate stays within CI
+time/resource bounds. The availability, LCP, health, error-rate, and workflow-success SLO numbers above
+remain telemetry targets (ADR-0013), not gate assertions.
 
 ## Alternatives Rejected
 
