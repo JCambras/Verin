@@ -141,6 +141,103 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
   });
 
+  it("an EDITED resubmit under the same client request id is rejected with a typed CONFLICT — never a silent replay of stale input (D-027)", async () => {
+    const clientRequestId = "6c5d4e3f-2a1b-4c0d-9e8f-7a6b5c4d3e2f";
+    const input = {
+      householdName: "Original Household", firstName: "Or", lastName: "Iginal", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    const first = await startAccountOpening(db, advisor, input);
+    expect(first.status).toBe("suspended");
+
+    // The user edits a field and resubmits under the SAME id: refused, not replayed.
+    const edited = await startAccountOpening(db, advisor, { ...input, householdName: "Corrected Household" });
+    expect(edited.status).toBe("failed");
+    expect(edited.error?.code).toBe("CONFLICT");
+    expect(edited.token).toBeUndefined(); // the original session's resume token never leaks on a refusal
+
+    // No stale write, no duplicate: exactly one household, the original submission's.
+    const households = await db.query<{ name: string }>("SELECT name FROM households WHERE org_id = $1", [ORG]);
+    expect(households.rows.map((r) => r.name)).toEqual(["Original Household"]);
+  });
+
+  it("an edited resubmit of a FAILED start is rejected with CONFLICT instead of re-driving the stale submission (D-027)", async () => {
+    const clientRequestId = "8b7a6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d";
+    const input = {
+      householdName: "Stale Household", firstName: "St", lastName: "Ale", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
+    const first = await startAccountOpening(db, advisor, input);
+    expect(first.status).toBe("failed");
+    await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
+
+    // The user fixes the form and resubmits under the same id: the persisted
+    // failed execution must NOT be re-driven with its stale input.
+    const edited = await startAccountOpening(db, advisor, { ...input, householdName: "Fixed Household" });
+    expect(edited.status).toBe("failed");
+    expect(edited.error?.code).toBe("CONFLICT");
+
+    const apps = await db.query<{ n: string }>("SELECT count(*) AS n FROM account_opening_applications WHERE org_id = $1", [ORG]);
+    expect(Number(apps.rows[0]!.n)).toBe(0); // the stale execution was not re-driven
+    const households = await db.query<{ name: string }>("SELECT name FROM households WHERE org_id = $1", [ORG]);
+    expect(households.rows.map((r) => r.name)).toEqual(["Stale Household"]); // and nothing new was written
+  });
+
+  it("a storage failure DURING the re-drive of a failed start surfaces as a typed failure, never an unenveloped throw", async () => {
+    const clientRequestId = "1f2e3d4c-5b6a-4798-8091-a2b3c4d5e6f7";
+    const input = {
+      householdName: "Redrive Household", firstName: "Re", lastName: "Drive", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
+    expect((await startAccountOpening(db, advisor, input)).status).toBe("failed");
+    await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
+
+    // The identical resubmit re-drives, but persisting the re-driven state blows
+    // up: the route must still receive a typed AppError result, not a rejection.
+    const failing: SqlDb = {
+      ...db,
+      query: <T,>(sql: string, params?: unknown[]) =>
+        sql.startsWith("UPDATE flow_executions") ? Promise.reject(new Error("disk full")) : db.query<T>(sql, params),
+    };
+    const retried = await startAccountOpening(failing, advisor, input);
+    expect(retried.status).toBe("failed");
+    expect(retried.error?.code).toBe("INTERNAL");
+    expect(retried.token).toBeUndefined();
+  });
+
+  it("a storage failure during the RACE-BRANCH re-drive is mapped the same way (typed failure, no unenveloped 500)", async () => {
+    const clientRequestId = "9a8b7c6d-5e4f-4321-8765-4a3b2c1d0e9f";
+    const input = {
+      householdName: "Race Household", firstName: "Ra", lastName: "Ce", email: null,
+      accountType: "individual", clientRequestId,
+    };
+    await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
+    expect((await startAccountOpening(db, advisor, input)).status).toBe("failed");
+    await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
+
+    // Simulate the concurrent-race loser: its pre-check load misses (the winner
+    // had not committed yet), its INSERT hits the real PK conflict (23505), and
+    // the recovery re-drive then fails to persist its state.
+    let missedPrecheck = false;
+    const racing: SqlDb = {
+      ...db,
+      query: <T,>(sql: string, params?: unknown[]) => {
+        if (sql.startsWith("SELECT * FROM flow_executions") && !missedPrecheck) {
+          missedPrecheck = true;
+          return Promise.resolve({ rows: [] as T[] });
+        }
+        if (sql.startsWith("UPDATE flow_executions")) return Promise.reject(new Error("disk full"));
+        return db.query<T>(sql, params);
+      },
+    };
+    const result = await startAccountOpening(racing, advisor, input);
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INTERNAL");
+    expect(result.token).toBeUndefined();
+  });
+
   it("a real storage failure mid-start is NOT masked as a double-submit replay (only SQLSTATE 23505 resolves as one)", async () => {
     // The execution row INSERTs fine; the post-step save (UPDATE) blows up — the
     // pre-fix catch would have reported this as a 'running' replay with no token.

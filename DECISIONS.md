@@ -211,6 +211,14 @@ hashing (false-dedups two genuinely different submissions with identical fields)
 `clientRequestId` optional in the route and mint server-side; the wire replay path is inert without a
 client id. Proven by the double-submit integration spec (same id → one household + same resume token;
 different id → a new execution).
+**Final replay semantics (review follow-up):** a replayed id is honored only for an IDENTICAL payload -
+a suspended/completed execution reports its current state, and a FAILED one is re-driven from its saved
+cursor (`retryFlow`, with any storage throw during the re-drive mapped to a typed AppError, never an
+unenveloped 500). A resubmit whose input fields (householdName/firstName/lastName/email/accountType)
+differ from the persisted submission is rejected with a typed `CONFLICT` (409) instead of silently
+writing the stale values, and the client re-mints its request id after any failed response, so a user
+who edits the form and resubmits starts a genuinely fresh execution. Locked by the edited-resubmit
+integration specs (CONFLICT on mismatch, no stale write, no duplicate; identical payload still re-drives).
 
 ### D-028 · 2026-07-19 · captain-decision · Deep-review quality sweep (r6 findings #2-#5, #9-#14) shipped as one batch
 Captain-authorized batch, one PR, each item test- or fence-locked:

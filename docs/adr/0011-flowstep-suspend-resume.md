@@ -58,8 +58,13 @@ of starting a duplicate. A replayed id whose execution FAILED is re-driven from 
 (`retryFlow` — the start-path mirror of resume's Vale V7 retry; the per-write keys make it replay-safe),
 so a transient mid-start failure is recoverable by resubmitting instead of dead-ending. Only the
 concurrent race loser's own PK conflict (SQLSTATE 23505) resolves as a replay; any other start failure
-surfaces as a typed error. Locked by an integration spec (same id → one household + the same resume
-token; a different id → a genuinely new execution; a failed start → re-driven, still one household).
+surfaces as a typed error, including a storage throw during the re-drive itself (mapped to a typed
+AppError, never an unenveloped 500). A replayed id is honored only for an IDENTICAL payload: a resubmit
+with edited input under the same id is rejected with a typed `CONFLICT` instead of silently replaying
+the stale submission, and the client re-mints its request id after any failed response, so an edited
+resubmit becomes a genuinely new execution. Locked by integration specs (same id → one household + the
+same resume token; a different id → a genuinely new execution; a failed start → re-driven, still one
+household; an edited resubmit → CONFLICT, no stale write, no duplicate).
 
 Two recovery paths remain deferred:
 

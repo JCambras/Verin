@@ -8,7 +8,7 @@ import type { SqlDb } from "@infra/store/db";
 import { writeActorOf, type Principal, type WriteActor } from "@contracts/principal";
 import { type Result } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
-import { startFlow, resumeFlow, retryFlow, type ExecutionState, type FlowRunResult } from "@domain/workflow/engine";
+import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -94,6 +94,37 @@ function replayedRunResult(state: ExecutionState): FlowRunResult {
   };
 }
 
+/**
+ * The client-editable fields persisted at start (D-027): a replayed request id is
+ * honored only when these match the original submission, so an edited resubmit
+ * under the same id can never silently write the stale values.
+ */
+const START_INPUT_FIELDS = ["householdName", "firstName", "lastName", "email", "accountType"] as const;
+
+function inputMatchesExecution(input: StartAccountOpeningInput, existing: ExecutionState): boolean {
+  return START_INPUT_FIELDS.every((field) => existing.data[field] === input[field]);
+}
+
+/** Typed refusal of an edited replay: the client must mint a new request id (D-027). */
+function editedReplayConflict(executionId: string): FlowRunResult {
+  return {
+    executionId,
+    status: "failed",
+    error: appError("CONFLICT", "This request id was already used with different input; mint a new request id and resubmit."),
+    data: {},
+  };
+}
+
+/** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
+async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState): Promise<FlowRunResult> {
+  try {
+    return await retryFlow(accountOpeningFlow, store, deps, existing);
+  } catch (e) {
+    const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be retried.");
+    return { executionId: existing.id, status: "failed", error, data: {} };
+  }
+}
+
 export async function startAccountOpening(db: SqlDb, principal: Principal, input: StartAccountOpeningInput): Promise<FlowRunResult> {
   const store = makeExecutionStore(db);
   const executionId = input.clientRequestId ?? randomUUID();
@@ -107,6 +138,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
   };
   if (input.clientRequestId) {
     const existing = await loadOwnExecution();
+    if (existing && !inputMatchesExecution(input, existing)) return editedReplayConflict(executionId);
     if (existing && existing.status !== "failed") return replayedRunResult(existing);
     if (existing) {
       // A replayed id whose execution FAILED is re-driven from its saved cursor
@@ -114,7 +146,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
       return withSpan("flow.account-opening.retry", { orgId: principal.orgId, actor: principal.userId }, async () => {
-        const result = await retryFlow(accountOpeningFlow, store, deps, existing);
+        const result = await retryFailedStart(store, deps, existing);
         log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
         return result;
       });
@@ -136,8 +168,10 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       // same replay. Any other throw is a real storage failure and surfaces as a
       // typed failure — never masked as a started flow, never an unenveloped 500.
       const raced = input.clientRequestId && isUniqueViolation(e) ? await loadOwnExecution() : null;
-      if (raced) {
-        result = raced.status === "failed" ? await retryFlow(accountOpeningFlow, store, deps, raced) : replayedRunResult(raced);
+      if (raced && !inputMatchesExecution(input, raced)) {
+        result = editedReplayConflict(executionId);
+      } else if (raced) {
+        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced) : replayedRunResult(raced);
       } else {
         const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be started.");
         result = { executionId, status: "failed", error, data: {} };

@@ -18,8 +18,11 @@ export default function AccountOpeningPage() {
   const [busy, setBusy] = useState(false);
   // One UUID per form session (D-027): the server uses it as the executionId, so
   // a double-submit (network retry, second tab re-posting the same session)
-  // replays the same execution instead of creating duplicate households.
-  const [clientRequestId] = useState(() => crypto.randomUUID());
+  // replays the same execution instead of creating duplicate households. A
+  // FAILED response burns the id (re-minted in start()), so a user who edits the
+  // form and resubmits gets a genuinely fresh execution - the server refuses to
+  // replay a used id with different input.
+  const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
   function steps(): ProgressStep[] {
     return [
@@ -51,7 +54,10 @@ export default function AccountOpeningPage() {
         body: JSON.stringify(payload),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) return setError(body?.error?.message ?? "Could not start the flow.");
+      if (!res.ok) {
+        setClientRequestId(crypto.randomUUID());
+        return setError(body?.error?.message ?? "Could not start the flow.");
+      }
       // Render what the server reports: a replayed submit can reattach to an
       // execution that already completed, or one still mid-flight (multi-tab
       // race) with nothing to sign yet — never a dead "awaiting" screen.
