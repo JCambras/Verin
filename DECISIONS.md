@@ -113,10 +113,12 @@ matched account's org/userId; unknown emails are logged), closing the repudiatio
 lockout, and per-IP throttling are deferred per ADR-0008. **Un-defer trigger:** before the first pilot
 with real users.
 
-### D-016 · 2026-07-19 · captain-decision · Schema versioning DEFERRED (CREATE IF NOT EXISTS is acceptable greenfield)
-`migrations.ts` stays a single idempotent DDL script with no schema-version table. **Un-defer trigger:**
-the FIRST real schema change (any column add/alter on an existing table) introduces a versioned migration
-mechanism instead of editing the DDL in place — noted in the file header.
+### D-016 · 2026-07-19 · captain-decision · Schema versioning DEFERRED → EXECUTED (see D-029, deep-review #6)
+`migrations.ts` originally stayed a single idempotent DDL script with no schema-version table. **Un-defer
+trigger (FIRED):** the FIRST real schema change - deep-review r6 finding #6's text→timestamptz + FK/index
+hardening - introduced a versioned migration mechanism instead of editing the DDL in place, exactly as this
+trigger required. Executed in D-029: `runMigrations` + a `schema_migrations` ledger; the file header now
+documents the mechanism.
 
 ### D-017 · 2026-07-19 · captain-decision · Scheduled chain-verify runs against a seeded store (persistent-store evidence deferred)
 The scheduled `audit-chain-verify` job seeds a fresh store on an ephemeral runner, so it proves the
@@ -251,3 +253,30 @@ Captain-authorized batch, one PR, each item test- or fence-locked:
 **Revert path:** each item is a small, independently revertable change; none is schema- or
 contract-breaking (the `WriteActor` narrowing is adapter-internal; routes still resolve full Principals
 for RBAC).
+
+### D-029 · 2026-07-19 · captain-decision · Store schema HARDENED + versioned migrations UN-DEFERRED (D-016 trigger, deep-review #6)
+Executed while there is no production store to migrate (dev/CI stores are ephemeral/reseedable), so the
+whole change is one DDL edit rather than a post-deploy migration project. Three parts, one PR:
+- **timestamptz everywhere.** Every temporal column (`created_at`, `expires_at`, `revoked_at`,
+  `prov_asof`, `open_date`, `due_date`, `updated_at`, `claimed_at`, `applied_at`) is now `timestamptz`,
+  not `text`. The app boundary is UNCHANGED - writers still emit `toISOString()` and the data dictionary
+  still types these `IsoTimestamp`; the driver serializes the ISO string and a `timestamptz` read-parser
+  in `db.ts` (Postgres OID 1184 → `new Date(v).toISOString()`) normalizes reads back to a canonical UTC
+  ISO string. This makes ordering and the `claimed_at < $2` reclaim comparison (`audit-store.ts`)
+  instant-correct instead of lexicographic on whatever offset a writer emitted, and it round-trips
+  byte-for-byte so the audit hash chain (which hashes `created_at`) still verifies.
+- **Foreign keys.** `contacts.household_id` and `financial_accounts.household_id` → `households(id)`;
+  `sessions.org_id` → `orgs(id)`. Orphaned contacts/accounts/sessions are now rejected by the store.
+- **Indexes.** `contacts(household_id)`, `financial_accounts(household_id)`, `sessions(user_id)` - the
+  lookups the household detail view (#1) and the load gate issue.
+
+**Versioned-migration mechanism (the D-016 trigger).** `migrations.ts` is now an ordered `MIGRATIONS`
+list (version 1 = the hardened baseline) plus `runMigrations(db)`, which applies every not-yet-recorded
+version in order and records it in a `schema_migrations` ledger, each version's DDL + its ledger row in
+ONE transaction. Future schema changes APPEND a `{version, name, sql}` entry instead of editing shipped
+DDL in place. The org-id-required fence classifies `schema_migrations` NON_TENANT (global infra table).
+**Locked by** `src/__tests__/integration/store-schema.test.ts` (FKs reject orphans; timestamptz orders by
+instant + normalizes reads + the reclaim predicate; the ledger records versions and is idempotent);
+adversarial proof PF-021. **Revert path:** the change is additive DDL against an empty store - revert the
+column types/FKs and drop `runMigrations` back to a single `db.exec(MIGRATION_SQL)`; only meaningful
+before the first prod deploy, which is exactly why D-016 fired now.

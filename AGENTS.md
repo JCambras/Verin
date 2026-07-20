@@ -47,6 +47,13 @@ behind the store interface (`SqlDb` in `src/infrastructure/store/db.ts`), manage
   handlers and server components/actions separately, so a module-local singleton opens TWO PGlite
   instances (writes to one invisible to the other → "session not found"). PGlite is single-connection;
   `db.ts` serializes all ops with a mutex.
+- **Schema = versioned migrations (D-016/D-029), not in-place DDL.** `migrations.ts` is an ordered
+  `MIGRATIONS` list applied by `runMigrations` (records each version in `schema_migrations`). A schema
+  change APPENDS `{version, name, sql}`; never edit a shipped migration's DDL. Temporal columns are
+  `timestamptz`, but the app boundary stays ISO strings BOTH ways: writers emit `toISOString()`; a read
+  parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
+  NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
+  Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
 - **Prod guards key on `APP_ENV`, never `NODE_ENV`:** `next build`/`next start` force `NODE_ENV=production`
   even in dev/CI, so the config fail-closed guards and the secure-cookie flag use `APP_ENV` (real
   deployment env). Same for the e2e webserver.

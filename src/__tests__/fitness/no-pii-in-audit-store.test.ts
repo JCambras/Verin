@@ -20,7 +20,7 @@ const PII_TOKENS = ["Zephyrine", "Okonkwo-Blackwood", "zeph@example.com", "212-5
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();
-  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','t','verin-crm','t','high')");
+  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
   return db;
 }
 

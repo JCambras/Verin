@@ -33,6 +33,7 @@ const NON_TENANT_TABLES = [
   "crm_write_cache", // idempotency cache, PK (org_id, idempotency_key) — always key-scoped
   "audit_outbox", // internal delivery queue, keyed by row id claims
   "audit_anchor", // one integrity row per org, keyed by org_id PK upserts
+  "schema_migrations", // migration ledger (D-016), global infra table keyed by version - no tenant data
 ];
 // Columns that are themselves an unguessable capability (scope the row without org_id).
 const CAPABILITY_KEYS = ["esign_token", "resume_token", "idempotency_key"];

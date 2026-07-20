@@ -10,7 +10,7 @@ import { unwrap } from "@contracts/result";
  */
 async function seed() {
   const db = await createMemoryDb();
-  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','t','verin-crm','t','high')");
+  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
   return db;
 }
 
@@ -19,7 +19,7 @@ async function writeWithKey(db: Awaited<ReturnType<typeof seed>>, key: string): 
     db, orgId: "o", actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
     idempotencyKey: key, detail: "d",
     perform: async (tx) => {
-      await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'t','verin-crm','t','high')");
+      await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
       return { id: "task-1" };
     },
   });
@@ -49,7 +49,7 @@ describe("idempotency exactly-once fence", () => {
         db, orgId: "o", actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
         idempotencyKey: "k2", detail: "d",
         perform: async (tx) => {
-          await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'t','verin-crm','t','high')");
+          await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
           return { id: "task-1" };
         },
       });
