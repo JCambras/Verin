@@ -15,13 +15,13 @@ and scrubbing at three crossings. The domain keeps precise PII for the UI; it is
 ## Decision
 
 `contracts/pii.ts` defines field-name and value patterns (field names: SSN, DOB, names, account/routing
-numbers; values: separated or labeled SSN, email, NANP/E.164 phone) and `assertNoPII(payload, boundary)`
-which throws `PII_VIOLATION` on any residue. PII is scrubbed
+numbers; values: separated or labeled SSN, email, NANP/E.164 phone) and `assertNoPIIValues(payload, boundary)`
+which throws `PII_VIOLATION` on any PII-shaped value that survives scrubbing. PII is scrubbed
 at three enforcement points: (1) the **audit write** boundary (before every audit entry is persisted —
 so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (deferred until an AI
-surface is wired — no AI scaffolding now, charter #5); (3) the **API response** boundary (client bodies
-carry masked PII, never raw; the `maskValue` helper in `contracts/pii.ts` is not yet wired at this edge, and
-today responses are RBAC-gated and limited to the identity fields the advisor UI displays by design).
+surface is wired — no AI scaffolding now, charter #5); (3) the **API response** boundary (today responses
+are RBAC-gated and limited to the identity fields the advisor UI displays by design; a masking helper for
+this edge was pruned as speculative until a surface needs it, D-028).
 The house-CRM store holds identity PII (it is the SoR); the audit/analytics
 stores never do (a fence rejects PII-named columns there). Masked PII is allowed in the advisor UI by
 design.
@@ -40,7 +40,7 @@ console, nav) resolve userId → email at render time.
 
 ## Trade-offs and Costs
 
-- **Gained:** PII never leaks into audit, logs, or client bodies; `assertNoPII` is a testable spec.
+- **Gained:** PII never leaks into audit, logs, or client bodies; `assertNoPIIValues` is a testable spec.
 - **Sacrificed:** boundary crossings must call scrub/assert; value-pattern tuning to avoid over-redaction.
 
 ## Consequences

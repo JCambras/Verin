@@ -15,7 +15,8 @@ Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what w
 - **Detection is not verification.** Every PASS-emitting check needs a companion proving incomplete
   work cannot pass it.
 - **Nothing built-but-not-shipped.** A capability merges only if reachable from UI/API in the same PR;
-  `knip` fails the build on dead exports outside `contracts/` (and the `domain/schema` vocabulary, D-013).
+  `knip` fails the build on dead exports outside `contracts/` (and the `domain/schema` vocabulary, D-013)
+  and on unused `dependencies` in `package.json` (D-028).
 - **No unlabeled synthetic data.** Every displayed/seeded value carries provenance (`source`/`asOf`).
 - Reversible decisions proceed but are logged in `DECISIONS.md`; irreversible/architectural ones stop
   and ask (a `needs-decision`).

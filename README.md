@@ -26,7 +26,7 @@ corepack pnpm typecheck
 corepack pnpm lint
 corepack pnpm test           # unit + integration + fitness fences (non-UTC clock)
 corepack pnpm test:e2e       # Playwright + axe
-corepack pnpm knip           # dead-export / dead-code
+corepack pnpm knip           # dead exports / unused dependencies
 corepack pnpm build
 ```
 
