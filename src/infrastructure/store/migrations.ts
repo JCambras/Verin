@@ -261,8 +261,21 @@ CREATE TABLE IF NOT EXISTS audit_anchor (
 );
 `;
 
+// Version 2 - sessions(expires_at) index (deep-review r6 finding #8). The
+// opportunistic session cleanup (`deleteDeadSessions`) sweeps rows by
+// `expires_at < cutoff`, and sliding-renewal resolution reads by expiry; this
+// index keeps that sweep from degrading to a full scan as the sessions table
+// grows. Additive, idempotent (IF NOT EXISTS) - the versioned-migration
+// mechanism applies it once and records version 2 in `schema_migrations`.
+const SESSIONS_EXPIRES_INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
+`;
+
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: "baseline", sql: BASELINE_SQL }];
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: "baseline", sql: BASELINE_SQL },
+  { version: 2, name: "sessions-expires-index", sql: SESSIONS_EXPIRES_INDEX_SQL },
+];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free
 // 1..N run of integers (so applying them in array order is applying them in version

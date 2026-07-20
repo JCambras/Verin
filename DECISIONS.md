@@ -280,3 +280,30 @@ instant + normalizes reads + the reclaim predicate; the ledger records versions 
 adversarial proof PF-021. **Revert path:** the change is additive DDL against an empty store - revert the
 column types/FKs and drop `runMigrations` back to a single `db.exec(MIGRATION_SQL)`; only meaningful
 before the first prod deploy, which is exactly why D-016 fired now.
+
+### D-030 · 2026-07-20 · reversible · Session lifecycle: sliding renewal + id rotation + cleanup (charter-#12 gap closed, deep-review #8)
+The walking-skeleton session was expiry-only: a hard 60-minute logout landed mid-workday regardless of
+activity, expired/revoked rows accumulated forever, and charter #12 named "rotation" while ADR-0008 recorded
+no rotation deferral (an unrecorded charter gap). All three are now handled inside the single identity-read
+chokepoint, so the auth fences hold unchanged:
+- **Sliding renewal.** A resolved session past the halfway mark of its TTL has `expires_at` extended by a
+  fresh full TTL and its cookie re-set (`resolveAndRenewSession`). Driven off the already-selected
+  `expires_at` + config TTL, so the pinned identity-read SELECT (org-id-required reviewed escape) is
+  unchanged. Read-only callers that cannot set a cookie (the server-component `/app` guard, logout) use
+  `resolveSession` and never rotate; the mutating/API chokepoint (`requirePrincipal`) applies the returned
+  rotated cookie via `cookies().set()`.
+- **Rotation on renewal.** Each renewal issues a NEW opaque id in one atomic `UPDATE` (id + `expires_at`
+  together; nothing references `sessions.id`), mitigating fixation and satisfying the charter's "rotation".
+  `created_at` is preserved (a future absolute-lifetime cap).
+- **Opportunistic cleanup.** A rotation sweeps sessions expired/revoked more than one TTL ago
+  (`deleteDeadSessions`), backed by a new `sessions(expires_at)` index shipped as migration **version 2**
+  through the existing versioned-migration mechanism (D-016/D-029) - not an in-place DDL edit.
+
+**Alternatives:** a grace/overlap window so a pre-rotation cookie still resolves briefly (deferred - no
+concurrent same-cookie requests exist yet; recorded in ADR-0008 with a trigger); auditing every rotation
+(rejected - an audit entry every half-TTL per active user; login create + logout revoke still bracket the
+episode; deferred in ADR-0008). **Locked by** `src/__tests__/integration/session-lifecycle.test.ts` (real
+PGlite: renewal extends, rotation changes the id, cleanup deletes only long-dead rows; each adversarial),
+proof PF-022, and an end-to-end HTTP verification (cookie rotated + session survived past the original hard
+expiry at a 2-min TTL). **Revert path:** drop `resolveAndRenewSession`/`renewSession`/`deleteDeadSessions`
+and point `requirePrincipal` back at `resolveSession`; the v2 index is additive and harmless if left.

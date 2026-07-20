@@ -114,3 +114,47 @@ export async function createSession(
 export async function revokeSession(db: SqlDb, sessionId: string): Promise<void> {
   await db.query("UPDATE sessions SET revoked_at = $2 WHERE id = $1", [sessionId, new Date().toISOString()]);
 }
+
+/**
+ * Sliding-renewal rotation (deep-review r6 #8, charter #12 "rotation"): in ONE
+ * atomic UPDATE, issue a NEW session id and extend `expires_at`, so an active
+ * session slides forward past its half-life without a mid-workday logout AND the
+ * presented id rotates (anti-fixation). Nothing references `sessions.id`, so
+ * rotating the primary key is safe. The WHERE guard (still live: not revoked, not
+ * expired) makes a lost race a no-op instead of resurrecting a dead row; RETURNING
+ * tells the caller whether the rotation applied. `created_at` is untouched so the
+ * original login instant survives a rotation (a future absolute-lifetime cap).
+ */
+export async function renewSession(
+  db: SqlDb,
+  sessionId: string,
+  ttlMinutes: number,
+): Promise<{ id: string; expiresAt: string } | null> {
+  const newId = randomUUID();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + ttlMinutes * 60_000).toISOString();
+  const res = await db.query<{ id: string }>(
+    `UPDATE sessions SET id = $2, expires_at = $3
+     WHERE id = $1 AND revoked_at IS NULL AND expires_at > $4
+     RETURNING id`,
+    [sessionId, newId, expiresAt, now.toISOString()],
+  );
+  return res.rows[0] ? { id: newId, expiresAt } : null;
+}
+
+/**
+ * Opportunistic cleanup (deep-review r6 #8): delete sessions that expired OR were
+ * revoked before `cutoffIso`, so dead rows don't accumulate forever. Time-scoped,
+ * not org-scoped: sessions are capability-keyed (the org-id-required fence
+ * classifies them NON_TENANT). Backed by the `sessions_expires` index (migration
+ * v2). Returns the number of rows deleted.
+ */
+export async function deleteDeadSessions(db: SqlDb, cutoffIso: string): Promise<number> {
+  const res = await db.query<{ id: string }>(
+    `DELETE FROM sessions
+     WHERE expires_at < $1 OR (revoked_at IS NOT NULL AND revoked_at < $1)
+     RETURNING id`,
+    [cutoffIso],
+  );
+  return res.rows.length;
+}

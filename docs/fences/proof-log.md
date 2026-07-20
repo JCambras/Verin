@@ -398,3 +398,33 @@ by always-throwing. The `financial_accounts.household_id` FK is the same REFEREN
 `contacts` one, proven by the same test shape.
 
 **Date:** 2026-07-19 (deep-review r6, finding #6 - schema hardening + D-016 versioned migrations executed).
+
+### PF-022 · session lifecycle (sliding renewal + rotation + cleanup) · `src/__tests__/integration/session-lifecycle.test.ts`
+**Invariant (ADR-0008, charter #12, deep-review r6 #8):** the identity chokepoint slides an active
+session forward past its half-life (extends `expires_at`), rotates to a NEW session id on each renewal
+(anti-fixation, the charter's "rotation" word), and opportunistically deletes long-dead rows - all inside
+the single identity read, so the auth fences hold. The real-PGlite integration test is each half's
+companion (every case asserts BOTH the positive behavior AND the guard, so it cannot pass by
+always-throwing or always-passing).
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# rotation removed - renewSession extends expiry but keeps the same id
+#   (identity-store.ts: `SET id = $2, expires_at = $3` -> `SET expires_at = $2`, return old id):
+  × rotates to a NEW id and extends expires_at in one update; the old id is gone
+    AssertionError: expected 's-aging' not to be 's-aging' // Object.is equality
+    ❯ src/__tests__/integration/session-lifecycle.test.ts:66
+# cleanup neutered - deleteDeadSessions matches nothing
+#   (identity-store.ts: `WHERE expires_at < $1 OR (...)` -> `WHERE expires_at < $1 AND FALSE`):
+  × deletes rows expired or revoked before the cutoff, sparing live and recently-dead ones
+    AssertionError: expected +0 to be 2 // Object.is equality
+    ❯ src/__tests__/integration/session-lifecycle.test.ts:103
+```
+**Revert:** restored both queries; `pnpm test` → `Tests 222 passed` (session-lifecycle file: `10 passed`),
+`pnpm test:fitness` → `153 passed`, `pnpm test:e2e` → `12 passed`. Additionally verified end-to-end over
+real HTTP (production server, `SESSION_TTL_MINUTES=2`): after crossing the 60s half-life a `GET /api/me`
+returned a rotated session cookie (`6a74c374…` → `cdb306d0…`) and the session stayed authenticated past
+its original 2-minute hard expiry - proving `cookies().set()` in a Route Handler attaches the renewed
+cookie and sliding renewal beats the fixed expiry.
+
+**Date:** 2026-07-20 (deep-review r6, finding #8 - session lifecycle hardened; charter-#12 rotation gap closed).

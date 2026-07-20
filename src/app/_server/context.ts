@@ -5,9 +5,10 @@
  * from the session, never from the request body or a header.
  */
 import { type NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getDb } from "@infra/store/db";
 import { getConfig } from "@infra/config";
-import { resolveSession, SESSION_COOKIE, requireRole } from "@infra/identity/session";
+import { resolveAndRenewSession, SESSION_COOKIE, requireRole } from "@infra/identity/session";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, toResponse, type AppError } from "@contracts/errors";
 import type { Principal } from "@contracts/principal";
@@ -19,7 +20,18 @@ export async function requirePrincipal(req: NextRequest): Promise<Result<Princip
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   if (!cookie) return err(appError("AUTH_FAILED", "Not signed in."));
   const db = await getDb();
-  return resolveSession(db, cookie);
+  const resolved = await resolveAndRenewSession(db, cookie);
+  if (!resolved.ok) return resolved;
+  const { principal, renewedCookie } = resolved.value;
+  if (renewedCookie) {
+    // Sliding renewal rotated the session id; persist the new signed cookie on
+    // THIS response so the client presents the rotated id next request. Valid
+    // because requirePrincipal is only ever called from a Route Handler / Server
+    // Action (never a Server Component, which cannot mutate cookies) — the
+    // read-only /app guard and logout use resolveSession instead.
+    (await cookies()).set(SESSION_COOKIE, renewedCookie.value, { ...sessionCookieOptions(), maxAge: renewedCookie.maxAgeSeconds });
+  }
+  return ok(principal);
 }
 
 export async function requirePrincipalWithRole(req: NextRequest, allowed: readonly Role[]): Promise<Result<Principal, AppError>> {
