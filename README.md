@@ -10,6 +10,8 @@ Practice intelligence for registered investment advisers. The third and final bu
 3. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
 4. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
 5. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
+6. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
+   subordinate to the charter and grounded in the foundation.
 
 ## Stack
 
