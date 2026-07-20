@@ -182,10 +182,10 @@ boundary, not a client flag.
 
 | Role | The question the home answers | What it foregrounds | Seeded |
 |---|---|---|---|
-| **Advisor** (Alex Rivera) | *"What needs me, and who am I seeing?"* | My book of households; today's/tomorrow's meetings; what changed since last contact; the one-click **meeting-prep** on-ramp; new-account follow-ups. | **Now** (Wave 1) |
+| **Advisor** (Alex Rivera) | *"What needs me, and who am I seeing?"* | My book of households; today's/tomorrow's meetings; what changed since last contact; the one-click **meeting-prep** on-ramp; new-account follow-ups. | **Seeded today** (foundation); populated book in Wave 1 |
 | **Operations** (ops) | *"What is in the queue, and what is waiting on me?"* | The work queue across the firm's flows; **money-movement approvals** and step-up gates; exceptions to clear; stuck/suspended flows; the console for live data fixes. | **Designed now, seeded Wave 2** (money-movement) |
-| **Principal** (Priya Nair) | *"How is the firm - book, risk, and growth?"* | The **firm-wide** book (every advisor); aggregate AUM and household health, each labeled and formula-shown; risk concentration; the funnel; who needs attention. | **Now** (Wave 1, firm view) |
-| **CCO** (Dana Whitfield) | *"Is anything out of compliance right now?"* | The **compliance scan** across the whole book; open exceptions with citations; overdue reviews; the examiner-export path; the audit chain. | **Now** (Wave 1, Act 3) |
+| **Principal** (Priya Nair) | *"How is the firm - book, risk, and growth?"* | The **firm-wide** book (every advisor); aggregate AUM and household health, each labeled and formula-shown; risk concentration; the funnel; who needs attention. | **Seeded today** (foundation); firm view in Wave 1 |
+| **CCO** (Dana Whitfield) | *"Is anything out of compliance right now?"* | The **compliance scan** across the whole book; open exceptions with citations; overdue reviews; the examiner-export path; the audit chain. | **Wave 1** (not seeded today; lands with the demo world + persona-select login) |
 
 Design rules for all four homes:
 - **One primary question, answered above the fold.** A calm home resists the temptation to show everything;
