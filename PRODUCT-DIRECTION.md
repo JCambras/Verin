@@ -136,7 +136,7 @@ the human is always the driver (charter #6, "nothing happens until you say go").
 ## 3. The primary navigation model
 
 Verin navigates on a **household-centric spine with a workflow catalog**, overlaid by the conversational
-control plane. Three levels, one overlay:
+control plane. Four levels, one overlay:
 
 ```
   ┌───────────────────────────────────────────────────────────────────────┐
@@ -160,8 +160,11 @@ control plane. Three levels, one overlay:
    renders as a one-screen, provenance-labeled result. Human gates suspend the flow until "you say go."
 4. **Audit chain = proving the work.** `/app/audit` - the tamper-evident, hash-chained record, inspectable in
    the UI, reachable from any outcome. Proving the work is a first-class destination, not a hidden log.
+Alongside these four levels sits one parallel surface, not a fifth nesting level:
+
 5. **House-CRM console** (`/app/console`) - the plain, RBAC-gated CRUD surface that proves records are real
-   and editable live (§10). Deliberately unpolished; never exempt from auth, audit, or a11y.
+   and editable live (§10). A sibling destination reachable from the chrome, not a rung on the spine.
+   Deliberately unpolished; never exempt from auth, audit, or a11y.
 
 **The control-plane overlay (`⌘K` / "ask Verin")** rides above all four levels. It is how you *jump* - "open
 Delgado," "run the scan," "show me what changed" - without hunting through nav. Production chrome (nav,
@@ -400,8 +403,8 @@ explained, and provably real.** That combination is the moat.
 
 ## 10. What the first investor demo must prove
 
-The demo is a **rehearsed instrument, not a slideshow** - a fixed cast (Henderson, Delgado, Okonkwo, Vance),
-a scripted click path, and rehearsed kill-lines, all specified in this section. Its one job: make an investor
+The demo is a **rehearsed instrument, not a slideshow** - marquee households such as Henderson, Delgado,
+Okonkwo, Vance, and Mensah, a scripted click path, and rehearsed kill-lines. Its one job: make an investor
 believe Verin is **real, alive, and defensible** in about six minutes. This section states the **proof
 obligations** - what each act must *establish*, mapped to the surface that carries it and the charter
 guarantee it demonstrates.
