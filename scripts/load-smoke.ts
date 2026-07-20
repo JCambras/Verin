@@ -127,27 +127,30 @@ async function main(): Promise<void> {
   // includes lock-wait a sequential loop never incurs - contention made visible.
   const concStepDurations: number[] = [];
   const concStart = performance.now();
-  const started = await Promise.all(
-    Array.from({ length: CONCURRENCY }, async (_, i) => {
-      const s = performance.now();
-      const r = await startAccountOpening(db, ADVISOR, {
-        householdName: `Concurrent Household ${i}`,
-        firstName: "Concurrent",
-        lastName: `Contact ${i}`,
-        email: null,
-        accountType: "individual",
-      });
-      concStepDurations.push(performance.now() - s);
-      if (r.status !== "suspended" || !r.token) throw new Error(`concurrent start ${i} did not suspend (status=${r.status})`);
-      return r;
-    }),
-  );
-  // Concurrent reads interleaved against the same lock as the writes above.
-  await Promise.all(
-    Array.from({ length: CONCURRENCY }, (_, i) =>
-      db.query("SELECT * FROM financial_accounts WHERE org_id = $1 AND household_id = $2", [ORG, `hh-${i}`]),
-    ),
-  );
+  // Fan out CONCURRENCY flow-starts AND CONCURRENCY reads in ONE batch so both
+  // queue on the db.ts serialize mutex at the same time and genuinely contend.
+  // Each read is timed and pushed into concStepDurations - the same array
+  // asserted against STEP_P95_BUDGET_MS - so the reads count toward the measured
+  // concurrent-step p95 rather than sitting inert next to the write path.
+  const startTasks = Array.from({ length: CONCURRENCY }, async (_, i) => {
+    const s = performance.now();
+    const r = await startAccountOpening(db, ADVISOR, {
+      householdName: `Concurrent Household ${i}`,
+      firstName: "Concurrent",
+      lastName: `Contact ${i}`,
+      email: null,
+      accountType: "individual",
+    });
+    concStepDurations.push(performance.now() - s);
+    if (r.status !== "suspended" || !r.token) throw new Error(`concurrent start ${i} did not suspend (status=${r.status})`);
+    return r;
+  });
+  const readTasks = Array.from({ length: CONCURRENCY }, async (_, i) => {
+    const s = performance.now();
+    await db.query("SELECT * FROM financial_accounts WHERE org_id = $1 AND household_id = $2", [ORG, `hh-${i}`]);
+    concStepDurations.push(performance.now() - s);
+  });
+  const [started] = await Promise.all([Promise.all(startTasks), Promise.all(readTasks)]);
   // Concurrent resumes: the finalize write path (3 audited writes each) under contention.
   await Promise.all(
     started.map(async (st) => {
