@@ -4,11 +4,20 @@
  * portable Postgres, so nothing above this file changes when the driver swaps.
  * This interface is infra-internal — domain never sees SQL.
  */
-import { PGlite } from "@electric-sql/pglite";
+import { PGlite, type PGliteOptions } from "@electric-sql/pglite";
 import { resolve, isAbsolute } from "node:path";
 import { getConfig } from "@infra/config";
 import { appError } from "@contracts/errors";
-import { MIGRATION_SQL } from "./migrations";
+import { runMigrations } from "./migrations";
+
+// timestamptz (Postgres OID 1184). Every temporal column is timestamptz, so the app
+// boundary sees ISO strings on BOTH sides: writers pass `toISOString()` (the driver
+// serializes the string, Postgres parses it to an instant), and this parser normalizes
+// the read back to a canonical UTC ISO-8601 string - the exact `toISOString()` form.
+// That keeps the audit hash chain (which hashes created_at) round-tripping byte-for-byte
+// and makes offset-carrying writes compare/order correctly instead of lexicographically.
+const TIMESTAMPTZ_OID = 1184;
+const STORE_PARSERS: PGliteOptions["parsers"] = { [TIMESTAMPTZ_OID]: (value: string) => new Date(value).toISOString() };
 
 export interface SqlResult<T> {
   rows: T[];
@@ -18,9 +27,18 @@ export interface SqlQueryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<SqlResult<T>>;
 }
 
+/**
+ * A transaction context. Adds `exec` (a multi-statement script, no params) to the
+ * queryable, so a caller can run DDL and a parameterized write in ONE atomic unit -
+ * used by the migration runner (a migration's DDL + its schema_migrations record).
+ */
+export interface SqlTx extends SqlQueryable {
+  exec(sql: string): Promise<void>;
+}
+
 export interface SqlDb extends SqlQueryable {
   exec(sql: string): Promise<void>;
-  transaction<T>(fn: (tx: SqlQueryable) => Promise<T>): Promise<T>;
+  transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T>;
   /** Dump the whole store for backup (ADR-0019). */
   dump(): Promise<Blob>;
   close(): Promise<void>;
@@ -53,13 +71,16 @@ function wrap(pg: PGlite): SqlDb {
         await pg.exec(sql);
       });
     },
-    transaction<T>(fn: (tx: SqlQueryable) => Promise<T>): Promise<T> {
+    transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
       return serialize(() =>
         pg.transaction(async (tx) => {
-          const q: SqlQueryable = {
+          const q: SqlTx = {
             async query<U>(sql: string, params?: unknown[]) {
               const res = await tx.query<U>(sql, params as unknown[] | undefined);
               return { rows: res.rows };
+            },
+            async exec(sql: string) {
+              await tx.exec(sql);
             },
           };
           return fn(q);
@@ -80,7 +101,9 @@ function wrap(pg: PGlite): SqlDb {
 
 /** Restore a store from a backup dump (ADR-0019 — used by the backup-restore drill). */
 export async function createDbFromDump(dump: Blob): Promise<SqlDb> {
-  const pg = new PGlite({ loadDataDir: dump });
+  // Same timestamptz read-parser as a live store, so a restored store's audit chain
+  // (which hashes created_at) verifies against the same canonical ISO form.
+  const pg = new PGlite({ loadDataDir: dump, parsers: STORE_PARSERS });
   await pg.waitReady;
   return wrap(pg);
 }
@@ -96,9 +119,9 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
   // Resolve relative dirs to an absolute path so every process (seed, server)
   // opens the SAME store regardless of its working directory.
   const dataDir = configured && !isAbsolute(configured) ? resolve(process.cwd(), configured) : configured;
-  const pg = dataDir ? new PGlite(dataDir) : new PGlite();
+  const pg = dataDir ? new PGlite(dataDir, { parsers: STORE_PARSERS }) : new PGlite({ parsers: STORE_PARSERS });
   const db = wrap(pg);
-  await db.exec(MIGRATION_SQL);
+  await runMigrations(db);
   return db;
 }
 

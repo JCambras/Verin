@@ -49,6 +49,17 @@ The house-CRM console (Phase E) is the plain internal CRUD surface over these en
 audited. Golden-record/survivorship policy (ADR-0005) anticipates a future second source. Adding the
 house-CRM → SF sync/import path is a scale-ladder item (ADR-0015) with a trigger.
 
+**Schema evolution (D-016 trigger executed - deep-review r6 finding #6, D-029).** The store DDL was
+initially a single idempotent `CREATE IF NOT EXISTS` script with schema versioning deferred (D-016). The
+first real schema change - hardening every temporal column to `timestamptz`, adding the
+`contacts`/`financial_accounts` → `households` and `sessions` → `orgs` foreign keys, and the household_id
+/ user_id lookup indexes - fired that trigger. `migrations.ts` is now an ordered `MIGRATIONS` list with a
+`runMigrations` runner and a `schema_migrations` ledger (version 1 = the hardened baseline); future schema
+changes append a versioned migration rather than editing shipped DDL in place. Portable Postgres DDL still
+runs identically on PGlite (dev/CI) and managed Postgres (prod). The app boundary keeps ISO strings on
+both read and write - the driver serializes them and a `timestamptz` read-parser normalizes reads back to
+canonical UTC ISO - so nothing above the store changed.
+
 ## Revisit When
 
 A second real source (Salesforce, CSV import) signs on (build the second adapter + activate survivorship),

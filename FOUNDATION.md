@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (202 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (212 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain`. Every one except the backup-restore drill is also a blocking CI
@@ -162,7 +162,7 @@ date/trigger), never omitted:
 | Content-Security-Policy (nonce strategy) | CC6.6 | founder | before first real deployment (ADR-0021 / D-020) |
 | Login rate limiting / lockout (failed logins ARE audited) | CC6.1 | red-team | before first pilot with real users (ADR-0008 / D-015) |
 | SHA/digest-pinned CI actions + semgrep image | CC8.1 | founder | SOC 2 Type II window or first production deploy (ADR-0017 / D-019) |
-| Versioned schema-migration mechanism (DDL is CREATE IF NOT EXISTS) | CC8.1 | founder | first real schema change (D-016) |
+| Versioned schema-migration mechanism - **CLOSED** (`runMigrations` + `schema_migrations` ledger; D-016 executed via D-029, deep-review #6) | CC8.1 | - | done |
 | Scheduled chain-verify against a PERSISTENT store (today: seeded per-run) | CC7.4 | founder | managed Postgres lands (D-017) |
 | Flow compensation + retry-by-execution-id recovery | CC7.1 | founder | first flow with external obligations / first manual-recovery incident (ADR-0011 / D-021) |
 

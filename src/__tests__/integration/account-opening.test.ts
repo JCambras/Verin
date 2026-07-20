@@ -76,8 +76,10 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     });
     const token = started.token!;
 
-    const first = await resumeAccountOpeningByToken(db, token, { signedAt: "t1" });
-    const second = await resumeAccountOpeningByToken(db, token, { signedAt: "t2" }); // replay
+    // signedAt flows into the timestamptz open_date column, so it must be a real ISO
+    // instant (the store now rejects a garbage timestamp - the point of the hardening).
+    const first = await resumeAccountOpeningByToken(db, token, { signedAt: "2026-07-19T10:00:00.000Z" });
+    const second = await resumeAccountOpeningByToken(db, token, { signedAt: "2026-07-19T11:00:00.000Z" }); // replay
     expect("status" in first && first.status).toBe("completed");
     // Second resume finds the flow already completed (idempotent) and does not re-run finalize.
     expect("status" in second && second.status).toBe("completed");

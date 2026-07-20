@@ -372,3 +372,29 @@ for event handlers/effects (which never run on the server). A stricter handlers-
 considered and deliberately not implemented (practical trade-off; the fence text carries the same note).
 
 **Date:** 2026-07-19 (deep-review r6 quality sweep, finding #12).
+
+### PF-021 · store schema hardening (timestamptz + FKs) · `src/__tests__/integration/store-schema.test.ts`
+**Invariant (ADR-0004, D-016, deep-review #6):** the store's DDL constraints ARE the fence here (real
+Postgres, not a fitness test): every temporal column is `timestamptz` so ordering / `claimed_at < $2`
+compare by INSTANT (not lexicographically on whatever offset a writer emitted), reads normalize back to a
+canonical UTC ISO-8601 string, and the `contacts.household_id` / `financial_accounts.household_id` /
+`sessions.org_id` foreign keys reject orphaned rows. The integration test is each constraint's companion.
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# open_date timestamptz -> text:
+  × orders by the true instant even when the offset makes the wall-clock string misleading
+  × reads normalize any written offset back to a canonical UTC ISO-8601 string     (Tests 2 failed)
+# audit_outbox.claimed_at timestamptz -> text (the cited foot-gun, audit-store.ts:97):
+  × the audit_outbox reclaim predicate (`claimed_at < $2`, audit-store.ts) compares by instant, not string
+# contacts.household_id REFERENCES households(id) removed:
+  × contacts.household_id must reference an existing household   (orphan insert silently succeeded)
+# sessions.org_id REFERENCES orgs(id) removed:
+  × sessions.org_id must reference an existing org
+```
+**Revert:** restored the DDL; `pnpm test` → `Tests 212 passed` (store-schema file: `Tests 10 passed`).
+Each test asserts BOTH halves (the violation is rejected AND the valid row is accepted), so it cannot pass
+by always-throwing. The `financial_accounts.household_id` FK is the same REFERENCES mechanism as the
+`contacts` one, proven by the same test shape.
+
+**Date:** 2026-07-19 (deep-review r6, finding #6 - schema hardening + D-016 versioned migrations executed).

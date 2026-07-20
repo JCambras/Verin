@@ -16,14 +16,14 @@ import { log } from "@infra/observability/logger";
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();
-  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','t','verin-crm','t','high')");
+  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('o','O','2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
   return db;
 }
 
 const base = { orgId: "o", actor: "u1", action: "task.create", entityType: "Task", entityId: "task-1", detail: "d" } as const;
 
 const insertTask = (id: string) =>
-  `INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('${id}','o',NULL,'s','not-started',NULL,NULL,'t','verin-crm','t','high')`;
+  `INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('${id}','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')`;
 
 async function taskCount(db: SqlDb): Promise<number> {
   const r = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks");
