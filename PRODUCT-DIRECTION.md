@@ -8,8 +8,9 @@
 > **Where it sits.** It is subordinate to [`CHARTER.md`](./CHARTER.md) (the constitution) and grounded in
 > [`FOUNDATION.md`](./FOUNDATION.md) (what is actually built). Where this doc and the charter appear to
 > conflict, the charter wins and the conflict is a defect in this doc. It is the connective tissue between
-> the charter, the as-built foundation, the roadmap (`data/verin-roadmap-s3`), and the demo instrument
-> (`data/verin-demo-design-s5`). It describes the **target product**; §"Build honesty" states plainly what
+> the charter, the as-built foundation, and two external design analyses that informed it - the Verin
+> post-foundation roadmap analysis and the Verin investor-demo design analysis. It describes the **target
+> product**; §"Build honesty" states plainly what
 > is built today, what Wave 1 lands, and what is directional - so nothing here reads as a claim that
 > unbuilt work exists (charter #5).
 
@@ -399,10 +400,11 @@ explained, and provably real.** That combination is the moat.
 
 ## 10. What the first investor demo must prove
 
-The demo is a **rehearsed instrument, not a slideshow** (the `verin-demo-design-s5` spec is authoritative for
-the exact cast, click path, and kill-lines). Its one job: make an investor believe Verin is **real, alive,
-and defensible** in about six minutes. This section states the **proof obligations** - what each act must
-*establish*, mapped to the surface that carries it and the charter guarantee it demonstrates.
+The demo is a **rehearsed instrument, not a slideshow** - a fixed cast (Henderson, Delgado, Okonkwo, Vance),
+a scripted click path, and rehearsed kill-lines, all specified in this section. Its one job: make an investor
+believe Verin is **real, alive, and defensible** in about six minutes. This section states the **proof
+obligations** - what each act must *establish*, mapped to the surface that carries it and the charter
+guarantee it demonstrates.
 
 | # | The demo must prove | How it is proven on stage | Charter guarantee shown | Belief installed |
 |---|---|---|---|---|
