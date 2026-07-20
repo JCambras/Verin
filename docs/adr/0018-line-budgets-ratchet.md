@@ -25,8 +25,10 @@ Two independent budgets, both fitness-enforced (Phase B/D):
   unaffected by presentation growth.
 
 Separately, the **load gate** (charter #11): a deterministic pilot-scale seed (1,000 households × ~2,000
-accounts, D-010) with a **p95 step-latency assertion** as a regression gate (scheduled full run + a fast PR
-smoke subset). A regression fails CI — the latency budget is owned (ADR-0014).
+accounts, D-010) with a **p95 step-latency assertion** as a regression gate. The identical pilot-scale run
+executes in both `ci.yml` (every push/PR) and `scheduled.yml` (on the schedule) — there is no fast-subset
+vs full-scale split (that split was never built, D-010; the nightly full-scale scale-up is deferred, D-018).
+A regression fails CI — the latency budget is owned (ADR-0014).
 
 ## Alternatives Rejected
 

@@ -221,9 +221,10 @@ record in `DECISIONS.md`.
    (deliverable F). [LOG]** Ambiguity in both the *number* ("1,000 × 2,000" — 2,000 accounts total or per
    household) and the *cadence* (a full pilot-scale load test is too slow per-PR; "smoke" implies fast).
    **Plan:** seed a deterministic pilot-scale dataset (I read it as 1,000 households and ~2,000 accounts
-   total for the gate, ≈2/household), assert p95 step-latency as a scheduled/nightly regression gate, and
-   run a fast subset as the PR "load smoke." Exact multiplier + cadence logged; scale-ladder ADR documents
-   10×/100×.
+   total for the gate, ≈2/household), assert p95 step-latency as the regression gate. The same pilot-scale
+   run executes in both the PR gate (`ci.yml`) and the scheduled job (`scheduled.yml`) — the fast-subset vs
+   full-scale split was never built (D-010) and the nightly full-scale scale-up is deferred (D-018). Exact
+   multiplier + cadence logged; scale-ladder ADR documents 10×/100×.
 
 5. **"No unlabeled synthetic data" (rule 3) vs the report's advice to port the 719-line fixture (gap-s4
    §5). [LOG]** Reconciled by the charter's own SoR strategy: port the *data* as **real seed rows in the
