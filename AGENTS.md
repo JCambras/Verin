@@ -60,6 +60,13 @@ behind the store interface (`SqlDb` in `src/infrastructure/store/db.ts`), manage
 - **Auth uses a Server Action** (`src/app/login/actions.ts`): it sets the cookie + redirects atomically,
   avoiding the client Set-Cookie/navigate race and hydration race. Client forms are uncontrolled
   (FormData) and gate submit on `useHydrated()` so a pre-hydration click can't do a native submit.
+- **Session lifecycle: renewal/rotation happens ONLY in `requirePrincipal`, never `resolveSession`**
+  (ADR-0008, D-030). `resolveAndRenewSession` slides an active session past its half-life (extends
+  `expires_at`) and rotates the id, returning a cookie the app layer re-sets via `cookies().set()` - valid
+  only in a Route Handler / Server Action. `resolveSession` is the read-only path (the server-component
+  `/app` guard + logout, which CANNOT set a cookie) and must never rotate. Do not call `requirePrincipal`
+  from a server component (it would throw on the cookie write). Renewal drives off the already-selected
+  `expires_at`, so the pinned org-id-required SELECT escape is unchanged.
 - Tests must run on a non-UTC TZ (`vitest.config.ts` pins `America/New_York`); `src/__tests__/setup.ts`
   fails loudly if the clock is UTC.
 - ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API);
