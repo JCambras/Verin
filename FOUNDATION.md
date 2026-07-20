@@ -29,7 +29,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 
 **Walking skeleton (`src/app`, `src/domain/workflow`, `src/infrastructure`):**
 - **Real auth:** login server action (atomic cookie + redirect), server-side sessions with expiry /
-  revocation, RBAC enforced at the port; identity is never client-trusted.
+  revocation / sliding renewal + id rotation, RBAC enforced at the port; identity is never client-trusted.
 - **Account opening** through the generic engine + a view-driven form; the engine **suspends** at a
   simulated e-sign step (fire-and-return) and **resumes** via an HMAC-authenticated webhook; one **audited,
   idempotent** house-CRM write, **exactly-once** under replay.

@@ -28,7 +28,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   (ADR-0008). *Fence:* `no-client-role-header`, `auth-enforcement`.
 - **T-S2 (High): forge/replay a session cookie.** *Exploit:* attacker crafts or replays a cookie.
   *Control:* cookie HMAC-signed with `SESSION_SECRET`; server-side session record with expiry and a
-  revocation list; opaque id. *Fence:* `auth-enforcement`.
+  revocation list; opaque id rotated on sliding renewal (anti-fixation, ADR-0008). *Fence:* `auth-enforcement`.
 - **T-S3 (High): spoof the e-sign webhook.** *Exploit:* attacker POSTs a fake "signed" callback to finalize
   a flow. *Control:* webhook verifies an HMAC signature over the TOKEN with `ESIGN_WEBHOOK_SECRET`
   (`esign.ts` signs the token string alone); the payload is server-constructed (`{ signedAt }`) and never
