@@ -13,6 +13,7 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
 import { type Role, isAllowedRole } from "@contracts/roles";
 import type { Principal } from "@contracts/principal";
+import { log } from "@infra/observability/logger";
 import { renewSession, deleteDeadSessions } from "./identity-store";
 
 export const SESSION_COOKIE = "verin_session";
@@ -140,7 +141,11 @@ export async function resolveAndRenewSession(
   // Cleanup piggybacks on the (infrequent) rotation event, not every request:
   // renewals happen at most once per half-TTL per session, a natural throttle.
   const cutoffIso = new Date(nowMs - ttlMinutes * 60_000 * DEAD_SESSION_RETENTION_TTLS).toISOString();
-  await deleteDeadSessions(db, cutoffIso);
+  // Best-effort: never let a cleanup failure throw out after the rotation already
+  // committed (it would orphan the rotated session); the next rotation retries.
+  await deleteDeadSessions(db, cutoffIso).catch((e: unknown) =>
+    log.warn({ reason: e instanceof Error ? e.message : String(e) }, "opportunistic session cleanup failed"),
+  );
 
   return ok({
     principal: { ...resolved.value.principal, sessionId: renewed.id },

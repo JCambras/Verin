@@ -264,9 +264,12 @@ CREATE TABLE IF NOT EXISTS audit_anchor (
 // Version 2 - sessions(expires_at) index (deep-review r6 finding #8). The
 // opportunistic session cleanup (`deleteDeadSessions`) sweeps rows by
 // `expires_at < cutoff`, and sliding-renewal resolution reads by expiry; this
-// index keeps that sweep from degrading to a full scan as the sessions table
-// grows. Additive, idempotent (IF NOT EXISTS) - the versioned-migration
-// mechanism applies it once and records version 2 in `schema_migrations`.
+// index supports that expiry-scan arm - the dominant cleanup driver - so it
+// stays an index scan as the sessions table grows. The cleanup DELETE's other
+// arm (`revoked_at < cutoff`) is intentionally unindexed: the sweep keeps the
+// table pruned, so scanning the few recently-revoked rows is cheap. Additive,
+// idempotent (IF NOT EXISTS) - the versioned-migration mechanism applies it
+// once and records version 2 in `schema_migrations`.
 const SESSIONS_EXPIRES_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
 `;
