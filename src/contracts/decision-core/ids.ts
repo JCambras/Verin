@@ -17,11 +17,13 @@ const brandedString = <B extends string>() => z.string().min(1).brand<B>();
 // ── Temporal + integrity primitives ─────────────────────────────────────────────
 
 /**
- * Canonical UTC instant. Z-suffixed ISO-8601 ONLY - offset and local forms are
- * rejected. This is the store discipline (db.ts OID 1184 parser → toISOString()):
- * one canonical byte form is what keeps bundle/decision hashes replay-stable.
+ * Canonical UTC instant, pinned to EXACTLY the Date.prototype.toISOString() byte
+ * form: YYYY-MM-DDTHH:MM:SS.mmmZ (three fractional digits, Z suffix). Offset,
+ * local, second-precision, and sub-millisecond forms are all rejected. This is
+ * the store discipline (db.ts OID 1184 parser → toISOString()): one byte form
+ * per instant is what keeps bundle/decision hashes replay-stable.
  */
-export const TimestampSchema = z.iso.datetime().brand<"Timestamp">();
+export const TimestampSchema = z.iso.datetime({ precision: 3 }).brand<"Timestamp">();
 export type Timestamp = z.infer<typeof TimestampSchema>;
 
 /** SHA-256 content hash, lowercase hex (the audit-chain convention, ADR-0007). */
