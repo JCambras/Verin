@@ -13,6 +13,7 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
 import { type Role, isAllowedRole } from "@contracts/roles";
 import type { Principal } from "@contracts/principal";
+import type { PIIBearing } from "@contracts/pii";
 import { log } from "@infra/observability/logger";
 import { renewSession, deleteDeadSessions } from "./identity-store";
 
@@ -28,7 +29,8 @@ const RENEW_WHEN_REMAINING_FRACTION = 0.5;
 const DEAD_SESSION_RETENTION_TTLS = 1;
 
 function sign(sessionId: string): string {
-  return createHmac("sha256", getConfig().session.secret).update(sessionId).digest("hex");
+  // reveal() is the explicit, fence-allowlisted secret read (v3 §15.4).
+  return createHmac("sha256", getConfig().session.secret.reveal()).update(sessionId).digest("hex");
 }
 
 /** Cookie value = "<sessionId>.<hmac>" so tampering is detected before a DB lookup. */
@@ -52,7 +54,8 @@ export function parseSignedCookie(value: string | undefined): string | null {
   return id;
 }
 
-interface JoinedRow {
+/** PIIBearing: carries the user email for principal display. */
+interface JoinedRow extends PIIBearing {
   session_id: string;
   org_id: string;
   role: Role;

@@ -1821,3 +1821,135 @@ measurement is 3412/3500 with 88 measured lines of headroom. All four decision-c
 remain byte-identical to their pre-fix SHA-256 digests.
 
 **Date:** 2026-07-27 (review corrections F96-F100, D-060).
+
+---
+
+## Prompt 6 - tenant, actor, PII, and secret boundaries (D-061)
+
+**Numbering note (rebase):** the five entries below were authored as PF-027..PF-031 on the prompt-6
+branch, in parallel with prompt 5 claiming PF-027..PF-029 above. The numbers are kept as authored so
+every in-branch reference stays valid; the entries are distinguished by their fence file paths
+(`tenant-context-required`, `tokenized-factory-only`, `llm-pii-boundary`, `governed-actions`,
+`no-secret-fallback`) rather than by number alone.
+
+### PF-027 · tenant-context-required (sealed TenantContext on every repository/port call) · `src/__tests__/fitness/tenant-context-required.test.ts`
+**Invariant (v3 §15.2, invariant 2; charter #7 — extends the org-id fence, never displaces it):** every
+exported repository function taking the SQL layer (`SqlDb`/`SqlQueryable`/`SqlTx`) must also take the
+sealed `TenantContext` (directly or inside a `WriteActor`), so a repository call without tenant scope
+does not COMPILE; the runtime seal assert in the factories/adapters makes an impostor context fail to
+PARSE. Escapes are exact-match `file :: function` entries (identity minting boundary, capability-keyed
+loads, schema management), each with its reason; a stale-escape check fails on drift, and a port-shape
+test pins `ExecutionStore.create/save/loadById` to `TenantContext` (with `loadByToken` pinned as THE
+capability escape). Companions feed unscoped functions, arrow-declaration evasions, and a renamed
+sibling of an escaped function.
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# appended an unscoped exported repository function to house-crm.ts:
+  × enforces: every exported repository function taking SqlDb also takes the sealed TenantContext (or is a reviewed escape)
+    AssertionError: src/infrastructure/crm/house-crm.ts :: listAllHouseholdsUnscoped — takes (SqlDb)
+    with no TenantContext/WriteActor: expected [ { …(2) } ] to deeply equal []
+    ❯ src/__tests__/fitness/tenant-context-required.test.ts:95
+# compile-level half ("missing tenant context cannot compile") — a literal TenantContext in wire.ts:
+  src/infrastructure/wire.ts(133,7): error TS2741: Property '[TenantContextBrand]' is missing in type
+  '{ orgId: string; }' but required in type 'TenantContext'.   [pnpm typecheck, exit 2]
+```
+**Revert:** removed both injections; fence file `Tests 10 passed`, `pnpm typecheck` clean. The parse-level
+half (cast/spread/JSON impostors refused at runtime by the repository asserts) is locked by
+`unit/tenant-context.test.ts` + `integration/tenant-isolation.test.ts` (cross-tenant reads return only
+the caller's rows; impostors reject with `INTERNAL` before any SQL).
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 6 — tenant/actor/PII/secret boundaries).
+
+### PF-028 · tokenized-factory-only (sealed security types) · `src/__tests__/fitness/tokenized-factory-only.test.ts`
+**Invariant (v3 §15.1 normative comment, invariant 1; ratified in docs/v3/verin-core-contracts.ts):**
+`Tokenized<T>`, `TenantContext`, and `ActionGrant` are constructible ONLY inside their factory modules
+(`infrastructure/pii/tokenize.ts`, `contracts/tenant.ts`, `contracts/authz.ts`). Anywhere else, an
+object literal or a cast (`as` / angle-bracket / `satisfies`) producing one of them fails the build —
+`piiFree: true` proves nothing unless the scrubber minted it. ESLint mirrors the rule at edit time
+(`noSealedTypeConstruction` in eslint.config.mjs); the fence is authoritative. A factory-liveness check
+fails if a factory module stops constructing its type (a moved factory cannot leave the fence passing
+vacuously — charter #4). Companions cover all three cast forms, the bare-literal impostor, and the
+factory's own sanctioned cast.
+
+**Injection + observed failure (verbatim), reverted:**
+```
+# appended a hand-built Tokenized (cast + literal) to wire.ts:
+  × enforces: no cast or literal produces Tokenized / TenantContext / ActionGrant outside its factory module
+    AssertionError: sealed-type constructions:
+    src/infrastructure/wire.ts:257 — cast to sealed type 'import("@contracts/tokenized").Tokenized<string>' outside its factory
+    src/infrastructure/wire.ts:257 — object literal with 'piiFree' outside the scrubber factory: expected [ …(2) ] to deeply equal []
+```
+**Revert:** restored wire.ts; fence file `Tests 9 passed`.
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 6).
+
+### PF-029 · llm-pii-boundary (v3 INVARIANT 1: no PII-bearing type reachable from llm/) · `src/__tests__/fitness/llm-pii-boundary.test.ts`
+**Invariant (v3 §15.1, invariant 1 — ACTIVATED by this PR):** the marked set is DERIVED (every
+platform-layer interface with a raw PII-named field must extend `PIIBearing` or be one of six reviewed
+machine-name escapes), and the transitive import closure of every file under `llm/` must contain no
+module declaring a marked type — type-only imports count. Runtime half: the Tokenized factory scrubs by
+construction and `parseMaskedLlmRequest` (the LLM adapter ingress gate) refuses unsealed impostors and
+PII-shaped leaves (`unit/llm-boundary.test.ts`). Companions cover the direct import, the transitive
+re-export laundering, the unmarked-interface floor, the Tokenized-typed exemption, and escape
+exact-matching.
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# imported the marked Contact entity from llm/projection.ts (type-only import):
+  × enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it (invariant 1)
+    AssertionError: PII-bearing types reachable from llm/:
+    src/infrastructure/llm/projection.ts reaches PII-bearing module src/domain/schema/entities.ts
+    (via import of '@domain/schema/entities' in src/infrastructure/llm/projection.ts): expected [ Array(1) ] to deeply equal []
+# added an UNMARKED interface with a PII field to engine.ts (the derivation floor):
+  × enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked (or a reviewed machine-name escape)
+    AssertionError: unmarked PII-bearing types (extend PIIBearing or review into NON_PII_ESCAPES):
+    src/domain/workflow/engine.ts :: SneakyClient.email: expected [ …(1) ] to deeply equal []
+```
+**Revert:** removed both injections; fence file `Tests 10 passed`. Registered as the mechanisms of v3
+invariant 1 (now active) with `src/__tests__/fitness/tokenized-factory-only.test.ts`; `pnpm v3:invariants`
+reports `3 active-pass · 0 active-fail`.
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 6).
+
+### PF-030 · governed-actions (per-action authorization hooks) · `src/__tests__/fitness/governed-actions.test.ts`
+**Invariant (v3 §15.3; charter #12 — extends route-level RBAC):** the `GOVERNED_ACTIONS` registry covers
+exactly the seven governed actions; separation of duties is pinned in the registry itself (compliance
+authority — `policy.approve`, `decision.override`, `decision.approve` — never includes the IT-admin or
+requesting-advisor roles, D-039); and every SURFACED action's route calls
+`requireActionGrant(req, "<action>")` with the exact literal. `authorizeGovernedAction` refuses system
+actors categorically and mints the sealed `ActionGrant` only for an allowlisted human role
+(`unit/authz.test.ts`: unauthorized actors cannot approve or execute). Companions cover the unwired
+route, the wrong-literal route, and the deleted-route-file case.
+
+**Injection + observed failure (verbatim), reverted:**
+```
+# swapped the audit route's action literal to "pii.view":
+  × enforces: every surfaced governed action is wired through requireActionGrant in its route
+    AssertionError: unwired governed routes:
+    src/app/api/audit/route.ts: no requireActionGrant(req, "audit.export") call: expected [ Array(1) ] to deeply equal []
+```
+**Revert:** restored the route; fence file `Tests 8 passed`.
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 6).
+
+### PF-031 · secret containment (reveal-allowlist extension of the config-hygiene fence) · `src/__tests__/fitness/no-secret-fallback.test.ts`
+**Invariant (v3 §15.4; charter #7/#15):** config secrets exist outside the config module only as
+`SecretValue` wrappers — every serialization/coercion path (String, template interpolation, JSON.stringify
+alone or nested, util.inspect, Object.entries/spread, exception-message interpolation) yields the
+redaction sentinel (`unit/secret.test.ts`), so a secret cannot enter config dumps, the ledger, traces, or
+exception text. Reading raw bytes is an explicit `.reveal()` call allowed ONLY in the two reviewed
+HMAC consumers (session cookie signing, e-sign callback signing); a stale-allowlist check fails if an
+allowlisted module stops revealing (charter #4). Companions cover the unsanctioned call, the commented
+call, and the allowlisted call.
+
+**Injection + observed failure (verbatim), reverted:**
+```
+# called getConfig().session.secret.reveal() from wire.ts:
+  × enforces: .reveal() appears only in the reviewed secret-consumer modules (v3 §15.4)
+    AssertionError: unsanctioned secret reveals:
+    src/infrastructure/wire.ts:23: expected [ 'src/infrastructure/wire.ts:23' ] to deeply equal []
+```
+**Revert:** removed the injection; fence file green (all config-hygiene checks pass).
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 6).

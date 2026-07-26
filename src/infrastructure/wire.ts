@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import { writeActorOf, systemWriteActor, type Principal, type WriteActor } from "@contracts/principal";
 import { tenantOf, type TenantContext } from "@contracts/tenant";
+import type { PIIBearing } from "@contracts/pii";
 import { type Result } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
@@ -72,7 +73,8 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
   };
 }
 
-export interface StartAccountOpeningInput {
+/** PIIBearing: household/contact names and email are client PII. */
+export interface StartAccountOpeningInput extends PIIBearing {
   householdName: string;
   firstName: string;
   lastName: string;
