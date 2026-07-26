@@ -360,6 +360,46 @@
           "status": "enforced"
         }
       ]
+    },
+    {
+      "id": "v3-direction-ratified",
+      "title": "v3 architecture ratified into the charter machinery; ratified docs SHA-256-pinned (ADR-0023)",
+      "status": "enforced",
+      "phase": "v3-0",
+      "mechanisms": [
+        {
+          "type": "adr",
+          "ref": "docs/adr/0023-adopt-v3-decision-layer-direction.md"
+        },
+        {
+          "type": "file",
+          "ref": "docs/v3/verin-architecture-v3.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/arch-version.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "v3-invariants-phase-gated",
+      "title": "30 v3 invariants tracked three-state (active-pass / active-fail / not-yet-active), never fake green (ADR-0023)",
+      "status": "enforced",
+      "phase": "v3-0",
+      "mechanisms": [
+        {
+          "type": "config",
+          "ref": "v3-invariants.json"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/v3-invariants.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "v3-invariants"
+        }
+      ]
     }
   ]
 }

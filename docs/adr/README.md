@@ -9,7 +9,7 @@ regret-trigger so a deferral is never silent. ADRs that close a documented failu
 (Meridian / Iris) cite the governing report finding.
 
 Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementation deferred)`,
-`Superseded by NNNN`.
+`Accepted (charter amendment)`, `Accepted (deferral with trigger)`, `Superseded by NNNN`.
 
 ## Index
 
@@ -37,7 +37,14 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0020](./0020-sacrificial-components.md) | Sacrificial-component discipline with a written register | Accepted |
 | [0021](./0021-content-security-policy-deferral.md) | Content-Security-Policy — deliberate deferral with a deployment trigger | Accepted |
 | [0022](./0022-derived-compliance-artifacts-demonstration.md) | Charter #3 extension — derived compliance artifacts are demonstrations (watermarked, excluded from examiner-export) | Accepted (charter amendment) |
+| [0023](./0023-adopt-v3-decision-layer-direction.md) | Adopt the v3 direction — Verin as the governed decision and execution layer; §3/§17 phase-gated commitments | Accepted (charter amendment) |
+| [0024](./0024-salesforce-acceleration-deferred.md) | Salesforce acceleration DEFERRED — fakes carry every wave; trigger = sandbox access granted | Accepted (deferral with trigger) |
+| [0025](./0025-money-movement-phase1-vertical.md) | Money movement is the Phase 1 vertical | Accepted |
+| [0026](./0026-stack-deviations-from-v3.md) | Stack deviations from v3 §18 — Postgres, Next.js, ts-morph fences; FirmId ≡ org_id | Accepted |
+| [0027](./0027-demo-first-wave0-labeled-fakes.md) | Demo-first Wave 0 on labeled fakes — charter #5 extension, no mock theater | Accepted (charter amendment) |
+| [0028](./0028-demo-design-language.md) | Demo design language — the established Verin design system is normative | Accepted |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),
-[`../sacrificial-components.md`](../sacrificial-components.md).
+[`../sacrificial-components.md`](../sacrificial-components.md),
+[`../v3/README.md`](../v3/README.md) (the ratified v3 architecture direction, ADR-0023..0028).

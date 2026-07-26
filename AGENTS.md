@@ -6,6 +6,14 @@ changes it (a silent `CHARTER.md` edit fails review). [`charter-map.json`](./cha
 each non-negotiable to the fence/gate/procedure that enforces it, and the charter-drift fence
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
+**Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
+governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are phase-gated in
+[`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
+stores activation only - pass/fail is computed, never fake green). Every ratified doc under `docs/v3/` is
+SHA-256-pinned (arch-version fence): editing one requires updating its pin in the same PR. Salesforce
+work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system, not v3
+§18's visuals (ADR-0028); UI prompts are blocked on `docs/demo-design-language.md`.
+
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.
 
 ## Non-negotiable working rules (from the charter)
@@ -37,9 +45,10 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
-(Playwright + axe) · `pnpm knip`. All gates also run in `.github/workflows/ci.yml` (blocking, never
-advisory). Node 22 in CI (`engines` floor ≥20); the house-CRM store is PGlite (real Postgres) in dev/CI
-behind the store interface (`SqlDb` in `src/infrastructure/store/db.ts`), managed Postgres in prod.
+(Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report). All gates
+also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
+the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
+`src/infrastructure/store/db.ts`), managed Postgres in prod.
 
 ## Sharp edges (hard-won — read before touching these areas)
 

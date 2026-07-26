@@ -189,6 +189,20 @@ jobs:
       - name: seed + verify org audit chains
         run: pnpm db:seed && pnpm audit:chain
 
+  v3-invariants:
+    name: v3-invariants (phase-gated three-state report, ADR-0023)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: v3 invariant report (active-pass / active-fail / not-yet-active; fails on active-fail)
+        run: pnpm v3:invariants
+
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)
     runs-on: ubuntu-latest

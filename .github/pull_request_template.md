@@ -17,6 +17,13 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 - [ ] **No unlabeled synthetic data (charter #3).** Any displayed/seeded value carries `source`/`asOf`/provenance and cannot feed a compliance decision.
 - [ ] **Reversible decisions logged in `DECISIONS.md`; irreversible/architectural ones went through a `needs-decision`.**
 
+## v3 phase gate (required — ADR-0023, orchestrator rule 3)
+
+- **Phase/wave:** <!-- Wave 0 / A–I per docs/v3/verin-prompt-sequence-v3.md, or "n/a — governance/docs/tooling only" -->
+- **Active v3 invariants served:** <!-- ids from v3-invariants.json (`pnpm v3:invariants`), or "none" -->
+- **Demo behavior changed:** <!-- what a demo viewer sees differently, or "none" -->
+- **Unresolved architecture contradictions:** <!-- "none", or name each one. A contradiction with docs/v3/verin-architecture-v3.md STOPS work and is raised here — never resolved silently in code (v3 §0.5, orchestrator rule 4). -->
+
 ## Charter amendment (only if `CHARTER.md` changed)
 
 - [ ] This PR changes `CHARTER.md`. It references the amending ADR: `docs/adr/____`. (Silent charter edits fail review — charter operating model.)
