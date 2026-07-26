@@ -45,7 +45,8 @@ is rendered visibly distinct from a passing one; CI never fakes green (v3 §17 p
 
 1. Read `CHARTER.md` first (always), then this directory.
 2. Read `verin-architecture-v3.md` before any decision-core work; read the demo contract before any
-   UI/demo work. UI prompts (3, 29) are additionally BLOCKED on `docs/demo-design-language.md` (ADR-0028).
+   UI/demo work. UI prompts (3, 29) additionally read `docs/demo-design-language.md` first (ADR-0028;
+   now authored - the gate is satisfied).
 3. Name the phase, active invariants served, demo behavior changed, and unresolved contradictions in
    every PR (the PR template asks; orchestrator rule 3).
 4. On contradiction with the architecture: stop and raise it. Never improvise around it (orchestrator
