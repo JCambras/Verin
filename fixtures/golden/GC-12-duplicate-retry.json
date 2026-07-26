@@ -1,0 +1,121 @@
+{
+  "caseId": "GC-12-duplicate-retry",
+  "title": "Duplicate retry - a double-click and a timeout retry produce exactly one external instruction",
+  "specName": "duplicate retry",
+  "scenarioRef": "duplicate-retry",
+  "scenarioRefNote": "Maps to scenarios.yaml `duplicate-retry` (retry or double-click after submission suppressed by the stable idempotency key; exactly one external instruction exists). Exercises the charter #16 substrate and v3 invariant 20's vocabulary.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "signed",
+    "authority": "captain",
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a suppressed duplicate returns the ORIGINAL handle and status (duplicate_suppressed receipt), and the timeline shows one instruction with the retry annotated - never a second external row."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request; after approval the operations user double-clicks Execute, and a network timeout triggers one automatic retry.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-12",
+    "maskedRequestSummary": "distribute 75000 USD; execution attempted three times client/transport-side (tokenized)",
+    "asOf": "2026-07-26T16:10:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T16:00:00-04:00",
+      "retrievedAt": "2026-07-26T16:10:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Balance 420000 USD; reserve satisfied - this case is about execution integrity, not evaluation."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T16:00:00-04:00",
+      "retrievedAt": "2026-07-26T16:10:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Six-month reserve (48000 USD) preserved after the movement."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Destination on-list; satisfied."
+    }
+  ],
+  "expectedDisposition": "proceed",
+  "expectedAuthority": {
+    "mode": "approval",
+    "stages": [
+      {
+        "stageId": "ops-dual-approval",
+        "order": 1,
+        "executionMode": "parallel",
+        "eligibleRoleIds": ["operations"],
+        "approvalsRequired": 2,
+        "distinctActorsRequired": true,
+        "requesterMayApprove": false,
+        "expiresAfter": "P3D",
+        "escalationPath": [
+          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+        ]
+      }
+    ],
+    "note": "Standard Firm A dual approval above 25000 USD."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": true,
+    "reason": "Approvals recorded; revalidation passes. The idempotency key is derived from the decision, NOT the click, so every duplicate attempt carries the same key.",
+    "idempotencyKey": "idem:GC-12:smiths-75000-2026-08-15",
+    "reservations": [
+      { "reservationId": "res:GC-12:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+    ],
+    "preconditions": [
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+    ]
+  },
+  "expectedExplanationNodes": [
+    { "code": "stable-idempotency-key", "summary": "The execution step's idempotency key is a pure function of the approved decision, so a double-click or transport retry cannot mint a new instruction." },
+    { "code": "duplicate-suppressed", "summary": "The second and third attempts return the original handle with a duplicate_suppressed receipt; the timeline shows ONE external instruction with the retries annotated against it." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying the stable idempotency key." },
+    { "type": "ReservationCreated", "note": "Liquidity reservation created before the first attempt." },
+    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
+    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
+    { "type": "ExecutionStarted", "note": "Exactly ONE ExecutionStarted is recorded for the step: the duplicate attempts are absorbed by the idempotency key and return duplicate_suppressed receipts referencing the same entry - no second start is ever recorded." },
+    { "type": "ExecutionSucceeded", "note": "The single external instruction is accepted; the same handle answers all three attempts." },
+    { "type": "StatusObserved", "note": "Returned status observed as submitted - once, for the one real instruction." }
+  ],
+  "expectedVerificationState": {
+    "reached": true,
+    "observedStatus": "submitted",
+    "settledClaim": "submitted-is-not-settled",
+    "note": "Retries do not create duplicate instructions - provable against the fake adapter now, re-proven against the real sandbox when the trigger fires (demo-contract §8). Execution/status carry fake-adapter-response provenance until then."
+  }
+}

@@ -14,9 +14,11 @@ Practice intelligence for registered investment advisers. The third and final bu
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
 7. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
    subordinate to the charter and grounded in the foundation.
-7. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
+8. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
    contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
+9. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
+   (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
 
 ## Stack
 
@@ -28,13 +30,14 @@ corepack) · Node 22 in CI (`engines` floor ≥20).
 
 ```bash
 corepack pnpm install
-corepack pnpm dev            # http://localhost:3000
+corepack pnpm dev             # http://localhost:3000
 corepack pnpm typecheck
 corepack pnpm lint
-corepack pnpm test           # unit + integration + fitness fences (non-UTC clock)
-corepack pnpm test:e2e       # Playwright + axe
-corepack pnpm knip           # dead exports / unused dependencies
-corepack pnpm v3:invariants  # 30 v3 invariants: active-pass / active-fail / not-yet-active
+corepack pnpm test            # unit + integration + fitness fences (non-UTC clock)
+corepack pnpm test:e2e        # Playwright + axe
+corepack pnpm knip            # dead exports / unused dependencies
+corepack pnpm v3:invariants   # 30 v3 invariants: active-pass / active-fail / not-yet-active
+corepack pnpm golden:validate # 16 golden cases: complete, vocabulary-aligned, signoff-gated
 corepack pnpm build
 ```
 

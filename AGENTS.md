@@ -22,6 +22,10 @@ investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scen
 and acceptance map [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). Salesforce is
 deferred-pending-sandbox (labeled fakes until then; Phase 1 never declared complete on fakes), and all
 demo UI derives its look from `docs/demo-design-language.md`, not v3's visual prescriptions.
+Expected engine outcomes are fixed by the golden-case truth set [`docs/golden-cases.md`](./docs/golden-cases.md)
+plus `fixtures/golden/` (D-035): captain-signoff-gated (agents never sign; the captain signed all 16 cases
+on 2026-07-26, making their expected outcomes binding product truth), validated by `pnpm golden:validate`
+(CI job `golden-cases`) and the `golden-cases` fence.
 
 ## Non-negotiable working rules (from the charter)
 
@@ -54,7 +58,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
-(Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report). All gates
+(Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
+`pnpm golden:validate` (16-case golden truth set). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.

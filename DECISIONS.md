@@ -388,3 +388,41 @@ silently diverging from the captain's v1 text.
 `charter-map.json`, and its line in charter-drift's `RATCHETED_ENFORCED_IDS` (the ratchet makes that
 removal a charter-ADR matter, per charter-drift (e)) - drop the now-unused `yaml` devDependency, and
 delete this entry. No product code imports any of it (consumers are later prompts 2, 3, 11, 29).
+
+### D-035 · 2026-07-26 · reversible · Golden-case truth set drafted (v3 build sequence, prompt 2) - 16 cases, ALL pending-captain
+
+The prompt-2 minimum truth set lands as `docs/golden-cases.md` + `fixtures/golden/*.json` (16 cases:
+the twelve spec-enumerated ones - two of them two-sided, so "recent bank change" = GC-03/GC-04 per
+firm and "two simultaneous distributions" = GC-10/GC-11 winner/loser - plus GC-15
+approval-invalidation and GC-16 specialist-review-expiration, completing the demo-contract §5 branch
+coverage). Every case states trigger, firm configuration, household evidence, policy versions,
+household instructions, and the six expected planes (disposition, authority stages, execution
+eligibility, explanation nodes, ledger events, verification state), aligned by construction with the
+scenarios.yaml vocabularies (D-034, append-only ids untouched) and the v3 core-contracts type names.
+Enforcement per charter #1: shared validator core `scripts/golden-cases.lib.ts`, human-readable CI
+runner `pnpm golden:validate` (blocking job `golden-cases`), fitness fence
+`src/__tests__/fitness/golden-cases.test.ts` (registered as `golden-cases-truth-set`, ratcheted),
+proof PF-026.
+- **Signoff honesty.** Every case's signoff is initialized `pending-captain` with null attribution;
+  the drafting agent may not sign. The validator admits exactly two shapes (pending-captain /
+  signed-with-attribution), so the captain's future signing PR stays green while an agent-invented
+  in-between state fails the build. Expected results are product truth subject to captain signoff,
+  not agent invention.
+- **Answers drafted where the contract was silent (flagged in the fixtures' signoff notes,
+  awaiting the captain):** Firm B sub-$100k authority = automatic (GC-02); post-invalidation rule =
+  re-evaluate on the new bundle, still-proceed re-runs the SAME stages against the NEW decision hash
+  (GC-15, fixing the question scenarios.yaml explicitly deferred to prompt 2); single-request
+  insufficient liquidity = resolvable block with `scenarioRef: null` (no matrix branch exists for
+  it; the matrix is append-only and a new branch is a captain-approved contract change); regulatory
+  prohibition modeled as an active legal hold (GC-07); reserve-material freshness window = 30 days
+  (GC-09); GC-13 partial-Salesforce carries `deferred-pending-sandbox` per the standing directive.
+**Why:** prompt 2's acceptance is that the engine is later judged against explicit domain outcomes
+instead of self-generated tests; landing the truth set fenced-and-pending keeps the branch honest
+while the captain reviews the §2 summary table.
+**Revert path:** delete `docs/golden-cases.md`, `fixtures/golden/`, the two scripts, the fence, the
+`golden:validate` script + `golden-cases` CI job, the `golden-cases-truth-set` charter-map entry and
+its ratchet line (a charter-ADR matter per charter-drift (e)), and this entry. Nothing else imports
+them (consumers are later prompts 11, 16-19, 28).
+**Addendum (2026-07-26):** the captain signed all 16 cases as drafted (approval relayed via
+firstmate); every fixture's signoff is now `signed` / `captain` / `2026-07-26`, and their expected
+outcomes are binding product truth per the §1 protocol.

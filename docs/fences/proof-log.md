@@ -616,3 +616,56 @@ failures (verbatim), each reverted:
 prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
 full-scope, two-directional id pinning, in round 4 to structural id-family discovery and full
 cross-reference closure, and in round 5 to loud shape-drift reporting in the cross-reference detector).
+
+### PF-026 · golden-cases (prompt-2 truth set: complete, aligned, signoff-gated) · `src/__tests__/fitness/golden-cases.test.ts`, `scripts/golden-cases-validate.ts`
+**Invariant (charter #1/#4; v3 build-sequence prompt 2):** the golden cases in `fixtures/golden/*.json`
+are the truth set the engine is later judged against, so an incomplete or dishonest case is a build
+failure: (a) every case states every required field, populated - trigger, firm configuration, household
+evidence, policy versions, household instructions, expected disposition / authority stages / execution
+eligibility / explanation nodes / ledger events / verification state, signoff; (b) vocabulary aligns
+with the LIVE `config/demo/scenarios.yaml` (firm/scenario/state/provenance/deferral ids) and with the
+v3 core-contracts `LedgerEntry` types; (c) structural consistency: blocked/prohibited cases carry no
+authority, no execution eligibility, no reached verification (v3 invariants 8/9), and the
+partial-Salesforce case carries `deferred-pending-sandbox`; (d) signoff honesty: exactly
+`pending-captain` (null attribution) or `signed` (populated attribution) - expected results are product
+truth subject to captain signoff, never agent invention, and an agent-"signed" case without attribution
+is rejected; (e) doc/fixture sync (every caseId in `docs/golden-cases.md`), filename = caseId, all
+twelve spec-enumerated cases covered, at least twelve cases. Validator core is shared
+(`scripts/golden-cases.lib.ts`) between the fence (in `pnpm test`) and the `golden-cases` CI job
+(`pnpm golden:validate`), so the enforced check and the proven check are the same code. The companion
+feeds violating cases cloned from the REAL fixtures (missing field, blank populated field, agent-signed,
+unknown status, five vocabulary drifts, three blocked-case contradictions plus a proceed-with-none,
+dropped deferral marking, doc drift, dropped spec case, sub-twelve set, duplicate caseId,
+recorded-silence abuse, a gutted scenarios.yaml ref set) and asserts each is caught, plus two positive
+cases (the real set passes; a properly attributed captain signature passes) so it can pass neither
+vacuously nor by always-failing. Registered in `charter-map.json` as `golden-cases-truth-set`
+(enforced, added to charter-drift's ratchet).
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# required field deleted from a real fixture (GC-01 expectedVerificationState removed):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-01-firm-a-happy-path.json :: expectedVerificationState object missing
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+# agent-signed case (GC-02 signoff.status pending-captain -> signed, attribution still null) - the
+# RUNNER path this time (defense in depth; CI job golden-cases):
+  ✗ GC-02-firm-b-happy-path  disposition=proceed  signoff=signed
+      └ signoff.signedBy must name the signer when status is signed
+      └ signoff.signedAt must be populated when status is signed
+  golden-cases: 2 problem(s) - an incomplete case cannot pass (charter #4)   [exit 1]
+# vocabulary drift (GC-03 firm: firm-a -> firm-alpha):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-03-recent-bank-change-firm-a.json :: firm must be a scenarios.yaml firm id, got "firm-alpha"
+    fixtures/golden/GC-03-recent-bank-change-firm-a.json :: firmConfiguration.firmId "firm-a" does not match case firm "firm-alpha"
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+# doc/fixture drift (docs/golden-cases.md rows for GC-16 renamed to GC-16-review-lapse):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-16-specialist-review-expiration.json :: caseId "GC-16-specialist-review-expiration" is not referenced anywhere in docs/golden-cases.md (doc/fixture drift)
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+```
+**Revert:** restored each injected file; fence file `Tests 15 passed`, `pnpm test:fitness` →
+`Tests 208 passed` (26 files), `pnpm golden:validate` → all 16 cases green, `pnpm typecheck` /
+`pnpm lint` / `pnpm knip` clean. The YAML cross-check reuses the `yaml` devDependency (2.9.0).
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 2 - the golden-case specification and signed fixtures;
+16 cases, all `pending-captain`; the captain signs against the summary table in `docs/golden-cases.md` §2).
