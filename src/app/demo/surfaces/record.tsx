@@ -13,7 +13,7 @@ import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } from "@app/presentation/evidence-row";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { DEV_BADGE_TEXT, type EvidenceRowVM, type RecordVM, type WhyVM } from "../model";
+import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionRowVM, type RecordVM, type WhyVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 import { PrintButton } from "./print-button";
 
@@ -57,6 +57,19 @@ function EvidenceDocRow({ row }: { row: EvidenceRowVM }) {
     case "missing":
       return <EvidenceMissing text={row.text} />;
   }
+}
+
+function ExecutionDocRow({ row }: { row: ExecutionRowVM }) {
+  return (
+    <li className="flex flex-col gap-0.5 text-sm print-avoid-break">
+      <span className="text-slate-800">
+        {row.step} · {row.target} · {row.statusLabel} · {row.timestamp}
+      </span>
+      {row.honestyLine ? <span className="text-xs text-slate-600">{row.honestyLine}</span> : null}
+      {row.plainClaim ? <span className="text-slate-700">{row.plainClaim}</span> : null}
+      <span className="font-mono text-xs text-slate-600">{row.identifiers.map((i) => `${i.label}: ${i.value}`).join(" · ")}</span>
+    </li>
+  );
 }
 
 const NOT_REACHED = "Not reached - this record ends where the journey ended.";
@@ -146,7 +159,7 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
 
         <DocSection n={3} title="Decision and disposition">
           <p className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={vm.disposition.kind} label={vm.disposition.kind} />
+            <StatusBadge status={vm.disposition.kind} label={DISPOSITION_LABELS[vm.disposition.kind]} />
             <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.disposition.fakeClass]} />
           </p>
           <p className="text-sm text-slate-800">{vm.disposition.headline}</p>
@@ -243,14 +256,7 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
           {vm.execution ? (
             <ul className="flex flex-col gap-2">
               {vm.execution.map((r) => (
-                <li key={`${r.step}-${r.timestamp}`} className="flex flex-col gap-0.5 text-sm print-avoid-break">
-                  <span className="text-slate-800">
-                    {r.step} · {r.target} · {r.statusLabel} · {r.timestamp}
-                  </span>
-                  {r.honestyLine ? <span className="text-xs text-slate-600">{r.honestyLine}</span> : null}
-                  {r.plainClaim ? <span className="text-slate-700">{r.plainClaim}</span> : null}
-                  <span className="font-mono text-xs text-slate-600">{r.identifiers.map((i) => `${i.label}: ${i.value}`).join(" · ")}</span>
-                </li>
+                <ExecutionDocRow key={`${r.step}-${r.timestamp}`} row={r} />
               ))}
             </ul>
           ) : (
@@ -275,6 +281,16 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                 ))}
               </ul>
               <p className="text-xs text-slate-600">{vm.verification.nextPoll}</p>
+              {vm.verification.appended.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium text-slate-800">Later arrivals, appended to the same register</p>
+                  <ul className="flex flex-col gap-2">
+                    {vm.verification.appended.map((r) => (
+                      <ExecutionDocRow key={`${r.step}-${r.timestamp}`} row={r} />
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="text-sm text-slate-600">{vm.stopNote ?? NOT_REACHED}</p>

@@ -190,6 +190,39 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByText("Returned NIGO", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Fix and resubmit the authorization" })).toBeVisible();
   await snap(page, 17, "verification-delayed-nigo");
+
+  // Specialist-review expiration under Firm B: no specialist stage exists there -
+  // the recorded per-firm split blocks until independently verified (contract §2).
+  await page.goto("/app/demo/decision?scenario=specialist-review-expiration&firm=firm-b");
+  await expect(page.getByTestId("disposition-blocked")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
+  await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-b");
+  await expect(page.getByText("Authority not reached")).toBeVisible();
+});
+
+test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/record?scenario=recent-bank-change-block&firm=firm-a");
+  await page.emulateMedia({ media: "print" });
+  // Design §9: wordmark, watermark chip, decision id, and the FULL hashes stay on paper.
+  await expect(page.getByTestId("record-watermark")).toBeVisible();
+  await expect(page.getByText("dec-smiths-renovation-2026-0726").first()).toBeVisible();
+  await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
+  // App chrome and interactive controls disappear.
+  await expect(page.getByRole("navigation", { name: "Primary" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Print this record" })).toBeHidden();
+});
+
+test("unknown branch ids 404 instead of silently rendering a different branch", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const badScenario = await page.goto("/app/demo/decision?scenario=not-a-branch&firm=firm-a");
+  expect(badScenario?.status()).toBe(404);
+  const badFirm = await page.goto("/app/demo/decision?scenario=safe-proceed&firm=firm-c");
+  expect(badFirm?.status()).toBe(404);
+  // Absent params still land on the default branch.
+  const defaulted = await page.goto("/app/demo/decision");
+  expect(defaulted?.status()).toBe(200);
+  await expect(page.getByTestId("disposition-proceed")).toBeVisible();
 });
 
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {

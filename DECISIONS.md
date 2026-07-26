@@ -472,3 +472,22 @@ policy-activation click advance the recorded choreography via routing (no state 
 **Revert path:** delete `src/app/demo/`, the new presentation primitives + `STATUS_STYLES`/print
 additions, `/app/demo` routes + nav/home links, `e2e/demo-journey.spec.ts`, the `demo-screens` CI
 step, and the `demo-skeleton-honesty` fence with its proof-log entry.
+
+### D-037 · 2026-07-26 · reversible · Review-fix round on the walking skeleton (captain-authorized, decision keys nm-review-askuser-s6 / nm-review-rerun-copy-s6)
+
+Eight review findings fixed forward, none by weakening a fence. The one contract amendment is
+captain-authorized: `specialist-review-expiration` gains the per-firm split firm-a=proceed /
+firm-b=blocked in BOTH `config/demo/scenarios.yaml` and `src/app/demo/data.ts` (ids unchanged,
+append-only intact), because Firm B's recorded bank-change handling is
+block-until-independently-verified - it has no specialist stage to expire, so under Firm B the same
+facts land on the recorded block with the independent-verification affordance (mirrors GC-03/GC-04).
+The rest: print-hide scoped to app chrome via a class (never a bare `header` selector), so the
+record's identity header prints per design §9; `demo-skeleton-honesty` RULE A now rejects any
+skeleton per-firm entry the contract does not record and RULE B walks `.ts` alongside `.tsx`
+(companions + injection proofs in `docs/fences/proof-log.md`); the printable record renders
+`verification.appended` (later arrivals append on paper as on screen) and uses the §5 badge labels
+via the shared `DISPOSITION_LABELS` vocabulary in `model.ts`; unknown `?scenario=`/`?firm=` ids 404
+in the route page (absent params still default; surfaces stay data-free); and
+`changedRerunResult` is disposition-aware from the recorded disposition (proceed / blocked /
+prohibited each state only what the contract records).
+**Revert path:** revert this round's commit; the D-036 skeleton stands unchanged beneath it.

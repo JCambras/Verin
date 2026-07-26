@@ -161,15 +161,26 @@ export const SCENARIOS: readonly ScenarioData[] = [
   { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true } },
   { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true } },
   { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true } },
-  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "A specialist-review stage expires without action and escalates along the configured escalation path.", outcomeClass: "escalated", disposition: "proceed", spec: { bankChanged: true, specialistExpired: true } },
+  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "A specialist-review stage expires without action and escalates along the configured escalation path.", outcomeClass: "escalated", disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true, specialistExpired: true } },
 ];
-export const DEFAULT_SCENARIO = "safe-proceed";
+const DEFAULT_SCENARIO = "safe-proceed";
 
 export function scenarioById(id: string): ScenarioData {
   return SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]!;
 }
 export function firmById(id: string): FirmData {
   return FIRMS[id] ?? FIRMS[DEFAULT_FIRM]!;
+}
+/** Resolve a URL branch param: an ABSENT param falls back to the default, but an
+ * UNKNOWN id returns null so the route can 404 - a typo'd demo URL must never
+ * silently render a different branch than the presenter asked for. */
+export function resolveScenarioId(id: string | undefined): string | null {
+  if (id === undefined) return DEFAULT_SCENARIO;
+  return SCENARIOS.some((s) => s.id === id) ? id : null;
+}
+export function resolveFirmId(id: string | undefined): string | null {
+  if (id === undefined) return DEFAULT_FIRM;
+  return id in FIRMS ? id : null;
 }
 /** The disposition this scenario lands on for this firm - recorded contract data. */
 export function dispositionFor(scenario: ScenarioData, firmId: string): DispositionKind {

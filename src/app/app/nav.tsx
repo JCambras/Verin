@@ -27,7 +27,7 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
     { href: "/app/audit", label: "Audit trail" },
   ];
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3">
+    <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3 print-hide">
       <nav className="flex items-center gap-5 text-sm" aria-label="Primary">
         <Link href="/app" className="text-lg" aria-current={pathname === "/app" ? "page" : undefined}>
           <Wordmark />

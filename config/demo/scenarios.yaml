@@ -233,9 +233,12 @@ scenarios:
 
   - id: specialist-review-expiration
     description: A specialist-review stage expires without action and escalates along the configured escalation path.
-    disposition: proceed
+    disposition:
+      per_firm:
+        firm-a: proceed # specialist review expires and escalates (contract §2 handling)
+        firm-b: blocked # until independently verified - Firm B has no specialist stage (contract §2)
     outcome_class: escalated
-    exercises: [proceed, awaiting-approval]
+    exercises: [proceed, blocked, awaiting-approval]
 
 # --------------------------------------------------------------------------
 # Provenance-label taxonomy (contract §6). Every visible data element or status is

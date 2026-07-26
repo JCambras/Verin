@@ -695,3 +695,32 @@ file:line. Injections + observed failures (verbatim), each reverted:
 **Revert:** both injections restored; fence file `Tests 11 passed` (incl. 8 companions:
 invented branch, dropped branch, drifted disposition, dropped per-firm split, invented firm,
 data/service/builder imports flagged with file:line, allowlist passes).
+
+## Walking-skeleton honesty fence hardening (2026-07-26, review round) - executed injection proofs
+
+### demo-skeleton-honesty, hardened RULE A + RULE B (review findings fence-rule-a-perfirm-invention-hole, fence-rule-b-ts-file-bypass)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`, strengthened in place (no rule weakened).
+RULE A now flags a skeleton `perFirm` map on a scenario whose contract disposition is plain, and any
+skeleton per-firm key the contract's recorded split does not state - previously `dispositionFor()`
+preferred `perFirm`, so a skeleton-only split could change rendered outcomes while the fence stayed
+green. RULE B's surfaces walk now includes plain `.ts` files alongside `.tsx` - previously a
+`surfaces/*.ts` helper could import `../data` or `../journey` and re-export to surfaces unseen.
+Injections + observed failures (verbatim), each reverted:
+```
+# RULE A: data.ts safe-proceed (contract-plain) given a skeleton-only perFirm: { "firm-b": "blocked" }:
+  × RULE A enforces: skeleton branch data equals the contract's scenarios, firms, and dispositions
+    AssertionError: skeleton/contract drift:
+    scenario "safe-proceed": skeleton records a per-firm split but the contract disposition is plain "proceed" - the UI may not invent decisions
+# RULE B: src/app/demo/surfaces/evil-helper.ts created on disk, importing the contract data:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/evil-helper.ts:1 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** the data.ts injection restored, the evil-helper.ts file deleted; fence file green with
+three new companions (skeleton per-firm split on a contract-plain scenario; skeleton per-firm key
+beyond the contract's recorded split; an on-disk `.ts` violator caught by the real walk via a temp
+directory). Same PR also lands the captain-authorized specialist-review-expiration per-firm split
+(firm-a=proceed / firm-b=blocked) in scenarios.yaml + data.ts, which the hardened RULE A holds equal.
+
+**Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision keys nm-review-askuser-s6 / nm-review-rerun-copy-s6).

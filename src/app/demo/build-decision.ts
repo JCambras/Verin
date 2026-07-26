@@ -8,7 +8,7 @@
  * design language specifies (§5 disposition treatments, §7 authority surfaces).
  */
 import { metric } from "@contracts/metric";
-import type { ApprovalStageVM, ApprovalVM, BlockerVM, DispositionVM, PolicyTraceVM, RecommendationVM, WhyVM } from "./model";
+import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
@@ -49,9 +49,9 @@ export function amountMetric() {
 
 /** The §5 spine state-slot per disposition. */
 export const DISPOSITION_BADGES = {
-  proceed: { status: "proceed", label: "Proceed" },
-  blocked: { status: "blocked", label: "Blocked - resolvable" },
-  prohibited: { status: "prohibited", label: "Prohibited" },
+  proceed: { status: "proceed", label: DISPOSITION_LABELS.proceed },
+  blocked: { status: "blocked", label: DISPOSITION_LABELS.blocked },
+  prohibited: { status: "prohibited", label: DISPOSITION_LABELS.prohibited },
 } as const;
 
 function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {

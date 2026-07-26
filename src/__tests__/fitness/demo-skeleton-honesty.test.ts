@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
 import { Project } from "ts-morph";
@@ -77,8 +78,18 @@ export function parityViolations(skeleton: BranchFacts, contract: BranchFacts): 
           out.push(`scenario "${id}": contract records per-firm ${firmId}=${disp}, skeleton says ${s.perFirm?.[firmId] ?? "(nothing)"}`);
         }
       }
-    } else if (s.disposition !== c.disposition) {
-      out.push(`scenario "${id}": contract disposition "${c.disposition}", skeleton says "${s.disposition}" - the UI may not invent decisions`);
+      for (const [firmId, disp] of Object.entries(s.perFirm ?? {})) {
+        if (!(firmId in c.perFirm)) {
+          out.push(`scenario "${id}": skeleton records per-firm ${firmId}=${disp} that the contract does not state - the UI may not invent decisions`);
+        }
+      }
+    } else {
+      if (s.perFirm) {
+        out.push(`scenario "${id}": skeleton records a per-firm split but the contract disposition is plain "${c.disposition}" - the UI may not invent decisions`);
+      }
+      if (s.disposition !== c.disposition) {
+        out.push(`scenario "${id}": contract disposition "${c.disposition}", skeleton says "${s.disposition}" - the UI may not invent decisions`);
+      }
     }
   }
   for (const f of contract.firms) if (!skeleton.firms.includes(f)) out.push(`firm "${f}" missing from the skeleton`);
@@ -115,9 +126,11 @@ function specifiersOf(project: Project): { path: string; specifiers: { spec: str
   }));
 }
 
-function surfacesProject(): Project {
+/** Both .ts and .tsx: a plain-.ts helper in surfaces/ could otherwise import ../data
+ * and re-export it to surfaces without the fence ever seeing the file. */
+function surfacesProject(dir: string = join(REPO_ROOT, SURFACES_DIR)): Project {
   const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
-  for (const f of walk(join(REPO_ROOT, SURFACES_DIR), (p) => p.endsWith(".tsx"))) project.addSourceFileAtPath(f);
+  for (const f of walk(dir, (p) => p.endsWith(".ts") || p.endsWith(".tsx"))) project.addSourceFileAtPath(f);
   return project;
 }
 
@@ -175,6 +188,35 @@ describe("demo-skeleton-honesty fence", () => {
       expect(parityViolations({ ...skeleton, firms: [...skeleton.firms, "firm-c"] }, contractFacts(yamlText)).some((v) => v.includes(`firm "firm-c" invented`))).toBe(true);
     });
 
+    it("RULE A flags a skeleton per-firm split the contract does not record (plain contract disposition)", () => {
+      const skeleton = skeletonFacts();
+      const invented = {
+        ...skeleton,
+        scenarios: { ...skeleton.scenarios, "safe-proceed": { disposition: "proceed", perFirm: { "firm-b": "blocked" } } },
+      };
+      expect(
+        parityViolations(invented, contractFacts(yamlText)).some(
+          (v) => v.includes(`"safe-proceed"`) && v.includes("per-firm split") && v.includes("may not invent"),
+        ),
+      ).toBe(true);
+    });
+
+    it("RULE A flags a skeleton per-firm entry beyond the contract's recorded split", () => {
+      const skeleton = skeletonFacts();
+      const extra = {
+        ...skeleton,
+        scenarios: {
+          ...skeleton.scenarios,
+          "recent-bank-change-block": { disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked", "firm-c": "proceed" } },
+        },
+      };
+      expect(
+        parityViolations(extra, contractFacts(yamlText)).some(
+          (v) => v.includes(`"recent-bank-change-block"`) && v.includes("firm-c=proceed") && v.includes("does not state"),
+        ),
+      ).toBe(true);
+    });
+
     it("RULE B flags a surface importing the contract data (with file:line)", () => {
       const project = inMemoryProject({ "/src/app/demo/surfaces/evil.tsx": `import { SCENARIOS } from "../data";\nexport function Evil() { return SCENARIOS.length; }` });
       const violations = importBoundaryViolations(specifiersOf(project));
@@ -188,6 +230,19 @@ describe("demo-skeleton-honesty fence", () => {
         "/src/app/demo/surfaces/evil2.tsx": `import { getJourney } from "../journey";\nimport { buildDisposition } from "../build-decision";\nexport const x = [getJourney, buildDisposition];`,
       });
       expect(importBoundaryViolations(specifiersOf(project)).length).toBe(2);
+    });
+
+    it("RULE B's walk sees plain-.ts files too - a .ts helper importing the data is caught on disk", () => {
+      const dir = mkdtempSync(join(tmpdir(), "surfaces-fence-"));
+      try {
+        writeFileSync(join(dir, "evil-helper.ts"), `import { SCENARIOS } from "../data";\nexport const leaked = SCENARIOS;\n`);
+        const violations = importBoundaryViolations(specifiersOf(surfacesProject(dir)));
+        expect(violations.length).toBe(1);
+        expect(violations[0]).toContain("evil-helper.ts:1");
+        expect(violations[0]).toContain(`"../data"`);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     it("RULE B passes the allowed imports (react, next, presentation, model, siblings)", () => {

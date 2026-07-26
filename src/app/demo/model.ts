@@ -72,6 +72,14 @@ export interface WhyVM {
 
 // ── Disposition treatments (design §5) ──────────────────────────────────────────────
 export type DispositionKind = "proceed" | "blocked" | "prohibited";
+/** The §5 badge labels - one vocabulary for every surface, the printable record
+ * included: "blocked" never loses its "resolvable" qualifier (doctrine, not
+ * decoration). */
+export const DISPOSITION_LABELS: Record<DispositionKind, string> = {
+  proceed: "Proceed",
+  blocked: "Blocked - resolvable",
+  prohibited: "Prohibited",
+};
 export interface DispositionFigureVM {
   readonly label: string;
   readonly metric: DisplayMetric;

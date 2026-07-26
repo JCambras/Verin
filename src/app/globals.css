@@ -110,14 +110,16 @@ body {
 
 /*
  * Print posture for the examiner-grade decision artifact (demo design language §9).
- * App chrome, the DecisionSpine, and every interactive control disappear; rows and
- * cards stay unbroken across pages; the running header/footer carry the decision id
- * and - for demonstration-derived artifacts - the ADR-0022 watermark on EVERY page,
- * so no single cropped page can pass as a real record. Tokens only; no new values.
+ * App chrome (via .print-hide - never a bare `header` selector, which would erase the
+ * record's own identity header: wordmark, watermark chip, decision id, full hashes),
+ * the DecisionSpine, and every interactive control disappear; rows and cards stay
+ * unbroken across pages; the running header/footer carry the decision id and - for
+ * demonstration-derived artifacts - the ADR-0022 watermark on EVERY page, so no
+ * single cropped page can pass as a real record. Tokens only; no new values.
  */
 .print-running { display: none; }
 @media print {
-  header, nav, button, .print-hide { display: none !important; }
+  nav, button, .print-hide { display: none !important; }
   .print-avoid-break { break-inside: avoid; }
   .print-running {
     display: flex;

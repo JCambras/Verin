@@ -7,7 +7,7 @@
  */
 import { notFound } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
-import { DEFAULT_FIRM, DEFAULT_SCENARIO } from "@app/demo/data";
+import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
 import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/surfaces/shared";
 import { WorkspaceSurface } from "@app/demo/surfaces/workspace";
 import { IntentSurface } from "@app/demo/surfaces/intent";
@@ -38,8 +38,9 @@ export default async function DemoStationPage({
   const { station } = await params;
   if (!(DEMO_SEQUENCE as readonly string[]).includes(station)) notFound();
   const sp = await searchParams;
-  const scenarioId = first(sp.scenario) ?? DEFAULT_SCENARIO;
-  const firmId = first(sp.firm) ?? DEFAULT_FIRM;
+  const scenarioId = resolveScenarioId(first(sp.scenario));
+  const firmId = resolveFirmId(first(sp.firm));
+  if (!scenarioId || !firmId) notFound();
   const approved = first(sp.approved) === "1";
   const journey = getJourney(scenarioId, firmId);
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };

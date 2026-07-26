@@ -155,8 +155,16 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
     gateLabel: isFirmA ? "Approve and activate FA-4.3" : "Approve (no effective change for Firm B)",
     activation: isFirmA ? { fromVersion: "FA-4.2", toVersion: "FA-4.3" } : { fromVersion: "FB-2.1", toVersion: "FB-2.1" },
     changedRerunResult: isFirmA
-      ? "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor."
-      : "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
+      ? {
+          proceed: "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor.",
+          blocked: "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
+          prohibited: "Re-run under FA-4.3: the Smith request remains prohibited - the destination restriction is not resolvable by a reserve-policy change.",
+        }[disp]
+      : {
+          proceed: "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
+          blocked: "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the named conditions still block this request.",
+          prohibited: "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the destination restriction is not resolvable by a reserve-policy change.",
+        }[disp],
     fakeClass: "deterministic-engine-output",
   };
 }

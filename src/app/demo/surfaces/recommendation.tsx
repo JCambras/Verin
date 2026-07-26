@@ -9,10 +9,9 @@ import { FreshValue } from "@app/presentation/fresh-value";
 import { Metric } from "@app/presentation/metric";
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { DispositionNotice, InspectiveLinks } from "@app/presentation/disposition-notice";
-import { DEV_BADGE_TEXT, type RecommendationVM } from "../model";
+import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type RecommendationVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
-const BADGE_LABELS = { proceed: "Proceed", blocked: "Blocked - resolvable", prohibited: "Prohibited" } as const;
 const SOURCE_KIND_LABELS = { "firm-policy": "firm policy", "household-instruction": "household instruction", regulatory: "regulatory" } as const;
 
 export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: RecommendationVM; scenarioId: string; firmId: string }) {
@@ -23,7 +22,7 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
         kind={d.kind}
         headline={d.headline}
         why={d.why}
-        badgeLabel={BADGE_LABELS[d.kind]}
+        badgeLabel={DISPOSITION_LABELS[d.kind]}
         devBadgeLabel={DEV_BADGE_TEXT[d.fakeClass]}
         {...(d.figures ? { figures: d.figures } : {})}
         {...(d.authoritySummary ? { authoritySummary: d.authoritySummary } : {})}
