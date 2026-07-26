@@ -1,0 +1,319 @@
+# Verin Phase 1 demo scenario matrix.
+#
+# WHAT THIS FILE IS: the demo contract (docs/demo-contract.md) expressed as inert,
+# machine-usable data. It is descriptive contract truth consumed by later build-sequence
+# prompts (golden-case fixtures, the corpus generator, the walking-skeleton UI, demo
+# choreography). It contains NO executable content of any kind and must never gain any:
+# no code, no templates, no tags beyond plain YAML scalars/maps/lists.
+#
+# STABILITY CONTRACT: every `id` in this file is a stable identifier. Once a consumer
+# references an id, the id is never renamed or reused; additions append. Substantive
+# changes track the demo contract itself (captain-approved, in the same PR).
+#
+# SCOPE DISCIPLINE: this file states only what the demo contract states. Where the
+# contract is silent (for example Firm B's requester rule), the field is null with a
+# comment - silence is recorded, never filled in.
+#
+# Source of truth: docs/demo-contract.md (v1, with the two integrated 2026-07-26
+# captain annotations: Salesforce deferral and the design-language pointer).
+
+contract:
+  id: verin-demo-contract
+  version: 1
+  source: docs/demo-contract.md
+  parent: architecture v3 §2
+
+# --------------------------------------------------------------------------
+# The canonical request (contract §2). Entered live by the presenter, so its
+# provenance is user-entered-demo-input, not a fixture.
+# --------------------------------------------------------------------------
+canonical_request:
+  text: "The Smiths need $75,000 for their home renovation by August 15."
+  amount_usd: 75000
+  purpose: home renovation
+  # The contract names a calendar day, not a year. The absolute date is fixed by the
+  # demo world clock when fixtures are materialized (build-sequence prompts 2 and 11).
+  deadline: August 15
+  provenance: user-entered-demo-input
+
+# --------------------------------------------------------------------------
+# Firm parameter sets (contract §2). The whole Firm A / Firm B difference must be
+# expressible as this data - no core code change between firms.
+# Note: the canonical $75,000 request sits between the two dual-approval thresholds
+# (above Firm A's $25,000, below Firm B's $100,000), which is what makes the Firm B
+# rerun differ on reserve logic and approval result with zero code change.
+# --------------------------------------------------------------------------
+firms:
+  - id: firm-a
+    display_name: Firm A
+    cash_reserve:
+      months_of_planned_withdrawals: 6
+    dual_approval:
+      threshold_usd: 25000
+      approvals_required: 2
+      distinct_actors_required: true
+      # "two distinct operations approvers"
+      eligible_role: operations
+      # Verbatim rule: "Requester may not satisfy both approvals."
+      requester_constraint: may-not-satisfy-both-approvals
+    bank_instruction_change:
+      # "Recent bank-instruction change requires specialist review."
+      handling: specialist-review
+  - id: firm-b
+    display_name: Firm B
+    cash_reserve:
+      months_of_planned_withdrawals: 12
+    dual_approval:
+      threshold_usd: 100000
+      approvals_required: 2
+      distinct_actors_required: true
+      # Contract §2 does not constrain the approver role for Firm B - not invented here.
+      eligible_role: null
+      # Contract §2 states no requester rule for Firm B - not invented here.
+      requester_constraint: null
+    bank_instruction_change:
+      # "Recent bank-instruction change blocks execution until independently verified."
+      handling: block-until-independently-verified
+
+# --------------------------------------------------------------------------
+# The Smiths household shape (contract §2). This is the REQUIRED SHAPE, not the
+# concrete fixture: balances, dates, and names are materialized by the golden-case
+# fixtures (prompt 2) and the corpus generator (prompt 11), always under the
+# no-unlabeled-synthetic rule (charter #3).
+# --------------------------------------------------------------------------
+household:
+  id: smiths
+  display_name: The Smiths
+  provenance: synthetic-fixture
+  required_shape:
+    - id: accounts
+      requirement: multiple taxable and retirement accounts
+    - id: planned-withdrawals
+      requirement: planned withdrawals requiring a cash reserve
+    - id: recent-bank-instruction-change
+      requirement: a recently changed bank instruction
+    - id: destination-restriction
+      requirement: a household-specific destination restriction
+    - id: pending-liquidity-activity
+      requirement: pending approved activity that affects available liquidity
+    - id: judgment-complexity
+      requirement: enough complexity to require real judgment without becoming implausible
+
+# --------------------------------------------------------------------------
+# State vocabulary (contract §5 requirement; build-sequence prompt 1 deliverable).
+# Exactly these ten states; `label` is the display string. The `class` groups each
+# state by the plane it describes:
+#   disposition   -> DecisionResult.kind in the v3 core contracts
+#   authority     -> approval-stage progress
+#   execution     -> ObservedStatus in the v3 core contracts
+# (ObservedStatus also defines 'Rejected'; it is not part of this demo vocabulary
+# and is deliberately not added here.)
+# --------------------------------------------------------------------------
+state_vocabulary:
+  - id: proceed
+    label: proceed
+    class: disposition
+  - id: blocked
+    label: blocked
+    class: disposition
+  - id: prohibited
+    label: prohibited
+    class: disposition
+  - id: awaiting-approval
+    label: awaiting approval
+    class: authority
+  - id: approved
+    label: approved
+    class: authority
+  - id: submitted
+    label: submitted
+    class: execution
+  - id: in-flight
+    label: in flight
+    class: execution
+  - id: completed
+    label: completed
+    class: execution
+  - id: nigo
+    label: NIGO
+    class: execution
+  - id: unknown
+    label: unknown
+    class: execution
+
+# --------------------------------------------------------------------------
+# The twelve required scenario branches (contract §5). The demo environment must
+# support all of them without code changes.
+#   disposition    - the state-vocabulary id the evaluator lands on at decision time
+#                    (per_firm where the firms differ; that difference is the point).
+#   outcome_class  - the one-line class of how the branch resolves.
+#   exercises      - state-vocabulary ids the branch walks through.
+# --------------------------------------------------------------------------
+scenarios:
+  - id: safe-proceed
+    description: No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.
+    disposition: proceed
+    outcome_class: governed submission
+    exercises: [proceed, awaiting-approval, approved, submitted]
+
+  - id: recent-bank-change-block
+    description: The recently changed bank instruction triggers each firm's configured handling for the same facts.
+    disposition:
+      per_firm:
+        firm-a: proceed # with a specialist-review authority stage (contract §2)
+        firm-b: blocked # until independently verified (contract §2)
+    outcome_class: resolvable block
+    exercises: [proceed, blocked, awaiting-approval]
+
+  - id: permanent-prohibition
+    description: The requested movement violates the household-specific destination restriction; no approval can waive it.
+    disposition: prohibited
+    outcome_class: permanent prohibition
+    exercises: [prohibited]
+
+  - id: stale-evidence
+    description: Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.
+    disposition: blocked
+    outcome_class: resolvable block
+    exercises: [blocked]
+
+  - id: ambiguous-instruction
+    description: A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.
+    disposition: blocked
+    outcome_class: resolvable block
+    exercises: [blocked]
+
+  - id: dual-approval
+    description: The amount exceeds the firm's threshold, requiring two distinct approvers with the requester constraint applied.
+    disposition: proceed
+    outcome_class: quorum approval
+    exercises: [proceed, awaiting-approval, approved]
+
+  - id: approval-invalidation
+    description: Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.
+    disposition: proceed
+    outcome_class: approval invalidated
+    # The post-invalidation disposition (re-approval vs block) is fixed by the golden
+    # cases (prompt 2) under human signoff, not invented here.
+    exercises: [proceed, awaiting-approval, approved]
+
+  - id: competing-liquidity
+    description: Two simultaneous, individually valid requests compete for the same liquidity; reservations prevent a joint violation.
+    disposition: proceed
+    outcome_class: one proceeds, one blocked by reservation
+    exercises: [proceed, blocked]
+
+  - id: duplicate-retry
+    description: A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.
+    disposition: proceed
+    outcome_class: duplicate suppressed
+    exercises: [proceed, approved, submitted]
+
+  - id: partial-salesforce-success
+    description: The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.
+    disposition: proceed
+    outcome_class: partial success, exception requested
+    exercises: [proceed, approved, submitted, unknown]
+
+  - id: delayed-nigo
+    description: A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.
+    disposition: proceed
+    outcome_class: delayed NIGO, exception requested
+    exercises: [proceed, approved, submitted, nigo]
+
+  - id: specialist-review-expiration
+    description: A specialist-review stage expires without action and escalates along the configured escalation path.
+    disposition: proceed
+    outcome_class: escalated
+    exercises: [proceed, awaiting-approval]
+
+# --------------------------------------------------------------------------
+# Provenance-label taxonomy (contract §6). Every visible data element or status is
+# labeled internally as exactly one of these seven kinds.
+# --------------------------------------------------------------------------
+provenance_labels:
+  - id: synthetic-fixture
+    description: Author-invented demo data, labeled as such end to end.
+  - id: real-derived-fixture
+    description: Anonymized historical defect or case, scrubbed of PII before entering fixtures.
+  - id: fake-adapter-response
+    description: Response produced by an in-memory fake adapter standing in for an external system.
+  - id: real-salesforce-sandbox-response
+    description: Response from the real managed Salesforce sandbox capability.
+    availability: deferred-pending-sandbox # cannot be produced before the trigger fires
+  - id: user-entered-demo-input
+    description: Typed live by the presenter or a demo actor during the demonstration.
+  - id: deterministic-engine-output
+    description: Computed by the deterministic decision engine from pinned inputs.
+  - id: llm-proposed-draft
+    description: LLM-proposed draft or wording, always behind the zero-PII boundary and never binding until humanly approved.
+
+# --------------------------------------------------------------------------
+# Per-element simulated-vs-real marking. Everything external is fake-adapter-backed
+# until the sandbox trigger fires (captain Salesforce deferral, 2026-07-26).
+#   reality_now         - the provenance label the element carries today.
+#   reality_at_phase1   - what it must be before the §8 completion test can pass.
+# --------------------------------------------------------------------------
+elements:
+  - id: advisor-request
+    description: The canonical request as entered in the contextual intent panel.
+    reality_now: user-entered-demo-input
+    reality_at_phase1: user-entered-demo-input
+  - id: household-records
+    description: The Smiths household, accounts, instructions, and pending activity, seeded as durable rows in the house-CRM store.
+    reality_now: synthetic-fixture
+    reality_at_phase1: synthetic-fixture # real durable rows; synthetic, labeled content
+  - id: evidence-snapshots
+    description: Account, liquidity, planned-withdrawal, bank-instruction, household-instruction, and pending-action evidence gathered for the decision.
+    reality_now: synthetic-fixture # via the house-CRM evidence source, over labeled fixture rows
+    reality_at_phase1: synthetic-fixture
+  - id: decision-outputs
+    description: Disposition, recommendation, alternatives, precedence trace, explanation trace, and simulation deltas.
+    reality_now: deterministic-engine-output
+    reality_at_phase1: deterministic-engine-output
+  - id: approvals
+    description: Approval and specialist-review actions taken by demo actors in the product.
+    reality_now: user-entered-demo-input
+    reality_at_phase1: user-entered-demo-input
+  - id: intent-shaping
+    description: Masked interpretation of the typed request into typed intent and slots.
+    reality_now: llm-proposed-draft
+    reality_at_phase1: llm-proposed-draft # deterministic binding on real records stays outside the model
+  - id: policy-draft
+    description: The natural-language policy sentence translated into a structured draft.
+    reality_now: llm-proposed-draft
+    reality_at_phase1: llm-proposed-draft # binding only after simulation and attributed human approval
+  - id: execution-invocation
+    description: The external money-movement instruction issued through the ExecutionTarget port.
+    reality_now: fake-adapter-response
+    reality_at_phase1: real-salesforce-sandbox-response
+    deferral: deferred-pending-sandbox
+  - id: returned-status
+    description: The returned and polled execution status observed through the StatusSource port.
+    reality_now: fake-adapter-response
+    reality_at_phase1: real-salesforce-sandbox-response
+    deferral: deferred-pending-sandbox
+  - id: delayed-exception-events
+    description: Delayed NIGO and exception arrivals ingested after submission.
+    reality_now: fake-adapter-response
+    reality_at_phase1: real-salesforce-sandbox-response
+    deferral: deferred-pending-sandbox
+  - id: replay-corpus
+    description: The versioned, labeled defect-replay corpus behind the measured detection rate.
+    reality_now: synthetic-fixture
+    # Strongly preferred foundation is anonymized real defect history; rates are always
+    # reported split by provenance and never blended (contract §7).
+    reality_at_phase1: real-derived-fixture
+
+# --------------------------------------------------------------------------
+# The Salesforce deferral itself, as data (captain ruling, 2026-07-26).
+# --------------------------------------------------------------------------
+deferral:
+  id: salesforce-sandbox
+  status: deferred-pending-sandbox
+  un_defer_trigger: Salesforce sandbox access granted
+  decided_by: captain ruling, 2026-07-26
+  deferred_elements: [execution-invocation, returned-status, delayed-exception-events]
+  gating_rule: >-
+    The demo runs end to end on labeled fakes, but Phase 1 is never declared complete
+    on fakes (demo contract §8; build-sequence orchestrator rule 6).

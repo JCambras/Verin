@@ -356,3 +356,26 @@ namespace (`typeof`-guarded, works with both shapes). Proven at runtime: `pnpm l
 **Revert path:** each override deletes independently once its upstream consumer bumps past the advisory
 range (the range-scoped selector then matches nothing); the minimatch patch deletes when eslint moves
 off minimatch@3 or a fixed 3.x ships.
+
+### D-034 · 2026-07-26 · captain-decision · Phase 1 demo contract landed as committed product truth (v3 build sequence, prompt 1)
+The captain-authored demo contract v1 (the 7-minute "Smiths $75k" journey, Firm A/B as pure
+configuration, the 12 scenario branches, the provenance-label taxonomy, the measured-proof and §8
+completion rules) is committed as `docs/demo-contract.md` with exactly two integrated captain
+annotations (both rulings dated 2026-07-26), plus its machine-usable companions
+`config/demo/scenarios.yaml` (scenario matrix, state vocabulary, firm parameter sets, per-element
+simulated-vs-real marking) and `docs/demo-contract-checklist.md` (timeline moment -> surface ->
+visible proof -> LedgerEntry artifact). Docs + inert config data only; no src/ changes.
+- **Salesforce deferral.** Everything requiring the REAL managed-Salesforce invocation is marked
+  `[deferred-pending-sandbox]`; un-defer trigger = sandbox access granted. All other elements run on
+  labeled fake adapters now. §8 stays honestly gated: the demo may run end to end on labeled fakes
+  but Phase 1 is never declared complete on them (orchestrator rule 6). The C4 charter-amendment ADR
+  formalizing this deferral is a separate ratification task, not this one.
+- **Design language.** All demo UI derives its look from `docs/demo-design-language.md` (being
+  authored in parallel from the ESTABLISHED Verin design system - OKLCH slate, Geist, presentation
+  tier); v3's visual prescriptions are not adopted, v3's UX semantics (Decision Spine, disposition
+  treatments, approval-invalidation moment) are kept.
+**Why:** prompt 1 of the ratified v3 sequence requires the contract as reviewable product truth
+before fixtures, golden cases, or UI exist; the two annotations record captain rulings instead of
+silently diverging from the captain's v1 text.
+**Revert path:** delete the three files and this entry; nothing imports them yet (consumers are
+later prompts 2, 3, 11, 29).
