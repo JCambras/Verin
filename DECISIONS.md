@@ -508,3 +508,31 @@ Two follow-up rounds on the D-036/D-037 skeleton, no fence weakened:
   `position: fixed` strips could overlap page content. On screen the table wrapper is layout-inert
   (`display: contents`), so design §9's running-header/footer requirement is met unchanged.
 **Revert path:** revert the two commits; the D-036/D-037 skeleton stands unchanged beneath them.
+
+### D-036 · 2026-07-26 · reversible · Decision-core canonical type system landed (v3 build sequence, prompt 5) as Zod-first contracts
+
+The v3 §5 contracts land as `src/contracts/decision-core/` (ids, actor, trigger, evidence,
+authority, execution, decision, serialization): Zod strict schemas are the single source, TypeScript
+types are `z.infer`-derived, and the invariant-7/8/9 distinctions are PARSE-LEVEL facts - proceed
+requires authority + a non-empty execution plan; blocked/prohibited cannot carry either (unknown
+keys are rejections, not stripped); a prohibition has no resolving-evidence channel and a prohibited
+record admits no revaluation conditions (GC-07: "stays prohibited as recorded"); disposition and
+authority never collapse. Tenant scope is structural (TenantContext spine + cross-tenant
+intent/attribution refinements, invariant 2's contract-layer half); replay metadata is pinned in
+DecisionInputBundle with a versioned canonical serializer whose byte form is locked by
+`fixtures/decision-core/` round-trip fixtures. Vocabulary is drift-locked to
+`config/demo/scenarios.yaml` (DecisionResult kinds ≡ the disposition state class, asserted in the
+unit suite) and to the golden truth set's freshness/duration/reason-code vocab.
+**Why:** prompt 5's acceptance is that the type system enforces the major distinctions without
+reviewer discipline; landing schemas-first means every later boundary (store, API, ports, LLM)
+inherits the guarantees by parsing.
+**Enforcement (charter #1, same PR):** fence `src/__tests__/fitness/decision-core-illegal-states.test.ts`
+(registered as the mechanism for v3 invariants 7-9, now ACTIVE; ratchet extended to [2,5,7,8,9];
+proof PF-027), unit suite `src/__tests__/unit/decision-core.test.ts`, contracts ceiling re-baselined
+600→1400 by ADR-0029 (the ADR-0018 amendment path; zod admitted into `contracts/` by the same ADR).
+**Alternatives:** land in domain / split types-vs-schemas across layers / trim to fit the 600
+ceiling - all rejected in ADR-0029's table.
+**Revert path:** delete `src/contracts/decision-core/`, `fixtures/decision-core/`, the fence and
+unit suite, flip invariants 7-9 back (a charter-ADR matter - the v3-invariants ratchet makes the
+regression loud), restore the 600 ceiling with ADR-0029 marked superseded, and delete this entry.
+Nothing else imports the module yet (consumers are prompts 7, 9-19, 25-26).
