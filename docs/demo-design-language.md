@@ -399,8 +399,15 @@ neutral**:
 | `rejected` | red (`failed`) | "Rejected" | With the returned reason in plain language. |
 | `nigo` | red (`failed`) | "Returned NIGO" | First-class, never buried: the row states the deficiency in plain words ("returned - the beneficiary form is not in good order: signature missing") and carries its resolving affordance (NIGO is blocked-class: fixable). |
 | `unknown` | amber (`suspended`) | "Unconfirmed" | With elapsed time: "no status for 2 days". |
-| stuck (prolonged unknown) | amber (`suspended`) | "Stuck" | First-class row, states the stuck-state rule that fired and the escalation affordance (blocked-class: has affordances). |
+| `stuck` (prolonged unknown) | amber (`suspended`) | "Stuck" | First-class row, states the stuck-state rule that fired and the escalation affordance (blocked-class: has affordances). |
 | `duplicate-suppressed` | slate (`pending`) | "Duplicate suppressed" | See §8.3. |
+
+Every status above is its own `STATUS_STYLES` key, never a label override on an existing one -
+honest-status doctrine forbids merging semantic identities that operators and fences must
+distinguish. `rejected` (an outcome returned by the external system) is not `failed` (an internal
+step that errored); `stuck` (verification cannot progress and needs attention) is not `suspended`
+(a healthy wait at a human gate). Each key only borrows the visual recipe of the family named in
+its row.
 
 ### 8.3 Idempotency, visible without jargon
 
@@ -625,7 +632,7 @@ budget (ADR-0012).
 | Primitive | Derives from | First used by | Spec |
 |---|---|---|---|
 | `DecisionSpine` | `ProgressSteps` states + a11y recipe; StepInfoCard kicker (collapsed form) | Surfaces 2-9, 11 | §4 |
-| `StatusBadge` map additions (`proceed`, `blocked`, `prohibited`, `submitted`, `in-flight`, `settled`, `nigo`, `unknown`, `duplicate-suppressed`) | Existing `STATUS_STYLES` families in `ui.tsx` | Surfaces 4, 6-9 | §5.1, §8.2 |
+| `StatusBadge` map additions (`proceed`, `blocked`, `prohibited`, `submitted`, `in-flight`, `settled`, `rejected`, `nigo`, `unknown`, `stuck`, `duplicate-suppressed`) | Existing `STATUS_STYLES` families in `ui.tsx` | Surfaces 4, 6-9 | §5.1, §8.2 |
 | `DispositionNotice` | Card recipe; audit-page amber panel; `Button` primary recipe as badge | Surface 4 | §5.2 |
 | `EvidenceRow` (+ conflict, missing variants) | `FreshValue`, `Metric`, EmptyState dashed idiom | Surface 3 | §6.1-6.3 |
 | `ApprovalStagePanel` | Card recipe, `ProgressSteps`, `StatusBadge`, `Field` hint idiom | Surface 6 | §7.2 |
