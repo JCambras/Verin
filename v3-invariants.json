@@ -1,5 +1,5 @@
 {
-  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
+  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023). Registers all 30 invariants from docs/v3/verin-architecture-v3.md \u00a717 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 \u00a717 preamble). The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
   "architectureVersion": "v3",
   "documents": [
     {
@@ -36,10 +36,19 @@
       "group": "foundation",
       "gate": "A",
       "name": "No PII-bearing type is reachable from llm/",
-      "status": "not-yet-active",
-      "activatesWhen": "the llm/ surface and the Tokenized<T> scrubber-only factory land (Wave A prompt 6); the fence ships in that PR (import-reachability + factory-construction rule)",
-      "mechanisms": [],
-      "notes": "Substrate today: contracts/pii.ts + scrub.ts + no-pii-in-audit-store fence + pino redaction (charter ADR-0006); the LLM surface is deliberately absent."
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/llm-pii-boundary.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/tokenized-factory-only.test.ts"
+        }
+      ],
+      "notes": "ACTIVATED by prompt 6 (fm/verin-secbound-d8): the llm/ boundary (masked request schema + evidence-to-LLM projection), the Tokenized<T> scrubber-only factory (infrastructure/pii/tokenize.ts), the PIIBearing marker derivation, and the import-reachability + factory-construction fences. Runtime half: scrub-by-construction + the parseMaskedLlmRequest ingress gate (unit/llm-boundary.test.ts)."
     },
     {
       "id": 2,
@@ -52,9 +61,13 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/org-id-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/tenant-context-required.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Domain contracts brand it FirmId when they land (prompt 5)."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Domain contracts brand it FirmId when they land (prompt 5). EXTENDED by prompt 6: sealed TenantContext (contracts/tenant.ts) required on every repository/port signature (tenant-context-required fence) - missing tenant context cannot compile (unique-symbol brand) or parse (runtime seal assert)."
     },
     {
       "id": 3,
@@ -69,11 +82,11 @@
       "id": 4,
       "group": "foundation",
       "gate": "A",
-      "name": "Import boundaries match v3 §16",
+      "name": "Import boundaries match v3 \u00a716",
       "status": "not-yet-active",
-      "activatesWhen": "the §16 module subsystems exist; each v3 dependency rule (decision/ never imports llm/, no module imports config/, ...) lands as a ts-morph fence in the wave that creates its subject (ADR-0026)",
+      "activatesWhen": "the \u00a716 module subsystems exist; each v3 dependency rule (decision/ never imports llm/, no module imports config/, ...) lands as a ts-morph fence in the wave that creates its subject (ADR-0026)",
       "mechanisms": [],
-      "notes": "Substrate today: the four-layer dependency rule is already fenced (src/__tests__/fitness/dependency-rule.test.ts); §16 modules will live INSIDE those layers."
+      "notes": "Substrate today: the four-layer dependency rule is already fenced (src/__tests__/fitness/dependency-rule.test.ts); \u00a716 modules will live INSIDE those layers."
     },
     {
       "id": 5,
@@ -158,7 +171,7 @@
       "gate": "D",
       "name": "Explanation is derived from the evaluation trace",
       "status": "not-yet-active",
-      "activatesWhen": "the evaluator + explanation trace land (Wave D prompt 16); WhyBubble becomes the renderer of ExplanationNodes (ADR-0028, marriage-map §2)",
+      "activatesWhen": "the evaluator + explanation trace land (Wave D prompt 16); WhyBubble becomes the renderer of ExplanationNodes (ADR-0028, marriage-map \u00a72)",
       "mechanisms": []
     },
     {

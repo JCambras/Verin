@@ -3,8 +3,12 @@
  * read (fence: no-process-env). Zod-validated; getConfig() throws at boot on
  * invalid config. Production superRefine guards refuse to boot on a dangerous
  * config (test placeholders, wrong store driver) — fail closed, never degrade.
+ * Secrets leave this module ONLY as SecretValue (v3 §15.4): serialization and
+ * interpolation see the redaction sentinel; reading the raw value is an
+ * explicit reveal() restricted by the secret-containment fence.
  */
 import { z } from "zod";
+import { SecretValue } from "@contracts/secret";
 
 function isValidTimezone(tz: string): boolean {
   try {
@@ -60,7 +64,22 @@ const schema = z
     }
   });
 
-export type Config = z.infer<typeof schema>;
+type RawConfig = z.infer<typeof schema>;
+
+/** The parsed shape with secrets sealed in SecretValue wrappers. */
+export type Config = Omit<RawConfig, "session" | "esign"> & {
+  session: Omit<RawConfig["session"], "secret"> & { secret: SecretValue };
+  esign: { webhookSecret: SecretValue };
+};
+
+/** Validation (length/placeholder guards) runs on the raw strings; the cached config seals them. */
+function sealSecrets(raw: RawConfig): Config {
+  return {
+    ...raw,
+    session: { ...raw.session, secret: new SecretValue(raw.session.secret) },
+    esign: { webhookSecret: new SecretValue(raw.esign.webhookSecret) },
+  };
+}
 
 let cached: Config | null = null;
 
@@ -102,10 +121,12 @@ export function getConfig(): Config {
   }
   const parsed = schema.safeParse(readEnv());
   if (!parsed.success) {
+    // Issue messages are zod's static schema messages plus field paths — never
+    // the offending env VALUE, so a bad secret cannot leak into the boot error.
     const detail = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`FATAL: invalid configuration: ${detail}`);
   }
-  cached = parsed.data;
+  cached = sealSecrets(parsed.data);
   return cached;
 }
 

@@ -8,6 +8,7 @@
  * dictionary.ts; the provenance-required fence fails the build if the two drift.
  */
 import type { Role } from "@contracts/roles";
+import type { PIIBearing } from "@contracts/pii";
 import type { RecordProvenance } from "@contracts/provenance";
 
 export type EntityId = string;
@@ -47,7 +48,8 @@ export interface Org {
   readonly provenance: RecordProvenance;
 }
 
-export interface User {
+/** PIIBearing: email + displayName are staff PII. */
+export interface User extends PIIBearing {
   readonly id: EntityId;
   readonly orgId: EntityId;
   readonly email: string;
@@ -69,7 +71,8 @@ export interface Session {
   readonly provenance: RecordProvenance;
 }
 
-export interface Household {
+/** PIIBearing: the household name is client PII. */
+export interface Household extends PIIBearing {
   readonly id: EntityId;
   readonly orgId: EntityId;
   readonly name: string;
@@ -80,7 +83,8 @@ export interface Household {
   readonly provenance: RecordProvenance;
 }
 
-export interface Contact {
+/** PIIBearing: names, email, and phone are client PII. */
+export interface Contact extends PIIBearing {
   readonly id: EntityId;
   readonly orgId: EntityId;
   readonly householdId: EntityId;

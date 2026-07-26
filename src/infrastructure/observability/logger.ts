@@ -14,7 +14,10 @@ import { scrub } from "@infra/pii/scrub";
 
 const cfg = getConfig();
 
-const PII_LOG_FIELDS = ["ssn", "password", "email", "phone", "dob", "firstName", "lastName", "name", "displayName"];
+const PII_LOG_FIELDS = [
+  "ssn", "password", "email", "phone", "dob", "firstName", "lastName", "name", "displayName",
+  "accountNumber", "account_number", "routingNumber", "routing_number", "taxId", "tax_id",
+];
 
 /** Exported so the logs-and-traces PII tests exercise the REAL redaction options, never a copy. */
 export const loggerOptions: pino.LoggerOptions = {

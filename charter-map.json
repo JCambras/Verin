@@ -31,7 +31,7 @@
     },
     {
       "id": 3,
-      "title": "No unlabeled synthetic data, ever (incl. derived artifacts — ADR-0022)",
+      "title": "No unlabeled synthetic data, ever (incl. derived artifacts \u2014 ADR-0022)",
       "status": "enforced",
       "phase": "C/F/W1",
       "mechanisms": [
@@ -122,6 +122,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/no-client-role-header.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/tenant-context-required.test.ts"
         }
       ]
     },
@@ -205,6 +209,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/auth-enforcement.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/governed-actions.test.ts"
         }
       ]
     },
@@ -225,6 +233,14 @@
         {
           "type": "ci-gate",
           "ref": "audit-chain-verify"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/llm-pii-boundary.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/tokenized-factory-only.test.ts"
         }
       ]
     },

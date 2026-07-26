@@ -8,7 +8,9 @@
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";
+import { looksLikePIIValue, REDACTED } from "@contracts/pii";
 import { registerOtelProviderIfConfigured } from "./otel-provider";
+import { safeReason } from "./logger";
 
 export interface RecordedSpan {
   name: string;
@@ -33,18 +35,35 @@ function record(s: RecordedSpan): void {
 registerOtelProviderIfConfigured();
 const tracer = trace.getTracer(getConfig().otel.serviceName);
 
+/**
+ * PII backstop at the trace boundary (v3 §15.4): span attributes are exported
+ * over OTLP, so a PII-shaped string VALUE is replaced wholesale before it can
+ * leave the process. Callers pass identifiers (opaque userId, orgId) — this
+ * guard exists for the day one doesn't.
+ */
+function scrubAttributes(attributes: Attributes): Attributes {
+  const out: Record<string, Attributes[string]> = {};
+  for (const [k, v] of Object.entries(attributes)) {
+    out[k] = typeof v === "string" && looksLikePIIValue(v) ? REDACTED : v;
+  }
+  return out;
+}
+
 /** Run `fn` inside a span. Records to OTel and the in-memory ring. */
 export async function withSpan<T>(name: string, attributes: Attributes, fn: () => Promise<T>): Promise<T> {
-  const span = tracer.startSpan(name, { attributes });
+  const attrs = scrubAttributes(attributes);
+  const span = tracer.startSpan(name, { attributes: attrs });
   const started = performance.now();
   try {
     const result = await fn();
     span.setStatus({ code: SpanStatusCode.OK });
-    record({ name, attributes, ok: true, durationMs: performance.now() - started, endedAt: Date.now() });
+    record({ name, attributes: attrs, ok: true, durationMs: performance.now() - started, endedAt: Date.now() });
     return result;
   } catch (e) {
-    span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : "error" });
-    record({ name, attributes, ok: false, durationMs: performance.now() - started, endedAt: Date.now() });
+    // Exception text can quote row values (a driver detail may embed an email);
+    // the status message is PII-scrubbed like every other trace field.
+    span.setStatus({ code: SpanStatusCode.ERROR, message: safeReason(e) });
+    record({ name, attributes: attrs, ok: false, durationMs: performance.now() - started, endedAt: Date.now() });
     throw e;
   } finally {
     span.end();

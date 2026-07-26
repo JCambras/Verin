@@ -508,3 +508,51 @@ Two follow-up rounds on the D-036/D-037 skeleton, no fence weakened:
   `position: fixed` strips could overlap page content. On screen the table wrapper is layout-inert
   (`display: contents`), so design §9's running-header/footer requirement is met unchanged.
 **Revert path:** revert the two commits; the D-036/D-037 skeleton stands unchanged beneath them.
+
+### D-039 · 2026-07-26 · reversible · Security boundaries landed (v3 build sequence, prompt 6): sealed TenantContext, governed-action authz, Tokenized factory + llm/ boundary, secret containment
+**What:** Implemented v3 §15 as structural seams over the existing substrate (marriage-map §6: EXTEND the
+org-id fence / PII scrub / RBAC / no-secret-fallback, displace nothing).
+**Rebase note:** This decision was D-036 on the topic branch. Prompt-6 implementation references to
+D-036 refer to this entry; origin/main had already assigned D-036 through D-038.
+- **TenantContext** (`contracts/tenant.ts`): compile-time unique-symbol brand + runtime module-private
+  seal; minted ONLY by `tenantOf(principal)` / `systemTenant(systemId, orgId)`. Every repository and port
+  call requires it (writes carry it inside `WriteActor`); capability-keyed loads (session id, e-sign
+  token, resume token) and the identity-provider internals are exact-match reviewed escapes, mirroring the
+  org-id fence's NON_TENANT classification. Missing context cannot compile (TS2741) or parse (repository
+  asserts reject casts/spreads/JSON impostors with `INTERNAL`). Fence: `tenant-context-required` (PF-027).
+- **Per-action authorization** (`contracts/authz.ts`): `ActorRef` (human role-holder | system actor) +
+  the seven v3 §15.3 governed actions with Phase 1 role allowlists. Surfaced actions mirror the previous
+  route allowlists EXACTLY (no behavior change): `pii.view` = all roles (households GET), `execution.initiate`
+  = advisor/ops/principal/admin (account-opening POST), `audit.export` = ops/cco/principal/admin (audit GET).
+  Unsurfaced actions drafted per v3 §11 semantics with separation of duties: compliance authority
+  (`policy.draft/approve`, `decision.approve`, `decision.override`) EXCLUDES the IT-admin role, approval
+  actions exclude the requesting-advisor role, and `evidence.supply`/`cco` are separated (review vs doing).
+  System actors are refused every governed action (machines never approve; policy-automatic paths arrive
+  with their own typed authority in prompt 18, which also brings quorum/actor-distinctness — these
+  allowlists are the role-level floor, not the authority machinery). Fence: `governed-actions` (PF-030).
+- **Tokenized + llm/ boundary**: `Tokenized<T>` lands with the ratified shape (verin-core-contracts.ts)
+  and is constructible only via the scrubber factory `infrastructure/pii/tokenize.ts` (runtime-sealed,
+  scrub-by-construction); `infrastructure/llm/` holds the ONLY LLM-bound shapes (masked request schema +
+  evidence-to-LLM projection with deterministic known-entity masking) and no model client (first LLM
+  surface = prompt 13; charter #5's no-dead-scaffolding is honored by keeping the boundary to the seam the
+  ratified invariant 1 requires — v3 invariant 1 is ACTIVATED by this PR, per its registry activation
+  clause). Fences: `tokenized-factory-only` (PF-028) + `llm-pii-boundary` (PF-029) + an ESLint edit-time
+  mirror.
+- **Secret containment** (`contracts/secret.ts`): config secrets become closure-held `SecretValue`s
+  (every coercion path redacts; `.reveal()` allowlisted to the two HMAC consumers — PF-031). Span
+  attributes and span error messages are PII-scrubbed at the trace boundary; pino redact list extended to
+  account/routing numbers; `piiSafe`/`safeReason` are the sanctioned free-form log helpers.
+- **ADR-0029**: line-budget amendment (contracts 600→1000, infrastructure 2500→3000) — the sanctioned
+  ADR path for growth scheduled by the ratified sequence; ratchet-down at wave gates unchanged.
+**Why:** v3 prompt 6's acceptance is that the security seams are structural even though Phase 1 uses a
+simplified identity provider — the seams are types + factories + fences, so swapping the identity provider
+or landing the real LLM surface later cannot move the boundary.
+**Alternatives:** naming-convention discipline (rejected: reviewer discipline is what §15.1 forbids
+relying on); Zod-only runtime checks without compile brands (rejected: an impostor should fail to
+compile, not merely 500); marking PII types by hand-maintained list (rejected: the fence DERIVES the
+marked set from field names, so a new PII type cannot ship unmarked).
+**Revert path:** delete `contracts/{tenant,authz,tokenized,secret}.ts`, `infrastructure/pii/tokenize.ts`,
+`infrastructure/llm/`, the four fences + the reveal-allowlist checks, the ESLint mirror; restore
+`WriteActor{orgId}` signatures and plain-orgId repository params; flip v3 invariant 1 back to
+not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0029);
+remove PF-027..PF-031 and this entry.

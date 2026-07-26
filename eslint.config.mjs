@@ -27,6 +27,20 @@ const noProcessEnv = {
     "process.env may only be read in src/infrastructure/config (charter #7). Inject config instead.",
 };
 
+// Sealed security types (v3 §15.1/§15.2, invariant 1): Tokenized, TenantContext,
+// and ActionGrant are constructible ONLY in their factory modules
+// (infrastructure/pii/tokenize.ts, contracts/tenant.ts, contracts/authz.ts).
+// Edit-time mirror of the AUTHORITATIVE tokenized-factory-only fitness fence.
+const SEALED_TYPE_NAME = "/^(Tokenized|TenantContext|ActionGrant)$/";
+const sealedTypeMessage =
+  "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction) — a cast or literal bypasses the scrub/seal (v3 invariant 1).";
+const noSealedTypeConstruction = [
+  { selector: `TSAsExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
+  { selector: `TSTypeAssertion TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
+  { selector: `TSSatisfiesExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
+  { selector: "ObjectExpression > Property[key.name='piiFree']", message: sealedTypeMessage },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -58,7 +72,7 @@ export default tseslint.config(
           ],
         },
       ],
-      "no-restricted-syntax": ["error", noProcessEnv],
+      "no-restricted-syntax": ["error", noProcessEnv, ...noSealedTypeConstruction],
     },
   },
   {
@@ -75,7 +89,7 @@ export default tseslint.config(
           ],
         },
       ],
-      "no-restricted-syntax": ["error", noProcessEnv],
+      "no-restricted-syntax": ["error", noProcessEnv, ...noSealedTypeConstruction],
     },
   },
   {
@@ -90,6 +104,26 @@ export default tseslint.config(
           ],
         },
       ],
+      "no-restricted-syntax": ["error", ...noSealedTypeConstruction],
+    },
+  },
+  {
+    files: ["src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": ["error", ...noSealedTypeConstruction],
+    },
+  },
+  // The factory modules themselves — the ONLY sanctioned construction sites.
+  {
+    files: ["src/contracts/tenant.ts", "src/contracts/authz.ts"],
+    rules: {
+      "no-restricted-syntax": ["error", noProcessEnv],
+    },
+  },
+  {
+    files: ["src/infrastructure/pii/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
 

@@ -115,6 +115,16 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
+- **Sealed security types (v3 §15, D-036): `TenantContext`, `ActionGrant`, `Tokenized<T>` construct ONLY
+  via their factories** (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction` in
+  `contracts/authz.ts`; `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`). A cast or
+  literal anywhere else fails the `tokenized-factory-only` fence + ESLint. Every repository/port call
+  requires a TenantContext (`tenant-context-required` fence; capability-keyed loads are exact-match
+  escapes IN the fence). Governed route surfaces call `requireActionGrant(req, "<action>")`, not bare
+  role checks. Nothing under `src/infrastructure/llm/` may (transitively) import a PIIBearing-marked
+  type (`llm-pii-boundary` fence — a new interface with a raw PII-named field must extend `PIIBearing`
+  or be reviewed into that fence's escapes). Config secrets are `SecretValue`s: `.reveal()` only in the
+  fence-allowlisted HMAC consumers.
 
 ## Maintaining this file
 

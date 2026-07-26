@@ -65,6 +65,30 @@ export function detectLiveOrgDomain(files: Array<{ rel: string; text: string }>)
 const PLACEHOLDER_VALUE =
   /^(|CHANGEME[_A-Za-z0-9]*|development|production|test|info|error|debug|warn|verin|pglite|postgres|America\/New_York|America\/[A-Za-z_]+|http:\/\/localhost(:\d+)?|\.verin-data[\w-]*|\d+|postgres:\/\/USER:CHANGEME_PASSWORD@HOST:5432\/verin)$/;
 
+// --- SecretValue containment (v3 §15.4, prompt 6) ---------------------------
+// Config secrets leave the config module only as SecretValue wrappers whose
+// serialization paths all redact; reading the raw string is an explicit
+// `.reveal()` call, and THIS allowlist is the set of modules with a reviewed
+// reason to hold raw secret bytes. Everywhere else, `.reveal(` fails the build.
+const REVEAL_ALLOWLIST: Array<{ file: string; why: string }> = [
+  { file: "src/infrastructure/identity/session.ts", why: "HMAC-signs the session cookie" },
+  { file: "src/infrastructure/esign/esign.ts", why: "HMAC-signs/verifies the e-sign webhook callback" },
+];
+const REVEAL_ALLOWED = new Set(REVEAL_ALLOWLIST.map((e) => e.file));
+
+export function detectUnsanctionedReveal(files: Array<{ rel: string; text: string }>): string[] {
+  const out: string[] = [];
+  for (const { rel, text } of files) {
+    const r = rel.replace(/\\/g, "/");
+    if (!r.startsWith("src/") || r.includes("__tests__") || !/\.(ts|tsx)$/.test(r)) continue;
+    if (REVEAL_ALLOWED.has(r)) continue;
+    text.split("\n").forEach((line, i) => {
+      if (/\.reveal\s*\(/.test(stripComments(line))) out.push(`${r}:${i + 1}`);
+    });
+  }
+  return out;
+}
+
 export function detectEnvExampleNonPlaceholder(): string[] {
   const p = join(REPO_ROOT, ".env.example");
   if (!existsSync(p)) return ["MISSING .env.example"];
@@ -97,6 +121,17 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     const o = detectEnvExampleNonPlaceholder();
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
+  it("enforces: .reveal() appears only in the reviewed secret-consumer modules (v3 §15.4)", () => {
+    const o = detectUnsanctionedReveal(files);
+    expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
+  });
+  it("enforces: every reveal-allowlisted module still reveals (no stale allowlist — charter #4)", () => {
+    for (const entry of REVEAL_ALLOWLIST) {
+      const f = files.find((x) => x.rel.replace(/\\/g, "/") === entry.file);
+      expect(f, `${entry.file} missing`).toBeTruthy();
+      expect(/\.reveal\s*\(/.test(f!.text), `${entry.file} no longer calls .reveal() — prune the allowlist entry`).toBe(true);
+    }
+  });
 
   describe("detects (companion): planted violations are caught", () => {
     it("catches a secret fallback", () => {
@@ -121,6 +156,14 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
       // simulate the parser directly on a suspicious value
       const suspicious = "sk_live_51H8xQ2eZvKYlo2C"; // gitleaks:allow — deliberately secret-shaped test fixture, not a real key
       expect(PLACEHOLDER_VALUE.test(suspicious)).toBe(false);
+    });
+    it("catches an unsanctioned .reveal() call outside the allowlist", () => {
+      const o = detectUnsanctionedReveal([{ rel: "src/infrastructure/crm/evil.ts", text: `const raw = getConfig().session.secret.reveal();` }]);
+      expect(o).toEqual(["src/infrastructure/crm/evil.ts:1"]);
+    });
+    it("does not flag a commented-out or allowlisted reveal", () => {
+      expect(detectUnsanctionedReveal([{ rel: "src/infrastructure/crm/evil.ts", text: `// secret.reveal()` }])).toEqual([]);
+      expect(detectUnsanctionedReveal([{ rel: "src/infrastructure/identity/session.ts", text: `sign(getConfig().session.secret.reveal())` }])).toEqual([]);
     });
   });
 });
