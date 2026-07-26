@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipal, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
+import { getDb, requireActionGrant, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
 import { listHouseholds, createHousehold, updateHouseholdName } from "@infra/crm/house-crm";
 import { writeActorOf } from "@contracts/principal";
 import { appError } from "@contracts/errors";
@@ -18,10 +18,13 @@ function isId(value: unknown): value is string {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const p = await requirePrincipal(req);
-  if (!p.ok) return errorResponse(p.error);
+  // Household names are client PII: reading them is the governed "pii.view"
+  // action (v3 §15.3) — authorized per-action, and the grant's sealed tenant
+  // scopes the repository read.
+  const auth = await requireActionGrant(req, "pii.view");
+  if (!auth.ok) return errorResponse(auth.error);
   const db = await getDb();
-  return NextResponse.json({ households: await listHouseholds(db, p.value) });
+  return NextResponse.json({ households: await listHouseholds(db, auth.value.grant.tenant) });
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

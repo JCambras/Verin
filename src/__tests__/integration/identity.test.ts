@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser, findUserByEmail, authenticate } from "@infra/identity/identity-store";
 
 const ORG = "org-1";
+const TENANT = systemTenant("test", ORG);
 
 describe("identity store email canonicalization (integration)", () => {
   let db: SqlDb;
@@ -12,7 +14,7 @@ describe("identity store email canonicalization (integration)", () => {
   });
 
   it("a user registered with a mixed-case email signs in with any casing (stored and matched canonically)", async () => {
-    const created = await createUser(db, { orgId: ORG, email: "Alex@Firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    const created = await createUser(db, TENANT, { email: "Alex@Firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
     expect(created.email).toBe("alex@firm.test");
 
     const found = await findUserByEmail(db, "ALEX@FIRM.TEST");
@@ -23,9 +25,9 @@ describe("identity store email canonicalization (integration)", () => {
   });
 
   it("a case-variant of an existing mailbox cannot register a second identity in the org", async () => {
-    await createUser(db, { orgId: ORG, email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
     await expect(
-      createUser(db, { orgId: ORG, email: "ALEX@Firm.test", displayName: "Case Variant", role: "advisor", password: "another-password" }),
+      createUser(db, TENANT, { email: "ALEX@Firm.test", displayName: "Case Variant", role: "advisor", password: "another-password" }),
     ).rejects.toThrow();
   });
 });

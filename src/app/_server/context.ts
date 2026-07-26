@@ -13,6 +13,7 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, toResponse, type AppError } from "@contracts/errors";
 import type { Principal } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
+import { actorRefOf, authorizeGovernedAction, type ActionGrant, type GovernedAction } from "@contracts/authz";
 
 export { getDb, requireRole };
 
@@ -38,6 +39,24 @@ export async function requirePrincipalWithRole(req: NextRequest, allowed: readon
   const p = await requirePrincipal(req);
   if (!p.ok) return p;
   return requireRole(p.value, allowed);
+}
+
+/**
+ * The per-action authorization hook for GOVERNED actions (v3 §15.3): resolves
+ * the principal server-side, then authorizes the specific action, returning the
+ * sealed ActionGrant whose tenant scopes every downstream repository call. Route
+ * handlers for governed surfaces call THIS (governed-actions fence) — plain
+ * requirePrincipalWithRole stays for non-governed CRUD gates.
+ */
+export async function requireActionGrant(
+  req: NextRequest,
+  action: GovernedAction,
+): Promise<Result<{ principal: Principal; grant: ActionGrant }, AppError>> {
+  const p = await requirePrincipal(req);
+  if (!p.ok) return p;
+  const grant = authorizeGovernedAction(actorRefOf(p.value), action);
+  if (!grant.ok) return grant;
+  return ok({ principal: p.value, grant: grant.value });
 }
 
 export function errorResponse(error: AppError): NextResponse {

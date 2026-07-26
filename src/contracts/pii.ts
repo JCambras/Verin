@@ -7,6 +7,21 @@
 /** The one redaction sentinel — scrub() writes it; assertNoPIIValues accepts it. */
 export const REDACTED = "[REDACTED]";
 
+declare const PIIBearingBrand: unique symbol;
+
+/**
+ * Type-level marker for a type carrying RAW PII fields (v3 §15.1, invariant 1).
+ * The llm-pii-boundary fence derives the marked set and proves (a) every
+ * declared interface with a raw PII-named string field carries this marker or a
+ * reviewed non-PII escape, and (b) no module declaring a marked type is
+ * import-reachable from llm/. The brand property is optional so existing object
+ * literals stay assignable — the marker exists for the fence and the reader,
+ * never as a runtime value.
+ */
+export interface PIIBearing {
+  readonly [PIIBearingBrand]?: "pii-bearing";
+}
+
 export const PII_FIELD_RE =
   /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|\bname\b|email|phone)/i;
 

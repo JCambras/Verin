@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createMemoryDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { unwrap } from "@contracts/result";
+import { systemTenant } from "@contracts/tenant";
 
 /**
  * IDEMPOTENCY EXACTLY-ONCE FENCE (ADR-0009, charter #16). Proves the audited-write
@@ -14,9 +15,11 @@ async function seed() {
   return db;
 }
 
+const TENANT = systemTenant("test", "o");
+
 async function writeWithKey(db: Awaited<ReturnType<typeof seed>>, key: string): Promise<void> {
   await auditedWrite({
-    db, orgId: "o", actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
+    db, tenant: TENANT, actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
     idempotencyKey: key, detail: "d",
     perform: async (tx) => {
       await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
@@ -46,7 +49,7 @@ describe("idempotency exactly-once fence", () => {
       // A different key targets the same row id; the second insert fails on PK →
       // auditedWrite returns an err (not a silent dedup). Proves keys matter.
       const second = await auditedWrite({
-        db, orgId: "o", actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
+        db, tenant: TENANT, actor: "a@t", action: "task.create", entityType: "Task", entityId: "task-1",
         idempotencyKey: "k2", detail: "d",
         perform: async (tx) => {
           await tx.query("INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('task-1','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')");
@@ -60,7 +63,7 @@ describe("idempotency exactly-once fence", () => {
     it("unwrap sanity on the happy replay", async () => {
       const db = await seed();
       const r = await auditedWrite({
-        db, orgId: "o", actor: "a@t", action: "x.create", entityType: "X", entityId: "x", idempotencyKey: "kx", detail: "d",
+        db, tenant: TENANT, actor: "a@t", action: "x.create", entityType: "X", entityId: "x", idempotencyKey: "kx", detail: "d",
         perform: async () => ({ ok: true }),
       });
       expect(unwrap(r)).toEqual({ ok: true });

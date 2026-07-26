@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
+import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
 import { startAccountOpening } from "@infra/wire";
 import { appError } from "@contracts/errors";
 import { ACCOUNT_TYPES, isAccountType } from "@domain/schema/entities";
@@ -13,8 +13,12 @@ function requiredString(value: unknown, maxLength: number): value is string {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const p = await requirePrincipalWithRole(req, ["advisor", "ops", "principal", "admin"]);
-  if (!p.ok) return errorResponse(p.error);
+  // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
+  // the allowed roles (advisor/ops/principal/admin) are unchanged from the
+  // original RBAC gate.
+  const auth = await requireActionGrant(req, "execution.initiate");
+  if (!auth.ok) return errorResponse(auth.error);
+  const principal = auth.value.principal;
 
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return errorResponse(parsed.error);
@@ -35,7 +39,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const db = await getDb();
-  const result = await startAccountOpening(db, p.value, {
+  const result = await startAccountOpening(db, principal, {
     householdName: b.householdName,
     firstName: b.firstName,
     lastName: b.lastName,

@@ -5,7 +5,8 @@
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
-import { writeActorOf, type Principal, type WriteActor } from "@contracts/principal";
+import { writeActorOf, systemWriteActor, type Principal, type WriteActor } from "@contracts/principal";
+import { tenantOf, type TenantContext } from "@contracts/tenant";
 import { type Result } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
@@ -38,24 +39,26 @@ function isUniqueViolation(e: unknown): boolean {
  * running-with-NULL-token crash window remains a recorded ADR-0011 deferral.
  */
 function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
+  const orgId = starter.tenant.orgId;
   return {
     createHousehold: (name) =>
-      withSpan("crm.household.create", { orgId: starter.orgId }, async () => must(await createHousehold(db, starter, { name }, `household:${executionId}`))),
+      withSpan("crm.household.create", { orgId }, async () => must(await createHousehold(db, starter, { name }, `household:${executionId}`))),
     createContact: (input) =>
-      withSpan("crm.contact.create", { orgId: starter.orgId }, async () => must(await createContact(db, starter, input, `contact:${executionId}`))),
+      withSpan("crm.contact.create", { orgId }, async () => must(await createContact(db, starter, input, `contact:${executionId}`))),
     createApplication: (input) =>
-      withSpan("crm.application.create", { orgId: starter.orgId }, async () => must(await createApplication(db, starter, input, `application:${executionId}`))),
+      withSpan("crm.application.create", { orgId }, async () => must(await createApplication(db, starter, input, `application:${executionId}`))),
     requestEsign: (applicationId) =>
-      withSpan("esign.request", { orgId: starter.orgId }, async () => {
+      withSpan("esign.request", { orgId }, async () => {
         const token = newEsignToken();
         return must(await setEsignRequested(db, starter, applicationId, token, `esign:${executionId}`));
       }),
     finalize: (input) =>
-      withSpan("account-opening.finalize", { orgId: starter.orgId, applicationId: input.applicationId }, async () => {
+      withSpan("account-opening.finalize", { orgId, applicationId: input.applicationId }, async () => {
         // Typed truth (finding #13): this write was driven by an external event
-        // on behalf of the initiating advisor — a narrow WriteActor, never a
-        // fabricated Principal with an invented role/session.
-        const actor: WriteActor = { orgId: starter.orgId, actorUserId: input.actor };
+        // on behalf of the initiating advisor — a narrow WriteActor carrying the
+        // starter's sealed tenant, never a fabricated Principal with an invented
+        // role/session.
+        const actor: WriteActor = { tenant: starter.tenant, actorUserId: input.actor };
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
         // Per-write keys derive from the application's minted idempotency key
         // (threaded through the flow context), so the key the application row
@@ -116,9 +119,9 @@ function editedReplayConflict(executionId: string): FlowRunResult {
 }
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
-async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState): Promise<FlowRunResult> {
+async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
   try {
-    return await retryFlow(accountOpeningFlow, store, deps, existing);
+    return await retryFlow(accountOpeningFlow, store, deps, existing, tenant);
   } catch (e) {
     const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be retried.");
     return { executionId: existing.id, status: "failed", error, data: {} };
@@ -128,13 +131,15 @@ async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps,
 export async function startAccountOpening(db: SqlDb, principal: Principal, input: StartAccountOpeningInput): Promise<FlowRunResult> {
   const store = makeExecutionStore(db);
   const executionId = input.clientRequestId ?? randomUUID();
+  const tenant = tenantOf(principal);
   const deps = makeDeps(db, writeActorOf(principal), executionId);
   // A client-minted id that already started is a double-submit: report the
-  // existing execution's state instead of starting a duplicate. Org-checked so a
-  // (guessed) foreign execution id can never leak another tenant's state.
+  // existing execution's state instead of starting a duplicate. The tenant-scoped
+  // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
+  // leak another tenant's state.
   const loadOwnExecution = async (): Promise<ExecutionState | null> => {
-    const existing = await store.loadById(executionId);
-    return existing && existing.orgId === principal.orgId && existing.flowId === accountOpeningFlow.id ? existing : null;
+    const existing = await store.loadById(executionId, tenant);
+    return existing && existing.flowId === accountOpeningFlow.id ? existing : null;
   };
   if (input.clientRequestId) {
     const existing = await loadOwnExecution();
@@ -146,7 +151,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
       return withSpan("flow.account-opening.retry", { orgId: principal.orgId, actor: principal.userId }, async () => {
-        const result = await retryFailedStart(store, deps, existing);
+        const result = await retryFailedStart(store, deps, existing, tenant);
         log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
         return result;
       });
@@ -159,7 +164,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
     try {
       result = await startFlow(accountOpeningFlow, store, deps, {
         executionId,
-        orgId: principal.orgId,
+        tenant,
         data: { ...input, initiatedBy: principal.userId },
       });
     } catch (e) {
@@ -171,7 +176,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       if (raced && !inputMatchesExecution(input, raced)) {
         result = editedReplayConflict(executionId);
       } else if (raced) {
-        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced) : replayedRunResult(raced);
+        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced, tenant) : replayedRunResult(raced);
       } else {
         const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be started.");
         result = { executionId, status: "failed", error, data: {} };
@@ -192,11 +197,15 @@ export async function resumeAccountOpeningByToken(
   if (!app) return { status: "not-found" };
   const store = makeExecutionStore(db);
   // The starter here is the reserved SYSTEM actor id (typed truth, finding #13:
-  // no fabricated Principal/role); finalize attributes its audit to the initiating
+  // no fabricated Principal/role) with a system-minted tenant scoped to the
+  // application row's org; finalize attributes its audit to the initiating
   // advisor's userId threaded through the flow context (ctx.initiatedBy).
   // Resume only runs post-suspend steps, so the pre-suspend key scope is inert.
-  const deps = makeDeps(db, { orgId: app.org_id, actorUserId: "esign-webhook" }, `resume:${token}`);
-  return withSpan("flow.account-opening.resume", { orgId: app.org_id }, () => resumeFlow(accountOpeningFlow, store, deps, token, payload));
+  const starter = systemWriteActor("esign-webhook", app.org_id);
+  const deps = makeDeps(db, starter, `resume:${token}`);
+  return withSpan("flow.account-opening.resume", { orgId: app.org_id }, () =>
+    resumeFlow(accountOpeningFlow, store, deps, token, payload, starter.tenant),
+  );
 }
 
 /**
@@ -227,17 +236,17 @@ export function computeEsignSignature(token: string): string {
  */
 export async function auditEvent(
   db: SqlDb,
-  opts: { orgId: string; actor: string; action: string; entityType: string; entityId: string; detail: string },
+  opts: { tenant: TenantContext; actor: string; action: string; entityType: string; entityId: string; detail: string },
 ): Promise<void> {
   const recorded = await auditedWrite({
-    db, orgId: opts.orgId, actor: opts.actor, action: opts.action, entityType: opts.entityType,
+    db, tenant: opts.tenant, actor: opts.actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
   });
   if (!recorded.ok) {
     // The auth operation proceeds (availability over completeness — an explicit
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
-      { orgId: opts.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
+      { orgId: opts.tenant.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
       "security-event audit could not be recorded",
     );
   }

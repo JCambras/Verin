@@ -10,6 +10,7 @@ import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError } from "@contracts/errors";
+import { assertTenantContext, systemTenant, type TenantContext } from "@contracts/tenant";
 import { log } from "@infra/observability/logger";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
@@ -89,8 +90,10 @@ const CLAIM_TIMEOUT_MS = 5 * 60_000;
  */
 const MAX_DELIVERY_ATTEMPTS = 5;
 
-/** Drain pending outbox rows for an org into the append-only, hash-chained log. */
-export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
+/** Drain pending outbox rows for a tenant into the append-only, hash-chained log. */
+export async function drainOutbox(db: SqlDb, tenant: TenantContext): Promise<number> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   // Reclaim stale claims first: a crash between claim and delete must not leave a
   // committed business write permanently unaudited.
   await db.query(
@@ -224,7 +227,7 @@ export async function discardedAuditEventWork(db: SqlDb): Promise<void> {
     .catch((e: unknown) => {
       if (e !== DISCARD) throw e;
     });
-  await drainOutbox(db, CONSTANT_WORK_ORG);
+  await drainOutbox(db, systemTenant("login-constant-work", CONSTANT_WORK_ORG));
   await db.query(
     "UPDATE audit_outbox SET status = 'claimed', claimed_at = $2 WHERE id = $1 AND status = 'pending' RETURNING id",
     [randomUUID(), new Date().toISOString()],
@@ -266,9 +269,10 @@ function toChainRow(r: AuditLogRow): ChainRow {
   };
 }
 
-/** Load an org's audit chain (examiner export / console). */
-export async function listOrgChain(db: SqlDb, orgId: string): Promise<ChainRow[]> {
-  const res = await db.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [orgId]);
+/** Load a tenant's audit chain (examiner export / console). */
+export async function listOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainRow[]> {
+  assertTenantContext(tenant);
+  const res = await db.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [tenant.orgId]);
   return res.rows.map(toChainRow);
 }
 
@@ -301,7 +305,9 @@ function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; e
  * not two: internal hash-chain consistency plus agreement with the out-of-band
  * anchor, so tail-truncation or full deletion is DETECTED (Vale V1 / Sable F4).
  */
-export async function verifyAndListOrgChain(db: SqlDb, orgId: string): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+export async function verifyAndListOrgChain(db: SqlDb, tenant: TenantContext): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   // Chain rows and the anchor are read in ONE transaction: a drain committing
   // between two separate reads would otherwise raise a false "rows removed /
   // truncated" tamper alarm (anchor ahead of the rows snapshot).
@@ -316,6 +322,6 @@ export async function verifyAndListOrgChain(db: SqlDb, orgId: string): Promise<{
   return { verdict: verdictFor(rows, anchor), rows };
 }
 
-export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
-  return (await verifyAndListOrgChain(db, orgId)).verdict;
+export async function verifyOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainVerdict> {
+  return (await verifyAndListOrgChain(db, tenant)).verdict;
 }

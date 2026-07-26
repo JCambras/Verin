@@ -9,6 +9,8 @@ import { discardedAuditEventWork } from "@infra/audit/audit-store";
 import { auditEvent } from "@infra/wire";
 import { getConfig } from "@infra/config";
 import { log } from "@infra/observability/logger";
+import { tenantOf, systemTenant } from "@contracts/tenant";
+import type { Principal } from "@contracts/principal";
 
 export interface LoginState {
   error?: string;
@@ -36,7 +38,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     // oracle (the invariant `authenticate` preserves with its dummy scrypt hash).
     const known = await findUserByEmail(db, email);
     if (known) {
-      await auditEvent(db, { orgId: known.org_id, actor: known.id, action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
+      // No session exists on this branch — the login boundary mints a SYSTEM
+      // tenant scoped to the known account's org (the identity module is the
+      // tenant-minting boundary, v3 §15.2).
+      await auditEvent(db, { tenant: systemTenant("login-boundary", known.org_id), actor: known.id, action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
     } else {
       await discardedAuditEventWork(db).catch((e: unknown) =>
         log.warn({ reason: e instanceof Error ? e.message : String(e) }, "constant-work audit mirror failed"),
@@ -52,7 +57,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     role: user.role,
     ttlMinutes: getConfig().session.ttlMinutes,
   });
-  await auditEvent(db, { orgId: user.org_id, actor: user.id, action: "session.create", entityType: "Session", entityId: session.id, detail: "Signed in" });
+  // The session exists now, so this IS the authenticated principal — the audit
+  // runs under its properly minted tenant, not a system mint.
+  const principal: Principal = { userId: user.id, orgId: user.org_id, role: user.role, actor: user.email, sessionId: session.id };
+  await auditEvent(db, { tenant: tenantOf(principal), actor: user.id, action: "session.create", entityType: "Session", entityId: session.id, detail: "Signed in" });
   (await cookies()).set(SESSION_COOKIE, signSessionCookie(session.id), sessionCookieOptions());
   redirect("/app");
 }

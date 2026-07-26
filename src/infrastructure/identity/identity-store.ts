@@ -2,13 +2,20 @@
  * Identity store (ADR-0008). Users, credentials, and server-side sessions in the
  * house-CRM store. Behind the identity port so a WorkOS/Auth0 swap is an adapter
  * change (D-002). org_id is always explicit; identity is never client-trusted.
+ * This module sits BELOW the TenantContext seam (v3 §15.2): session/credential
+ * lookups are the tenant-MINTING boundary (the org comes FROM the authenticated
+ * row), so they are reviewed escapes in the tenant-context-required fence;
+ * provisioning writes (createUser) DO require the sealed context.
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import type { Role } from "@contracts/roles";
+import type { PIIBearing } from "@contracts/pii";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { hashPassword, verifyPassword } from "./password";
 
-export interface UserRow {
+/** PIIBearing: carries the user's raw email and display name. */
+export interface UserRow extends PIIBearing {
   id: string;
   org_id: string;
   email: string;
@@ -36,19 +43,21 @@ function normalizeEmail(email: string): string {
 
 export async function createUser(
   db: SqlDb,
-  input: { orgId: string; email: string; displayName: string; role: Role; password: string },
+  tenant: TenantContext,
+  input: { email: string; displayName: string; role: Role; password: string },
 ): Promise<UserRow> {
+  assertTenantContext(tenant);
   const id = randomUUID();
   const email = normalizeEmail(input.email);
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.query(
       "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')",
-      [id, input.orgId, email, input.displayName, input.role, now],
+      [id, tenant.orgId, email, input.displayName, input.role, now],
     );
     await tx.query("INSERT INTO credentials (user_id, password_hash) VALUES ($1,$2)", [id, await hashPassword(input.password)]);
   });
-  return { id, org_id: input.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
+  return { id, org_id: tenant.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
 }
 
 export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow | null> {

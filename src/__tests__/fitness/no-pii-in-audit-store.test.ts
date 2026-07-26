@@ -5,7 +5,7 @@ import { unwrap } from "@contracts/result";
 import { looksLikePIIValue, isPIIField, assertNoPIIValues, REDACTED } from "@contracts/pii";
 import { scrub } from "@infra/pii/scrub";
 import type { WriteActor } from "@contracts/principal";
-
+import { systemTenant } from "@contracts/tenant";
 /**
  * NO-PII-IN-AUDIT-STORE FENCE (ADR-0006, charter #3/#13, STRIDE T-I1). PII entered
  * into the house CRM (the system of record) must be SCRUBBED before it lands in the
@@ -13,7 +13,7 @@ import type { WriteActor } from "@contracts/principal";
  * before/after snapshots OR the free-text detail (Sable F1: the earlier fence only
  * checked email/phone and never scanned `detail`, so it passed vacuously).
  */
-const p: WriteActor = { orgId: "o", actorUserId: "u" };
+const p: WriteActor = { tenant: systemTenant("test", "o"), actorUserId: "u" };
 
 // Distinctive tokens that must NOT survive into the audit store.
 const PII_TOKENS = ["Zephyrine", "Okonkwo-Blackwood", "zeph@example.com", "212-555-0142", "The Okonkwo-Blackwood Family"];

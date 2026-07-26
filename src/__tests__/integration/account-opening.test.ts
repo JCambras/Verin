@@ -4,6 +4,7 @@ import { startAccountOpening, resumeAccountOpeningByToken, esignCallback, comput
 import { verifyOrgChain } from "@infra/audit/audit-store";
 import { recentSpans } from "@infra/observability/tracer";
 import type { Principal } from "@contracts/principal";
+import { tenantOf } from "@contracts/tenant";
 
 const ORG = "org-1";
 const advisor: Principal = { userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" };
@@ -59,7 +60,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // Audit chain intact end-to-end and attributes to the initiating advisor's
     // opaque userId (ADR-0006/0007: never the raw email at the audit boundary).
-    const verdict = await verifyOrgChain(db, ORG);
+    const verdict = await verifyOrgChain(db, tenantOf(advisor));
     expect(verdict.ok).toBe(true);
     const chain = await db.query<{ actor: string; action: string }>("SELECT actor, action FROM audit_log WHERE org_id=$1 ORDER BY sequence", [ORG]);
     expect(chain.rows.some((r) => r.action === "financial_account.create" && r.actor === "u1")).toBe(true);
@@ -87,7 +88,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(await accountCount(db)).toBe(1); // exactly once, not twice
     const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE org_id=$1", [ORG]);
     expect(Number(tasks.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+    expect((await verifyOrgChain(db, tenantOf(advisor))).ok).toBe(true);
   });
 
   it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {
@@ -140,7 +141,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     // No duplicated pre-failure writes: still exactly one household.
     const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(after.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+    expect((await verifyOrgChain(db, tenantOf(advisor))).ok).toBe(true);
   });
 
   it("an EDITED resubmit under the same client request id is rejected with a typed CONFLICT — never a silent replay of stale input (D-027)", async () => {
