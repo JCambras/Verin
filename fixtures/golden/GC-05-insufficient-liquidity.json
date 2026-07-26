@@ -8,10 +8,10 @@
   "provenance": "synthetic-fixture",
   "deferred": null,
   "signoff": {
-    "status": "pending-captain",
+    "status": "signed",
     "authority": "captain",
-    "signedBy": null,
-    "signedAt": null,
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
     "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition."
   },
   "trigger": {

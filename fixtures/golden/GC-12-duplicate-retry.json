@@ -8,10 +8,10 @@
   "provenance": "synthetic-fixture",
   "deferred": null,
   "signoff": {
-    "status": "pending-captain",
+    "status": "signed",
     "authority": "captain",
-    "signedBy": null,
-    "signedAt": null,
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
     "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a suppressed duplicate returns the ORIGINAL handle and status (duplicate_suppressed receipt), and the timeline shows one instruction with the retry annotated - never a second external row."
   },
   "trigger": {

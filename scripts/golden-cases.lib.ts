@@ -55,9 +55,11 @@ export const AUTHORITY_MODES = ["automatic", "approval", "specialist_review", "n
 /** DecisionResult.kind (the disposition plane). */
 export const DISPOSITIONS = ["proceed", "blocked", "prohibited"] as const;
 
-/** The execution-plane state ids a verification state may report. These mirror the
- * scenarios.yaml state_vocabulary execution class (ObservedStatus minus the
- * deliberately-excluded 'Rejected'); the scenarios.yaml cross-check re-confirms it. */
+/** The execution-plane state ids a verification state may report: the v3
+ * ObservedStatus vocabulary minus the deliberately-excluded 'Rejected'. An
+ * observedStatus is dual-checked against BOTH this pin and the live
+ * scenarios.yaml execution class (mirroring expectedDisposition), so a state
+ * appended to the matrix later cannot silently widen the golden vocabulary. */
 export const EXECUTION_STATES = ["submitted", "in-flight", "completed", "nigo", "unknown"] as const;
 
 /** EvidenceSnapshotRef.freshness. */
@@ -369,7 +371,11 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       if (reached === undefined) P("expectedVerificationState.reached must be a boolean");
       if (!isNonEmptyString(vs.note)) P("expectedVerificationState.note missing or empty");
       if (reached === true) {
-        if (!(isNonEmptyString(vs.observedStatus) && refs.executionStates.has(vs.observedStatus))) P(`expectedVerificationState.observedStatus must be a scenarios.yaml execution state when reached, got ${JSON.stringify(vs.observedStatus)}`);
+        if (!(isNonEmptyString(vs.observedStatus) && (EXECUTION_STATES as readonly string[]).includes(vs.observedStatus))) {
+          P(`expectedVerificationState.observedStatus must be one of ${EXECUTION_STATES.join("|")} when reached, got ${JSON.stringify(vs.observedStatus)}`);
+        } else if (!refs.executionStates.has(vs.observedStatus)) {
+          P(`expectedVerificationState.observedStatus "${vs.observedStatus}" is not a scenarios.yaml execution-class state`);
+        }
       } else if (reached === false) {
         if (vs.observedStatus !== null) P("expectedVerificationState.observedStatus must be null when execution is not reached");
       }
@@ -393,6 +399,13 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
   // every spec-enumerated case is covered
   for (const name of REQUIRED_SPEC_NAMES) {
     if (!seenSpecNames.has(name)) problems.push(`required spec case "${name}" is not covered by any fixture's specName`);
+  }
+
+  // doc→fixture direction: every full case id the doc names must exist as a
+  // fixture (the fixture→doc direction is checked per case above), so a deleted
+  // fixture whose doc rows remain is caught, not just a renamed doc reference.
+  for (const docId of new Set(docText.match(/\bGC-\d\d-[a-z0-9-]+/g) ?? [])) {
+    if (!seenIds.has(docId)) problems.push(`docs/golden-cases.md references case id "${docId}" but no such fixture is loaded (stale doc reference / deleted fixture)`);
   }
   return problems;
 }

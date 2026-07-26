@@ -9,6 +9,7 @@ import {
   loadScenarioRefs,
   validateGoldenCases,
   type LoadedCase,
+  type ScenarioRefs,
 } from "../../../scripts/golden-cases.lib";
 
 /**
@@ -28,8 +29,9 @@ import {
  *  (d) signoff honesty: pending-captain (unsigned) or signed-with-attribution;
  *      an agent-invented in-between state cannot pass; expected results remain
  *      product truth subject to captain signoff, never agent invention;
- *  (e) doc/fixture sync: every fixture caseId appears in docs/golden-cases.md;
- *      all twelve spec-enumerated cases are covered; at least twelve cases.
+ *  (e) doc/fixture sync in BOTH directions: every fixture caseId appears in
+ *      docs/golden-cases.md AND every full case id the doc names exists as a
+ *      fixture; all twelve spec-enumerated cases are covered; at least twelve.
  * The validator core is shared with scripts/golden-cases-validate.ts (the
  * `golden-cases` CI job), so the enforced check and the proven check are the
  * same code. The companion below feeds violating cases and proves they CANNOT
@@ -79,7 +81,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   it("flags an AGENT-SIGNED case: signed without attribution, and a status outside the two legal shapes", () => {
     const cases = clone();
     const signoff = caseById(cases, "GC-01-firm-a-happy-path").signoff as Record<string, unknown>;
-    signoff.status = "signed"; // signedBy/signedAt still null - the dishonest middle
+    signoff.status = "signed"; // with attribution stripped below - the dishonest middle
+    signoff.signedBy = null;
+    signoff.signedAt = null;
     const problems = run(cases);
     expect(problems.some((p) => p.includes("signoff.signedBy must name the signer"))).toBe(true);
 
@@ -102,6 +106,22 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(problems.some((p) => p.includes("expectedDisposition must be one of proceed|blocked|prohibited"))).toBe(true);
     expect(problems.some((p) => p.includes("provenance must be a scenarios.yaml provenance label"))).toBe(true);
     expect(problems.some((p) => p.includes("must be a v3 LedgerEntry type"))).toBe(true);
+  });
+
+  it("flags an execution state outside the pinned vocabulary even when scenarios.yaml appends it", () => {
+    // The matrix's stability contract is append-only, so a later-appended state
+    // (e.g. the deliberately-excluded 'rejected') must still be refused by the
+    // EXECUTION_STATES pin - the yaml alone cannot widen the golden vocabulary.
+    const widened: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates, "rejected"]) };
+    const cases = clone();
+    (caseById(cases, "GC-01-firm-a-happy-path").expectedVerificationState as Record<string, unknown>).observedStatus = "rejected";
+    const problems = validateGoldenCases(cases, widened, realDoc);
+    expect(problems.some((p) => p.includes("observedStatus must be one of submitted|in-flight|completed|nigo|unknown"))).toBe(true);
+
+    // And the reverse: a pinned state the live matrix no longer defines fails too.
+    const narrowed: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates].filter((s) => s !== "submitted")) };
+    const drifted = validateGoldenCases(clone(), narrowed, realDoc);
+    expect(drifted.some((p) => p.includes('observedStatus "submitted" is not a scenarios.yaml execution-class state'))).toBe(true);
   });
 
   it("flags structural contradictions: a blocked case carrying authority/execution, a proceed case with none", () => {
@@ -132,6 +152,15 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
     const fewer = clone().filter((c) => (c.data as Record<string, unknown>).caseId !== "GC-09-stale-evidence");
     expect(run(fewer).some((p) => p.includes('required spec case "stale evidence" is not covered'))).toBe(true);
+  });
+
+  it("flags a doc-only reference: a deleted fixture whose doc rows remain CANNOT pass", () => {
+    // GC-15's spec name is not in REQUIRED_SPEC_NAMES and 15 cases still satisfy
+    // the >=12 floor, so only the doc->fixture direction can catch this deletion.
+    const fewer = clone().filter((c) => (c.data as Record<string, unknown>).caseId !== "GC-15-approval-invalidation");
+    expect(
+      run(fewer).some((p) => p.includes('references case id "GC-15-approval-invalidation"') && p.includes("no such fixture")),
+    ).toBe(true);
   });
 
   it("flags a truth set below twelve cases and a duplicated caseId", () => {

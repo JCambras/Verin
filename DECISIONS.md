@@ -423,3 +423,6 @@ while the captain reviews the §2 summary table.
 `golden:validate` script + `golden-cases` CI job, the `golden-cases-truth-set` charter-map entry and
 its ratchet line (a charter-ADR matter per charter-drift (e)), and this entry. Nothing else imports
 them (consumers are later prompts 11, 16-19, 28).
+**Addendum (2026-07-26):** the captain signed all 16 cases as drafted (approval relayed via
+firstmate); every fixture's signoff is now `signed` / `captain` / `2026-07-26`, and their expected
+outcomes are binding product truth per the §1 protocol.
