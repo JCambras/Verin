@@ -100,14 +100,18 @@ household:
       requirement: enough complexity to require real judgment without becoming implausible
 
 # --------------------------------------------------------------------------
-# State vocabulary (contract §5 requirement; build-sequence prompt 1 deliverable).
+# State vocabulary (v3 build-sequence prompt 1 deliverable; the committed
+# demo-contract.md does not enumerate these states - its §5 names only the twelve
+# scenario branches).
 # Exactly these ten states; `label` is the display string. The `class` groups each
 # state by the plane it describes:
 #   disposition   -> DecisionResult.kind in the v3 core contracts
 #   authority     -> approval-stage progress
 #   execution     -> ObservedStatus in the v3 core contracts
 # (ObservedStatus also defines 'Rejected'; it is not part of this demo vocabulary
-# and is deliberately not added here.)
+# and is deliberately not added here. Committed referent for these type names:
+# docs/v3/verin-core-contracts.ts, landing in the parallel ratification branch
+# fm/verin-ratify-x2 under its arch-version pin, architecture v3.)
 # --------------------------------------------------------------------------
 state_vocabulary:
   - id: proceed
@@ -184,7 +188,13 @@ scenarios:
     exercises: [blocked]
 
   - id: dual-approval
-    description: The amount exceeds the firm's threshold, requiring two distinct approvers with the requester constraint applied.
+    description: The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.
+    # Firm-scoped by design: at the canonical $75,000 request this branch fires under
+    # Firm A only (threshold $25,000). Firm B's threshold is $100,000, so no dual
+    # approval triggers there, and Firm B's requester rule is deliberately null
+    # (contract silence, recorded in `firms` above). This asymmetry is itself a demo
+    # beat for the Firm B comparison (contract §3, 5:40-6:25) - do not invent a
+    # Firm B requester rule to make the branch fire under both firms.
     disposition: proceed
     outcome_class: quorum approval
     exercises: [proceed, awaiting-approval, approved]

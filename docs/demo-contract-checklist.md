@@ -7,7 +7,11 @@ them. Ledger artifact names are the `LedgerEntry` type names from the v3 core co
 14-entry union: `DecisionRecorded`, `EvidenceSnapshotRecorded`, `ApprovalRecorded`,
 `ApprovalInvalidated`, `ReservationCreated`, `ReservationReleased`, `ExecutionStarted`,
 `ExecutionSucceeded`, `ExecutionPartiallySucceeded`, `ExecutionFailed`, `StatusObserved`,
-`VerificationClosed`, `VerificationStuck`, `ExceptionDecisionRequested`).
+`VerificationClosed`, `VerificationStuck`, `ExceptionDecisionRequested`). The committed referent
+for these names (and for `DecisionRecord`, `DecisionInputBundle`, and `ObservedStatus`) is
+[`docs/v3/verin-core-contracts.ts`](./v3/verin-core-contracts.ts), which lands in the parallel
+ratification branch `fm/verin-ratify-x2` under its arch-version pin (architecture v3); this
+document points at that referent rather than duplicating it.
 
 **How a moment passes.** Every visible-proof item renders on its named surface from recorded
 artifacts - real ones, or labeled fakes where the contract's `[deferred-pending-sandbox]`
