@@ -12,7 +12,8 @@ governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are
 stores activation only - pass/fail is computed, never fake green). Every ratified doc under `docs/v3/` is
 SHA-256-pinned (arch-version fence): editing one requires updating its pin in the same PR. Salesforce
 work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system, not v3
-§18's visuals (ADR-0028); UI prompts are blocked on `docs/demo-design-language.md`.
+§18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
+the ADR-0028 gate is satisfied).
 
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.
 
@@ -39,7 +40,9 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 - `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine + flow definitions.
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
-- `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`).
+- `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI
+  surface work follows [`docs/demo-design-language.md`](./docs/demo-design-language.md) (normative;
+  tokens live only in `globals.css` + the presentation tier - never fork them).
 
 ## Commands (pnpm via corepack)
 

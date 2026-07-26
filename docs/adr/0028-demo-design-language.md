@@ -1,6 +1,6 @@
 # ADR-0028: Demo design language - the established Verin design system is normative
 
-**Status:** Accepted (decision record; `docs/demo-design-language.md` is authored in a parallel task under this ruling)
+**Status:** Accepted (decision record; `docs/demo-design-language.md` is now authored under this ruling - the UI-prompt gate it names is satisfied)
 **Date:** 2026-07-26
 **Deciders:** captain (design directive, 2026-07-26 - ruling), founding architect
 **Relates to:** charter #9 (WCAG 2.2 AA), #10 (presentation tier as first-class surface; WhyBubble doctrine); ADR-0012 (presentation tier and budgets); ADR-0023 (v3 adoption); v3 §2.2 (required screens), prompt-sequence prompts 3/29 and standing rules ("read docs/demo-design-language.md before any UI work")

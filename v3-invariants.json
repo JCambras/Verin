@@ -295,7 +295,7 @@
       "gate": "G/H",
       "name": "The UI distinguishes blocked, prohibited, approved, submitted, and verified states",
       "status": "not-yet-active",
-      "activatesWhen": "the demo UI lands (Wave 0 prompt 3 begins it - BLOCKED on docs/demo-design-language.md per ADR-0028; demo-complete at Wave H prompt 29)",
+      "activatesWhen": "the demo UI lands (Wave 0 prompt 3 begins it - docs/demo-design-language.md now authored per ADR-0028; demo-complete at Wave H prompt 29)",
       "mechanisms": []
     },
     {
