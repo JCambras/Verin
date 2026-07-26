@@ -7,10 +7,12 @@ Practice intelligence for registered investment advisers. The third and final bu
 1. **[`CHARTER.md`](./CHARTER.md)** — the constitution. Read it first, in full. It is code: amended only
    by an ADR, and its enforcement is self-checked by the charter-drift fence.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
-3. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
-4. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
-5. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
-6. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
+3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
+   0023-0028; every doc under `docs/v3/` is SHA-256-pinned by the arch-version fence).
+4. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
+5. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
+6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
+7. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
    subordinate to the charter and grounded in the foundation.
 
 ## Stack
@@ -29,6 +31,7 @@ corepack pnpm lint
 corepack pnpm test           # unit + integration + fitness fences (non-UTC clock)
 corepack pnpm test:e2e       # Playwright + axe
 corepack pnpm knip           # dead exports / unused dependencies
+corepack pnpm v3:invariants  # 30 v3 invariants: active-pass / active-fail / not-yet-active
 corepack pnpm build
 ```
 
