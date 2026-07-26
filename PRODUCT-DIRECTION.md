@@ -13,6 +13,12 @@
 > product**; §"Build honesty" states plainly what
 > is built today, what Wave 1 lands, and what is directional - so nothing here reads as a claim that
 > unbuilt work exists (charter #5).
+>
+> **The Phase 1 demo contract.** Demo work is governed by the normative Phase 1 investor-demo contract,
+> [`docs/demo-contract.md`](./docs/demo-contract.md) (D-034, 2026-07-26), with its machine-usable matrix
+> [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml) and acceptance checklist
+> [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). §10 below predates that
+> contract; for what the Phase 1 investor demo is and must prove, the contract is normative.
 
 ---
 

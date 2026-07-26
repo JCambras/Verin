@@ -14,6 +14,9 @@ Practice intelligence for registered investment advisers. The third and final bu
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
 7. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
    subordinate to the charter and grounded in the foundation.
+7. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
+   contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
+   and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
 
 ## Stack
 
