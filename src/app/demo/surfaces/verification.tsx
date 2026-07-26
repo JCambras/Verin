@@ -8,7 +8,7 @@ import { FreshValue } from "@app/presentation/fresh-value";
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type VerificationVM } from "../model";
-import { JourneyNav, NotReached, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow } from "./shared";
 
 export function VerificationSurface({
   vm,
@@ -63,21 +63,7 @@ export function VerificationSurface({
       {vm.appended.length > 0 ? (
         <section aria-label="Later arrivals" className="flex flex-col gap-2">
           <h2 className="text-base font-semibold text-slate-900">Later arrivals</h2>
-          <ExecutionTimeline
-            caption="Later status arrivals, appended to the same register"
-            rows={vm.appended.map((r) => ({
-              step: r.step,
-              target: r.target,
-              status: r.status,
-              statusLabel: r.statusLabel,
-              timestamp: r.timestamp,
-              ...(r.honestyLine ? { honestyLine: r.honestyLine } : {}),
-              ...(r.plainClaim ? { plainClaim: r.plainClaim } : {}),
-              ...(r.affordanceLabel ? { affordanceLabel: r.affordanceLabel } : {}),
-              identifiers: r.identifiers.map((i) => ({ label: i.label, value: i.value, mono: true })),
-              devBadgeLabel: DEV_BADGE_TEXT[r.fakeClass],
-            }))}
-          />
+          <ExecutionTimeline caption="Later status arrivals, appended to the same register" rows={vm.appended.map((r) => toTimelineRow(r))} />
         </section>
       ) : null}
 

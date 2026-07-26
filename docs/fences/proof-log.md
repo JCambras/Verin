@@ -724,3 +724,36 @@ directory). Same PR also lands the captain-authorized specialist-review-expirati
 (firm-a=proceed / firm-b=blocked) in scenarios.yaml + data.ts, which the hardened RULE A holds equal.
 
 **Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision keys nm-review-askuser-s6 / nm-review-rerun-copy-s6).
+
+## Walking-skeleton honesty fence hardening 2 (2026-07-26, review round) - executed injection proofs
+
+### demo-skeleton-honesty, hardened RULE B collector (review finding rule-b-reexport-and-traversal-bypass)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`, strengthened in place (no rule
+weakened). RULE B's specifier collector previously read only static import declarations, so a
+re-export (`export { x } from` / `export * from`), a dynamic `import()`, or a `require()` could
+reach the contract data or the builders unseen, and a traversal specifier like `"./../data"`
+matched the `"./"` sibling allowlist outright. The collector now gathers every module-reaching
+form with file:line, records a non-literal dynamic specifier as unverifiable (so it fails the
+allowlist instead of slipping past), and any `..` segment beyond the one allowed `"../model"`
+is rejected as traversal. Injections + observed failures (verbatim), each reverted:
+```
+# RULE B: `export { SCENARIOS } from "../data";` appended to a shipped surface:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/execution.tsx:40 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+# RULE B: `export const sneak = import("../journey");` appended to a shipped surface:
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/execution.tsx:40 :: import "../journey" - surfaces render view models only (no data, service, or builder imports)
+# RULE B: `import { FIRMS } from "./../data";` added to a shipped surface's imports:
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/verification.tsx:12 :: import "./../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** all three injections restored; fence file `Tests 18 passed` with four new companions
+(a re-export, a dynamic import, a non-literal dynamic specifier, and traversal specifiers incl.
+a nested `"./helpers/../../journey"`). The same review round mirrors the voided-approval
+treatment in the below-threshold single-approver stage (`build-decision.ts`, so gate, safety,
+and record agree under approval-invalidation at Firm B) and extracts the shared
+execution-timeline row mapper into `surfaces/shared.tsx` - neither changes any fence rule.
+
+**Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision key nm-review-invalidation-s6).

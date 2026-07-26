@@ -254,15 +254,17 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
       ],
     });
   } else {
+    const approver =
+      spec.invalidation && phase === "final"
+        ? { name: CAST.opsApprover1, role: "Operations", status: "voided", statusLabel: "Approval voided - evidence changed" }
+        : spec.invalidation || phase === "final"
+          ? { name: CAST.opsApprover1, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:02" }
+          : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
       title: "Stage 1 - Approval",
       requirement: `Below ${firm.name}'s dual-approval threshold at this amount. ${firm.name} policy does not name an approver role for this stage.`,
-      stepState: phase === "final" ? "done" : "active",
-      actors: [
-        phase === "final"
-          ? { name: CAST.opsApprover1, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:02" }
-          : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" },
-      ],
+      stepState: phase === "final" && !spec.invalidation ? "done" : "active",
+      actors: [approver],
     });
   }
   if (spec.bankChanged && firm.bankChangeHandling === "specialist-review") {

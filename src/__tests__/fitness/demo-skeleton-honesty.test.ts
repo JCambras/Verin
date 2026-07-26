@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
-import { Project } from "ts-morph";
+import { Project, SyntaxKind } from "ts-morph";
 import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
 import { SCENARIOS, FIRMS } from "@app/demo/data";
 
@@ -23,7 +23,10 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    presentation primitives, the view-model module, and surface-local siblings.
  *    Importing the contract data, the fake service, or the builders from a surface
  *    is exactly how a component would start recomputing decisions - it fails the
- *    build with file:line.
+ *    build with file:line. Every module-reaching form counts: static imports,
+ *    re-exports (export { x } from / export * from), dynamic import(), require(),
+ *    and traversal specifiers ("./../data") dressed up as sibling imports; a
+ *    non-literal dynamic specifier cannot be verified, so it cannot pass.
  *
  * Both detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
@@ -108,7 +111,10 @@ export function importBoundaryViolations(files: { path: string; specifiers: { sp
   const out: string[] = [];
   for (const f of files) {
     for (const { spec, line } of f.specifiers) {
-      if (!ALLOWED.some((re) => re.test(spec))) {
+      // A ".." segment anywhere (beyond the one allowed "../model") escapes the
+      // sibling allowlist by traversal - "./../data" must not read as a sibling.
+      const traversal = spec !== "../model" && spec.split("/").includes("..");
+      if (traversal || !ALLOWED.some((re) => re.test(spec))) {
         out.push(`${f.path}:${line} :: import "${spec}" - surfaces render view models only (no data, service, or builder imports)`);
       }
     }
@@ -116,14 +122,28 @@ export function importBoundaryViolations(files: { path: string; specifiers: { sp
   return out;
 }
 
+/** Every module-reaching specifier with its line: static imports, re-exports,
+ * dynamic import(), and require(). A non-literal dynamic specifier is recorded as
+ * unverifiable so it fails the allowlist instead of slipping past it. */
 function specifiersOf(project: Project): { path: string; specifiers: { spec: string; line: number }[] }[] {
-  return project.getSourceFiles().map((sf) => ({
-    path: relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"),
-    specifiers: sf.getImportDeclarations().map((d) => ({
-      spec: d.getModuleSpecifierValue(),
-      line: d.getStartLineNumber(),
-    })),
-  }));
+  return project.getSourceFiles().map((sf) => {
+    const specifiers: { spec: string; line: number }[] = [];
+    for (const d of sf.getImportDeclarations()) {
+      specifiers.push({ spec: d.getModuleSpecifierValue(), line: d.getStartLineNumber() });
+    }
+    for (const d of sf.getExportDeclarations()) {
+      const spec = d.getModuleSpecifierValue();
+      if (spec !== undefined) specifiers.push({ spec, line: d.getStartLineNumber() });
+    }
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expr = call.getExpression();
+      if (expr.getKind() !== SyntaxKind.ImportKeyword && expr.getText() !== "require") continue;
+      const arg = call.getArguments()[0];
+      const lit = arg?.asKind(SyntaxKind.StringLiteral) ?? arg?.asKind(SyntaxKind.NoSubstitutionTemplateLiteral);
+      specifiers.push({ spec: lit ? lit.getLiteralText() : "(non-literal dynamic specifier)", line: call.getStartLineNumber() });
+    }
+    return { path: relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"), specifiers };
+  });
 }
 
 /** Both .ts and .tsx: a plain-.ts helper in surfaces/ could otherwise import ../data
@@ -243,6 +263,47 @@ describe("demo-skeleton-honesty fence", () => {
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
+    });
+
+    it("RULE B flags a re-export reaching the contract data or the fake service", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/leak.ts": `export { SCENARIOS } from "../data";\nexport * from "../journey";`,
+      });
+      const violations = importBoundaryViolations(specifiersOf(project));
+      expect(violations.length).toBe(2);
+      expect(violations[0]).toContain("leak.ts:1");
+      expect(violations[0]).toContain(`"../data"`);
+      expect(violations[1]).toContain("leak.ts:2");
+      expect(violations[1]).toContain(`"../journey"`);
+    });
+
+    it("RULE B flags a dynamic import of the contract data", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/dynamic.tsx": `export async function Sneaky() {\n  const { SCENARIOS } = await import("../data");\n  return SCENARIOS.length;\n}`,
+      });
+      const violations = importBoundaryViolations(specifiersOf(project));
+      expect(violations.length).toBe(1);
+      expect(violations[0]).toContain("dynamic.tsx:2");
+      expect(violations[0]).toContain(`"../data"`);
+    });
+
+    it("RULE B flags a non-literal dynamic specifier - unverifiable cannot pass", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/opaque.tsx": `const target = "../data";\nexport const p = import(target);`,
+      });
+      const violations = importBoundaryViolations(specifiersOf(project));
+      expect(violations.length).toBe(1);
+      expect(violations[0]).toContain("(non-literal dynamic specifier)");
+    });
+
+    it("RULE B flags traversal specifiers disguised as sibling imports", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/traverse.tsx": `import { SCENARIOS } from "./../data";\nimport { getJourney } from "./helpers/../../journey";\nexport const t = [SCENARIOS, getJourney];`,
+      });
+      const violations = importBoundaryViolations(specifiersOf(project));
+      expect(violations.length).toBe(2);
+      expect(violations[0]).toContain(`"./../data"`);
+      expect(violations[1]).toContain(`"./helpers/../../journey"`);
     });
 
     it("RULE B passes the allowed imports (react, next, presentation, model, siblings)", () => {

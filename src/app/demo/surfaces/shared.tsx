@@ -10,8 +10,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { DecisionSpine } from "@app/presentation/decision-spine";
+import type { ExecutionTimelineRow } from "@app/presentation/execution-timeline";
 import { EmptyState } from "@app/presentation/ui";
-import type { DecisionSpineVM } from "../model";
+import { DEV_BADGE_TEXT, type DecisionSpineVM, type ExecutionRowVM } from "../model";
 
 /** Route per journey station, in click order (the demo route runs this sequence). */
 export const DEMO_SEQUENCE = [
@@ -32,6 +33,23 @@ export type DemoStation = (typeof DEMO_SEQUENCE)[number];
 
 export function demoHref(station: DemoStation, scenarioId: string, firmId: string, extra?: string): string {
   return `/app/demo/${station}?scenario=${scenarioId}&firm=${firmId}${extra ?? ""}`;
+}
+
+/** The one ExecutionRowVM -> ExecutionTimeline row mapping, shared by the execution
+ * and verification surfaces so the two renders cannot drift. */
+export function toTimelineRow(r: ExecutionRowVM): ExecutionTimelineRow {
+  return {
+    step: r.step,
+    target: r.target,
+    status: r.status,
+    statusLabel: r.statusLabel,
+    timestamp: r.timestamp,
+    ...(r.honestyLine ? { honestyLine: r.honestyLine } : {}),
+    ...(r.plainClaim ? { plainClaim: r.plainClaim } : {}),
+    ...(r.affordanceLabel ? { affordanceLabel: r.affordanceLabel } : {}),
+    identifiers: r.identifiers.map((i) => ({ label: i.label, value: i.value, mono: true })),
+    devBadgeLabel: DEV_BADGE_TEXT[r.fakeClass],
+  };
 }
 
 /** Link dressed in the Button primary recipe - the surface's one clear next action. */

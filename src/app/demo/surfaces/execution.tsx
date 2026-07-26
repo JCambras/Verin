@@ -6,8 +6,8 @@
  * keys inspectable.
  */
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
-import { DEV_BADGE_TEXT, type ExecutionVM } from "../model";
-import { JourneyNav, NotReached, SurfaceShell, demoHref } from "./shared";
+import type { ExecutionVM } from "../model";
+import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow } from "./shared";
 
 export function ExecutionSurface({
   vm,
@@ -29,21 +29,7 @@ export function ExecutionSurface({
   }
   return (
     <SurfaceShell spine={vm.spine} title="Execution" description={vm.deferredNote}>
-      <ExecutionTimeline
-        caption="Execution timeline"
-        rows={vm.rows.map((r) => ({
-          step: r.step,
-          target: r.target,
-          status: r.status,
-          statusLabel: r.statusLabel,
-          timestamp: r.timestamp,
-          ...(r.honestyLine ? { honestyLine: r.honestyLine } : {}),
-          ...(r.plainClaim ? { plainClaim: r.plainClaim } : {}),
-          ...(r.affordanceLabel ? { affordanceLabel: r.affordanceLabel } : {}),
-          identifiers: r.identifiers.map((i) => ({ label: i.label, value: i.value, mono: true })),
-          devBadgeLabel: DEV_BADGE_TEXT[r.fakeClass],
-        }))}
-      />
+      <ExecutionTimeline caption="Execution timeline" rows={vm.rows.map((r) => toTimelineRow(r))} />
       <JourneyNav
         back={{ href: demoHref("safety", scenarioId, firmId), label: "Back to the safety check" }}
         forward={{ href: demoHref("verification", scenarioId, firmId), label: "View verification" }}
