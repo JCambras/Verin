@@ -550,6 +550,37 @@ baseline check is two-directional. Injections + observed failures (verbatim), ea
 `Tests 17 passed`, `pnpm test:fitness` → `Tests 170 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
 `pnpm knip` clean.
 
+**Extension (gate review round 4 - structural family discovery + full cross-reference closure):** the
+baseline previously extracted ids through nine hand-listed paths, so an id in a NEW section (e.g. a future
+`personas:` list) escaped both pinning directions despite the STABILITY CONTRACT's "every `id` in this
+file"; and two cross-references were unchecked: the top-level `canonical_request.provenance` /
+`household.provenance` labels, and the deferral agreement was only two-thirds enforced (a listed element
+whose `deferral:` marking was dropped, or a marking value disagreeing with `deferral.status`, passed).
+`collectIdFamilies` now discovers every `id`-keyed value structurally (grouped by key path, non-string ids
+kept via `String()` so they cannot slip past unreviewed), and `crossRefViolations` validates the top-level
+provenance fields and the deferral sections in full (marked-implies-listed, listed-implies-marked, marking
+value matches `deferral.status`). Injections + observed failures (verbatim), each reverted:
+```
+# NEW id-bearing section appended (`personas:` with `- id: avery-the-advisor`) - no extraction
+# path existed for it before, so the old fence passed it:
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: personas: id "avery-the-advisor" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:277
+# top-level provenance typo'd (household `provenance: synthetic-fixture` -> `synthetic-fixtures`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: household.provenance -> "synthetic-fixtures" is not a provenance_labels id
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:282
+# listed element's deferral marking dropped (`returned-status` kept in deferral.deferred_elements,
+# its `deferral: deferred-pending-sandbox` line deleted):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: deferral.deferred_elements lists "returned-status" but elements[returned-status] carries no deferral marking
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:282
+```
+**Revert (round-4 extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 22 passed`, `pnpm test:fitness` → `Tests 175 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
 **Date:** 2026-07-26 (gate review round 2 - the D-034 scenario-matrix invariants fenced per charter #1;
 prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
-full-scope, two-directional id pinning).
+full-scope, two-directional id pinning, and in round 4 to structural id-family discovery and full
+cross-reference closure).

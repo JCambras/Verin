@@ -17,11 +17,17 @@ import { REPO_ROOT } from "./_fence-utils";
  *      below is still present (renames/removals fail the build), each id present
  *      in the file is pinned below (an addition must append here in the same PR,
  *      where review sees it - same ratchet pattern as charter-drift's
- *      RATCHETED_ENFORCED_IDS), and no id is duplicated;
+ *      RATCHETED_ENFORCED_IDS), and no id is duplicated. Families are discovered
+ *      generically - every `id`-keyed value anywhere in the document, grouped by
+ *      its key path - so a future id-bearing section joins the pinning the
+ *      moment it appears, with no extraction path to hand-list;
  *  (c) every cross-reference resolves: scenario dispositions and `exercises`
- *      to state_vocabulary ids, `per_firm` keys to firm ids, element
- *      reality_now/reality_at_phase1 to provenance_labels ids, and
- *      deferral.deferred_elements to element ids (both directions).
+ *      to state_vocabulary ids, `per_firm` keys to firm ids, top-level
+ *      `provenance` fields and element reality_now/reality_at_phase1 to
+ *      provenance_labels ids, and the deferral sections agree in full:
+ *      deferral.deferred_elements to element ids in both directions
+ *      (marked-implies-listed AND listed-implies-marked), with every element
+ *      `deferral` value matching deferral.status.
  * The detectors are pure functions over YAML text so the companion below can
  * feed them violating synthetic documents (charter #4).
  */
@@ -109,20 +115,41 @@ interface ElementRow extends IdRow {
 }
 export interface ScenariosData {
   contract?: IdRow;
+  canonical_request?: { provenance?: unknown };
   firms?: IdRow[];
-  household?: IdRow & { required_shape?: IdRow[] };
+  household?: IdRow & { provenance?: unknown; required_shape?: IdRow[] };
   state_vocabulary?: IdRow[];
   scenarios?: ScenarioRow[];
   provenance_labels?: IdRow[];
   elements?: ElementRow[];
-  deferral?: IdRow & { deferred_elements?: unknown };
+  deferral?: IdRow & { status?: unknown; deferred_elements?: unknown };
 }
 
 const idsOf = (rows: IdRow[] | undefined): string[] =>
   (rows ?? []).map((r) => (typeof r?.id === "string" ? r.id : "")).filter(Boolean);
 
-const singletonIdOf = (row: IdRow | undefined): string[] =>
-  typeof row?.id === "string" ? [row.id] : [];
+/** Every `id`-keyed value in the document, grouped by family = the key path of
+ * its containing section (array indices elided). Discovery is structural, not a
+ * hand-listed set of extraction paths, so an id in a section this fence has
+ * never seen still lands in a family and is held against PINNED_IDS. Non-string
+ * ids are kept via String() so they cannot slip past the baseline unreviewed. */
+export function collectIdFamilies(value: unknown): Record<string, string[]> {
+  const families: Record<string, string[]> = {};
+  const walk = (node: unknown, path: string): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, path);
+      return;
+    }
+    if (!node || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    if ("id" in record) (families[path || "(root)"] ??= []).push(String(record.id));
+    for (const [key, child] of Object.entries(record)) {
+      if (key !== "id") walk(child, path ? `${path}.${key}` : key);
+    }
+  };
+  walk(value, "");
+  return families;
+}
 
 /** (a) Inertness: parse issues and ANY tag (unresolved or explicit-standard) are violations. */
 export function inertnessViolations(text: string): string[] {
@@ -146,17 +173,7 @@ export function inertnessViolations(text: string): string[] {
 /** (b) Stability contract, two-directional: every pinned id present, every
  * present id pinned, no id reused within its set. */
 export function baselineViolations(data: ScenariosData, pinned: Record<string, readonly string[]> = PINNED_IDS): string[] {
-  const sets: Record<string, string[]> = {
-    contract: singletonIdOf(data.contract),
-    firms: idsOf(data.firms),
-    household: singletonIdOf(data.household),
-    "household.required_shape": idsOf(data.household?.required_shape),
-    deferral: singletonIdOf(data.deferral),
-    scenarios: idsOf(data.scenarios),
-    state_vocabulary: idsOf(data.state_vocabulary),
-    provenance_labels: idsOf(data.provenance_labels),
-    elements: idsOf(data.elements),
-  };
+  const sets = collectIdFamilies(data);
   const issues: string[] = [];
   for (const setName of new Set([...Object.keys(pinned), ...Object.keys(sets)])) {
     const pinnedIds = pinned[setName] ?? [];
@@ -205,6 +222,15 @@ export function crossRefViolations(data: ScenariosData): string[] {
     }
   }
 
+  for (const [section, row] of [
+    ["canonical_request", data.canonical_request],
+    ["household", data.household],
+  ] as const) {
+    if (row && !labels.has(String(row.provenance))) {
+      issues.push(`${section}.provenance -> "${String(row.provenance)}" is not a provenance_labels id`);
+    }
+  }
+
   for (const element of data.elements ?? []) {
     const eid = typeof element.id === "string" ? element.id : "?";
     for (const field of ["reality_now", "reality_at_phase1"] as const) {
@@ -218,9 +244,17 @@ export function crossRefViolations(data: ScenariosData): string[] {
     if (!elementIds.has(elementId)) issues.push(`deferral.deferred_elements -> "${elementId}" is not an element id`);
   }
   const deferredSet = new Set(deferred);
+  const deferralStatus = data.deferral?.status;
   for (const element of data.elements ?? []) {
-    if (element.deferral !== undefined && !deferredSet.has(String(element.id))) {
-      issues.push(`elements[${String(element.id)}] carries a deferral marking but is missing from deferral.deferred_elements`);
+    const eid = String(element.id);
+    if (element.deferral !== undefined && !deferredSet.has(eid)) {
+      issues.push(`elements[${eid}] carries a deferral marking but is missing from deferral.deferred_elements`);
+    }
+    if (element.deferral === undefined && deferredSet.has(eid)) {
+      issues.push(`deferral.deferred_elements lists "${eid}" but elements[${eid}] carries no deferral marking`);
+    }
+    if (element.deferral !== undefined && String(element.deferral) !== String(deferralStatus)) {
+      issues.push(`elements[${eid}].deferral -> "${String(element.deferral)}" does not match deferral.status "${String(deferralStatus)}"`);
     }
   }
   return issues;
@@ -317,6 +351,19 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     expect(crossRefViolations(appended)).toEqual([]);
   });
 
+  it("flags an id in a NEW, never-before-seen section - no hand-listed extraction path to bypass", () => {
+    const extended = parseData(realText) as ScenariosData & { personas?: unknown };
+    extended.personas = [{ id: "avery-the-advisor", role: "presenter" }];
+    expect(baselineViolations(extended).some((i) => i.includes(`personas: id "avery-the-advisor" is not in PINNED_IDS`))).toBe(true);
+    expect(baselineViolations(extended, { ...PINNED_IDS, personas: ["avery-the-advisor"] })).toEqual([]);
+  });
+
+  it("flags a non-string id instead of letting it slip past the baseline", () => {
+    const numeric = parseData(realText);
+    numeric.scenarios = [...(numeric.scenarios ?? []), { id: 13, disposition: "proceed", exercises: ["proceed"] }];
+    expect(baselineViolations(numeric).some((i) => i.includes(`scenarios: id "13" is not in PINNED_IDS`))).toBe(true);
+  });
+
   it("flags a scenario exercising a state outside the vocabulary (e.g. ObservedStatus's excluded 'rejected')", () => {
     const drifted = parseData(realText.replace("exercises: [proceed, approved, submitted, nigo]", "exercises: [proceed, approved, submitted, rejected]"));
     expect(crossRefViolations(drifted).some((i) => i.includes(`"rejected" is not a state_vocabulary id`))).toBe(true);
@@ -325,6 +372,17 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
   it("flags an element with an unknown provenance label", () => {
     const mislabeled = parseData(realText.replace("reality_now: deterministic-engine-output", "reality_now: totally-real-data"));
     expect(crossRefViolations(mislabeled).some((i) => i.includes(`"totally-real-data" is not a provenance_labels id`))).toBe(true);
+  });
+
+  it("flags a typo'd top-level provenance reference (canonical_request, household)", () => {
+    const typoed = parseData(
+      realText
+        .replace("provenance: user-entered-demo-input", "provenance: user-entered-demo-inputs")
+        .replace("provenance: synthetic-fixture", "provenance: synthetic-fixtures"),
+    );
+    const issues = crossRefViolations(typoed);
+    expect(issues.some((i) => i.includes(`canonical_request.provenance -> "user-entered-demo-inputs" is not a provenance_labels id`))).toBe(true);
+    expect(issues.some((i) => i.includes(`household.provenance -> "synthetic-fixtures" is not a provenance_labels id`))).toBe(true);
   });
 
   it("flags a dangling deferred element (both directions)", () => {
@@ -336,6 +394,28 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     const unlisted = parseData(realText);
     if (unlisted.deferral) unlisted.deferral.deferred_elements = ["execution-invocation", "returned-status"];
     expect(crossRefViolations(unlisted).some((i) => i.includes("elements[delayed-exception-events] carries a deferral marking"))).toBe(true);
+  });
+
+  it("flags a listed deferred element whose marking was dropped (listed-implies-marked)", () => {
+    const unmarked = parseData(realText);
+    const element = unmarked.elements?.find((e) => e.id === "returned-status");
+    if (element) delete element.deferral;
+    expect(
+      crossRefViolations(unmarked).some((i) =>
+        i.includes(`deferral.deferred_elements lists "returned-status" but elements[returned-status] carries no deferral marking`),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags an element deferral marking that disagrees with deferral.status", () => {
+    const disagreeing = parseData(realText);
+    const element = disagreeing.elements?.find((e) => e.id === "execution-invocation");
+    if (element) element.deferral = "deferred-until-someday";
+    expect(
+      crossRefViolations(disagreeing).some((i) =>
+        i.includes(`elements[execution-invocation].deferral -> "deferred-until-someday" does not match deferral.status "deferred-pending-sandbox"`),
+      ),
+    ).toBe(true);
   });
 
   it("flags a gutted or empty document instead of passing vacuously", () => {

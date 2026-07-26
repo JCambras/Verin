@@ -383,5 +383,8 @@ deferred elements -> elements, both directions). No product code.
 **Why:** prompt 1 of the ratified v3 sequence requires the contract as reviewable product truth
 before fixtures, golden cases, or UI exist; the two annotations record captain rulings instead of
 silently diverging from the captain's v1 text.
-**Revert path:** delete the three files and this entry; nothing imports them yet (consumers are
-later prompts 2, 3, 11, 29).
+**Revert path:** delete the three files together with their enforcement wiring - the fence
+`src/__tests__/fitness/demo-scenarios-contract.test.ts`, the `demo-contract-as-data` entry in
+`charter-map.json`, and its line in charter-drift's `RATCHETED_ENFORCED_IDS` (the ratchet makes that
+removal a charter-ADR matter, per charter-drift (e)) - drop the now-unused `yaml` devDependency, and
+delete this entry. No product code imports any of it (consumers are later prompts 2, 3, 11, 29).
