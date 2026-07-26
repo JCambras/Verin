@@ -39,7 +39,9 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 - `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine + flow definitions.
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
-- `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`).
+- `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI
+  surface work follows [`docs/demo-design-language.md`](./docs/demo-design-language.md) (normative;
+  tokens live only in `globals.css` + the presentation tier - never fork them).
 
 ## Commands (pnpm via corepack)
 
