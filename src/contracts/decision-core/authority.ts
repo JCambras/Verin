@@ -44,6 +44,25 @@ const stageCore = {
   escalationPath: z.array(EscalationStepSchema),
 };
 
+/**
+ * Parse-time stage integrity, mirroring ExecutionPlan's: approvals bind to stages
+ * by stageId and sequence by order, so a duplicate of either inside one stack
+ * would alias that binding the way a duplicate idempotency key aliases retries.
+ */
+const requireDistinctStages = (
+  stages: ReadonlyArray<{ stageId: string; order: number }>,
+  ctx: z.core.$RefinementCtx,
+): void => {
+  const stageIds = new Set<string>();
+  const orders = new Set<number>();
+  for (const stage of stages) {
+    if (stageIds.has(stage.stageId)) ctx.addIssue({ code: "custom", message: `duplicate stage id "${stage.stageId}"`, path: ["stages"] });
+    stageIds.add(stage.stageId);
+    if (orders.has(stage.order)) ctx.addIssue({ code: "custom", message: `duplicate stage order ${stage.order}`, path: ["stages"] });
+    orders.add(stage.order);
+  }
+};
+
 /** Template form (firm configuration): relative expiry - it cannot know wall-clock time. */
 export const ApprovalStageTemplateSchema = z.strictObject({
   ...stageCore,
@@ -52,10 +71,12 @@ export const ApprovalStageTemplateSchema = z.strictObject({
 export type ApprovalStageTemplate = z.infer<typeof ApprovalStageTemplateSchema>;
 
 /** A reusable, referencable stack of stage templates. */
-export const ApprovalTemplateSchema = z.strictObject({
-  id: ApprovalTemplateIdSchema,
-  stages: z.array(ApprovalStageTemplateSchema).min(1),
-});
+export const ApprovalTemplateSchema = z
+  .strictObject({
+    id: ApprovalTemplateIdSchema,
+    stages: z.array(ApprovalStageTemplateSchema).min(1),
+  })
+  .superRefine((template, ctx) => requireDistinctStages(template.stages, ctx));
 export type ApprovalTemplate = z.infer<typeof ApprovalTemplateSchema>;
 
 /**
@@ -72,15 +93,19 @@ export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
 /**
  * How authority is satisfied for a proceed decision. "approval" with zero stages
  * would be "automatic" wearing a costume - stages are non-empty by construction,
- * so the modes stay honest.
+ * and every stage stack keeps stageId and order distinct, so the modes stay honest.
  */
 export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("automatic") }),
-  z.strictObject({ mode: z.literal("approval"), stages: z.array(ApprovalStageSchema).min(1) }),
-  z.strictObject({
-    mode: z.literal("specialist_review"),
-    specialistRoleIds: z.array(RoleIdSchema).min(1),
-    stages: z.array(ApprovalStageSchema),
-  }),
+  z
+    .strictObject({ mode: z.literal("approval"), stages: z.array(ApprovalStageSchema).min(1) })
+    .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
+  z
+    .strictObject({
+      mode: z.literal("specialist_review"),
+      specialistRoleIds: z.array(RoleIdSchema).min(1),
+      stages: z.array(ApprovalStageSchema),
+    })
+    .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
 ]);
 export type AuthorityRequirement = z.infer<typeof AuthorityRequirementSchema>;
