@@ -580,7 +580,39 @@ value matches `deferral.status`). Injections + observed failures (verbatim), eac
 `Tests 22 passed`, `pnpm test:fitness` → `Tests 175 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
 `pnpm knip` clean.
 
+**Extension (gate review round 5 - shape drift is a violation, not a skip):** `crossRefViolations`
+previously validated only values that already had the expected container shape: a scenario missing its
+`disposition` key entirely, an `exercises` value that was not a list, a disposition object lacking
+`per_firm` (or whose `per_firm` was a scalar, a list, or an empty map), and a fully dropped
+`canonical_request` section (it carries no pinned id, so the baseline alone never notices) each passed
+silently, carrying a possibly unvalidated reference past the fence. The detector now reports every
+unexpected shape with its offending path, and the companion feeds it each drift: missing disposition,
+scalar and missing exercises, per_firm renamed away / scalar / empty map, an unknown per_firm firm id
+and a non-state per_firm value, and dropped canonical_request/household sections. Injections + observed
+failures (verbatim), each reverted:
+```
+# scenario disposition key deleted (permanent-prohibition's `disposition: prohibited` line removed):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[permanent-prohibition].disposition -> expected a state_vocabulary id or a per_firm map, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# exercises flattened to a scalar (stale-evidence `exercises: [blocked]` -> `exercises: blocked`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[stale-evidence].exercises -> expected a list of state_vocabulary ids, got string
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# per_firm key renamed away (recent-bank-change-block `per_firm:` -> `firm_split:`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[recent-bank-change-block].disposition.per_firm -> expected a firm-id to state map, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# canonical_request section deleted whole (no pinned id in it, so the baseline alone never notices):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: canonical_request -> expected a section carrying a provenance label, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+```
+**Revert (round-5 extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 27 passed`, `pnpm test:fitness` → `Tests 180 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
 **Date:** 2026-07-26 (gate review round 2 - the D-034 scenario-matrix invariants fenced per charter #1;
 prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
-full-scope, two-directional id pinning, and in round 4 to structural id-family discovery and full
-cross-reference closure).
+full-scope, two-directional id pinning, in round 4 to structural id-family discovery and full
+cross-reference closure, and in round 5 to loud shape-drift reporting in the cross-reference detector).

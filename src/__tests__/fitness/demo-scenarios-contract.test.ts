@@ -27,7 +27,10 @@ import { REPO_ROOT } from "./_fence-utils";
  *      provenance_labels ids, and the deferral sections agree in full:
  *      deferral.deferred_elements to element ids in both directions
  *      (marked-implies-listed AND listed-implies-marked), with every element
- *      `deferral` value matching deferral.status.
+ *      `deferral` value matching deferral.status. Shape drift is a violation,
+ *      not a skip: a missing scenario disposition, a non-list `exercises`, a
+ *      malformed or empty `per_firm` map, and a dropped provenance-bearing
+ *      section are each reported with the offending path.
  * The detectors are pure functions over YAML text so the companion below can
  * feed them violating synthetic documents (charter #4).
  */
@@ -128,6 +131,9 @@ export interface ScenariosData {
 const idsOf = (rows: IdRow[] | undefined): string[] =>
   (rows ?? []).map((r) => (typeof r?.id === "string" ? r.id : "")).filter(Boolean);
 
+const shapeOf = (value: unknown): string =>
+  value === undefined ? "missing" : value === null ? "null" : Array.isArray(value) ? "a list" : typeof value;
+
 /** Every `id`-keyed value in the document, grouped by family = the key path of
  * its containing section (array indices elided). Discovery is structural, not a
  * hand-listed set of extraction paths, so an id in a section this fence has
@@ -193,7 +199,10 @@ export function baselineViolations(data: ScenariosData, pinned: Record<string, r
   return issues;
 }
 
-/** (c) Every cross-reference between sections resolves. */
+/** (c) Every cross-reference between sections resolves, and every container the
+ * references live in has the expected shape - a shape drift (missing
+ * disposition, non-list exercises, malformed/empty per_firm, dropped
+ * provenance-bearing section) is a reported violation, never a silent skip. */
 export function crossRefViolations(data: ScenariosData): string[] {
   const states = new Set(idsOf(data.state_vocabulary));
   const firms = new Set(idsOf(data.firms));
@@ -207,18 +216,26 @@ export function crossRefViolations(data: ScenariosData): string[] {
       for (const state of scenario.exercises) {
         if (!states.has(String(state))) issues.push(`scenarios[${sid}].exercises -> "${String(state)}" is not a state_vocabulary id`);
       }
+    } else {
+      issues.push(`scenarios[${sid}].exercises -> expected a list of state_vocabulary ids, got ${shapeOf(scenario.exercises)}`);
     }
     const disposition = scenario.disposition;
     if (typeof disposition === "string") {
       if (!states.has(disposition)) issues.push(`scenarios[${sid}].disposition -> "${disposition}" is not a state_vocabulary id`);
-    } else if (disposition && typeof disposition === "object" && "per_firm" in disposition) {
+    } else if (disposition && typeof disposition === "object" && !Array.isArray(disposition)) {
       const perFirm = (disposition as { per_firm?: unknown }).per_firm;
-      if (perFirm && typeof perFirm === "object") {
-        for (const [firmId, state] of Object.entries(perFirm)) {
+      if (perFirm && typeof perFirm === "object" && !Array.isArray(perFirm)) {
+        const entries = Object.entries(perFirm);
+        if (entries.length === 0) issues.push(`scenarios[${sid}].disposition.per_firm -> expected a firm-id to state map, got an empty map`);
+        for (const [firmId, state] of entries) {
           if (!firms.has(firmId)) issues.push(`scenarios[${sid}].disposition.per_firm -> "${firmId}" is not a firm id`);
           if (!states.has(String(state))) issues.push(`scenarios[${sid}].disposition.per_firm.${firmId} -> "${String(state)}" is not a state_vocabulary id`);
         }
+      } else {
+        issues.push(`scenarios[${sid}].disposition.per_firm -> expected a firm-id to state map, got ${shapeOf(perFirm)}`);
       }
+    } else {
+      issues.push(`scenarios[${sid}].disposition -> expected a state_vocabulary id or a per_firm map, got ${shapeOf(disposition)}`);
     }
   }
 
@@ -226,7 +243,9 @@ export function crossRefViolations(data: ScenariosData): string[] {
     ["canonical_request", data.canonical_request],
     ["household", data.household],
   ] as const) {
-    if (row && !labels.has(String(row.provenance))) {
+    if (!row || typeof row !== "object") {
+      issues.push(`${section} -> expected a section carrying a provenance label, got ${shapeOf(row)}`);
+    } else if (!labels.has(String(row.provenance))) {
       issues.push(`${section}.provenance -> "${String(row.provenance)}" is not a provenance_labels id`);
     }
   }
@@ -416,6 +435,85 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
         i.includes(`elements[execution-invocation].deferral -> "deferred-until-someday" does not match deferral.status "deferred-pending-sandbox"`),
       ),
     ).toBe(true);
+  });
+
+  it("flags a scenario whose disposition key is missing entirely instead of skipping it", () => {
+    const missing = parseData(realText);
+    const scenario = missing.scenarios?.find((s) => s.id === "safe-proceed");
+    if (scenario) delete scenario.disposition;
+    expect(
+      crossRefViolations(missing).some((i) =>
+        i.includes(`scenarios[safe-proceed].disposition -> expected a state_vocabulary id or a per_firm map, got missing`),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags exercises that is not a list (scalar or missing) instead of skipping it", () => {
+    const scalar = parseData(realText);
+    const drifted = scalar.scenarios?.find((s) => s.id === "stale-evidence");
+    if (drifted) drifted.exercises = "blocked";
+    expect(
+      crossRefViolations(scalar).some((i) => i.includes(`scenarios[stale-evidence].exercises -> expected a list of state_vocabulary ids, got string`)),
+    ).toBe(true);
+
+    const dropped = parseData(realText);
+    const gutted = dropped.scenarios?.find((s) => s.id === "stale-evidence");
+    if (gutted) delete gutted.exercises;
+    expect(
+      crossRefViolations(dropped).some((i) => i.includes(`scenarios[stale-evidence].exercises -> expected a list of state_vocabulary ids, got missing`)),
+    ).toBe(true);
+  });
+
+  it("flags a disposition object lacking per_firm, and a per_firm that is a scalar or an empty map", () => {
+    const lacking = parseData(realText);
+    const renamedKey = lacking.scenarios?.find((s) => s.id === "recent-bank-change-block");
+    if (renamedKey) renamedKey.disposition = { firm_split: { "firm-a": "proceed" } };
+    expect(
+      crossRefViolations(lacking).some((i) =>
+        i.includes(`scenarios[recent-bank-change-block].disposition.per_firm -> expected a firm-id to state map, got missing`),
+      ),
+    ).toBe(true);
+
+    const scalar = parseData(realText);
+    const flattened = scalar.scenarios?.find((s) => s.id === "recent-bank-change-block");
+    if (flattened) flattened.disposition = { per_firm: "proceed" };
+    expect(
+      crossRefViolations(scalar).some((i) =>
+        i.includes(`scenarios[recent-bank-change-block].disposition.per_firm -> expected a firm-id to state map, got string`),
+      ),
+    ).toBe(true);
+
+    const empty = parseData(realText);
+    const emptied = empty.scenarios?.find((s) => s.id === "recent-bank-change-block");
+    if (emptied) emptied.disposition = { per_firm: {} };
+    expect(
+      crossRefViolations(empty).some((i) =>
+        i.includes(`scenarios[recent-bank-change-block].disposition.per_firm -> expected a firm-id to state map, got an empty map`),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a per_firm entry with an unknown firm id or a non-state value", () => {
+    const unknownFirm = parseData(realText.replace("firm-a: proceed", "firm-c: proceed"));
+    expect(
+      crossRefViolations(unknownFirm).some((i) => i.includes(`scenarios[recent-bank-change-block].disposition.per_firm -> "firm-c" is not a firm id`)),
+    ).toBe(true);
+
+    const badState = parseData(realText.replace("firm-b: blocked", "firm-b: vetoed"));
+    expect(
+      crossRefViolations(badState).some((i) =>
+        i.includes(`scenarios[recent-bank-change-block].disposition.per_firm.firm-b -> "vetoed" is not a state_vocabulary id`),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a dropped provenance-bearing section (canonical_request, household) instead of skipping it", () => {
+    const dropped = parseData(realText);
+    delete dropped.canonical_request;
+    delete dropped.household;
+    const issues = crossRefViolations(dropped);
+    expect(issues.some((i) => i.includes(`canonical_request -> expected a section carrying a provenance label, got missing`))).toBe(true);
+    expect(issues.some((i) => i.includes(`household -> expected a section carrying a provenance label, got missing`))).toBe(true);
   });
 
   it("flags a gutted or empty document instead of passing vacuously", () => {
