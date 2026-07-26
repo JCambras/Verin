@@ -482,3 +482,137 @@ missing-invariant classes plus the honest-registry acceptance case.
 `summary: 2 active-pass · 0 active-fail · 28 not-yet-active (30 total)`, exit 0.
 
 **Date:** 2026-07-26 (v3 ratification "prompt 0", ADR-0023).
+
+### PF-025 · demo-scenarios-contract (inert data + stable ids + cross-refs) · `src/__tests__/fitness/demo-scenarios-contract.test.ts`
+**Invariant (charter #1, D-034):** `config/demo/scenarios.yaml` states its own invariants in prose - the
+STABILITY CONTRACT (every `id` stable: never renamed or reused, additions append) and the inert-data rule
+("NO executable content of any kind": plain YAML scalars/maps/lists, no tags) - and its sections
+cross-reference each other by id. The fence machine-enforces all three: (a) the file parses clean with NO
+YAML tags of any kind (custom or explicit-standard); (b) EVERY id family in the file - contract, firms,
+household, household.required_shape, deferral, scenarios, state_vocabulary, provenance_labels, elements,
+exactly the scope the STABILITY CONTRACT claims ("every `id` in this file") - is pinned against a
+two-directional inline baseline (`PINNED_IDS` - removals and renames fail; an id present in the file but
+absent from the baseline fails, so additions must append there in the same PR, review-visible, same
+ratchet pattern as charter-drift's `RATCHETED_ENFORCED_IDS`); (c) every cross-reference resolves: scenario dispositions,
+`per_firm` entries, and `exercises` to state-vocabulary/firm ids, element `reality_now`/`reality_at_phase1`
+to provenance-label ids, and `deferral.deferred_elements` to element ids in BOTH directions. The detectors
+are pure functions over YAML text; the companion feeds them violating documents (custom tag, explicit
+standard tag, removed/renamed/reused pinned id, a coordinated firm rename consistent across `firms` and
+`per_firm` keys, removed household required-shape id, renamed contract/household/deferral singleton ids,
+an id appended without a matching baseline append, dangling state/label/deferral references, a gutted
+`{}` document) and asserts each is caught, plus the positive appended-id-plus-baseline-append case, so it
+can pass neither vacuously nor by always-failing. Registered in `charter-map.json` as
+`demo-contract-as-data` (enforced, added to charter-drift's ratchet).
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# custom tag injected (`amount_usd: 75000` -> `amount_usd: !exec 75000`):
+  × enforces: the scenario matrix is inert - plain scalars/maps/lists, no tags of any kind
+    config/demo/scenarios.yaml :: Unresolved tag: !exec at line 32, column 15:
+    config/demo/scenarios.yaml :: line 32: tag "!exec" - plain YAML scalars/maps/lists only, no tags of any kind
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:207
+# pinned id renamed (`- id: dual-approval` -> `- id: dual-approvals`):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: scenarios: pinned id "dual-approval" is missing - ids are never renamed or removed; additions append
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:212
+# cross-reference dangled (delayed-nigo `exercises`: nigo -> rejected, the ObservedStatus value the
+# vocabulary deliberately excludes):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[delayed-nigo].exercises -> "rejected" is not a state_vocabulary id
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:217
+```
+**Revert:** restored `config/demo/scenarios.yaml` after each injection; fence file `Tests 13 passed`,
+`pnpm test:fitness` → `Tests 166 passed` (23 files), `pnpm typecheck` / `pnpm lint` / `pnpm knip` clean.
+YAML parsing uses the `yaml` devDependency (exact-pinned 2.9.0; devDependencies are knip-exempt).
+
+**Extension (gate review round 3 - captain ruling: the fence must enforce the STABILITY CONTRACT's full
+claim):** the baseline initially pinned only the four list families, leaving firms, household
+required-shape, and the contract/household/deferral singleton ids prose-only (a coordinated `firm-a`
+rename across `firms` and every `per_firm` key passed). `PINNED_IDS` now pins every id family and the
+baseline check is two-directional. Injections + observed failures (verbatim), each reverted:
+```
+# coordinated firm rename (firm-a -> firm-alpha in BOTH `firms` and every `per_firm` key -
+# internally consistent, so cross-refs alone would pass it):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: firms: pinned id "firm-a" is missing - ids are never renamed or removed; additions append
+    config/demo/scenarios.yaml :: firms: id "firm-alpha" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+# singleton renamed (deferral `id: salesforce-sandbox` -> `id: sf-sandbox`):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: deferral: pinned id "salesforce-sandbox" is missing - ids are never renamed or removed; additions append
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+# scenario `a-new-branch` appended WITHOUT appending it to PINNED_IDS (reverse direction):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: scenarios: id "a-new-branch" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+```
+**Revert (extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 17 passed`, `pnpm test:fitness` → `Tests 170 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
+**Extension (gate review round 4 - structural family discovery + full cross-reference closure):** the
+baseline previously extracted ids through nine hand-listed paths, so an id in a NEW section (e.g. a future
+`personas:` list) escaped both pinning directions despite the STABILITY CONTRACT's "every `id` in this
+file"; and two cross-references were unchecked: the top-level `canonical_request.provenance` /
+`household.provenance` labels, and the deferral agreement was only two-thirds enforced (a listed element
+whose `deferral:` marking was dropped, or a marking value disagreeing with `deferral.status`, passed).
+`collectIdFamilies` now discovers every `id`-keyed value structurally (grouped by key path, non-string ids
+kept via `String()` so they cannot slip past unreviewed), and `crossRefViolations` validates the top-level
+provenance fields and the deferral sections in full (marked-implies-listed, listed-implies-marked, marking
+value matches `deferral.status`). Injections + observed failures (verbatim), each reverted:
+```
+# NEW id-bearing section appended (`personas:` with `- id: avery-the-advisor`) - no extraction
+# path existed for it before, so the old fence passed it:
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: personas: id "avery-the-advisor" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:277
+# top-level provenance typo'd (household `provenance: synthetic-fixture` -> `synthetic-fixtures`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: household.provenance -> "synthetic-fixtures" is not a provenance_labels id
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:282
+# listed element's deferral marking dropped (`returned-status` kept in deferral.deferred_elements,
+# its `deferral: deferred-pending-sandbox` line deleted):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: deferral.deferred_elements lists "returned-status" but elements[returned-status] carries no deferral marking
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:282
+```
+**Revert (round-4 extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 22 passed`, `pnpm test:fitness` → `Tests 175 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
+**Extension (gate review round 5 - shape drift is a violation, not a skip):** `crossRefViolations`
+previously validated only values that already had the expected container shape: a scenario missing its
+`disposition` key entirely, an `exercises` value that was not a list, a disposition object lacking
+`per_firm` (or whose `per_firm` was a scalar, a list, or an empty map), and a fully dropped
+`canonical_request` section (it carries no pinned id, so the baseline alone never notices) each passed
+silently, carrying a possibly unvalidated reference past the fence. The detector now reports every
+unexpected shape with its offending path, and the companion feeds it each drift: missing disposition,
+scalar and missing exercises, per_firm renamed away / scalar / empty map, an unknown per_firm firm id
+and a non-state per_firm value, and dropped canonical_request/household sections. Injections + observed
+failures (verbatim), each reverted:
+```
+# scenario disposition key deleted (permanent-prohibition's `disposition: prohibited` line removed):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[permanent-prohibition].disposition -> expected a state_vocabulary id or a per_firm map, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# exercises flattened to a scalar (stale-evidence `exercises: [blocked]` -> `exercises: blocked`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[stale-evidence].exercises -> expected a list of state_vocabulary ids, got string
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# per_firm key renamed away (recent-bank-change-block `per_firm:` -> `firm_split:`):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[recent-bank-change-block].disposition.per_firm -> expected a firm-id to state map, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+# canonical_request section deleted whole (no pinned id in it, so the baseline alone never notices):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: canonical_request -> expected a section carrying a provenance label, got missing
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:301
+```
+**Revert (round-5 extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 27 passed`, `pnpm test:fitness` → `Tests 180 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
+**Date:** 2026-07-26 (gate review round 2 - the D-034 scenario-matrix invariants fenced per charter #1;
+prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
+full-scope, two-directional id pinning, in round 4 to structural id-family discovery and full
+cross-reference closure, and in round 5 to loud shape-drift reporting in the cross-reference detector).

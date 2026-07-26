@@ -17,6 +17,12 @@ the ADR-0028 gate is satisfied).
 
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.
 
+Demo work is governed by [`docs/demo-contract.md`](./docs/demo-contract.md) (the normative Phase 1
+investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
+and acceptance map [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). Salesforce is
+deferred-pending-sandbox (labeled fakes until then; Phase 1 never declared complete on fakes), and all
+demo UI derives its look from `docs/demo-design-language.md`, not v3's visual prescriptions.
+
 ## Non-negotiable working rules (from the charter)
 
 - **Fence every invariant in the same PR that states it**, and prove it adversarially (inject a
