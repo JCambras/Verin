@@ -279,7 +279,7 @@ the decision, it also appears as a blocker with its affordance in the `Dispositi
 Per the demo contract's evidence requirements: **no numeric "AI confidence" appears anywhere in
 the demo.** No percentages on interpretations, no score chips on recommendations, no gauges. The
 `Confidence` field in `RecordProvenance` is a closed vocabulary (`high | medium | low`) used by
-survivorship logic; it may appear inside the tap-to-verify provenance detail as a word, never as
+survivorship logic; it may appear inside the `TapToVerify` provenance detail (§6.6) as a word, never as
 a headline number, and never styled as a claim of model certainty.
 
 ### 6.5 Confidence as hierarchy (deterministic vs LLM-drafted)
@@ -299,6 +299,21 @@ hierarchy, not badges**.
   a sourced record; the LLM proposes wording and structure only (v3 non-negotiable 1, kept as a
   design rule: AI proposes, deterministic code disposes - and the typography makes the boundary
   visible).
+
+### 6.6 `TapToVerify` (to-be-built)
+
+The tap-to-verify-source affordance of PRODUCT-DIRECTION §7 - the provenance of one fact (where
+it came from, which record, how fresh, how confident), one tap from the value - and the
+disclosure that §6.4, §8.1, §8.3, §11.3, and §12.2 rely on as the `TapToVerify` detail.
+The interaction derives from the WhyBubble disclosure recipe in `why-bubble.tsx`: an underlined
+`text-sm text-slate-600` text trigger reading **"Verify source"**, wired with
+`aria-expanded`/`aria-controls`, opening an `animate-slide-down` panel in the `rounded-md border
+border-slate-200 bg-slate-50 p-3` recipe. The panel contains provenance metadata only - source
+system and record identifiers (`font-mono text-xs`), observed and retrieved times, the §6.4
+confidence word, and, under the §11.3 collapse mode, the fake-class taxonomy label. It stays
+distinct from `WhyBubble` (reasoning plus the regulation citation): PRODUCT-DIRECTION §7 keeps
+provenance-of-a-fact and reasoning-for-a-decision as separate doctrines, and the two disclosures
+never merge.
 
 ---
 
@@ -383,7 +398,7 @@ the underlying source proves. Submitted is not settled. Signed is not submitted.
 The register idiom (audit-trail table lineage, §1): uppercase `text-xs tracking-wide` headers on
 `bg-surface`, `divide-y` rows, one row per execution step - step name, target, `StatusBadge`,
 timestamp, and identifiers (`font-mono text-xs`: idempotency key, conflict key, reservation id)
-in a tap-to-verify detail rather than cluttering the row.
+in a `TapToVerify` detail (§6.6) rather than cluttering the row.
 
 ### 8.2 Status vocabulary
 
@@ -417,7 +432,7 @@ non-engineer trusts:
 - The suppressed row's body copy: **"Already submitted once - Verin did not send it again."**
   That sentence is the product claim; "idempotency" never appears in primary copy.
 - The mechanism stays inspectable for the technical viewer: the idempotency key in `font-mono
-  text-xs` inside the row's tap-to-verify detail, matching byte-for-byte across the original and
+  text-xs` inside the row's `TapToVerify` detail (§6.6), matching byte-for-byte across the original and
   suppressed rows - the visible proof they are the same instruction.
 - A duplicate-suppressed row is styled neutrally (slate), not as success and not as failure: it
   is a non-event, and calm styling says so.
@@ -525,7 +540,7 @@ mapped onto the repo's vocabulary:
 | Contract label | Repo vocabulary | Notes |
 |---|---|---|
 | Synthetic fixture | `source: "fixture"` (`SOURCE_SYSTEMS`) | Already renders as "Sample data · as of …" via `provenanceLabel` |
-| Real-derived fixture (anonymized history) | `fixture` + corpus provenance metadata | The corpus intake (v3 prompt 11) extends the vocabulary; until then the badge reads "Sample data (anonymized history)" |
+| Real-derived fixture (anonymized history) | `fixture` + corpus provenance metadata | The corpus intake (v3 prompt 11) extends the vocabulary; until then the interim string is the `DevProvenanceBadge` text for this row, in the badge's established lowercase style (§11.2): "sample data - anonymized history" - the `FreshValue` `provenanceLabel` output ("Sample data · as of …") is unchanged |
 | Fake adapter response | dev-only view-model class (not a `SourceSystem`) | Exists only while the real adapter is pending; carried by the typed view model |
 | Real Salesforce sandbox response | `source: "salesforce"` | |
 | User-entered demo input | `source: "user-input"` + demo `dataClass` | |
@@ -556,7 +571,7 @@ The visible development-only badge on every fake-backed element:
   #3 violation in spirit and fails review.
 - **Badges render inline by default, in every environment.** For final-presentation surfaces, a
   **badge-collapse mode (to-be-built)** may let a remaining fake-class badge collapse into the
-  value's tap-to-verify provenance detail instead of rendering inline, honoring demo contract
+  value's `TapToVerify` provenance detail (§6.6) instead of rendering inline, honoring demo contract
   §6 - provided the `FreshValue` source label (e.g. "Sample data · as of …") remains visible as
   always. That mode is an explicitly designed deliverable of the build work that lands it, and
   its trigger mechanism is decided in that work - it is never a silent default. `FreshValue`
@@ -603,8 +618,8 @@ Restrained motion is a token-level commitment (PRODUCT-DIRECTION §1.5). These f
 1. **Surface entry:** `animate-fade-in` (0.4s) on a surface's main container when it first
    appears - container-level only, once per navigation. v3's "evidence stagger" is rejected:
    **no per-row stagger choreography**; an evidence list fades in as one calm unit.
-2. **Disclosure:** `animate-slide-down` (0.25s) on WhyBubble panels and tap-to-verify details -
-   as already shipped in `why-bubble.tsx`.
+2. **Disclosure:** `animate-slide-down` (0.25s) on WhyBubble panels and `TapToVerify` details
+   (§6.6) - as already shipped in `why-bubble.tsx`.
 3. **Step completion:** `animate-check-pop` on a ProgressSteps or DecisionSpine dot at the moment
    a station transitions to done.
 4. **The invalidation moment:** exactly one `animate-fade-in` on the "what changed" block
@@ -635,11 +650,12 @@ budget (ADR-0012).
 | `StatusBadge` map additions (`proceed`, `blocked`, `prohibited`, `submitted`, `in-flight`, `settled`, `rejected`, `nigo`, `unknown`, `stuck`, `duplicate-suppressed`) | Existing `STATUS_STYLES` families in `ui.tsx` | Surfaces 4, 6-9 | §5.1, §8.2 |
 | `DispositionNotice` | Card recipe; audit-page amber panel; `Button` primary recipe as badge | Surface 4 | §5.2 |
 | `EvidenceRow` (+ conflict, missing variants) | `FreshValue`, `Metric`, EmptyState dashed idiom | Surface 3 | §6.1-6.3 |
+| `TapToVerify` | `WhyBubble` disclosure recipe (`why-bubble.tsx`): text trigger + `animate-slide-down` `bg-slate-50` panel; distinct from `WhyBubble` per PRODUCT-DIRECTION §7 | Surfaces 3, 7-9 (and the §11.3 collapse mode) | §6.6 |
 | `ApprovalStagePanel` | Card recipe, `ProgressSteps`, `StatusBadge`, `Field` hint idiom | Surface 6 | §7.2 |
 | `ExecutionTimeline` | Audit-page register idiom | Surfaces 7-9 | §8.1 |
 | `ComparisonColumns` | Grid layout; type scale; `WhyBubble` | Surface 10 | §10 |
 | `DevProvenanceBadge` | Watermark chip recipe (`metric.tsx`) + EmptyState dashed border | All fake-backed surfaces during build | §11.2 |
-| `DevProvenanceBadge` collapse mode | `DevProvenanceBadge` + the tap-to-verify provenance detail | Final-presentation surfaces (demo contract §6) | §11.3 |
+| `DevProvenanceBadge` collapse mode | `DevProvenanceBadge` + the `TapToVerify` provenance detail | Final-presentation surfaces (demo contract §6) | §11.3 |
 | Print stylesheet for the decision artifact | `globals.css` tokens; audit-register idiom; `brand.tsx` | Surface 12 | §9 |
 
 ---
