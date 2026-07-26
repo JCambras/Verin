@@ -13,10 +13,11 @@ import { REPO_ROOT } from "./_fence-utils";
  * other by id. This fence makes all three machine-enforced:
  *  (a) the file parses clean with NO tags of any kind (a custom/unresolved tag
  *      is the executable-content class this file must never gain);
- *  (b) every pinned id below is still present, and no id is duplicated -
- *      renames/removals fail the build, additions pass (append the new id here
- *      in the same PR, where review sees it - same ratchet pattern as
- *      charter-drift's RATCHETED_ENFORCED_IDS);
+ *  (b) EVERY id family in the file is pinned, two-directionally: each pinned id
+ *      below is still present (renames/removals fail the build), each id present
+ *      in the file is pinned below (an addition must append here in the same PR,
+ *      where review sees it - same ratchet pattern as charter-drift's
+ *      RATCHETED_ENFORCED_IDS), and no id is duplicated;
  *  (c) every cross-reference resolves: scenario dispositions and `exercises`
  *      to state_vocabulary ids, `per_firm` keys to firm ids, element
  *      reality_now/reality_at_phase1 to provenance_labels ids, and
@@ -26,10 +27,24 @@ import { REPO_ROOT } from "./_fence-utils";
  */
 const SCENARIOS_REL = "config/demo/scenarios.yaml";
 
-/** Stable ids shipped by D-034. Append-only: additions append here in the same
- * PR; removing or renaming an entry requires a captain-approved demo-contract
+/** Stable ids shipped by D-034 - every id family in scenarios.yaml, exactly the
+ * scope the STABILITY CONTRACT claims ("every `id` in this file"). Append-only:
+ * additions append here in the same PR (the reverse baseline check forces it);
+ * removing or renaming an entry requires a captain-approved demo-contract
  * change AND an edit here, where review sees it. */
 export const PINNED_IDS: Record<string, readonly string[]> = {
+  contract: ["verin-demo-contract"],
+  firms: ["firm-a", "firm-b"],
+  household: ["smiths"],
+  "household.required_shape": [
+    "accounts",
+    "planned-withdrawals",
+    "recent-bank-instruction-change",
+    "destination-restriction",
+    "pending-liquidity-activity",
+    "judgment-complexity",
+  ],
+  deferral: ["salesforce-sandbox"],
   scenarios: [
     "safe-proceed",
     "recent-bank-change-block",
@@ -93,16 +108,21 @@ interface ElementRow extends IdRow {
   deferral?: unknown;
 }
 export interface ScenariosData {
+  contract?: IdRow;
   firms?: IdRow[];
+  household?: IdRow & { required_shape?: IdRow[] };
   state_vocabulary?: IdRow[];
   scenarios?: ScenarioRow[];
   provenance_labels?: IdRow[];
   elements?: ElementRow[];
-  deferral?: { deferred_elements?: unknown };
+  deferral?: IdRow & { deferred_elements?: unknown };
 }
 
 const idsOf = (rows: IdRow[] | undefined): string[] =>
   (rows ?? []).map((r) => (typeof r?.id === "string" ? r.id : "")).filter(Boolean);
+
+const singletonIdOf = (row: IdRow | undefined): string[] =>
+  typeof row?.id === "string" ? [row.id] : [];
 
 /** (a) Inertness: parse issues and ANY tag (unresolved or explicit-standard) are violations. */
 export function inertnessViolations(text: string): string[] {
@@ -123,20 +143,31 @@ export function inertnessViolations(text: string): string[] {
   return issues;
 }
 
-/** (b) Stability contract: every pinned id present, no id reused within its set. */
+/** (b) Stability contract, two-directional: every pinned id present, every
+ * present id pinned, no id reused within its set. */
 export function baselineViolations(data: ScenariosData, pinned: Record<string, readonly string[]> = PINNED_IDS): string[] {
   const sets: Record<string, string[]> = {
+    contract: singletonIdOf(data.contract),
+    firms: idsOf(data.firms),
+    household: singletonIdOf(data.household),
+    "household.required_shape": idsOf(data.household?.required_shape),
+    deferral: singletonIdOf(data.deferral),
     scenarios: idsOf(data.scenarios),
     state_vocabulary: idsOf(data.state_vocabulary),
     provenance_labels: idsOf(data.provenance_labels),
     elements: idsOf(data.elements),
   };
   const issues: string[] = [];
-  for (const [setName, pinnedIds] of Object.entries(pinned)) {
+  for (const setName of new Set([...Object.keys(pinned), ...Object.keys(sets)])) {
+    const pinnedIds = pinned[setName] ?? [];
     const present = sets[setName] ?? [];
     const presentSet = new Set(present);
+    const pinnedSet = new Set(pinnedIds);
     for (const id of pinnedIds) {
       if (!presentSet.has(id)) issues.push(`${setName}: pinned id "${id}" is missing - ids are never renamed or removed; additions append`);
+    }
+    for (const id of presentSet) {
+      if (!pinnedSet.has(id)) issues.push(`${setName}: id "${id}" is not in PINNED_IDS - append it to the baseline in the same PR that adds it`);
     }
     for (const dup of new Set(present.filter((id, i) => present.indexOf(id) !== i))) {
       issues.push(`${setName}: id "${dup}" appears more than once - ids are never reused`);
@@ -246,10 +277,43 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     expect(baselineViolations(doubled).some((i) => i.includes(`id "approvals" appears more than once`))).toBe(true);
   });
 
-  it("accepts an appended NEW id (additions pass)", () => {
+  it("flags a coordinated firm rename (firms + per_firm keys changed together) that cross-refs alone would miss", () => {
+    const renamed = parseData(realText.replaceAll("firm-a", "firm-alpha"));
+    expect(crossRefViolations(renamed)).toEqual([]);
+    const issues = baselineViolations(renamed);
+    expect(issues.some((i) => i.includes(`firms: pinned id "firm-a" is missing`))).toBe(true);
+    expect(issues.some((i) => i.includes(`firms: id "firm-alpha" is not in PINNED_IDS`))).toBe(true);
+  });
+
+  it("flags a removed household required-shape id", () => {
+    const gutted = parseData(realText);
+    if (gutted.household) gutted.household.required_shape = gutted.household.required_shape?.filter((r) => r.id !== "destination-restriction");
+    expect(baselineViolations(gutted).some((i) => i.includes(`household.required_shape: pinned id "destination-restriction" is missing`))).toBe(true);
+  });
+
+  it("flags a renamed singleton id (contract, household, deferral)", () => {
+    const renamed = parseData(
+      realText
+        .replace("id: verin-demo-contract", "id: verin-demo-contract-v2")
+        .replace("id: smiths", "id: the-smiths")
+        .replace("id: salesforce-sandbox", "id: sf-sandbox"),
+    );
+    const issues = baselineViolations(renamed);
+    expect(issues.some((i) => i.includes(`contract: pinned id "verin-demo-contract" is missing`))).toBe(true);
+    expect(issues.some((i) => i.includes(`household: pinned id "smiths" is missing`))).toBe(true);
+    expect(issues.some((i) => i.includes(`deferral: pinned id "salesforce-sandbox" is missing`))).toBe(true);
+  });
+
+  it("flags an id added WITHOUT appending it to PINNED_IDS (reverse direction)", () => {
     const appended = parseData(realText);
     appended.scenarios = [...(appended.scenarios ?? []), { id: "a-new-branch", disposition: "proceed", exercises: ["proceed"] }];
-    expect(baselineViolations(appended)).toEqual([]);
+    expect(baselineViolations(appended).some((i) => i.includes(`scenarios: id "a-new-branch" is not in PINNED_IDS`))).toBe(true);
+  });
+
+  it("accepts an appended NEW id once the baseline is appended in the same PR (additions pass)", () => {
+    const appended = parseData(realText);
+    appended.scenarios = [...(appended.scenarios ?? []), { id: "a-new-branch", disposition: "proceed", exercises: ["proceed"] }];
+    expect(baselineViolations(appended, { ...PINNED_IDS, scenarios: [...(PINNED_IDS.scenarios ?? []), "a-new-branch"] })).toEqual([]);
     expect(crossRefViolations(appended)).toEqual([]);
   });
 

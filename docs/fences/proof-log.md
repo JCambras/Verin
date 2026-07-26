@@ -488,17 +488,21 @@ missing-invariant classes plus the honest-registry acceptance case.
 STABILITY CONTRACT (every `id` stable: never renamed or reused, additions append) and the inert-data rule
 ("NO executable content of any kind": plain YAML scalars/maps/lists, no tags) - and its sections
 cross-reference each other by id. The fence machine-enforces all three: (a) the file parses clean with NO
-YAML tags of any kind (custom or explicit-standard); (b) the four id sets (scenarios, state_vocabulary,
-provenance_labels, elements) are pinned against an append-only inline baseline (`PINNED_IDS` - removals
-and renames fail, additions pass after appending the id there, review-visible, same ratchet pattern as
-charter-drift's `RATCHETED_ENFORCED_IDS`); (c) every cross-reference resolves: scenario dispositions,
+YAML tags of any kind (custom or explicit-standard); (b) EVERY id family in the file - contract, firms,
+household, household.required_shape, deferral, scenarios, state_vocabulary, provenance_labels, elements,
+exactly the scope the STABILITY CONTRACT claims ("every `id` in this file") - is pinned against a
+two-directional inline baseline (`PINNED_IDS` - removals and renames fail; an id present in the file but
+absent from the baseline fails, so additions must append there in the same PR, review-visible, same
+ratchet pattern as charter-drift's `RATCHETED_ENFORCED_IDS`); (c) every cross-reference resolves: scenario dispositions,
 `per_firm` entries, and `exercises` to state-vocabulary/firm ids, element `reality_now`/`reality_at_phase1`
 to provenance-label ids, and `deferral.deferred_elements` to element ids in BOTH directions. The detectors
 are pure functions over YAML text; the companion feeds them violating documents (custom tag, explicit
-standard tag, removed/renamed/reused pinned id, dangling state/label/deferral references, a gutted `{}`
-document) and asserts each is caught, plus the positive appended-new-id case, so it can pass neither
-vacuously nor by always-failing. Registered in `charter-map.json` as `demo-contract-as-data` (enforced,
-added to charter-drift's ratchet).
+standard tag, removed/renamed/reused pinned id, a coordinated firm rename consistent across `firms` and
+`per_firm` keys, removed household required-shape id, renamed contract/household/deferral singleton ids,
+an id appended without a matching baseline append, dangling state/label/deferral references, a gutted
+`{}` document) and asserts each is caught, plus the positive appended-id-plus-baseline-append case, so it
+can pass neither vacuously nor by always-failing. Registered in `charter-map.json` as
+`demo-contract-as-data` (enforced, added to charter-drift's ratchet).
 
 **Injection + observed failure (verbatim), each reverted:**
 ```
@@ -521,5 +525,31 @@ added to charter-drift's ratchet).
 `pnpm test:fitness` → `Tests 166 passed` (23 files), `pnpm typecheck` / `pnpm lint` / `pnpm knip` clean.
 YAML parsing uses the `yaml` devDependency (exact-pinned 2.9.0; devDependencies are knip-exempt).
 
+**Extension (gate review round 3 - captain ruling: the fence must enforce the STABILITY CONTRACT's full
+claim):** the baseline initially pinned only the four list families, leaving firms, household
+required-shape, and the contract/household/deferral singleton ids prose-only (a coordinated `firm-a`
+rename across `firms` and every `per_firm` key passed). `PINNED_IDS` now pins every id family and the
+baseline check is two-directional. Injections + observed failures (verbatim), each reverted:
+```
+# coordinated firm rename (firm-a -> firm-alpha in BOTH `firms` and every `per_firm` key -
+# internally consistent, so cross-refs alone would pass it):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: firms: pinned id "firm-a" is missing - ids are never renamed or removed; additions append
+    config/demo/scenarios.yaml :: firms: id "firm-alpha" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+# singleton renamed (deferral `id: salesforce-sandbox` -> `id: sf-sandbox`):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: deferral: pinned id "salesforce-sandbox" is missing - ids are never renamed or removed; additions append
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+# scenario `a-new-branch` appended WITHOUT appending it to PINNED_IDS (reverse direction):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: scenarios: id "a-new-branch" is not in PINNED_IDS - append it to the baseline in the same PR that adds it
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:243
+```
+**Revert (extension):** restored `config/demo/scenarios.yaml` after each injection; fence file
+`Tests 17 passed`, `pnpm test:fitness` → `Tests 170 passed` (23 files), `pnpm typecheck` / `pnpm lint` /
+`pnpm knip` clean.
+
 **Date:** 2026-07-26 (gate review round 2 - the D-034 scenario-matrix invariants fenced per charter #1;
-prose-only invariants are on the charter's do-not-port list).
+prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
+full-scope, two-directional id pinning).
