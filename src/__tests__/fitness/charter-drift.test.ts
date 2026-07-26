@@ -62,6 +62,7 @@ const RATCHETED_ENFORCED_IDS = [
   "dependency-rule",
   "v3-direction-ratified",
   "v3-invariants-phase-gated",
+  "demo-contract-as-data",
 ];
 
 function blockingCiText(): string {

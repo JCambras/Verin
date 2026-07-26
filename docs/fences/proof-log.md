@@ -482,3 +482,44 @@ missing-invariant classes plus the honest-registry acceptance case.
 `summary: 2 active-pass · 0 active-fail · 28 not-yet-active (30 total)`, exit 0.
 
 **Date:** 2026-07-26 (v3 ratification "prompt 0", ADR-0023).
+
+### PF-025 · demo-scenarios-contract (inert data + stable ids + cross-refs) · `src/__tests__/fitness/demo-scenarios-contract.test.ts`
+**Invariant (charter #1, D-034):** `config/demo/scenarios.yaml` states its own invariants in prose - the
+STABILITY CONTRACT (every `id` stable: never renamed or reused, additions append) and the inert-data rule
+("NO executable content of any kind": plain YAML scalars/maps/lists, no tags) - and its sections
+cross-reference each other by id. The fence machine-enforces all three: (a) the file parses clean with NO
+YAML tags of any kind (custom or explicit-standard); (b) the four id sets (scenarios, state_vocabulary,
+provenance_labels, elements) are pinned against an append-only inline baseline (`PINNED_IDS` - removals
+and renames fail, additions pass after appending the id there, review-visible, same ratchet pattern as
+charter-drift's `RATCHETED_ENFORCED_IDS`); (c) every cross-reference resolves: scenario dispositions,
+`per_firm` entries, and `exercises` to state-vocabulary/firm ids, element `reality_now`/`reality_at_phase1`
+to provenance-label ids, and `deferral.deferred_elements` to element ids in BOTH directions. The detectors
+are pure functions over YAML text; the companion feeds them violating documents (custom tag, explicit
+standard tag, removed/renamed/reused pinned id, dangling state/label/deferral references, a gutted `{}`
+document) and asserts each is caught, plus the positive appended-new-id case, so it can pass neither
+vacuously nor by always-failing. Registered in `charter-map.json` as `demo-contract-as-data` (enforced,
+added to charter-drift's ratchet).
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# custom tag injected (`amount_usd: 75000` -> `amount_usd: !exec 75000`):
+  × enforces: the scenario matrix is inert - plain scalars/maps/lists, no tags of any kind
+    config/demo/scenarios.yaml :: Unresolved tag: !exec at line 32, column 15:
+    config/demo/scenarios.yaml :: line 32: tag "!exec" - plain YAML scalars/maps/lists only, no tags of any kind
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:207
+# pinned id renamed (`- id: dual-approval` -> `- id: dual-approvals`):
+  × enforces: every pinned stable id is present and none is reused (append-only)
+    config/demo/scenarios.yaml :: scenarios: pinned id "dual-approval" is missing - ids are never renamed or removed; additions append
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:212
+# cross-reference dangled (delayed-nigo `exercises`: nigo -> rejected, the ObservedStatus value the
+# vocabulary deliberately excludes):
+  × enforces: every cross-reference between sections resolves
+    config/demo/scenarios.yaml :: scenarios[delayed-nigo].exercises -> "rejected" is not a state_vocabulary id
+    ❯ src/__tests__/fitness/demo-scenarios-contract.test.ts:217
+```
+**Revert:** restored `config/demo/scenarios.yaml` after each injection; fence file `Tests 13 passed`,
+`pnpm test:fitness` → `Tests 166 passed` (23 files), `pnpm typecheck` / `pnpm lint` / `pnpm knip` clean.
+YAML parsing uses the `yaml` devDependency (exact-pinned 2.9.0; devDependencies are knip-exempt).
+
+**Date:** 2026-07-26 (gate review round 2 - the D-034 scenario-matrix invariants fenced per charter #1;
+prose-only invariants are on the charter's do-not-port list).

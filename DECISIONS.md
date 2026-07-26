@@ -364,7 +364,13 @@ completion rules) is committed as `docs/demo-contract.md` with exactly two integ
 annotations (both rulings dated 2026-07-26), plus its machine-usable companions
 `config/demo/scenarios.yaml` (scenario matrix, state vocabulary, firm parameter sets, per-element
 simulated-vs-real marking) and `docs/demo-contract-checklist.md` (timeline moment -> surface ->
-visible proof -> LedgerEntry artifact). Docs + inert config data only; no src/ changes.
+visible proof -> LedgerEntry artifact). Docs + inert config data, shipped with the fence charter #1
+requires for the invariants the data states: `src/__tests__/fitness/demo-scenarios-contract.test.ts`
+(registered in `charter-map.json` as `demo-contract-as-data`, proof PF-025) build-enforces the
+scenarios.yaml stability contract (append-only stable ids, never renamed/reused), the inert-data
+rule (plain YAML scalars/maps/lists only, no tags), and every internal cross-reference
+(dispositions/exercises -> state vocabulary, element reality labels -> provenance taxonomy,
+deferred elements -> elements, both directions). No product code.
 - **Salesforce deferral.** Everything requiring the REAL managed-Salesforce invocation is marked
   `[deferred-pending-sandbox]`; un-defer trigger = sandbox access granted. All other elements run on
   labeled fake adapters now. §8 stays honestly gated: the demo may run end to end on labeled fakes

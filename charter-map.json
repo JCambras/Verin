@@ -400,6 +400,22 @@
           "ref": "v3-invariants"
         }
       ]
+    },
+    {
+      "id": "demo-contract-as-data",
+      "title": "Demo scenario matrix stays inert (no executable YAML), id-stable (append-only), and internally consistent (D-034)",
+      "status": "enforced",
+      "phase": "v3-p1",
+      "mechanisms": [
+        {
+          "type": "config",
+          "ref": "config/demo/scenarios.yaml"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-scenarios-contract.test.ts"
+        }
+      ]
     }
   ]
 }
