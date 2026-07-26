@@ -112,27 +112,45 @@
       "group": "decision-core",
       "gate": "D",
       "name": "A proceed decision cannot exist without authority and an execution plan",
-      "status": "not-yet-active",
-      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5) making the illegal state unrepresentable; schema tests at prompts 5 and 17",
-      "mechanisms": []
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
+        }
+      ],
+      "notes": "Structural since prompt 5 (ADR-0029): ProceedDecision is a strict schema REQUIRING authority + executionPlan (src/contracts/decision-core/decision.ts); the fence proves the missing/empty variants are parse errors. Prompt 17 adds property tests over the evaluator."
     },
     {
       "id": 8,
       "group": "decision-core",
       "gate": "D",
       "name": "A blocked decision cannot carry authority or an execution plan",
-      "status": "not-yet-active",
-      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5); property tests at prompt 17",
-      "mechanisms": []
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
+        }
+      ],
+      "notes": "Structural since prompt 5 (ADR-0029): BlockedDecision is a strict schema with no authority/plan keys - a smuggled key is a parse error. Prompt 17 adds property tests over the evaluator."
     },
     {
       "id": 9,
       "group": "decision-core",
       "gate": "D",
       "name": "A prohibited decision cannot carry a resolving condition, authority, or execution plan",
-      "status": "not-yet-active",
-      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5); property tests at prompt 17",
-      "mechanisms": []
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
+        }
+      ],
+      "notes": "Structural since prompt 5 (ADR-0029): ProhibitedDecision/Prohibition are strict schemas with no authority, plan, or resolving-evidence channel, and a prohibited DecisionRecord admits no revaluation conditions. Prompt 17 adds property tests over the evaluator."
     },
     {
       "id": 10,

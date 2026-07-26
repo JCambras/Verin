@@ -46,7 +46,10 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `app/` may import anything; `contracts/` imports nothing project-local. Enforced at edit-time by ESLint
 (`eslint.config.mjs`) and authoritatively by the fitness fences in `src/__tests__/fitness/`.
 
-- `src/contracts/` — dependency-free types + pure functions (`Result<T,E>`, `AppError`, roles).
+- `src/contracts/` - types + pure functions, no project-local imports from outer layers
+  (`Result<T,E>`, `AppError`, roles) plus the v3 decision-core Zod contracts
+  (`contracts/decision-core/`, ADR-0029; zod is the layer's ONLY permitted external import - a
+  second one needs its own ADR).
 - `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine + flow definitions.
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).

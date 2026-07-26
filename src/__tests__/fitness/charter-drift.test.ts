@@ -64,6 +64,7 @@ const RATCHETED_ENFORCED_IDS = [
   "v3-invariants-phase-gated",
   "demo-contract-as-data",
   "golden-cases-truth-set",
+  "decision-core-type-system",
 ];
 
 function blockingCiText(): string {
