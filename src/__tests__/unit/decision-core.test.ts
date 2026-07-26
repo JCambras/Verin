@@ -164,11 +164,15 @@ describe("vocabulary locks - aligned with what is on main", () => {
 });
 
 describe("temporal + integrity primitives", () => {
-  it("Timestamp admits ONLY canonical UTC (Z) instants - the store's byte-exact ISO discipline", () => {
+  it("Timestamp admits ONLY the toISOString() byte form - the store's byte-exact ISO discipline", () => {
     expect(TimestampSchema.safeParse(timestamp).success).toBe(true);
     expect(TimestampSchema.safeParse("2026-07-26T09:30:00-04:00").success).toBe(false);
     expect(TimestampSchema.safeParse("2026-07-26T09:30:00").success).toBe(false);
     expect(TimestampSchema.safeParse("2026-07-26").success).toBe(false);
+    expect(TimestampSchema.safeParse("2026-07-26T13:30Z").success).toBe(false);
+    expect(TimestampSchema.safeParse("2026-07-26T13:30:00Z").success).toBe(false);
+    expect(TimestampSchema.safeParse("2026-07-26T13:30:00.5Z").success).toBe(false);
+    expect(TimestampSchema.safeParse("2026-07-26T13:30:00.0000Z").success).toBe(false);
   });
 
   it("Hash admits only sha256 lowercase hex", () => {
