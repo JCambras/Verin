@@ -757,3 +757,37 @@ and record agree under approval-invalidation at Firm B) and extracts the shared
 execution-timeline row mapper into `surfaces/shared.tsx` - neither changes any fence rule.
 
 **Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision key nm-review-invalidation-s6).
+
+---
+
+### PF-027 · decision-core illegal-states (v3 invariants 7-9, prompt 5) · `src/__tests__/fitness/decision-core-illegal-states.test.ts`
+**Invariant (charter #1; v3 §5; ADR-0029, D-036):** the canonical type system makes the decision-core
+distinctions structural - a proceed decision REQUIRES an authority requirement and a non-empty
+execution plan (inv 7); a blocked decision cannot carry authority or a plan and its blockers must be
+genuinely resolvable (inv 8); a prohibited decision carries no resolving condition, authority, or plan,
+whether smuggled into the Prohibition or via record-level revaluation conditions (inv 9); disposition
+and authority never collapse into one plane. Every rejection is a Zod strict-schema PARSE failure over
+`src/contracts/decision-core/` - reviewer discipline is not a mechanism. The registry
+(`v3-invariants.json`) maps invariants 7-9 to this fence; the runner (`pnpm v3:invariants`) executes it.
+**Companion:** the legal counterpart of every rejection parses (a reject-everything schema cannot pass),
+including all three dispositions on a full DecisionRecord and a NON-prohibited record carrying
+revaluation conditions.
+
+**Injected violations (each run live, watched fail, reverted):**
+```
+# 1 - silent weakening: BlockedDecisionSchema z.strictObject -> z.object (unknown keys stripped, not rejected):
+  × enforces: invariant 8 - blocked cannot carry authority or an execution plan > rejects authority on a blocked result
+    AssertionError: expected rejection naming "authority": expected true to be false
+    ❯ expectRejected src/__tests__/fitness/decision-core-illegal-states.test.ts:80:73
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:107:7
+  × ... > rejects an execution plan on a blocked result
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:110:7
+# 2 - inv-7 hole: ProceedDecisionSchema.executionPlan made .optional():
+  × enforces: invariant 7 - proceed requires authority and an execution plan > rejects proceed without an execution plan
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:80:73
+```
+**Revert:** both injections restored; fence file `Tests 18 passed`. The rejection assertions demand the
+error name the offending path/key, so a schema that fails for an unrelated reason cannot green them.
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 5 - the canonical core type system; invariants 7-9
+flipped ACTIVE in `v3-invariants.json`, ratchet extended to [2, 5, 7, 8, 9]).

@@ -49,7 +49,7 @@ const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedu
 // The RATCHET (e): every invariant id that has shipped as 'active'. Flipping one
 // back to 'not-yet-active' would un-enforce it silently; removal needs an ADR
 // AND an edit here, where review sees it.
-export const ACTIVE_RATCHET = [2, 5];
+export const ACTIVE_RATCHET = [2, 5, 7, 8, 9];
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
 export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciText: string }): string[] {
