@@ -115,17 +115,30 @@ body {
  * the DecisionSpine, and every interactive control disappear; rows and cards stay
  * unbroken across pages; the running header/footer carry the decision id and - for
  * demonstration-derived artifacts - the ADR-0022 watermark on EVERY page, so no
- * single cropped page can pass as a real record. Tokens only; no new values.
+ * single cropped page can pass as a real record. The record rides in a .print-doc
+ * table because Chromium repeats thead/tfoot on every printed page AND reserves
+ * their space, so the running strips can never overlap page content (position:fixed
+ * strips cannot reserve per-page room). On screen the table wrapper is layout-inert
+ * (display: contents) and the running rows stay hidden. Tokens only; no new values.
  */
 .print-running { display: none; }
+.print-doc,
+.print-doc > tbody,
+.print-doc > tbody > tr,
+.print-doc > tbody > tr > td { display: contents; }
+.print-doc > thead,
+.print-doc > tfoot { display: none; }
 @media print {
   nav, button, .print-hide { display: none !important; }
   .print-avoid-break { break-inside: avoid; }
+  .print-doc { display: table; width: 100%; border-collapse: collapse; }
+  .print-doc > thead { display: table-header-group; }
+  .print-doc > tfoot { display: table-footer-group; }
+  .print-doc > tbody { display: table-row-group; }
+  .print-doc > thead > tr, .print-doc > tbody > tr, .print-doc > tfoot > tr { display: table-row; }
+  .print-doc > thead > tr > td, .print-doc > tbody > tr > td, .print-doc > tfoot > tr > td { display: table-cell; }
   .print-running {
     display: flex;
-    position: fixed;
-    left: 0;
-    right: 0;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.25rem 1rem;
@@ -133,6 +146,4 @@ body {
     color: var(--muted-foreground);
     background: var(--background);
   }
-  .print-running-top { top: 0; }
-  .print-running-bottom { bottom: 0; }
 }
