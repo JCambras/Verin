@@ -14,11 +14,14 @@ reduced-motion kill-switch, no gaudy AI sparkle. This document translates v3's U
 (the Decision Spine, proceed/blocked/prohibited, the approval-invalidation moment) into that
 established language. It never imports v3's visual prescriptions, and it never forks the token
 system.
-**External references:** citations to the "demo contract" (its §3, §4, §6) resolve to
-`docs/demo-contract.md`, landing on branch `fm/verin-contract-j5` (currently in validation);
-citations to "v3" (the architecture and prompt sequence - v3 §10.2, prompts 3, 11, 29) resolve to
-`docs/v3/`, landing on branch `fm/verin-ratify-x2`. Neither document is copied into this branch;
-once those branches merge, these citations become ordinary repo-relative references.
+**External references:** citations to "v3" (the architecture and prompt sequence - v3 §10.2,
+prompts 3, 11, 29) resolve to the ratified in-repo copies under [`docs/v3/`](./v3/):
+[`verin-architecture-v3.md`](./v3/verin-architecture-v3.md) and
+[`verin-prompt-sequence-v3.md`](./v3/verin-prompt-sequence-v3.md). Citations to the "demo
+contract" (its §3, §4, §6) resolve to `docs/demo-contract.md`, landing on branch
+`fm/verin-contract-j5` (currently in validation); until it merges,
+[`docs/v3/verin-demo-contract-v1.md`](./v3/verin-demo-contract-v1.md) is the in-repo source it
+derives from.
 
 ---
 
