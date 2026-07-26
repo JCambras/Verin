@@ -7,6 +7,20 @@ operating and evidenced over time, not bolted on), SEC-examiner-ready, enterpris
 and scalable without a rewrite. Every choice below serves that bar. Where scale or compliance work is
 deferred, it is deferred EXPLICITLY - named in an ADR with the trigger that un-defers it - never silently.
 
+PRODUCT FRAMING - AMENDED BY ADR-0023 (v3 ratification, 2026-07-26): Verin is the GOVERNED DECISION AND
+EXECUTION LAYER for RIA operations. It sits above CRM, meeting tools, and custodians: those systems
+supply evidence, provide staff surfaces, and perform actions; Verin determines the governed action,
+explains it, routes authority, coordinates execution, and records what was proven. The ratified
+architecture is committed verbatim at docs/v3/ (SHA-256-pinned by the arch-version fence); its §3
+non-negotiables and §17 THIRTY PHASE-GATED INVARIANTS are adopted as commitments registered in
+v3-invariants.json and reported three-state (active-pass / active-fail / not-yet-active) by the blocking
+v3-invariants CI gate - never fake green. The sixteen non-negotiables below stand UNCHANGED; the v3
+invariants extend them into the decision core. Deviations and deferrals from v3 are recorded by ADR:
+0024 (Salesforce deferred; un-defer trigger = sandbox access granted), 0025 (money movement is the
+Phase 1 vertical), 0026 (stack: PostgreSQL, Next.js, ts-morph fences stay; FirmId ≡ org_id), 0027
+(Wave 0 labeled fakes - see the #5 extension below), 0028 (demo design language: the established Verin
+design system is normative).
+
 REFERENCE MATERIAL (all read-only; study before writing any code):
 - /Users/joncambras/github/min-demo - "Meridian", the frozen prototype. Study: the design system
   (frontend/src/app/globals.css - Geist + OKLCH slate tokens), the micro-component library
@@ -79,6 +93,13 @@ NON-NEGOTIABLES - each ships as a machine-enforced rule from commit #1, never pr
    do not scaffold it now. No mock theater: critical-path tests exercise the real engine, and no test
    may pass solely because its mock always succeeds. Enforce mechanically: a dead-export/dead-code
    check (knip or ts-prune) runs in CI and fails the build on unreferenced exports outside contracts/.
+   EXTENSION (ADR-0027): a Wave 0 walking-skeleton demo surface backed by in-memory fakes is
+   charter-legal ONLY when every fake is a typed implementation of a real port contract (later held to
+   the same conformance suite as the real adapter), every fake-backed value carries an internal
+   provenance label per the demo contract (docs/v3/verin-demo-contract-v1.md §6) removable only when
+   the corresponding real path lands, the screens are reachable in the same PR, and the work is never
+   declared done on fakes (v3 orchestrator rule 6). This extends the no-mock-theater rule; it never
+   weakens it.
 6. HUMAN-IN-THE-LOOP IS IN THE CORE CONTRACT. FlowStep supports suspend / await-external-input /
    resume BEFORE any flow is authored. ADR first. The walking skeleton must prove it end-to-end.
 7. MULTI-TENANCY AND CONFIG HYGIENE FROM DAY ONE. org_id on every query; no global custodian switch;
@@ -137,6 +158,12 @@ SYSTEM-OF-RECORD STRATEGY (DECIDED - do not reopen):
 - Provenance: house-CRM records carry source=verin-crm, and survivorship rules must anticipate a future
   second source (Salesforce, CSV import) so connecting one never corrupts the golden record. Add the
   house-CRM -> SF sync/import path as an item on the scale-ladder ADR with its trigger.
+- AMENDMENT (ADR-0024, captain directive 2026-07-26): the ratified v3 architecture requires a REAL
+  Salesforce sandbox execution path for Phase 1 COMPLETION (docs/v3, prompt 27), but sandbox access is
+  not yet available. The rule above stands: ZERO SF adapter code now; in-memory fakes behind the three
+  v3 ports (EvidenceSource / ExecutionTarget / StatusSource) carry every wave. UN-DEFER TRIGGER:
+  Salesforce sandbox access granted. Phase 1 is NEVER declared complete on fakes (v3 invariant 28 stays
+  not-yet-active until the real adapter lands and passes the shared conformance suite).
 
 DO NOT PORT (these are the diseases; porting them fails the mission):
 - The demo shadow-world pattern (client-side parallel fake state pretending to be the product).

@@ -307,3 +307,36 @@ PGlite: renewal extends, rotation changes the id, cleanup deletes only long-dead
 proof PF-022, and an end-to-end HTTP verification (cookie rotated + session survived past the original hard
 expiry at a 2-min TTL). **Revert path:** drop `resolveAndRenewSession`/`renewSession`/`deleteDeadSessions`
 and point `requirePrincipal` back at `resolveSession`; the v2 index is additive and harmless if left.
+
+### D-031 · 2026-07-26 · captain-decision · v3 architecture RATIFIED; Salesforce deferred; money movement Phase 1; established design language
+Four rulings from the captain's v3 ratification (recorded in `docs/v3/marriage-map.md`, implemented by
+ADRs 0023-0028): (1) the v3 direction - Verin as the governed decision and execution layer, the decision
+spine, and the 30 §17 invariants as phase-gated commitments - is adopted INTO the charter machinery
+(ADR-0023; one constitution, never two). (2) Salesforce directive (2026-07-26): "Salesforce MCP is going
+to have to wait, let's do everything else we can without that" - prompts 27/28's real path are DEFERRED,
+un-defer trigger = sandbox access granted; in-memory fakes carry every wave; Phase 1 is never declared
+complete on fakes (ADR-0024). (3) Money movement is the Phase 1 vertical, superseding read-flows-first
+Wave 1 (ADR-0025). (4) Design directive (2026-07-26): the ESTABLISHED Verin design system is normative
+for all demo UI; v3's visual prescriptions rejected; v3's UX semantics re-expressed via a
+docs/demo-design-language.md authored from the existing presentation tier (ADR-0028). Stack deviations
+from v3 §18 (keep Postgres/D-001, Next.js, ts-morph fences; FirmId ≡ org_id) recorded in ADR-0026;
+Wave 0 labeled-fakes reconciliation with charter #5 in ADR-0027. The queued p2-p7 demo chain is
+superseded by the re-baselined 30-prompt sequence (marriage-map §6).
+**Revert path:** captain re-ruling only; each ADR names its own Revisit When triggers.
+
+### D-032 · 2026-07-26 · reversible · v3 invariant registry as a SIBLING of charter-map.json; runner executes fences rather than trusting stored status
+Mechanics of the ratification PR ("prompt 0"): (a) the 30 invariants live in `v3-invariants.json`, a
+sibling registry, NOT as 30 new charter-map entries - charter entries are all-active and ratcheted,
+v3 invariants are phase-gated with activation states; the charter-drift fence still sees the new fences
+via two new operatingModel entries (`v3-direction-ratified`, `v3-invariants-phase-gated`), both added to
+its ratchet list. (b) HONESTY RULE: the registry stores ONLY `active`/`not-yet-active`; pass/fail is
+computed by `scripts/v3-invariants.ts` (CI job `v3-invariants`), which RUNS each active invariant's
+mapped fitness fences via vitest and fails on active-fail - a stored PASS would be the false-pass class
+charter #4 exists to kill. Fenced by `v3-invariants.test.ts` (registry integrity: 30 present,
+activation-only statuses, active ⇒ runnable mechanism, not-yet-active ⇒ named trigger, activation
+ratchet [2, 5]). (c) Every ratified doc under docs/v3/ is SHA-256-pinned in the registry, verified by the
+`arch-version` fence AND re-verified by the runner (prompt 4's architecture-checksum idea). Active today:
+invariant 2 (tenant scoping → org-id-required fence) and invariant 5 (append-only ledger →
+audited-write-required fence + audit_log triggers + audit-chain-verify gate), per marriage-map §2.
+**Revert path:** delete the registry + runner + two fences + CI job + charter-map entries and the two
+ratchet ids; the ratified docs and ADRs stand independently.

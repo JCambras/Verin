@@ -1,0 +1,329 @@
+{
+  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
+  "architectureVersion": "v3",
+  "documents": [
+    {
+      "path": "docs/v3/verin-architecture-v3.md",
+      "sha256": "dc4bf69bcc7582c045d0fa876205788252ca73f034063ea98253127489ce4f6b"
+    },
+    {
+      "path": "docs/v3/verin-prompt-sequence-v3.md",
+      "sha256": "b26ec3809cabf71dadc7f9a83202f6a7ff81fb0460220874f3bcdbd09c42ec4a"
+    },
+    {
+      "path": "docs/v3/verin-demo-contract-v1.md",
+      "sha256": "fbc210b1b7cfc8248f64f38e217eac70967fedcf9fcd94906b20d66d81ffbc7e"
+    },
+    {
+      "path": "docs/v3/verin-core-contracts.ts",
+      "sha256": "fa1f7d8bee6b9f7153c1a6ee2c1f3355592bf5d47f21b0836371254334569341"
+    },
+    {
+      "path": "docs/v3/marriage-map.md",
+      "sha256": "1933462608fb73259ed90ce7597530bcb91f85377d321724481f60b78c864350"
+    }
+  ],
+  "gates": {
+    "A": "Foundation invariants 1-5 are active and green (Wave A, prompts 4-7)",
+    "D": "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green (Wave D, prompts 16-19)",
+    "E": "A natural-language draft becomes simulated and approved structured policy; policy invariants 14-17 green (Wave E, prompts 20-22)",
+    "F": "Concurrent, repeated, failed, and delayed execution paths are safe and recorded; approval/execution invariants 18-25 green against fakes (Wave F, prompts 23-26)",
+    "G/H": "The full journey uses real Salesforce invocation and honest returned status; demo invariants 26-30 green (Waves G-H, prompts 27-29; Phase 1 completion). Prompt 27 is DEFERRED pending sandbox access (ADR-0024)"
+  },
+  "invariants": [
+    {
+      "id": 1,
+      "group": "foundation",
+      "gate": "A",
+      "name": "No PII-bearing type is reachable from llm/",
+      "status": "not-yet-active",
+      "activatesWhen": "the llm/ surface and the Tokenized<T> scrubber-only factory land (Wave A prompt 6); the fence ships in that PR (import-reachability + factory-construction rule)",
+      "mechanisms": [],
+      "notes": "Substrate today: contracts/pii.ts + scrub.ts + no-pii-in-audit-store fence + pino redaction (charter ADR-0006); the LLM surface is deliberately absent."
+    },
+    {
+      "id": 2,
+      "group": "foundation",
+      "gate": "A",
+      "name": "Every persisted record and repository operation is tenant-scoped",
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/org-id-required.test.ts"
+        }
+      ],
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Domain contracts brand it FirmId when they land (prompt 5)."
+    },
+    {
+      "id": 3,
+      "group": "foundation",
+      "gate": "A",
+      "name": "No core module, directory, or evaluator branch is named for a decision domain",
+      "status": "not-yet-active",
+      "activatesWhen": "the decision-core subsystems are scaffolded inside the four layers (Wave A; ADR-0026/marriage-map C6); the naming fence ships with the first decision-core module. PRE-CONDITION: the ADR-0010 account-opening flow definition migrates to config/domains/ (Wave B prompt 10, marriage-map C10) before this can go active-green",
+      "mechanisms": []
+    },
+    {
+      "id": 4,
+      "group": "foundation",
+      "gate": "A",
+      "name": "Import boundaries match v3 §16",
+      "status": "not-yet-active",
+      "activatesWhen": "the §16 module subsystems exist; each v3 dependency rule (decision/ never imports llm/, no module imports config/, ...) lands as a ts-morph fence in the wave that creates its subject (ADR-0026)",
+      "mechanisms": [],
+      "notes": "Substrate today: the four-layer dependency rule is already fenced (src/__tests__/fitness/dependency-rule.test.ts); §16 modules will live INSIDE those layers."
+    },
+    {
+      "id": 5,
+      "group": "foundation",
+      "gate": "A",
+      "name": "Ledger records are append-only",
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/audited-write-required.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "audit-chain-verify"
+        },
+        {
+          "type": "file",
+          "ref": "src/infrastructure/store/migrations.ts"
+        }
+      ],
+      "notes": "The current ledger substrate is the hash-chained audit_log: BEFORE UPDATE/DELETE/TRUNCATE triggers RAISE EXCEPTION (migrations.ts), every write flows through the audited-write helper (fence), and the per-org chain is re-verified by the audit-chain-verify CI gate. The typed v3 LedgerEntry union + projections land ON this substrate (Wave A prompt 7)."
+    },
+    {
+      "id": 6,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "Policy evaluation is a pure function of an immutable DecisionInputBundle and a deterministic engine version",
+      "status": "not-yet-active",
+      "activatesWhen": "the input bundle (Wave C prompt 15) and the deterministic evaluator (Wave D prompt 16) land",
+      "mechanisms": []
+    },
+    {
+      "id": 7,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "A proceed decision cannot exist without authority and an execution plan",
+      "status": "not-yet-active",
+      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5) making the illegal state unrepresentable; schema tests at prompts 5 and 17",
+      "mechanisms": []
+    },
+    {
+      "id": 8,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "A blocked decision cannot carry authority or an execution plan",
+      "status": "not-yet-active",
+      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5); property tests at prompt 17",
+      "mechanisms": []
+    },
+    {
+      "id": 9,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "A prohibited decision cannot carry a resolving condition, authority, or execution plan",
+      "status": "not-yet-active",
+      "activatesWhen": "the DecisionResult discriminated union lands (Wave A prompt 5); property tests at prompt 17",
+      "mechanisms": []
+    },
+    {
+      "id": 10,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "Precedence is order-independent and every conflict emits a trace",
+      "status": "not-yet-active",
+      "activatesWhen": "the precedence engine lands (Wave D prompt 17) with shuffled-seed order-independence property tests",
+      "mechanisms": []
+    },
+    {
+      "id": 11,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "A decision with blocking evidence gaps cannot proceed automatically",
+      "status": "not-yet-active",
+      "activatesWhen": "the validation stage lands (Wave C prompt 15; validate is distinct from evaluate - present-but-stale evidence cannot silently proceed)",
+      "mechanisms": []
+    },
+    {
+      "id": 12,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "Explanation is derived from the evaluation trace",
+      "status": "not-yet-active",
+      "activatesWhen": "the evaluator + explanation trace land (Wave D prompt 16); WhyBubble becomes the renderer of ExplanationNodes (ADR-0028, marriage-map §2)",
+      "mechanisms": []
+    },
+    {
+      "id": 13,
+      "group": "decision-core",
+      "gate": "D",
+      "name": "Replay from the pinned bundle is byte-identical under canonical serialization",
+      "status": "not-yet-active",
+      "activatesWhen": "replay lands (Wave D prompt 19) with adversarial break attempts (live-source changes, reordering, TZ changes, engine upgrades)",
+      "mechanisms": []
+    },
+    {
+      "id": 14,
+      "group": "policy",
+      "gate": "E",
+      "name": "No policy reaches approved without a recorded simulation run",
+      "status": "not-yet-active",
+      "activatesWhen": "the policy lifecycle lands (Wave E prompt 20: draft -> simulated -> in_review -> approved -> active -> superseded)",
+      "mechanisms": []
+    },
+    {
+      "id": 15,
+      "group": "policy",
+      "gate": "E",
+      "name": "No active policy is mutable",
+      "status": "not-yet-active",
+      "activatesWhen": "the policy lifecycle lands (Wave E prompt 20; changes fork a new version, supersession preserves old replay)",
+      "mechanisms": []
+    },
+    {
+      "id": 16,
+      "group": "policy",
+      "gate": "E",
+      "name": "Firm policy configuration contains no arbitrary executable code",
+      "status": "not-yet-active",
+      "activatesWhen": "the constrained policy AST + load-time validator land (Wave B prompt 9: closed vocabularies; eval/dynamic-import/SQL/shell/user-functions rejected at load time)",
+      "mechanisms": []
+    },
+    {
+      "id": 17,
+      "group": "policy",
+      "gate": "E",
+      "name": "LLM output cannot directly activate or bind policy",
+      "status": "not-yet-active",
+      "activatesWhen": "the NL policy path lands (Wave E prompt 22: LLM output must survive AST validation, simulation, and attributed human approval before activation)",
+      "mechanisms": []
+    },
+    {
+      "id": 18,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Every non-automatic approval stage defines role eligibility, quorum, actor-distinctness, expiration, and escalation",
+      "status": "not-yet-active",
+      "activatesWhen": "authority/approval stages land (Wave D prompt 18) on the FlowStep suspend/resume substrate (ADR-0011)",
+      "mechanisms": []
+    },
+    {
+      "id": 19,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Approval invalidates on material input-bundle hash change",
+      "status": "not-yet-active",
+      "activatesWhen": "approval binding to decisionHash + inputBundleHash lands (Wave D prompt 18; ApprovalInvalidated ledger event)",
+      "mechanisms": []
+    },
+    {
+      "id": 20,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Every external execution step has an idempotency key and verification rule",
+      "status": "not-yet-active",
+      "activatesWhen": "execution plans with verification rules land (Wave F prompt 25)",
+      "mechanisms": [],
+      "notes": "Substrate today: every house-CRM write already carries an idempotency key with a replay-tested exactly-once effect (charter #16, src/__tests__/fitness/idempotency-exactly-once.test.ts). The ExecutionStep/verification-rule vocabulary does not exist yet, so claiming this invariant active would overstate it."
+    },
+    {
+      "id": 21,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Pre-execution revalidation occurs after approval and before external execution",
+      "status": "not-yet-active",
+      "activatesWhen": "revalidation lands (Wave F prompt 23: refresh material evidence, rebuild bundle, invalidate stale approvals)",
+      "mechanisms": []
+    },
+    {
+      "id": 22,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Conflicting pending or in-flight actions are considered through conflict keys and reservations",
+      "status": "not-yet-active",
+      "activatesWhen": "conflict keys + append-only reservations land (Wave F prompt 23; reference failure: two simultaneous $75k requests individually valid, jointly overcommitted)",
+      "mechanisms": []
+    },
+    {
+      "id": 23,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Every execution and status occurrence is recorded as a ledger event",
+      "status": "not-yet-active",
+      "activatesWhen": "the typed LedgerEntry union (Wave A prompt 7) and execution events (Wave F prompt 25) land",
+      "mechanisms": [],
+      "notes": "Substrate today: every store write is audited via the audited-write helper (audited-write-required fence); the typed execution/status event vocabulary does not exist yet."
+    },
+    {
+      "id": 24,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "A failure becomes a derived decision only when policy requires judgment; it never disappears into logs alone",
+      "status": "not-yet-active",
+      "activatesWhen": "the event-driven exception loop lands (Wave F prompt 25: classify -> ExceptionDecisionRequested only when judgment is required)",
+      "mechanisms": []
+    },
+    {
+      "id": 25,
+      "group": "approval-execution",
+      "gate": "F",
+      "name": "Every real adapter and fake passes the same conformance suite",
+      "status": "not-yet-active",
+      "activatesWhen": "the three-port conformance suite lands (Wave F prompt 24; the real Salesforce adapter is additionally gated by ADR-0024)",
+      "mechanisms": []
+    },
+    {
+      "id": 26,
+      "group": "demo",
+      "gate": "G/H",
+      "name": "The identical $75,000 request produces different correct results for Firm A and Firm B with zero core-code change",
+      "status": "not-yet-active",
+      "activatesWhen": "the full vertical is assembled (Wave G prompt 28: Firm B differs only through configuration)",
+      "mechanisms": []
+    },
+    {
+      "id": 27,
+      "group": "demo",
+      "gate": "G/H",
+      "name": "The UI distinguishes blocked, prohibited, approved, submitted, and verified states",
+      "status": "not-yet-active",
+      "activatesWhen": "the demo UI lands (Wave 0 prompt 3 begins it - BLOCKED on docs/demo-design-language.md per ADR-0028; demo-complete at Wave H prompt 29)",
+      "mechanisms": []
+    },
+    {
+      "id": 28,
+      "group": "demo",
+      "gate": "G/H",
+      "name": "Every external status claim shown in the demo is backed by a real adapter response",
+      "status": "not-yet-active",
+      "activatesWhen": "the real Salesforce adapter lands (Wave G prompt 27) - DEFERRED pending sandbox access (ADR-0024, captain directive 2026-07-26). Until the trigger fires, no external status claim may be presented as real (fake-backed claims stay provenance-labeled per ADR-0027), and Phase 1 is never declared complete",
+      "mechanisms": []
+    },
+    {
+      "id": 29,
+      "group": "demo",
+      "gate": "G/H",
+      "name": "The constrained natural-language policy path results in a structured draft, simulation, approval, version activation, and changed replay outcome",
+      "status": "not-yet-active",
+      "activatesWhen": "the NL policy path lands (Wave E prompt 22) and is demo-choreographed (Wave H prompt 29)",
+      "mechanisms": []
+    },
+    {
+      "id": 30,
+      "group": "demo",
+      "gate": "G/H",
+      "name": "The printable decision record can be reconstructed entirely from ledger and replay artifacts",
+      "status": "not-yet-active",
+      "activatesWhen": "the printable examiner-grade artifact is generated from ledger + replay data (Wave G prompt 28)",
+      "mechanisms": []
+    }
+  ]
+}

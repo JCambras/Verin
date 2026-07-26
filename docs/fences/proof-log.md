@@ -428,3 +428,57 @@ its original 2-minute hard expiry - proving `cookies().set()` in a Route Handler
 cookie and sliding renewal beats the fixed expiry.
 
 **Date:** 2026-07-20 (deep-review r6, finding #8 - session lifecycle hardened; charter-#12 rotation gap closed).
+
+### PF-023 · arch-version fence (ratified v3 documents SHA-256-pinned) · `src/__tests__/fitness/arch-version.test.ts`
+**Invariant (ADR-0023; v3 prompt 4 "architecture checksum"):** every ratified document under `docs/v3/`
+must match its SHA-256 pin in `v3-invariants.json`, so build work cannot silently target a stale or
+edited copy of the architecture. The inline `detects` companion additionally proves drift, missing-file,
+and single-flipped-byte cases against the pure `verifyDocumentPins` core (and that a matching document
+passes, so the fence cannot pass by always-failing).
+
+**Injection + observed failure (verbatim), reverted:**
+```
+# appended "<!-- adversarial drift -->" to docs/v3/verin-architecture-v3.md:
+  × enforces: every ratified v3 document matches its SHA-256 pin
+    AssertionError: ratified v3 documents drifted from their pins:
+    docs/v3/verin-architecture-v3.md: content drifted from its ratified pin.
+      pinned:  dc4bf69bcc7582c045d0fa876205788252ca73f034063ea98253127489ce4f6b
+      actual:  144574e0c7f1c64813d112b140b560ecf9debc1d0c04f260265df6f012e9f0e1
+    ❯ src/__tests__/fitness/arch-version.test.ts:67
+# the runner blocks on the same drift (defense in depth):
+  v3-invariants: registry/pin problems:
+    - docs/v3/verin-architecture-v3.md: drifted from its ratified pin (pinned dc4bf69bcc75…, actual
+      144574e0c7f1…) - update the pin in the same PR and review the invariants (ADR-0023)   [exit 1]
+```
+**Revert:** restored the document from the ratified source (`cmp` byte-identical); fence file
+`Tests 6 passed`.
+
+**Date:** 2026-07-26 (v3 ratification "prompt 0", ADR-0023).
+
+### PF-024 · v3-invariant registry fence + three-state runner · `src/__tests__/fitness/v3-invariants.test.ts`, `scripts/v3-invariants.ts`
+**Invariant (ADR-0023; v3 §17 preamble "never fake green"):** the registry stores ACTIVATION only
+('active' | 'not-yet-active') - a pass/fail can never be stored, an active invariant must map to a
+runnable fence, a not-yet-active one must name its trigger, and activation is ratcheted ([2, 5]). The
+runner EXECUTES each active invariant's mapped fences and fails CI on active-fail; not-yet-active
+renders as `○ not-yet-active` (dim, no checkmark), never as a pass. The inline `detects` companion
+covers the stored-result, hollow-active, silent-deferral, ghost-mechanism, missing-ci-gate, ratchet, and
+missing-invariant classes plus the honest-registry acceptance case.
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# (a) registry ratchet - invariant 2 flipped to not-yet-active in v3-invariants.json:
+  × enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+    AssertionError: v3-invariants.json problems:
+    invariant 2: shipped as 'active' but regressed to 'not-yet-active' (the ratchet is monotonic)
+    ❯ src/__tests__/fitness/v3-invariants.test.ts:111
+# (b) runner active-fail - invariant 2 mapped to a deliberately failing fence file:
+    ✗ ACTIVE-FAIL     # 2 Every persisted record and repository operation is tenant-scoped
+                         └ fitness src/__tests__/tmp-adversarial-fail.test.ts FAILED
+    summary: 1 active-pass · 1 active-fail · 28 not-yet-active (30 total)
+    v3-invariants: ACTIVE invariants failing:   [exit 1]
+```
+**Revert:** restored invariant 2 (active, org-id-required mechanism), deleted the temp failing test;
+`vitest run` on both fence files → `Tests 13 passed`; `pnpm v3:invariants` →
+`summary: 2 active-pass · 0 active-fail · 28 not-yet-active (30 total)`, exit 0.
+
+**Date:** 2026-07-26 (v3 ratification "prompt 0", ADR-0023).
