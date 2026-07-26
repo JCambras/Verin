@@ -11,6 +11,7 @@ import {
 import { IntentSchema } from "@contracts/decision-core/trigger";
 import { DecisionInputBundleSchema, EvidenceSnapshotRefSchema } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
+import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/decision-core/authority";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
   CANONICAL_SERIALIZER_VERSION,
@@ -211,6 +212,49 @@ describe("structural-integrity refinements", () => {
     ).toBe(false);
     expect(ExecutionPlanSchema.safeParse({ id: "plan:u:4", steps: [step("s1", { dependsOn: ["ghost"] })] }).success).toBe(false);
     expect(ExecutionPlanSchema.safeParse({ id: "plan:u:5", steps: [step("s1", { dependsOn: ["s1"] })] }).success).toBe(false);
+  });
+
+  const stageBase = (stageId: string, order: number) => ({
+    stageId,
+    order,
+    executionMode: "sequential",
+    requirements: [
+      {
+        eligibleRoleIds: ["operations-manager"],
+        approvalsRequired: 1,
+        distinctActorsRequired: true,
+        requesterMayApprove: false,
+        priorExecutorMayApprove: true,
+        reasonRequiredOnOverride: true,
+      },
+    ],
+    escalationPath: [],
+  });
+  const approvalStage = (stageId: string, order: number) => ({
+    ...stageBase(stageId, order),
+    templateId: "apt:u:1",
+    expiresAt: timestamp,
+  });
+  const templateStage = (stageId: string, order: number) => ({
+    ...stageBase(stageId, order),
+    expiresAfter: "P3D",
+  });
+
+  it("accepts distinct approval stages; rejects a duplicate stageId and a duplicate order in every stage-carrying shape", () => {
+    const distinct = [approvalStage("stg:ops", 0), approvalStage("stg:manager", 1)];
+    const dupId = [approvalStage("stg:ops", 0), approvalStage("stg:ops", 1)];
+    const dupOrder = [approvalStage("stg:ops", 0), approvalStage("stg:manager", 0)];
+    expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: distinct }).success).toBe(true);
+    expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: dupId }).success).toBe(false);
+    expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: dupOrder }).success).toBe(false);
+    const review = (stages: unknown) => ({ mode: "specialist_review", specialistRoleIds: ["cco"], stages });
+    expect(AuthorityRequirementSchema.safeParse(review(distinct)).success).toBe(true);
+    expect(AuthorityRequirementSchema.safeParse(review(dupId)).success).toBe(false);
+    expect(AuthorityRequirementSchema.safeParse(review(dupOrder)).success).toBe(false);
+    const template = (stages: unknown) => ({ id: "apt:u:1", stages });
+    expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 1)])).success).toBe(true);
+    expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:ops", 1)])).success).toBe(false);
+    expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 0)])).success).toBe(false);
   });
 
   it("deadline_reached requires a deadline; other kinds do not", () => {
