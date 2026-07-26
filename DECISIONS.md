@@ -426,3 +426,49 @@ them (consumers are later prompts 11, 16-19, 28).
 **Addendum (2026-07-26):** the captain signed all 16 cases as drafted (approval relayed via
 firstmate); every fixture's signoff is now `signed` / `captain` / `2026-07-26`, and their expected
 outcomes are binding product truth per the §1 protocol.
+
+### D-036 · 2026-07-26 · reversible · Walking skeleton: twelve demo surfaces clickable on labeled fakes (v3 prompt 3, Gate 0)
+
+The full demo surface sequence (demo contract §4, all twelve) ships as a navigable Next.js
+App Router experience under `/app/demo` (auth-guarded like every /app surface), built ONLY from
+typed view models on static contract data - the walking skeleton the v3 sequence requires before
+the engine exists (re-baselined per marriage-map §6: App Router + the existing presentation tier,
+NOT the old doc's React/Vite).
+- **Typed UI state model** (`src/app/demo/model.ts`): every rendered state - spine stations,
+  dispositions, blockers, approval stages, execution statuses, comparison rows - is data on a
+  view model. Components have no decision branches; the recorded disposition comes from
+  `src/app/demo/data.ts`, which mirrors `config/demo/scenarios.yaml` and is FENCED equal to it.
+- **Fake service** (`src/app/demo/journey.ts` + `build-*.ts`): composes per-surface VMs per
+  (scenario × firm); blocked/prohibited journeys produce NO authority/safety/execution VMs, so
+  no surface can render a station the record has not reached (design §4; charter #4 for UI).
+- **New presentation primitives** (design §13 register, first render = this PR, charter #5):
+  `DecisionSpine`, `DevProvenanceBadge`, `TapToVerify`, `EvidenceRow` (+conflict/missing),
+  `DispositionNotice`, `ApprovalStagePanel`, `ExecutionTimeline`, `ComparisonColumns`, the
+  `STATUS_STYLES` additions (§5.1 dispositions + §8.2 honest-status vocabulary, each its own
+  key), and the §9 print stylesheet in `globals.css` (tokens only).
+- **Every fake-backed element carries the visible `DevProvenanceBadge`** (§11.2) with the
+  contract §6 taxonomy label; derived figures go through `deriveArtifactProvenance`, so computed
+  reserve/headroom values render the ADR-0022 demonstration watermark, and the printable record
+  watermarks every printed page via the running header/footer. Badges are removed only in the PR
+  that lands the corresponding real path (§11.3).
+- **Fence in the same PR** (charter #1): `demo-skeleton-honesty` - RULE A pins skeleton branch
+  data equal to scenarios.yaml (ids, firms, dispositions incl. per-firm splits); RULE B allowlists
+  surface imports (react/next, presentation, model, contract types, siblings) so surfaces cannot
+  import data/service/builders and start recomputing decisions. Adversarial proof in
+  `docs/fences/proof-log.md` (both rules injected, failed with file:line, reverted).
+- **E2E extended, nothing displaced**: `e2e/demo-journey.spec.ts` walks the seven-minute journey
+  end to end by clicking (Gate 0), proves blocked/prohibited/invalidation/duplicate/NIGO branch
+  states, runs axe on every surface, asserts a dev badge on all twelve, and captures a screenshot
+  per required screen to `demo-screens/` (uploaded as a CI artifact by a new step in the existing
+  e2e job).
+**Why:** Wave 0 requires the investor experience tangible before backend completion (orchestrator
+rule 5), charter-legal via the ADR-0027 extension: typed fakes, labeled provenance, screens
+reachable in the same PR, never declared done on fakes.
+**Skeleton-scope choices** (flagged for the golden cases / later prompts, not silently decided):
+concrete Smiths figures (accounts, $200k cash, $6k monthly withdrawals, $40k pending) are
+demo-fixture placeholders until prompt 2's captain-signed golden cases; Firm B's below-threshold
+approval stage renders "contract silence" copy rather than inventing a rule; the approval gate and
+policy-activation click advance the recorded choreography via routing (no state is written).
+**Revert path:** delete `src/app/demo/`, the new presentation primitives + `STATUS_STYLES`/print
+additions, `/app/demo` routes + nav/home links, `e2e/demo-journey.spec.ts`, the `demo-screens` CI
+step, and the `demo-skeleton-honesty` fence with its proof-log entry.

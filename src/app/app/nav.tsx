@@ -21,6 +21,7 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
     }
   }
   const links = [
+    { href: "/app/demo", label: "Demo" },
     { href: "/app/account-opening", label: "Open account" },
     { href: "/app/console", label: "Console" },
     { href: "/app/audit", label: "Audit trail" },

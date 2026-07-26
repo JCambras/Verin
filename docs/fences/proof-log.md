@@ -669,3 +669,29 @@ vacuously nor by always-failing. Registered in `charter-map.json` as `golden-cas
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 2 - the golden-case specification and signed fixtures;
 16 cases, all `pending-captain`; the captain signs against the summary table in `docs/golden-cases.md` §2).
+
+## Walking-skeleton honesty fence (2026-07-26) - executed injection proofs
+
+### demo-skeleton-honesty (v3 prompt 3 Gate 0; charter #4/#5, ADR-0027)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`. Two rules: (A) the demo
+skeleton's static branch data (`src/app/demo/data.ts`) must state EXACTLY the scenario ids,
+firm ids, and dispositions (incl. per-firm splits) recorded in `config/demo/scenarios.yaml` -
+the UI cannot show an outcome the ratified contract does not state; (B) surface components
+(`src/app/demo/surfaces/`) may import only react/next, presentation primitives, the view-model
+module, contract types, and surface-local siblings - importing the contract data, the fake
+service, or a builder (the road to components recomputing decisions) fails the build with
+file:line. Injections + observed failures (verbatim), each reverted:
+```
+# RULE A: data.ts permanent-prohibition disposition flipped "prohibited" -> "proceed":
+  × RULE A enforces: skeleton branch data equals the contract's scenarios, firms, and dispositions
+    AssertionError: skeleton/contract drift:
+    scenario "permanent-prohibition": contract disposition "prohibited", skeleton says "proceed" - the UI may not invent decisions
+# RULE B: `import { SCENARIOS } from "../data";` added to a shipped surface:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/recommendation.tsx:13 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** both injections restored; fence file `Tests 11 passed` (incl. 8 companions:
+invented branch, dropped branch, drifted disposition, dropped per-firm split, invented firm,
+data/service/builder imports flagged with file:line, allowlist passes).

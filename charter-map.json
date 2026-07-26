@@ -436,6 +436,18 @@
           "ref": "golden-cases"
         }
       ]
+    },
+    {
+      "id": "demo-skeleton-honesty",
+      "title": "Walking-skeleton UI cannot invent decisions: demo branch data pinned equal to scenarios.yaml; surface components render view models only (D-036)",
+      "status": "enforced",
+      "phase": "v3-p3",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        }
+      ]
     }
   ]
 }
