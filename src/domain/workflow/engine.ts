@@ -8,6 +8,7 @@
  * webhook has exactly-once effect (charter #16).
  */
 import { isAppError, type AppError } from "@contracts/errors";
+import type { TenantContext } from "@contracts/tenant";
 
 export type FlowData = Record<string, unknown>;
 
@@ -23,11 +24,17 @@ export interface ExecutionState {
   data: FlowData;
 }
 
-/** Port: persist/load flow continuations (implemented in infrastructure). */
+/**
+ * Port: persist/load flow continuations (implemented in infrastructure).
+ * Every call carries the sealed TenantContext (v3 §15.2) except loadByToken —
+ * the webhook resume path is capability-keyed by the unguessable token and the
+ * tenant comes FROM the row (the same reviewed escape as the org-id fence);
+ * resumeFlow re-checks the loaded row against the caller's tenant.
+ */
 export interface ExecutionStore {
-  create(state: ExecutionState): Promise<void>;
-  save(state: ExecutionState): Promise<void>;
-  loadById(id: string): Promise<ExecutionState | null>;
+  create(state: ExecutionState, tenant: TenantContext): Promise<void>;
+  save(state: ExecutionState, tenant: TenantContext): Promise<void>;
+  loadById(id: string, tenant: TenantContext): Promise<ExecutionState | null>;
   loadByToken(token: string): Promise<ExecutionState | null>;
 }
 
@@ -62,6 +69,7 @@ async function drive<D>(
   store: ExecutionStore,
   deps: D,
   state: ExecutionState,
+  tenant: TenantContext,
 ): Promise<FlowRunResult> {
   let { cursor, data } = state;
   while (cursor < def.steps.length) {
@@ -80,7 +88,7 @@ async function drive<D>(
 
     if (result.kind === "fail") {
       const failed: ExecutionState = { ...state, status: "failed", cursor, data };
-      await store.save(failed);
+      await store.save(failed, tenant);
       return { executionId: state.id, status: "failed", error: result.error, data };
     }
 
@@ -89,7 +97,7 @@ async function drive<D>(
 
     if (result.kind === "suspend") {
       const suspended: ExecutionState = { ...state, status: "suspended", resumeToken: result.token, cursor, data };
-      await store.save(suspended);
+      await store.save(suspended, tenant);
       return { executionId: state.id, status: "suspended", token: result.token, awaiting: result.awaiting, data };
     }
   }
@@ -97,7 +105,7 @@ async function drive<D>(
   // Keep resumeToken so a replayed webhook still resolves this (now completed)
   // execution and returns its status idempotently instead of "not-found".
   const completed: ExecutionState = { ...state, status: "completed", cursor, data };
-  await store.save(completed);
+  await store.save(completed, tenant);
   return { executionId: state.id, status: "completed", data };
 }
 
@@ -105,19 +113,19 @@ export async function startFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,
   deps: D,
-  input: { executionId: string; orgId: string; data: FlowData },
+  input: { executionId: string; tenant: TenantContext; data: FlowData },
 ): Promise<FlowRunResult> {
   const state: ExecutionState = {
     id: input.executionId,
-    orgId: input.orgId,
+    orgId: input.tenant.orgId,
     flowId: def.id,
     status: "running",
     resumeToken: null,
     cursor: 0,
     data: input.data,
   };
-  await store.create(state);
-  return drive(def, store, deps, state);
+  await store.create(state, input.tenant);
+  return drive(def, store, deps, state, input.tenant);
 }
 
 /**
@@ -132,8 +140,9 @@ export async function retryFlow<D>(
   store: ExecutionStore,
   deps: D,
   state: ExecutionState,
+  tenant: TenantContext,
 ): Promise<FlowRunResult> {
-  return drive(def, store, deps, { ...state, status: "running" });
+  return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
 
 export async function resumeFlow<D>(
@@ -142,9 +151,14 @@ export async function resumeFlow<D>(
   deps: D,
   token: string,
   payload: FlowData,
+  tenant: TenantContext,
 ): Promise<FlowRunResult | { status: "not-found" }> {
   const state = await store.loadByToken(token);
   if (!state) return { status: "not-found" };
+  // The token is the capability, but the caller's tenant (derived from the
+  // application row) must agree with the execution row — a cross-tenant
+  // token/application mismatch reads as absent, never as another org's state.
+  if (state.orgId !== tenant.orgId) return { status: "not-found" };
   if (state.status === "completed") {
     // Already finalized (idempotent): report without re-running.
     return { executionId: state.id, status: "completed", data: state.data };
@@ -158,5 +172,5 @@ export async function resumeFlow<D>(
   // Trusted flow context takes precedence over the (HMAC-token-authed but
   // unsigned) webhook payload, so a payload cannot override accountType/actor (Vale V18).
   const resumed: ExecutionState = { ...state, status: "running", data: { ...payload, ...state.data } };
-  return drive(def, store, deps, resumed);
+  return drive(def, store, deps, resumed, tenant);
 }

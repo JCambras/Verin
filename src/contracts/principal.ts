@@ -6,8 +6,11 @@
  * DISPLAY surfaces only (nav, /api/me); views resolve userId → email at render.
  */
 import type { Role } from "./roles";
+import type { PIIBearing } from "./pii";
+import { tenantOf, systemTenant, type TenantContext } from "./tenant";
 
-export interface Principal {
+/** PIIBearing: `actor` carries the user's raw email for display surfaces. */
+export interface Principal extends PIIBearing {
   readonly userId: string;
   readonly orgId: string;
   readonly role: Role;
@@ -16,19 +19,25 @@ export interface Principal {
 }
 
 /**
- * The narrow identity a CRM/store WRITE is attributed to: which org, which actor
- * (an opaque userId, or a reserved system-actor id like "esign-webhook"/"seed").
- * Adapters accept this instead of a full Principal so event-driven paths (webhook
- * finalize, seeds) never fabricate a Principal with an invented role/sessionId —
- * a forged credential the day port-level role checks land. RBAC stays at the
- * route/port boundary on the full session Principal; a session-derived write
- * actor is built via writeActorOf.
+ * The narrow identity a CRM/store WRITE is attributed to: which tenant (a sealed
+ * TenantContext — every write path carries proof of a properly minted scope),
+ * which actor (an opaque userId, or a reserved system-actor id like
+ * "esign-webhook"/"seed"). Adapters accept this instead of a full Principal so
+ * event-driven paths (webhook finalize, seeds) never fabricate a Principal with
+ * an invented role/sessionId — a forged credential the day port-level role
+ * checks land. RBAC stays at the route/port boundary on the full session
+ * Principal; a session-derived write actor is built via writeActorOf.
  */
 export interface WriteActor {
-  readonly orgId: string;
+  readonly tenant: TenantContext;
   readonly actorUserId: string;
 }
 
 export function writeActorOf(p: Principal): WriteActor {
-  return { orgId: p.orgId, actorUserId: p.userId };
+  return { tenant: tenantOf(p), actorUserId: p.userId };
+}
+
+/** Reserved system-actor writes (webhook finalize, seed) — never a fabricated Principal. */
+export function systemWriteActor(systemId: string, orgId: string): WriteActor {
+  return { tenant: systemTenant(systemId, orgId), actorUserId: systemId };
 }

@@ -12,21 +12,11 @@
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
-import { looksLikePIIValue, REDACTED } from "@contracts/pii";
-import { log } from "@infra/observability/logger";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { log, safeReason } from "@infra/observability/logger";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
-
-/**
- * Driver/exception text can quote row values (a unique-violation detail may embed
- * an email); the pino redaction is field-NAME-based and cannot see into free text,
- * so a PII-shaped reason is replaced wholesale before it reaches the log.
- */
-function logSafeReason(e: unknown): string {
-  const raw = e instanceof Error ? `${e.name}: ${e.message}` : isAppError(e) ? e.message : String(e);
-  return looksLikePIIValue(raw) ? REDACTED : raw;
-}
 
 /** SQLSTATE class 23 = integrity constraint violation (23502/23503/23505/23514…). */
 function isDriverConstraintError(e: unknown): boolean {
@@ -39,7 +29,7 @@ function isDriverConstraintError(e: unknown): boolean {
 
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
-  orgId: string;
+  tenant: TenantContext;
   actor: string;
   action: string;
   entityType: string;
@@ -63,7 +53,11 @@ async function cachedResult<T>(db: SqlDb, orgId: string, key: string): Promise<T
 }
 
 export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result<T>> {
-  const { db, orgId, idempotencyKey } = opts;
+  const { db, tenant, idempotencyKey } = opts;
+  // The write chokepoint refuses an impostor context before any SQL runs
+  // ("missing tenant context cannot parse", v3 §15.2).
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const now = new Date().toISOString();
 
   // Fast path: a known replay returns the cached result without touching the DB.
@@ -106,7 +100,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       await enqueueAudit(tx, intent, "success", now);
       return r;
     });
-    await drainOutbox(db, orgId).catch(() => undefined);
+    await drainOutbox(db, tenant).catch(() => undefined);
     return ok(result);
   } catch (e) {
     // Any path where the key already resolved to a cached result is a replay → exactly-once.
@@ -122,7 +116,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       {
         orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null,
         code: known?.code ?? null,
-        reason: logSafeReason(e),
+        reason: safeReason(e),
       },
       "audited write failed",
     );
@@ -137,12 +131,12 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     };
     await db
       .transaction(async (tx) => enqueueAudit(tx, failIntent, "failure", now))
-      .then(() => drainOutbox(db, orgId))
+      .then(() => drainOutbox(db, tenant))
       .catch((auditErr: unknown) => {
         // The business failure is already being reported; the audit-of-failure loss
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
-          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: logSafeReason(auditErr) },
+          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: safeReason(auditErr) },
           "failure-audit entry could not be recorded",
         );
       });

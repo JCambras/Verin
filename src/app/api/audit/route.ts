@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipalWithRole, errorResponse } from "@app/_server/context";
+import { getDb, requireActionGrant, errorResponse } from "@app/_server/context";
 import { verifyAndListOrgChain } from "@infra/audit/audit-store";
 
 export const runtime = "nodejs";
@@ -8,21 +8,23 @@ export const runtime = "nodejs";
 const MAX_ENTRIES = 200;
 
 /**
- * The tamper-evident audit trail (charter #13). RBAC-gated to compliance roles
- * (ops/cco/principal/admin) — a base advisor is FORBIDDEN (demonstrates
- * server-side RBAC at the boundary). Live integrity verdict on every load (the
- * verify covers the WHOLE chain in the same single scan that feeds the listing);
- * the listing is capped to the latest entries, newest first, plus the total.
- * The persisted actor is an opaque userId (ADR-0006/0007); the email is resolved
- * here, at RENDER time, for this org's users only. System actors (seed,
- * esign-webhook) display as-is.
+ * The tamper-evident audit trail (charter #13). Authorized per-action as the
+ * governed "audit.export" hook (v3 §15.3) — the allowed roles
+ * (ops/cco/principal/admin) are unchanged from the original RBAC gate; a base
+ * advisor is FORBIDDEN (demonstrates server-side RBAC at the boundary). Live
+ * integrity verdict on every load (the verify covers the WHOLE chain in the
+ * same single scan that feeds the listing); the listing is capped to the latest
+ * entries, newest first, plus the total. The persisted actor is an opaque
+ * userId (ADR-0006/0007); the email is resolved here, at RENDER time, for this
+ * org's users only. System actors (seed, esign-webhook) display as-is.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const p = await requirePrincipalWithRole(req, ["ops", "cco", "principal", "admin"]);
-  if (!p.ok) return errorResponse(p.error);
+  const auth = await requireActionGrant(req, "audit.export");
+  if (!auth.ok) return errorResponse(auth.error);
+  const tenant = auth.value.grant.tenant;
   const db = await getDb();
-  const { verdict, rows } = await verifyAndListOrgChain(db, p.value.orgId);
-  const users = await db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", [p.value.orgId]);
+  const { verdict, rows } = await verifyAndListOrgChain(db, tenant);
+  const users = await db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", [tenant.orgId]);
   const emailById = new Map(users.rows.map((u) => [u.id, u.email]));
   return NextResponse.json({
     verdict,

@@ -28,13 +28,13 @@ export async function createApplication(
   const finalizeKey = `finalize:${id}`;
   const now = new Date().toISOString();
   return auditedWrite<{ id: string; idempotencyKey: string }>({
-    db, orgId: a.orgId, actor: a.actorUserId, action: "application.create", entityType: "AccountOpeningApplication", entityId: id,
+    db, tenant: a.tenant, actor: a.actorUserId, action: "application.create", entityType: "AccountOpeningApplication", entityId: id,
     idempotencyKey, detail: `Opened ${input.accountType} application`,
     buildAfter: () => ({ id, status: "draft", accountType: input.accountType }),
     perform: async (tx) => {
       await tx.query(
         "INSERT INTO account_opening_applications (id,org_id,household_id,contact_id,account_type,status,esign_token,idempotency_key,created_at,updated_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,'draft',NULL,$6,$7,$7,'verin-crm',$7,'high')",
-        [id, a.orgId, input.householdId, input.contactId, input.accountType, finalizeKey, now],
+        [id, a.tenant.orgId, input.householdId, input.contactId, input.accountType, finalizeKey, now],
       );
       return { id, idempotencyKey: finalizeKey };
     },
@@ -45,12 +45,12 @@ export async function setEsignRequested(
   db: SqlDb, a: WriteActor, applicationId: string, token: string, idempotencyKey?: string,
 ): Promise<Result<{ token: string }>> {
   return auditedWrite<{ token: string }>({
-    db, orgId: a.orgId, actor: a.actorUserId, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
+    db, tenant: a.tenant, actor: a.actorUserId, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Sent application for e-signature", buildAfter: () => ({ status: "awaiting-signature" }),
     perform: async (tx) => {
       const res = await tx.query<{ id: string }>(
         "UPDATE account_opening_applications SET status='awaiting-signature', esign_token=$3, updated_at=$4 WHERE id=$1 AND org_id=$2 RETURNING id",
-        [applicationId, a.orgId, token, new Date().toISOString()],
+        [applicationId, a.tenant.orgId, token, new Date().toISOString()],
       );
       // Vale V15: a wrong id/org affects 0 rows — fail instead of silently "succeeding".
       if (res.rows.length !== 1) throw { code: "NOT_FOUND", message: "Application not found." };
@@ -70,13 +70,13 @@ export async function completeApplication(
   db: SqlDb, a: WriteActor, applicationId: string, idempotencyKey: string,
 ): Promise<Result<{ id: string }>> {
   return auditedWrite<{ id: string }>({
-    db, orgId: a.orgId, actor: a.actorUserId, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
+    db, tenant: a.tenant, actor: a.actorUserId, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Account opening completed (e-signature received)",
     buildAfter: () => ({ status: "completed" }),
     perform: async (tx) => {
       const res = await tx.query<{ id: string }>(
         "UPDATE account_opening_applications SET status='completed', updated_at=$3 WHERE id=$1 AND org_id=$2 RETURNING id",
-        [applicationId, a.orgId, new Date().toISOString()],
+        [applicationId, a.tenant.orgId, new Date().toISOString()],
       );
       // Vale V15: a wrong id/org affects 0 rows — fail instead of silently "succeeding".
       if (res.rows.length !== 1) throw { code: "NOT_FOUND", message: "Application not found." };
