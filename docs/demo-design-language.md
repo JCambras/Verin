@@ -14,6 +14,11 @@ reduced-motion kill-switch, no gaudy AI sparkle. This document translates v3's U
 (the Decision Spine, proceed/blocked/prohibited, the approval-invalidation moment) into that
 established language. It never imports v3's visual prescriptions, and it never forks the token
 system.
+**External references:** citations to the "demo contract" (its §3, §4, §6) resolve to
+`docs/demo-contract.md`, landing on branch `fm/verin-contract-j5` (currently in validation);
+citations to "v3" (the architecture and prompt sequence - v3 §10.2, prompts 3, 11, 29) resolve to
+`docs/v3/`, landing on branch `fm/verin-ratify-x2`. Neither document is copied into this branch;
+once those branches merge, these citations become ordinary repo-relative references.
 
 ---
 
@@ -124,8 +129,8 @@ journey the viewer can see **where this request is in the pipeline** without bei
 calm and secondary - a quiet line, never a dashboard that shouts.
 
 **`DecisionSpine` (to-be-built)** - a horizontal derivative of `ProgressSteps`
-(`src/app/presentation/progress-steps.tsx`), sharing its state vocabulary and accessibility recipe
-exactly:
+(`src/app/presentation/progress-steps.tsx`), sharing its state vocabulary and accessibility
+recipe:
 
 - **Stations (fixed, seven):** Intent, Evidence, Decision, Authority, Safety, Execution,
   Verification.
@@ -144,8 +149,9 @@ exactly:
 - **Narrow viewports (below `sm`):** collapse to the StepInfoCard kicker idiom - a single line
   `text-xs font-medium uppercase tracking-wide text-slate-600` reading "Station 3 of 7 ·
   Decision".
-- **Accessibility:** the ProgressSteps recipe verbatim - `aria-current="step"` on the active
-  station, `sr-only` state text per station, and `aria-label="Decision progress"` on the `<ol>`.
+- **Accessibility:** the ProgressSteps recipe - `aria-current="step"` on the active station and
+  `sr-only` state text per station - plus one requirement this spec adds beyond that recipe:
+  `aria-label="Decision progress"` on the `<ol>`.
 - **The spine shows position, never disposition.** It has no blocked/prohibited/failed rendering.
   Disposition belongs to the surface body (§5); at most, a single standard `StatusBadge` may sit
   at the spine's right end as its state slot (e.g. `Blocked - resolvable`). When a decision is
@@ -242,7 +248,9 @@ A composition (not a fork) for one evidence item:
   **observed** time - when the fact was true at its source - and it is what freshness keys off.
 - The **retrieved** time as a trailing `text-xs text-slate-500` suffix: "retrieved Jul 26,
   09:14". Observed versus retrieved is the contract's requirement; observed governs opacity,
-  retrieved is metadata.
+  retrieved is metadata. The retrieved timestamp comes from the evidence view model backed by
+  `EvidenceSnapshotRef` (`observedAt` / `retrievedAt` in the v3 contracts), landing with the
+  evidence-snapshot build work - it is not a `RecordProvenance` field.
 - Metric-class values inside evidence go through `Metric` (never `FreshValue` alone) so the
   provenance fence and watermark rules apply.
 
@@ -539,13 +547,14 @@ The visible development-only badge on every fake-backed element:
   the badge's presence in the codebase is the honest inventory of what is still fake, and its
   removal diff is the proof the real path arrived. Removing a badge any other way is a charter
   #3 violation in spirit and fails review.
-- **Final-presentation surfaces stay uncluttered while the system retains provenance:** in the
-  rehearsed demo environment only (the real deployment-env switch, `APP_ENV` - never
-  `NODE_ENV`), a remaining fake-class badge may collapse into the value's tap-to-verify
-  provenance detail instead of rendering inline - provided the `FreshValue` source label (e.g.
-  "Sample data · as of …") remains visible as always. In dev and CI the badge always renders
-  inline. `FreshValue` labels and ADR-0022 demonstration watermarks are **never** suppressible
-  anywhere, in any environment.
+- **Badges render inline by default, in every environment.** For final-presentation surfaces, a
+  **badge-collapse mode (to-be-built)** may let a remaining fake-class badge collapse into the
+  value's tap-to-verify provenance detail instead of rendering inline, honoring demo contract
+  §6 - provided the `FreshValue` source label (e.g. "Sample data · as of …") remains visible as
+  always. That mode is an explicitly designed deliverable of the build work that lands it, and
+  its trigger mechanism is decided in that work - it is never a silent default. `FreshValue`
+  labels and ADR-0022 demonstration watermarks are **never** suppressible anywhere, in any
+  environment.
 - There is no "hide provenance" mode. The uncluttered final demo is achieved by landing real
   paths, not by hiding labels - and the presenter must never state simulated behavior as real
   (demo contract §6).
@@ -623,6 +632,7 @@ budget (ADR-0012).
 | `ExecutionTimeline` | Audit-page register idiom | Surfaces 7-9 | §8.1 |
 | `ComparisonColumns` | Grid layout; type scale; `WhyBubble` | Surface 10 | §10 |
 | `DevProvenanceBadge` | Watermark chip recipe (`metric.tsx`) + EmptyState dashed border | All fake-backed surfaces during build | §11.2 |
+| `DevProvenanceBadge` collapse mode | `DevProvenanceBadge` + the tap-to-verify provenance detail | Final-presentation surfaces (demo contract §6) | §11.3 |
 | Print stylesheet for the decision artifact | `globals.css` tokens; audit-register idiom; `brand.tsx` | Surface 12 | §9 |
 
 ---
@@ -651,7 +661,8 @@ A build or audit pass against this document verifies, at minimum:
       demonstration-derived - watermarks every page (ADR-0022); the screen rendering passes axe.
 - [ ] Firm A/B differences are hierarchy-marked, cause-cited by policy version, and free of
       judgment colors.
-- [ ] Every fake-backed element carries its taxonomy label; badge removals appear only in the PR
+- [ ] Every fake-backed element carries its taxonomy label; badges render inline by default and
+      collapse only through the explicitly built §11.3 mode; badge removals appear only in the PR
       landing the real path; `FreshValue` labels and watermarks are never suppressed.
 - [ ] axe passes on every new surface; every animation dies under `prefers-reduced-motion` and
       the surface still reads correctly.
