@@ -340,3 +340,19 @@ invariant 2 (tenant scoping → org-id-required fence) and invariant 5 (append-o
 audited-write-required fence + audit_log triggers + audit-chain-verify gate), per marriage-map §2.
 **Revert path:** delete the registry + runner + two fences + CI job + charter-map entries and the two
 ratchet ids; the ratified docs and ADRs stand independently.
+
+### D-033 · 2026-07-26 · reversible · Dependency-audit remediation: next 16.2.12 + pnpm overrides for advisory-flagged transitives + minimatch@3 patch
+The dependency-audit CI gate (`pnpm audit --audit-level=high`) flagged 9 high advisories. Remediation:
+(a) `next` 16.2.10 → 16.2.12 (`eslint-config-next` kept in lockstep) clears the four Next.js advisories.
+(b) next 16.2.12 still pins vulnerable transitives, so `pnpm.overrides` force the advisory-patched
+versions using range-scoped selectors that self-expire once upstream catches up: `sharp@<0.35.0 → 0.35.3`,
+`postcss@<8.5.18 → 8.5.23` (next pins 8.4.31; our direct 8.5.20 devDep is already clean and untouched by
+the selector), `brace-expansion@<5.0.8 → 5.0.8`, and `tar@<7.5.21 → 7.5.22` (moderate, dev-only via
+cdxgen, cleared for a fully green audit). (c) brace-expansion 5.x exports `{ expand }` (named, CJS) while
+minimatch@3 - vendored by eslint 9, which is pinned per the ESLint-10 incompatibility note - expects
+`module.exports = expand`; no fixed minimatch 3.x exists, so `patches/minimatch@3.1.5.patch` unwraps the
+namespace (`typeof`-guarded, works with both shapes). Proven at runtime: `pnpm lint` fails with
+"expand is not a function" without the patch, passes with it.
+**Revert path:** each override deletes independently once its upstream consumer bumps past the advisory
+range (the range-scoped selector then matches nothing); the minimatch patch deletes when eslint moves
+off minimatch@3 or a fixed 3.x ships.
