@@ -1,0 +1,106 @@
+{
+  "caseId": "GC-04-recent-bank-change-firm-b",
+  "title": "Recent bank-instruction change under Firm B - blocked until independently verified",
+  "specName": "recent bank change",
+  "scenarioRef": "recent-bank-change-block",
+  "scenarioRefNote": "Maps to scenarios.yaml `recent-bank-change-block`, firm-b arm (disposition per_firm.firm-b = blocked). Identical facts to GC-03; the only difference is Firm B's configured handling: block-until-independently-verified rather than specialist review.",
+  "firm": "firm-b",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. The block is resolvable: independent verification of the bank instruction clears it and the request re-enters evaluation."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the identical $75,000 request under Firm B; the destination bank instruction was changed four days ago.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-04",
+    "maskedRequestSummary": "distribute 75000 USD to a recently changed destination under Firm B (tokenized)",
+    "asOf": "2026-07-26T09:30:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-b",
+    "cashReserveMonths": 12,
+    "dualApprovalThresholdUsd": 100000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": null,
+    "requesterConstraint": null,
+    "bankInstructionChangeHandling": "block-until-independently-verified"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-22T14:12:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction changed on 2026-07-22 and not yet independently verified - Firm B blocks execution until it is."
+    },
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Liquidity is sufficient; the block is about instruction verification, not funds."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-b-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Distributions may only be sent to household-titled bank instructions."
+    }
+  ],
+  "expectedDisposition": "blocked",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A blocked decision carries no authority and no execution plan (v3 invariant 8). No approval can waive the block; only the resolving evidence can."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "Firm B blocks execution while the recently changed bank instruction is unverified; the block resolves when an independent verification snapshot is supplied.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "blockers": [
+    {
+      "code": "bank-instruction-change-unverified",
+      "explanation": "The destination bank instruction changed recently and Firm B requires independent verification before any execution.",
+      "resolvingEvidence": [
+        { "evidenceKind": "bank-instruction-independent-verification", "subjectRef": "bank-instruction:smiths-primary", "suppliableBy": ["operations", "external"] }
+      ]
+    }
+  ],
+  "expectedExplanationNodes": [
+    { "code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22)." },
+    { "code": "firm-b-blocks-until-verified", "summary": "Firm B handling for a recent bank-instruction change is to block execution until the instruction is independently verified - the resolving affordance is the verification, shown to the user." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent, unverified change is pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Blocked decision recording the resolvable blocker and its resolving evidence; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs, so there is no external status to verify. The block is resolvable, not terminal."
+  }
+}

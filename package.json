@@ -26,6 +26,7 @@
     "license:audit": "tsx scripts/license-audit.ts",
     "load:smoke": "LOG_LEVEL=warn tsx scripts/load-smoke.ts",
     "v3:invariants": "tsx scripts/v3-invariants.ts",
+    "golden:validate": "tsx scripts/golden-cases-validate.ts",
     "sbom": "cdxgen -t pnpm --no-install-deps -o sbom.json ."
   },
   "dependencies": {

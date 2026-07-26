@@ -1,0 +1,91 @@
+{
+  "caseId": "GC-08-ambiguous-household",
+  "title": "Ambiguous household - 'the Smiths' matches two households; blocked pending human disambiguation",
+  "specName": "ambiguous household",
+  "scenarioRef": "ambiguous-instruction",
+  "scenarioRefNote": "Maps to scenarios.yaml `ambiguous-instruction` (a household or bank instruction is ambiguous; blocked pending human disambiguation OUTSIDE the model). This is the canonical multiple-Smiths ambiguity named by the v3 build sequence (prompt 13 re-baseline note).",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that the model NEVER guesses between candidate households - the ambiguity becomes a structured human question, never a probabilistic pick."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters: 'The Smiths need $75,000 for their home renovation by August 15.' The advisor's book contains TWO Smith households: Robert & Ana Smith, and the Smith Family Trust.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-08",
+    "maskedRequestSummary": "distribute 75000 USD for home-renovation; household slot has two candidates (tokenized)",
+    "asOf": "2026-07-26T13:20:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "household-directory",
+      "subjectRef": "subject:advisor-book",
+      "observedAt": "2026-07-26T13:20:00-04:00",
+      "retrievedAt": "2026-07-26T13:20:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Directory lookup for 'Smith' in the requesting advisor's book returns two candidate households: subject:smiths-robert-ana and subject:smith-family-trust. Neither is a uniquely better match."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": [],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [],
+  "householdInstructionsNote": "No household-instruction versions can bind while the household slot itself is ambiguous - pinning either candidate's instructions would presuppose the answer to the human question. Recorded as silence, never filled in.",
+  "expectedDisposition": "blocked",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A blocked decision carries no authority and no execution plan (v3 invariant 8). Disambiguation is a human act recorded as evidence, not an approval stage."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "The household slot is ambiguous; no input bundle can be completed until a human selects the intended household.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "blockers": [
+    {
+      "code": "household-slot-ambiguous",
+      "explanation": "'The Smiths' matches two households in the requesting advisor's book; Verin does not guess between candidates.",
+      "resolvingEvidence": [
+        { "evidenceKind": "household-disambiguation", "subjectRef": "subject:advisor-book", "suppliableBy": ["advisor"] }
+      ]
+    }
+  ],
+  "expectedExplanationNodes": [
+    { "code": "household-candidates-found", "summary": "Two candidate households match 'the Smiths': Robert & Ana Smith and the Smith Family Trust. Both candidates are shown with distinguishing context." },
+    { "code": "human-disambiguation-required", "summary": "Verin asks the advisor a structured question (which household?) instead of guessing - the resolving affordance IS the question, and the answer is recorded evidence attributed to the advisor." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "The household-directory snapshot with both candidate refs is pinned - the ambiguity itself is recorded evidence." },
+    { "type": "DecisionRecorded", "note": "Blocked decision carrying the ambiguity's structured human question as its resolving evidence; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs. The advisor's recorded answer resolves the block and evaluation re-runs with the household bound - the disambiguation is attributed, timestamped evidence, not a silent retry."
+  }
+}

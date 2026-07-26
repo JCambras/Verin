@@ -1,0 +1,111 @@
+{
+  "caseId": "GC-09-stale-evidence",
+  "title": "Stale evidence - planned-withdrawal data older than policy allows; blocked until refreshed",
+  "specName": "stale evidence",
+  "scenarioRef": "stale-evidence",
+  "scenarioRefNote": "Maps to scenarios.yaml `stale-evidence` (material evidence is older than policy allows; blocked until a fresh snapshot resolves it). Exercises v3 invariant 11: present-but-stale evidence cannot silently proceed - validate is distinct from evaluate.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft sets the staleness rule at the policy level (planned-withdrawal evidence must be under 30 days old for a reserve computation); the captain confirms the freshness window archetype."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request; the planned-withdrawal schedule was last observed 47 days ago and the reserve computation depends on it.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-09",
+    "maskedRequestSummary": "distribute 75000 USD; reserve-material evidence exceeds its freshness window (tokenized)",
+    "asOf": "2026-07-26T14:00:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T14:00:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Balance evidence is fresh - staleness is isolated to the planned-withdrawal schedule."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-06-09T08:00:00-04:00",
+      "retrievedAt": "2026-07-26T14:00:05-04:00",
+      "freshness": "stale",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Planned-withdrawal schedule last observed 2026-06-09 (47 days before asOf) - outside the 30-day freshness window firm policy requires for reserve-material evidence. Observed time and retrieved time are shown separately."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Satisfied; not the failing constraint."
+    },
+    {
+      "instructionKind": "liquidity-preference",
+      "versionId": "smiths-liquidity-preference@v1",
+      "summary": "Source preference noted; a source cannot be committed while the reserve arithmetic rests on stale data."
+    }
+  ],
+  "expectedDisposition": "blocked",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A blocked decision carries no authority and no execution plan (v3 invariant 8). Approving a reserve computed from stale data would be exactly the silent-proceed v3 invariant 11 forbids."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "The cash-reserve computation is material to the decision and its planned-withdrawal input exceeds the 30-day freshness window.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "blockers": [
+    {
+      "code": "reserve-evidence-stale",
+      "explanation": "Planned-withdrawal evidence is 47 days old; policy requires under 30 days for reserve-material computations.",
+      "resolvingEvidence": [
+        { "evidenceKind": "planned-withdrawals", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations", "client"] }
+      ]
+    }
+  ],
+  "expectedExplanationNodes": [
+    { "code": "freshness-window-exceeded", "summary": "The planned-withdrawal snapshot (observed 2026-06-09) exceeds the 30-day window; the evidence view shows observed vs retrieved time and the stale badge - no unexplained confidence score anywhere." },
+    { "code": "stale-cannot-silently-proceed", "summary": "The evidence EXISTS but is not fresh enough to compute the reserve - validation fails before evaluation, and the resolving affordance is a refresh request, not an override." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "The stale planned-withdrawal snapshot is recorded with freshness 'stale' - staleness is provenance, not an omission." },
+    { "type": "DecisionRecorded", "note": "Blocked decision recording the stale-evidence blocker and the refresh path; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs. A fresh planned-withdrawal snapshot resolves the block and evaluation re-runs on a NEW input bundle - the stale bundle is never patched in place."
+  }
+}

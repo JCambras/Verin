@@ -1,0 +1,158 @@
+{
+  "caseId": "GC-01-firm-a-happy-path",
+  "title": "Firm A happy path - governed submission of the canonical $75,000 request",
+  "specName": "Firm A happy path",
+  "scenarioRef": "safe-proceed",
+  "scenarioRefNote": "Maps to scenarios.yaml `safe-proceed` under firm-a. At $75,000 (> Firm A's $25,000 dual-approval threshold) the happy path also exercises the `dual-approval` branch - the coverage table in docs/golden-cases.md records that mapping.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff (build-sequence prompt 2). The agent drafted them; only the captain may mark this case signed."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters: 'The Smiths need $75,000 for their home renovation by August 15.'",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-01",
+    "maskedRequestSummary": "distribute 75000 USD for home-renovation, deadline 2026-08-15 (tokenized before any LLM surface)",
+    "asOf": "2026-07-26T09:30:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Joint taxable brokerage available balance 420000 USD; liquid without a taxable-event penalty."
+    },
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-ira",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Traditional IRA balance 610000 USD; a distribution here is a taxable event and is rejected as the source."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Recurring planned withdrawals 8000 USD/month; six months of reserve = 48000 USD (Firm A requirement)."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2025-11-01T10:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction unchanged since 2025-11-01 and independently verified; no recent-change handling triggers."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-05-10T10:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination restriction permits distributions to the household-titled primary bank instruction; this request's destination is on-list."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Distributions may only be sent to bank instructions titled to the household."
+    },
+    {
+      "instructionKind": "liquidity-preference",
+      "versionId": "smiths-liquidity-preference@v1",
+      "summary": "Prefer taxable sources over retirement accounts for discretionary spending."
+    }
+  ],
+  "expectedDisposition": "proceed",
+  "expectedAuthority": {
+    "mode": "approval",
+    "stages": [
+      {
+        "stageId": "ops-dual-approval",
+        "order": 1,
+        "executionMode": "parallel",
+        "eligibleRoleIds": ["operations"],
+        "approvalsRequired": 2,
+        "distinctActorsRequired": true,
+        "requesterMayApprove": false,
+        "expiresAfter": "P3D",
+        "escalationPath": [
+          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+        ]
+      }
+    ],
+    "note": "Amount 75000 USD exceeds Firm A's 25000 USD threshold, so two DISTINCT operations approvers are required and the requester may satisfy neither (firm-a requester constraint)."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": true,
+    "reason": "Both distinct operations approvals recorded against the decision hash; pre-execution revalidation confirms fresh evidence and the reservation still holds.",
+    "idempotencyKey": "idem:GC-01:smiths-75000-2026-08-15",
+    "reservations": [
+      { "reservationId": "res:GC-01:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+    ],
+    "preconditions": [
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable", "subject:smiths-household"], "mustStillHoldAtExecution": true },
+      { "code": "approval-bound-to-decision-hash", "requiredEvidence": [], "mustStillHoldAtExecution": true }
+    ]
+  },
+  "expectedExplanationNodes": [
+    { "code": "source-account-selected", "summary": "Joint taxable brokerage chosen as the source; the IRA alternative was rejected because it triggers a taxable event." },
+    { "code": "cash-reserve-preserved", "summary": "After the 75000 USD movement the household still retains six months (48000 USD) of planned-withdrawal reserve, satisfying Firm A policy." },
+    { "code": "dual-approval-required", "summary": "The movement exceeds Firm A's 25000 USD threshold, so two distinct operations approvers are required before execution." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Account, liquidity, planned-withdrawal, bank-instruction, and household-instruction snapshots pinned into the input bundle." },
+    { "type": "DecisionRecorded", "note": "Proceed decision with recommendation, authority requirement, and execution plan; bound to the input-bundle hash." },
+    { "type": "ReservationCreated", "note": "Liquidity reservation created on conflict key conflict:smiths-liquidity." },
+    { "type": "ApprovalRecorded", "note": "First operations approver approves against the decision hash." },
+    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
+    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
+    { "type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle." },
+    { "type": "StatusObserved", "note": "Returned status observed as submitted - not yet settled." }
+  ],
+  "expectedVerificationState": {
+    "reached": true,
+    "observedStatus": "submitted",
+    "settledClaim": "submitted-is-not-settled",
+    "note": "The demo displays 'submitted', never 'settled'; the next poll and external-status expectation are shown. Execution and status carry provenance fake-adapter-response until the Salesforce sandbox trigger fires (scenarios.yaml deferral)."
+  }
+}

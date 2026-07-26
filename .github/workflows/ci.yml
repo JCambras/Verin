@@ -203,6 +203,20 @@ jobs:
       - name: v3 invariant report (active-pass / active-fail / not-yet-active; fails on active-fail)
         run: pnpm v3:invariants
 
+  golden-cases:
+    name: golden-cases (prompt-2 truth-set completeness, captain-signoff-gated)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: golden-case validation (every required field populated; vocabulary aligned; signoff honest)
+        run: pnpm golden:validate
+
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)
     runs-on: ubuntu-latest

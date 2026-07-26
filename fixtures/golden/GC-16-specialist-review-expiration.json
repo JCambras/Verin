@@ -1,0 +1,126 @@
+{
+  "caseId": "GC-16-specialist-review-expiration",
+  "title": "Specialist-review expiration - the stage lapses without action and escalates along the configured path",
+  "specName": "specialist-review expiration and escalation",
+  "scenarioRef": "specialist-review-expiration",
+  "scenarioRefNote": "Maps to scenarios.yaml `specialist-review-expiration` (a specialist-review stage expires without action and escalates along the configured escalation path; exercises [proceed, awaiting-approval] - the branch ends at the escalated, still-awaiting state, not at execution). Beyond the prompt-2 twelve (demo-contract §5 branch).",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that expiration escalates (it does not auto-approve and does not silently cancel): the stage re-arms for the escalation roles with a fresh expiry, and every lapse is a recorded, attributed fact."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request with a recently changed bank instruction (as in GC-03). The bank-change specialist takes no action for two days; the review stage expires and escalates to the operations manager.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-16",
+    "maskedRequestSummary": "distribute 75000 USD; specialist review lapses unactioned and escalates (tokenized)",
+    "asOf": "2026-07-26T18:20:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-22T14:12:00-04:00",
+      "retrievedAt": "2026-07-26T18:20:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction changed 2026-07-22, unverified - triggers Firm A's specialist-review handling."
+    },
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T18:15:00-04:00",
+      "retrievedAt": "2026-07-26T18:20:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Liquidity and reserve satisfied; authority progress is the only open question."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Destination on-list (the changed instruction remains household-titled); satisfied."
+    }
+  ],
+  "expectedDisposition": "proceed",
+  "expectedAuthority": {
+    "mode": "specialist_review",
+    "stages": [
+      {
+        "stageId": "bank-change-specialist-review",
+        "order": 1,
+        "executionMode": "sequential",
+        "eligibleRoleIds": ["bank-change-specialist"],
+        "approvalsRequired": 1,
+        "distinctActorsRequired": false,
+        "requesterMayApprove": false,
+        "expiresAfter": "P2D",
+        "escalationPath": [
+          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle" }
+        ]
+      },
+      {
+        "stageId": "ops-dual-approval",
+        "order": 2,
+        "executionMode": "parallel",
+        "eligibleRoleIds": ["operations"],
+        "approvalsRequired": 2,
+        "distinctActorsRequired": true,
+        "requesterMayApprove": false,
+        "expiresAfter": "P3D",
+        "escalationPath": [
+          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+        ]
+      }
+    ],
+    "note": "Same required stages as GC-03. This case's subject is the TIME dimension: the specialist stage's P2D expiry lapses unactioned, the P1D escalation step widens eligibility to the operations manager, and the case ends still awaiting - stage 2 never arms."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "Authority is unresolved: the specialist stage expired without action and now awaits the escalation roles. A proceed decision without completed authority is not executable - expiration never auto-approves.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "expectedExplanationNodes": [
+    { "code": "specialist-review-required", "summary": "Firm A routes the recent bank-instruction change to a bank-change specialist (stage 1 of 2)." },
+    { "code": "stage-expired-escalated", "summary": "No specialist acted within the configured window; the stage escalated along its configured path to the operations manager - visibly, with the expiration and escalation shown as recorded facts, and nothing auto-approved." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction change and evaluation snapshots pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Proceed decision requiring specialist review (stage 1) then dual approval (stage 2); the stage instance's expiresAt is computed and recorded at instantiation." },
+    { "type": "ApprovalInvalidated", "note": "The lapsed specialist stage is closed with reason approval-expired: the unactioned window is a recorded authority fact (the reevaluateWhen condition approval_expired fires), and the stage re-arms for the escalation roles with a fresh expiry." },
+    { "type": "ExceptionDecisionRequested", "note": "The idle-past-escalation condition derives an attention decision for the operations manager referencing the prior decision and the lapse - the stall never disappears into a queue." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs while authority is unresolved. The demo shows expiration and escalation as first-class, honest states (demo-contract §3, 2:30-3:20: expiration and escalation are visible proof)."
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "caseId": "GC-07-regulatory-prohibition",
+  "title": "Regulatory prohibition - active legal hold on the source account",
+  "specName": "regulatory or firm prohibition",
+  "scenarioRef": "permanent-prohibition",
+  "scenarioRefNote": "Maps to scenarios.yaml `permanent-prohibition` by outcome class. The matrix's branch description names the household-restriction variant (GC-06); this case supplies the prompt-2-required regulatory/firm variant: same prohibited treatment, different precedence source (regulatory outranks firm policy AND household instruction).",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the regulatory source as an active legal hold recorded against the source account; the captain confirms the example is the right regulatory archetype for the demo."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request; the joint taxable account carries an active legal hold recorded by operations.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-07",
+    "maskedRequestSummary": "distribute 75000 USD from an account under an active legal hold (tokenized)",
+    "asOf": "2026-07-26T11:00:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T11:00:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Balance covers the request - funds are not the issue; the hold is."
+    },
+    {
+      "evidenceKind": "account-restriction",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-18T09:00:00-04:00",
+      "retrievedAt": "2026-07-26T11:00:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Active legal hold recorded 2026-07-18: all distributions from this account are prohibited while the hold stands."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": "reg-distribution-holds@2026.02"
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "The destination is on-list; the household instruction is satisfied and is NOT the prohibition source here."
+    }
+  ],
+  "expectedDisposition": "prohibited",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A prohibited decision carries no resolving condition, no authority, and no execution plan (v3 invariant 9). No firm approval can override a regulatory hold."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "The source account is under an active legal hold; regulatory precedence prohibits any distribution regardless of approvals.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "prohibition": {
+    "source": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
+    "scope": "scope:account:subject:smiths-joint-taxable",
+    "reasonCode": "active-legal-hold",
+    "explanation": "An active legal hold on the source account prohibits all distributions while it stands. Regulatory sources take precedence over firm policy and household instructions."
+  },
+  "expectedExplanationNodes": [
+    { "code": "legal-hold-detected", "summary": "The account-restriction evidence shows an active legal hold recorded 2026-07-18 against the source account." },
+    { "code": "regulatory-precedence-applied", "summary": "The precedence trace shows the regulatory rule outranking firm policy and household instructions - the prohibition cites reg-distribution-holds@2026.02, and the UI shows the stamp with zero affordances." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Account-restriction snapshot (the hold) pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Prohibited decision citing the regulatory source and precedence trace; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs. Release of the hold would arrive as new evidence and any retry is a NEW intent evaluated against it - this decision stays prohibited as recorded."
+  }
+}

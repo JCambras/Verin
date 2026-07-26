@@ -22,6 +22,9 @@ investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scen
 and acceptance map [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). Salesforce is
 deferred-pending-sandbox (labeled fakes until then; Phase 1 never declared complete on fakes), and all
 demo UI derives its look from `docs/demo-design-language.md`, not v3's visual prescriptions.
+Expected engine outcomes are fixed by the golden-case truth set [`docs/golden-cases.md`](./docs/golden-cases.md)
+plus `fixtures/golden/` (D-035): captain-signoff-gated (`pending-captain` until the captain signs; agents
+never sign), validated by `pnpm golden:validate` (CI job `golden-cases`) and the `golden-cases` fence.
 
 ## Non-negotiable working rules (from the charter)
 

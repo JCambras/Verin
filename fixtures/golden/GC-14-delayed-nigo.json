@@ -1,0 +1,107 @@
+{
+  "caseId": "GC-14-delayed-nigo",
+  "title": "Delayed NIGO - a not-in-good-order return arrives after submitted; ingested late, exception derived",
+  "specName": "delayed NIGO",
+  "scenarioRef": "delayed-nigo",
+  "scenarioRefNote": "Maps to scenarios.yaml `delayed-nigo` (a NIGO arrives after a submitted status; ingested late; derives an exception decision). The delayed arrival rides the StatusSource port - exercised against the fake now; the real feed is part of the deferred elements (scenarios.yaml delayed-exception-events).",
+  "firm": "firm-b",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request under Firm B; execution submits cleanly. Two business days later the custodian returns the instruction NIGO: the signature date on the disbursement form predates the form version.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-14",
+    "maskedRequestSummary": "distribute 75000 USD; custodian NIGO return arrives two days after submission (tokenized)",
+    "asOf": "2026-07-26T17:15:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-b",
+    "cashReserveMonths": 12,
+    "dualApprovalThresholdUsd": 100000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": null,
+    "requesterConstraint": null,
+    "bankInstructionChangeHandling": "block-until-independently-verified"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T17:10:00-04:00",
+      "retrievedAt": "2026-07-26T17:15:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Balance 420000 USD; twelve-month reserve (96000 USD) preserved - evaluation is clean."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2025-11-01T10:00:00-04:00",
+      "retrievedAt": "2026-07-26T17:15:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination instruction verified and unchanged; the NIGO is about form paperwork, not the destination."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-b-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Destination on-list; satisfied."
+    }
+  ],
+  "expectedDisposition": "proceed",
+  "expectedAuthority": {
+    "mode": "automatic",
+    "stages": [],
+    "note": "75000 USD is below Firm B's 100000 USD threshold; authority resolves automatically (same divergence as GC-02)."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": true,
+    "reason": "Automatic authority and clean revalidation - the submission is legitimate; the NIGO is a later external fact.",
+    "idempotencyKey": "idem:GC-14:smiths-75000-2026-08-15",
+    "reservations": [
+      { "reservationId": "res:GC-14:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+    ],
+    "preconditions": [
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+    ]
+  },
+  "expectedExplanationNodes": [
+    { "code": "submitted-not-settled-vindicated", "summary": "The verification surface never claimed settlement - 'submitted' stayed submitted with a next-poll expectation, so the late NIGO contradicts nothing the product asserted." },
+    { "code": "delayed-nigo-ingested", "summary": "The NIGO return (signature date predates form version) is ingested two days late as a StatusObserved fact with the custodian's exact reason preserved, and remediation is routed as a derived exception decision - not a silent retry, not a log line (v3 invariant 24)." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Proceed decision with automatic authority under Firm B." },
+    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution." },
+    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
+    { "type": "ExecutionSucceeded", "note": "Instruction accepted; handle returned; status submitted." },
+    { "type": "StatusObserved", "note": "Initial poll observes Submitted - displayed as submitted, never settled." },
+    { "type": "StatusObserved", "note": "Two business days later the delayed return is ingested: status NIGO, sourceStatus carrying the custodian's exact reason." },
+    { "type": "ExceptionDecisionRequested", "note": "The NIGO derives a new decision request (correct paperwork and resubmit vs cancel) referencing the prior decision and the NIGO ledger entry." }
+  ],
+  "expectedVerificationState": {
+    "reached": true,
+    "observedStatus": "nigo",
+    "settledClaim": "submitted-is-not-settled",
+    "note": "Verification lands on NIGO: what the returned status actually proves is shown honestly, and the exception path is visible. Status responses are fake-adapter-response until the sandbox trigger fires."
+  }
+}

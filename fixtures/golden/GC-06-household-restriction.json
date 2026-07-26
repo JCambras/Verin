@@ -1,0 +1,113 @@
+{
+  "caseId": "GC-06-household-restriction",
+  "title": "Household destination restriction - prohibited, no approval can waive it",
+  "specName": "household restriction",
+  "scenarioRef": "permanent-prohibition",
+  "scenarioRefNote": "Maps to scenarios.yaml `permanent-prohibition`, whose description is exactly this case: the requested movement violates the household-specific destination restriction. The regulatory/firm variant of a prohibition is GC-07.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "pending-captain",
+    "authority": "captain",
+    "signedBy": null,
+    "signedAt": null,
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats a destination outside the household instruction's allow-list as PROHIBITED (the stamp, zero affordances), not blocked: the instruction is a standing client mandate, and honoring it admits no operational resolution path within this request."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters: 'Send $30,000 from the Smiths' taxable account to their contractor's business account for the renovation deposit.'",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-06",
+    "maskedRequestSummary": "distribute 30000 USD to a third-party (non-household-titled) destination (tokenized)",
+    "asOf": "2026-07-26T10:15:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Liquidity comfortably covers 30000 USD - funds are not the issue; the destination is."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:contractor-business",
+      "observedAt": "2026-07-25T16:40:00-04:00",
+      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Requested destination is a third-party business account, not titled to the household."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-05-10T10:00:00-04:00",
+      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Standing destination restriction: distributions may ONLY go to bank instructions titled to the household. The contractor account is off-list."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Distributions may only be sent to bank instructions titled to the household - the violated instruction, and the prohibition's source."
+    }
+  ],
+  "expectedDisposition": "prohibited",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A prohibited decision carries no resolving condition, no authority, and no execution plan (v3 invariant 9). The UI shows the prohibition stamp and zero affordances."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "The destination violates the household's standing destination restriction; no approval path exists.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "prohibition": {
+    "source": { "sourceType": "household_instruction", "sourceId": "smiths-destination-restriction", "versionId": "smiths-destination-restriction@v2" },
+    "scope": "scope:destination:bank-instruction:contractor-business",
+    "reasonCode": "destination-not-household-titled",
+    "explanation": "The household's standing instruction restricts distributions to household-titled bank instructions. The requested destination is a third-party business account."
+  },
+  "expectedExplanationNodes": [
+    { "code": "destination-restriction-applies", "summary": "The household's destination restriction (smiths-destination-restriction@v2) governs every outbound movement, with precedence over any firm-level default." },
+    { "code": "destination-off-list", "summary": "The requested destination is not titled to the household, so the movement is prohibited - the exact violated instruction and version are cited, and no approval affordance is offered." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Destination bank instruction and household-instruction snapshots pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Prohibited decision citing the household instruction version as the prohibition source; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs and no resolving affordance is shown. A future request to an on-list destination would be a NEW intent, not a resolution of this one."
+  }
+}
