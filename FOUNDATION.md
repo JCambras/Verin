@@ -6,10 +6,11 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (235 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (279 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
-> `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report). Every
+> `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
+> `pnpm golden:validate` (the 16-case golden truth set, D-035). Every
 > one except the backup-restore drill is also a blocking CI job (`.github/workflows/ci.yml`); the
 > drill runs nightly in `scheduled.yml`.
 
@@ -21,7 +22,7 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 24 build-failing fitness
+Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 26 build-failing fitness
 fences; ratchet-down line budgets + a separate presentation budget.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
@@ -48,18 +49,20 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 
 **Governance:** 28 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
-(3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence), and
-the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023).
+(3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
+the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
+normative Phase 1 demo contract (`docs/demo-contract.md` + `config/demo/scenarios.yaml`, D-034), and the
+captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/`, D-035).
 
 ---
 
 ## 2. Every fence, with its proof
 
-24 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
+26 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-024).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-026).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -86,6 +89,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `bounded-request-body` | no unbounded body reader — json/text/formData/arrayBuffer/blob (DoS) (#11/#14) | PF-017 + companions |
 | `arch-version` (SHA-256 pins on every ratified `docs/v3/` doc) | build work never targets a stale or edited architecture copy (ADR-0023) | PF-023 + companions |
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
+| `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
+| `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
