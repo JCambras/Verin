@@ -9,7 +9,8 @@ regret-trigger so a deferral is never silent. ADRs that close a documented failu
 (Meridian / Iris) cite the governing report finding.
 
 Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementation deferred)`,
-`Accepted (charter amendment)`, `Accepted (deferral with trigger)`, `Superseded by NNNN`.
+`Accepted (charter amendment)`, `Accepted (deferral with trigger)`, `Accepted (amends ADR-NNNN)`,
+`Superseded by NNNN`.
 
 ## Index
 

@@ -6,7 +6,7 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (279 unit/integration/fitness, non-UTC clock) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (313 unit/integration/fitness, non-UTC clock) ·
 > `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
@@ -22,8 +22,14 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 26 build-failing fitness
+Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 27 build-failing fitness
 fences; ratchet-down line budgets + a separate presentation budget.
+
+**v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-036):** the canonical decision
+type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
+plan, blocked/prohibited carry neither, a prohibition has no resolving condition (v3 invariants 7-9 as
+parse-level facts) - plus a versioned canonical serializer whose byte form is locked by the
+`fixtures/decision-core/` round-trip fixtures.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
@@ -47,7 +53,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 12
   tests) plus axe, green on a non-UTC clock.
 
-**Governance:** 28 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 29 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -58,11 +64,11 @@ captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/
 
 ## 2. Every fence, with its proof
 
-26 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
+27 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-026).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-027).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -91,6 +97,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
+| `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-036) | PF-027 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

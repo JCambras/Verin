@@ -1,6 +1,6 @@
 # ADR-0001: Clean architecture with a fitness-enforced dependency rule
 
-**Status:** Accepted
+**Status:** Accepted (amended by ADR-0029: `contracts/` may import Zod - and only Zod; the layer remains free of project-local imports)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #1, #5; operating model (dependency-rule)
