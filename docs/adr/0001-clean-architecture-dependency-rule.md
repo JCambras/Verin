@@ -33,6 +33,10 @@ triple-slash type/path/lib references, and the implicit JSX runtime; classifies 
 resolves aliases, baseUrl modules, package imports, and package self-references through TypeScript;
 rejects `createRequire`, local paths outside the layers, ambient contract declarations, and platform
 globals by diagnostic code; enforces the Zod-only external allowlist for `contracts/`; and TS path aliases.
+Computed loader-member keys are followed through local literal declarations and preceding simple
+assignments. Runtime, conditional, and configuration-derived keys are outside this static AST proof:
+the fence catches real source-layer violations, but is not a security boundary against a determined
+author rewriting a loader name at runtime. No shipped source currently contains a `require` token.
 
 ## Alternatives Rejected
 
@@ -57,4 +61,6 @@ split the repo into physical packages.
 ## Revisit When
 
 Interface indirection produces measurable, repeated boilerplate pain, OR physical service boundaries are
-needed for independent deploy/scale (then reconsider a package split — see the scale-ladder, ADR-0015).
+needed for independent deploy/scale (then reconsider a package split - see the scale-ladder, ADR-0015),
+OR shipped source intentionally needs a runtime-computed CommonJS loader key (then replace or augment
+the static fence with a runtime or compiler-level boundary).

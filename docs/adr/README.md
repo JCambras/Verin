@@ -44,7 +44,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0026](./0026-stack-deviations-from-v3.md) | Stack deviations from v3 §18 — Postgres, Next.js, ts-morph fences; FirmId ≡ org_id | Accepted |
 | [0027](./0027-demo-first-wave0-labeled-fakes.md) | Demo-first Wave 0 on labeled fakes — charter #5 extension, no mock theater | Accepted (charter amendment) |
 | [0028](./0028-demo-design-language.md) | Demo design language — the established Verin design system is normative | Accepted |
-| [0029](./0029-decision-core-contracts.md) | Decision-core canonical contracts (v3 prompt 5) as Zod schemas in `contracts/`; ceiling re-baseline 600→3200 | Accepted (amends ADR-0018) |
+| [0029](./0029-decision-core-contracts.md) | Decision-core canonical contracts (v3 prompt 5) as Zod schemas in `contracts/`; ceiling re-baseline 600→3500 | Accepted (amends ADR-0018) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

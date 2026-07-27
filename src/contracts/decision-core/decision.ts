@@ -21,24 +21,12 @@ import {
   DecisionInputBundleRefSchema,
   DecisionRefSchema,
   EvidenceKindSchema,
-  EvidenceSnapshotIdRefSchema,
   HashSchema,
-  HouseholdInstructionRefSchema,
-  HouseholdInstructionVersionRefSchema,
   IntentRefSchema,
-  PolicyRefSchema,
-  PolicyVersionRefSchema,
   ReasonCodeSchema,
-  RegulatorySourceRefSchema,
-  RegulatoryVersionRefSchema,
   ScopeRefSchema,
   SubjectRefSchema,
   TimestampSchema,
-  compareVersionedScopedReferences,
-  hasUniqueByComparator,
-  hasUniqueScopedReferences,
-  normalizeScopedReferences,
-  normalizeVersionedScopedReferences,
 } from "./ids";
 import {
   AnyActorRefSchema,
@@ -58,70 +46,35 @@ import {
   isPlainRecord,
   normalizeExplanationNode,
 } from "./normalization";
+import {
+  ExplanationNodeSchema,
+  PrecedenceStepSchema,
+  VersionedSourceRefSchema,
+  type VersionedSourceRef,
+} from "./explanation";
+export {
+  ExplanationNodeSchema,
+  PrecedenceStepSchema,
+  VersionedSourceRefSchema,
+  type ExplanationNode,
+  type PrecedenceStep,
+  type VersionedSourceRef,
+} from "./explanation";
 
-/** A versioned governing source: the precedence and explanation planes cite these. */
-export const VersionedSourceRefSchema = z
-  .discriminatedUnion("sourceType", [
-    z.strictObject({
-      sourceType: z.literal("firm_policy"),
-      sourceRef: PolicyRefSchema,
-      versionRef: PolicyVersionRefSchema,
-    }),
-    z.strictObject({
-      sourceType: z.literal("household_instruction"),
-      sourceRef: HouseholdInstructionRefSchema,
-      versionRef: HouseholdInstructionVersionRefSchema,
-    }),
-    z.strictObject({
-      sourceType: z.literal("regulatory"),
-      sourceRef: RegulatorySourceRefSchema,
-      versionRef: RegulatoryVersionRefSchema,
-    }),
-  ])
-  .refine((source) => source.sourceRef.firmId === source.versionRef.firmId, {
-    message: "sourceRef.firmId and versionRef.firmId must match",
-    path: ["sourceRef", "firmId"],
-  })
-  .readonly();
-export type VersionedSourceRef = z.infer<typeof VersionedSourceRefSchema>;
+type ExplanationPath = {
+  readonly parent?: ExplanationPath;
+  readonly segment: string | number;
+};
 
-/** One recorded precedence resolution between two governing sources. */
-export const PrecedenceStepSchema = z.strictObject({
-  left: VersionedSourceRefSchema,
-  right: VersionedSourceRefSchema,
-  resolution: z.enum(["left_wins", "right_wins", "narrowed", "exception_required", "blocked"]),
-  reasonCode: ReasonCodeSchema,
-}).readonly();
-export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
-
-/** Recursive explanation tree - every decision explains itself, citing evidence + sources. */
-export const ExplanationNodeSchema = z
-  .strictObject({
-    code: z.string().min(1),
-    messageTemplate: z.string().min(1),
-    evidenceSnapshotRefs: z
-      .array(EvidenceSnapshotIdRefSchema)
-      .refine(
-        hasUniqueScopedReferences,
-        "duplicate explanation evidence snapshot reference",
-      )
-      .overwrite(normalizeScopedReferences)
-      .readonly(),
-    sourceRefs: z
-      .array(VersionedSourceRefSchema)
-      .refine(
-        (refs) =>
-          hasUniqueByComparator(refs, compareVersionedScopedReferences),
-        "duplicate explanation source reference",
-      )
-      .overwrite(normalizeVersionedScopedReferences)
-      .readonly(),
-    get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
-      return z.array(ExplanationNodeSchema).readonly();
-    },
-  })
-  .readonly();
-export type ExplanationNode = z.infer<typeof ExplanationNodeSchema>;
+const materializeExplanationPath = (
+  path: ExplanationPath | undefined,
+): (string | number)[] => {
+  const segments: (string | number)[] = [];
+  for (let cursor = path; cursor !== undefined; cursor = cursor.parent) {
+    segments.push(cursor.segment);
+  }
+  return segments.reverse();
+};
 
 type ExplanationTenantReferences = {
   evidenceSnapshotRefs: readonly { firmId: string }[];
@@ -200,12 +153,30 @@ export const RecommendationAlternativeSchema = z.strictObject({
 export type RecommendationAlternative = z.infer<typeof RecommendationAlternativeSchema>;
 
 /** The governed action a proceed decision recommends, with its rejected alternatives. */
-export const RecommendationSchema = z.strictObject({
-  code: z.string().min(1),
-  summary: z.string().min(1),
-  parameters: z.record(z.string().min(1), RecommendationParameterSchema).readonly(),
-  alternatives: z.array(RecommendationAlternativeSchema).readonly(),
-}).readonly();
+export const RecommendationSchema = z
+  .strictObject({
+    code: z.string().min(1),
+    summary: z.string().min(1),
+    parameters: z.record(
+      z.string().min(1),
+      RecommendationParameterSchema,
+    ).readonly(),
+    alternatives: z.array(RecommendationAlternativeSchema).readonly(),
+  })
+  .superRefine((recommendation, ctx) => {
+    const subjectRefs = Object.values(recommendation.parameters).filter(
+      (parameter): parameter is z.infer<typeof SubjectRefSchema> =>
+        parameter !== null && typeof parameter === "object",
+    );
+    if (subjectRefs.some((ref) => ref.firmId !== subjectRefs[0]?.firmId)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "recommendation subjects must belong to one tenant",
+        path: ["parameters"],
+      });
+    }
+  })
+  .readonly();
 export type Recommendation = z.infer<typeof RecommendationSchema>;
 
 /**
@@ -339,27 +310,53 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
       requireSameFirm(source.sourceRef, [...path, "sourceRef", "firmId"]);
       requireSameFirm(source.versionRef, [...path, "versionRef", "firmId"]);
     };
-    const requireExplanation = (
-      node: ExplanationTenantReferences,
-      path: (string | number)[],
-    ) => {
+    const explanationTasks: Array<{
+      readonly node: ExplanationTenantReferences;
+      readonly path: ExplanationPath;
+    }> = [];
+    record.explanationTrace.forEach((node, index) =>
+      explanationTasks.push({
+        node: node as ExplanationTenantReferences,
+        path: {
+          parent: { segment: "explanationTrace" },
+          segment: index,
+        },
+      }),
+    );
+    while (explanationTasks.length > 0) {
+      const { node, path } = explanationTasks.pop()!;
       node.evidenceSnapshotRefs.forEach((ref, index) =>
-        requireSameFirm(ref, [...path, "evidenceSnapshotRefs", index, "firmId"]),
+        requireSameFirm(ref, [
+          ...materializeExplanationPath(path),
+          "evidenceSnapshotRefs",
+          index,
+          "firmId",
+        ]),
       );
       node.sourceRefs.forEach((source, index) =>
-        requireSource(source, [...path, "sourceRefs", index]),
+        requireSource(source, [
+          ...materializeExplanationPath(path),
+          "sourceRefs",
+          index,
+        ]),
       );
       node.childNodes.forEach((child, index) =>
-        requireExplanation(child, [...path, "childNodes", index]),
+        explanationTasks.push({
+          node: child,
+          path: {
+            parent: {
+              parent: path,
+              segment: "childNodes",
+            },
+            segment: index,
+          },
+        }),
       );
-    };
+    }
     record.precedenceTrace.forEach((step, index) => {
       requireSource(step.left, ["precedenceTrace", index, "left"]);
       requireSource(step.right, ["precedenceTrace", index, "right"]);
     });
-    (record.explanationTrace as readonly ExplanationTenantReferences[]).forEach((node, index) =>
-      requireExplanation(node, ["explanationTrace", index]),
-    );
     record.reevaluateWhen.forEach((condition, index) => {
       if (condition.subjectRef) {
         requireSameFirm(condition.subjectRef, ["reevaluateWhen", index, "subjectRef", "firmId"]);

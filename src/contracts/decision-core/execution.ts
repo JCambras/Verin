@@ -65,6 +65,10 @@ export const ExecutionPreconditionSchema = z
       .array(EvidenceSnapshotIdRefSchema)
       .min(1)
       .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
+      .refine(
+        (refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId),
+        "required evidence snapshots must belong to one tenant",
+      )
       .overwrite(normalizeScopedReferences)
       .readonly(),
     mustStillHoldAtExecution: z.literal(true),
@@ -198,6 +202,13 @@ export const ExecutionStepSchema = z
   })
   .superRefine(requireActionTenant)
   .superRefine((step, ctx) => {
+    if (step.dependsOn.includes(step.id)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "an execution step cannot depend on itself",
+        path: ["dependsOn"],
+      });
+    }
     if (
       step.compensatingAction !== undefined &&
       step.compensatingAction.targetRef.firmId !== step.targetRef.firmId
@@ -206,6 +217,16 @@ export const ExecutionStepSchema = z
         code: "custom",
         message: "compensating action must belong to the step tenant",
         path: ["compensatingAction", "targetRef", "firmId"],
+      });
+    }
+    if (
+      step.compensatingAction !== undefined &&
+      step.compensatingAction.idempotencyKey === step.idempotencyKey
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "a compensating action must use a distinct idempotency key",
+        path: ["compensatingAction", "idempotencyKey"],
       });
     }
   })

@@ -7,6 +7,7 @@ import * as authoritySchemas from "@contracts/decision-core/authority";
 import * as decisionSchemas from "@contracts/decision-core/decision";
 import * as evidenceSchemas from "@contracts/decision-core/evidence";
 import * as executionSchemas from "@contracts/decision-core/execution";
+import * as explanationSchemas from "@contracts/decision-core/explanation";
 import * as idSchemas from "@contracts/decision-core/ids";
 import * as normalizationSchemas from "@contracts/decision-core/normalization";
 import * as serializationSchemas from "@contracts/decision-core/serialization";
@@ -22,34 +23,6 @@ import {
   IntentSchema,
 } from "@contracts/decision-core/trigger";
 import { REPO_ROOT } from "./_fence-utils";
-
-const SCOPED_REFERENCE_COLLECTION_CONSTRAINTS = {
-  "authority.ts:ApprovalStageSchema.escalationPath": "authority-stage-tenant",
-  "authority.ts:ApprovalStageSchema.requirements": "authority-stage-tenant",
-  "authority.ts:ApprovalTemplateSchema.stages": "template-enclosing-firm",
-  "authority.ts:AuthorityRequirementSchema.stages": "authority-stage-tenant",
-  "decision.ts:DecisionRecordSchema.explanationTrace": "decision-record-recursive",
-  "decision.ts:DecisionRecordSchema.precedenceTrace": "decision-record-recursive",
-  "decision.ts:DecisionRecordSchema.reevaluateWhen": "decision-record-recursive",
-  "decision.ts:DecisionResultSchema.blockers": "decision-record-recursive",
-  "decision.ts:ExplanationNodeSchema.childNodes": "decision-record-recursive",
-  "decision.ts:ExplanationNodeSchema.evidenceSnapshotRefs": "decision-record-recursive",
-  "decision.ts:ExplanationNodeSchema.sourceRefs": "decision-record-recursive",
-  "decision.ts:RecommendationSchema.parameters": "decision-record-recursive",
-  "evidence.ts:DecisionInputBundleSchema.evidenceSnapshotRefs": "bundle-enclosing-firm",
-  "evidence.ts:DecisionInputBundleSchema.householdInstructionVersionRefs": "bundle-enclosing-firm",
-  "execution.ts:CompensatingActionSchema.preconditions": "action-target-firm",
-  "execution.ts:CompensatingActionSchema.reservationRefs": "action-target-firm",
-  "execution.ts:ExecutionPlanSchema.steps": "execution-plan-single-tenant",
-  "execution.ts:ExecutionPreconditionSchema.requiredEvidenceSnapshotRefs": "action-target-firm",
-  "ids.ts:NonEmptyRoleRefSetSchema": "single-tenant-role-set",
-  "ids.ts:RoleRefSetSchema": "single-tenant-role-set",
-  "trigger.ts:AmbiguityRefSchema.candidateRefs": "single-tenant-ambiguity",
-  "trigger.ts:EvidenceRequestSchema.suppliableBy": "evidence-subject-firm",
-  "trigger.ts:ResolutionStateSchema.ambiguous": "element-tenant-constraint",
-  "trigger.ts:ResolutionStateSchema.gaps": "element-tenant-constraint",
-  "trigger.ts:ResolvableBlockerSchema.resolvingEvidence": "element-tenant-constraint",
-} as const;
 
 type SchemaModule = readonly [file: string, exports: Record<string, unknown>];
 type SchemaDefinition = {
@@ -67,6 +40,7 @@ const DECISION_CORE_SCHEMA_MODULES: readonly SchemaModule[] = [
   ["decision.ts", decisionSchemas],
   ["evidence.ts", evidenceSchemas],
   ["execution.ts", executionSchemas],
+  ["explanation.ts", explanationSchemas],
   ["ids.ts", idSchemas],
   ["normalization.ts", normalizationSchemas],
   ["serialization.ts", serializationSchemas],
@@ -183,52 +157,41 @@ const COLLECTION_SCHEMA_TYPES = new Set([
   "map",
 ]);
 
-const discoveredScopedReferenceCollections = (
+const schemaContainsScopedReferenceCollection = (
+  schema: z.ZodType,
+): boolean => {
+  const pending = [schema];
+  const seen = new Set<z.ZodType>();
+  while (pending.length > 0) {
+    const current = unwrapSchema(pending.pop()!);
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (
+      COLLECTION_SCHEMA_TYPES.has(schemaDefinition(current).type) &&
+      schemaContainsScopedReference(current)
+    ) {
+      return true;
+    }
+    pending.push(...schemaEdges(current).map((edge) => edge.schema));
+  }
+  return false;
+};
+
+const discoveredScopedReferenceBoundaries = (
   modules: readonly SchemaModule[],
-): string[] => {
-  const pathsByCollection = new Map<z.ZodType, string[]>();
+): Map<string, z.ZodType> => {
+  const boundaries = new Map<string, z.ZodType>();
   for (const [file, exports] of modules) {
     for (const [exportName, value] of Object.entries(exports)) {
-      if (!exportName.endsWith("Schema") || !isSchema(value)) continue;
-      const pending: Array<{ schema: z.ZodType; path: string }> = [{
-        schema: value,
-        path: `${file}:${exportName}`,
-      }];
-      const seen = new Set<z.ZodType>();
-      while (pending.length > 0) {
-        const candidate = pending.pop()!;
-        const schema = unwrapSchema(candidate.schema);
-        if (seen.has(schema)) continue;
-        seen.add(schema);
-        const definition = schemaDefinition(schema);
-        if (
-          COLLECTION_SCHEMA_TYPES.has(definition.type) &&
-          schemaContainsScopedReference(schema)
-        ) {
-          const paths = pathsByCollection.get(schema) ?? [];
-          paths.push(candidate.path);
-          pathsByCollection.set(schema, paths);
-        }
-        for (const child of schemaEdges(schema)) {
-          pending.push({
-            schema: child.schema,
-            path:
-              child.segment === ""
-                ? candidate.path
-                : `${candidate.path}.${child.segment}`,
-          });
-        }
+      if (
+        isSchema(value) &&
+        schemaContainsScopedReferenceCollection(value)
+      ) {
+        boundaries.set(`${file}:${exportName}`, value);
       }
     }
   }
-  return [...pathsByCollection.values()]
-    .map((paths) =>
-      paths.sort(
-        (left, right) =>
-          left.length - right.length || left.localeCompare(right),
-      )[0]!,
-    )
-    .sort();
+  return boundaries;
 };
 
 const fixture = (name: string): Record<string, unknown> =>
@@ -306,8 +269,239 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
   versionRef: { ...source.versionRef, firmId: "firm-b" },
 });
 
+const proceedBoundary = decisionFixture("decision-record-proceed");
+const proceedResult = proceedBoundary.result;
+const executionStep = proceedResult.executionPlan!.steps[0]!;
+const approvalStage = proceedResult.authority!.stages![0]!;
+const approvalRequirement = {
+  ...approvalStage.requirements[0]!,
+  eligibleRoleIds: [
+    { firmId: "firm-a", id: "operations" },
+    { firmId: "firm-a", id: "advisor" },
+  ],
+};
+const escalationStep = {
+  ...approvalStage.escalationPath[0]!,
+  roleIds: [
+    { firmId: "firm-a", id: "operations-manager" },
+    { firmId: "firm-a", id: "compliance-manager" },
+  ],
+};
+const probedApprovalStage = {
+  stageId: "stage:probe",
+  order: 0,
+  executionMode: "parallel",
+  requirements: [approvalRequirement],
+  escalationPath: [escalationStep],
+  templateRef: { firmId: "firm-a", id: "template:probe" },
+  expiresAt: "2026-07-29T13:30:00.000Z",
+};
+const approvalStageTemplate = {
+  stageId: probedApprovalStage.stageId,
+  order: probedApprovalStage.order,
+  executionMode: probedApprovalStage.executionMode,
+  requirements: probedApprovalStage.requirements,
+  escalationPath: probedApprovalStage.escalationPath,
+  expiresAfter: "P1D",
+};
+const approvalTemplate = {
+  firmId: "firm-a",
+  id: "template:probe",
+  stages: [approvalStageTemplate],
+};
+const authorityRequirement = {
+  mode: "approval",
+  stages: [probedApprovalStage],
+};
+const actorRef = {
+  firmId: "firm-a",
+  actorId: "actor:probe",
+  roleIds: [
+    { firmId: "firm-a", id: "advisor" },
+    { firmId: "firm-a", id: "operations" },
+  ],
+};
+const explanationNode = {
+  ...proceedBoundary.explanationTrace[0]!,
+  evidenceSnapshotRefs: [
+    { firmId: "firm-a", id: "evidence:one" },
+    { firmId: "firm-a", id: "evidence:two" },
+  ],
+  childNodes: [],
+};
+const recommendation = {
+  ...proceedResult.recommendation!,
+  parameters: {
+    firstSubject: { firmId: "firm-a", id: "subject:one" },
+    secondSubject: { firmId: "firm-a", id: "subject:two" },
+  },
+};
+const probedProceedResult = {
+  ...proceedResult,
+  recommendation,
+  authority: authorityRequirement,
+};
+const externalAction = {
+  targetRef: executionStep.targetRef,
+  command: executionStep.command,
+  idempotencyKey: executionStep.idempotencyKey,
+  conflictKeys: executionStep.conflictKeys,
+  reservationRefs: executionStep.reservationRefs,
+  preconditions: executionStep.preconditions,
+  verificationRuleRef: executionStep.verificationRuleRef,
+};
+const compensatingAction = {
+  ...externalAction,
+  idempotencyKey: "idem:compensation:probe",
+  reasonCode: "later-step-failed",
+};
+const executionPrecondition = {
+  ...executionStep.preconditions[0]!,
+  requiredEvidenceSnapshotRefs: [
+    { firmId: "firm-a", id: "evidence:one" },
+    { firmId: "firm-a", id: "evidence:two" },
+  ],
+};
+const roleRefSet = [
+  { firmId: "firm-a", id: "advisor" },
+  { firmId: "firm-a", id: "operations" },
+];
+const ambiguityRef = {
+  slotName: "household",
+  candidateRefs: [
+    { firmId: "firm-a", id: "subject:one" },
+    { firmId: "firm-a", id: "subject:two" },
+  ],
+  humanQuestionCode: "choose-household",
+};
+const evidenceRequest = {
+  evidenceKind: "account-balance",
+  subjectRef: { firmId: "firm-a", id: "subject:one" },
+  suppliableBy: [
+    { firmId: "firm-a", id: "advisor" },
+    { firmId: "firm-a", id: "operations" },
+  ],
+};
+const resolvableBlocker = {
+  code: "missing-balance",
+  explanation: "Balance evidence is required.",
+  resolvingEvidence: [evidenceRequest],
+};
+const resolutionState = {
+  bound: [],
+  ambiguous: [ambiguityRef],
+  gaps: [evidenceRequest],
+};
+const trigger = {
+  kind: "human_request",
+  requester: actorRef,
+  requestRef: { firmId: "firm-a", id: "request:probe" },
+  maskedRequest: { value: "tokenized request", piiFree: true },
+};
+const intent = {
+  firmId: "firm-a",
+  id: "intent:probe",
+  trigger,
+  domainConfigVersionRef: {
+    firmId: "firm-a",
+    id: "domain-config:probe",
+  },
+  action: "primitive:probe",
+  slots: {},
+  createdAt: "2026-07-26T13:30:00.000Z",
+};
+
+const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
+  Record<string, unknown>
+> = {
+  "actor.ts:ActorRefSchema": actorRef,
+  "actor.ts:AnyActorRefSchema": actorRef,
+  "authority.ts:ApprovalRequirementSchema": approvalRequirement,
+  "authority.ts:ApprovalStageSchema": probedApprovalStage,
+  "authority.ts:ApprovalStageTemplateSchema": approvalStageTemplate,
+  "authority.ts:ApprovalTemplateSchema": approvalTemplate,
+  "authority.ts:AuthorityRequirementSchema": authorityRequirement,
+  "authority.ts:EscalationStepSchema": escalationStep,
+  "decision.ts:BlockedDecisionSchema": {
+    kind: "blocked",
+    blockers: [resolvableBlocker],
+  },
+  "decision.ts:DecisionRecordSchema": proceedBoundary,
+  "decision.ts:DecisionResultSchema": probedProceedResult,
+  "decision.ts:ExplanationNodeSchema": explanationNode,
+  "decision.ts:ProceedDecisionSchema": probedProceedResult,
+  "decision.ts:RecommendationSchema": recommendation,
+  "evidence.ts:DecisionInputBundleSchema":
+    fixture("decision-input-bundle"),
+  "execution.ts:CompensatingActionSchema": compensatingAction,
+  "execution.ts:ExecutionPlanSchema": proceedResult.executionPlan,
+  "execution.ts:ExecutionPreconditionSchema": executionPrecondition,
+  "execution.ts:ExecutionStepSchema": executionStep,
+  "execution.ts:RetrySafeExternalActionSchema": externalAction,
+  "explanation.ts:ExplanationNodeSchema": explanationNode,
+  "ids.ts:NonEmptyRoleRefSetSchema": roleRefSet,
+  "ids.ts:RoleRefSetSchema": roleRefSet,
+  "trigger.ts:AmbiguityRefSchema": ambiguityRef,
+  "trigger.ts:EvidenceRequestSchema": evidenceRequest,
+  "trigger.ts:IntentSchema": intent,
+  "trigger.ts:ResolutionStateSchema": resolutionState,
+  "trigger.ts:ResolvableBlockerSchema": resolvableBlocker,
+  "trigger.ts:TriggerSchema": trigger,
+};
+
+const mixedTenantProbe = (legal: unknown): unknown => {
+  const mixed = structuredClone(legal);
+  const scopedReferences: Array<Record<string, unknown>> = [];
+  const pending = [mixed];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (value === null || typeof value !== "object") continue;
+    if (
+      !Array.isArray(value) &&
+      Object.hasOwn(value, "firmId") &&
+      Object.hasOwn(value, "id") &&
+      typeof (value as Record<string, unknown>).firmId === "string" &&
+      typeof (value as Record<string, unknown>).id === "string"
+    ) {
+      scopedReferences.push(value as Record<string, unknown>);
+    }
+    pending.push(...Object.values(value));
+  }
+  if (scopedReferences.length < 2) {
+    throw new Error("tenant boundary probes require at least two scoped references");
+  }
+  const selected = scopedReferences.at(-1)!;
+  selected.firmId = selected.firmId === "firm-b" ? "firm-a" : "firm-b";
+  return mixed;
+};
+
+const tenantBoundaryAudit = (
+  modules: readonly SchemaModule[],
+  probes: Readonly<Record<string, unknown>>,
+): {
+  readonly missing: string[];
+  readonly stale: string[];
+  readonly failed: string[];
+} => {
+  const boundaries = discoveredScopedReferenceBoundaries(modules);
+  const boundaryNames = [...boundaries.keys()].sort();
+  const probeNames = Object.keys(probes).sort();
+  const missing = boundaryNames.filter((name) => !(name in probes));
+  const stale = probeNames.filter((name) => !boundaries.has(name));
+  const failed = probeNames.filter((name) => {
+    const schema = boundaries.get(name);
+    if (schema === undefined) return false;
+    const legal = probes[name];
+    return (
+      !schema.safeParse(legal).success ||
+      schema.safeParse(mixedTenantProbe(legal)).success
+    );
+  });
+  return { missing, stale, failed };
+};
+
 describe("decision-core tenant-scope fence", () => {
-  it("keeps the scoped-reference collection registry exhaustive", () => {
+  it("keeps every exported scoped-reference boundary behaviorally verified", () => {
     expect(
       readdirSync(join(REPO_ROOT, "src/contracts/decision-core"))
         .filter((file) => file.endsWith(".ts"))
@@ -315,62 +509,68 @@ describe("decision-core tenant-scope fence", () => {
     ).toEqual(
       DECISION_CORE_SCHEMA_MODULES.map(([file]) => file).sort(),
     );
-    const discovered = discoveredScopedReferenceCollections(
+    expect(tenantBoundaryAudit(
       DECISION_CORE_SCHEMA_MODULES,
-    );
-    expect(discovered).toContain(
-      "trigger.ts:AmbiguityRefSchema.candidateRefs",
-    );
-    expect(discovered).toContain(
-      "decision.ts:RecommendationSchema.parameters",
-    );
-    expect(discovered).toEqual(
-      Object.keys(SCOPED_REFERENCE_COLLECTION_CONSTRAINTS).sort(),
-    );
+      SCOPED_REFERENCE_BOUNDARY_PROBES,
+    )).toEqual({ missing: [], stale: [], failed: [] });
   });
 
-  it.each([
-    [
-      "alias",
-      (reference: z.ZodType) => z.array(reference),
-    ],
-    [
-      "wrapper",
-      (reference: z.ZodType) => reference.readonly().array(),
-    ],
-    [
-      "composite",
-      (reference: z.ZodType) =>
-        z.array(z.strictObject({ reference })),
-    ],
-    [
-      "record",
-      (reference: z.ZodType) =>
-        z.record(z.string(), z.union([z.string(), reference])),
-    ],
-    [
-      "wrapper factory",
-      (reference: z.ZodType) => {
-        const wrap = (schema: z.ZodType) =>
-          z.tuple([z.string(), schema]).readonly();
-        return wrap(reference);
-      },
-    ],
-  ] as const)(
-    "discovers a scoped-reference collection through a %s",
-    (_name, buildCollection) => {
-      const reference = z
-        .strictObject({ firmId: z.string(), id: z.string() })
-        .readonly();
-      expect(
-        discoveredScopedReferenceCollections([
-          ["probe.ts", { AddedSchema: buildCollection(reference) }],
-        ]),
-      ).toEqual([
-        "probe.ts:AddedSchema",
-      ]);
-    },
-  );
+  it("detects an exported boundary without a Schema suffix", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const Added = z.array(reference);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Added }]],
+      {},
+    ).missing).toEqual(["probe.ts:Added"]);
+  });
+
+  it("detects an unconstrained wrapper that reuses a registered collection", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const RegisteredSchema = z
+      .array(reference)
+      .refine((refs) =>
+        refs.every((ref) => ref.firmId === refs[0]?.firmId),
+      );
+    const UnconstrainedWrapper = z.strictObject({
+      refs: RegisteredSchema,
+      ownerRef: reference,
+    });
+    const legal = [
+      { firmId: "firm-a", id: "one" },
+      { firmId: "firm-a", id: "two" },
+    ];
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { RegisteredSchema, UnconstrainedWrapper }]],
+      { "probe.ts:RegisteredSchema": legal },
+    );
+    expect(audit.missing).toEqual(["probe.ts:UnconstrainedWrapper"]);
+  });
+
+  it("executes each probe instead of trusting its registry label", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const UnconstrainedWrapper = z.strictObject({
+      refs: z.array(reference),
+    });
+    const legal = {
+      refs: [
+        { firmId: "firm-a", id: "one" },
+        { firmId: "firm-a", id: "two" },
+      ],
+    };
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { UnconstrainedWrapper }]],
+      { "probe.ts:UnconstrainedWrapper": legal },
+    ).failed).toEqual(["probe.ts:UnconstrainedWrapper"]);
+  });
 
   it("enforces: ambiguity candidates are duplicate-free and belong to one tenant", () => {
     const candidate = { firmId: "firm-a", id: "subject:a" };

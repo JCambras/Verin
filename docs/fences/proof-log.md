@@ -1751,3 +1751,73 @@ headroom. All decision-core fixture files remain byte-identical and their record
 without a schema or preimage version change.
 
 **Date:** 2026-07-27 (review corrections F92-F95, D-059).
+
+## F96-F100 · behavioral tenant, standalone retry, tuple identity, parse depth, and loader-key corrections (D-060)
+
+**Invariants:** every exported scoped-reference collection boundary has an executed mixed-tenant
+refusal; standalone steps reject intrinsic retry hazards; scoped-reference identity is a collision-free
+tuple; valid explanation depth does not depend on the host stack at parse; locally assigned loader
+keys retain provenance.
+
+The pre-fix production-boundary reproduction reported all five defects:
+```
+selfDependencyAccepted: true
+reusedCompensationKeyAccepted: true
+collisionAccepted: false
+deepParse: RangeError
+dependencyResults: [[],[]]
+```
+The collision refusal included `duplicate ambiguity candidate reference` for the distinct pairs
+`("a", "\0b")` and `("a\0", "b")`.
+
+Adding the former `Schema` suffix filter back to the runtime tenant inventory failed all three
+completeness companions:
+```
+× detects an exported boundary without a Schema suffix
+× detects an unconstrained wrapper that reuses a registered collection
+× executes each probe instead of trusting its registry label
+```
+The production check inventories each exported Zod value independently, while the synthetic schemas
+prove missing and behaviorally false registry entries are reported.
+
+Disabling the two step-local refinements failed the direct-schema companions:
+```
+× enforces: standalone steps reject compensation idempotency-key aliasing
+× enforces: standalone steps reject self-dependencies
+```
+Both companions parse `ExecutionStepSchema` directly, so a plan-level refusal cannot make them pass.
+
+Restoring NUL-delimited uniqueness failed the tuple companion:
+```
+× uses collision-free tuple identity for scoped references
+AssertionError: expected false to be true
+```
+The production helper now delegates identity to the same `(firmId, id)` comparator that owns canonical
+ordering.
+
+Routing `ExplanationNodeSchema` back through Zod's recursive runner failed the 12,000-level companion
+at the production parse boundary:
+```
+× hashes a deeply nested acyclic decision without overflowing
+RangeError: Maximum call stack size exceeded
+```
+The legal deep payload now passes through `DecisionRecordSchema.safeParse`, iterative tenant traversal,
+preimage normalization, and canonical serialization. Existing cycle and non-plain-object refusals
+remain production-path assertions.
+
+Replacing shared property-key provenance with direct literal inspection failed the assigned-key
+companions:
+```
+× destructured ambient require provenance remains enforced: assigned computed key
+× destructured createRequire provenance remains enforced: assigned computed key
+× assigned element-access loader keys remain enforced: ambient require
+```
+The resolver covers local literals and latest preceding simple assignments for destructuring and
+element access. D-060 and ADR-0001 record the residual limit for runtime, conditional, and
+configuration-derived keys with a Revisit-When.
+
+**Revert:** every injected incomplete form was removed after its focused failure. The final contracts
+measurement is 3412/3500 with 88 measured lines of headroom. All four decision-core fixture files
+remain byte-identical to their pre-fix SHA-256 digests.
+
+**Date:** 2026-07-27 (review corrections F96-F100, D-060).

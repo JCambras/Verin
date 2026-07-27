@@ -1066,3 +1066,38 @@ remain byte-identical, so schema and preimage versions stay 1.7.0.
 must be inseparable from their data, and unbounded valid inputs must not depend on the host call stack.
 **Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, replay, and
 dependency boundaries remain supported.
+
+### D-060 · 2026-07-27 · captain-decision · Exported boundaries prove tenant and retry safety behavior
+
+The decision-core tenant inventory covers every exported Zod value whose runtime schema graph contains
+a scoped-reference collection. Export names are unrestricted and shared schema objects are inventoried
+once per exported boundary rather than collapsed by identity. The registry is exact, and every entry
+supplies a legal payload plus a mixed-tenant payload that the registered exported schema must reject.
+Suffixless-export, reused-wrapper, and behavior-failure companions prove all three parts of that claim.
+
+`ExecutionStepSchema` itself rejects a self-dependency and a compensation that aliases the parent
+idempotency key. Scoped-reference uniqueness uses the one canonical tuple comparator, so unrestricted
+identifier strings cannot collide through delimiter concatenation. Explanation parsing and
+decision-record tenant traversal are iterative at the production schema boundary; the 12,000-level
+companion now enters through `DecisionRecordSchema.safeParse` before hashing.
+
+The dependency fence resolves computed loader keys through local literals and the latest preceding
+simple assignment for both destructuring and element access, shared by `require` and `createRequire`.
+Its static proof does not cover runtime, conditional, or configuration-derived property keys and is not
+a security boundary against a determined source author. No shipped source contains a `require` token.
+**Revisit-When:** shipped code intentionally needs a runtime-computed CommonJS loader key; replace or
+augment this fence with a runtime or compiler-level boundary rather than enumerating more spellings.
+
+Independently of the line measurement, parse boundaries and hash preimages continue to share pure
+normalization authorities so canonical collections cannot drift and non-plain inputs remain visible to
+the serializer refusal. The final contracts implementation measures **3412** lines. ADR-0029
+re-baselines the ceiling from 3200 to **3500** through ADR-0018's amendment path, leaving **88 lines of
+measured headroom**. The ratchet resumes from 3500 and does not authorize unrelated growth. Recorded
+bundle and decision fixture bytes and digests remain unchanged, so schema and preimage versions stay
+1.7.0.
+
+**Why:** exported validation boundaries must prove their actual tenant behavior, intrinsic retry
+hazards must fail at the standalone step boundary, and valid input depth must not depend on the host
+call stack.
+**Revert path:** none while prompt-5 tenant, execution, replay, and dependency boundaries remain
+supported.

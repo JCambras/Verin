@@ -75,21 +75,33 @@ describe("decision-core external-action safety fence", () => {
     ).toBe(false);
   });
 
-  it("enforces: parent and compensation idempotency keys cannot alias", () => {
-    const parsed = ExecutionPlanSchema.safeParse({
-      id: "plan:1",
-      steps: [
-        {
-          id: "step:1",
-          ...action,
-          dependsOn: [],
-          compensatingAction: { ...compensation, idempotencyKey: action.idempotencyKey },
-        },
-      ],
+  it("enforces: standalone steps reject compensation idempotency-key aliasing", () => {
+    const parsed = ExecutionStepSchema.safeParse({
+      id: "step:1",
+      ...action,
+      dependsOn: [],
+      compensatingAction: {
+        ...compensation,
+        idempotencyKey: action.idempotencyKey,
+      },
     });
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => issue.path.includes("compensatingAction"))).toBe(true);
+    }
+  });
+
+  it("enforces: standalone steps reject self-dependencies", () => {
+    const parsed = ExecutionStepSchema.safeParse({
+      id: "step:1",
+      ...action,
+      dependsOn: ["step:1"],
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) =>
+        issue.path.includes("dependsOn"),
+      )).toBe(true);
     }
   });
 

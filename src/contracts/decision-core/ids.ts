@@ -171,16 +171,6 @@ export const normalizeScopedReferences = <T extends ScopedReference>(
   references: readonly T[],
 ): T[] => [...references].sort(compareScopedReferences);
 
-const scopedReferenceKey = (reference: ScopedReference): string =>
-  `${reference.firmId}\u0000${reference.id}`;
-
-/**
- * Set semantics for tenant-scoped references: identity is the (firm, id) PAIR, keyed
- * through a NUL separator so no two distinct pairs can concatenate into one key.
- */
-export const hasUniqueScopedReferences = (references: readonly ScopedReference[]): boolean =>
-  new Set(references.map(scopedReferenceKey)).size === references.length;
-
 export const hasUniqueByComparator = <T>(
   values: readonly T[],
   comparator: (left: T, right: T) => number,
@@ -188,6 +178,10 @@ export const hasUniqueByComparator = <T>(
   const ordered = [...values].sort(comparator);
   return ordered.every((value, index) => index === 0 || comparator(ordered[index - 1]!, value) !== 0);
 };
+
+/** Set semantics for tenant-scoped references: identity is the (firm, id) pair. */
+export const hasUniqueScopedReferences = (references: readonly ScopedReference[]): boolean =>
+  hasUniqueByComparator(references, compareScopedReferences);
 
 export type VersionedScopedReference = {
   readonly sourceType: string;

@@ -132,11 +132,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   structured references carrying `firmId` plus the opaque branded ID. Approval templates are
   tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
   collections reject duplicates and normalize by firm then opaque ID. Ambiguity candidates are a
-  duplicate-free canonical set constrained to one tenant. The tenant-scope fence follows schema
-  provenance through aliases, wrappers, and composite schemas to discover every scoped-reference
-  collection in decision-core, and requires an exact
-  match with its explicit constraint registry; a newly exported collection fails until its tenant
-  rule and companion are registered. Decision-record refinements recursively
+  duplicate-free canonical set constrained to one tenant. The tenant-scope fence inventories every
+  exported Zod value, regardless of its name, whose runtime schema graph contains a scoped-reference
+  collection. Every discovered export must have an exact registry entry whose legal and mixed-tenant
+  payloads are parsed through that exported schema; a new alias or wrapper fails until its behavior is
+  registered and rejects the mixed payload. Decision-record refinements iteratively
   check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
   actor roles, authority roles, and evidence-supplier roles, rejecting every cross-tenant link. For the
   execution plan the record binds ONE edge per step - the step's `targetRef` - because the action and plan
@@ -206,7 +206,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
   ambient runtime or namespace declarations, and type-checks contracts against the ES-only library
   surface using diagnostic codes so implicit DOM and Node globals cannot add platform coupling.
   Destructured `require` and `createRequire` references share receiver-provenance resolution across
-  declarations, computed literal keys, type-erased aliases, and assignment destructuring.
+  declarations, computed literal keys, type-erased aliases, and assignment destructuring. Computed
+  keys follow local literal declarations and preceding simple assignments; runtime, conditional, and
+  configuration-derived keys remain outside this static fence's documented proof boundary.
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
@@ -216,11 +218,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   explanation structure, then drift whenever either schema grows. Parsing inside a hash builder
   would instead change the accepted runtime object boundary and hide non-plain object refusals.
   Shared pure authorities avoid both defects while preserving explicit versioned projections.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3200**. The final implementation
-  measures **3158** lines by the line-budget fence's own metric, leaving **42 lines of headroom**.
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3500**. The final implementation
+  measures **3412** lines by the line-budget fence's own metric, leaving **88 lines of headroom**.
   This is the final post-review figure and the only current-state measurement to plan against. The
-  former 3100 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
-  resumes from 3200; later contract-layer prompts
+  former 3200 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
+  resumes from 3500; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
@@ -245,17 +247,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 3200 (a real growth, honestly sized and ratcheted).
+  grew 600 → 3500 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 3200 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 3500 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
-  cross-tenant values and the scoped-reference collection registry exactly matches every container
-  that reaches a scoped reference in the exported runtime Zod schema graph, independently of source
-  constructor syntax. Its exact module inventory prevents a newly added decision-core source module
-  from escaping that graph walk.
+  their executable mixed-tenant probes and the registry exactly matches every exported Zod value
+  whose runtime schema graph contains a scoped-reference collection, independently of export naming,
+  aliasing, or wrapper reuse. Its exact module inventory prevents a newly added decision-core source
+  module from escaping that graph walk.
 - `charter-map.json` #16 executes `decision-core-external-action-safety`, which rejects incomplete
   compensating actions and idempotency-key aliasing.
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended

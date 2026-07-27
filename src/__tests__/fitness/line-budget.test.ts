@@ -14,7 +14,7 @@ import { relative } from "node:path";
  * foundation close. Raising any ceiling is an ADR amendment, not a code change.
  */
 const CEILINGS = {
-  contracts: 3200, // raised 600 -> 3200 by ADR-0029 (v3 prompt-5 decision-core contracts); ratchet-down resumes from here
+  contracts: 3500, // raised 600 -> 3500 by ADR-0029 (v3 prompt-5 decision-core contracts); ratchet-down resumes from here
   domain: 1200,
   infrastructure: 2500,
   presentation: 6000, // grown only by an ADR bump (ADR-0012)

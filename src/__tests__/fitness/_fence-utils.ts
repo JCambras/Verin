@@ -236,28 +236,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       return node.getLiteralText();
     }
     if (Node.isComputedPropertyName(node)) {
-      const literalValue = (
-        value: Node | undefined,
-        seen: Set<Node> = new Set(),
-      ): string | null => {
-        const expression = unwrapExpression(value);
-        if (
-          Node.isStringLiteral(expression) ||
-          Node.isNoSubstitutionTemplateLiteral(expression)
-        ) {
-          return expression.getLiteralText();
-        }
-        if (!Node.isIdentifier(expression) || seen.has(expression)) {
-          return null;
-        }
-        seen.add(expression);
-        const declaration = expression
-          .getSymbol()
-          ?.getDeclarations()
-          .find(Node.isVariableDeclaration);
-        return literalValue(declaration?.getInitializer(), seen);
-      };
-      return literalValue(node.getExpression());
+      return literalPropertyKey(node.getExpression());
     }
     return null;
   };
@@ -357,6 +336,13 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     return source === undefined
       ? expression
       : expressionProvenance(source, seen);
+  };
+  const literalPropertyKey = (node: Node | undefined): string | null => {
+    const expression = expressionProvenance(node);
+    return Node.isStringLiteral(expression) ||
+      Node.isNoSubstitutionTemplateLiteral(expression)
+      ? expression.getLiteralText()
+      : null;
   };
   /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
   const isAmbientGlobalReference = (node: Node | undefined): boolean => {
@@ -581,14 +567,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   }
   for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
     const argument = access.getArgumentExpression();
+    const memberName = literalPropertyKey(argument);
     if (
       isCreateRequireNamespace(access.getExpression()) &&
-      (!argument ||
-        !(
-          Node.isStringLiteral(argument) ||
-          Node.isNoSubstitutionTemplateLiteral(argument)
-        ) ||
-        argument.getLiteralText() === "createRequire")
+      (memberName === null || memberName === "createRequire")
     ) {
       refs.push({
         specifier: null,
@@ -597,10 +579,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
     if (
-      argument &&
-      (Node.isStringLiteral(argument) ||
-        Node.isNoSubstitutionTemplateLiteral(argument)) &&
-      argument.getLiteralText() === "require" &&
+      memberName === "require" &&
       isAmbientRequireMember(access.getExpression(), argument)
     ) {
       refs.push({

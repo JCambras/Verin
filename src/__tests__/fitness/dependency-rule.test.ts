@@ -16,6 +16,10 @@ import {
  * dynamic import(), AND require() — resolving relative and aliased specifiers to a
  * layer (the seams Iris leaked through: relative + dynamic imports walked past an
  * import-only check).
+ *
+ * Computed loader members are resolved when their key comes from a local literal
+ * declaration or a preceding simple assignment. Runtime, conditional, and
+ * configuration-derived keys are outside this static fence's proof boundary.
  */
 describe("dependency-rule fence", () => {
   it("enforces: the real src/ tree has zero layer violations", () => {
@@ -553,6 +557,10 @@ describe("dependency-rule fence", () => {
         `const key = "require" as const;\nconst { [key]: load } = module;\nexport const value = load("@infra/store");`,
       ],
       [
+        "assigned computed key",
+        `let key = "other";\nkey = "require";\nconst { [key]: load } = module;\nexport const value = load("@infra/store");`,
+      ],
+      [
         "assignment",
         `let load: any;\n({ require: load } = module);\nexport const value = load("@infra/store");`,
       ],
@@ -600,6 +608,10 @@ describe("dependency-rule fence", () => {
         `const key = "createRequire" as const;\nconst { [key]: make } = await import("node:module");\nexport const load = make(import.meta.url);`,
       ],
       [
+        "assigned computed key",
+        `let key = "other";\nkey = "createRequire";\nconst { [key]: make } = await import("node:module");\nexport const load = make(import.meta.url);`,
+      ],
+      [
         "assignment",
         `let make: any;\n({ createRequire: make } = await import("node:module"));\nexport const load = make(import.meta.url);`,
       ],
@@ -629,6 +641,28 @@ describe("dependency-rule fence", () => {
       expect(v.some((violation) =>
         violation.specifier === "<non-literal create-require>",
       )).toBe(true);
+    });
+
+    it.each([
+      [
+        "ambient require",
+        `let key = "other";\nkey = "require";\nexport const value = module[key]("@infra/store");`,
+      ],
+      [
+        "createRequire",
+        `let key = "other";\nkey = "createRequire";\nexport const load = (await import("node:module"))[key](import.meta.url);`,
+      ],
+    ])("assigned element-access loader keys remain enforced: %s", (_name, source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/types/node-shim.d.ts":
+            "declare const module: { require(id: string): unknown };",
+          "src/domain/evil.ts": source,
+        }),
+      );
+      expect(v.map((violation) =>
+        `${violation.fromLayer}->${violation.toLayer}`,
+      )).toContain("domain->unresolved");
     });
   });
 });

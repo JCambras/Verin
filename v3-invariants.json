@@ -58,7 +58,7 @@
           "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and their registered boundaries reject cross-tenant configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, verification rule, and ambiguity-candidate values. An exact schema-derived inventory follows aliases, wrappers, and composite schemas and fails when a scoped-reference collection is added without an explicit registered constraint."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and their registered boundaries reject cross-tenant configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, verification rule, and ambiguity-candidate values. An exact runtime inventory covers every exported Zod value whose schema graph contains a scoped-reference collection, regardless of export name, alias, or wrapper reuse, and executes a legal and mixed-tenant parse probe for every registered boundary."
     },
     {
       "id": 3,

@@ -10,6 +10,7 @@ import {
   HashSchema,
   TimestampSchema,
   compareScopedReferences,
+  hasUniqueScopedReferences,
 } from "@contracts/decision-core/ids";
 import { ActorRefSchema, TokenizedPayloadSchema } from "@contracts/decision-core/actor";
 import {
@@ -981,11 +982,9 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
   );
 
   it("hashes a deeply nested acyclic decision without overflowing", () => {
-    const record = structuredClone(
-      DecisionRecordSchema.parse(
-        JSON.parse(readFixture("decision-record-proceed")),
-      ),
-    );
+    const record = JSON.parse(
+      readFixture("decision-record-proceed"),
+    ) as Record<string, unknown>;
     type MutableExplanation = {
       code: string;
       messageTemplate: string;
@@ -1009,14 +1008,17 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
         childNodes: [explanation],
       };
     }
-    const persistenceHydrated = record as unknown as {
+    const persistenceHydrated = record as {
       explanationTrace: MutableExplanation[];
     };
     persistenceHydrated.explanationTrace = [explanation];
+    const parsed = DecisionRecordSchema.safeParse(record);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
     expect(
       canonicalJson(
         decisionHashPreimage(
-          record as Parameters<typeof decisionHashPreimage>[0],
+          parsed.data,
         ),
       ).ok,
     ).toBe(true);
@@ -1376,6 +1378,17 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(bundleHashPreimage(bundle).payload.evidenceSnapshotRefs).toEqual([
       ...bundle.evidenceSnapshotRefs,
     ]);
+  });
+
+  it("uses collision-free tuple identity for scoped references", () => {
+    expect(hasUniqueScopedReferences([
+      { firmId: "a", id: "\u0000b" },
+      { firmId: "a\u0000", id: "b" },
+    ])).toBe(true);
+    expect(hasUniqueScopedReferences([
+      { firmId: "a", id: "b" },
+      { firmId: "a", id: "b" },
+    ])).toBe(false);
   });
 
   it("refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON", () => {
