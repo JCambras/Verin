@@ -34,6 +34,7 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/identity/session.ts :: requireRole", why: "pure role authorization" },
   { ref: "src/infrastructure/crm/application-store.ts :: getApplicationByToken", why: "e-sign capability load" },
   { ref: "src/infrastructure/store/execution-store.ts :: makeExecutionStore", why: "factory whose returned port is checked independently" },
+  { ref: "src/infrastructure/store/execution-store.ts :: makeExecutionStore.loadByToken", why: "unguessable resume-token capability load" },
   { ref: "src/infrastructure/audit/audit-store.ts :: enqueueAudit", why: "transaction-local auditedWrite internal" },
   { ref: "src/infrastructure/audit/audit-store.ts :: discardedAuditEventWork", why: "non-persisting login constant work" },
   { ref: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken", why: "e-sign resume-token capability" },
@@ -42,6 +43,11 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
 ];
 
 const PORT_ESCAPES = new Set([
+  "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
+  "src/domain/observability/safe-values.ts :: safeLogMessage.<call>",
+  "src/domain/observability/safe-values.ts :: safeSpanName.<call>",
+  "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionValue.<call>",
+  "src/domain/pii/projection-resolution.ts :: resolveCompleteSensitiveEntities.<call>",
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
   "src/domain/schema/golden-record.ts :: resolveConflict.<call>",
@@ -290,6 +296,79 @@ function exportedDomainCallableTypes(
   );
 }
 
+function returnedRepositoryEntries(
+  declaration: Node,
+  owner: string,
+): RepositoryEntry[] {
+  const body = Node.isFunctionDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration)
+    ? declaration.getBody()
+    : null;
+  if (!body) return [];
+  const returnedExpressions: Node[] = [];
+  if (!Node.isBlock(body)) returnedExpressions.push(body);
+  for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+    const containingFunction = statement.getFirstAncestor((ancestor) =>
+      Node.isFunctionDeclaration(ancestor) ||
+      Node.isFunctionExpression(ancestor) ||
+      Node.isArrowFunction(ancestor) ||
+      Node.isMethodDeclaration(ancestor)
+    );
+    if (containingFunction !== declaration) continue;
+    const expression = statement.getExpression();
+    if (expression) returnedExpressions.push(expression);
+  }
+  const resolveObject = (expression: Node, seen = new Set<string>()): Node | null => {
+    const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    if (Node.isObjectLiteralExpression(expression)) return expression;
+    if (Node.isParenthesizedExpression(expression) ||
+      Node.isAsExpression(expression) ||
+      Node.isSatisfiesExpression(expression) ||
+      Node.isTypeAssertion(expression)) {
+      return resolveObject(expression.getExpression(), seen);
+    }
+    if (!Node.isIdentifier(expression)) return null;
+    const symbol = expression.getSymbol();
+    const target = symbol?.getAliasedSymbol() ?? symbol;
+    for (const candidate of target?.getDeclarations() ?? []) {
+      if (!Node.isVariableDeclaration(candidate)) continue;
+      const initializer = candidate.getInitializer();
+      if (initializer) return resolveObject(initializer, seen);
+    }
+    return null;
+  };
+  const expressions = returnedExpressions
+    .map((expression) => resolveObject(expression))
+    .filter((expression): expression is Node => expression !== null);
+  const entries: RepositoryEntry[] = [];
+  for (const expression of expressions) {
+    if (!Node.isObjectLiteralExpression(expression)) continue;
+    for (const property of expression.getProperties()) {
+      if (Node.isMethodDeclaration(property)) {
+        entries.push({
+          name: `${owner}.${property.getName()}`,
+          signatures: [property.getSignature()],
+        });
+        continue;
+      }
+      if (!Node.isPropertyAssignment(property)) continue;
+      const initializer = property.getInitializer();
+      if (!initializer ||
+        (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer))) {
+        continue;
+      }
+      entries.push({
+        name: `${owner}.${property.getName()}`,
+        signatures: [initializer.getSignature()],
+      });
+    }
+  }
+  return entries;
+}
+
 function sqlBackedInfrastructureModules(project: Project): Set<string> {
   const modules = new Set<string>(["src/infrastructure/store/db.ts"]);
   const isSqlAdapter = (specifier: string): boolean =>
@@ -370,6 +449,10 @@ export function detectMissingTenantParams(
           name: fn.getName() ?? "<anonymous>",
           signatures: [fn.getSignature()],
         });
+        entries.push(...returnedRepositoryEntries(
+          fn,
+          fn.getName() ?? "<anonymous>",
+        ));
       }
     }
     for (const declaration of sf.getVariableDeclarations()) {
@@ -379,6 +462,11 @@ export function detectMissingTenantParams(
           name: member.name,
           signatures: member.signatures,
         });
+      }
+      const initializer = declaration.getInitializer();
+      if (initializer &&
+        (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
+        entries.push(...returnedRepositoryEntries(initializer, declaration.getName()));
       }
     }
     for (const assignment of sf.getExportAssignments()) {
@@ -693,6 +781,32 @@ describe("tenant-context-required fence", () => {
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
         {
           ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("flags an unguarded method returned by an escaped repository factory", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          loadById(id: string, tenant: TenantContext): unknown;
+        }
+        export function makeRepo(db: SqlDb): Repo {
+          return {
+            loadById(id, tenant) {
+              return db.query("SELECT 1");
+            },
+          };
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
           detail: "repository callable does not assert its sealed tenant authority before SQL access",
         },
       ]);

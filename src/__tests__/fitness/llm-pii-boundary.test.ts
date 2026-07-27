@@ -53,6 +53,16 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/migrations.ts :: Migration.name", why: "migration label (machine)" },
 ];
 const ESCAPE_SET = new Set(NON_PII_ESCAPES.map((e) => e.ref));
+const OPAQUE_LLM_INGRESS_ESCAPES = [
+  "src/contracts/errors.ts :: isAppError(value)",
+  "src/contracts/pii.ts :: assertNoAmbiguousSensitiveText(payload)",
+  "src/contracts/pii.ts :: assertNoPIIValues(payload)",
+  "src/infrastructure/llm/request-schema.ts :: parseMaskedLlmRequest(input)",
+  "src/infrastructure/pii/scrub.ts :: scrub(value)",
+  "src/infrastructure/pii/scrub.ts :: scrub.return",
+  "src/infrastructure/pii/tokenize.ts :: isSealedTokenized(value)",
+] as const;
+const OPAQUE_ESCAPE_SET = new Set<string>(OPAQUE_LLM_INGRESS_ESCAPES);
 
 function normalizePath(sf: SourceFile): string {
   const rel = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
@@ -415,6 +425,155 @@ function exportedCallablePIIExposures(sf: SourceFile): string[] {
   return [...new Set(exposures)];
 }
 
+function opaqueTypeExposures(
+  type: Type,
+  path: string,
+  seen = new Set<string>(),
+  location?: Node,
+): string[] {
+  if (isTokenized(type) || isSecretValue(type)) return [];
+  if (type.isAny() || type.isUnknown()) return [path];
+  if (isLeafType(type)) return [];
+  const key = `${type.getText()}::${type.getFlags()}`;
+  if (seen.has(key)) return [];
+  const nextSeen = new Set(seen).add(key);
+  const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  if (composite.length) {
+    return composite.flatMap((member) =>
+      opaqueTypeExposures(member, path, nextSeen, location)
+    );
+  }
+  const nestedArguments = [
+    ...type.getAliasTypeArguments(),
+    ...type.getTypeArguments(),
+  ].flatMap((argument) =>
+    opaqueTypeExposures(argument, path, nextSeen, location)
+  );
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const inspectProperties = !symbol || symbol.getDeclarations().some((declaration) =>
+    Node.isTypeLiteral(declaration) ||
+    normalizePath(declaration.getSourceFile()).startsWith("src/")
+  );
+  if (!inspectProperties) return nestedArguments;
+  const properties = type.getProperties().flatMap((property) => {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0] ??
+      location;
+    return declaration
+      ? opaqueTypeExposures(
+        property.getTypeAtLocation(declaration),
+        `${path}.${property.getName()}`,
+        nextSeen,
+        declaration,
+      )
+      : [];
+  });
+  const calls = type.getCallSignatures().flatMap((signature) =>
+    signatureOpaqueExposures(signature, `${path}.<call>`, nextSeen)
+  );
+  return [...nestedArguments, ...properties, ...calls];
+}
+
+function signatureOpaqueExposures(
+  signature: Signature,
+  path: string,
+  seen = new Set<string>(),
+): string[] {
+  const parameters = signature.getParameters().flatMap((parameter) => {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    return declaration
+      ? opaqueTypeExposures(
+        parameter.getTypeAtLocation(declaration),
+        `${path}(${parameter.getName()})`,
+        seen,
+        declaration,
+      )
+      : [];
+  });
+  return [
+    ...parameters,
+    ...opaqueTypeExposures(
+      signature.getReturnType(),
+      `${path}.return`,
+      seen,
+      signature.getDeclaration(),
+    ),
+  ];
+}
+
+function exportedOpaqueRefs(sf: SourceFile): string[] {
+  const file = normalizePath(sf);
+  const refs: string[] = [];
+  const add = (name: string, signature: Signature): void => {
+    refs.push(...signatureOpaqueExposures(signature, name).map((exposure) =>
+      `${file} :: ${exposure}`
+    ));
+  };
+  for (const fn of sf.getFunctions().filter((candidate) => candidate.isExported())) {
+    add(fn.getName() ?? "<call>", fn.getSignature());
+  }
+  for (const variable of sf.getVariableDeclarations().filter((candidate) =>
+    candidate.isExported()
+  )) {
+    const initializer = variable.getInitializer();
+    if (!initializer) continue;
+    if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
+      add(variable.getName(), initializer.getSignature());
+      continue;
+    }
+    if (!Node.isObjectLiteralExpression(initializer)) continue;
+    for (const property of initializer.getProperties()) {
+      if (Node.isMethodDeclaration(property)) {
+        add(`${variable.getName()}.${property.getName()}`, property.getSignature());
+        continue;
+      }
+      if (!Node.isPropertyAssignment(property)) continue;
+      const member = property.getInitializer();
+      if (member && (Node.isArrowFunction(member) || Node.isFunctionExpression(member))) {
+        add(`${variable.getName()}.${property.getName()}`, member.getSignature());
+      }
+    }
+  }
+  for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
+    for (const property of cls.getProperties()) {
+      refs.push(...opaqueTypeExposures(
+        property.getType(),
+        `${cls.getName() ?? "<anonymous>"}.${property.getName()}`,
+        new Set(),
+        property,
+      ).map((exposure) => `${file} :: ${exposure}`));
+    }
+    for (const method of cls.getMethods()) {
+      if (method.getScope() === "private" || method.getScope() === "protected") continue;
+      add(`${cls.getName() ?? "<anonymous>"}.${method.getName()}`, method.getSignature());
+    }
+  }
+  for (const iface of sf.getInterfaces().filter((candidate) => candidate.isExported())) {
+    refs.push(...opaqueTypeExposures(
+      iface.getType(),
+      iface.getName(),
+      new Set(),
+      iface,
+    ).map((exposure) => `${file} :: ${exposure}`));
+  }
+  for (const alias of sf.getTypeAliases().filter((candidate) => candidate.isExported())) {
+    refs.push(...opaqueTypeExposures(
+      alias.getType(),
+      alias.getName(),
+      new Set(),
+      alias,
+    ).map((exposure) => `${file} :: ${exposure}`));
+  }
+  for (const variable of sf.getVariableDeclarations().filter((candidate) =>
+    candidate.isExported() &&
+    (candidate.getType().isAny() || candidate.getType().isUnknown())
+  )) {
+    refs.push(`${file} :: ${variable.getName()}`);
+  }
+  return [...new Set(refs)];
+}
+
 /** Platform-layer type declarations with raw PII-named fields that are neither marked nor escaped. */
 export function detectUnmarkedPIITypes(project: Project, escapes: ReadonlySet<string>): string[] {
   const out: string[] = [];
@@ -521,6 +680,11 @@ export function detectPIIReachableFromLlm(project: Project): string[] {
       const current = queue.shift()!;
       const sf = byPath.get(current);
       if (!sf) continue;
+      for (const ref of exportedOpaqueRefs(sf)) {
+        if (!OPAQUE_ESCAPE_SET.has(ref)) {
+          violations.push(`${origin} reaches unverifiable opaque export ${ref}`);
+        }
+      }
       for (const line of unverifiableModuleLoadLines(sf)) {
         violations.push(
           `${origin} reaches an unverifiable module load in ${current}:${line}`,
@@ -557,6 +721,15 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     }
     const stale = NON_PII_ESCAPES.filter((e) => !live.has(e.ref)).map((e) => e.ref);
     expect(stale, `stale escapes:\n${stale.join("\n")}`).toEqual([]);
+  });
+
+  it("enforces: opaque ingress escapes are exact and live", () => {
+    const live = new Set(
+      project.getSourceFiles().flatMap(exportedOpaqueRefs),
+    );
+    expect(
+      OPAQUE_LLM_INGRESS_ESCAPES.filter((ref) => !live.has(ref)),
+    ).toEqual([]);
   });
 
   it("enforces: the marked set is non-empty (a gutted marker would pass reachability vacuously — charter #4)", () => {
@@ -791,9 +964,9 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
           export const load = () => import(target);
         `,
       });
-      expect(detectPIIReachableFromLlm(project)).toEqual([
+      expect(detectPIIReachableFromLlm(project)).toContain(
         "src/infrastructure/llm/evil.ts reaches an unverifiable module load in src/infrastructure/llm/evil.ts:3",
-      ]);
+      );
     });
     it("resolves JavaScript import specifiers through TypeScript extension substitution", () => {
       const project = inMemoryProject({
@@ -808,6 +981,34 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       )).toBe("src/domain/contact.ts");
       expect(detectPIIReachableFromLlm(project).some((violation) =>
         violation.includes("src/domain/contact.ts")
+      )).toBe(true);
+    });
+    it("rejects unwrapped unknown returns reachable from llm", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/helper.ts": `
+          export function loadClient(): unknown {
+            return { firstName: "Alice" };
+          }
+        `,
+        "/src/infrastructure/llm/evil.ts": `
+          import { loadClient } from "../helper";
+          export const value = loadClient();
+        `,
+      });
+      expect(detectPIIReachableFromLlm(project).some((violation) =>
+        violation.includes("loadClient.return")
+      )).toBe(true);
+    });
+    it("rejects unwrapped opaque aliases reachable from llm", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/helper.ts": `export type HiddenClient = unknown;`,
+        "/src/infrastructure/llm/evil.ts": `
+          import type { HiddenClient } from "../helper";
+          export type Value = HiddenClient;
+        `,
+      });
+      expect(detectPIIReachableFromLlm(project).some((violation) =>
+        violation.includes("HiddenClient")
       )).toBe(true);
     });
   });

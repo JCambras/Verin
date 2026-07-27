@@ -29,7 +29,6 @@ function toState(r: Row): ExecutionState {
 
 /** A state whose orgId disagrees with the tenant is a wiring bug — refuse to persist it. */
 function assertStateInTenant(state: ExecutionState, tenant: TenantContext): void {
-  assertTenantContext(tenant);
   if (state.orgId !== tenant.orgId) {
     throw appError("INTERNAL", "Execution state org does not match the tenant context.");
   }
@@ -38,6 +37,7 @@ function assertStateInTenant(state: ExecutionState, tenant: TenantContext): void
 export function makeExecutionStore(db: SqlDb): ExecutionStore {
   return {
     async create(state, tenant) {
+      assertTenantContext(tenant);
       assertStateInTenant(state, tenant);
       const now = new Date().toISOString();
       await db.query(
@@ -46,6 +46,7 @@ export function makeExecutionStore(db: SqlDb): ExecutionStore {
       );
     },
     async save(state, tenant) {
+      assertTenantContext(tenant);
       assertStateInTenant(state, tenant);
       await db.query(
         "UPDATE flow_executions SET status=$2, resume_token=$3, context_json=$4, updated_at=$5 WHERE id=$1 AND org_id=$6",

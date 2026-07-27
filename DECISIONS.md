@@ -1398,3 +1398,37 @@ boundaries).
 factory, file-level privileged factory allowances, manual governed sink table,
 and signature-only tenant fence. D-039 through D-044 remain the underlying
 prompt-6 security decisions.
+
+### D-046 · 2026-07-27 · reversible · Prompt-6 resolver, observability, and callable-boundary proofs hardened
+
+All five seventh-round findings were legitimate instances of three remaining
+false assurances: projection trusted caller-supplied entity bindings,
+observability treated some arbitrary strings as safe, and semantic fences
+stopped at exported function declarations instead of executable boundaries.
+
+- Sensitive entities are now derived by a deterministic domain resolver from
+  the complete request and evidence payload. Callers cannot provide bindings.
+  Subject names, account references, evidence keys, strings, and primitive
+  leaves are classified before the projection can be sealed. Unknown keys,
+  unclassified numbers, unmatched entity counts, and residual text fail closed.
+- Logs and traces admit dynamic primitives only through field-specific closed
+  vocabularies for opaque identifiers, statuses, error categories, actions,
+  entity types, and operational counts. Generic strings, including a single
+  name in any position, are redacted.
+- The tenant fence inspects callable methods returned by repository factories
+  and requires their runtime seal assertion. The governed-action fence derives
+  sinks from exported functions, arrows, object methods, and class methods.
+  The LLM reachability fence rejects unwrapped `any` and `unknown` on exported
+  callables, with exact live escapes for reviewed scrub-and-parse ingress
+  functions.
+
+**Alternatives:** add more residual-safe words while retaining caller bindings
+(rejected because the caller would still define completeness); redact only
+title-cased strings (rejected because lowercase names and arbitrary free text
+remain untrusted); ban repository factories and callable objects (rejected
+because their runtime implementations are semantically inspectable).
+
+**Revert path:** revert this changeset and restore caller-provided
+`resolvedEntities`, heuristic observability values, function-declaration-only
+governed sinks, signature-only returned ports, and opaque types as safe leaves.
+D-039 through D-045 remain the underlying prompt-6 security decisions.

@@ -10,9 +10,12 @@ import { getConfig } from "@infra/config";
 import { isAppError } from "@contracts/errors";
 import {
   isPIIField,
-  looksLikeAmbiguousSensitiveText,
   REDACTED,
 } from "@contracts/pii";
+import {
+  isSafeObservabilityPrimitive,
+  safeLogMessage,
+} from "@domain/observability/safe-values";
 
 const cfg = getConfig();
 
@@ -40,6 +43,14 @@ export const loggerOptions: pino.LoggerOptions = {
       return scrubStructuredLog(object) as Record<string, unknown>;
     },
   },
+  hooks: {
+    logMethod(args, method) {
+      const safeArgs = args.map((arg) =>
+        typeof arg === "string" ? safeLogMessage(arg) : arg
+      ) as Parameters<pino.LogFn>;
+      method.apply(this, safeArgs);
+    },
+  },
 };
 
 export const log = pino(loggerOptions);
@@ -59,25 +70,29 @@ const SAFE_DRIVER_ERROR_CODES = new Set([
 
 function scrubStructuredLog(
   value: unknown,
-  keyIsPII = false,
+  field?: string,
+  forceRedact = false,
   seen = new WeakSet<object>(),
 ): unknown {
   if (value == null) return value;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
-    return keyIsPII || looksLikeAmbiguousSensitiveText(String(value))
-      ? REDACTED
-      : value;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    typeof value === "boolean"
+  ) {
+    return forceRedact || !isSafeObservabilityPrimitive(field, value) ? REDACTED : value;
   }
-  if (typeof value !== "object") return keyIsPII ? REDACTED : value;
+  if (typeof value !== "object") return REDACTED;
   if (seen.has(value)) return REDACTED;
   seen.add(value);
   if (Array.isArray(value)) {
-    return value.map((item) => scrubStructuredLog(item, keyIsPII, seen));
+    return value.map((item) => scrubStructuredLog(item, field, forceRedact, seen));
   }
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       key,
-      scrubStructuredLog(item, keyIsPII || isPIIField(key), seen),
+      scrubStructuredLog(item, key, forceRedact || isPIIField(key), seen),
     ]),
   );
 }
