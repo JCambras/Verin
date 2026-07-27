@@ -192,6 +192,58 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     node.getSymbol()?.getDeclarations().some(
       (declaration) => declaration.getSourceFile() === sf,
     ) ?? false;
+  /**
+   * An identifier spelled `require` only names a loader in VALUE position. A member
+   * name (`cfg.require`), an object key, a declared member, or a destructuring
+   * property name is an ordinary property that merely shares the spelling - and it
+   * resolves into whichever module declares that property, so a "declared in THIS
+   * file?" test reports every cross-module one as a CommonJS loader.
+   */
+  const isMemberNamePosition = (identifier: Node): boolean => {
+    const parent = identifier.getParent();
+    if (parent === undefined || Node.isShorthandPropertyAssignment(parent)) return false;
+    if (Node.isQualifiedName(parent)) return parent.getRight() === identifier;
+    if (Node.isBindingElement(parent)) {
+      return parent.getPropertyNameNode() === identifier || parent.getNameNode() === identifier;
+    }
+    if (Node.isPropertyAccessExpression(parent)) return parent.getNameNode() === identifier;
+    return Node.isPropertyNamed(parent) && parent.getNameNode() === identifier;
+  };
+  const unwrapExpression = (node: Node | undefined): Node | undefined => {
+    let expression = node;
+    while (
+      Node.isParenthesizedExpression(expression) ||
+      Node.isAsExpression(expression) ||
+      Node.isSatisfiesExpression(expression) ||
+      Node.isNonNullExpression(expression) ||
+      Node.isTypeAssertion(expression)
+    ) {
+      expression = expression.getExpression();
+    }
+    return expression;
+  };
+  /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
+  const isAmbientGlobalReference = (node: Node | undefined): boolean => {
+    const expression = unwrapExpression(node);
+    if (!Node.isIdentifier(expression)) return false;
+    return (expression.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
+      declaration.getSourceFile().isDeclarationFile(),
+    );
+  };
+  /**
+   * A `require` MEMBER is the CommonJS loader only when it hangs off an ambient
+   * global, or when the member itself is declared ambiently (`const m = module;
+   * m.require(…)`). A member declared by project source - or none at all, which is
+   * every access through a receiver typed `any` - is somebody's own property.
+   */
+  const isAmbientRequireMember = (receiver: Node | undefined, member: Node | undefined): boolean => {
+    if (isAmbientGlobalReference(receiver)) return true;
+    const declarations = member?.getSymbol()?.getDeclarations() ?? [];
+    return (
+      declarations.length > 0 &&
+      declarations.every((declaration) => declaration.getSourceFile().isDeclarationFile())
+    );
+  };
   const loaderSpecifier = (node: Node | undefined): string | null => {
     let expression = node;
     while (Node.isAwaitExpression(expression) || Node.isParenthesizedExpression(expression)) {
@@ -278,10 +330,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       kind: "reference-lib",
     });
   }
-  const jsx = sf.getDescendants().find((node) =>
-    node.isKind(SyntaxKind.JsxElement) ||
-    node.isKind(SyntaxKind.JsxSelfClosingElement) ||
-    node.isKind(SyntaxKind.JsxFragment),
+  const jsx = sf.forEachDescendant((node) =>
+    Node.isJsxElement(node) || Node.isJsxSelfClosingElement(node) || Node.isJsxFragment(node)
+      ? node
+      : undefined,
   );
   if (jsx) {
     refs.push({
@@ -350,11 +402,19 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         kind: "create-require",
       });
     }
+    if (access.getName() === "require" && isAmbientRequireMember(expression, access.getNameNode())) {
+      refs.push({
+        specifier: null,
+        line: access.getStartLineNumber(),
+        kind: "require-reference",
+      });
+    }
   }
   for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
     if (
       identifier.getText() === "require" &&
       !directRequireStarts.has(identifier.getStart()) &&
+      !isMemberNamePosition(identifier) &&
       !isDeclaredLocally(identifier)
     ) {
       refs.push({
@@ -387,7 +447,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       (Node.isStringLiteral(argument) ||
         Node.isNoSubstitutionTemplateLiteral(argument)) &&
       argument.getLiteralText() === "require" &&
-      !isDeclaredLocally(access.getExpression())
+      isAmbientRequireMember(access.getExpression(), argument)
     ) {
       refs.push({
         specifier: null,

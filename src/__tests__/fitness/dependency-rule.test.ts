@@ -432,5 +432,57 @@ describe("dependency-rule fence", () => {
       );
       expect(v).toEqual([]);
     });
+
+    it("require-shaped members of values imported from ANOTHER module do not trip the fence", () => {
+      // The same-file case above passes for the wrong reason: those symbols resolve
+      // locally. A member reached through an import resolves into the OTHER module, and
+      // a receiver typed `any` resolves nowhere - both used to read as a CommonJS
+      // loader and hard-fail an inner layer on a property that merely shares the name.
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/cfg.ts": [
+            `export const cfg = { require: (value: string) => value, nested: { require: (value: string) => value } };`,
+            `export type Contract = { require: string };`,
+          ].join("\n"),
+          "src/domain/ok.ts": [
+            `import { cfg, type Contract } from "./cfg";`,
+            `declare const untyped: any;`,
+            `const { require: renamed } = cfg;`,
+            `const contract: Contract = { require: "x" };`,
+            `export const values = [`,
+            `  cfg.require("x"),`,
+            `  cfg["require"]("x"),`,
+            `  cfg.nested["require"]("x"),`,
+            `  renamed("x"),`,
+            `  contract.require,`,
+            `  untyped.require("x"),`,
+            `  untyped["require"]("x"),`,
+            `];`,
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it.each([
+      `export const value = module.require("@infra/store");`,
+      `export const value = module["require"]("@infra/store");`,
+      `export const value = (globalThis as any).require("@infra/store");`,
+      `export const value = (globalThis as any)["require"]("@infra/store");`,
+      `const loader = module;\nexport const value = loader.require("@infra/store");`,
+    ])("a require member reached through an AMBIENT global still fails closed", (source) => {
+      // NON-VACUOUS pair for the companion above: narrowing the scan to real loaders
+      // must not narrow it past `module`/`globalThis`, whose `require` is exactly the
+      // CommonJS escape the dependency rule exists to close. Ambiently declared or
+      // undeclared receivers stay caught; project-declared ones do not.
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/types/node-shim.d.ts": `declare const module: { require(id: string): unknown };`,
+          "src/domain/evil.ts": source,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
+      expect(v[0]?.specifier).toBe("<non-literal require-reference>");
+    });
   });
 });

@@ -160,15 +160,15 @@ export const compareScopedReferences = (left: ScopedReference, right: ScopedRefe
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 };
 
+const scopedReferenceKey = (reference: ScopedReference): string =>
+  `${reference.firmId}\u0000${reference.id}`;
+
 /**
  * Set semantics for tenant-scoped references: identity is the (firm, id) PAIR, keyed
  * through a NUL separator so no two distinct pairs can concatenate into one key.
  */
 export const hasUniqueScopedReferences = (references: readonly ScopedReference[]): boolean =>
   new Set(references.map(scopedReferenceKey)).size === references.length;
-
-export const scopedReferenceKey = (reference: ScopedReference): string =>
-  `${reference.firmId}\u0000${reference.id}`;
 
 const roleRefSet = (minimum: number) =>
   z

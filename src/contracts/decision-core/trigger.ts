@@ -49,8 +49,6 @@ const HumanRequestTriggerObjectSchema = z
     }
   });
 
-export const HumanRequestTriggerSchema = HumanRequestTriggerObjectSchema.readonly();
-
 /** A system event from an evidence source: payload tokenized, raw body behind SecureEventRef. */
 const SystemEventTriggerObjectSchema = z
   .strictObject({
@@ -78,15 +76,13 @@ const SystemEventTriggerObjectSchema = z
     }
   });
 
-export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.readonly();
-
 export const TriggerSchema = z
   .discriminatedUnion("kind", [HumanRequestTriggerObjectSchema, SystemEventTriggerObjectSchema])
   .readonly();
 export type Trigger = z.infer<typeof TriggerSchema>;
 
 /** The tenant a trigger belongs to (requester's firm for human requests). */
-export function triggerFirmId(trigger: Trigger): z.infer<typeof FirmIdSchema> {
+function triggerFirmId(trigger: Trigger): z.infer<typeof FirmIdSchema> {
   return trigger.kind === "human_request" ? trigger.requester.firmId : trigger.firmId;
 }
 

@@ -100,12 +100,22 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `America/Coyhaique`, added in tzdata 2025a), re-introducing on the test side the OS coupling the
   pinned registry exists to remove. The companions are non-vacuous against the pinned data instead:
   the admitted set is EXACTLY the release minus its declared placeholders (an unlisted placeholder
-  still boots, an over-broad subtraction refuses a real `Zone` - both fail), no `Link` targets a
-  placeholder, and on a CONSTRUCTED release the subtraction is release-scoped rather than hardcoded.
+  still boots, an over-broad subtraction refuses a real `Zone` - both fail), an alias is admitted
+  exactly when its target is and only then resolves to it - asserted as that EQUIVALENCE rather than
+  as this release's incidental "no `Link` targets a placeholder", so a future release whose alias
+  table does target one passes on data this code already handles correctly - and on a CONSTRUCTED
+  release the subtraction is release-scoped rather than hardcoded.
   `TimeZone` itself stays closed over supported-release `Zone` names (341 today), so one zone still
-  has exactly one persisted and hashed spelling. **Migration:** no deployment action is required - a
-  `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
-  its canonical Zone rather than failing closed. `TimeZone` is branded and `timeZoneDataVersion` is
+  has exactly one persisted and hashed spelling. **Migration:** no deployment action is required for
+  any IANA spelling - a `FIRM_TIMEZONE` naming a `Zone` or a `Link` alias (`UTC`, `GMT`, `EST5EDT`,
+  `US/Pacific`, `Asia/Calcutta`, `Europe/Kiev`, `America/Nipigon`, `W-SU`, `Etc/GMT+12`) still boots,
+  and an alias-valued one now resolves to its canonical Zone rather than failing closed. Exactly ONE
+  value class the superseded host-`Intl` guard accepted no longer boots: ECMA-402 fixed-offset
+  identifiers such as `+05:30` or `-08:00`. Admitting them is an explicit NON-GOAL - an offset
+  carries no DST rules, belongs to no tzdb release, and has no canonical `Zone` to persist and hash,
+  so it can never carry the release-scoped replay semantics every accepted value does; a deployment
+  configured with one fails FATAL at boot and must name the IANA Zone for that offset instead.
+  `TimeZone` is branded and `timeZoneDataVersion` is
   typed by the release map's key union, so neither a bare `string` nor an unshipped version string
   can reach a replay field without parsing.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
@@ -178,9 +188,10 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2364** after the
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2360** after the
   version-keyed IANA release map, the release-scoped configuration boundary, the placeholder-Zone
-  subtraction, and complete review hardening - **36 lines of headroom**; this is the FINAL post-review
+  subtraction, and complete review hardening including the removal of the non-ratified dead exports -
+  **40 lines of headroom**; this is the FINAL post-review
   figure, and the only current-state measurement to plan against). The prior 2300 left 15 lines, a ceiling that
   blocks the next edit of any size rather than one that budgets a layer. The ratchet-down doctrine
   resumes from 2400; later contract-layer prompts

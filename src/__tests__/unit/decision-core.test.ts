@@ -46,7 +46,6 @@ import {
   CANONICAL_IANA_TIME_ZONE_LINKS,
   IANA_TIME_ZONE_DATA_VERSION,
   IANA_TIME_ZONE_LINK_REGISTRY_SHA256,
-  IANA_TIME_ZONE_PLACEHOLDER_ZONES,
   IANA_TIME_ZONE_REGISTRY_SHA256,
   LinkResolvedTimeZoneSchema,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
@@ -452,8 +451,18 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // pinned release (which already carries America/Coyhaique, added in tzdata 2025a),
     // re-introducing on the test side the OS coupling the pinned registry removes.
     const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
-    expect([...current.placeholderZones]).toEqual([...IANA_TIME_ZONE_PLACEHOLDER_ZONES]);
-    expect([...IANA_TIME_ZONE_PLACEHOLDER_ZONES].sort()).toEqual(["Factory"]);
+    // The review record is keyed BY RELEASE for the same reason the registries are:
+    // adopting one ADDS an entry here rather than repointing a single-release constant,
+    // and a release nobody reviewed fails outright instead of declaring itself correct.
+    // An unlisted placeholder and an over-broad declaration both fail this, order-free.
+    const reviewedPlaceholderZones: Record<string, readonly string[]> = {
+      "iana-tzdb/2026b": ["Factory"],
+    };
+    for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      expect([...SUPPORTED_IANA_TIME_ZONE_RELEASES[version].placeholderZones].sort()).toEqual(
+        reviewedPlaceholderZones[version],
+      );
+    }
     for (const placeholder of current.placeholderZones) {
       expect(current.zones).toContain(placeholder);
       expect(LinkResolvedTimeZoneSchema.safeParse(placeholder).success).toBe(false);
@@ -471,13 +480,25 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     for (const zone of current.zones) {
       expect(LinkResolvedTimeZoneSchema.safeParse(zone).success).toBe(!placeholders.has(zone));
     }
-    // Every alias of THIS release resolves inside it, and none of them targets a
-    // placeholder - so no alias spelling can smuggle an unconfigurable Zone past the
-    // subtraction, which runs after resolution.
+    // No alias spelling can smuggle an unconfigurable Zone past the subtraction, which
+    // runs AFTER resolution: an alias is admitted exactly when its target is, and then
+    // resolves to that target. This is the CODE's rule, so it holds for any release -
+    // including one whose Link table aliases a placeholder, which this one does not.
     for (const [alias, zone] of Object.entries(current.links)) {
-      expect(placeholders.has(zone)).toBe(false);
-      expect(LinkResolvedTimeZoneSchema.parse(alias)).toBe(zone);
+      const admitted = !placeholders.has(zone);
+      expect(LinkResolvedTimeZoneSchema.safeParse(alias).success).toBe(admitted);
+      if (admitted) expect(LinkResolvedTimeZoneSchema.parse(alias)).toBe(zone);
     }
+    // The refusing arm of that equivalence is empty on this release, so exercise it on
+    // THIS release plus one alias that does target a declared placeholder - still
+    // deterministic from the pinned registry, never probed from the host.
+    const placeholder = current.placeholderZones[0]!;
+    const withPlaceholderAlias = configuredTimeZoneSchema({
+      ...current,
+      links: { ...current.links, "Legacy/Unset": placeholder },
+    });
+    expect(withPlaceholderAlias.safeParse("Legacy/Unset").success).toBe(false);
+    expect(withPlaceholderAlias.parse("UTC")).toBe(current.links["UTC"]);
   });
 
   it("subtracts placeholders per RELEASE, after alias resolution", () => {
