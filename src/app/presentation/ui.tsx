@@ -92,6 +92,28 @@ const STATUS_STYLES: Record<string, string> = {
   pending: "bg-slate-100 text-slate-700 border-slate-200",
   running: "bg-blue-50 text-blue-800 border-blue-200",
   failed: "bg-red-50 text-red-800 border-red-200",
+  // Demo design language §5.1 dispositions + §8.2 honest-status vocabulary. Every
+  // status is its own key (semantic identities never merge - §8.2); each borrows
+  // ONLY the visual recipe of the family named in the design doc. Red stays
+  // reserved for failure; `prohibited` wears the Button-primary recipe as a badge
+  // (slate-900 is the system's voice of authority - a refusal reads as integrity,
+  // not breakage).
+  proceed: "bg-green-50 text-green-800 border-green-200",
+  blocked: "bg-amber-50 text-amber-900 border-amber-200",
+  prohibited: "bg-slate-900 text-white border-slate-900",
+  submitted: "bg-blue-50 text-blue-800 border-blue-200",
+  "in-flight": "bg-blue-50 text-blue-800 border-blue-200",
+  settled: "bg-green-50 text-green-800 border-green-200",
+  rejected: "bg-red-50 text-red-800 border-red-200",
+  nigo: "bg-red-50 text-red-800 border-red-200",
+  unknown: "bg-amber-50 text-amber-900 border-amber-200",
+  stuck: "bg-amber-50 text-amber-900 border-amber-200",
+  "duplicate-suppressed": "bg-slate-100 text-slate-700 border-slate-200",
+  // Amber-family authority/evidence states (§6.2 conflicts, §7.2 expiry, §7.3 voided
+  // approvals): distinct semantics, so distinct keys, same waiting-on-a-condition amber.
+  expired: "bg-amber-50 text-amber-900 border-amber-200",
+  voided: "bg-amber-50 text-amber-900 border-amber-200",
+  conflict: "bg-amber-50 text-amber-900 border-amber-200",
 };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {

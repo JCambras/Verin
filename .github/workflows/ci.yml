@@ -33,7 +33,7 @@ jobs:
     name: quality (typecheck, lint, build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -48,7 +48,7 @@ jobs:
     name: test (unit, integration, fitness)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -62,7 +62,7 @@ jobs:
     name: knip (dead-export / dead-code)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -76,7 +76,7 @@ jobs:
     name: e2e (Playwright + axe)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -92,12 +92,20 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+      # Walking-skeleton deliverable (v3 prompt 3): a screenshot of every required
+      # demo screen, captured by e2e/demo-journey.spec.ts on every run.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: demo-screens
+          path: demo-screens/
+          retention-days: 14
 
   secret-scan:
     name: secret-scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # Run the pinned gitleaks CLI directly over the full local history instead
@@ -124,7 +132,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: semgrep
         # `semgrep scan --error` is the self-contained blocking SAST gate: exit
         # non-zero on any finding. (`semgrep ci` targets the Semgrep AppSec
@@ -144,7 +152,7 @@ jobs:
     name: dependency-audit (pnpm audit + license/vuln review)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -160,7 +168,7 @@ jobs:
     name: provenance-trace (displayed metric -> source, charter #3)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -179,7 +187,7 @@ jobs:
     env:
       VERIN_DATA_DIR: .verin-data-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -193,7 +201,7 @@ jobs:
     name: v3-invariants (phase-gated three-state report, ADR-0023)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -207,7 +215,7 @@ jobs:
     name: golden-cases (prompt-2 truth-set completeness, captain-signoff-gated)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -221,7 +229,7 @@ jobs:
     name: load-smoke (p95 regression gate, charter #11)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:

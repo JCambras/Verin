@@ -77,8 +77,10 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   *Fence:* `auth-enforcement` (routes resolve a session and check role).
 - **T-E2 (High): demo/seed affordance reachable in production.** *Control:* the config fail-closed guards
   refuse a non-postgres driver or placeholder secrets in production (ADR-0003); the populated demo world
-  is deferred (D-005), so no demo affordance ships yet. *Fence:* the config superRefine guards; a
-  dedicated demo-mode fence lands with the demo milestone.
+  is deferred (D-005), and the one demo affordance that ships - the D-036 walking-skeleton screens under
+  `/app/demo` - is static labeled fakes behind the `/app` auth guard, writing no state (ADR-0027
+  provenance badges). *Fence:* the config superRefine guards plus `demo-skeleton-honesty` (skeleton data
+  pinned to the contract); a dedicated demo-mode fence lands with the demo milestone.
 
 ## Gaps (explicit, owned, dated)
 
