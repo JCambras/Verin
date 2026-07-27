@@ -24,7 +24,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const auth = await requireActionGrant(req, "pii.view");
   if (!auth.ok) return errorResponse(auth.error);
   const db = await getDb();
-  return NextResponse.json({ households: await listHouseholds(db, auth.value.tenant) });
+  return NextResponse.json({ households: await listHouseholds(db, auth.value) });
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

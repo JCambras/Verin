@@ -2,9 +2,9 @@
  * House-CRM adapter (ADR-0004). The first real adapter behind the CRM boundary:
  * genuine persistence, canonical schema as its schema. EVERY mutation routes
  * through auditedWrite (audited-write-required + anti-fork fences) and is
- * attributed to a narrow WriteActor (never a fabricated Principal — D-028);
- * EVERY call requires a sealed TenantContext (v3 §15.2) — writes carry it inside
- * the WriteActor, reads take it directly — so org_id is never client-supplied
+ * attributed to a narrow WriteActor (never a fabricated Principal, D-028);
+ * EVERY call requires a sealed TenantContext (v3 §15.2). Writes carry it inside
+ * the WriteActor, and governed reads derive it from an action grant, so org_id is never client-supplied
  * and a hand-rolled context cannot parse. Provenance source = verin-crm on
  * every row (charter #3).
  */
@@ -13,7 +13,11 @@ import type { SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import type { Result } from "@contracts/result";
 import type { WriteActor } from "@contracts/principal";
-import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { assertTenantContext } from "@contracts/tenant";
+import {
+  assertActionGrant,
+  type ActionGrant,
+} from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
 import type { Household, Contact, FinancialAccount, Task, AccountType, HouseholdStatus } from "@domain/schema/entities";
 import type { RecordProvenance } from "@contracts/provenance";
@@ -82,7 +86,12 @@ export async function updateHouseholdName(db: SqlDb, a: WriteActor, id: string, 
   });
 }
 
-export async function listHouseholds(db: SqlDb, tenant: TenantContext): Promise<Household[]> {
+export async function listHouseholds(
+  db: SqlDb,
+  grant: ActionGrant<"pii.view">,
+): Promise<Household[]> {
+  assertActionGrant(grant, "pii.view");
+  const tenant = grant.tenant;
   assertTenantContext(tenant);
   const res = await db.query<HouseholdRow>("SELECT * FROM households WHERE org_id = $1 ORDER BY created_at DESC", [tenant.orgId]);
   return res.rows.map(toHousehold);

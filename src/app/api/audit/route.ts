@@ -23,7 +23,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!auth.ok) return errorResponse(auth.error);
   const tenant = auth.value.tenant;
   const db = await getDb();
-  const { verdict, rows } = await verifyAndListOrgChain(db, tenant);
+  const { verdict, rows } = await verifyAndListOrgChain(db, auth.value);
   const users = await db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", [tenant.orgId]);
   const emailById = new Map(users.rows.map((u) => [u.id, u.email]));
   return NextResponse.json({

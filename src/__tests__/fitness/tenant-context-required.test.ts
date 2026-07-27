@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { relative } from "node:path";
 import {
   Node,
+  SyntaxKind,
+  ts,
   type Project,
   type Signature,
   type SourceFile,
@@ -13,24 +15,12 @@ import {
   REPO_ROOT,
 } from "./_fence-utils";
 
-const REPO_MODULE_DIRS = [
-  "src/infrastructure/crm/",
-  "src/infrastructure/store/",
-  "src/infrastructure/audit/",
-  "src/infrastructure/identity/",
-];
-
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/db.ts :: createDbFromDump", why: "global database restoration factory" },
   { ref: "src/infrastructure/store/db.ts :: createDb", why: "global database connection factory" },
   { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
   { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
   { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
-  { ref: "src/infrastructure/audit/hash-chain.ts :: canonicalize", why: "pure hash-chain serialization" },
-  { ref: "src/infrastructure/audit/hash-chain.ts :: computeEntryHash", why: "pure hash-chain computation" },
-  { ref: "src/infrastructure/audit/hash-chain.ts :: verifyChain", why: "pure hash-chain verification" },
-  { ref: "src/infrastructure/identity/password.ts :: hashPassword", why: "pure credential hashing" },
-  { ref: "src/infrastructure/identity/password.ts :: verifyPassword", why: "pure credential verification" },
   { ref: "src/infrastructure/identity/identity-store.ts :: findUserByEmail", why: "login resolves the tenant from the identity row" },
   { ref: "src/infrastructure/identity/identity-store.ts :: getPasswordHash", why: "user-PK capability before authentication" },
   { ref: "src/infrastructure/identity/identity-store.ts :: authenticate", why: "identity boundary that produces the sealed tenant" },
@@ -46,11 +36,18 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/execution-store.ts :: makeExecutionStore", why: "factory whose returned port is checked independently" },
   { ref: "src/infrastructure/audit/audit-store.ts :: enqueueAudit", why: "transaction-local auditedWrite internal" },
   { ref: "src/infrastructure/audit/audit-store.ts :: discardedAuditEventWork", why: "non-persisting login constant work" },
+  { ref: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken", why: "e-sign resume-token capability" },
+  { ref: "src/infrastructure/wire.ts :: esignCallback", why: "verified e-sign signature and resume-token capability" },
+  { ref: "src/infrastructure/wire.ts :: computeEsignSignature", why: "pure e-sign simulation signer" },
 ];
 
 const PORT_ESCAPES = new Set([
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
+  "src/domain/schema/entities.ts :: isAccountType.<call>",
+  "src/domain/schema/golden-record.ts :: resolveConflict.<call>",
 ]);
+
+const SQL_ADAPTER_MODULES = ["@electric-sql/pglite"] as const;
 
 export interface TenantFenceViolation {
   ref: string;
@@ -166,6 +163,18 @@ function exportedDomainCallableTypes(
   sf: SourceFile,
 ): Array<{ name: string; type: Type }> {
   return [
+    ...sf.getFunctions()
+      .filter((declaration) => declaration.isExported())
+      .map((declaration) => ({
+        name: declaration.getName() ?? "<anonymous>",
+        type: declaration.getType(),
+      })),
+    ...sf.getVariableDeclarations()
+      .filter((declaration) => declaration.isExported())
+      .map((declaration) => ({
+        name: declaration.getName(),
+        type: declaration.getType(),
+      })),
     ...sf.getInterfaces()
       .filter((declaration) => declaration.isExported())
       .map((declaration) => ({ name: declaration.getName(), type: declaration.getType() })),
@@ -185,14 +194,78 @@ function exportedDomainCallableTypes(
   );
 }
 
+function sqlBackedInfrastructureModules(project: Project): Set<string> {
+  const modules = new Set<string>(["src/infrastructure/store/db.ts"]);
+  const isSqlAdapter = (specifier: string): boolean =>
+    SQL_ADAPTER_MODULES.some((moduleName) =>
+      specifier === moduleName || specifier.startsWith(`${moduleName}/`)
+    );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const sf of project.getSourceFiles()) {
+      const normalized = normalizedPath(sf.getFilePath());
+      if (
+        !normalized.startsWith("src/infrastructure/") ||
+        modules.has(normalized)
+      ) {
+        continue;
+      }
+      const staticTargets = sf.getImportDeclarations().flatMap((declaration) => {
+        const target = declaration.getModuleSpecifierSourceFile();
+        return target ? [normalizedPath(target.getFilePath())] : [];
+      });
+      const importsSqlAdapter = sf.getImportDeclarations().some((declaration) =>
+        isSqlAdapter(declaration.getModuleSpecifierValue())
+      );
+      const dynamicTargets: string[] = [];
+      let loadsSqlAdapter = false;
+      let unverifiableModuleLoad = false;
+      for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        const expression = call.getExpression();
+        const isModuleLoad = expression.getKind() === SyntaxKind.ImportKeyword ||
+          expression.getText() === "require";
+        if (!isModuleLoad) continue;
+        const argument = call.getArguments()[0];
+        if (!argument || !Node.isStringLiteral(argument)) {
+          unverifiableModuleLoad = true;
+          continue;
+        }
+        if (isSqlAdapter(argument.getLiteralValue())) {
+          loadsSqlAdapter = true;
+        }
+        const resolved = ts.resolveModuleName(
+          argument.getLiteralValue(),
+          sf.getFilePath(),
+          project.getCompilerOptions(),
+          project.getModuleResolutionHost(),
+        ).resolvedModule?.resolvedFileName;
+        if (resolved) dynamicTargets.push(normalizedPath(resolved));
+      }
+      const reachesSql = importsSqlAdapter ||
+        loadsSqlAdapter ||
+        unverifiableModuleLoad ||
+        [...staticTargets, ...dynamicTargets].some((target) =>
+          modules.has(target)
+        );
+      if (reachesSql) {
+        modules.add(normalized);
+        changed = true;
+      }
+    }
+  }
+  return modules;
+}
+
 export function detectMissingTenantParams(
   project: Project,
   escapes: ReadonlySet<string>,
 ): TenantFenceViolation[] {
   const out: TenantFenceViolation[] = [];
+  const repositoryModules = sqlBackedInfrastructureModules(project);
   for (const sf of project.getSourceFiles()) {
     const normalized = normalizedPath(sf.getFilePath());
-    if (!REPO_MODULE_DIRS.some((dir) => normalized.startsWith(dir))) continue;
+    if (!repositoryModules.has(normalized)) continue;
 
     const entries: RepositoryEntry[] = [];
     for (const fn of sf.getFunctions()) {
@@ -394,6 +467,46 @@ describe("tenant-context-required fence", () => {
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
     });
 
+    it("flags SQL-backed repositories outside the established adapter directories", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query(sql: string): unknown }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import { getDb } from "../store/db";
+          export async function listAll() {
+            const db = await getDb();
+            return db.query("SELECT 1");
+          }
+        `,
+      });
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/new-adapter/repository.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it("flags repositories that import the SQL adapter directly", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/direct/repository.ts": `
+          import { PGlite } from "@electric-sql/pglite";
+          export async function listAll() {
+            const db = new PGlite();
+            return db.query("SELECT 1");
+          }
+        `,
+      });
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/direct/repository.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
     it("flags an exported repository class method with a bound database", () => {
       const project = repositoryFixture(`
         import type { SqlDb } from "../store/db";
@@ -536,6 +649,21 @@ describe("tenant-context-required fence", () => {
       expect(detectUnscopedPortMethods(project, new Set())).toEqual([
         "src/domain/evil.ts :: LoaderPort.load",
         "src/domain/evil.ts :: WriterPort.save",
+      ]);
+    });
+
+    it("flags exported function and function-valued variable port forms", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `
+          export function load(id: string): unknown {
+            return id;
+          }
+          export const save: (id: string) => Promise<void> = async () => {};
+        `,
+      });
+      expect(detectUnscopedPortMethods(project, new Set())).toEqual([
+        "src/domain/evil.ts :: load.<call>",
+        "src/domain/evil.ts :: save.<call>",
       ]);
     });
   });

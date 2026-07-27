@@ -3,7 +3,9 @@ import { relative } from "node:path";
 import {
   Node,
   SyntaxKind,
+  ts,
   type Project,
+  type SourceFile,
   type Type,
 } from "ts-morph";
 import {
@@ -44,7 +46,7 @@ const SEALED = [
     factory: "src/contracts/principal.ts",
   },
   {
-    typeName: "EntityMaskBinding",
+    typeName: "CompleteEntityMaskSet",
     declaration: "src/infrastructure/pii/llm-projection.ts",
     factory: "src/infrastructure/pii/llm-projection.ts",
   },
@@ -94,7 +96,7 @@ const TRUSTED_FACTORY_CALLS = [
     ],
   },
   {
-    name: "bindEntityMask",
+    name: "bindCompleteEntityMaskSet",
     declaration: "src/infrastructure/pii/llm-projection.ts",
     allowed: [],
   },
@@ -157,6 +159,96 @@ function functionTarget(type: Type): {
     }
   }
   return null;
+}
+
+function resolvedModulePath(
+  project: Project,
+  sourceFile: SourceFile,
+  specifier: string,
+): string | null {
+  const resolved = ts.resolveModuleName(
+    specifier,
+    sourceFile.getFilePath(),
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost(),
+  ).resolvedModule?.resolvedFileName;
+  return resolved ? normalizedPath(resolved) : null;
+}
+
+function detectPrivilegedFactoryModuleAccess(project: Project): string[] {
+  const out: string[] = [];
+  const privilegedModules = new Map<string, string[]>();
+  for (const factory of TRUSTED_FACTORY_CALLS) {
+    const names = privilegedModules.get(factory.declaration) ?? [];
+    names.push(factory.name);
+    privilegedModules.set(factory.declaration, names);
+  }
+  for (const sf of project.getSourceFiles()) {
+    const normalized = normalizedPath(sf.getFilePath());
+    if (
+      (!normalized.startsWith("src/") && !normalized.startsWith("scripts/")) ||
+      normalized.includes("/__tests__/")
+    ) {
+      continue;
+    }
+    for (const declaration of sf.getImportDeclarations()) {
+      const target = declaration.getModuleSpecifierSourceFile();
+      const targetPath = target ? normalizedPath(target.getFilePath()) : null;
+      const names = targetPath ? privilegedModules.get(targetPath) : undefined;
+      if (
+        names &&
+        targetPath !== normalized &&
+        (declaration.getNamespaceImport() || declaration.getDefaultImport())
+      ) {
+        out.push(
+          `${normalized}:${declaration.getStartLineNumber()} - privileged factory module namespace exposes ${names.join(", ")}`,
+        );
+      }
+    }
+    for (const declaration of sf.getExportDeclarations()) {
+      const target = declaration.getModuleSpecifierSourceFile();
+      const targetPath = target ? normalizedPath(target.getFilePath()) : null;
+      const names = targetPath ? privilegedModules.get(targetPath) : undefined;
+      if (!names || targetPath === normalized) continue;
+      const exportedNames = declaration.getNamedExports().map((item) =>
+        item.getNameNode().getText()
+      );
+      if (
+        declaration.isNamespaceExport() ||
+        exportedNames.length === 0 ||
+        exportedNames.some((name) => names.includes(name))
+      ) {
+        out.push(
+          `${normalized}:${declaration.getStartLineNumber()} - privileged factory re-export exposes ${names.join(", ")}`,
+        );
+      }
+    }
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expression = call.getExpression();
+      const isModuleLoad = expression.getKind() === SyntaxKind.ImportKeyword ||
+        expression.getText() === "require";
+      if (!isModuleLoad) continue;
+      const argument = call.getArguments()[0];
+      if (!argument || !Node.isStringLiteral(argument)) {
+        out.push(
+          `${normalized}:${call.getStartLineNumber()} - unverifiable module load could expose a privileged factory`,
+        );
+        continue;
+      }
+      const targetPath = resolvedModulePath(
+        project,
+        sf,
+        argument.getLiteralValue(),
+      );
+      const names = targetPath ? privilegedModules.get(targetPath) : undefined;
+      if (names && targetPath !== normalized) {
+        out.push(
+          `${normalized}:${call.getStartLineNumber()} - dynamic factory module access exposes ${names.join(", ")}`,
+        );
+      }
+    }
+  }
+  return out;
 }
 
 export function detectSealedTypeConstruction(project: Project): string[] {
@@ -260,7 +352,8 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       }
     }
   }
-  return out;
+  out.push(...detectPrivilegedFactoryModuleAccess(project));
+  return [...new Set(out)];
 }
 
 function sealedFixture(path: string, source: string): Project {
@@ -284,8 +377,8 @@ function sealedFixture(path: string, source: string): Project {
       export function delegatedWriteActor(actor: WriteActor, actorUserId: string): WriteActor { return { ...actor, actorUserId } }
     `,
     "/src/infrastructure/pii/llm-projection.ts": `
-      export interface EntityMaskBinding { slotId: string }
-      export function bindEntityMask(input: object): EntityMaskBinding { return input as EntityMaskBinding }
+      export interface CompleteEntityMaskSet { bindings: readonly object[] }
+      export function bindCompleteEntityMaskSet(input: object[]): CompleteEntityMaskSet { return { bindings: input } as CompleteEntityMaskSet }
     `,
     [path]: source,
   });
@@ -408,6 +501,19 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(detectUntrustedFactoryCalls(project).length).toBeGreaterThan(0);
     });
 
+    it("catches trusted factories reached through a reflected module namespace", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as tenantModule from "../contracts/tenant";
+          Reflect.get(tenantModule, "systemTenant")("seed", "victim");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.includes("systemTenant")
+      )).toBe(true);
+    });
+
     it("catches system tenant and system write factories outside reviewed boundaries", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -427,16 +533,16 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
         `
-          import { bindEntityMask } from "../infrastructure/pii/llm-projection";
-          bindEntityMask({
+          import { bindCompleteEntityMaskSet } from "../infrastructure/pii/llm-projection";
+          bindCompleteEntityMaskSet([{
             slotId: "slot_0001",
             slotType: "subject",
             rawValues: ["account"],
-          });
+          }]);
         `,
       );
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
-        hit.includes("bindEntityMask")
+        hit.includes("bindCompleteEntityMaskSet")
       )).toBe(true);
     });
 

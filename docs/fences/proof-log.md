@@ -1273,3 +1273,123 @@ invariants, all 16 golden cases, the load budget, audit-chain verification,
 the license audit, and the high-severity dependency audit.
 
 **Date:** 2026-07-27 (fourth review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 5 (2026-07-27)
+
+All six findings reproduced against the vulnerable implementation before the
+fixes. Seven focused companion and integration assertions failed, covering the
+incomplete entity set, reflected tenant and secret access, an unguarded PII
+read, repository coverage outside known directories, exported function-valued
+ports, and `.js` to `.ts` LLM import substitution.
+
+### Complete trusted sensitive-entity set
+
+The projection boundary now accepts a single factory-sealed
+`CompleteEntityMaskSet`. Sensitive slots and bindings must match exactly. Every
+trusted raw value is masked in request and evidence, the result is checked for
+residual occurrences, and unresolved embedded proper names fail closed.
+
+```
+# before the complete-set boundary:
+× refuses an incomplete trusted binding set that leaves other names unresolved
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:298
+```
+
+### PF-028 privileged factory module confinement
+
+Factory references are still resolved semantically. In addition, namespace
+imports, re-exports, dynamic module access, and unverifiable module loads are
+rejected for every privileged factory module.
+
+```
+# planted a namespace import and Reflect.get(..., "systemTenant") in wire.ts:
+× enforces: identity and system minting factories are called only at reviewed boundaries
+  src/infrastructure/wire.ts:7 - privileged factory module namespace exposes
+  tenantFromIdentity, systemTenant
+  src/__tests__/fitness/tokenized-factory-only.test.ts:393
+```
+
+### PF-031 secret module confinement
+
+`revealSecret` remains usable only as the direct key argument of the two exact
+HMAC consumers. Loading its module as a namespace, re-exporting it, or reaching
+it through dynamic module access is rejected before reflective access can
+launder the symbol.
+
+```
+# planted a namespace import and Reflect.get(..., "revealSecret") in esign.ts:
+× enforces: raw secret access appears only in reviewed secret-consumer modules
+  src/infrastructure/esign/esign.ts:9
+  src/__tests__/fitness/no-secret-fallback.test.ts:328
+```
+
+### PF-030 action grants at governed sinks
+
+Every registered governed sink requires an action-parameterized `ActionGrant`
+and validates it as its first statement. Raw PII reads and audit-row exports
+derive tenant scope from the validated grant. A helper outside a route can no
+longer turn an ordinary tenant context into governed access. The companion also
+rejects an assertion hidden inside a conditional first statement.
+
+```
+# removed the runtime grant assertion from listHouseholds:
+× enforces: governed sinks validate action-scoped grants at their execution boundaries
+  src/infrastructure/crm/house-crm.ts :: listHouseholds:
+  first statement must assert ActionGrant<"pii.view">
+  src/__tests__/fitness/governed-actions.test.ts:403
+# before the sink signature changed:
+× a tenant context alone cannot invoke the governed PII read sink
+  AssertionError: promise resolved instead of rejecting
+  src/__tests__/integration/tenant-isolation.test.ts:52
+```
+
+### PF-027 semantic repository and port coverage
+
+Repository modules are derived from the transitive infrastructure SQL import
+graph, including literal dynamic loads and conservative rejection of
+unverifiable loads. Exported domain functions and function-valued variables
+join interfaces, aliases, classes, and object callables under the port check.
+The companion covers both a new transitive adapter directory and a repository
+that imports the SQL driver directly.
+
+```
+# planted an unscoped exported SQL callable in wire.ts:
+× enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+  src/infrastructure/wire.ts :: unsafeSqlProbe
+  repository callable has no sealed tenant context
+  src/__tests__/fitness/tenant-context-required.test.ts:369
+# before coverage was semantic across directories and callable forms:
+× flags SQL-backed repositories outside the established adapter directories
+× flags exported function and function-valued variable port forms
+  src/__tests__/fitness/tenant-context-required.test.ts:411
+  src/__tests__/fitness/tenant-context-required.test.ts:573
+```
+
+### PF-029 TypeScript module resolution for LLM reachability
+
+Import reachability now uses `ts.resolveModuleName` with the project's compiler
+options and module-resolution host. Bundler-compatible `.js` specifiers resolve
+to their actual `.ts` source declarations.
+
+```
+# planted import type { Contact } from "../../domain/schema/entities.js":
+× enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it
+  src/infrastructure/llm/request-schema.ts reaches PII-bearing module
+  src/domain/schema/entities.ts
+  via import of '../../domain/schema/entities.js'
+  src/__tests__/fitness/llm-pii-boundary.test.ts:587
+# before compiler resolution:
+× resolves JavaScript import specifiers through TypeScript extension substitution
+  AssertionError: expected null to be 'src/domain/contact.ts'
+  src/__tests__/fitness/llm-pii-boundary.test.ts:815
+```
+
+**Revert:** every planted source violation was removed. The eight affected
+focused files passed 137 tests after the revert, together with type checking.
+Final validation passed type checking, lint, Knip, all 458 repository tests,
+all 17 Playwright and axe checks against the production build, all active v3
+invariants, all 16 golden cases, the load budget, audit-chain verification, the
+license audit, and the high-severity dependency audit.
+
+**Date:** 2026-07-27 (fifth review-fix round on v3 build-sequence prompt 6).

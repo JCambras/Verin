@@ -10,56 +10,75 @@ import {
 } from "@infra/llm/request-schema";
 import { tokenizeText, tokenizeRecord } from "./tokenize";
 
-declare const EntityMaskBindingBrand: unique symbol;
+declare const CompleteEntityMaskSetBrand: unique symbol;
 
-export interface EntityMaskBinding extends PIIBearing {
+interface EntityMaskBinding extends PIIBearing {
   readonly slotId: string;
   readonly slotType: "subject" | "account-ref";
   readonly rawValues: readonly string[];
-  readonly [EntityMaskBindingBrand]: "EntityMaskBinding";
+}
+
+export interface CompleteEntityMaskSet extends PIIBearing {
+  readonly bindings: readonly EntityMaskBinding[];
+  readonly [CompleteEntityMaskSetBrand]: "CompleteEntityMaskSet";
 }
 
 export interface EvidenceProjectionInput extends PIIBearing {
   readonly purpose: LlmPurpose;
   readonly requestText: string;
   readonly slots: readonly SlotPlaceholder[];
-  readonly bindings: readonly EntityMaskBinding[];
+  readonly entitySet: CompleteEntityMaskSet;
   readonly evidence: Readonly<Record<string, unknown>>;
 }
 
-const ENTITY_BINDING_SEAL = Symbol("verin.entity-mask-binding.seal");
-const ENTITY_BINDINGS = new WeakSet<object>();
+const COMPLETE_ENTITY_SET_SEAL = Symbol("verin.complete-entity-mask-set.seal");
+const COMPLETE_ENTITY_SETS = new WeakSet<object>();
 
-export function bindEntityMask(input: {
+export function bindCompleteEntityMaskSet(input: readonly {
   readonly slotId: string;
   readonly slotType: "subject" | "account-ref";
   readonly rawValues: readonly string[];
-}): EntityMaskBinding {
-  const rawValues = [...new Set(input.rawValues.map((value) => value.trim()))];
-  if (
-    !SLOT_ID_RE.test(input.slotId) ||
-    rawValues.length === 0 ||
-    rawValues.some((value) => value.length < 2)
-  ) {
-    throw appError("PII_VIOLATION", "Trusted entity binding was invalid.");
-  }
-  const binding = Object.defineProperty(
-    {
-      slotId: input.slotId,
-      slotType: input.slotType,
+}[]): CompleteEntityMaskSet {
+  const slotIds = new Set<string>();
+  const bindings = input.map((entity) => {
+    const rawValues = [...new Set(entity.rawValues.map((value) => value.trim()))];
+    if (
+      !SLOT_ID_RE.test(entity.slotId) ||
+      slotIds.has(entity.slotId) ||
+      rawValues.length === 0 ||
+      rawValues.some((value) => value.length < 2)
+    ) {
+      throw appError("PII_VIOLATION", "Trusted sensitive-entity set was invalid.");
+    }
+    slotIds.add(entity.slotId);
+    return Object.freeze({
+      slotId: entity.slotId,
+      slotType: entity.slotType,
       rawValues: Object.freeze(rawValues),
-    },
-    ENTITY_BINDING_SEAL,
+    });
+  });
+  const entitySet = Object.defineProperty(
+    { bindings: Object.freeze(bindings) },
+    COMPLETE_ENTITY_SET_SEAL,
     { value: true, enumerable: false },
   );
-  ENTITY_BINDINGS.add(binding);
-  return Object.freeze(binding) as unknown as EntityMaskBinding;
+  COMPLETE_ENTITY_SETS.add(entitySet);
+  return Object.freeze(entitySet) as unknown as CompleteEntityMaskSet;
 }
 
-function isEntityMaskBinding(value: unknown): value is EntityMaskBinding {
-  return typeof value === "object" &&
-    value !== null &&
-    ENTITY_BINDINGS.has(value);
+function isCompleteEntityMaskSet(
+  value: unknown,
+): value is CompleteEntityMaskSet {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !COMPLETE_ENTITY_SETS.has(value)
+  ) {
+    return false;
+  }
+  return Array.isArray(
+    (value as { readonly bindings?: unknown }).bindings,
+  );
 }
 
 interface SensitiveMask extends PIIBearing {
@@ -136,26 +155,28 @@ function masksAreValid(input: EvidenceProjectionInput): boolean {
       typeof slot.slotId === "string" &&
       typeof slot.slotType === "string"
     ) ||
-    !Array.isArray(input.bindings) ||
-    !input.bindings.every(isEntityMaskBinding)
+    !isCompleteEntityMaskSet(input.entitySet)
   ) {
     return false;
   }
+  const bindings = input.entitySet.bindings;
   const slots = new Map(input.slots.map((slot) => [slot.slotId, slot.slotType]));
   const sensitiveSlots = input.slots
     .filter((slot) =>
       slot.slotType === "subject" || slot.slotType === "account-ref"
     )
     .map((slot) => slot.slotId);
-  const maskedSlots = new Set(input.bindings.map((binding) => binding.slotId));
+  const maskedSlots = new Set(bindings.map((binding) => binding.slotId));
   if (
     (input.purpose === "intent-shaping" && sensitiveSlots.length === 0) ||
-    maskedSlots.size !== input.bindings.length ||
-    sensitiveSlots.some((slotId) => !maskedSlots.has(slotId))
+    maskedSlots.size !== bindings.length ||
+    maskedSlots.size !== sensitiveSlots.length ||
+    sensitiveSlots.some((slotId) => !maskedSlots.has(slotId)) ||
+    [...maskedSlots].some((slotId) => !sensitiveSlots.includes(slotId))
   ) {
     return false;
   }
-  return input.bindings.every((binding) => {
+  return bindings.every((binding) => {
     const slotType = slots.get(binding.slotId);
     return slotType === binding.slotType &&
       binding.rawValues.some((rawText) =>
@@ -175,14 +196,22 @@ export function projectForLlm(
     ));
   }
   try {
-    const masks = orderedMasks(masksFromBindings(input.bindings));
+    const masks = orderedMasks(masksFromBindings(input.entitySet.bindings));
+    const maskedText = maskText(input.requestText, masks);
+    const maskedEvidence = maskRecord(input.evidence, masks) as Readonly<
+      Record<string, unknown>
+    >;
+    if (masks.some((mask) =>
+      containsText(maskedText, mask.rawText) ||
+      containsText(maskedEvidence, mask.rawText)
+    )) {
+      throw appError("PII_VIOLATION", "Sensitive entity remained after masking.");
+    }
     const candidate: MaskedLlmRequest = {
       purpose: input.purpose,
-      maskedText: tokenizeText(maskText(input.requestText, masks)),
+      maskedText: tokenizeText(maskedText),
       slots: input.slots,
-      context: tokenizeRecord(
-        maskRecord(input.evidence, masks) as Readonly<Record<string, unknown>>,
-      ),
+      context: tokenizeRecord(maskedEvidence),
     };
     return parseMaskedLlmRequest(candidate);
   } catch {
