@@ -491,3 +491,20 @@ in the route page (absent params still default; surfaces stay data-free); and
 `changedRerunResult` is disposition-aware from the recorded disposition (proceed / blocked /
 prohibited each state only what the contract records).
 **Revert path:** revert this round's commit; the D-036 skeleton stands unchanged beneath it.
+
+### D-038 · 2026-07-26 · reversible · Second review round + print-overlap fix on the walking skeleton (decision key nm-review-invalidation-s6)
+
+Two follow-up rounds on the D-036/D-037 skeleton, no fence weakened:
+- **Review round 2** (key nm-review-invalidation-s6): the below-threshold single-approver stage in
+  `build-decision.ts` mirrors the voided-approval treatment, so the approval gate, safety check, and
+  printable record agree under approval-invalidation at Firm B; `demo-skeleton-honesty` RULE B's
+  specifier collector now also catches re-exports, dynamic `import()` / `require()`, non-literal
+  dynamic specifiers, and traversal specifiers like `"./../data"` (injection proofs in
+  `docs/fences/proof-log.md`); the per-surface execution-timeline row mapping is shared via
+  `surfaces/shared.tsx` rather than duplicated.
+- **Print-overlap fix:** the printable record's running header/footer strips (decision id + the
+  ADR-0022 watermark) ride in a `.print-doc` table as repeating `thead`/`tfoot` rows, because
+  Chromium repeats those on every printed page AND reserves their space; the prior
+  `position: fixed` strips could overlap page content. On screen the table wrapper is layout-inert
+  (`display: contents`), so design §9's running-header/footer requirement is met unchanged.
+**Revert path:** revert the two commits; the D-036/D-037 skeleton stands unchanged beneath them.
