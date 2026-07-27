@@ -92,6 +92,14 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+      # Walking-skeleton deliverable (v3 prompt 3): a screenshot of every required
+      # demo screen, captured by e2e/demo-journey.spec.ts on every run.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: demo-screens
+          path: demo-screens/
+          retention-days: 14
 
   secret-scan:
     name: secret-scan (gitleaks)

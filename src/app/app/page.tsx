@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 
 export default function AppHome() {
   const cards = [
+    { href: "/app/demo", title: "Money-movement demo", desc: "The governed decision journey on labeled fakes: intent to verification, Firm A vs Firm B, policy authoring.", regulation: "Phase 1 demo contract (D-034)" },
     { href: "/app/account-opening", title: "Open an account", desc: "Run the account-opening flow: KYC, e-signature, and finalize.", regulation: "SEC Reg BI / FINRA 2090" },
     { href: "/app/console", title: "House-CRM console", desc: "Create and edit households. Every edit is an audited, tamper-evident record.", regulation: "SEC Rule 204-2" },
     { href: "/app/audit", title: "Audit trail", desc: "Inspect the append-only, hash-chained audit log and verify its integrity.", regulation: "SEC 17a-4 / SOC 2 CC7.4" },

@@ -104,14 +104,14 @@ same grammar stretched across a pipeline. Every one of the twelve required surfa
 |---|---|---|---|
 | 1 | Household workspace | Recommendation (context) | Cards, `Metric` / `FreshValue` on every figure, `EmptyState` on-ramps, `DecisionSpine` absent (no decision in flight yet) |
 | 2 | Contextual intent panel | Action (initiate) | `Field` + `TextInput`, one primary `Button`; anchored panel attached to the workspace, never a 50/50 chat layout (PRODUCT-DIRECTION §2, §6); the interpreted intent echoes back as typed slots, each a labeled value |
-| 3 | Evidence and conflict view | Reasoning (facts) | `EvidenceRow` (to-be-built, §6) = `FreshValue` + observed/retrieved times; conflict and missing-item variants; `WhyBubble` on derived items |
-| 4 | Recommendation and alternatives | Recommendation + Reasoning | `DispositionNotice` (to-be-built, §5), ranked alternative cards, `WhyBubble` per rejection reason, every figure a `FreshValue` |
+| 3 | Evidence and conflict view | Reasoning (facts) | `EvidenceRow` (built, §6) = `FreshValue` + observed/retrieved times; conflict and missing-item variants; `WhyBubble` on derived items |
+| 4 | Recommendation and alternatives | Recommendation + Reasoning | `DispositionNotice` (built, §5), ranked alternative cards, `WhyBubble` per rejection reason, every figure a `FreshValue` |
 | 5 | Policy and precedence trace | Reasoning (rules) | Register idiom rows; policy/instruction versions in `font-mono text-xs`; `WhyBubble` per precedence step |
-| 6 | Approval stages and actor status | Action (human gate) | `ProgressSteps` for stages, `ApprovalStagePanel` (to-be-built, §7), `StatusBadge` per actor slot |
+| 6 | Approval stages and actor status | Action (human gate) | `ProgressSteps` for stages, `ApprovalStagePanel` (built, §7), `StatusBadge` per actor slot |
 | 7 | Pre-execution safety check | Action → Outcome hinge | Check rows with `StatusBadge`, revalidation timestamp as a `FreshValue`-style label, reservation + conflict keys in `font-mono text-xs`; the invalidation moment (§7.3) lives here |
-| 8 | Execution timeline | Outcome | `ExecutionTimeline` (to-be-built, §8) in the register idiom; honest `StatusBadge` states; idempotency made visible in plain words |
+| 8 | Execution timeline | Outcome | `ExecutionTimeline` (built, §8) in the register idiom; honest `StatusBadge` states; idempotency made visible in plain words |
 | 9 | Verification state | Outcome (honest) | "Proven / not yet proven" lists, next-poll label, NIGO and stuck rows first-class (§8) |
-| 10 | Firm A / Firm B comparison | Reasoning (policy difference) | `ComparisonColumns` (to-be-built, §10), difference-as-hierarchy, `WhyBubble` per differing row |
+| 10 | Firm A / Firm B comparison | Reasoning (policy difference) | `ComparisonColumns` (built, §10), difference-as-hierarchy, `WhyBubble` per differing row |
 | 11 | Policy draft and simulation impact | Recommendation + Action | Draft AST rendered as structured rows (never raw code as the primary view), LLM-drafted wording set apart (§6.5), simulation delta in the register idiom, human approval gate per §7 |
 | 12 | Printable examiner-grade decision artifact | Outcome (proof) | Document-styled surface (§9), all reasoning expanded, hashes in full, ADR-0022 watermark rules |
 
@@ -131,7 +131,7 @@ The persistent orientation element (v3's UX semantic, kept): on every surface of
 journey the viewer can see **where this request is in the pipeline** without being told. It is
 calm and secondary - a quiet line, never a dashboard that shouts.
 
-**`DecisionSpine` (to-be-built)** - a horizontal derivative of `ProgressSteps`
+**`DecisionSpine` (built, D-036)** - a horizontal derivative of `ProgressSteps`
 (`src/app/presentation/progress-steps.tsx`), sharing its state vocabulary and accessibility
 recipe:
 
@@ -182,7 +182,7 @@ palette.
 ### 5.1 Badges
 
 Three entries are **added to the existing `STATUS_STYLES` map** in
-`src/app/presentation/ui.tsx` (same shape, same file - to-be-built with surface #4):
+`src/app/presentation/ui.tsx` (same shape, same file - built with surface #4, D-036):
 
 - `proceed`: `bg-green-50 text-green-800 border-green-200` (the `done` family), label
   **"Proceed"**.
@@ -197,7 +197,7 @@ system malfunctioned; the solid slate badge says the system decided. This is the
 "Verin won't fake a compliance answer" (PRODUCT-DIRECTION §9): **a refusal reads as integrity,
 not as breakage.**
 
-### 5.2 `DispositionNotice` (to-be-built)
+### 5.2 `DispositionNotice` (built, D-036)
 
 The card that heads the recommendation view (surface #4) and any surface that must state a
 disposition:
@@ -242,7 +242,7 @@ Surface #3 (evidence and conflict view) and every place evidence appears inline.
 **FreshValue everywhere**; the demo's evidence minute (demo contract §3, 0:45-1:30) is carried
 entirely by provenance rendering the product already has.
 
-### 6.1 `EvidenceRow` (to-be-built)
+### 6.1 `EvidenceRow` (built, D-036)
 
 A composition (not a fork) for one evidence item:
 
@@ -303,7 +303,7 @@ hierarchy, not badges**.
   design rule: AI proposes, deterministic code disposes - and the typography makes the boundary
   visible).
 
-### 6.6 `TapToVerify` (to-be-built)
+### 6.6 `TapToVerify` (built, D-036)
 
 The tap-to-verify-source affordance of PRODUCT-DIRECTION §7 - the provenance of one fact (where
 it came from, which record, how fresh, how confident), one tap from the value - and the
@@ -332,7 +332,7 @@ Approval stages render through the existing `ProgressSteps` (vertical): one step
 parallel stage groups are stated in the stage title text ("Stage 2 - either order"), not with
 novel diagram graphics.
 
-### 7.2 `ApprovalStagePanel` (to-be-built)
+### 7.2 `ApprovalStagePanel` (built, D-036)
 
 One card per stage (standard card recipe), containing:
 
@@ -396,7 +396,7 @@ alone, that the approval no longer stands and why.
 Surfaces #7, #8, #9. The doctrine is **honest status**: the UI never claims a stronger state than
 the underlying source proves. Submitted is not settled. Signed is not submitted. Green is earned.
 
-### 8.1 `ExecutionTimeline` (to-be-built)
+### 8.1 `ExecutionTimeline` (built, D-036)
 
 The register idiom (audit-trail table lineage, §1): uppercase `text-xs tracking-wide` headers on
 `bg-surface`, `divide-y` rows, one row per execution step - step name, target, `StatusBadge`,
@@ -405,7 +405,7 @@ in a `TapToVerify` detail (§6.6) rather than cluttering the row.
 
 ### 8.2 Status vocabulary
 
-Added to `STATUS_STYLES` (to-be-built with surface #8), mapped onto the existing families -
+Added to `STATUS_STYLES` (built with surface #8, D-036), mapped onto the existing families -
 **blue = in progress, green = proven done, amber = waiting/unconfirmed, red = failed, slate =
 neutral**:
 
@@ -505,7 +505,7 @@ Surface #10. The claim on stage: same household, same request, different approve
 materially different outcome, zero code change. The design's job is to make the **difference**
 legible and its **cause** (policy-version provenance) inspectable.
 
-**`ComparisonColumns` (to-be-built):**
+**`ComparisonColumns` (built, D-036):**
 
 - **Layout:** `grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2`; stacks on narrow viewports.
   Each column headed by the firm name (`text-base font-semibold text-slate-900`) and its **active
@@ -554,7 +554,7 @@ Extending the machine vocabulary (`SOURCE_SYSTEMS`, the view-model classes) is b
 by the prompt that lands each path; this section fixes the labels and their renderings so no
 build prompt invents its own.
 
-### 11.2 `DevProvenanceBadge` (to-be-built)
+### 11.2 `DevProvenanceBadge` (built, D-036)
 
 The visible development-only badge on every fake-backed element:
 
@@ -642,10 +642,12 @@ motion moment must pass to exist at all.
 
 ## 13. To-be-built primitive register
 
-The complete inventory of what the twelve surfaces need that the tier does not yet have. Each
-derives from named existing recipes; none introduces a token. Build them in the prompt that first
-renders their surface (charter #5), in `src/app/presentation/`, within the presentation-tier
-budget (ADR-0012).
+The complete inventory of what the twelve surfaces need beyond the pre-skeleton tier. Each
+derives from named existing recipes; none introduces a token. Each row is built in the prompt that
+first renders its surface (charter #5), in `src/app/presentation/`, within the presentation-tier
+budget (ADR-0012). The walking skeleton (D-036) built every row below except the
+`DevProvenanceBadge` collapse mode, which stays to-be-built until a final-presentation surface
+first needs it (§11.3).
 
 | Primitive | Derives from | First used by | Spec |
 |---|---|---|---|
