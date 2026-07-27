@@ -52,10 +52,10 @@ async function cachedResult<T>(db: SqlDb, orgId: string, key: string): Promise<T
 }
 
 export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result<T>> {
+  assertWriteActor(opts.actor);
   const { db, actor, idempotencyKey } = opts;
   // The write chokepoint refuses an impostor context before any SQL runs
   // ("missing tenant context cannot parse", v3 §15.2).
-  assertWriteActor(actor);
   const tenant = actor.tenant;
   const orgId = tenant.orgId;
   const now = new Date().toISOString();

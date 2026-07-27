@@ -77,6 +77,12 @@ export const GOVERNED_ACTIONS = {
 
 export type GovernedAction = keyof typeof GOVERNED_ACTIONS;
 
+declare const GovernedOutputBrand: unique symbol;
+
+export interface GovernedOutput<A extends GovernedAction> {
+  readonly [GovernedOutputBrand]?: A;
+}
+
 declare const ActionGrantBrand: unique symbol;
 
 /** Proof that authorizeGovernedAction approved this actor for this action. */

@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import type { Result } from "@contracts/result";
-import type { WriteActor } from "@contracts/principal";
+import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { assertTenantContext } from "@contracts/tenant";
 import {
   assertActionGrant,
@@ -41,6 +41,7 @@ function toHousehold(r: HouseholdRow): Household {
 export async function createHousehold(
   db: SqlDb, a: WriteActor, input: { name: string; status?: HouseholdStatus }, idempotencyKey?: string,
 ): Promise<Result<Household>> {
+  assertWriteActor(a);
   const id = randomUUID();
   const createdAt = nowIso();
   const prov = houseProv();
@@ -62,6 +63,7 @@ export async function createHousehold(
 }
 
 export async function updateHouseholdName(db: SqlDb, a: WriteActor, id: string, name: string): Promise<Result<Household>> {
+  assertWriteActor(a);
   // The before-snapshot is read INSIDE the write transaction (FOR UPDATE row
   // lock), so the audited pre-image can never race a concurrent rename.
   let oldName: string | null = null;
@@ -100,6 +102,7 @@ export async function listHouseholds(
 export async function createContact(
   db: SqlDb, a: WriteActor, input: { householdId: string; firstName: string; lastName: string; email?: string | null; phone?: string | null }, idempotencyKey?: string,
 ): Promise<Result<Contact>> {
+  assertWriteActor(a);
   const id = randomUUID();
   const createdAt = nowIso();
   const prov = houseProv();
@@ -123,6 +126,7 @@ export async function createFinancialAccount(
   input: { householdId: string; accountType: AccountType; custodian?: string | null; currency?: string; openDate?: string | null },
   idempotencyKey?: string,
 ): Promise<Result<FinancialAccount>> {
+  assertWriteActor(a);
   const id = randomUUID();
   const createdAt = nowIso();
   const prov = houseProv();
@@ -149,6 +153,7 @@ export async function createFinancialAccount(
 export async function createTask(
   db: SqlDb, a: WriteActor, input: { householdId?: string | null; subject: string }, idempotencyKey?: string,
 ): Promise<Result<Task>> {
+  assertWriteActor(a);
   const id = randomUUID();
   const createdAt = nowIso();
   const prov = houseProv();

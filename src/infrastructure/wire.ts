@@ -7,10 +7,15 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import {
   delegatedWriteActor,
+  assertWriteActor,
   systemWriteActor,
   type WriteActor,
 } from "@contracts/principal";
-import { assertActionGrant, type ActionGrant } from "@contracts/authz";
+import {
+  assertActionGrant,
+  type ActionGrant,
+  type GovernedOutput,
+} from "@contracts/authz";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result } from "@contracts/result";
@@ -98,6 +103,10 @@ export interface StartAccountOpeningInput extends PIIBearing {
   clientRequestId?: string;
 }
 
+type AccountOpeningStartResult =
+  & FlowRunResult
+  & GovernedOutput<"execution.initiate">;
+
 /** Report an already-started execution's current state (double-submit replay). */
 function replayedRunResult(state: ExecutionState): FlowRunResult {
   return {
@@ -144,7 +153,7 @@ export async function startAccountOpening(
   db: SqlDb,
   grant: ActionGrant<"execution.initiate">,
   input: StartAccountOpeningInput,
-): Promise<FlowRunResult> {
+): Promise<AccountOpeningStartResult> {
   assertActionGrant(grant, "execution.initiate");
   const store = makeExecutionStore(db);
   const executionId = input.clientRequestId ?? randomUUID();
@@ -255,6 +264,7 @@ export async function auditEvent(
   db: SqlDb,
   opts: { actor: WriteActor; action: string; entityType: string; entityId: string; detail: string },
 ): Promise<void> {
+  assertWriteActor(opts.actor);
   const recorded = await auditedWrite({
     db, actor: opts.actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
