@@ -113,4 +113,38 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(r.value.maskedText.value).not.toContain(RAW.name.toLowerCase());
     expect(r.value.maskedText.value).toContain("{{subject_1}}");
   });
+  it("refuses a non-machine-name mask slotName fail-closed (a '$&' slotName cannot re-insert the entity)", () => {
+    const r = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `follow up with ${RAW.name}`,
+      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      masks: [{ slotName: "$&", rawText: RAW.name }],
+      evidence: {},
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("PII_VIOLATION");
+    expect(r.error.message).not.toContain(RAW.name);
+    expect(r.error.message).not.toContain("$&");
+  });
+  it("overlapping masks are applied longest-first (a shorter mask cannot leave a partial name behind)", () => {
+    const r = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `schedule a call with ${RAW.name}`,
+      slots: [
+        { slotName: "subject_1", slotType: "subject" },
+        { slotName: "subject_2", slotType: "subject" },
+      ],
+      masks: [
+        { slotName: "subject_2", rawText: "Adaeze" },
+        { slotName: "subject_1", rawText: RAW.name },
+      ],
+      evidence: {},
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.maskedText.value).not.toContain("Okonkwo-Blackwood");
+    expect(r.value.maskedText.value).not.toContain("Adaeze");
+    expect(r.value.maskedText.value).toContain("{{subject_1}}");
+  });
 });

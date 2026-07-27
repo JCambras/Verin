@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { relative, resolve, dirname } from "node:path";
-import type { Project, SourceFile } from "ts-morph";
+import { SyntaxKind, type Project, type SourceFile, type TypeAliasDeclaration, type TypeLiteralNode } from "ts-morph";
 import { realProject, inMemoryProject, importSpecifiers, REPO_ROOT, SRC_ROOT } from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
 
@@ -8,12 +8,15 @@ import { isPIIField } from "@contracts/pii";
  * LLM-PII-BOUNDARY FENCE (v3 §15.1, INVARIANT 1: "No PII-bearing type is
  * reachable from llm/"). Two derived, compile/import-level checks:
  *
- *  1. MARKER COMPLETENESS (the derivation floor): every interface in the
- *     platform layers (contracts/domain/infrastructure — the app layer is
+ *  1. MARKER COMPLETENESS (the derivation floor): every type declaration in
+ *     the platform layers (contracts/domain/infrastructure — the app layer is
  *     structurally unreachable from llm/ via the dependency-rule fence) that
- *     declares a raw PII-named field must extend the PIIBearing marker or be a
- *     reviewed machine-name escape. The marked set is therefore DERIVED, so a
- *     new PII-carrying type cannot ship unmarked and slip past check 2.
+ *     declares a raw PII-named field must carry the PIIBearing marker or be a
+ *     reviewed machine-name escape. Interfaces, type-alias object literals,
+ *     and classes all count — a `type Client = { firstName: string }` alias is
+ *     the same evasion as an unmarked interface. The marked set is therefore
+ *     DERIVED, so a new PII-carrying type cannot ship unmarked and slip past
+ *     check 2.
  *
  *  2. IMPORT REACHABILITY: the transitive import closure of every file under
  *     an llm/ directory must contain NO module that declares a PIIBearing-
@@ -43,20 +46,63 @@ function normalizePath(sf: SourceFile): string {
   return rel.startsWith("..") ? sf.getFilePath().replace(/^\//, "") : rel;
 }
 
-/** Platform-layer interfaces with raw PII-named fields that are neither marked nor escaped. */
+interface PIITypeDecl {
+  readonly name: string;
+  readonly marked: boolean;
+  readonly props: ReadonlyArray<{ readonly name: string; readonly typeText: string }>;
+}
+
+/** Top-level object literals of a type alias (direct, or members of a union/intersection). */
+function aliasObjectLiterals(alias: TypeAliasDeclaration): TypeLiteralNode[] {
+  const typeNode = alias.getTypeNode();
+  if (!typeNode) return [];
+  const direct = typeNode.asKind(SyntaxKind.TypeLiteral);
+  if (direct) return [direct];
+  const composite = typeNode.asKind(SyntaxKind.IntersectionType) ?? typeNode.asKind(SyntaxKind.UnionType);
+  return composite ? composite.getTypeNodes().flatMap((n) => n.asKind(SyntaxKind.TypeLiteral) ?? []) : [];
+}
+
+/** Every property-bearing type declaration — interface, type-alias object literal, or class. */
+function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
+  const out: PIITypeDecl[] = [];
+  for (const iface of sf.getInterfaces()) {
+    if (iface.getName() === "PIIBearing") continue; // the marker itself
+    out.push({
+      name: iface.getName(),
+      marked: iface.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText())),
+      props: iface.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" })),
+    });
+  }
+  for (const alias of sf.getTypeAliases()) {
+    const literals = aliasObjectLiterals(alias);
+    if (!literals.length) continue;
+    out.push({
+      name: alias.getName(),
+      marked: /\bPIIBearing\b/.test(alias.getTypeNode()?.getText() ?? ""),
+      props: literals.flatMap((lit) => lit.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" }))),
+    });
+  }
+  for (const cls of sf.getClasses()) {
+    out.push({
+      name: cls.getName() ?? "(anonymous class)",
+      marked: cls.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText())),
+      props: cls.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" })),
+    });
+  }
+  return out;
+}
+
+/** Platform-layer type declarations with raw PII-named fields that are neither marked nor escaped. */
 export function detectUnmarkedPIITypes(project: Project, escapes: ReadonlySet<string>): string[] {
   const out: string[] = [];
   for (const sf of project.getSourceFiles()) {
     const normalized = normalizePath(sf);
     if (!/^src\/(contracts|domain|infrastructure)\//.test(normalized)) continue;
-    for (const iface of sf.getInterfaces()) {
-      if (iface.getName() === "PIIBearing") continue; // the marker itself
-      const marked = iface.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText()));
-      if (marked) continue;
-      for (const prop of iface.getProperties()) {
-        const typeText = prop.getTypeNode()?.getText() ?? "";
-        if (!isPIIField(prop.getName()) || /\bTokenized\b/.test(typeText)) continue;
-        const ref = `${normalized} :: ${iface.getName()}.${prop.getName()}`;
+    for (const decl of piiTypeDeclarations(sf)) {
+      if (decl.marked) continue;
+      for (const prop of decl.props) {
+        if (!isPIIField(prop.name) || /\bTokenized\b/.test(prop.typeText)) continue;
+        const ref = `${normalized} :: ${decl.name}.${prop.name}`;
         if (!escapes.has(ref)) out.push(ref);
       }
     }
@@ -64,12 +110,11 @@ export function detectUnmarkedPIITypes(project: Project, escapes: ReadonlySet<st
   return out;
 }
 
-/** Modules that declare at least one PIIBearing-marked interface. */
+/** Modules that declare at least one PIIBearing-marked type (interface, alias, or class). */
 export function markedModules(project: Project): Set<string> {
   const out = new Set<string>();
   for (const sf of project.getSourceFiles()) {
-    const hasMarked = sf.getInterfaces().some((i) => i.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText())));
-    if (hasMarked) out.add(normalizePath(sf));
+    if (piiTypeDeclarations(sf).some((d) => d.marked)) out.add(normalizePath(sf));
   }
   return out;
 }
@@ -142,11 +187,11 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     expect(unmarked, `unmarked PII-bearing types (extend PIIBearing or review into NON_PII_ESCAPES):\n${unmarked.join("\n")}`).toEqual([]);
   });
 
-  it("enforces: no stale escapes (each escape still names a live interface property)", () => {
+  it("enforces: no stale escapes (each escape still names a live declared property)", () => {
     const live = new Set<string>();
     for (const sf of project.getSourceFiles()) {
       const normalized = normalizePath(sf);
-      for (const iface of sf.getInterfaces()) for (const prop of iface.getProperties()) live.add(`${normalized} :: ${iface.getName()}.${prop.getName()}`);
+      for (const decl of piiTypeDeclarations(sf)) for (const prop of decl.props) live.add(`${normalized} :: ${decl.name}.${prop.name}`);
     }
     const stale = NON_PII_ESCAPES.filter((e) => !live.has(e.ref)).map((e) => e.ref);
     expect(stale, `stale escapes:\n${stale.join("\n")}`).toEqual([]);
@@ -212,6 +257,40 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       });
       const v = detectUnmarkedPIITypes(project, ESCAPE_SET);
       expect(v).toEqual(["src/domain/workflow/engine.ts :: FlowStep.email"]);
+    });
+    it("flags an UNMARKED type-alias object literal with a raw PII field (alias evasion)", () => {
+      const project = inMemoryProject({
+        "/src/domain/sneaky-alias.ts": `export type Client = { firstName: string }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual(["src/domain/sneaky-alias.ts :: Client.firstName"]);
+    });
+    it("flags an UNMARKED type-alias union/intersection member with a raw PII field", () => {
+      const project = inMemoryProject({
+        "/src/domain/sneaky-union.ts": `export type Party = { kind: "org" } | { kind: "person"; email: string }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual(["src/domain/sneaky-union.ts :: Party.email"]);
+    });
+    it("flags an UNMARKED class with a raw PII field (class evasion)", () => {
+      const project = inMemoryProject({
+        "/src/domain/sneaky-class.ts": `export class Client { firstName = "" }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual(["src/domain/sneaky-class.ts :: Client.firstName"]);
+    });
+    it("flags llm reaching a module whose PII type is a MARKED type alias (markedModules covers aliases)", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/schema/alias-entities.ts": `import type { PIIBearing } from "@contracts/pii";\nexport type Contact = PIIBearing & { firstName: string };`,
+        "/src/infrastructure/llm/evil.ts": `import type { Contact } from "@domain/schema/alias-entities";\nexport type Leak = Contact;`,
+      });
+      expect(detectPIIReachableFromLlm(project).length).toBe(1);
+    });
+    it("flags llm reaching a module whose PII type is a MARKED class (markedModules covers classes)", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/schema/class-entities.ts": `import type { PIIBearing } from "@contracts/pii";\nexport class Contact implements PIIBearing { firstName = "" }`,
+        "/src/infrastructure/llm/evil.ts": `import type { Contact } from "@domain/schema/class-entities";\nexport type Leak = Contact;`,
+      });
+      expect(detectPIIReachableFromLlm(project).length).toBe(1);
     });
   });
 });

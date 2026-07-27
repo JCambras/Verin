@@ -1113,7 +1113,8 @@ references to either number refer to this entry; origin/main had already assigne
   org-id fence's NON_TENANT classification. Missing context cannot compile (TS2741) or parse (repository
   asserts reject casts/spreads/JSON impostors with `INTERNAL`). Fence: `tenant-context-required` (PF-027).
 - **Per-action authorization** (`contracts/authz.ts`): `ActorRef` (human role-holder | system actor) +
-  the seven v3 §15.3 governed actions with Phase 1 role allowlists. Surfaced actions mirror the previous
+  the seven v3 §15.3 permission points (eight actions - policy drafting and approval are distinct) with
+  Phase 1 role allowlists. Surfaced actions mirror the previous
   route allowlists EXACTLY (no behavior change): `pii.view` = all roles (households GET), `execution.initiate`
   = advisor/ops/principal/admin (account-opening POST), `audit.export` = ops/cco/principal/admin (audit GET).
   Unsurfaced actions drafted per v3 §11 semantics with separation of duties: compliance authority
