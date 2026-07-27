@@ -8,13 +8,14 @@
  * webhook has exactly-once effect (charter #16).
  */
 import { isAppError, type AppError } from "@contracts/errors";
+import type { PIIBearing } from "@contracts/pii";
 import type { TenantContext } from "@contracts/tenant";
 
-export type FlowData = Record<string, unknown>;
+export type FlowData = Record<string, unknown> & PIIBearing;
 
 export type ExecutionStatus = "running" | "suspended" | "completed" | "failed";
 
-export interface ExecutionState {
+export interface ExecutionState extends PIIBearing {
   id: string;
   orgId: string;
   flowId: string;
@@ -31,7 +32,7 @@ export interface ExecutionState {
  * tenant comes FROM the row (the same reviewed escape as the org-id fence);
  * resumeFlow re-checks the loaded row against the caller's tenant.
  */
-export interface ExecutionStore {
+export interface ExecutionStore extends PIIBearing {
   create(state: ExecutionState, tenant: TenantContext): Promise<void>;
   save(state: ExecutionState, tenant: TenantContext): Promise<void>;
   loadById(id: string, tenant: TenantContext): Promise<ExecutionState | null>;
@@ -43,7 +44,7 @@ export type StepResult =
   | { kind: "suspend"; token: string; awaiting: string; patch?: FlowData }
   | { kind: "fail"; error: AppError };
 
-export interface FlowStep<D> {
+export interface FlowStep<D> extends PIIBearing {
   id: string;
   name: string;
   execute(ctx: FlowData, deps: D, tenant: TenantContext): Promise<StepResult>;
@@ -55,7 +56,7 @@ export interface FlowDefinition<D> {
   steps: FlowStep<D>[];
 }
 
-export interface FlowRunResult {
+export interface FlowRunResult extends PIIBearing {
   executionId: string;
   status: ExecutionStatus;
   token?: string;

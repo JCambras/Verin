@@ -25,6 +25,7 @@ export interface TenantContext {
 }
 
 const SEAL = Symbol("verin.tenant-context.seal");
+const TENANT_CONTEXTS = new WeakSet<object>();
 
 export const SYSTEM_ACTOR_IDS = [
   "audit-chain-verify",
@@ -47,6 +48,7 @@ function mint(orgId: string, actor: TenantContext["actor"]): TenantContext {
     value: true,
     enumerable: false,
   });
+  TENANT_CONTEXTS.add(ctx);
   // The ONE sanctioned TenantContext cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(ctx) as unknown as TenantContext;
 }
@@ -77,7 +79,7 @@ export function systemTenant(systemId: SystemActorId, orgId: string): TenantCont
 }
 
 export function isTenantContext(value: unknown): value is TenantContext {
-  return typeof value === "object" && value !== null && (value as Record<symbol, unknown>)[SEAL] === true;
+  return typeof value === "object" && value !== null && TENANT_CONTEXTS.has(value);
 }
 
 /**

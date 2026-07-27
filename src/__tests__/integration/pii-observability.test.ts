@@ -6,6 +6,7 @@ import { loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import { principalFromIdentity } from "@contracts/principal";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -15,7 +16,10 @@ import { principalFromIdentity } from "@contracts/principal";
  * account-opening flow end-to-end and scans every recorded span.
  */
 const ORG = "org-pii";
-const advisor = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
+const advisorPrincipal = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
+const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
+if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
+const advisor = advisorAuthorization.value;
 const FIXTURES = {
   householdName: "Okonkwo-Blackwood Household",
   firstName: "Zephyrine",
@@ -81,7 +85,7 @@ describe("traces never carry raw names or account numbers", () => {
     await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Firm',$2,'verin-crm',$2,'high')", [ORG, now]);
     await db.query(
       "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,'Advisor','advisor','active',$4,'verin-crm',$4,'high')",
-      [advisor.userId, ORG, advisor.actor, now],
+      [advisor.actorId, ORG, advisorPrincipal.actor, now],
     );
   });
 
@@ -122,7 +126,7 @@ describe("traces never carry raw names or account numbers", () => {
   it("a PII-NAMED attribute KEY is redacted regardless of value type (numbers included)", async () => {
     await withSpan(
       "test.keyrule",
-      { phone: 2125550142, accountNumber: 941000517334, orgId: ORG, actor: advisor.userId },
+      { phone: 2125550142, accountNumber: 941000517334, orgId: ORG, actor: advisor.actorId },
       async () => undefined,
     );
     const span = [...recentSpans()].reverse().find((s) => s.name === "test.keyrule");
@@ -130,7 +134,7 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.phone).toBe(REDACTED);
     expect(span!.attributes.accountNumber).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifier keys survive
-    expect(span!.attributes.actor).toBe(advisor.userId);
+    expect(span!.attributes.actor).toBe(advisor.actorId);
   });
 
   it("generic trace keys cannot carry unresolved names or bare account numbers", async () => {

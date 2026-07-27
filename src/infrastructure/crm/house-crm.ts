@@ -44,7 +44,7 @@ export async function createHousehold(
   const advisorUserId = a.tenant.actor.kind === "human" ? a.actorUserId : null;
   return auditedWrite<Household>({
     // detail is PII-minimized (no client name); entityId identifies the record.
-    db, tenant: a.tenant, actor: a.actorUserId, action: "household.create", entityType: "Household", entityId: id,
+    db, actor: a, action: "household.create", entityType: "Household", entityId: id,
     idempotencyKey, detail: "Created a household",
     buildAfter: (h) => ({ id: h.id, name: h.name, status: h.status }),
     perform: async (tx) => {
@@ -62,7 +62,7 @@ export async function updateHouseholdName(db: SqlDb, a: WriteActor, id: string, 
   // lock), so the audited pre-image can never race a concurrent rename.
   let oldName: string | null = null;
   return auditedWrite<Household>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "household.update", entityType: "Household", entityId: id,
+    db, actor: a, action: "household.update", entityType: "Household", entityId: id,
     buildBefore: () => (oldName == null ? undefined : { name: oldName }),
     buildAfter: () => ({ name }), detail: "Renamed a household",
     perform: async (tx) => {
@@ -95,7 +95,7 @@ export async function createContact(
   const createdAt = nowIso();
   const prov = houseProv();
   return auditedWrite<Contact>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "contact.create", entityType: "Contact", entityId: id,
+    db, actor: a, action: "contact.create", entityType: "Contact", entityId: id,
     idempotencyKey, detail: `Added contact to household`,
     // NOTE: before/after are scrubbed by the audit boundary, so PII (name/email) is redacted in the trail.
     buildAfter: (c) => ({ id: c.id, householdId: c.householdId, firstName: c.firstName, lastName: c.lastName, email: c.email, phone: c.phone }),
@@ -124,7 +124,7 @@ export async function createFinancialAccount(
   const openDate = input.openDate ?? null;
   const status: FinancialAccount["status"] = openDate ? "open" : "pending";
   return auditedWrite<FinancialAccount>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "financial_account.create", entityType: "FinancialAccount", entityId: id,
+    db, actor: a, action: "financial_account.create", entityType: "FinancialAccount", entityId: id,
     idempotencyKey, detail: `Opened ${input.accountType} account`,
     buildAfter: (acct) => ({ id: acct.id, householdId: acct.householdId, accountType: acct.accountType, status: acct.status }),
     perform: async (tx) => {
@@ -144,7 +144,7 @@ export async function createTask(
   const createdAt = nowIso();
   const prov = houseProv();
   return auditedWrite<Task>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "task.create", entityType: "Task", entityId: id,
+    db, actor: a, action: "task.create", entityType: "Task", entityId: id,
     idempotencyKey, detail: `Created task: ${input.subject}`,
     buildAfter: (t) => ({ id: t.id, subject: t.subject, status: t.status }),
     perform: async (tx) => {

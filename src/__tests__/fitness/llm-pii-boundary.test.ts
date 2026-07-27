@@ -2,13 +2,10 @@ import { describe, it, expect } from "vitest";
 import { relative, resolve, dirname } from "node:path";
 import {
   Node,
-  SyntaxKind,
   type Project,
   type Signature,
   type SourceFile,
   type Type,
-  type TypeAliasDeclaration,
-  type TypeLiteralNode,
 } from "ts-morph";
 import {
   realSemanticProject,
@@ -120,10 +117,41 @@ function isLeafType(type: Type): boolean {
     type.isVoid();
 }
 
+function isLeafComposite(type: Type): boolean {
+  if (isLeafType(type)) return true;
+  const members = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  return members.length > 0 && members.every(isLeafComposite);
+}
+
+function aliasProperties(
+  type: Type,
+  location: Node,
+): Array<{ readonly name: string; readonly type: Type }> {
+  if (isLeafComposite(type)) return [];
+  const members = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  const candidates = members.length ? members.flatMap((member) =>
+    aliasProperties(member, location)
+  ) : type.getProperties().map((property) => {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0] ??
+      location;
+    return {
+      name: property.getName(),
+      type: property.getTypeAtLocation(declaration),
+    };
+  });
+  const unique = new Map<string, { readonly name: string; readonly type: Type }>();
+  for (const property of candidates) {
+    unique.set(`${property.name}::${property.type.getText()}`, property);
+  }
+  return [...unique.values()];
+}
+
 function inlinePIIExposures(
   type: Type,
   path: string,
   seen = new Set<string>(),
+  location?: Node,
 ): string[] {
   if (isTokenized(type)) return [];
   if (isPIIBearingType(type)) return [path];
@@ -134,7 +162,7 @@ function inlinePIIExposures(
   const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
   if (composite.length) {
     return composite.flatMap((member) =>
-      inlinePIIExposures(member, path, nextSeen)
+      inlinePIIExposures(member, path, nextSeen, location)
     );
   }
   const typeArguments = [
@@ -142,28 +170,30 @@ function inlinePIIExposures(
     ...type.getTypeArguments(),
   ];
   const nestedArguments = typeArguments.flatMap((argument) =>
-    inlinePIIExposures(argument, path, nextSeen)
+    inlinePIIExposures(argument, path, nextSeen, location)
   );
   const symbol = type.getAliasSymbol() ?? type.getSymbol();
   const inline = !symbol || symbol.getDeclarations().some((declaration) =>
     Node.isTypeLiteral(declaration)
   );
-  if (!inline) return nestedArguments;
-  const nestedProperties = type.getProperties().flatMap((property) => {
+  const properties = type.getProperties().flatMap((property) => {
     const declaration = property.getValueDeclaration() ??
-      property.getDeclarations()[0];
+      property.getDeclarations()[0] ??
+      location;
     if (!declaration) return [];
     const propertyType = property.getTypeAtLocation(declaration);
     const propertyPath = `${path}.${property.getName()}`;
     if (isPIIField(property.getName()) && !isTokenized(propertyType)) {
       return [propertyPath];
     }
-    return inlinePIIExposures(propertyType, propertyPath, nextSeen);
+    if (!inline) return [];
+    return inlinePIIExposures(propertyType, propertyPath, nextSeen, declaration);
   });
+  if (!inline) return [...nestedArguments, ...properties];
   const nestedCalls = type.getCallSignatures().flatMap((signature) =>
     signaturePIIExposures(signature, `${path}.<call>`, nextSeen)
   );
-  return [...nestedArguments, ...nestedProperties, ...nestedCalls];
+  return [...nestedArguments, ...properties, ...nestedCalls];
 }
 
 function signaturePIIExposures(
@@ -180,11 +210,16 @@ function signaturePIIExposures(
     if (isPIIField(parameter.getName()) && !isTokenized(parameterType)) {
       return [parameterPath];
     }
-    return inlinePIIExposures(parameterType, parameterPath, seen);
+    return inlinePIIExposures(parameterType, parameterPath, seen, declaration);
   });
   return [
     ...parameters,
-    ...inlinePIIExposures(signature.getReturnType(), `${path}.return`, seen),
+    ...inlinePIIExposures(
+      signature.getReturnType(),
+      `${path}.return`,
+      seen,
+      signature.getDeclaration(),
+    ),
   ];
 }
 
@@ -206,16 +241,6 @@ function callablePIIExposures(type: Type): string[] {
   return [...new Set(exposures)];
 }
 
-/** Top-level object literals of a type alias (direct, or members of a union/intersection). */
-function aliasObjectLiterals(alias: TypeAliasDeclaration): TypeLiteralNode[] {
-  const typeNode = alias.getTypeNode();
-  if (!typeNode) return [];
-  const direct = typeNode.asKind(SyntaxKind.TypeLiteral);
-  if (direct) return [direct];
-  const composite = typeNode.asKind(SyntaxKind.IntersectionType) ?? typeNode.asKind(SyntaxKind.UnionType);
-  return composite ? composite.getTypeNodes().flatMap((n) => n.asKind(SyntaxKind.TypeLiteral) ?? []) : [];
-}
-
 /** Every property-bearing type declaration — interface, type-alias object literal, or class. */
 function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
   const out: PIITypeDecl[] = [];
@@ -232,19 +257,14 @@ function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
     });
   }
   for (const alias of sf.getTypeAliases()) {
-    const literals = aliasObjectLiterals(alias);
     const aliasType = alias.getType();
-    if (!literals.length && !aliasType.getCallSignatures().length) continue;
     out.push({
       name: alias.getName(),
       marked: isPIIBearingType(aliasType),
-      props: literals.flatMap((literal) =>
-        literal.getProperties().map((property) => ({
-          name: property.getName(),
-          type: property.getType(),
-        }))
-      ),
-      callableExposures: callablePIIExposures(aliasType),
+      props: aliasProperties(aliasType, alias),
+      callableExposures: isLeafComposite(aliasType)
+        ? []
+        : callablePIIExposures(aliasType),
     });
   }
   for (const cls of sf.getClasses()) {
@@ -380,6 +400,20 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     expect(markedModules(project).size).toBeGreaterThanOrEqual(4);
   });
 
+  it("enforces: persisted workflow state retains the PII-bearing marker", () => {
+    const engine = project.getSourceFiles().find((sf) =>
+      normalizePath(sf) === "src/domain/workflow/engine.ts"
+    );
+    expect(engine).toBeTruthy();
+    const declarations = piiTypeDeclarations(engine!);
+    for (const name of ["FlowData", "ExecutionState", "FlowRunResult"]) {
+      expect(
+        declarations.find((declaration) => declaration.name === name)?.marked,
+        `${name} must retain PIIBearing`,
+      ).toBe(true);
+    }
+  });
+
   it("enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it (invariant 1)", () => {
     const llmFiles = project.getSourceFiles().filter((sf) => /\/llm\//.test(normalizePath(sf)));
     expect(
@@ -401,8 +435,7 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "/src/infrastructure/llm/evil.ts": `import type { Contact } from "@domain/schema/entities";\nexport type Leak = Contact;`,
       });
       const v = detectPIIReachableFromLlm(project);
-      expect(v.length).toBe(1);
-      expect(v[0]).toContain("entities");
+      expect(v.some((violation) => violation.includes("entities"))).toBe(true);
     });
     it("flags a PII-bearing type declared inside llm itself", () => {
       const project = inMemoryProject({
@@ -430,7 +463,7 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "/src/infrastructure/helper.ts": `export { type Contact } from "../domain/schema/entities";`,
         "/src/infrastructure/llm/evil.ts": `import type { Contact } from "../helper";\nexport type Leak = Contact;`,
       });
-      expect(detectPIIReachableFromLlm(project).length).toBe(1);
+      expect(detectPIIReachableFromLlm(project).length).toBeGreaterThanOrEqual(1);
     });
     it("allows llm importing the marker-DECLARING module (contracts/pii declares no marked type)", () => {
       const project = inMemoryProject({
@@ -530,7 +563,32 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "/src/domain/schema/alias-entities.ts": `import type { PIIBearing } from "@contracts/pii";\nexport type Contact = PIIBearing & { firstName: string };`,
         "/src/infrastructure/llm/evil.ts": `import type { Contact } from "@domain/schema/alias-entities";\nexport type Leak = Contact;`,
       });
-      expect(detectPIIReachableFromLlm(project).length).toBe(1);
+      expect(detectPIIReachableFromLlm(project).length).toBeGreaterThanOrEqual(1);
+    });
+    it("flags a marked mapped alias with no syntactic object literal", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/contact.ts": `export interface Contact { firstName: string; lastName: string }`,
+        "/src/domain/alias.ts": `import type { PIIBearing } from "@contracts/pii"; import type { Contact } from "./contact"; export type NamedContact = PIIBearing & Pick<Contact, "firstName">;`,
+        "/src/infrastructure/llm/evil.ts": `import type { NamedContact } from "@domain/alias"; export type Leak = NamedContact;`,
+      });
+      expect(detectPIIReachableFromLlm(project).length).toBeGreaterThanOrEqual(1);
+    });
+    it("flags an unmarked mapped alias with a PII key", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `export type RawContact = Record<"email", string>;`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/domain/evil.ts :: RawContact.email",
+      ]);
+    });
+    it("flags a mapped PII type nested in a callable parameter", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `export interface Handler { submit(input: Record<"email", string>): void }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/domain/evil.ts :: Handler.submit(input).email",
+      ]);
     });
     it("flags llm reaching a module whose PII type is a MARKED class (markedModules covers classes)", () => {
       const project = inMemoryProject({

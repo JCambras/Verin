@@ -28,7 +28,7 @@ export async function createApplication(
   const finalizeKey = `finalize:${id}`;
   const now = new Date().toISOString();
   return auditedWrite<{ id: string; idempotencyKey: string }>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "application.create", entityType: "AccountOpeningApplication", entityId: id,
+    db, actor: a, action: "application.create", entityType: "AccountOpeningApplication", entityId: id,
     idempotencyKey, detail: `Opened ${input.accountType} application`,
     buildAfter: () => ({ id, status: "draft", accountType: input.accountType }),
     perform: async (tx) => {
@@ -45,7 +45,7 @@ export async function setEsignRequested(
   db: SqlDb, a: WriteActor, applicationId: string, token: string, idempotencyKey?: string,
 ): Promise<Result<{ token: string }>> {
   return auditedWrite<{ token: string }>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
+    db, actor: a, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Sent application for e-signature", buildAfter: () => ({ status: "awaiting-signature" }),
     perform: async (tx) => {
       const res = await tx.query<{ id: string }>(
@@ -70,7 +70,7 @@ export async function completeApplication(
   db: SqlDb, a: WriteActor, applicationId: string, idempotencyKey: string,
 ): Promise<Result<{ id: string }>> {
   return auditedWrite<{ id: string }>({
-    db, tenant: a.tenant, actor: a.actorUserId, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
+    db, actor: a, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Account opening completed (e-signature received)",
     buildAfter: () => ({ status: "completed" }),
     perform: async (tx) => {

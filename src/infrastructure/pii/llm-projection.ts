@@ -28,6 +28,7 @@ export interface EvidenceProjectionInput extends PIIBearing {
 }
 
 const ENTITY_BINDING_SEAL = Symbol("verin.entity-mask-binding.seal");
+const ENTITY_BINDINGS = new WeakSet<object>();
 
 export function bindEntityMask(input: {
   readonly slotName: string;
@@ -51,13 +52,14 @@ export function bindEntityMask(input: {
     ENTITY_BINDING_SEAL,
     { value: true, enumerable: false },
   );
+  ENTITY_BINDINGS.add(binding);
   return Object.freeze(binding) as unknown as EntityMaskBinding;
 }
 
 function isEntityMaskBinding(value: unknown): value is EntityMaskBinding {
   return typeof value === "object" &&
     value !== null &&
-    (value as Record<symbol, unknown>)[ENTITY_BINDING_SEAL] === true;
+    ENTITY_BINDINGS.has(value);
 }
 
 interface SensitiveMask extends PIIBearing {

@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { relative } from "node:path";
 import {
   Node,
-  type ParameterDeclaration,
   type Project,
   type Signature,
+  type SourceFile,
   type Type,
 } from "ts-morph";
 import {
@@ -93,22 +93,79 @@ function carriesTenant(type: Type): boolean {
   ) {
     return true;
   }
-  const property = type.getProperty("tenant");
-  const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
-  return Boolean(
-    declaration &&
-    declaredAs(
-      property!.getTypeAtLocation(declaration),
-      "src/contracts/tenant.ts",
-      "TenantContext",
-    ),
-  );
+  for (const name of ["tenant", "actor"]) {
+    const property = type.getProperty(name);
+    const declaration = property?.getValueDeclaration() ??
+      property?.getDeclarations()[0];
+    if (!declaration || !property) continue;
+    const propertyType = property.getTypeAtLocation(declaration);
+    if (
+      declaredAs(propertyType, "src/contracts/tenant.ts", "TenantContext") ||
+      declaredAs(propertyType, "src/contracts/principal.ts", "WriteActor")
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 interface RepositoryEntry {
   readonly name: string;
-  readonly params: ParameterDeclaration[];
+  readonly signatures: Signature[];
   readonly boundSql: boolean;
+}
+
+function callableMembers(
+  type: Type,
+  owner: string,
+): Array<{ name: string; signatures: Signature[] }> {
+  const entries: Array<{ name: string; signatures: Signature[] }> = [];
+  const direct = type.getCallSignatures();
+  if (direct.length) entries.push({ name: owner, signatures: direct });
+  for (const property of type.getProperties()) {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0];
+    if (!declaration) continue;
+    const signatures = property.getTypeAtLocation(declaration).getCallSignatures();
+    if (signatures.length) {
+      entries.push({ name: `${owner}.${property.getName()}`, signatures });
+    }
+  }
+  return entries;
+}
+
+function signatureHas(
+  signature: Signature,
+  predicate: (type: Type) => boolean,
+): boolean {
+  return signature.getParameters().some((parameter) => {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    return Boolean(declaration && predicate(parameter.getTypeAtLocation(declaration)));
+  });
+}
+
+function exportedDomainCallableTypes(
+  sf: SourceFile,
+): Array<{ name: string; type: Type }> {
+  return [
+    ...sf.getInterfaces()
+      .filter((declaration) => declaration.isExported())
+      .map((declaration) => ({ name: declaration.getName(), type: declaration.getType() })),
+    ...sf.getTypeAliases()
+      .filter((declaration) => declaration.isExported())
+      .map((declaration) => ({ name: declaration.getName(), type: declaration.getType() })),
+    ...sf.getClasses()
+      .filter((declaration) => declaration.isExported())
+      .map((declaration) => ({ name: declaration.getName() ?? "<anonymous>", type: declaration.getType() })),
+  ].filter((declaration) =>
+    callableMembers(declaration.type, declaration.name).some((member) =>
+      member.signatures.some((signature) =>
+        normalizedPath(signature.getDeclaration().getSourceFile().getFilePath())
+          .startsWith("src/domain/")
+      )
+    )
+  );
 }
 
 export function detectMissingTenantParams(
@@ -125,22 +182,30 @@ export function detectMissingTenantParams(
       if (fn.isExported()) {
         entries.push({
           name: fn.getName() ?? "<anonymous>",
-          params: fn.getParameters(),
+          signatures: [fn.getSignature()],
           boundSql: false,
         });
       }
     }
-    for (const statement of sf.getVariableStatements()) {
-      if (!statement.isExported()) continue;
-      for (const declaration of statement.getDeclarations()) {
-        const initializer = declaration.getInitializer();
-        if (initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
-          entries.push({
-            name: declaration.getName(),
-            params: initializer.getParameters(),
-            boundSql: false,
-          });
-        }
+    for (const declaration of sf.getVariableDeclarations()) {
+      if (!declaration.isExported()) continue;
+      for (const member of callableMembers(declaration.getType(), declaration.getName())) {
+        entries.push({
+          name: member.name,
+          signatures: member.signatures,
+          boundSql: false,
+        });
+      }
+    }
+    for (const assignment of sf.getExportAssignments()) {
+      const expression = assignment.getExpression();
+      if (Node.isIdentifier(expression)) continue;
+      for (const member of callableMembers(expression.getType(), "default")) {
+        entries.push({
+          name: member.name,
+          signatures: member.signatures,
+          boundSql: false,
+        });
       }
     }
     for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
@@ -151,22 +216,23 @@ export function detectMissingTenantParams(
         if (method.getScope() === "private" || method.getScope() === "protected") continue;
         entries.push({
           name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
-          params: method.getParameters(),
+          signatures: [method.getSignature()],
           boundSql,
         });
       }
     }
 
     for (const entry of entries) {
-      if (!entry.boundSql && !entry.params.some((parameter) => carriesSql(parameter.getType()))) {
-        continue;
-      }
       const ref = `${normalized} :: ${entry.name}`;
       if (escapes.has(ref)) continue;
-      if (!entry.params.some((parameter) => carriesTenant(parameter.getType()))) {
+      const unscoped = entry.signatures.some((signature) =>
+        (entry.boundSql || signatureHas(signature, carriesSql)) &&
+        !signatureHas(signature, carriesTenant)
+      );
+      if (unscoped) {
         out.push({
           ref,
-          detail: `takes (${entry.params.map((parameter) => parameter.getType().getText()).join(", ")}) with no sealed tenant context`,
+          detail: "SQL-backed callable has no sealed tenant context",
         });
       }
     }
@@ -182,38 +248,21 @@ export function detectUnscopedPortMethods(
   for (const sf of project.getSourceFiles()) {
     const normalized = normalizedPath(sf.getFilePath());
     if (!normalized.startsWith("src/domain/")) continue;
-    for (const iface of sf.getInterfaces()) {
-      if (!iface.isExported()) continue;
-      const callableMembers: Array<{ ref: string; signatures: Signature[] }> = [];
-      for (const property of iface.getType().getProperties()) {
-        const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
-        if (!declaration) continue;
-        const signatures = property.getTypeAtLocation(declaration).getCallSignatures();
-        if (signatures.length) {
-          callableMembers.push({
-            ref: `${normalized} :: ${iface.getName()}.${property.getName()}`,
-            signatures,
-          });
-        }
-      }
-      const directCalls = iface.getType().getCallSignatures();
-      if (directCalls.length) {
-        callableMembers.push({
-          ref: `${normalized} :: ${iface.getName()}.<call>`,
-          signatures: directCalls,
-        });
-      }
-      for (const member of callableMembers) {
+    const declarations = exportedDomainCallableTypes(sf);
+    for (const declaration of declarations) {
+      const members = callableMembers(declaration.type, declaration.name)
+        .map((member) => ({
+          ref: `${normalized} :: ${member.name === declaration.name ? `${declaration.name}.<call>` : member.name}`,
+          signatures: member.signatures.filter((signature) =>
+            normalizedPath(signature.getDeclaration().getSourceFile().getFilePath())
+              .startsWith("src/domain/")
+          ),
+        }))
+        .filter((member) => member.signatures.length > 0);
+      for (const member of members) {
         if (escapes.has(member.ref)) continue;
         const unscoped = member.signatures.some((signature) =>
-          !signature.getParameters().some((parameter) => {
-            const declaration = parameter.getValueDeclaration() ??
-              parameter.getDeclarations()[0];
-            return Boolean(
-              declaration &&
-              carriesTenant(parameter.getTypeAtLocation(declaration)),
-            );
-          })
+          !signatureHas(signature, carriesTenant)
         );
         if (unscoped) out.push(member.ref);
       }
@@ -269,24 +318,10 @@ describe("tenant-context-required fence", () => {
 
   it("enforces: every exported domain port method requires TenantContext unless capability-keyed", () => {
     const project = realSemanticProject();
-    const callableInterfaces = project.getSourceFiles()
+    const callableTypes = project.getSourceFiles()
       .filter((sf) => normalizedPath(sf.getFilePath()).startsWith("src/domain/"))
-      .flatMap((sf) => sf.getInterfaces())
-      .filter((iface) =>
-        iface.isExported() &&
-        (
-          iface.getType().getCallSignatures().length > 0 ||
-          iface.getType().getProperties().some((property) => {
-            const declaration = property.getValueDeclaration() ??
-              property.getDeclarations()[0];
-            return Boolean(
-              declaration &&
-              property.getTypeAtLocation(declaration).getCallSignatures().length,
-            );
-          })
-        )
-      );
-    expect(callableInterfaces.length).toBeGreaterThanOrEqual(3);
+      .flatMap(exportedDomainCallableTypes);
+    expect(callableTypes.length).toBeGreaterThanOrEqual(3);
     expect(detectUnscopedPortMethods(project, PORT_ESCAPES)).toEqual([]);
   });
 
@@ -296,21 +331,11 @@ describe("tenant-context-required fence", () => {
     for (const sf of project.getSourceFiles()) {
       const normalized = normalizedPath(sf.getFilePath());
       if (!normalized.startsWith("src/domain/")) continue;
-      for (const iface of sf.getInterfaces().filter((candidate) =>
-        candidate.isExported()
-      )) {
-        for (const property of iface.getType().getProperties()) {
-          const declaration = property.getValueDeclaration() ??
-            property.getDeclarations()[0];
-          if (
-            declaration &&
-            property.getTypeAtLocation(declaration).getCallSignatures().length
-          ) {
-            live.add(`${normalized} :: ${iface.getName()}.${property.getName()}`);
-          }
-        }
-        if (iface.getType().getCallSignatures().length) {
-          live.add(`${normalized} :: ${iface.getName()}.<call>`);
+      for (const declaration of exportedDomainCallableTypes(sf)) {
+        for (const member of callableMembers(declaration.type, declaration.name)) {
+          live.add(
+            `${normalized} :: ${member.name === declaration.name ? `${declaration.name}.<call>` : member.name}`,
+          );
         }
       }
     }
@@ -350,6 +375,38 @@ describe("tenant-context-required fence", () => {
           constructor(private db: SqlDb) {}
           listAll() { return this.db.query("SELECT 1"); }
         }
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
+    });
+
+    it("flags exported repository object methods", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export const repo = {
+          listAll(db: SqlDb) { return db.query("SELECT 1"); },
+        };
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
+    });
+
+    it("flags default-exported repository object methods", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        const repo = {
+          listAll(db: SqlDb) { return db.query("SELECT 1"); },
+        };
+        export default repo;
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
+    });
+
+    it("flags separately exported repository object methods", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        const repo = {
+          listAll(db: SqlDb) { return db.query("SELECT 1"); },
+        };
+        export { repo };
       `);
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
     });
@@ -416,6 +473,43 @@ describe("tenant-context-required fence", () => {
       expect(detectUnscopedPortMethods(project, new Set())).toEqual([
         "src/domain/evil.ts :: LoaderDeps.load",
         "src/domain/evil.ts :: Resolver.<call>",
+      ]);
+    });
+
+    it("flags type-alias and abstract-class port forms", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/domain/evil.ts": `
+          export type LoaderPort = {
+            load(id: string): unknown;
+          };
+          export abstract class WriterPort {
+            abstract save(id: string): Promise<void>;
+          }
+        `,
+      });
+      expect(detectUnscopedPortMethods(project, new Set())).toEqual([
+        "src/domain/evil.ts :: LoaderPort.load",
+        "src/domain/evil.ts :: WriterPort.save",
+      ]);
+    });
+
+    it("flags separately exported type-alias and abstract-class ports", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/domain/evil.ts": `
+          type LoaderPort = {
+            load(id: string): unknown;
+          };
+          abstract class WriterPort {
+            abstract save(id: string): Promise<void>;
+          }
+          export { LoaderPort, WriterPort };
+        `,
+      });
+      expect(detectUnscopedPortMethods(project, new Set())).toEqual([
+        "src/domain/evil.ts :: LoaderPort.load",
+        "src/domain/evil.ts :: WriterPort.save",
       ]);
     });
   });

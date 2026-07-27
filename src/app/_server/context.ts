@@ -48,15 +48,15 @@ export async function requirePrincipalWithRole(req: NextRequest, allowed: readon
  * handlers for governed surfaces call THIS (governed-actions fence) — plain
  * requirePrincipalWithRole stays for non-governed CRUD gates.
  */
-export async function requireActionGrant(
+export async function requireActionGrant<A extends GovernedAction>(
   req: NextRequest,
-  action: GovernedAction,
-): Promise<Result<{ principal: Principal; grant: ActionGrant }, AppError>> {
+  action: A,
+): Promise<Result<ActionGrant<A>, AppError>> {
   const p = await requirePrincipal(req);
   if (!p.ok) return p;
   const grant = authorizeGovernedAction(actorRefOf(p.value), action);
   if (!grant.ok) return grant;
-  return ok({ principal: p.value, grant: grant.value });
+  return ok(grant.value);
 }
 
 export function errorResponse(error: AppError): NextResponse {

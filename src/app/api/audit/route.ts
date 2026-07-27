@@ -21,7 +21,7 @@ const MAX_ENTRIES = 200;
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const auth = await requireActionGrant(req, "audit.export");
   if (!auth.ok) return errorResponse(auth.error);
-  const tenant = auth.value.grant.tenant;
+  const tenant = auth.value.tenant;
   const db = await getDb();
   const { verdict, rows } = await verifyAndListOrgChain(db, tenant);
   const users = await db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", [tenant.orgId]);

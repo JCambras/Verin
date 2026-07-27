@@ -2154,3 +2154,94 @@ dependency method, and callable PII leak. Focused unit, integration, and fence
 tests passed after the revert.
 
 **Date:** 2026-07-26 (second review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 3 (2026-07-27)
+
+The third review found five legitimate structural gaps. The tests below were
+first added against the vulnerable implementation and failed. Each real-source
+violation was then injected after the fix, observed, and reverted.
+
+### PF-027 exported object repositories and non-interface ports
+
+The tenant fence resolves exported repository values semantically, including
+callable object members. Exported interfaces, type aliases, and classes under
+the domain layer are inspected through the same callable-type path. Companions
+cover object repositories, separately exported bindings, mapped function types,
+and abstract classes.
+
+```
+# added unsafeRepository.listAll(db: SqlDb) to house-crm.ts:
+  × enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+    src/infrastructure/crm/house-crm.ts :: unsafeRepository.listAll
+    SQL-backed callable has no sealed tenant context
+    ❯ src/__tests__/fitness/tenant-context-required.test.ts:292
+# before separately exported bindings were resolved:
+  × flags separately exported repository object methods
+    AssertionError: expected [] to have a length of 1 but got +0
+    ❯ src/__tests__/fitness/tenant-context-required.test.ts:410
+```
+
+### PF-028 sealed write attribution
+
+`WriteActor` is compile-time branded, runtime sealed, frozen, and asserted at
+the audited-write chokepoint. Direct attribution must equal the actor retained
+in its sealed tenant. Webhook and login-boundary attribution use the explicit,
+callsite-fenced delegated factory.
+
+```
+# removed assertWriteActor(actor) from auditedWrite:
+  × the write chokepoint refuses actor attribution paired with a borrowed tenant
+    AssertionError: promise resolved "{ ok: true, value: ... }" instead of rejecting
+    ❯ src/__tests__/integration/tenant-isolation.test.ts:113
+# before the runtime seals used factory-identity registries:
+  × a caller cannot elevate a sealed principal by fabricating an actor role
+    AssertionError: expected true to be false
+    ❯ src/__tests__/unit/authz.test.ts:76
+  × cannot compile or parse from a literal
+    AssertionError: expected true to be false
+    ❯ src/__tests__/unit/tenant-context.test.ts:92
+```
+
+### PF-029 mapped aliases and persisted workflow PII
+
+The PII fence inspects resolved alias properties across mapped, union, and
+intersection types, while excluding primitive-library members. Workflow data,
+persisted execution state, and returned flow state retain `PIIBearing`
+explicitly.
+
+```
+# added type UnsafeMappedContact = Record<"email", string> to engine.ts:
+  × enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked
+    src/domain/workflow/engine.ts :: UnsafeMappedContact.email
+    ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:379
+# removed PIIBearing from ExecutionState:
+  × enforces: persisted workflow state retains the PII-bearing marker
+    AssertionError: ExecutionState must retain PIIBearing
+    ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:406
+# before Tokenized and entity-binding seals used factory-identity registries:
+  × a structural impostor literal is NOT sealed
+    AssertionError: expected true to be false
+    ❯ src/__tests__/unit/llm-boundary.test.ts:64
+  × rejects a prototype clone of a trusted entity binding
+    AssertionError: expected true to be false
+    ❯ src/__tests__/unit/llm-boundary.test.ts:123
+```
+
+### PF-030 action-scoped execution boundary
+
+The account-opening execution API accepts only an
+`ActionGrant<"execution.initiate">`, validates the runtime action seal before
+work, and derives tenant and write actor from that grant.
+
+```
+# removed assertActionGrant(grant, "execution.initiate") from startAccountOpening:
+  × refuses a sealed Principal without an execution.initiate grant at the execution boundary
+    AssertionError: expected TypeError ... to match object { code: "FORBIDDEN" }
+    ❯ src/__tests__/integration/account-opening.test.ts:41
+```
+
+**Revert:** every planted violation was removed. Focused validation passed:
+10 files and 123 tests across the affected fences, unit tests, and integration
+paths.
+
+**Date:** 2026-07-27 (third review-fix round on v3 build-sequence prompt 6).

@@ -4,10 +4,14 @@ import { startAccountOpening, resumeAccountOpeningByToken, esignCallback, comput
 import { verifyOrgChain } from "@infra/audit/audit-store";
 import { recentSpans } from "@infra/observability/tracer";
 import { principalFromIdentity } from "@contracts/principal";
-import { tenantOf } from "@contracts/tenant";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 
 const ORG = "org-1";
-const advisor = principalFromIdentity({ userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" });
+const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" });
+const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
+if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
+const advisor = advisorAuthorization.value;
+const cco = principalFromIdentity({ userId: "u-cco", orgId: ORG, role: "cco", actor: "cco@firm.test", sessionId: "s-cco" });
 
 async function seedOrg(db: SqlDb) {
   const now = new Date().toISOString();
@@ -25,6 +29,17 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
   beforeEach(async () => {
     db = await createMemoryDb();
     await seedOrg(db);
+  });
+
+  it("refuses a sealed Principal without an execution.initiate grant at the execution boundary", async () => {
+    await expect(startAccountOpening(db, cco as never, {
+      householdName: "Unauthorized Household",
+      firstName: "Una",
+      lastName: "Authorized",
+      email: null,
+      accountType: "individual",
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await db.query("SELECT id FROM flow_executions")).rows).toEqual([]);
   });
 
   it("suspends at e-sign, then finalizes on resume with a verifiable audit chain", async () => {
@@ -60,7 +75,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // Audit chain intact end-to-end and attributes to the initiating advisor's
     // opaque userId (ADR-0006/0007: never the raw email at the audit boundary).
-    const verdict = await verifyOrgChain(db, tenantOf(advisor));
+    const verdict = await verifyOrgChain(db, advisor.tenant);
     expect(verdict.ok).toBe(true);
     const chain = await db.query<{ actor: string; action: string }>("SELECT actor, action FROM audit_log WHERE org_id=$1 ORDER BY sequence", [ORG]);
     expect(chain.rows.some((r) => r.action === "financial_account.create" && r.actor === "u1")).toBe(true);
@@ -88,7 +103,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(await accountCount(db)).toBe(1); // exactly once, not twice
     const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE org_id=$1", [ORG]);
     expect(Number(tasks.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, tenantOf(advisor))).ok).toBe(true);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
   it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {
@@ -141,7 +156,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     // No duplicated pre-failure writes: still exactly one household.
     const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(after.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, tenantOf(advisor))).ok).toBe(true);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
   it("an EDITED resubmit under the same client request id is rejected with a typed CONFLICT — never a silent replay of stale input (D-027)", async () => {
@@ -267,7 +282,9 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(started.status).toBe("suspended");
 
     const intruder = principalFromIdentity({ userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" });
-    const result = await startAccountOpening(db, intruder, {
+    const intruderAuthorization = authorizeGovernedAction(actorRefOf(intruder), "execution.initiate");
+    if (!intruderAuthorization.ok) throw new Error("intruder advisor should hold execution.initiate");
+    const result = await startAccountOpening(db, intruderAuthorization.value, {
       householdName: "Intruder Household", firstName: "E", lastName: "Ve", email: null,
       accountType: "individual", clientRequestId, // the PK conflict is a 23505, but not the caller's own execution
     });
