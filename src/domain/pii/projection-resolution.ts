@@ -40,6 +40,11 @@ interface Candidate extends PIIBearing {
   readonly rawText: string;
 }
 
+function hasSensitiveDigitLength(value: number | bigint): boolean {
+  const digits = String(value).replace(/^-/, "");
+  return /^\d{9,18}$/.test(digits);
+}
+
 function addCandidate(candidates: Candidate[], slotType: Candidate["slotType"], rawText: string): void {
   const normalized = rawText.trim();
   if (normalized.length < 2 ||
@@ -81,7 +86,9 @@ function collectCandidates(
     return;
   }
   if (typeof value === "number" || typeof value === "bigint") {
-    if (key && ACCOUNT_KEYS.has(key)) addCandidate(candidates, "account-ref", String(value));
+    if ((key && ACCOUNT_KEYS.has(key)) || hasSensitiveDigitLength(value)) {
+      addCandidate(candidates, "account-ref", String(value));
+    }
     return;
   }
   if (value == null || typeof value !== "object" || seen.has(value)) return;
@@ -141,7 +148,12 @@ export function hasUnresolvedProjectionValue(
   seen = new WeakSet<object>(),
 ): boolean {
   if (typeof value === "string") return unresolvedString(value);
-  if (typeof value === "number") return !Number.isFinite(value) || !key || !SAFE_NUMERIC_KEYS.has(key);
+  if (typeof value === "number") {
+    return !Number.isFinite(value) ||
+      hasSensitiveDigitLength(value) ||
+      !key ||
+      !SAFE_NUMERIC_KEYS.has(key);
+  }
   if (typeof value === "bigint") return true;
   if (typeof value === "boolean" || value == null) return false;
   if (typeof value !== "object" || seen.has(value)) return true;

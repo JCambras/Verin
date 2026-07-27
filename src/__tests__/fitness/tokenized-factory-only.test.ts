@@ -5,6 +5,7 @@ import {
   SyntaxKind,
   ts,
   type Project,
+  type Signature,
   type SourceFile,
   type Type,
 } from "ts-morph";
@@ -44,6 +45,11 @@ const SEALED = [
     typeName: "WriteActor",
     declaration: "src/contracts/principal.ts",
     factory: "src/contracts/principal.ts",
+  },
+  {
+    typeName: "ObservabilityId",
+    declaration: "src/domain/observability/safe-values.ts",
+    factory: "src/domain/observability/safe-values.ts",
   },
 ] as const;
 
@@ -109,6 +115,20 @@ const TRUSTED_FACTORY_CALLS = [
   },
 ] as const;
 
+const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
+  ["src/contracts/authz.ts", new Set(["actorRefOf", "authorizeGovernedAction"])],
+  ["src/contracts/principal.ts", new Set([
+    "delegatedWriteActor", "principalFromIdentity", "systemWriteActor",
+    "writeActorOf",
+  ])],
+  ["src/contracts/tenant.ts", new Set([
+    "systemTenant", "tenantFromIdentity", "tenantOf",
+  ])],
+  ["src/infrastructure/pii/tokenize.ts", new Set([
+    "tokenizeRecord", "tokenizeText",
+  ])],
+]);
+
 function normalizedPath(path: string): string {
   const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
   return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
@@ -136,7 +156,12 @@ function sealedType(type: Type): (typeof SEALED)[number] | null {
         }
       }
     }
-    queue.push(...current.getUnionTypes(), ...current.getIntersectionTypes());
+    queue.push(
+      ...current.getAliasTypeArguments(),
+      ...current.getTypeArguments(),
+      ...current.getUnionTypes(),
+      ...current.getIntersectionTypes(),
+    );
   }
   return null;
 }
@@ -342,9 +367,12 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
     ];
     for (const reference of references) {
+      const parent = reference.getParent();
       if (
         reference.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) ||
-        reference.getFirstAncestorByKind(SyntaxKind.ExportDeclaration)
+        reference.getFirstAncestorByKind(SyntaxKind.ExportDeclaration) ||
+        (Node.isFunctionDeclaration(parent) &&
+          parent.getNameNode() === reference)
       ) {
         continue;
       }
@@ -357,7 +385,6 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       const owner = enclosingOwner(reference);
       if (
         factory &&
-        normalized !== factory.declaration &&
         !factory.allowed.some((scope) =>
           scope.file === normalized && scope.owner === owner
         )
@@ -371,7 +398,63 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
     }
   }
   out.push(...detectPrivilegedFactoryModuleAccess(project));
+  out.push(...detectFactoryResultLaundering(project));
   return [...new Set(out)];
+}
+
+function callableSignatures(
+  type: Type,
+  seen = new Set<string>(),
+): Signature[] {
+  const key = `${type.getText()}::${type.getFlags()}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+  const signatures = [...type.getCallSignatures()];
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const projectType = !symbol || symbol.getDeclarations().some((declaration) =>
+    normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+  );
+  if (!projectType) return signatures;
+  for (const property of type.getProperties()) {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0];
+    if (!declaration) continue;
+    signatures.push(
+      ...callableSignatures(property.getTypeAtLocation(declaration), seen),
+    );
+  }
+  return signatures;
+}
+
+function detectFactoryResultLaundering(project: Project): string[] {
+  const out: string[] = [];
+  for (const [file, reviewed] of REVIEWED_FACTORY_EXPORTS) {
+    const sf = project.getSourceFiles().find((sourceFile) =>
+      normalizedPath(sourceFile.getFilePath()) === file
+    );
+    if (!sf) continue;
+    for (const [name, declarations] of sf.getExportedDeclarations()) {
+      if (reviewed.has(name)) continue;
+      for (const declaration of declarations) {
+        if (
+          !Node.isFunctionDeclaration(declaration) &&
+          !Node.isVariableDeclaration(declaration) &&
+          !Node.isClassDeclaration(declaration)
+        ) {
+          continue;
+        }
+        for (const signature of callableSignatures(declaration.getType())) {
+          const sealed = sealedType(signature.getReturnType());
+          if (sealed) {
+            out.push(
+              `${file}:${declaration.getStartLineNumber()} - exported '${name}' launders sealed type '${sealed.typeName}'`,
+            );
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function sealedFixture(path: string, source: string): Project {
@@ -496,6 +579,24 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       }
     });
 
+    it("catches an ObservabilityId assertion outside its runtime-sealed factory", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { ObservabilityId } from "../domain/observability/safe-values";
+          const id = { field: "entityId", value: "941000517334" } as ObservabilityId;
+          void id;
+        `,
+      );
+      project.createSourceFile(
+        "/src/domain/observability/safe-values.ts",
+        `export interface ObservabilityId { field: string; value: string }`,
+      );
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.includes("ObservabilityId")
+      )).toBe(true);
+    });
+
     it("catches an aliased principal factory call outside identity", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -558,6 +659,41 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
         hit.includes("systemTenant") && hit.includes("mintForAnyone")
       )).toBe(true);
+    });
+    it("catches privileged result wrappers exported by factory declaration modules", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function tenantFromIdentity(actorId: string, orgId: string): TenantContext { return { orgId } }
+          export function systemTenant(systemId: string, orgId: string): TenantContext { return { orgId } }
+          export function mintTenant(orgId: string): TenantContext {
+            return systemTenant("seed", orgId);
+          }
+        `,
+        "/src/contracts/principal.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface Principal { userId: string }
+          export interface WriteActor { tenant: TenantContext; actorUserId: string }
+          export function principalFromIdentity(input: object): Principal { return input as Principal }
+          export function systemWriteActor(systemId: string, orgId: string): WriteActor { throw new Error(); }
+          export function delegatedWriteActor(actor: WriteActor, actorUserId: string): WriteActor { return { ...actor, actorUserId }; }
+          export function mintActor(orgId: string): WriteActor {
+            return systemWriteActor("seed", orgId);
+          }
+        `,
+        "/src/infrastructure/pii/tokenize.ts": `
+          export function tokenizeText(raw: string): object { return { value: raw }; }
+          export function tokenizeRecord(raw: object): object { return raw; }
+          export function mintToken(raw: string): object {
+            return tokenizeText(raw);
+          }
+        `,
+        "/src/infrastructure/pii/llm-projection.ts": "",
+      });
+      const hits = detectUntrustedFactoryCalls(project);
+      for (const name of ["systemTenant", "systemWriteActor", "tokenizeText"]) {
+        expect(hits.some((hit) => hit.includes(name)), name).toBe(true);
+      }
     });
 
     it("catches direct tokenization outside the projection boundary", () => {

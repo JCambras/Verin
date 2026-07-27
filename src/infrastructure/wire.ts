@@ -29,6 +29,7 @@ import { createApplication, setEsignRequested, completeApplication, getApplicati
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
 import { log } from "@infra/observability/logger";
+import { observabilityId } from "@domain/observability/safe-values";
 
 /** Unwrap a Result inside a step; on error, throw the typed AppError (the engine catches it). */
 function must<T>(r: Result<T>): T {
@@ -59,18 +60,21 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
   };
   return {
     createHousehold: (name, tenant) =>
-      withSpan("crm.household.create", { orgId: tenant.orgId }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
+      withSpan("crm.household.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
     createContact: (input, tenant) =>
-      withSpan("crm.contact.create", { orgId: tenant.orgId }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
+      withSpan("crm.contact.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
     createApplication: (input, tenant) =>
-      withSpan("crm.application.create", { orgId: tenant.orgId }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
+      withSpan("crm.application.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
     requestEsign: (applicationId, tenant) =>
-      withSpan("esign.request", { orgId: tenant.orgId }, async () => {
+      withSpan("esign.request", { orgId: observabilityId("orgId", tenant.orgId) }, async () => {
         const token = newEsignToken();
         return must(await setEsignRequested(db, actorFor(tenant), applicationId, token, `esign:${executionId}`));
       }),
     finalize: (input, tenant) =>
-      withSpan("account-opening.finalize", { orgId: tenant.orgId, applicationId: input.applicationId }, async () => {
+      withSpan("account-opening.finalize", {
+        orgId: observabilityId("orgId", tenant.orgId),
+        applicationId: observabilityId("applicationId", input.applicationId),
+      }, async () => {
         const starterActor = actorFor(tenant);
         const actor = starterActor.actorUserId === input.actor
           ? starterActor
@@ -176,16 +180,27 @@ export async function startAccountOpening(
       // (resumeFlow's Vale V7 retry, applied to the start path): the per-write
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
-      return withSpan("flow.account-opening.retry", { orgId: tenant.orgId, actor: grant.actorId }, async () => {
+      return withSpan("flow.account-opening.retry", {
+        orgId: observabilityId("orgId", tenant.orgId),
+        actor: observabilityId("actor", grant.actorId),
+      }, async () => {
         const result = await retryFailedStart(store, deps, existing, tenant);
-        log.info({ orgId: tenant.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
+        log.info({
+          orgId: observabilityId("orgId", tenant.orgId),
+          flow: "account-opening",
+          status: result.status,
+          executionId: observabilityId("executionId", result.executionId),
+        }, "flow retried");
         return result;
       });
     }
   }
   // Span attribution is the opaque userId, never the email — OTel attributes are
   // exported to the OTLP endpoint and must not carry PII (ADR-0006/0013).
-  return withSpan("flow.account-opening.start", { orgId: tenant.orgId, actor: grant.actorId }, async () => {
+  return withSpan("flow.account-opening.start", {
+    orgId: observabilityId("orgId", tenant.orgId),
+    actor: observabilityId("actor", grant.actorId),
+  }, async () => {
     let result: FlowRunResult;
     try {
       result = await startFlow(accountOpeningFlow, store, deps, {
@@ -209,7 +224,12 @@ export async function startAccountOpening(
       }
     }
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.
-    log.info({ orgId: tenant.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow started");
+    log.info({
+      orgId: observabilityId("orgId", tenant.orgId),
+      flow: "account-opening",
+      status: result.status,
+      executionId: observabilityId("executionId", result.executionId),
+    }, "flow started");
     return result;
   });
 }
@@ -229,7 +249,9 @@ export async function resumeAccountOpeningByToken(
   // Resume only runs post-suspend steps, so the pre-suspend key scope is inert.
   const starter = systemWriteActor("esign-webhook", app.org_id);
   const deps = makeDeps(db, starter, `resume:${token}`);
-  return withSpan("flow.account-opening.resume", { orgId: app.org_id }, () =>
+  return withSpan("flow.account-opening.resume", {
+    orgId: observabilityId("orgId", app.org_id),
+  }, () =>
     resumeFlow(accountOpeningFlow, store, deps, token, payload, starter.tenant),
   );
 }
@@ -273,7 +295,13 @@ export async function auditEvent(
     // The auth operation proceeds (availability over completeness — an explicit
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
-      { orgId: opts.actor.tenant.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
+      {
+        orgId: observabilityId("orgId", opts.actor.tenant.orgId),
+        action: opts.action,
+        entityType: opts.entityType,
+        entityId: observabilityId("entityId", opts.entityId),
+        code: recorded.error.code,
+      },
       "security-event audit could not be recorded",
     );
   }

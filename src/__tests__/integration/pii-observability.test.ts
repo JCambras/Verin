@@ -7,6 +7,7 @@ import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
+import { observabilityId } from "@domain/observability/safe-values";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -83,6 +84,33 @@ describe("logs never carry raw names or account numbers", () => {
     expect(out).toContain(REDACTED);
     expect(out).toContain("log event");
   });
+  it("closed semantic fields reject name and account-number smuggling", () => {
+    const { lines, logger } = makeSink();
+    logger.info(
+      { action: "alice", entityId: FIXTURES.accountNumber },
+      "test line",
+    );
+    const out = lines.join("");
+    expect(out).not.toContain("alice");
+    expect(out).not.toContain(FIXTURES.accountNumber);
+    expect(out).toContain(REDACTED);
+  });
+  it("sealed opaque identifiers preserve reviewed machine ids only", () => {
+    expect(() =>
+      observabilityId("entityId", FIXTURES.accountNumber)
+    ).toThrow(/opaque/);
+    const { lines, logger } = makeSink();
+    logger.info(
+      {
+        entityId: observabilityId(
+          "entityId",
+          "123e4567-e89b-12d3-a456-123456789012",
+        ),
+      },
+      "test line",
+    );
+    expect(lines.join("")).toContain("123e4567-e89b-12d3-a456-123456789012");
+  });
 });
 
 describe("traces never carry raw names or account numbers", () => {
@@ -120,7 +148,12 @@ describe("traces never carry raw names or account numbers", () => {
   it("a PII-shaped attribute VALUE is scrubbed at the span boundary (backstop)", async () => {
     await withSpan(
       "test.backstop",
-      { contact: FIXTURES.email, phone: FIXTURES.phone, orgId: ORG, refs: [FIXTURES.email, ORG] },
+      {
+        contact: FIXTURES.email,
+        phone: FIXTURES.phone,
+        orgId: observabilityId("orgId", ORG),
+        refs: [FIXTURES.email, observabilityId("refs", ORG)],
+      },
       async () => undefined,
     );
     const span = [...recentSpans()].reverse().find((s) => s.name === "test.backstop");
@@ -134,7 +167,12 @@ describe("traces never carry raw names or account numbers", () => {
   it("a PII-NAMED attribute KEY is redacted regardless of value type (numbers included)", async () => {
     await withSpan(
       "test.keyrule",
-      { phone: 2125550142, accountNumber: 941000517334, orgId: ORG, actor: advisor.actorId },
+      {
+        phone: 2125550142,
+        accountNumber: 941000517334,
+        orgId: observabilityId("orgId", ORG),
+        actor: observabilityId("actor", advisor.actorId),
+      },
       async () => undefined,
     );
     const span = [...recentSpans()].reverse().find((s) => s.name === "test.keyrule");

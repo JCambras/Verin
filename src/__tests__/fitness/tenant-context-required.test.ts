@@ -44,6 +44,8 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
 
 const PORT_ESCAPES = new Set([
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
+  "src/domain/observability/safe-values.ts :: observabilityId.<call>",
+  "src/domain/observability/safe-values.ts :: readObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: safeLogMessage.<call>",
   "src/domain/observability/safe-values.ts :: safeSpanName.<call>",
   "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionValue.<call>",
@@ -329,6 +331,18 @@ function returnedRepositoryEntries(
       Node.isSatisfiesExpression(expression) ||
       Node.isTypeAssertion(expression)) {
       return resolveObject(expression.getExpression(), seen);
+    }
+    if (Node.isCallExpression(expression)) {
+      const callee = expression.getExpression();
+      if (
+        Node.isPropertyAccessExpression(callee) &&
+        callee.getExpression().getText() === "Object" &&
+        ["freeze", "seal"].includes(callee.getName()) &&
+        expression.getArguments().length === 1
+      ) {
+        return resolveObject(expression.getArguments()[0]!, seen);
+      }
+      return null;
     }
     if (!Node.isIdentifier(expression)) return null;
     const symbol = expression.getSymbol();
@@ -799,6 +813,31 @@ describe("tenant-context-required fence", () => {
               return db.query("SELECT 1");
             },
           };
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+    it("flags an unguarded method returned through Object.freeze", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          loadById(id: string, tenant: TenantContext): unknown;
+        }
+        export function makeRepo(db: SqlDb): Repo {
+          return Object.freeze({
+            loadById(id: string, tenant: TenantContext) {
+              return db.query("SELECT 1");
+            },
+          });
         }
       `);
       expect(detectMissingTenantParams(

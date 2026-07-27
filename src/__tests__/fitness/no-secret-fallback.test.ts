@@ -85,6 +85,7 @@ const REVEAL_ALLOWLIST: Array<{ file: string; functionName: string; why: string 
   { file: "src/infrastructure/identity/session.ts", functionName: "sign", why: "HMAC-signs the session cookie" },
   { file: "src/infrastructure/esign/esign.ts", functionName: "signCallback", why: "HMAC-signs/verifies the e-sign webhook callback" },
 ];
+const SECRET_MODULE_EXPORTS = new Set(["SecretValue", "revealSecret"]);
 
 function normalizedPath(path: string): string {
   const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
@@ -159,8 +160,7 @@ function secretAccesses(project: Project): SecretAccess[] {
     const file = normalizedPath(sf.getFilePath());
     if (
       (!file.startsWith("src/") && !file.startsWith("scripts/")) ||
-      file.includes("/__tests__/") ||
-      file === "src/contracts/secret.ts"
+      file.includes("/__tests__/")
     ) continue;
     for (const declaration of sf.getImportDeclarations()) {
       const target = declaration.getModuleSpecifierSourceFile();
@@ -206,13 +206,15 @@ function secretAccesses(project: Project): SecretAccess[] {
       }
     }
     for (const reference of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const parent = reference.getParent();
       if (
         reference.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) ||
+        (Node.isFunctionDeclaration(parent) &&
+          parent.getNameNode() === reference) ||
         !revealSecretReference(reference)
       ) {
         continue;
       }
-      const parent = reference.getParent();
       if (
         Node.isCallExpression(parent) &&
         parent.getExpression() === reference &&
@@ -258,6 +260,20 @@ function secretAccesses(project: Project): SecretAccess[] {
   return out;
 }
 
+function secretModuleExportViolations(project: Project): string[] {
+  const sf = project.getSourceFiles().find((sourceFile) =>
+    normalizedPath(sourceFile.getFilePath()) === "src/contracts/secret.ts"
+  );
+  if (!sf) return ["src/contracts/secret.ts:1"];
+  return [...sf.getExportedDeclarations()]
+    .filter(([name]) => !SECRET_MODULE_EXPORTS.has(name))
+    .flatMap(([name, declarations]) =>
+      declarations.map((declaration) =>
+        `src/contracts/secret.ts:${declaration.getStartLineNumber()} (${name})`
+      )
+    );
+}
+
 function importedNodeCreateHmac(call: CallExpression): boolean {
   const symbol = call.getExpression().getSymbol();
   return Boolean(symbol?.getDeclarations().some((declaration) =>
@@ -288,6 +304,7 @@ export function detectUnsanctionedReveal(project: Project): string[] {
       out.push(`${access.file}:${access.line}`);
     }
   }
+  out.push(...secretModuleExportViolations(project));
   return [...new Set(out)];
 }
 
@@ -426,6 +443,18 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
       expect(detectUnsanctionedReveal(project)).toEqual([
         "src/infrastructure/identity/session.ts:5",
       ]);
+    });
+    it("rejects a reveal wrapper exported by the secret declaration module", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `
+          export class SecretValue {}
+          export function revealSecret(value: SecretValue): string { return ""; }
+          export function leak(value: SecretValue): string {
+            return revealSecret(value);
+          }
+        `,
+      });
+      expect(detectUnsanctionedReveal(project).length).toBeGreaterThan(0);
     });
   });
 });

@@ -14,6 +14,7 @@ import {
 } from "@contracts/pii";
 import {
   isSafeObservabilityPrimitive,
+  readObservabilityId,
   safeLogMessage,
 } from "@domain/observability/safe-values";
 
@@ -75,6 +76,8 @@ function scrubStructuredLog(
   seen = new WeakSet<object>(),
 ): unknown {
   if (value == null) return value;
+  const opaqueId = readObservabilityId(value, field);
+  if (opaqueId !== null) return forceRedact ? REDACTED : opaqueId;
   if (
     typeof value === "string" ||
     typeof value === "number" ||

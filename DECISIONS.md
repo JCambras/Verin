@@ -838,3 +838,38 @@ because their runtime implementations are semantically inspectable).
 `resolvedEntities`, heuristic observability values, function-declaration-only
 governed sinks, signature-only returned ports, and opaque types as safe leaves.
 D-039 through D-045 remain the underlying prompt-6 security decisions.
+
+### D-047 · 2026-07-27 · reversible · Prompt-6 typed evidence, observability identity, and wrapper analysis hardened
+
+All seven eighth-round findings were legitimate instances of three remaining
+boundary gaps: evidence shape was inferred from key names, observability trusted
+identifier-shaped strings, and declaration-module or transparent-wrapper
+callables escaped semantic review.
+
+- LLM evidence is checked against a closed masked schema. Sensitive-length
+  numeric leaves are classified as account references regardless of their key,
+  so a long account number under `plannedWithdrawals` is refused before sealing.
+- Observability actions use a closed value set. Identifiers cross the log and
+  trace boundary only through runtime-sealed, field-bound `ObservabilityId`
+  values; raw action-like names and account-like identifiers are redacted.
+- The secret module is scanned and limited to its reviewed exports. Privileged
+  factory declaration modules are inspected for wrapper calls and exported
+  sealed-result laundering.
+- Tenant, governed-action, and LLM fences inspect callable members through
+  transparent wrappers such as `Object.freeze`. Factory-returned repository
+  methods retain their first-statement runtime assertion requirement.
+- ADR-0030 raises the infrastructure line budget from 3,000 to 3,200 lines so
+  the reviewed boundary code remains readable. The next wave gate still
+  ratchets the ceiling down to actual plus buffer.
+
+**Alternatives:** allow long numbers under amount-shaped keys (rejected because
+keys do not prove data identity); preserve regex-trusted observability strings
+(rejected because names and account numbers can match); ban transparent
+wrappers (rejected because their semantic callable shape is inspectable);
+compress boundary code under the old ceiling (rejected because auditability
+would suffer).
+
+**Revert path:** revert this changeset, restore raw observability primitives and
+syntax-only wrapper discovery, remove ADR-0030, and restore the 3,000-line
+infrastructure ceiling. D-039 through D-046 remain the underlying prompt-6
+security decisions.

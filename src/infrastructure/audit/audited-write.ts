@@ -14,6 +14,7 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
+import { observabilityId } from "@domain/observability/safe-values";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
@@ -114,7 +115,12 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     const known: AppError | null = isAppError(e) ? e : null;
     log[known ? logLevelFor(known.code) : "error"](
       {
-        orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null,
+        orgId: observabilityId("orgId", orgId),
+        action: opts.action,
+        entityType: opts.entityType,
+        entityId: opts.entityId
+          ? observabilityId("entityId", opts.entityId)
+          : null,
         code: known?.code ?? null,
         reason: safeReason(e),
       },
@@ -136,7 +142,15 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
         // The business failure is already being reported; the audit-of-failure loss
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
-          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: safeReason(auditErr) },
+          {
+            orgId: observabilityId("orgId", orgId),
+            action: opts.action,
+            entityType: opts.entityType,
+            entityId: opts.entityId
+              ? observabilityId("entityId", opts.entityId)
+              : null,
+            reason: safeReason(auditErr),
+          },
           "failure-audit entry could not be recorded",
         );
       });

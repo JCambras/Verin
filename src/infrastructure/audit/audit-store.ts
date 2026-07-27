@@ -16,6 +16,7 @@ import {
   type ActionGrant,
 } from "@contracts/authz";
 import { log, safeReason } from "@infra/observability/logger";
+import { observabilityId } from "@domain/observability/safe-values";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -129,7 +130,12 @@ export async function drainOutbox(db: SqlDb, tenant: TenantContext): Promise<num
         .catch(() => null);
       if (updated?.rows[0]?.status === "parked") {
         log.error(
-          { outboxRowId: row.id, orgId, attempts: Number(updated.rows[0].attempts), reason: safeReason(err) },
+          {
+            outboxRowId: observabilityId("outboxRowId", row.id),
+            orgId: observabilityId("orgId", orgId),
+            attempts: Number(updated.rows[0].attempts),
+            reason: safeReason(err),
+          },
           "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
         );
       }

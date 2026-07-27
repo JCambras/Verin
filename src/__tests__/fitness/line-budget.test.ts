@@ -16,7 +16,7 @@ import { relative } from "node:path";
 const CEILINGS = {
   contracts: 1000, // raised by ADR-0029 (Wave A security boundaries, prompt 6)
   domain: 1200,
-  infrastructure: 3000, // raised by ADR-0029 (scrubber factory + llm/ boundary)
+  infrastructure: 3200, // raised by ADR-0030 (prompt-6 adversarial review hardening)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 
