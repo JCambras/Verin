@@ -8,30 +8,35 @@
  * (looksLikePIIValue / looksLikeAmbiguousSensitiveText / hasSensitiveDigitRun /
  * TITLE_CASE_WORD_SOURCE), the SAME ones that guard the audit, log, and trace
  * boundaries, so the four boundaries cannot disagree and arbitrary non-PII prose
- * passes. Candidate extraction is derived from those same predicates, so
- * anything the residual check would refuse is something the masker was already
- * required to bind to a declared slot — fail-closed by construction.
+ * passes. Candidate extraction reads the SAME shapes: a title-case run is a
+ * subject candidate and a 9-18 digit run that survives redaction is an
+ * account-ref candidate, so the set the residual check would refuse is the set
+ * the masker was told to bind — neither over-binding ordinary numbers (a year is
+ * not an account) nor leaving a refusal the caller cannot satisfy.
  *
- * Documented residual risk (not papered over): a capitalized word that OPENS a
- * prose string carries no information — English capitalizes sentence openers —
- * so it is not a name signal at any Verin boundary. A caller that knows a
- * leading token is a person supplies it in evidence under a name key
- * (firstName / fullName / householdName / …), which makes it a candidate
- * regardless of position and masks every case-variant of it in the text.
- * Evidence keys and values are machine data rather than sentences, so they get
- * the strict treatment: ANY title-case word there must be masked.
+ * Documented residual risk (not papered over): a SINGLE capitalized word that
+ * OPENS a prose string carries no information — English capitalizes sentence
+ * openers — so on its own it is not a name signal at any Verin boundary. A
+ * MULTI-word title-case run is the person-name shape wherever it sits (it is
+ * what TITLE_CASE_PERSON_RE keys on), so a leading run is bound whole. A caller
+ * that knows a lone leading token is a person supplies it in evidence under a
+ * name key (firstName / fullName / householdName / …), which makes it a
+ * candidate regardless of position and masks every case-variant of it in the
+ * text. Evidence keys and values are machine data rather than sentences, so they
+ * get the strict treatment: ANY title-case word there must be masked.
  */
 import {
   hasSensitiveDigitRun,
   looksLikeAmbiguousSensitiveText,
   looksLikePIIValue,
+  redactPIIValues,
   REDACTED,
+  SENSITIVE_DIGIT_RUN_SOURCE,
   TITLE_CASE_WORD_SOURCE,
   type PIIBearing,
 } from "@contracts/pii";
 
 export interface SensitiveResolutionInput extends PIIBearing {
-  readonly purpose: string;
   readonly requestText: string;
   readonly slots: readonly {
     readonly slotId: string;
@@ -57,6 +62,7 @@ const TITLE_RUN_RE = new RegExp(
   `${TITLE_CASE_WORD_SOURCE}(?:\\s+${TITLE_CASE_WORD_SOURCE})*`,
   "gu",
 );
+const ACCOUNT_RUN_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE, "g");
 
 interface Candidate extends PIIBearing {
   readonly slotType: ResolvedSensitiveEntity["slotType"];
@@ -80,12 +86,15 @@ function titleRuns(text: string): Array<{ readonly run: string; readonly index: 
   }));
 }
 
-/** Prose (requestText): the sentence-opening word is grammar, every other run is a candidate. */
+/**
+ * Prose (requestText): a LONE sentence-opening word is grammar; every other run
+ * — including a multi-word run at position 0, which is the name shape itself —
+ * is a candidate.
+ */
 function proseSubjectCandidates(text: string): string[] {
   return titleRuns(text).flatMap(({ run, index }) => {
-    const words = run.split(/\s+/);
-    if (text.slice(0, index).trim().length === 0) words.shift();
-    return words.length ? [words.join(" ")] : [];
+    const opensTheString = text.slice(0, index).trim().length === 0;
+    return opensTheString && !/\s/.test(run) ? [] : [run];
   });
 }
 
@@ -94,10 +103,15 @@ function strictSubjectCandidates(text: string): string[] {
   return titleRuns(text).map(({ run }) => run);
 }
 
+/**
+ * Account references: EXACTLY the runs hasSensitiveDigitRun refuses, read from
+ * the text after pattern redaction. A run the scrubber replaces with the
+ * sentinel (a labeled SSN, an E.164 phone) never reaches a model, so it needs no
+ * slot; a run that survives redaction is precisely what the residual check would
+ * refuse, so the caller is told to bind it.
+ */
 function accountCandidates(text: string): string[] {
-  if (looksLikePIIValue(text)) return [];
-  const withoutCurrency = text.replace(/\$\d[\d,]*(?:\.\d+)?/g, " ");
-  return [...withoutCurrency.matchAll(/\b\d{3,18}\b/g)].map((match) => match[0]);
+  return [...redactPIIValues(text).matchAll(ACCOUNT_RUN_RE)].map((match) => match[0]);
 }
 
 function collectCandidates(
@@ -136,10 +150,13 @@ function collectCandidates(
 export function resolveCompleteSensitiveEntities(
   input: SensitiveResolutionInput,
 ): readonly ResolvedSensitiveEntity[] | null {
+  // A request is resolved when every sensitive candidate is bound — NOT when the
+  // caller happens to have declared a slot. Prose with nothing structurally
+  // sensitive in it binds nothing and is resolved; the per-type count match below
+  // is what refuses an unbound candidate.
   const slots = input.slots.filter((slot) =>
     slot.slotType === "subject" || slot.slotType === "account-ref"
   );
-  if (input.purpose === "intent-shaping" && slots.length === 0) return null;
   const candidates: Candidate[] = [];
   for (const subject of proseSubjectCandidates(input.requestText)) {
     addCandidate(candidates, "subject", subject);

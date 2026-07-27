@@ -941,3 +941,52 @@ observability predicate, the enumerated projection vocabularies, the text-regex
 mutation classifier, the route-only governed surface scan, and `listOrgChain`.
 ADR-0031 would be withdrawn with it. D-039 through D-047 remain the underlying
 prompt-6 security decisions.
+
+### D-049 · 2026-07-27 · reversible · Tenth-round review: leading-name binding, the account shape, and semantic fence keys
+
+D-048 replaced two enumerated vocabularies with structural rules; the tenth round
+found that both structures were drawn slightly off the predicate they claimed to
+derive from, and that the D-048 crash fix had been narrowed rather than closed.
+
+- **A multi-word name that OPENS the prose is bound whole.** Dropping the first
+  word of every leading title-case run left a given name raw in the text a model
+  would see (`"Adaeze {{slot_0001}} wants to open an account"`), and nothing
+  downstream caught it: masking the surname destroys the two-adjacent-words shape
+  `TITLE_CASE_PERSON_RE` needs, and `looksLikeAmbiguousSensitiveText` exempts a
+  title-case word at index 0. The sentence-opener rationale holds for a LONE
+  capitalized word, not for a run — a multi-word run is the person-name shape
+  itself, so only a single-word leading run is treated as grammar. The cost is
+  over-binding a leading verb + name ("Review Alice"), which is fail-closed.
+- **Account references are exactly the runs the residual check refuses.**
+  Extraction moved from `\b\d{3,18}\b` to `SENSITIVE_DIGIT_RUN_SOURCE`
+  (9-18 digits) read from the text AFTER pattern redaction, so a year no longer
+  demands an account-ref slot and a long digit run beside a redactable phone is
+  no longer an unsatisfiable refusal. `redactPIIValues` is hoisted into
+  `contracts/pii.ts` as the ONE authority for what redaction removes; `scrub()`
+  delegates to it. The blanket "intent-shaping must declare a slot" rule is gone
+  — it guarded caller-supplied masks in an earlier round, and per-type count
+  matching subsumes it now that masks are derived.
+- **The request id is canonical BEFORE it becomes an `executionId`.** Making the
+  opaque-id pattern case-insensitive left `NAME_SHAPED_RE` refusing any
+  `[A-F][a-f]` adjacency, so a mixed-case UUID still committed its writes and then
+  threw out of the log line. `startAccountOpening` now lowercases a UUID-shaped
+  request id and PROVES it is a loggable observability id before any write, so
+  every caller — route, script, or a future Server Action — gets a typed
+  `VALIDATION` refusal instead of an unenveloped 500 with durable side effects.
+  The route validates against the same exported `CLIENT_REQUEST_ID_RE`, so the two
+  validators cannot drift.
+- **Fence keys are semantic, not textual.** The test-only span injection point is
+  matched by resolved symbol alone, so an aliased import cannot smuggle a call
+  past it; `literalText` reads a string-LITERAL type, so a hoisted `const MSG`
+  message is checked like an inline literal instead of being skipped entirely.
+
+**Alternatives:** reject uppercase UUIDs at the route (rejected — it breaks
+clients that mint them, and the next id source repeats the mismatch); weaken
+`NAME_SHAPED_RE` so hex always passes (rejected — that trades a real PII guard
+for a canonicalization bug); keep the leading-word shift and add a downstream
+detector (rejected — the detector would have to treat every leading title-case
+word as a name, which refuses ordinary prose).
+
+**Revert path:** revert this changeset to restore the leading-word shift, the
+3-18 digit account shape, the text-keyed injection-point filter, and the
+uncanonicalized `executionId`. D-048 and ADR-0031 stand independently.

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
-import { startAccountOpening } from "@infra/wire";
+import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
 import { appError } from "@contracts/errors";
 import { ACCOUNT_TYPES, isAccountType } from "@domain/schema/entities";
 
@@ -9,8 +9,6 @@ export const runtime = "nodejs";
 function requiredString(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
@@ -33,7 +31,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   // Double-submit protection (D-027): the client mints one UUID per form session;
   // it becomes the executionId, so a retry/second tab replays the same execution.
-  if (typeof b.clientRequestId !== "string" || !UUID_RE.test(b.clientRequestId)) {
+  if (typeof b.clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(b.clientRequestId)) {
     return errorResponse(appError("VALIDATION", "clientRequestId is required (a UUID minted once per form session)."));
   }
 
