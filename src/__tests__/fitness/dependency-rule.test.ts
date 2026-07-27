@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Project } from "ts-morph";
 import {
   detectContractsExternalImportViolations,
   detectLayerViolations,
@@ -42,6 +43,31 @@ describe("dependency-rule fence", () => {
         inMemoryProject({ "src/domain/evil.ts": `import { x } from "../infrastructure/store";\nexport const y = x;` }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
+    });
+
+    it("configured aliases are resolved from compiler options before classification", () => {
+      const project = new Project({
+        useInMemoryFileSystem: true,
+        compilerOptions: {
+          baseUrl: "/",
+          paths: { "@outer/*": ["src/infrastructure/*"] },
+        },
+      });
+      project.createSourceFile(
+        "/src/domain/evil.ts",
+        `import { x } from "@outer/store";\nexport const y = x;`,
+      );
+      const v = detectLayerViolations(project);
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
+    });
+
+    it("local imports outside the four source layers fail closed", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": `import { x } from "../../scripts/local";\nexport const y = x;`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
     });
 
     it("alias traversal from contracts into infrastructure is normalized before classification", () => {
@@ -150,6 +176,38 @@ describe("dependency-rule fence", () => {
       );
       expect(v).toHaveLength(1);
       expect(v[0]).toMatchObject({ line: 1, specifier: "react/jsx-runtime" });
+    });
+
+    it.each([
+      "fetch('https://example.test')",
+      "Buffer.from('x')",
+      "process.getBuiltinModule('fs')",
+      "globalThis.fetch('https://example.test')",
+    ])(
+      "implicit platform global %s cannot evade contracts isolation",
+      (expression) => {
+        const v = detectContractsExternalImportViolations(
+          inMemoryProject({
+            "src/contracts/evil.ts": `export const forbidden = ${expression};`,
+          }),
+        );
+        expect(v).toHaveLength(1);
+        expect(v[0]?.line).toBe(1);
+      },
+    );
+
+    it("locally declared platform-like names do not trip contracts isolation", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "const fetch = (value: string) => value;",
+            "const Buffer = { from: (value: string) => value };",
+            "const process = { getBuiltinModule: (value: string) => value };",
+            "export const values = [fetch('x'), Buffer.from('x'), process.getBuiltinModule('x')];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
     });
 
     it("relative traversal outside a project layer cannot reach an external package", () => {

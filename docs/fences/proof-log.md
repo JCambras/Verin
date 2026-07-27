@@ -1065,3 +1065,75 @@ test failed:
 throwing implementation and proves the supported bundle still parses.
 
 **Date:** 2026-07-27 (review correction F28, D-047).
+
+### PF-027 extension · canonical evaluator order, replay registry, and lineage
+**Invariant (charter #1/#4; v3 invariants 6/13; ADR-0029, D-048):** one bundle hash exposes one
+canonical evaluator order, the pinned IANA registry cannot drift under its version, and a decision
+cannot derive from itself.
+
+The target commit reproduced the three gaps before implementation:
+```
+× canonicalizes set-like replay collections in parsed evaluator input
+  expected reversed references to equal canonical references
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected Europe/London to parse
+× rejects direct self-reference in derived-decision lineage
+  expected true to be false
+```
+After implementation, the household-instruction sort and self-lineage refinement were removed, and
+`Europe/London` was removed from the pinned registry. The focused tests rejected all three
+weakenings; the registry case failed its committed SHA-256 digest before reaching host ICU.
+**Revert:** restored the sort, lineage refinement, and registry entry. The focused suite passed.
+
+**Date:** 2026-07-27 (review corrections F30, F34, and F35, D-048).
+
+### PF-028 extension · tenant-scoped secure storage references
+**Invariant (charter #7; v3 invariant 2; ADR-0029, D-048):** secure request, event, and blob
+pointers carry their own tenant and match the enclosing request, snapshot, execution action, and
+decision.
+
+The target commit could not express a pointer tenant. After structured references landed, both the
+execution-step payload refinement and the recursive decision payload check were removed. The real
+fence failed:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:470
+```
+**Revert:** restored both checks. Companions separately exercise human request, system event,
+snapshot storage, execution payload, and canonical fixture paths.
+
+**Date:** 2026-07-27 (review correction F31, D-048).
+
+### PF-002 extension · compiler-resolved local paths and platform globals
+**Invariant (charter #1; ADR-0001/0029, D-048):** dependency classification follows active
+TypeScript path configuration, local targets outside the four source layers fail closed, and
+contracts cannot couple to implicit DOM or Node globals.
+
+Two real-tree violations were injected independently:
+```
+src/contracts/time-zone.ts:2: contracts -> unresolved (../../scripts/golden-cases.lib)
+contracts external-import violations:
+src/contracts/time-zone.ts:5 (<platform-global fetch>)
+```
+**Revert:** removed both probes. In-memory companions retarget a configured alias into
+infrastructure, exercise `fetch`, `Buffer`, and `process.getBuiltinModule`, and prove locally
+declared lookalike names remain legal.
+
+**Date:** 2026-07-27 (review corrections F32 and F33, D-048).
+
+### PF-029 extension · duplicate-free execution sets
+**Invariant (charter #16; ADR-0029, D-048):** dependency, conflict, reservation, and
+precondition-evidence collections are sets at the execution boundary and cannot encode one logical
+plan multiple ways.
+
+The duplicate-conflict-key refinement was removed. The real fence failed:
+```
+× enforces: conflictKeys are duplicate-free
+  expected true to be false
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:110
+```
+**Revert:** restored the refinement. Companions cover every set-like execution collection on both
+the shared action and full plan boundaries.
+
+**Date:** 2026-07-27 (review correction F36, D-048).

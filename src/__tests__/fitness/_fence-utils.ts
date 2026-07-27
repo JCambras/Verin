@@ -5,7 +5,7 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
+import { Node, Project, SyntaxKind, ts, type CompilerOptions, type SourceFile } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -16,13 +16,10 @@ const IN_MEMORY_SRC_ROOT = resolve("/src");
 
 export type Layer = "contracts" | "domain" | "infrastructure" | "app";
 const RANK: Record<Layer, number> = { contracts: 0, domain: 1, infrastructure: 2, app: 3 };
-const ALIAS_PATHS: ReadonlyArray<readonly [string, string]> = [
-  ["@contracts", "contracts"],
-  ["@domain", "domain"],
-  ["@infra", "infrastructure"],
-  ["@app", "app"],
-  ["@", ""],
-];
+const REPO_COMPILER_OPTIONS = new Project({
+  tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+  skipAddingFilesFromTsConfig: true,
+}).getCompilerOptions();
 
 /** Recursively list files under `dir` whose name matches `filter`. */
 export function walk(dir: string, filter: (f: string) => boolean): string[] {
@@ -78,22 +75,68 @@ export function layerOfPath(absPath: string): Layer | null {
  * it is an external/node module. Handles alias (@contracts, @/infrastructure, …),
  * bare "@/<layer>/…", and relative (./ ../) paths.
  */
-export function specifierToLayer(fromFile: string, spec: string): Layer | null {
+type SpecifierClassification =
+  | { kind: "layer"; layer: Layer }
+  | { kind: "external" }
+  | { kind: "local-unclassified" };
+
+function matchPathPattern(pattern: string, specifier: string): string | null {
+  const star = pattern.indexOf("*");
+  if (star === -1) return pattern === specifier ? "" : null;
+  const prefix = pattern.slice(0, star);
+  const suffix = pattern.slice(star + 1);
+  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) return null;
+  return specifier.slice(prefix.length, specifier.length - suffix.length);
+}
+
+function configuredPathTargets(specifier: string, compilerOptions: CompilerOptions): string[] {
+  const paths = compilerOptions.paths ?? {};
+  const matches = Object.entries(paths)
+    .flatMap(([pattern, targets]) => {
+      const wildcard = matchPathPattern(pattern, specifier);
+      return wildcard === null ? [] : [{ pattern, targets, wildcard }];
+    })
+    .sort((left, right) => right.pattern.replace("*", "").length - left.pattern.replace("*", "").length);
+  const selected = matches[0];
+  if (!selected) return [];
+  const configuredBase =
+    compilerOptions.pathsBasePath ??
+    compilerOptions.baseUrl ??
+    (compilerOptions.configFilePath ? dirname(String(compilerOptions.configFilePath)) : REPO_ROOT);
+  const configBase = typeof configuredBase === "string" ? configuredBase : REPO_ROOT;
+  return selected.targets.map((target) =>
+    resolve(configBase, target.replace("*", selected.wildcard)),
+  );
+}
+
+function classifySpecifier(
+  fromFile: string,
+  specifier: string,
+  compilerOptions: CompilerOptions,
+): SpecifierClassification {
   const sourceRoot = sourceRootOf(fromFile);
-  if (sourceRoot === null) return null;
-  for (const [alias, pathFromSourceRoot] of ALIAS_PATHS) {
-    const root = resolve(sourceRoot, pathFromSourceRoot);
-    if (spec === alias) return layerWithinSourceRoot(root, sourceRoot);
-    const prefix = `${alias}/`;
-    if (spec.startsWith(prefix)) {
-      return layerWithinSourceRoot(resolve(root, ...spec.slice(prefix.length).split("/")), sourceRoot);
-    }
+  if (sourceRoot === null) return { kind: "external" };
+  const targets = specifier.startsWith(".") || isAbsolute(specifier)
+    ? [resolve(dirname(fromFile), specifier)]
+    : configuredPathTargets(specifier, compilerOptions);
+  if (targets.length === 0) return { kind: "external" };
+  const layers = new Set(
+    targets.flatMap((target) => {
+      const layer =
+        layerWithinSourceRoot(target, sourceRoot) ??
+        layerWithinSourceRoot(target, SRC_ROOT) ??
+        layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT);
+      return layer === null ? [] : [layer];
+    }),
+  );
+  if (layers.size === 1 && targets.every((target) =>
+    layerWithinSourceRoot(target, sourceRoot) !== null ||
+    layerWithinSourceRoot(target, SRC_ROOT) !== null ||
+    layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT) !== null
+  )) {
+    return { kind: "layer", layer: [...layers][0]! };
   }
-  if (spec.startsWith(".")) {
-    const resolved = resolve(dirname(fromFile), spec);
-    return layerWithinSourceRoot(resolved, sourceRoot);
-  }
-  return null; // bare/external
+  return { kind: "local-unclassified" };
 }
 
 export interface ModuleReference {
@@ -209,6 +252,7 @@ export interface LayerViolation {
  */
 export function detectLayerViolations(project: Project): LayerViolation[] {
   const violations: LayerViolation[] = [];
+  const compilerOptions = project.getCompilerOptions();
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
     const fromLayer = layerOfPath(filePath);
@@ -226,8 +270,19 @@ export function detectLayerViolations(project: Project): LayerViolation[] {
         }
         continue;
       }
-      const toLayer = specifierToLayer(filePath, ref.specifier);
-      if (!toLayer) continue;
+      const classification = classifySpecifier(filePath, ref.specifier, compilerOptions);
+      if (classification.kind === "external") continue;
+      if (classification.kind === "local-unclassified") {
+        violations.push({
+          file: relative(REPO_ROOT, filePath),
+          line: ref.line,
+          specifier: ref.specifier,
+          fromLayer,
+          toLayer: "unresolved",
+        });
+        continue;
+      }
+      const toLayer = classification.layer;
       if (RANK[toLayer] > RANK[fromLayer]) {
         violations.push({
           file: relative(REPO_ROOT, filePath),
@@ -251,12 +306,18 @@ export interface ContractsExternalImportViolation {
 /** ADR-0029 allows contracts to import only Zod among external packages. */
 export function detectContractsExternalImportViolations(project: Project): ContractsExternalImportViolation[] {
   const violations: ContractsExternalImportViolation[] = [];
+  const compilerOptions = project.getCompilerOptions();
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
     if (layerOfPath(filePath) !== "contracts") continue;
     for (const ref of moduleReferences(sf)) {
       const specifier = ref.specifier;
-      if (specifier !== null && specifierToLayer(filePath, specifier) !== null) continue;
+      if (
+        specifier !== null &&
+        classifySpecifier(filePath, specifier, compilerOptions).kind === "layer"
+      ) {
+        continue;
+      }
       if (specifier === "zod" || specifier?.startsWith("zod/")) continue;
       violations.push({
         file: relative(REPO_ROOT, filePath),
@@ -265,19 +326,61 @@ export function detectContractsExternalImportViolations(project: Project): Contr
       });
     }
   }
+  const isolated = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      lib: ["lib.es2022.d.ts"],
+      types: [],
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      strict: true,
+      skipLibCheck: true,
+    },
+  });
+  for (const sf of project.getSourceFiles()) {
+    if (layerOfPath(sf.getFilePath()) !== "contracts") continue;
+    isolated.createSourceFile(sf.getFilePath(), sf.getFullText(), { overwrite: true });
+  }
+  for (const diagnostic of isolated.getPreEmitDiagnostics()) {
+    const message = ts.flattenDiagnosticMessageText(
+      diagnostic.compilerObject.messageText,
+      "\n",
+    );
+    if (
+      !message.startsWith("Cannot find name") &&
+      diagnostic.getCode() !== 2339 &&
+      diagnostic.getCode() !== 7017
+    ) continue;
+    const sf = diagnostic.getSourceFile();
+    const start = diagnostic.getStart();
+    if (!sf || start === undefined) continue;
+    const name = sf.getFullText().slice(start, start + (diagnostic.getLength() ?? 0));
+    violations.push({
+      file: relative(REPO_ROOT, sf.getFilePath()),
+      line: diagnostic.getLineNumber() ?? 1,
+      specifier: `<platform-global ${name}>`,
+    });
+  }
   return violations;
 }
 
 /** A ts-morph Project loaded from the real src/ tree (no type-checking, fast). */
 export function realProject(): Project {
-  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+  const project = new Project({
+    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+    skipAddingFilesFromTsConfig: true,
+  });
   for (const f of shippedSourceFiles()) project.addSourceFileAtPath(f);
   return project;
 }
 
 /** An in-memory Project for companion tests. */
 export function inMemoryProject(files: Record<string, string>): Project {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: REPO_COMPILER_OPTIONS,
+  });
   for (const [path, content] of Object.entries(files)) project.createSourceFile(path, content);
   return project;
 }

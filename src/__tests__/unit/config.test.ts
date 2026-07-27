@@ -6,7 +6,14 @@ import { getConfig, resetConfigForTests } from "@infra/config";
  * process.env in the test (allowed — the no-process-env fence scans src/, not
  * tests) and resets the cache between cases.
  */
-const KEYS = ["APP_ENV", "VERIN_STORE_DRIVER", "DATABASE_URL", "SESSION_SECRET", "ESIGN_WEBHOOK_SECRET"] as const;
+const KEYS = [
+  "APP_ENV",
+  "FIRM_TIMEZONE",
+  "VERIN_STORE_DRIVER",
+  "DATABASE_URL",
+  "SESSION_SECRET",
+  "ESIGN_WEBHOOK_SECRET",
+] as const;
 const saved: Record<string, string | undefined> = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 
 function withEnv(overrides: Partial<Record<(typeof KEYS)[number], string>>): void {
@@ -32,6 +39,39 @@ describe("config fail-closed guards", () => {
   it("parses a valid development config", () => {
     withEnv({ APP_ENV: "development", VERIN_STORE_DRIVER: "pglite", SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(getConfig().store.driver).toBe("pglite");
+  });
+
+  it.each(["America/Chicago", "Europe/London"])(
+    "accepts canonical IANA firm time zone %s",
+    (firmTimezone) => {
+      withEnv({
+        APP_ENV: "development",
+        FIRM_TIMEZONE: firmTimezone,
+        VERIN_STORE_DRIVER: "pglite",
+        SESSION_SECRET: goodSecret,
+        ESIGN_WEBHOOK_SECRET: goodWebhook,
+      });
+      expect(getConfig().firmTimezone).toBe(firmTimezone);
+    },
+  );
+
+  it("canonicalizes case and rejects time-zone aliases outside the pinned registry", () => {
+    withEnv({
+      APP_ENV: "development",
+      FIRM_TIMEZONE: "america/new_york",
+      VERIN_STORE_DRIVER: "pglite",
+      SESSION_SECRET: goodSecret,
+      ESIGN_WEBHOOK_SECRET: goodWebhook,
+    });
+    expect(getConfig().firmTimezone).toBe("America/New_York");
+    withEnv({
+      APP_ENV: "development",
+      FIRM_TIMEZONE: "US/Eastern",
+      VERIN_STORE_DRIVER: "pglite",
+      SESSION_SECRET: goodSecret,
+      ESIGN_WEBHOOK_SECRET: goodWebhook,
+    });
+    expect(() => getConfig()).toThrow(/firmTimezone/);
   });
 
   it("refuses to boot in production without the postgres driver", () => {

@@ -5,15 +5,7 @@
  * config (test placeholders, wrong store driver) — fail closed, never degrade.
  */
 import { z } from "zod";
-
-function isValidTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { TimeZoneSchema } from "@contracts/time-zone";
 
 const PLACEHOLDER_SECRET = /^(ci-only|e2e-only|CHANGEME|change-in-prod)/i;
 
@@ -22,7 +14,7 @@ const schema = z
     nodeEnv: z.enum(["development", "production", "test"]).default("development"),
     appEnv: z.enum(["development", "staging", "production"]).default("development"),
     appUrl: z.string().url().default("http://localhost:3000"),
-    firmTimezone: z.string().refine(isValidTimezone, "must be a valid IANA timezone").default("America/New_York"),
+    firmTimezone: TimeZoneSchema.default("America/New_York"),
     store: z.object({
       driver: z.enum(["pglite", "postgres"]).default("pglite"),
       dataDir: z.string().default(".verin-data"),

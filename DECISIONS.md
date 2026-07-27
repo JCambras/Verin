@@ -662,3 +662,30 @@ dependencies to runtime convention would contradict charter #1/#7/#16 and v3 non
 **Revert path:** restore the 1.2.0 schemas and fixtures together, remove the external-action fence
 and JSX companion, restore ICU-based validation, and return the contracts ceiling and indexes to
 1650.
+
+### D-048 · 2026-07-27 · captain-decision · Replay inputs, secure references, and dependency fences are canonical and fail closed
+
+Set-like instruction-version and evidence-snapshot collections are sorted at the
+`DecisionInputBundleSchema` boundary, so one approved bundle hash exposes one evaluator order.
+Secure request, event, and blob pointers now carry `{ firmId, id }`; human requests, system events,
+evidence snapshots, execution actions, and decision records reject mismatched pointer tenants.
+Execution dependency, conflict, reservation, and precondition-evidence collections reject
+duplicates, and direct derived-decision self-reference is illegal.
+
+One shared `iana-tzdb/2026b` registry contains all 418 canonical identifiers from the pinned
+release, is SHA-256 locked, canonicalizes identifier casing, rejects aliases outside the registry,
+and is consumed by both infrastructure configuration and replay bundles. The schema and both hash
+preimage envelopes advance to 1.4.0; fixtures lock the new references, versions, fingerprints, and
+digests.
+
+The dependency fence now resolves `paths` from each project's TypeScript compiler configuration,
+fails closed on local targets outside the four source layers, and checks contracts against an
+ES-only library surface so implicit DOM or Node globals are reported. The complete contracts layer
+measures 1988 lines, so ADR-0029 re-baselines the ceiling from 1800 to 2000 through ADR-0018's
+amendment path.
+**Why:** these are the bounded F30-F36 correctness and governance corrections authorized by the
+captain. They close hash/evaluator divergence, tenant leakage through secure storage, host-dependent
+replay validation, and silent dependency-fence bypasses without adding evaluator or execution logic.
+**Revert path:** restore the 1.3.0 schemas, fixtures, time-zone boundary, and hashes together;
+remove the new duplicate and lineage refinements plus dependency companions; restore host-ICU
+configuration validation; and return the contracts ceiling and indexes to 1800.
