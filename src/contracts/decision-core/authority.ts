@@ -52,6 +52,11 @@ const stageCore = {
   escalationPath: z.array(EscalationStepSchema).readonly(),
 };
 
+const PositiveApprovalDurationSchema = DurationSchema.refine(
+  (duration) => !duration.startsWith("-") && /[1-9]/.test(duration),
+  "approval-stage expiration must be strictly positive",
+);
+
 /**
  * Parse-time stage integrity, mirroring ExecutionPlan's: approvals bind to stages
  * by stageId and sequence by order, so a duplicate of either inside one stack
@@ -74,7 +79,7 @@ const requireDistinctStages = (
 /** Template form (firm configuration): relative expiry - it cannot know wall-clock time. */
 export const ApprovalStageTemplateSchema = z.strictObject({
   ...stageCore,
-  expiresAfter: DurationSchema,
+  expiresAfter: PositiveApprovalDurationSchema,
 }).readonly();
 export type ApprovalStageTemplate = z.infer<typeof ApprovalStageTemplateSchema>;
 

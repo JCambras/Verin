@@ -1137,3 +1137,71 @@ The duplicate-conflict-key refinement was removed. The real fence failed:
 the shared action and full plan boundaries.
 
 **Date:** 2026-07-27 (review correction F36, D-048).
+
+### PF-029 extension · single-tenant actions and evidence-targeted revalidation
+**Invariant (charter #7/#16; v3 non-negotiables 10-11; ADR-0029, D-049):** every
+external action is internally single-tenant, every action in one plan shares that tenant, and every
+precondition identifies at least one evidence snapshot to revalidate.
+
+The target commit accepted cross-tenant standalone actions, mixed-tenant plans, and empty evidence
+targets. After implementation, the tenant checks and evidence minimum were weakened together. The
+real fence rejected all three regressions:
+```
+× enforces: conflict control and pre-execution revalidation cannot be empty or advisory
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:68
+× enforces: standalone actions reject a cross-tenant payload reference
+× enforces: standalone actions reject a cross-tenant reservation reference
+× enforces: standalone actions reject a cross-tenant precondition evidence reference
+× enforces: standalone actions reject a cross-tenant verification rule reference
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:169
+× enforces: every step and compensation in one plan shares a tenant
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:198
+```
+**Revert:** restored all action and plan tenant checks plus the non-empty evidence target. The
+complete-action companion and focused fence passed.
+
+**Date:** 2026-07-27 (review corrections F37 and F41, D-049).
+
+### PF-027 extension · approval chronology and complete tzdb Zone registry
+**Invariant (charter #1/#4; v3 authority §11 and replay §12.1; ADR-0029, D-049):** reusable
+approval stages have positive duration, instantiated stages begin unexpired, and the pinned 2026b
+registry contains every primary `Zone` record without treating `Link` names as distinct replay values.
+
+The positive-duration and record-relative chronology refinements were disabled. The real fence failed:
+```
+× rejects a template stage with zero expiration
+  src/__tests__/fitness/decision-core-illegal-states.test.ts:150
+× rejects an already-expired approval stage on a new decision
+× rejects an already-expired specialist_review stage on a new decision
+  src/__tests__/fitness/decision-core-illegal-states.test.ts:197
+```
+`Etc/UTC` was then removed from the pinned registry. Its digest companion failed before parsing:
+```
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected 4361f644... to be 8125f9d8...
+  src/__tests__/unit/decision-core.test.ts:222
+```
+**Revert:** restored the approval refinements and `Etc/UTC`. The registry was also diffed byte for
+byte against the sorted `Zone` names from the IANA 2026b primary data files.
+
+**Date:** 2026-07-27 (review corrections F42 and F43, D-049).
+
+### PF-002 extension · lib directives, declarations, and indirect CommonJS loaders
+**Invariant (charter #1; ADR-0001/0029, D-049):** source-local declarations receive the same
+dependency enforcement as implementation files, triple-slash lib directives cannot restore hidden
+platform dependencies, and indirect CommonJS loader forms fail closed.
+
+The three collection paths were disabled together. The dependency companion reported:
+```
+× indirect CommonJS loaders fail closed (4 forms)
+  expected [] to include domain->unresolved
+  src/__tests__/fitness/dependency-rule.test.ts:128
+× triple-slash lib references cannot restore contracts platform globals
+  src/__tests__/fitness/dependency-rule.test.ts:196
+× source-local declaration files remain shipped and dependency-enforced
+  src/__tests__/fitness/dependency-rule.test.ts:288
+```
+**Revert:** restored lib-reference collection, source declaration discovery, and untracked
+`require` reference rejection. The focused dependency fence passed.
+
+**Date:** 2026-07-27 (review corrections F38-F40, D-049).

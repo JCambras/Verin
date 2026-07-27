@@ -323,9 +323,16 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
         }
       }
       if (record.result.authority.mode !== "automatic") {
-        record.result.authority.stages.forEach((stage, stageIndex) =>
-          requireSameFirm(stage.templateRef, ["result", "authority", "stages", stageIndex, "templateRef", "firmId"]),
-        );
+        record.result.authority.stages.forEach((stage, stageIndex) => {
+          requireSameFirm(stage.templateRef, ["result", "authority", "stages", stageIndex, "templateRef", "firmId"]);
+          if (stage.expiresAt <= record.createdAt) {
+            ctx.addIssue({
+              code: "custom",
+              message: "approval-stage expiration must be later than decision creation",
+              path: ["result", "authority", "stages", stageIndex, "expiresAt"],
+            });
+          }
+        });
       }
       record.result.executionPlan.steps.forEach((step, stepIndex) => {
         const stepPath = ["result", "executionPlan", "steps", stepIndex] as const;

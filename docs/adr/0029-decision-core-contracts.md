@@ -33,7 +33,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.4.0
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.5.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
@@ -42,10 +42,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
   and migration story.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.4.0 schema and
-  1.0.0 canonical serializer. It persists `iana-tzdb/2026b`, admits all 418 canonical identifiers
-  in the SHA-256-locked registry, canonicalizes identifier casing, and rejects aliases outside the
-  pinned set, so replay validation never changes with host ICU data. Set-like instruction-version
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.5.0 schema and
+  1.0.0 canonical serializer. It persists `iana-tzdb/2026b`, admits all 341 `Zone` identifiers
+  derived from that release's primary data files in the SHA-256-locked registry, canonicalizes
+  identifier casing, and rejects `Link` aliases outside the pinned set, so replay validation never
+  changes with host ICU data or gives aliases distinct replay bytes. Set-like instruction-version
   and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
   not only in the hash projection. The parsed bundle remains deeply frozen.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
@@ -59,20 +60,26 @@ parse time, not by reviewer discipline. Three constraints meet here:
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **Retry-safe external actions:** execution steps and their non-recursive compensating actions share one
   external-action shape requiring a stable idempotency key, conflict keys, tenant-scoped reservations,
-  pre-execution conditions, and a tenant-scoped verification rule. Parent and compensation idempotency
-  keys must be distinct across the plan. Set-like dependency, conflict, reservation, and precondition
-  evidence collections reject duplicates, and a derived decision cannot name itself as its parent.
+  pre-execution conditions naming at least one evidence snapshot, and a tenant-scoped verification rule.
+  Every reference within an action matches its target tenant, every step and compensation in a plan shares
+  one tenant, and parent and compensation idempotency keys must be distinct across the plan. Set-like
+  dependency, conflict, reservation, and precondition evidence collections reject duplicates, and a
+  derived decision cannot name itself as its parent.
+- **Approval chronology:** approval-template expiration is strictly positive. Every approval or
+  specialist-review stage instantiated on a decision expires later than that decision's recorded
+  creation timestamp.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
   The dependency fence enforces the external allowlist across static imports, re-exports, dynamic
-  imports, `require`, TypeScript import types, import-equals declarations, and triple-slash type/path
-  references. It resolves path aliases from the active TypeScript compiler configuration, rejects
-  local paths outside the four source layers, and type-checks contracts against the ES-only library
-  surface so implicit DOM and Node globals cannot add platform coupling. JSX in `contracts/` is
-  rejected because `jsx: react-jsx` would add an implicit `react/jsx-runtime` dependency.
+  imports, direct and indirect CommonJS loaders, TypeScript import types, import-equals declarations,
+  source-local declaration files, and triple-slash type/path/lib references. It resolves path aliases
+  from the active TypeScript compiler configuration, rejects local paths outside the four source
+  layers, and type-checks contracts against the ES-only library surface so implicit DOM and Node
+  globals cannot add platform coupling. JSX in `contracts/` is rejected because `jsx: react-jsx`
+  would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2000** (measured 1988 after the
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2000** (measured 1981 after the
   version-pinned shared IANA registry and complete review hardening). The ratchet-down doctrine resumes from 2000; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive

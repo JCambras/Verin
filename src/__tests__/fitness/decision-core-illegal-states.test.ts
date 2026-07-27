@@ -8,7 +8,10 @@ import {
   ProhibitedDecisionSchema,
   ProhibitionSchema,
 } from "@contracts/decision-core/decision";
-import { AuthorityRequirementSchema } from "@contracts/decision-core/authority";
+import {
+  ApprovalTemplateSchema,
+  AuthorityRequirementSchema,
+} from "@contracts/decision-core/authority";
 import { ResolvableBlockerSchema } from "@contracts/decision-core/trigger";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 
@@ -42,7 +45,9 @@ const plan = {
       reservationRefs: [],
       preconditions: [{
         code: "evidence-still-fresh",
-        requiredEvidenceSnapshotRefs: [],
+        requiredEvidenceSnapshotRefs: [
+          { firmId: "firm-a", id: "evidence:fence:1" },
+        ],
         mustStillHoldAtExecution: true,
       }],
       verificationRuleRef: { firmId: "firm-a", id: "vr:fence:1" },
@@ -141,6 +146,61 @@ describe("decision-core illegal-states fence", () => {
     it("rejects a specialist review with zero stages (the same costume, audit F7)", () => {
       expectRejected(AuthorityRequirementSchema, { mode: "specialist_review", specialistRoleIds: ["cco"], stages: [] }, "stages");
     });
+    it("rejects a template stage with zero expiration", () => {
+      expectRejected(
+        ApprovalTemplateSchema,
+        {
+          firmId: "firm-a",
+          id: "template:fence:1",
+          stages: [{
+            stageId: "stage:fence:1",
+            order: 0,
+            executionMode: "sequential",
+            requirements: [{
+              eligibleRoleIds: ["operations"],
+              approvalsRequired: 1,
+              distinctActorsRequired: true,
+              requesterMayApprove: false,
+              priorExecutorMayApprove: false,
+              reasonRequiredOnOverride: false,
+            }],
+            escalationPath: [],
+            expiresAfter: "P0D",
+          }],
+        },
+        "expiresAfter",
+      );
+    });
+    it.each(["approval", "specialist_review"] as const)(
+      "rejects an already-expired %s stage on a new decision",
+      (mode) => {
+        const stages = [{
+          stageId: "stage:fence:1",
+          templateRef: { firmId: "firm-a", id: "template:fence:1" },
+          order: 0,
+          executionMode: "sequential",
+          requirements: [{
+            eligibleRoleIds: ["operations"],
+            approvalsRequired: 1,
+            distinctActorsRequired: true,
+            requesterMayApprove: false,
+            priorExecutorMayApprove: false,
+            reasonRequiredOnOverride: false,
+          }],
+          expiresAt: "2026-07-26T13:29:59.999Z",
+          escalationPath: [],
+        }];
+        const stageAuthority =
+          mode === "approval"
+            ? { mode, stages }
+            : { mode, specialistRoleIds: ["cco"], stages };
+        expectRejected(
+          DecisionRecordSchema,
+          record({ ...proceed, authority: stageAuthority }),
+          "expiresAt",
+        );
+      },
+    );
   });
 
   describe("enforces: invariant 8 - blocked cannot carry authority or an execution plan", () => {

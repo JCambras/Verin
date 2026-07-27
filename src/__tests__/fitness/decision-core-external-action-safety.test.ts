@@ -60,6 +60,15 @@ describe("decision-core external-action safety fence", () => {
     expect(
       CompensatingActionSchema.safeParse({
         ...compensation,
+        preconditions: [{
+          ...compensation.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [],
+        }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CompensatingActionSchema.safeParse({
+        ...compensation,
         preconditions: [{ ...compensation.preconditions[0]!, mustStillHoldAtExecution: false }],
       }).success,
     ).toBe(false);
@@ -108,6 +117,100 @@ describe("decision-core external-action safety fence", () => {
     ],
   ])("enforces: %s are duplicate-free", (_name, override) => {
     expect(RetrySafeExternalActionSchema.safeParse({ ...action, ...override }).success).toBe(false);
+  });
+
+  it.each([
+    [
+      "payload",
+      {
+        command: {
+          ...action.command,
+          payloadRef: { ...action.command.payloadRef, firmId: "firm-b" },
+        },
+      },
+    ],
+    [
+      "reservation",
+      {
+        reservationRefs: [
+          { ...action.reservationRefs[0]!, firmId: "firm-b" },
+        ],
+      },
+    ],
+    [
+      "precondition evidence",
+      {
+        preconditions: [{
+          ...action.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [
+            {
+              ...action.preconditions[0]!.requiredEvidenceSnapshotRefs[0]!,
+              firmId: "firm-b",
+            },
+          ],
+        }],
+      },
+    ],
+    [
+      "verification rule",
+      {
+        verificationRuleRef: {
+          ...action.verificationRuleRef,
+          firmId: "firm-b",
+        },
+      },
+    ],
+  ])("enforces: standalone actions reject a cross-tenant %s reference", (_name, override) => {
+    expect(
+      RetrySafeExternalActionSchema.safeParse({
+        ...action,
+        ...override,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("enforces: every step and compensation in one plan shares a tenant", () => {
+    const firmBAction = {
+      ...action,
+      targetRef: { firmId: "firm-b", id: "target:house-crm" },
+      command: {
+        ...action.command,
+        payloadRef: { firmId: "firm-b", id: "blob:firm-b" },
+      },
+      idempotencyKey: "idem:firm-b",
+      reservationRefs: [{ firmId: "firm-b", id: "reservation:firm-b" }],
+      preconditions: [{
+        ...action.preconditions[0]!,
+        requiredEvidenceSnapshotRefs: [
+          { firmId: "firm-b", id: "evidence:firm-b" },
+        ],
+      }],
+      verificationRuleRef: { firmId: "firm-b", id: "verification:firm-b" },
+    };
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:mixed",
+        steps: [
+          { id: "step:firm-a", ...action, dependsOn: [] },
+          { id: "step:firm-b", ...firmBAction, dependsOn: [] },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:mixed-compensation",
+        steps: [{
+          id: "step:firm-a",
+          ...action,
+          dependsOn: [],
+          compensatingAction: {
+            ...firmBAction,
+            idempotencyKey: "idem:firm-b-compensation",
+            reasonCode: "later-step-failed",
+          },
+        }],
+      }).success,
+    ).toBe(false);
   });
 
   describe("detects (companion): complete retry-safe actions parse", () => {
