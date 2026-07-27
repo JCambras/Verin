@@ -91,9 +91,10 @@ export const ApprovalStageSchema = z.strictObject({
 export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
 
 /**
- * How authority is satisfied for a proceed decision. "approval" with zero stages
- * would be "automatic" wearing a costume - stages are non-empty by construction,
- * and every stage stack keeps stageId and order distinct, so the modes stay honest.
+ * How authority is satisfied for a proceed decision. "approval" or
+ * "specialist_review" with zero stages would be "automatic" wearing a costume -
+ * stages are non-empty by construction in BOTH non-automatic modes, and every
+ * stage stack keeps stageId and order distinct, so the modes stay honest.
  */
 export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("automatic") }),
@@ -104,7 +105,7 @@ export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
     .strictObject({
       mode: z.literal("specialist_review"),
       specialistRoleIds: z.array(RoleIdSchema).min(1),
-      stages: z.array(ApprovalStageSchema),
+      stages: z.array(ApprovalStageSchema).min(1),
     })
     .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
 ]);
