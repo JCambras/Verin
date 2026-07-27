@@ -46,9 +46,12 @@ const PORT_ESCAPES = new Set([
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
   "src/domain/observability/safe-values.ts :: observabilityId.<call>",
   "src/domain/observability/safe-values.ts :: readObservabilityId.<call>",
+  "src/domain/observability/safe-values.ts :: registerTestSpanName.<call>",
   "src/domain/observability/safe-values.ts :: safeLogMessage.<call>",
   "src/domain/observability/safe-values.ts :: safeSpanName.<call>",
-  "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionValue.<call>",
+  "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionEvidence.<call>",
+  "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionText.<call>",
+  "src/domain/pii/projection-resolution.ts :: isPlainProjectionData.<call>",
   "src/domain/pii/projection-resolution.ts :: resolveCompleteSensitiveEntities.<call>",
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
@@ -631,6 +634,14 @@ describe("tenant-context-required fence", () => {
       if (!normalized.startsWith("src/domain/")) continue;
       for (const declaration of exportedDomainCallableTypes(sf)) {
         for (const member of callableMembers(declaration.type, declaration.name)) {
+          // Same domain-declaration filter detectUnscopedPortMethods applies:
+          // without it a member the detector can NEVER emit still counts as
+          // live, so its escape could sit in PORT_ESCAPES forever unflagged.
+          const domainSignatures = member.signatures.filter((signature) =>
+            normalizedPath(signature.getDeclaration().getSourceFile().getFilePath())
+              .startsWith("src/domain/")
+          );
+          if (domainSignatures.length === 0) continue;
           live.add(
             `${normalized} :: ${member.name === declaration.name ? `${declaration.name}.<call>` : member.name}`,
           );

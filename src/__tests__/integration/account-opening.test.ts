@@ -106,6 +106,29 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
+  it("an UPPERCASE-hex client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
+    // Regression: the observability id predicate was case-SENSITIVE while the
+    // route accepts a case-insensitive UUID, so the flow committed the
+    // household/contact/application writes and THEN threw PII_VIOLATION out of
+    // the log line — an unenveloped 500 with side effects already durable.
+    const clientRequestId = "3F2504E0-4F89-11D3-9A0C-0305E82C3301";
+    const started = await startAccountOpening(db, advisor, {
+      householdName: "Uppercase Household", firstName: "Upper", lastName: "Case", email: null,
+      accountType: "individual", clientRequestId,
+    });
+    expect(started.status).toBe("suspended");
+    expect(started.executionId).toBe(clientRequestId);
+    const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(households.rows[0]!.n)).toBe(1);
+    // The replay path (which logs the same identifier again) also survives.
+    const replayed = await startAccountOpening(db, advisor, {
+      householdName: "Uppercase Household", firstName: "Upper", lastName: "Case", email: null,
+      accountType: "individual", clientRequestId,
+    });
+    expect(replayed.executionId).toBe(clientRequestId);
+    expect(replayed.status).toBe("suspended");
+  });
+
   it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {
     const clientRequestId = "3f1f9c2e-8f7a-4b6e-9e2d-1a2b3c4d5e6f";
     const input = {

@@ -4,6 +4,7 @@ import { startAccountOpening } from "@infra/wire";
 import { withSpan, recentSpans } from "@infra/observability/tracer";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
+import { registerTestSpanName } from "@domain/observability/safe-values";
 
 /**
  * OBSERVABILITY-COVERAGE FENCE (ADR-0013, charter #14). Proves flow steps and
@@ -11,6 +12,10 @@ import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
  * modeled. If the engine or the CRM calls were not instrumented, these spans would
  * be absent.
  */
+// Test-only span vocabulary (the production allowlist carries no test names).
+registerTestSpanName("test.op.ok");
+registerTestSpanName("test.op.fail");
+
 const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");

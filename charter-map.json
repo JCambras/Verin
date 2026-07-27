@@ -261,6 +261,11 @@
           "status": "enforced"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/observability-vocabulary.test.ts",
+          "status": "enforced"
+        },
+        {
           "type": "ci-gate",
           "ref": "unit"
         }

@@ -1633,3 +1633,104 @@ Knip, the production build, all 17 Playwright journeys, load smoke, the v3
 invariant report, and all 16 signed golden cases also passed.
 
 **Date:** 2026-07-27 (eighth review-fix round on v3 build-sequence prompt 6).
+
+## Round 9 — derived observability vocabulary, structural resolution, boundary-honest fences
+
+### PF-032 observability-vocabulary drift (NEW fence)
+
+`withSpan("flow.account-opening.resume", …)` was renamed to
+`…reopen` and the "security-event audit could not be recorded" log message was
+reworded, both in `src/infrastructure/wire.ts`. Before this fence existed both
+values silently degraded to `"operation"` / `"log event"` at runtime with a
+green build.
+
+```
+× enforces: the production vocabulary matches the shipped call sites exactly
+  unregistered span name "flow.account-opening.reopen" — it would be emitted as "operation"
+  stale span name "flow.account-opening.resume" — no shipped call site emits it
+  unregistered log message "security-event audit was not recorded" — it would be emitted as "log event"
+  stale log message "security-event audit could not be recorded" — no shipped call site emits it
+  src/__tests__/fitness/observability-vocabulary.test.ts:218
+```
+
+### PF-033 test-only span vocabulary cannot leak into production
+
+`registerTestSpanName("test.sneaky")` was called from `src/infrastructure/wire.ts`.
+
+```
+× enforces: the test-only injection point has no shipped caller
+  src/infrastructure/wire.ts:33 references registerTestSpanName
+  src/__tests__/fitness/observability-vocabulary.test.ts:229
+```
+
+### PF-034 governed-sink mutation classified from SQL, not from text
+
+`listContacts(db, actor): Promise<Contact[]>` was appended to
+`src/infrastructure/crm/house-crm.ts` containing the comment
+`// nothing to update here` and `const update = false`. The previous text regex
+matched that word and dropped the PII read out of sink derivation entirely.
+
+```
+× enforces: governed sinks validate action-scoped grants at their execution boundaries
+  src/infrastructure/crm/house-crm.ts :: listContacts: boundary must require ActionGrant<"pii.view">
+  src/__tests__/fitness/governed-actions.test.ts:697
+```
+
+### PF-035 an LLM escape is keyed on the full dotted path
+
+`readonly client: { name: string }` was added to `FlowDefinition`
+(`src/domain/workflow/engine.ts`). Keying the escape on the property's nearest
+ancestor let the reviewed `FlowDefinition.name` entry cover a raw client name
+inside an inline nested type literal.
+
+```
+× enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked
+  src/domain/workflow/engine.ts :: FlowDefinition.client.name
+  src/__tests__/fitness/llm-pii-boundary.test.ts:701
+```
+
+### PF-036 config-hygiene corpus non-vacuity
+
+`SKIP_DIRS` was widened with `"src"` and `"docs"`, collapsing the scanned
+corpus. Both detectors previously compared `[] === []` and passed.
+
+```
+× enforces: the scanned corpus is real (a collapsed corpus would pass vacuously — charter #4)
+  corpus is missing src/infrastructure/config/index.ts
+  src/__tests__/fitness/no-secret-fallback.test.ts:355
+```
+
+### PF-037 sealed-type ESLint mirror covers the whole pii/ tree except the factory
+
+`export const impostor = { value: "x", piiFree: true } as unknown as Tokenized<string>`
+was added to `src/infrastructure/pii/llm-projection.ts`. The override previously
+disabled `no-restricted-syntax` for all of `src/infrastructure/pii/**`, so this
+cast had no edit-time guard.
+
+```
+src/infrastructure/pii/llm-projection.ts
+  14:39  error  Sealed type: construct via its factory … no-restricted-syntax
+  14:69  error  Sealed type: construct via its factory … no-restricted-syntax
+✖ 2 problems (2 errors, 0 warnings)
+```
+
+### PF-038 uppercase-hex request id no longer aborts a committed flow
+
+The opaque-id pattern was reverted to its case-SENSITIVE form. The
+account-opening flow committed its household/contact/application writes and then
+threw out of the "flow started" log line — the unenveloped 500 the surrounding
+code documents as impossible.
+
+```
+× an UPPERCASE-hex client request id … completes instead of throwing after its writes commit
+  Unknown Error: Observability executionId identifiers must be opaque.
+  src/__tests__/integration/account-opening.test.ts
+```
+
+**Revert:** every planted change was reverted immediately after capturing the
+failure (the two source injections were restored from a copy; `git diff` on
+`src/infrastructure/wire.ts`, `src/infrastructure/crm/house-crm.ts`,
+`src/domain/workflow/engine.ts`, `src/infrastructure/pii/llm-projection.ts`, and
+`src/__tests__/fitness/no-secret-fallback.test.ts` was empty afterwards).
+
+**Date:** 2026-07-27 (ninth review-fix round on v3 build-sequence prompt 6).

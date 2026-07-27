@@ -45,6 +45,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0028](./0028-demo-design-language.md) | Demo design language — the established Verin design system is normative | Accepted |
 | [0029](./0029-line-budget-wave-a-security-boundaries.md) | Line-budget amendment for Wave A security boundaries | Accepted |
 | [0030](./0030-line-budget-prompt-6-review-hardening.md) | Line-budget amendment for prompt-6 review hardening | Accepted |
+| [0031](./0031-llm-projection-boundary-ahead-of-first-caller.md) | The evidence-to-LLM projection boundary lands ahead of its first caller — a reviewed charter #5 exception | Accepted |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

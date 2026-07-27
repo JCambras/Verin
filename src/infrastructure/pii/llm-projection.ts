@@ -1,9 +1,25 @@
+/**
+ * The evidence-to-LLM projection (v3 §15.1 stage 1): bind the request's
+ * structurally sensitive spans to declared slots, mask them, then seal the
+ * result through the Tokenized factory so nothing unmasked can reach a model.
+ *
+ * This boundary is landed AHEAD of its first production caller by ADR-0031
+ * (the model client arrives at prompt 13): v3 invariant 1 is a contract about a
+ * boundary, and a boundary only exists once both sides do. That is a reviewed
+ * charter #5 exception for a spec-named boundary — NOT a licence for
+ * convenience code, which is why the piiSafe logger helper was deleted instead.
+ *
+ * Resolution is structural, never an enumerated vocabulary — see
+ * domain/pii/projection-resolution.ts (D-048).
+ */
 import { type Result, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import { parseMaskedLlmRequest, SLOT_ID_RE, type LlmPurpose, type MaskedLlmRequest, type SlotPlaceholder } from "@infra/llm/request-schema";
 import {
-  hasUnresolvedProjectionValue,
+  hasUnresolvedProjectionEvidence,
+  hasUnresolvedProjectionText,
+  isPlainProjectionData,
   resolveCompleteSensitiveEntities,
   type ResolvedSensitiveEntity,
 } from "@domain/pii/projection-resolution";
@@ -92,47 +108,6 @@ function containsText(value: unknown, needle: string, seen = new WeakSet<object>
   );
 }
 
-const TEXT_EVIDENCE_KEYS = new Set([
-  "accountNumber", "accountRef", "account_number", "account_ref", "firstName",
-  "fullName", "householdName", "lastName", "name", "note", "requestKind", "ssn",
-]);
-
-function isSensitiveLengthNumber(value: number): boolean {
-  return Number.isInteger(value) && /^\d{9,18}$/.test(String(Math.abs(value)));
-}
-
-function matchesMaskedEvidenceSchema(
-  value: unknown,
-  key?: string,
-  seen = new WeakSet<object>(),
-): boolean {
-  if (value == null) return true;
-  if (typeof value === "string") {
-    return Boolean(
-      key &&
-      (TEXT_EVIDENCE_KEYS.has(key) || /^\{\{slot_\d{4}\}\}$/.test(key)),
-    );
-  }
-  if (typeof value === "number") {
-    return key === "plannedWithdrawals" &&
-      Number.isFinite(value) &&
-      value >= 0 &&
-      !isSensitiveLengthNumber(value);
-  }
-  if (typeof value !== "object" || seen.has(value) || Array.isArray(value)) {
-    return false;
-  }
-  if (key && key !== "household") return false;
-  seen.add(value);
-  return Object.entries(value).every(([nestedKey, item]) =>
-    (nestedKey === "household" ||
-      nestedKey === "plannedWithdrawals" ||
-      TEXT_EVIDENCE_KEYS.has(nestedKey) ||
-      /^\{\{slot_\d{4}\}\}$/.test(nestedKey)) &&
-    matchesMaskedEvidenceSchema(item, nestedKey, seen)
-  );
-}
-
 function resolveCompleteBindings(input: EvidenceProjectionInput): readonly ResolvedSensitiveEntity[] | null {
   if (
     typeof input !== "object" ||
@@ -171,8 +146,8 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
     const masks = orderedMasks(masksFromBindings(bindings));
     const maskedText = maskText(input.requestText, masks);
     const maskedEvidence = maskRecord(input.evidence, masks) as Readonly<Record<string, unknown>>;
-    if (!matchesMaskedEvidenceSchema(maskedEvidence)) {
-      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted schema.");
+    if (!isPlainProjectionData(maskedEvidence)) {
+      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
     }
     if (masks.some((mask) =>
       containsText(maskedText, mask.rawText) ||
@@ -183,8 +158,8 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
     const tokenizedText = tokenizeText(maskedText);
     const tokenizedEvidence = tokenizeRecord(maskedEvidence);
     if (
-      hasUnresolvedProjectionValue(tokenizedText.value) ||
-      hasUnresolvedProjectionValue(tokenizedEvidence.value)
+      hasUnresolvedProjectionText(tokenizedText.value) ||
+      hasUnresolvedProjectionEvidence(tokenizedEvidence.value)
     ) {
       throw appError("PII_VIOLATION", "Unresolved sensitive entity remained after masking.");
     }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { listOrgChain, verifyOrgChain, drainOutbox, discardedAuditEventWork } from "@infra/audit/audit-store";
+import { verifyAndListOrgChain, verifyOrgChain, drainOutbox, discardedAuditEventWork } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
 import { principalFromIdentity, writeActorOf } from "@contracts/principal";
 import {
@@ -54,7 +54,7 @@ describe("tamper-evident audit chain (integration)", () => {
     });
     expect(unwrap(r).id).toBe("hh-1");
 
-    const chain = await listOrgChain(db, AUDIT_GRANT);
+    const chain = (await verifyAndListOrgChain(db, AUDIT_GRANT)).rows;
     expect(chain.length).toBe(1);
     expect(chain[0]!.actor).toBe("advisor@test"); // NOT hardcoded "system"
     expect(chain[0]!.action).toBe("household.create");
@@ -91,7 +91,7 @@ describe("tamper-evident audit chain (integration)", () => {
     // exactly-once: one row, one cache entry, one audit entry.
     const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE id = 'task-1'");
     expect(Number(tasks.rows[0]!.n)).toBe(1);
-    const chain = await listOrgChain(db, AUDIT_GRANT);
+    const chain = (await verifyAndListOrgChain(db, AUDIT_GRANT)).rows;
     expect(chain.length).toBe(1);
     expect((await verifyOrgChain(db, TENANT)).ok).toBe(true);
   });
@@ -167,7 +167,7 @@ describe("tamper-evident audit chain (integration)", () => {
     );
 
     expect(await drainOutbox(db, TENANT)).toBe(1);
-    expect((await listOrgChain(db, AUDIT_GRANT)).length).toBe(1);
+    expect((await verifyAndListOrgChain(db, AUDIT_GRANT)).rows.length).toBe(1);
     expect((await verifyOrgChain(db, TENANT)).ok).toBe(true);
     const left = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE org_id = $1", [ORG]);
     expect(Number(left.rows[0]!.n)).toBe(0);
@@ -196,7 +196,7 @@ describe("tamper-evident audit chain (integration)", () => {
     expect(Number(after.rows[0]!.attempts)).toBe(5);
     const backlog = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE status IN ('pending','claimed')");
     expect(Number(backlog.rows[0]!.n)).toBe(0);
-    expect((await listOrgChain(db, AUDIT_GRANT)).length).toBe(0);
+    expect((await verifyAndListOrgChain(db, AUDIT_GRANT)).rows.length).toBe(0);
   });
 
   it("the constant-work login mirror runs the audit pipeline but persists NOTHING (Vale V6)", async () => {

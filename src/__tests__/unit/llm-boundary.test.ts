@@ -4,6 +4,10 @@ import type { Tokenized } from "@contracts/tokenized";
 import { tokenizeText, tokenizeRecord, isSealedTokenized } from "@infra/pii/tokenize";
 import { parseMaskedLlmRequest, slotId, type MaskedLlmRequest } from "@infra/llm/request-schema";
 import { projectForLlm } from "@infra/pii/llm-projection";
+import {
+  hasUnresolvedProjectionEvidence,
+  hasUnresolvedProjectionText,
+} from "@domain/pii/projection-resolution";
 
 /**
  * The runtime half of v3 invariant 1: the Tokenized factory scrubs by
@@ -222,7 +226,9 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping" as const,
       requestText: "Alice wants account",
       slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
-      evidence: {},
+      // A leading capital is sentence grammar, so the name is bound from the
+      // evidence key that DECLARES it as identity data.
+      evidence: { firstName: "Alice" },
     };
     expect(projectForLlm({
       ...base,
@@ -248,16 +254,25 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "Alice sends to Bob account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { firstName: "Alice" },
+    });
+    expect(result.ok).toBe(false);
+  });
+  it("refuses an account binding that leaves an unbound person name", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Wire 401 to Ira Bennett",
+      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
       evidence: {},
     });
     expect(result.ok).toBe(false);
   });
-  it("refuses an account binding that leaves a resolver-ambiguous person name", () => {
+  it("refuses masked evidence outside the plain-data shape", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Ira wants 401",
-      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
-      evidence: {},
+      requestText: "Review Alice",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { load: () => "raw record" },
     });
     expect(result.ok).toBe(false);
   });
@@ -279,14 +294,48 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     });
     expect(result.ok).toBe(false);
   });
-  it("refuses an omitted lowercase entity outside the closed residual vocabulary", () => {
+  it("accepts realistic non-fixture prose once its sensitive spans are tokenized", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "alice wants Bob account",
+      requestText: "Please transfer funds to the client's Roth",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      evidence: {},
+      evidence: { requestKind: "withdrawal", plannedWithdrawals: 4200 },
     });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maskedText.value).toBe(
+      "Please transfer funds to the client's {{slot_0001}}",
+    );
+    expect(JSON.stringify(result.value.context.value)).toContain("4200");
+  });
+  it("resolution is a STRUCTURAL rule, not an enumerated vocabulary", () => {
+    // Prose the closed word list refused; nothing here is on any allowlist.
+    for (const resolved of [
+      "Please transfer funds to the client's {{slot_0001}}",
+      "reconcile the quarterly custodial statement and note any variance",
+      "escalate before the 2026 filing deadline",
+    ]) {
+      expect(hasUnresolvedProjectionText(resolved), resolved).toBe(false);
+    }
+    // Structurally sensitive spans stay unresolved whatever surrounds them.
+    for (const unresolved of [
+      "call Adaeze Okonkwo-Blackwood today",
+      "wire to account 941000517334",
+      "ping zeph.okonkwo@example.test",
+      "ssn 078-05-1120 on file",
+      "escalate to Compliance", // shape, not a name dictionary
+    ]) {
+      expect(hasUnresolvedProjectionText(unresolved), unresolved).toBe(true);
+    }
+    // Evidence is machine data: a bound placeholder key and plain business data
+    // resolve; any surviving title-case key or sensitive-length number does not.
+    expect(hasUnresolvedProjectionEvidence({
+      "{{slot_0001}}": REDACTED,
+      plannedWithdrawals: 4200,
+      requestKind: "withdrawal",
+    })).toBe(false);
+    expect(hasUnresolvedProjectionEvidence({ Bennett: REDACTED })).toBe(true);
+    expect(hasUnresolvedProjectionEvidence({ reference: 941000517334 })).toBe(true);
   });
   it("refuses an innocuous subject binding that leaves a leading name unresolved", () => {
     const result = projectForLlm({

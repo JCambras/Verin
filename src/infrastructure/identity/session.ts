@@ -11,7 +11,7 @@ import type { SqlDb } from "@infra/store/db";
 import { getConfig } from "@infra/config";
 import { revealSecret } from "@contracts/secret";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, type AppError } from "@contracts/errors";
+import { appError, isAppError, type AppError } from "@contracts/errors";
 import { type Role, isAllowedRole } from "@contracts/roles";
 import {
   principalFromIdentity,
@@ -77,6 +77,27 @@ interface ResolvedSession {
 }
 
 /**
+ * A persisted identity row is untrusted INPUT, not programmer error: `users.role`
+ * carries no CHECK constraint, so an out-of-taxonomy or blank column must resolve
+ * to a typed AUTH_FAILED — the same shape as revoked/disabled/expired — rather
+ * than throwing out of the read-only /app server-component guard as a 500.
+ * authenticate() (identity-store) treats the identical condition the same way.
+ */
+function principalFromRow(input: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: Role;
+  readonly actor: string;
+  readonly sessionId: string;
+}): Result<Principal, AppError> {
+  try {
+    return ok(principalFromIdentity(input));
+  } catch (e) {
+    return err(isAppError(e) ? e : appError("AUTH_FAILED", "Session identity is not usable."));
+  }
+}
+
+/**
  * The single identity read: map a signed session cookie to its server-side record,
  * enforcing revocation, account status, and expiry. Returns the principal AND the
  * expiry (the renewal orchestrator needs it) or a typed AppError — never a fallback
@@ -105,16 +126,16 @@ async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Pr
   // Server-side expiry — independent of any cookie max-age the client controls.
   if (new Date(row.expires_at).getTime() <= Date.now()) return err(appError("AUTH_EXPIRED", "Session has expired."));
 
-  return ok({
-    principal: principalFromIdentity({
-      userId: row.user_id,
-      orgId: row.org_id,
-      role: row.role,
-      actor: row.email,
-      sessionId: row.session_id,
-    }),
-    expiresAt: row.expires_at,
+  const principal = principalFromRow({
+    userId: row.user_id,
+    orgId: row.org_id,
+    role: row.role,
+    actor: row.email,
+    sessionId: row.session_id,
   });
+  if (!principal.ok) return principal;
+
+  return ok({ principal: principal.value, expiresAt: row.expires_at });
 }
 
 /**
@@ -162,14 +183,17 @@ export async function resolveAndRenewSession(
     log.warn({ reason: safeReason(e) }, "opportunistic session cleanup failed"),
   );
 
+  const rotated = principalFromRow({
+    userId: resolved.value.principal.userId,
+    orgId: resolved.value.principal.orgId,
+    role: resolved.value.principal.role,
+    actor: resolved.value.principal.actor,
+    sessionId: renewed.id,
+  });
+  if (!rotated.ok) return rotated;
+
   return ok({
-    principal: principalFromIdentity({
-      userId: resolved.value.principal.userId,
-      orgId: resolved.value.principal.orgId,
-      role: resolved.value.principal.role,
-      actor: resolved.value.principal.actor,
-      sessionId: renewed.id,
-    }),
+    principal: rotated.value,
     renewedCookie: { value: signSessionCookie(renewed.id), maxAgeSeconds: ttlMinutes * 60 },
   });
 }

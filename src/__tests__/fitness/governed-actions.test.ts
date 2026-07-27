@@ -231,9 +231,31 @@ function hasTenantBoundaryParameter(signature: Signature): boolean {
   });
 }
 
+const SQL_MUTATION_RE = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i;
+
+/**
+ * SQL text passed as a CALL ARGUMENT. Classifying from the AST (not from
+ * declaration.getText()) is what keeps the write exemption from being one word
+ * wide: an identifier named `update`, a `.update()` method call, or a comment
+ * saying "nothing to update" is not SQL, and must not drop a PII-returning
+ * callable out of governed-sink derivation.
+ */
+function sqlArgumentTexts(declaration: Node): string[] {
+  return declaration.getDescendantsOfKind(SyntaxKind.CallExpression)
+    .flatMap((call) => call.getArguments())
+    .flatMap((argument) => {
+      if (
+        Node.isStringLiteral(argument) ||
+        Node.isNoSubstitutionTemplateLiteral(argument)
+      ) {
+        return [argument.getLiteralValue()];
+      }
+      return Node.isTemplateExpression(argument) ? [argument.getText()] : [];
+    });
+}
+
 function mutatesPersistence(declaration: Node): boolean {
-  const body = declaration.getText();
-  return /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(body) ||
+  return sqlArgumentTexts(declaration).some((sql) => SQL_MUTATION_RE.test(sql)) ||
     declaration.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
       callResolvesTo(
         call,
@@ -401,6 +423,8 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
   return out;
 }
 
+const APP_SURFACE_RE = /^src\/app\/.*\.tsx?$/;
+
 export function discoverGovernedRoutes(
   project: Project,
 ): { entries: GovernedRouteEntry[]; violations: string[] } {
@@ -409,14 +433,18 @@ export function discoverGovernedRoutes(
   const sinks = deriveGovernedSinks(project);
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
-    if (!/^src\/app\/.*\/route\.ts$/.test(file)) continue;
+    // EVERY app-layer surface, not just route.ts: Server Actions
+    // (src/app/login/actions.ts) and server components are App Router surfaces
+    // that can call a governed sink, and an unscanned surface class is an
+    // unfenced one.
+    if (!APP_SURFACE_RE.test(file)) continue;
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const sink = governedSinkForCall(call, sinks);
       if (!sink) continue;
       const handler = call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
       if (!handler?.isExported() || !handler.getName()) {
         violations.push(
-          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported route handler`,
+          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported app-surface handler`,
         );
         continue;
       }
@@ -496,6 +524,7 @@ function governedDiscoveryProject(route: string): Project {
 function authDeclaration(
   statement: Statement,
   action: string,
+  handlerParameters: ReadonlySet<string>,
 ): { variable: string } | null {
   if (!Node.isVariableStatement(statement)) return null;
   const declarations = statement.getDeclarations();
@@ -517,8 +546,14 @@ function authDeclaration(
     return null;
   }
   const args = initializer.getArguments();
+  // The request must be the one the FRAMEWORK handed this surface (a parameter
+  // of the handler), not a name that merely reads "req" — a Server Action with
+  // no request parameter therefore cannot satisfy the hook by inventing one.
+  const request = args[0];
   if (
-    args[0]?.getText() !== "req" ||
+    !request ||
+    !Node.isIdentifier(request) ||
+    !handlerParameters.has(request.getText()) ||
     !Node.isStringLiteral(args[1]) ||
     args[1].getLiteralValue() !== action
   ) {
@@ -573,7 +608,12 @@ export function detectUnwiredGovernedRoutes(
       continue;
     }
     const statements = body.getStatements();
-    const auth = statements[0] ? authDeclaration(statements[0], entry.action) : null;
+    const handlerParameters = new Set(
+      handler.getParameters().map((parameter) => parameter.getName()),
+    );
+    const auth = statements[0]
+      ? authDeclaration(statements[0], entry.action, handlerParameters)
+      : null;
     if (!auth) {
       out.push(
         `${entry.file} :: ${entry.handler}: first statement must bind requireActionGrant(req, "${entry.action}")`,
@@ -999,6 +1039,109 @@ describe("governed-actions fence (v3 §15.3)", () => {
       });
       expect(detectUnwiredGovernedRoutes(project, [
         { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
+      ])).toHaveLength(1);
+    });
+    it("does not let the word 'update' outside SQL exempt a PII read sink", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `
+          export interface PIIBearing { readonly pii?: "bearing" }
+        `,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+        `,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          export function listContacts(tenant: TenantContext): Contact[] {
+            // nothing to update here
+            const update = false;
+            void update;
+            return [{ fullName: tenant.orgId }];
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/crm/contacts.ts :: listContacts: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+    it("still exempts a real SQL mutation passed to the driver", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `
+          export interface PIIBearing { readonly pii?: "bearing" }
+        `,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+        `,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query(sql: string, params: unknown[]): Promise<void> };
+          export async function renameContact(tenant: TenantContext): Promise<Contact> {
+            await db.query("UPDATE contacts SET full_name = $1 WHERE org_id = $2", [tenant.orgId]);
+            return { fullName: tenant.orgId };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([]);
+    });
+    it("discovers a governed sink called from a Server Action, not just route.ts", () => {
+      const project = inMemoryProject({
+        "/src/contracts/authz.ts": `
+          export interface ActionGrant<A extends string> { action: A }
+          export function assertActionGrant<A extends string>(
+            value: unknown,
+            action: A,
+          ): asserts value is ActionGrant<A> {
+            void value;
+            void action;
+          }
+        `,
+        "/src/infrastructure/audit/audit-store.ts": `
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          export function verifyAndListOrgChain(
+            db: unknown,
+            grant: ActionGrant<"audit.export">,
+          ): unknown {
+            assertActionGrant(grant, "audit.export");
+            return { db, grant };
+          }
+        `,
+        "/src/app/exports/actions.ts": `
+          "use server";
+          import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+          export async function exportChainAction() {
+            return verifyAndListOrgChain({}, {} as never);
+          }
+        `,
+      });
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries).toEqual([
+        {
+          file: "src/app/exports/actions.ts",
+          handler: "exportChainAction",
+          action: "audit.export",
+          sink: "verifyAndListOrgChain",
+          sinkFile: "src/infrastructure/audit/audit-store.ts",
+        },
+      ]);
+      // …and the unwired Server Action fails, so it cannot ship unauthorized.
+      expect(
+        detectUnwiredGovernedRoutes(project, discovered.entries),
+      ).toHaveLength(1);
+    });
+    it("rejects an authorization bound to a forged request instead of the handler's own", () => {
+      const project = governedTestProject(`
+          const req = new Request("http://local/forged");
+          export async function GET(request: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return list(auth.value.grant.tenant);
+          }
+        `);
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "list" },
       ])).toHaveLength(1);
     });
     it("passes a correctly wired route", () => {
