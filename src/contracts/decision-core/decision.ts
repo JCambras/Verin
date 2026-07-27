@@ -1,7 +1,7 @@
 /**
  * The decision contracts: disposition union, prohibition, traces, and the
  * persisted DecisionRecord (v3 §5; ratified shapes: docs/v3/verin-core-contracts.ts;
- * ADR-0029, D-036).
+ * ADR-0029, D-040).
  *
  * THE CENTRAL DISTINCTIONS, STRUCTURALLY (v3 invariants 7–9; scenarios.yaml
  * disposition vocabulary proceed/blocked/prohibited):

@@ -1,6 +1,6 @@
 /**
  * Immutable evidence snapshots and the decision input bundle (v3 §5; ratified
- * shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-036).
+ * shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-040).
  *
  * The bundle IS the replay contract: it pins every version and hash a byte-identical
  * re-evaluation needs (prompt 19). EvidenceSnapshotRef is the immutable
@@ -22,6 +22,7 @@ import {
   TimestampSchema,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
+import { CANONICAL_SERIALIZER_VERSION, DECISION_CORE_SCHEMA_VERSION } from "./serialization";
 
 /** Freshness at retrieval - the golden truth set's vocabulary ("fresh"/"stale"/"unknown"). */
 export const EvidenceFreshnessSchema = z.enum(["fresh", "stale", "unknown"]);
@@ -55,19 +56,30 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * ids identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
+const TimeZoneSchema = z.string().min(1).refine(
+  (timeZone) => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { message: "unsupported IANA time-zone identifier" },
+);
+
 export const DecisionInputBundleSchema = TenantContextSchema.extend({
   id: DecisionInputBundleIdSchema,
-  schemaVersion: z.string().min(1),
-  canonicalSerializerVersion: z.string().min(1),
+  schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
+  canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
   engineVersion: z.string().min(1),
   primitiveSetVersion: z.string().min(1),
   domainConfigVersionId: DomainConfigVersionIdSchema,
   policyVersionId: PolicyVersionIdSchema,
-  householdInstructionVersionIds: z.array(HouseholdInstructionVersionIdSchema),
-  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema),
+  householdInstructionVersionIds: z.array(HouseholdInstructionVersionIdSchema).readonly(),
+  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
   asOf: TimestampSchema,
-  /** IANA zone name (e.g. "America/New_York") - day-boundary rules are firm-local. */
-  timeZone: z.string().min(1),
+  timeZone: TimeZoneSchema,
   bundleHash: HashSchema,
-});
+}).readonly();
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

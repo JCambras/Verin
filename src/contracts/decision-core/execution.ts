@@ -1,6 +1,6 @@
 /**
  * Execution-plan contracts (v3 §5; ratified shapes: docs/v3/verin-core-contracts.ts;
- * ADR-0029, D-036). A plan exists ONLY inside a proceed decision (decision.ts).
+ * ADR-0029, D-040). A plan exists ONLY inside a proceed decision (decision.ts).
  * Every step is idempotent and retry-safe by construction (charter #16): it carries
  * its idempotency key, conflict keys, reservations, preconditions that must still
  * hold at execution, its verification rule, and dependency edges for

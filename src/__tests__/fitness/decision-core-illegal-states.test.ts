@@ -13,7 +13,7 @@ import { ResolvableBlockerSchema } from "@contracts/decision-core/trigger";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 
 /**
- * DECISION-CORE ILLEGAL-STATES FENCE (v3 §5 / invariants 7–9; ADR-0029, D-036;
+ * DECISION-CORE ILLEGAL-STATES FENCE (v3 §5 / invariants 7–9; ADR-0029, D-040;
  * charter #1). The canonical type system makes the major distinctions STRUCTURAL:
  *  - inv 7: a proceed decision cannot exist without authority AND an execution plan;
  *  - inv 8: a blocked decision cannot carry authority or an execution plan;

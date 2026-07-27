@@ -15,7 +15,9 @@ import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema 
 import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/decision-core/authority";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
+  BUNDLE_HASH_PAYLOAD_KEYS,
   CANONICAL_SERIALIZER_VERSION,
+  DECISION_HASH_PAYLOAD_KEYS,
   DECISION_CORE_SCHEMA_VERSION,
   bundleHashPreimage,
   canonicalJson,
@@ -27,7 +29,7 @@ import { unwrap } from "@contracts/result";
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 /**
- * Decision-core schema tests (v3 §5; ADR-0029, D-036). The illegal-state fence
+ * Decision-core schema tests (v3 §5; ADR-0029, D-040). The illegal-state fence
  * (fitness/decision-core-illegal-states.test.ts) owns invariants 7–9; this suite
  * covers the rest of the prompt-5 contract: tenant scoping of persisted records,
  * canonical-serialization fixtures, vocabulary locks against the demo matrix,
@@ -121,6 +123,37 @@ function readFixture(name: string): string {
 }
 
 describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwork)", () => {
+  it("keeps every schema key, including optional keys, classified in its hash projection", () => {
+    const bundleKeys = Object.keys(DecisionInputBundleSchema.unwrap().shape).filter(
+      (key) => key !== "id" && key !== "bundleHash",
+    );
+    const decisionKeys = Object.keys(DecisionRecordSchema.shape).filter((key) => key !== "decisionHash");
+    expect([...BUNDLE_HASH_PAYLOAD_KEYS].sort()).toEqual(bundleKeys.sort());
+    expect([...DECISION_HASH_PAYLOAD_KEYS].sort()).toEqual(decisionKeys.sort());
+    expect(DECISION_HASH_PAYLOAD_KEYS).toContain("derivedFromDecisionId");
+  });
+
+  it("rejects replay metadata versions without a matching implementation", () => {
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, schemaVersion: "2.0.0" }).success).toBe(false);
+    expect(
+      DecisionInputBundleSchema.safeParse({ ...validBundle, canonicalSerializerVersion: "2.0.0" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unsupported time zones before replay depends on firm-local time", () => {
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Not/AZone" }).success).toBe(false);
+    expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
+  });
+
+  it("freezes parsed replay inputs and their nested collections", () => {
+    const bundle = DecisionInputBundleSchema.parse(validBundle);
+    expect(Object.isFrozen(bundle)).toBe(true);
+    expect(Object.isFrozen(bundle.householdInstructionVersionIds)).toBe(true);
+    expect(Object.isFrozen(bundle.evidenceSnapshotIds)).toBe(true);
+    expect(Reflect.set(bundle, "policyVersionId", "pv:mutated")).toBe(false);
+    expect(Reflect.set(bundle.evidenceSnapshotIds, 0, "evs:mutated")).toBe(false);
+  });
+
   it("locks the versioned, non-self-referential bundle hash preimage and digest", () => {
     const text = readFixture("decision-input-bundle");
     const bundle = DecisionInputBundleSchema.parse(JSON.parse(text));
@@ -171,6 +204,23 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expect(canonicalJson(circular as JsonValue).ok).toBe(false);
+  });
+
+  it("refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON", () => {
+    expect(canonicalJson(Array(1) as JsonValue).ok).toBe(false);
+    expect(canonicalJson(Array(2) as JsonValue).ok).toBe(false);
+    expect(unwrap(canonicalJson([]))).toBe("[]");
+  });
+
+  it("hashes every schema-valid decision even when optional keys were explicitly undefined", () => {
+    const value = JSON.parse(readFixture("decision-record-proceed")) as {
+      result: { executionPlan: { steps: Array<Record<string, unknown>> } };
+      reevaluateWhen: Array<Record<string, unknown>>;
+    };
+    value.result.executionPlan.steps[0]!.compensatingAction = undefined;
+    value.reevaluateWhen = [{ kind: "evidence_changed", subjectRef: undefined }];
+    const record = DecisionRecordSchema.parse(value);
+    expect(canonicalJson(decisionHashPreimage(record)).ok).toBe(true);
   });
 });
 

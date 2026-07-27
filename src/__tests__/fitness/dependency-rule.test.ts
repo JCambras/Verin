@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { detectLayerViolations, realProject, inMemoryProject } from "./_fence-utils";
+import {
+  detectContractsExternalImportViolations,
+  detectLayerViolations,
+  realProject,
+  inMemoryProject,
+} from "./_fence-utils";
 
 /**
  * DEPENDENCY-RULE FENCE (ADR-0001, charter #1). Inner layers never import outer:
@@ -10,10 +15,16 @@ import { detectLayerViolations, realProject, inMemoryProject } from "./_fence-ut
  */
 describe("dependency-rule fence", () => {
   it("enforces: the real src/ tree has zero layer violations", () => {
-    const violations = detectLayerViolations(realProject());
+    const project = realProject();
+    const violations = detectLayerViolations(project);
     expect(
       violations,
       `dependency-rule violations:\n${violations.map((v) => `${v.file}: ${v.fromLayer} -> ${v.toLayer} (${v.specifier})`).join("\n")}`,
+    ).toEqual([]);
+    const external = detectContractsExternalImportViolations(project);
+    expect(
+      external,
+      `contracts external-import violations:\n${external.map((v) => `${v.file}:${v.line} (${v.specifier})`).join("\n")}`,
     ).toEqual([]);
   });
 
@@ -50,6 +61,37 @@ describe("dependency-rule fence", () => {
     it("clean inner->inner imports do NOT trip the fence", () => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/ok.ts": `import { Result } from "@contracts/result";\nexport const r: Result<number> | null = null;` }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it("an external package other than zod in contracts is caught with file:line", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `import { createElement } from "react";\nexport { createElement };` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
+    });
+
+    it("non-literal dynamic imports cannot evade the contracts allowlist", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `const packageName = "react";\nexport const load = () => import(packageName);` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]?.specifier).toBe("<non-literal dynamic-import>");
+    });
+
+    it("relative traversal outside a project layer cannot reach an external package", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `import React from "../../../node_modules/react/index.js";\nexport { React };` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]?.specifier).toBe("../../../node_modules/react/index.js");
+    });
+
+    it("zod is the only permitted contracts external dependency", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/ok.ts": `import { z } from "zod";\nexport const schema = z.string();` }),
       );
       expect(v).toEqual([]);
     });

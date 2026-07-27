@@ -19,14 +19,16 @@ will drift or silently revert.
 
 Four layers under `src/`, dependencies point inward only:
 
-- `contracts/` — dependency-free types + pure functions. Imports nothing project-local.
+- `contracts/` - types + pure functions. Imports nothing project-local; ADR-0029 permits Zod as its
+  only external package.
 - `domain/` — entities, use-cases, ports (interfaces), the workflow engine + flows. Imports only `contracts/`.
 - `infrastructure/` — adapters / port implementations. Imports `domain/` + `contracts/`, never `app/`.
 - `app/` — Next.js App Router + presentation tier. May import anything (so the presentation tier is architecture-safe).
 
 Enforced three ways (defense in depth): ESLint `no-restricted-imports` at edit time
 (`eslint.config.mjs`); the authoritative `dependency-rule` fitness fence (ts-morph, Phase B) that resolves
-**static, relative, AND dynamic `import()`** and classifies each by resolved layer; and TS path aliases.
+**static, relative, AND dynamic `import()`**, classifies each by resolved layer, and enforces the Zod-only
+external allowlist for `contracts/`; and TS path aliases.
 
 ## Alternatives Rejected
 

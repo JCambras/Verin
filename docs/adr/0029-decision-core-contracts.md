@@ -35,14 +35,20 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.0.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot ID lists; the decision projection excludes
-  only its stored hash. Fixture digests are SHA-256 over canonical UTF-8 bytes and must equal the
-  stored hash. A projection change requires its own version bump and migration story.
+  only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
+  schema growth cannot evade a preimage-version bump. Explicit undefined optional properties normalize
+  to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over canonical UTF-8 bytes
+  and must equal the stored hash. A projection change requires its own version bump and migration story.
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.0.0 schema and
+  canonical serializer versions, validates the time zone against the runtime's supported IANA data,
+  and freezes the parsed bundle plus its replay-ID collections.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
+  The dependency fence enforces the external allowlist and rejects non-literal dynamic imports.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1400** (measured 1293 after landing
-  + modest headroom). The ratchet-down doctrine resumes from 1400; later contract-layer prompts
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1446 after replay-boundary
+  review hardening + modest headroom). The ratchet-down doctrine resumes from 1550; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
@@ -66,11 +72,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 1400 (a real growth, honestly sized and ratcheted).
+  grew 600 → 1550 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 1400 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 1550 (this ADR is the amendment ADR-0018 requires).
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended
   to [2, 5, 7, 8, 9].
 - Consumers (prompts 7, 9–19, 25–26) import from `@contracts/decision-core/*`; the store boundary
