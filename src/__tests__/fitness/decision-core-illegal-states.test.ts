@@ -101,6 +101,9 @@ describe("decision-core illegal-states fence", () => {
     it("rejects an approval authority with zero stages (automatic wearing a costume)", () => {
       expectRejected(AuthorityRequirementSchema, { mode: "approval", stages: [] }, "stages");
     });
+    it("rejects a specialist review with zero stages (the same costume, audit F7)", () => {
+      expectRejected(AuthorityRequirementSchema, { mode: "specialist_review", specialistRoleIds: ["cco"], stages: [] }, "stages");
+    });
   });
 
   describe("enforces: invariant 8 - blocked cannot carry authority or an execution plan", () => {
