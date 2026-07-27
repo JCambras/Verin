@@ -9,7 +9,7 @@
 import { z } from "zod";
 import {
   ConflictKeySchema,
-  EvidenceSnapshotIdSchema,
+  EvidenceSnapshotIdRefSchema,
   ExecutionPlanIdSchema,
   ExecutionStepIdSchema,
   ExecutionTargetIdSchema,
@@ -31,7 +31,7 @@ export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 /** A condition proven before the decision that must still hold when the step runs. */
 export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
-  requiredEvidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
+  requiredEvidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
   mustStillHoldAtExecution: z.boolean(),
 }).readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;

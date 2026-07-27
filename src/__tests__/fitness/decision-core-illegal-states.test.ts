@@ -49,7 +49,11 @@ const blocker = {
   resolvingEvidence: [{ evidenceKind: "account-balance", subjectRef: "subject:x", suppliableBy: ["external"] }],
 };
 const prohibition = {
-  source: { sourceType: "regulatory", sourceId: "reg-holds", versionId: "2026.02" },
+  source: {
+    sourceType: "regulatory",
+    sourceRef: { firmId: "firm-a", id: "reg-holds" },
+    versionRef: { firmId: "firm-a", id: "reg-holds@2026.02" },
+  },
   scope: "scope:account:x",
   reasonCode: "active-legal-hold",
   explanation: "Active legal hold.",
