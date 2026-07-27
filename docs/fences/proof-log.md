@@ -1501,3 +1501,65 @@ injection (`git diff` clean); typecheck, lint, knip, build, v3:invariants, golde
 full suite pass, with all four fixture digests unchanged and contracts still at 2364/2400.
 
 **Date:** 2026-07-27 (review corrections F69-F70, D-055).
+
+## F71-F74 · decision-core review corrections (D-056)
+
+**Invariants:** the dependency-rule `require` scan flags CommonJS loaders and only CommonJS loaders;
+the configuration boundary admits an alias exactly when it admits that alias's target.
+
+The `require` scan's cross-module false positive is latent - no shipped source contains a `require`
+token - so it was proven against the new companion instead. Restoring the pre-fix scan (drop the
+member-name-position skip, put `!isDeclaredLocally(receiver)` back on the element-access branch)
+failed it:
+```
+× require-shaped members of values imported from ANOTHER module do not trip the fence
+AssertionError: expected [ { …(5) }, { …(5) }, { …(5) }, …(2) ] to deeply equal []
+  src/__tests__/fitness/dependency-rule.test.ts:464
+```
+Five violations, none CommonJS: `cfg.require("x")`, `cfg["require"]("x")`, `cfg.nested["require"]("x")`,
+`const { require: renamed } = cfg`, and two accesses through a receiver typed `any`. The pre-existing
+companion (`local.require("x")` declared in the file under test) passes either way, which is why it
+could not detect this.
+
+The opposite injection proves the narrowing did not go too far. Making the ambient-global arm return
+`false` failed six tests, including four of the five ambient cases:
+```
+× a require member reached through an AMBIENT global still fails closed  (×4)
+AssertionError: expected [] to include 'domain->unresolved'
+  src/__tests__/fitness/dependency-rule.test.ts:484
+× indirect CommonJS loaders fail closed  (module.require / module["require"], ×2)
+```
+The fifth ambient case (`const loader = module; loader.require(…)`) survived that injection because it
+is caught by the OTHER arm - the member's own declaration being ambient - so the two arms are shown to
+be independently live rather than one masking the other.
+
+Four independent injections were run against the release-scoped placeholder proofs; each failed:
+```
+1) placeholder left UNLISTED    IANA_TIME_ZONE_PLACEHOLDER_ZONES = []
+   AssertionError: expected [] to deeply equal [ 'Factory' ]            (decision-core.test.ts:462)
+
+2) OVER-BROAD declaration       [..., "America/Toronto"]
+   AssertionError: expected [ 'America/Toronto', 'Factory' ] to deeply equal [ 'Factory' ]
+
+3) subtraction made a NO-OP     timeZoneNameSchema(release.zones)
+   AssertionError: expected true to be false                            (decision-core.test.ts:468)
+
+4) aliases BYPASS the subtraction (alias resolved against the UNFILTERED zone list)
+   AssertionError: expected true to be false                            (decision-core.test.ts:500)
+```
+Injection 4 is the one the replaced `expect(placeholders.has(target)).toBe(false)` arm could not see:
+the pinned release has no alias targeting a placeholder, so that arm was vacuous in its refusing
+direction. Under injection 4 every earlier assertion in that test - review record, placeholder
+refusal, admitted set, alias equivalence - still PASSES, and the only failure inside it is the
+constructed alias-of-a-placeholder assertion at line 500, so the new arm is live on its own rather
+than carried by a neighbour. (The separate constructed-release companion at line 517 catches injection
+4 as well, which is the cross-check that the two are proving the same rule.) Injections 1 and 2
+confirm the release-keyed review record still rejects both an unlisted and an over-broad placeholder
+declaration, which is what the removed module-constant equality was doing.
+
+**Revert:** restored `_fence-utils.ts`, `time-zone.ts`, and `IANA_TIME_ZONE_PLACEHOLDER_ZONES` after
+each injection (`git diff` clean against the fixed tree); typecheck, lint, knip, build, v3:invariants,
+golden:validate, and the full suite pass, with all four fixture digests unchanged, both registry pins
+untouched, and contracts at 2360/2400.
+
+**Date:** 2026-07-27 (review corrections F71-F74, D-056).

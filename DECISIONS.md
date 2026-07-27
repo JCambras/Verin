@@ -892,7 +892,8 @@ Placeholder membership is therefore a DECLARATION carried by each release entry,
 release is adopted (ADR-0029's Revisit-When now says so), and the blocking proofs are deterministic
 from the pinned data: the declared set is pinned, the config boundary's admitted set is EXACTLY the
 release minus that set (an unlisted placeholder still boots, an over-broad subtraction refuses a real
-`Zone` - both fail), no `Link` targets a placeholder, `Factory` stays refused at the configuration
+`Zone` - both fail), no `Link` targets a placeholder (**D-056 replaces that arm** with the equivalence
+it was standing in for, for the reason recorded there), `Factory` stays refused at the configuration
 boundary while a bundle that already recorded it still parses and hash-verifies, and the CONSTRUCTED
 two-release companion still proves the subtraction is release-scoped rather than hardcoded. No
 host-ICU observation remains that can fail the build. The `firmTimezone` comment at the boundary now
@@ -906,3 +907,60 @@ moved. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouch
 the boundary subtracts exactly what the release declares, which the pinned registry can decide alone.
 **Revert path:** restore the `Intl` sweep and the exact-equality arm in the placeholder test, and
 revert the `firmTimezone` comment, ADR-0029, and this entry's pointer in D-054.
+
+### D-056 · 2026-07-27 · captain-decision · Non-ratified helpers stay module-local, the require scan reads value position, and placeholder proofs are release-keyed
+
+Four decision-core runtime exports had no consumer anywhere in the repo and no place on the ratified
+surface (`docs/v3/verin-core-contracts.ts`): `HumanRequestTriggerSchema` and `SystemEventTriggerSchema`
+were zero-caller `.readonly()` aliases - `TriggerSchema` composes the un-readonly `*ObjectSchema`
+values, so removing them changes no parse behaviour - and `triggerFirmId` and `scopedReferenceKey` each
+had exactly one caller, inside their own module. `knip.json` treats `src/contracts/**/*.ts` as an entry
+point (the layer is a vocabulary other layers import from), so its dead-export rule cannot see them and
+charter #5 went unenforced here. All four are now module-local or gone. The THREE narrowing guards
+`isProceedDecision` / `isBlockedDecision` / `isProhibitedDecision` stay exported unchanged: they ARE
+ratified surface (`docs/v3/verin-core-contracts.ts`, SHA-256-pinned) held for later consumers, which is
+the distinction that makes the other four dead rather than early.
+
+The dependency-rule fence's `require` scan flagged every identifier spelled `require` that was not
+declared in the scanning file, including identifiers in MEMBER-NAME position. A member resolves into
+whichever module declares that property, so `cfg.require("x")` on a value imported from a sibling
+module - or any access through a receiver typed `any`, where the symbol resolves nowhere - reported as
+a `<non-literal require-reference>` layer violation and would have hard-failed an inner layer on a
+property that merely shares the spelling. The existing companion only exercised the SAME-FILE case,
+which passes because those symbols resolve locally, so the cross-module case was untested. The scan
+now reads value position only, and a `require` MEMBER is treated as the CommonJS loader when it hangs
+off an ambient global (`module`, `globalThis`) or is itself ambiently declared (`const m = module;
+m.require(…)`) - both arms proven live and independently non-vacuous. The implicit-JSX-runtime probe
+stopped materializing every node of every shipped file and early-exits at the first JSX node instead.
+
+The placeholder companion asserted `expect(placeholders.has(target)).toBe(false)` for every `Link` -
+"no alias of this release targets a placeholder", a DATA property of 2026b, not of the code, which
+deliberately handles the opposite case. A future release whose alias table does target a placeholder
+would have reddened the build on data this boundary already handles correctly, reading `expected true
+to be false` rather than naming the adoption: the same shape as the host-ICU coupling D-055 removed.
+The assertion is now the EQUIVALENCE it was standing in for - an alias is admitted exactly when its
+target is, and only then resolves to it - which holds for any release, with the refusing arm exercised
+on the pinned release plus one constructed alias that does target a declared placeholder. Placeholder
+membership is likewise checked against a review record keyed BY RELEASE rather than against a
+single-release module constant, so adopting a release ADDS an entry and an unreviewed release fails
+outright, while an unlisted or over-broad declaration still fails as before.
+
+`.env.example` and ADR-0029 no longer claim "Migration: none". Every IANA spelling that booted before
+ADR-0029 still boots - Zones and `Link` aliases alike, in any casing - but ECMA-402 fixed-offset
+identifiers such as `+05:30` and `-08:00`, which the superseded host-`Intl` guard accepted, now fail
+FATAL at boot. That is the entire blast radius and it is an explicit NON-GOAL: an offset carries no DST
+rules, belongs to no tzdb release, and has no canonical `Zone` to persist and hash, so it can never
+carry the release-scoped replay semantics every accepted value does.
+
+No schema, projection, byte, or digest changes: schema and preimage versions stay 1.7.0, both registry
+pins are untouched, and every recorded fixture hash still reproduces. The contracts layer now measures
+**2360** lines against the 2400 ceiling - **40 lines of headroom**, up from 36, because the dead
+exports left. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched, and
+placeholder membership stays review-enforced at release adoption (ADR-0029 Revisit-When), not
+fence-enforced.
+**Why:** charter #5 does not exempt a layer knip cannot police; a fence that fails on unrelated code is
+worse than none (charter #4); and a proof pinned to incidental release data fails the release it was
+meant to protect.
+**Revert path:** re-export the four helpers, restore the file-local `require` symbol test and the
+whole-AST JSX probe, restore the `no Link targets a placeholder` and module-constant assertions, and
+revert the `.env.example` / ADR-0029 migration wording.
