@@ -146,25 +146,37 @@ export type ScopeRef = z.infer<typeof ScopeRefSchema>;
 export const RoleRefSchema = tenantScopedReference(RoleIdSchema);
 export type RoleRef = z.infer<typeof RoleRefSchema>;
 
+/** The shape every tenant-scoped reference shares: firm plus opaque branded id. */
+export type ScopedReference = { readonly firmId: string; readonly id: string };
+
+/**
+ * THE canonical order for tenant-scoped references - firm first, then opaque id.
+ * Every set-like collection and every hash preimage sorts through this one
+ * comparator: a second ordering would let a parsed record and its hash preimage
+ * disagree the day references stop being single-tenant (ADR-0029, D-051).
+ */
+export const compareScopedReferences = (left: ScopedReference, right: ScopedReference): number => {
+  if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+};
+
+/**
+ * Set semantics for tenant-scoped references: identity is the (firm, id) PAIR, keyed
+ * through a NUL separator so no two distinct pairs can concatenate into one key.
+ */
+export const hasUniqueScopedReferences = (references: readonly ScopedReference[]): boolean =>
+  new Set(references.map(scopedReferenceKey)).size === references.length;
+
+export const scopedReferenceKey = (reference: ScopedReference): string =>
+  `${reference.firmId}\u0000${reference.id}`;
+
 const roleRefSet = (minimum: number) =>
   z
     .array(RoleRefSchema)
     .min(minimum)
-    .refine(
-      (refs) =>
-        refs.every(
-          (ref, index) =>
-            !refs.slice(0, index).some(
-              (candidate) => candidate.firmId === ref.firmId && candidate.id === ref.id,
-            ),
-        ),
-      "duplicate role reference",
-    )
+    .refine(hasUniqueScopedReferences, "duplicate role reference")
     .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "role references must belong to one tenant")
-    .overwrite((refs) => [...refs].sort((left, right) => {
-      if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
-      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-    }))
+    .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly();
 
 export const RoleRefSetSchema = roleRefSet(0);

@@ -21,9 +21,42 @@ import {
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 
-/** After `after` with no quorum, escalate to `roleIds` for `reasonCode`. */
+const DURATION_COMPONENT = /(\d+(?:[.,]\d+)?)[YMWDHS]/g;
+
+/**
+ * Strictly positive, decided by READING the duration rather than by trusting the
+ * shape of the accepted grammar: any sign at all is refused, and at least one
+ * component magnitude must exceed zero. A guard written as "does not start with -"
+ * silently inherits whatever ISO-8601 profile the validation library ships (8601-2
+ * permits a sign on each individual component), so the day that profile widens,
+ * "PT-1H" would become a stage that is already expired the moment it is created.
+ *
+ * Exported so the invariant is testable against signed forms DIRECTLY: today's
+ * validator refuses them before this predicate ever runs, which would leave the
+ * soundness of the check unverifiable through the schema alone.
+ */
+export const isStrictlyPositiveDuration = (duration: string): boolean => {
+  if (/[+-]/.test(duration)) return false;
+  let total = 0;
+  for (const match of duration.matchAll(DURATION_COMPONENT)) {
+    total += Number.parseFloat((match[1] ?? "0").replace(",", "."));
+  }
+  return total > 0;
+};
+
+/** Every approval duration is strictly positive - relative expiry AND escalation delay. */
+const PositiveApprovalDurationSchema = DurationSchema.refine(
+  isStrictlyPositiveDuration,
+  "approval duration must be strictly positive",
+);
+
+/**
+ * After `after` with no quorum, escalate to `roleIds` for `reasonCode`. `after` is a
+ * positive delay for the same reason `expiresAfter` is: "PT0S" would escalate
+ * instantly and "-P1D" would escalate into the past.
+ */
 export const EscalationStepSchema = z.strictObject({
-  after: DurationSchema,
+  after: PositiveApprovalDurationSchema,
   roleIds: NonEmptyRoleRefSetSchema,
   reasonCode: ReasonCodeSchema,
 }).readonly();
@@ -51,11 +84,6 @@ const stageCore = {
   requirements: z.array(ApprovalRequirementSchema).min(1).readonly(),
   escalationPath: z.array(EscalationStepSchema).readonly(),
 };
-
-const PositiveApprovalDurationSchema = DurationSchema.refine(
-  (duration) => !duration.startsWith("-") && /[1-9]/.test(duration),
-  "approval-stage expiration must be strictly positive",
-);
 
 /**
  * Parse-time stage integrity, mirroring ExecutionPlan's: approvals bind to stages
