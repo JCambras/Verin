@@ -46,7 +46,7 @@ export type StepResult =
 export interface FlowStep<D> {
   id: string;
   name: string;
-  execute(ctx: FlowData, deps: D): Promise<StepResult>;
+  execute(ctx: FlowData, deps: D, tenant: TenantContext): Promise<StepResult>;
 }
 
 export interface FlowDefinition<D> {
@@ -76,7 +76,7 @@ async function drive<D>(
     const step = def.steps[cursor]!;
     let result: StepResult;
     try {
-      result = await step.execute(data, deps);
+      result = await step.execute(data, deps, tenant);
     } catch (e) {
       // Only a real AppError (in-taxonomy code) passes through; anything else —
       // driver errors with a `code` like '23505'/'ENOENT' included — becomes a

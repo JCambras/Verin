@@ -3,7 +3,11 @@ import { REDACTED } from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { tokenizeText, tokenizeRecord, isSealedTokenized } from "@infra/pii/tokenize";
 import { parseMaskedLlmRequest, type MaskedLlmRequest } from "@infra/llm/request-schema";
-import { projectForLlm } from "@infra/pii/llm-projection";
+import {
+  bindEntityMask,
+  projectForLlm,
+  type EntityMaskBinding,
+} from "@infra/pii/llm-projection";
 
 /**
  * The runtime half of v3 invariant 1: the Tokenized factory scrubs by
@@ -40,6 +44,19 @@ describe("the Tokenized factory scrubs by construction", () => {
     // Non-PII business values survive the scrub.
     expect(json).toContain("812000");
     expect(isSealedTokenized(t)).toBe(true);
+  });
+  it("deep-freezes structured payloads after sealing", () => {
+    const source = { nested: { notes: ["safe"] } };
+    const token = tokenizeRecord(source);
+    expect(Object.isFrozen(token.value)).toBe(true);
+    expect(Object.isFrozen(token.value.nested)).toBe(true);
+    expect(Object.isFrozen(token.value.nested.notes)).toBe(true);
+    expect(() => {
+      (token.value.nested.notes as unknown as string[]).push("Alice account 941000517334");
+    }).toThrow(TypeError);
+    source.nested.notes[0] = "changed-after-tokenization";
+    expect(token.value.nested.notes[0]).toBe("safe");
+    expect(isSealedTokenized(token)).toBe(true);
   });
   it("a structural impostor literal is NOT sealed (the runtime check behind the fence)", () => {
     const impostor = { value: RAW.name, piiFree: true } as Tokenized<string>;
@@ -94,7 +111,11 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: `Wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
       slots: [{ slotName: "subject_1", slotType: "subject" }, { slotName: "amount_1", slotType: "amount" }],
-      masks: [{ slotName: "subject_1", rawText: RAW.name }],
+      bindings: [bindEntityMask({
+        slotName: "subject_1",
+        slotType: "subject",
+        rawValues: [RAW.name],
+      })],
       evidence: { household: { name: RAW.name }, ssn: RAW.ssn, plannedWithdrawals: 12000 },
     });
     expect(r.ok).toBe(true);
@@ -110,7 +131,11 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name.toLowerCase()}`,
       slots: [{ slotName: "subject_1", slotType: "subject" }],
-      masks: [{ slotName: "subject_1", rawText: RAW.name }],
+      bindings: [bindEntityMask({
+        slotName: "subject_1",
+        slotType: "subject",
+        rawValues: [RAW.name],
+      })],
       evidence: {},
     });
     expect(r.ok).toBe(true);
@@ -123,7 +148,11 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name}`,
       slots: [{ slotName: "subject_1", slotType: "subject" }],
-      masks: [{ slotName: "$&", rawText: RAW.name }],
+      bindings: [{
+        slotName: "$&",
+        slotType: "subject",
+        rawValues: [RAW.name],
+      } as unknown as EntityMaskBinding],
       evidence: {},
     });
     expect(r.ok).toBe(false);
@@ -140,9 +169,17 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
         { slotName: "subject_1", slotType: "subject" },
         { slotName: "subject_2", slotType: "subject" },
       ],
-      masks: [
-        { slotName: "subject_2", rawText: "Adaeze" },
-        { slotName: "subject_1", rawText: RAW.name },
+      bindings: [
+        bindEntityMask({
+          slotName: "subject_2",
+          slotType: "subject",
+          rawValues: ["Adaeze"],
+        }),
+        bindEntityMask({
+          slotName: "subject_1",
+          slotType: "subject",
+          rawValues: [RAW.name],
+        }),
       ],
       evidence: {},
     });
@@ -157,7 +194,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "John Smith account 941000517334",
       slots: [],
-      masks: [],
+      bindings: [],
       evidence: { note: "John Smith account 941000517334" },
     });
     expect(r.ok).toBe(false);
@@ -174,18 +211,61 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       slots: [{ slotName: "subject_1", slotType: "subject" as const }],
       evidence: {},
     };
-    expect(projectForLlm({ ...base, masks: [] }).ok).toBe(false);
+    expect(projectForLlm({ ...base, bindings: [] }).ok).toBe(false);
     expect(projectForLlm({
       ...base,
-      masks: [{ slotName: "subject_1", rawText: "unrelated person" }],
+      bindings: [bindEntityMask({
+        slotName: "subject_1",
+        slotType: "subject",
+        rawValues: ["unrelated person"],
+      })],
     }).ok).toBe(false);
+  });
+  it("refuses caller-declared mask metadata and masks single-word names from sealed bindings", () => {
+    const base = {
+      purpose: "intent-shaping" as const,
+      requestText: "Alice wants account",
+      slots: [{ slotName: "subject_1", slotType: "subject" as const }],
+      evidence: {},
+    };
+    const callerDeclared = {
+      slotName: "subject_1",
+      slotType: "subject",
+      rawValues: ["account"],
+    } as unknown as EntityMaskBinding;
+    expect(projectForLlm({ ...base, bindings: [callerDeclared] }).ok).toBe(false);
+    expect(projectForLlm({
+      ...base,
+      bindings: [null as unknown as EntityMaskBinding],
+    }).ok).toBe(false);
+    expect(projectForLlm({
+      ...base,
+      masks: [{ slotName: "subject_1", rawText: "account" }],
+    } as never).ok).toBe(false);
+
+    const result = projectForLlm({
+      ...base,
+      bindings: [bindEntityMask({
+        slotName: "subject_1",
+        slotType: "subject",
+        rawValues: ["Alice"],
+      })],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("{{subject_1}} wants account");
+    }
   });
   it("masks known entities in untyped evidence values before tokenization", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Review ${RAW.name}`,
       slots: [{ slotName: "subject_1", slotType: "subject" }],
-      masks: [{ slotName: "subject_1", rawText: RAW.name }],
+      bindings: [bindEntityMask({
+        slotName: "subject_1",
+        slotType: "subject",
+        rawValues: [RAW.name],
+      })],
       evidence: { note: `${RAW.name} requested a review` },
     });
     expect(r.ok).toBe(true);

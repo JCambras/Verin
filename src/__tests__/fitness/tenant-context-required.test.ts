@@ -4,6 +4,7 @@ import {
   Node,
   type ParameterDeclaration,
   type Project,
+  type Signature,
   type Type,
 } from "ts-morph";
 import {
@@ -182,15 +183,39 @@ export function detectUnscopedPortMethods(
     const normalized = normalizedPath(sf.getFilePath());
     if (!normalized.startsWith("src/domain/")) continue;
     for (const iface of sf.getInterfaces()) {
-      if (!iface.isExported() || !/(Port|Store)$/.test(iface.getName())) continue;
-      for (const method of iface.getMethods()) {
-        const ref = `${normalized} :: ${iface.getName()}.${method.getName()}`;
-        if (
-          !escapes.has(ref) &&
-          !method.getParameters().some((parameter) => carriesTenant(parameter.getType()))
-        ) {
-          out.push(ref);
+      if (!iface.isExported()) continue;
+      const callableMembers: Array<{ ref: string; signatures: Signature[] }> = [];
+      for (const property of iface.getType().getProperties()) {
+        const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
+        if (!declaration) continue;
+        const signatures = property.getTypeAtLocation(declaration).getCallSignatures();
+        if (signatures.length) {
+          callableMembers.push({
+            ref: `${normalized} :: ${iface.getName()}.${property.getName()}`,
+            signatures,
+          });
         }
+      }
+      const directCalls = iface.getType().getCallSignatures();
+      if (directCalls.length) {
+        callableMembers.push({
+          ref: `${normalized} :: ${iface.getName()}.<call>`,
+          signatures: directCalls,
+        });
+      }
+      for (const member of callableMembers) {
+        if (escapes.has(member.ref)) continue;
+        const unscoped = member.signatures.some((signature) =>
+          !signature.getParameters().some((parameter) => {
+            const declaration = parameter.getValueDeclaration() ??
+              parameter.getDeclarations()[0];
+            return Boolean(
+              declaration &&
+              carriesTenant(parameter.getTypeAtLocation(declaration)),
+            );
+          })
+        );
+        if (unscoped) out.push(member.ref);
       }
     }
   }
@@ -244,13 +269,52 @@ describe("tenant-context-required fence", () => {
 
   it("enforces: every exported domain port method requires TenantContext unless capability-keyed", () => {
     const project = realSemanticProject();
-    const portMethods = project.getSourceFiles()
+    const callableInterfaces = project.getSourceFiles()
       .filter((sf) => normalizedPath(sf.getFilePath()).startsWith("src/domain/"))
       .flatMap((sf) => sf.getInterfaces())
-      .filter((iface) => iface.isExported() && /(Port|Store)$/.test(iface.getName()))
-      .flatMap((iface) => iface.getMethods());
-    expect(portMethods.length).toBeGreaterThan(0);
+      .filter((iface) =>
+        iface.isExported() &&
+        (
+          iface.getType().getCallSignatures().length > 0 ||
+          iface.getType().getProperties().some((property) => {
+            const declaration = property.getValueDeclaration() ??
+              property.getDeclarations()[0];
+            return Boolean(
+              declaration &&
+              property.getTypeAtLocation(declaration).getCallSignatures().length,
+            );
+          })
+        )
+      );
+    expect(callableInterfaces.length).toBeGreaterThanOrEqual(3);
     expect(detectUnscopedPortMethods(project, PORT_ESCAPES)).toEqual([]);
+  });
+
+  it("enforces: no stale domain-port escapes", () => {
+    const project = realSemanticProject();
+    const live = new Set<string>();
+    for (const sf of project.getSourceFiles()) {
+      const normalized = normalizedPath(sf.getFilePath());
+      if (!normalized.startsWith("src/domain/")) continue;
+      for (const iface of sf.getInterfaces().filter((candidate) =>
+        candidate.isExported()
+      )) {
+        for (const property of iface.getType().getProperties()) {
+          const declaration = property.getValueDeclaration() ??
+            property.getDeclarations()[0];
+          if (
+            declaration &&
+            property.getTypeAtLocation(declaration).getCallSignatures().length
+          ) {
+            live.add(`${normalized} :: ${iface.getName()}.${property.getName()}`);
+          }
+        }
+        if (iface.getType().getCallSignatures().length) {
+          live.add(`${normalized} :: ${iface.getName()}.<call>`);
+        }
+      }
+    }
+    expect([...PORT_ESCAPES].filter((ref) => !live.has(ref))).toEqual([]);
   });
 
   describe("detects (companion): semantic and declaration-form evasions are caught", () => {
@@ -322,6 +386,36 @@ describe("tenant-context-required fence", () => {
       });
       expect(detectUnscopedPortMethods(project, new Set())).toEqual([
         "src/domain/evil.ts :: EvidencePort.load",
+      ]);
+    });
+
+    it("flags dependency-shaped interfaces regardless of their name", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `
+          export interface AccountOpeningDeps {
+            createContact(input: { firstName: string }): Promise<void>;
+          }
+        `,
+      });
+      expect(detectUnscopedPortMethods(project, new Set())).toEqual([
+        "src/domain/evil.ts :: AccountOpeningDeps.createContact",
+      ]);
+    });
+
+    it("flags callable-property and direct-call port signatures", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `
+          export interface LoaderDeps {
+            load: (id: string) => unknown;
+          }
+          export interface Resolver {
+            (id: string): unknown;
+          }
+        `,
+      });
+      expect(detectUnscopedPortMethods(project, new Set())).toEqual([
+        "src/domain/evil.ts :: LoaderDeps.load",
+        "src/domain/evil.ts :: Resolver.<call>",
       ]);
     });
   });

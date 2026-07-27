@@ -149,7 +149,19 @@ export function realSemanticProject(): Project {
 
 /** An in-memory Project for companion tests. */
 export function inMemoryProject(files: Record<string, string>): Project {
-  const project = new Project({ useInMemoryFileSystem: true });
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: {
+      baseUrl: "/",
+      paths: {
+        "@contracts/*": ["src/contracts/*"],
+        "@domain/*": ["src/domain/*"],
+        "@infra/*": ["src/infrastructure/*"],
+        "@app/*": ["src/app/*"],
+        "@/*": ["src/*"],
+      },
+    },
+  });
   for (const [path, content] of Object.entries(files)) project.createSourceFile(path, content);
   return project;
 }

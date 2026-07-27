@@ -611,3 +611,47 @@ credentials have no complete safe regex).
 **Revert path:** revert this review-fix changeset, remove migration 3 only if it
 has not shipped to a persistent store, and restore the prior PF-027 through
 PF-031 implementations. D-039 remains the underlying prompt-6 decision.
+
+### D-041 · 2026-07-26 · reversible · Prompt-6 authority, token immutability, and semantic boundary fences hardened
+
+All six second-round review findings were legitimate instances of three
+remaining structural gaps: authorization and masking still accepted
+caller-assembled metadata, sealed wrappers did not make their payloads
+immutable, and two completeness fences classified contracts by declaration
+names or direct properties instead of their semantic callable shape.
+
+- `ActorRef` is now compile-time branded, runtime-sealed, frozen, and derived
+  only from a sealed `Principal`. `authorizeGovernedAction` rejects unsealed
+  actors before consulting the role allowlist, so a caller cannot combine a
+  valid tenant with a fabricated elevated role. `ActorRef` construction is
+  included in the sealed-security-types fence.
+- Evidence projection accepts sealed `EntityMaskBinding` values rather than
+  caller-declared masks. Binding and tokenization factories are semantically
+  callsite-fenced, with token creation owned by the projection boundary and no
+  shipped entity-binding mint site until deterministic resolution lands.
+- `Tokenized<T>.value` is deeply readonly in the contract. The scrubbed clone is
+  recursively frozen before the wrapper is sealed, so neither the source object
+  nor nested arrays or records can mutate a valid token afterward.
+- The tenant-context fence now inspects every callable member and direct call
+  signature on exported domain interfaces, independent of `Port`, `Store`, or
+  `Deps` naming. The flow step contract and every `AccountOpeningDeps` method
+  receive the sealed tenant explicitly; the adapter rejects a scope that does
+  not match its bound actor.
+- Observability exposes only allowlisted PostgreSQL SQLSTATE categories.
+  Caller-controlled five-character codes fall back to `unexpected-error`.
+- The PII marker floor now resolves `PIIBearing` and `Tokenized` by declaration
+  identity and inspects method parameters, callable properties, call
+  signatures, inline objects, and return types. A locally named `Tokenized`
+  cannot create an exemption.
+
+**Alternatives:** authorize directly from `Principal` and remove `ActorRef`
+(rejected because the ratified contracts retain actor references beyond the
+authorization seam); expand name and account regexes again (rejected because
+mask ownership, not probabilistic text recognition, is the durable boundary);
+add `Deps` to the port-name regex (rejected because the next naming variation
+would recreate the false green).
+
+**Revert path:** revert this changeset and restore the prior `ActorRef`,
+projection input, shallow token contract, flow dependency signatures, driver
+code pattern, and PF-027 through PF-029 implementations. D-039 and D-040 remain
+the underlying prompt-6 decisions.

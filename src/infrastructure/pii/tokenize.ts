@@ -13,13 +13,26 @@
  * shaping (prompt 13) lands INSIDE this factory, never beside it.
  */
 import { assertNoAmbiguousSensitiveText, assertNoPIIValues } from "@contracts/pii";
-import type { Tokenized } from "@contracts/tokenized";
+import type { DeepReadonly, Tokenized } from "@contracts/tokenized";
 import { scrub } from "./scrub";
 
 const SEAL = Symbol("verin.tokenized.seal");
 
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> {
+  if (value === null || typeof value !== "object" || seen.has(value)) {
+    return value as DeepReadonly<T>;
+  }
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  return Object.freeze(value) as DeepReadonly<T>;
+}
+
 function seal<T>(value: T): Tokenized<T> {
-  const t = Object.defineProperty({ value, piiFree: true as const }, SEAL, { value: true, enumerable: false });
+  const t = Object.defineProperty(
+    { value: deepFreeze(value), piiFree: true as const },
+    SEAL,
+    { value: true, enumerable: false },
+  );
   // The ONE sanctioned Tokenized cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(t) as Tokenized<T>;
 }
@@ -33,8 +46,10 @@ export function tokenizeText(raw: string): Tokenized<string> {
 }
 
 /** Deep-scrub a structured payload (evidence projection) into a Tokenized record. */
-export function tokenizeRecord(raw: Readonly<Record<string, unknown>>): Tokenized<Readonly<Record<string, unknown>>> {
-  const scrubbed = scrub(raw) as Readonly<Record<string, unknown>>;
+export function tokenizeRecord<T extends Readonly<Record<string, unknown>>>(
+  raw: T,
+): Tokenized<T> {
+  const scrubbed = scrub(raw) as T;
   assertNoPIIValues(scrubbed, "llm");
   assertNoAmbiguousSensitiveText(scrubbed, "llm");
   return seal(scrubbed);

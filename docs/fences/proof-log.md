@@ -1018,3 +1018,65 @@ repository interface.
 The CI seed plus `pnpm audit:chain` also verified the migrated store.
 
 **Date:** 2026-07-26 (review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 2 (2026-07-26)
+
+The second review found remaining false-green paths in PF-027 through PF-029.
+Each strengthened rule was proven against a real-source injection. The
+violations below were injected together, each fence was run independently, and
+all injections were then reverted.
+
+### PF-027 callable domain contracts
+
+The tenant fence now discovers callable members and direct call signatures
+semantically on every exported domain interface, regardless of the interface
+name. The account-opening dependency contract and the generic flow-step
+contract carry `TenantContext` on every call.
+
+```
+# removed TenantContext from AccountOpeningDeps.createHousehold:
+  × enforces: every exported domain port method requires TenantContext unless capability-keyed
+    AssertionError:
+    src/domain/workflow/flows/account-opening.ts ::
+    AccountOpeningDeps.createHousehold
+    ❯ src/__tests__/fitness/tenant-context-required.test.ts:290
+```
+
+### PF-028 sealed actor and mask authority
+
+`ActorRef` and `EntityMaskBinding` joined the sealed-type registry.
+`tokenizeText`, `tokenizeRecord`, and `bindEntityMask` joined the semantic
+trusted-factory callsite fence. Runtime authorization refuses an unsealed actor,
+and only the projection boundary may construct LLM tokens.
+
+```
+# cast an object to ActorRef and called tokenizeText from wire.ts:
+  × enforces: sealed types are built only in their factory modules
+    src/infrastructure/wire.ts:264 - cast to sealed type 'ActorRef' outside its factory
+    src/infrastructure/wire.ts:264 - object literal constructs sealed type 'ActorRef'
+    ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:278
+  × enforces: identity and system minting factories are called only at reviewed boundaries
+    src/infrastructure/wire.ts:22 - tokenizeText referenced outside its reviewed boundary
+    src/infrastructure/wire.ts:266 - tokenizeText referenced outside its reviewed boundary
+    ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:282
+```
+
+### PF-029 callable PII reachability
+
+The marker-completeness floor resolves the real `PIIBearing` and `Tokenized`
+declarations semantically. It follows callable parameters, inline object
+members, callable properties, direct call signatures, and return types.
+
+```
+# added an unmarked callable interface with a nested firstName parameter:
+  × enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked
+    src/infrastructure/pii/llm-projection.ts ::
+    CallableLeak.persist(input).firstName
+    ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:367
+```
+
+**Revert:** removed the `ActorRef` cast, direct tokenization call, unscoped
+dependency method, and callable PII leak. Focused unit, integration, and fence
+tests passed after the revert.
+
+**Date:** 2026-07-26 (second review-fix round on v3 build-sequence prompt 6).

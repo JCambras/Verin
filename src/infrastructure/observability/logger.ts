@@ -44,6 +44,19 @@ export const loggerOptions: pino.LoggerOptions = {
 
 export const log = pino(loggerOptions);
 
+const SAFE_DRIVER_ERROR_CODES = new Set([
+  "08006",
+  "23502",
+  "23503",
+  "23505",
+  "23514",
+  "40001",
+  "40P01",
+  "53300",
+  "57014",
+  "57P01",
+]);
+
 function scrubStructuredLog(
   value: unknown,
   keyIsPII = false,
@@ -82,7 +95,7 @@ export function safeReason(e: unknown): string {
     e !== null &&
     "code" in e &&
     typeof (e as { code: unknown }).code === "string" &&
-    /^[0-9A-Z]{5}$/.test((e as { code: string }).code)
+    SAFE_DRIVER_ERROR_CODES.has((e as { code: string }).code)
   ) {
     return `driver-error:${(e as { code: string }).code}`;
   }
