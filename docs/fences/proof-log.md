@@ -1413,3 +1413,44 @@ AssertionError: expected true to be false // Object.is equality
 alias table, and the chronology refinement; typecheck, lint, knip, and the full suite pass.
 
 **Date:** 2026-07-27 (review corrections F62-F64, D-053).
+
+## F65-F68 · decision-core review corrections (D-054)
+
+**Invariants:** the configuration boundary refuses a `Zone` the runtime cannot format; the canonical
+serializer's plain-object refusal stays reachable on the PRODUCTION preimage paths.
+
+Removing the placeholder subtraction from `configuredTimeZoneSchema` (`timeZoneNameSchema(release.zones)`)
+failed both new companions:
+```
+× refuses to BOOT on a zone the runtime cannot format, while still reading one that persisted
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:453  LinkResolvedTimeZoneSchema.safeParse(placeholder)
+× subtracts placeholders per RELEASE, after alias resolution
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:487  configured.safeParse("Unset")
+```
+The second case is the general rule, proven on a CONSTRUCTED release: the shipped one has a single
+placeholder and no alias pointing at it, so "subtracted per release, after resolution" would otherwise be
+indistinguishable from "Factory is hardcoded somewhere". The completeness arm is not a Factory-shaped
+assertion either - it sweeps every identifier the config boundary still admits against host ICU and
+requires the unformattable set to equal the declared placeholder list exactly.
+
+Removing the prototype check from `normalizeOptionalProperties` (restoring the unconditional
+`Object.fromEntries` rebuild) failed the reachability companion:
+```
+× keeps that refusal REACHABLE on the production preimage paths, not only on a direct call
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:647  canonicalJson(bundleHashPreimage({...})).ok
+```
+That is the silent failure exactly: with the rebuild in place the `Date`/`Map`/class instance is
+flattened to `{}` and the preimage hashes CLEANLY. The pre-existing direct-call test
+(`canonicalJson(new Date())`) passes either way, which is why it could not detect this. The companion
+carries its own control - the genuinely-`{}` payload still serializes - so the refusals are attributable
+to the non-plain value, not to a reject-everything path, and the fixture digest assertion still
+reproduces `bundle.bundleHash`.
+
+**Revert:** restored the placeholder subtraction and the shared `isPlainObject` rule; typecheck, lint,
+knip, build, v3:invariants, golden:validate, and the full 450-test suite pass, with all four fixture
+digests unchanged.
+
+**Date:** 2026-07-27 (review corrections F65-F68, D-054).

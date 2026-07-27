@@ -27,14 +27,17 @@ import {
 import { TenantContextSchema } from "./actor";
 import { CANONICAL_SERIALIZER_VERSION, DECISION_CORE_SCHEMA_VERSION } from "./serialization";
 import {
-  IANA_TIME_ZONE_DATA_VERSION,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   TimeZoneSchema,
   isTimeZoneInRecordedRegistry,
 } from "../time-zone";
-export { TimeZoneSchema };
 
-/** Freshness at retrieval - the golden truth set's vocabulary ("fresh"/"stale"/"unknown"). */
+/**
+ * The evaluator's freshness verdict at retrieval - the golden truth set's vocabulary
+ * ("fresh"/"stale"/"unknown"). RECORDED, not re-derived: the staleness threshold is
+ * per-evidence-kind policy this layer does not have, so the label cannot be checked
+ * against observedAt/retrievedAt here without inventing that policy.
+ */
 export const EvidenceFreshnessSchema = z.enum(["fresh", "stale", "unknown"]);
 export type EvidenceFreshness = z.infer<typeof EvidenceFreshnessSchema>;
 
@@ -73,9 +76,9 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
     }
     // observedAt is the instant the fact itself holds; retrievedAt is when Verin
     // fetched it. Retrieval cannot precede observation - an inverted pair would bind
-    // into the decision hash as an immutable input and yield a freshness label
-    // (fresh/stale/unknown is derived from this pair) no evaluator can interpret.
-    // Equality is legal: a source that reports as-of == fetched-at is ordinary.
+    // into the decision hash as an immutable input, and every downstream evaluator
+    // that reads the pair (the freshness threshold owner among them) would be reading
+    // a nonsense interval. Equality is legal: as-of == fetched-at is ordinary.
     if (snapshot.retrievedAt < snapshot.observedAt) {
       ctx.addIssue({
         code: "custom",
@@ -94,8 +97,6 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-export const TIME_ZONE_DATA_VERSION = IANA_TIME_ZONE_DATA_VERSION;
-
 export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
   schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),

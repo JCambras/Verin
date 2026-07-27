@@ -16,8 +16,6 @@ import { EvidenceRequestSchema, IntentSchema } from "@contracts/decision-core/tr
 import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
-  TIME_ZONE_DATA_VERSION,
-  TimeZoneSchema,
   type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
@@ -48,10 +46,12 @@ import {
   CANONICAL_IANA_TIME_ZONE_LINKS,
   IANA_TIME_ZONE_DATA_VERSION,
   IANA_TIME_ZONE_LINK_REGISTRY_SHA256,
+  IANA_TIME_ZONE_PLACEHOLDER_ZONES,
   IANA_TIME_ZONE_REGISTRY_SHA256,
   LinkResolvedTimeZoneSchema,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   SUPPORTED_IANA_TIME_ZONE_RELEASES,
+  TimeZoneSchema,
   configuredTimeZoneSchema,
   isTimeZoneInRecordedRegistry,
   timeZoneNameSchema,
@@ -116,7 +116,7 @@ const validBundle = {
   evidenceSnapshotRefs: [{ firmId: "firm-a", id: "evs:u:1" }],
   asOf: timestamp,
   timeZone: "America/New_York",
-  timeZoneDataVersion: TIME_ZONE_DATA_VERSION,
+  timeZoneDataVersion: IANA_TIME_ZONE_DATA_VERSION,
   bundleHash: hash,
 };
 
@@ -235,7 +235,6 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
   });
 
   it("uses a version-pinned time-zone registry independent of host ICU data", () => {
-    expect(TIME_ZONE_DATA_VERSION).toBe(IANA_TIME_ZONE_DATA_VERSION);
     expect(
       createHash("sha256").update(CANONICAL_IANA_TIME_ZONES.join("\n")).digest("hex"),
     ).toBe(IANA_TIME_ZONE_REGISTRY_SHA256);
@@ -399,8 +398,13 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const older = {
       zones: ["America/Nipigon", "America/Toronto"],
       links: { "Canada/Eastern": "America/Nipigon" },
+      placeholderZones: [],
     };
-    const newer = { zones: ["America/Toronto"], links: { "Canada/Eastern": "America/Toronto" } };
+    const newer = {
+      zones: ["America/Toronto"],
+      links: { "Canada/Eastern": "America/Toronto" },
+      placeholderZones: [],
+    };
 
     // The alias table travels with ITS release: one spelling, two canonical answers.
     // A single un-versioned Link table could not express this, so it lives in the map.
@@ -430,11 +434,61 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
         expect(LinkResolvedTimeZoneSchema.safeParse(zone).success).toBe(false);
       }
     }
-    for (const zone of ["America/New_York", "Etc/UTC", "Factory"]) {
+    for (const zone of ["America/New_York", "Etc/UTC"]) {
       expect(current.zones).toContain(zone);
       expect(LinkResolvedTimeZoneSchema.parse(zone)).toBe(zone);
     }
     expect(LinkResolvedTimeZoneSchema.parse("UTC")).toBe(current.links["UTC"]);
+  });
+
+  it("refuses to BOOT on a zone the runtime cannot format, while still reading one that persisted", () => {
+    // tzdb ships `Factory` as the placeholder for an unconfigured system and CLDR/ICU
+    // omits it, so it is a legal registry name that no formatter resolves. Configuring
+    // it would boot and then throw at the first local-time render - the fail-late
+    // shape the release-scoped config boundary exists to refuse.
+    const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
+    for (const placeholder of IANA_TIME_ZONE_PLACEHOLDER_ZONES) {
+      expect(current.zones).toContain(placeholder);
+      expect(() => new Intl.DateTimeFormat("en", { timeZone: placeholder })).toThrow(RangeError);
+      expect(LinkResolvedTimeZoneSchema.safeParse(placeholder).success).toBe(false);
+      // ...and it stays a readable, hash-verifiable PERSISTED value.
+      expect(TimeZoneSchema.safeParse(placeholder).success).toBe(true);
+      const persisted = DecisionInputBundleSchema.parse({ ...validBundle, timeZone: placeholder });
+      expect(persisted.timeZone).toBe(placeholder);
+      expect(hashPreimage(bundleHashPreimage(persisted))).toHaveLength(64);
+    }
+    // NON-VACUOUS: the exclusion list is COMPLETE, not just "contains Factory". Every
+    // name the config boundary still admits must be one the host runtime can format,
+    // so a placeholder added to a future release cannot slip through unlisted.
+    const placeholders = new Set<string>(IANA_TIME_ZONE_PLACEHOLDER_ZONES);
+    const unformattable = [...current.zones, ...Object.keys(current.links)].filter((zone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: zone }).format(0);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(unformattable.filter((zone) => !placeholders.has(zone))).toEqual([]);
+    expect(unformattable).toEqual([...IANA_TIME_ZONE_PLACEHOLDER_ZONES]);
+  });
+
+  it("subtracts placeholders per RELEASE, after alias resolution", () => {
+    // Proven on a constructed release, because the shipped one has a single
+    // placeholder and no alias pointing at it - the general rule would otherwise be
+    // indistinguishable from "Factory is hardcoded somewhere".
+    const release = {
+      zones: ["America/Toronto", "Local"],
+      links: { "Canada/Eastern": "America/Toronto", Unset: "Local" },
+      placeholderZones: ["Local"],
+    };
+    const configured = configuredTimeZoneSchema(release);
+    expect(configured.parse("Canada/Eastern")).toBe("America/Toronto");
+    expect(configured.safeParse("Local").success).toBe(false);
+    // An ALIAS of a placeholder is refused too: the subtraction runs after resolution.
+    expect(configured.safeParse("Unset").success).toBe(false);
+    // A release that declares no placeholder still admits the same name.
+    expect(configuredTimeZoneSchema({ ...release, placeholderZones: [] }).parse("Local")).toBe("Local");
   });
 
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
@@ -563,6 +617,44 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expect(canonicalJson(circular as JsonValue).ok).toBe(false);
+  });
+
+  it("keeps that refusal REACHABLE on the production preimage paths, not only on a direct call", () => {
+    // canonicalJson's only shipped callers are the two preimage builders, and every
+    // payload field they emit passes through optional-property normalization first. If
+    // that normalization rebuilds objects from their own entries, a Date/Map/class
+    // instance arrives at the serializer already flattened to {} and hashes as {} -
+    // structurally different decision inputs collapsing onto one hash, in the
+    // audit-chain-critical path. Probing canonicalJson directly cannot see that.
+    const bundle = DecisionInputBundleSchema.parse(JSON.parse(readFixture("decision-input-bundle")));
+    const record = DecisionRecordSchema.parse(JSON.parse(readFixture("decision-record-proceed")));
+    class OpaqueRef {
+      readonly firmId = "firm-a";
+      readonly id = "dcv:opaque";
+    }
+    for (const opaque of [new Date(timestamp), new Map([["firmId", "firm-a"]]), new OpaqueRef()]) {
+      for (const refused of [
+        canonicalJson(bundleHashPreimage({ ...bundle, domainConfigVersionRef: opaque } as unknown as typeof bundle)),
+        canonicalJson(decisionHashPreimage({ ...record, intentRef: opaque } as unknown as typeof record)),
+        // ...and nested one level down, where the recursive walk does the rebuilding.
+        canonicalJson(
+          bundleHashPreimage({
+            ...bundle,
+            policyVersionRef: { firmId: "firm-a", id: opaque },
+          } as unknown as typeof bundle),
+        ),
+      ]) {
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) expect(refused.error.message).toContain("only plain objects");
+      }
+    }
+    // The control: the flattened {} these must NOT be silently confused with DOES
+    // serialize, so the assertions above are refusals, not an unrelated failure.
+    expect(
+      canonicalJson(bundleHashPreimage({ ...bundle, domainConfigVersionRef: {} } as unknown as typeof bundle)).ok,
+    ).toBe(true);
+    // A plain-object payload still normalizes: explicit undefined is still dropped.
+    expect(hashPreimage(bundleHashPreimage(bundle))).toBe(bundle.bundleHash);
   });
 
   it("names a cycle precisely instead of relying on the stack running out", () => {

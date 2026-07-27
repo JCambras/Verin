@@ -754,10 +754,10 @@ the current path and names them, instead of surfacing a host-dependent `RangeErr
 diagnostic path lazily.
 
 The schema and both hash-preimage envelopes advance to 1.7.0; fixtures pin the new projection fingerprint
-and digests. The contracts layer measures 2324 lines by the line-budget fence's own metric, so ADR-0029
-re-baselines its ceiling from 2200 to 2400 through ADR-0018's amendment path - 76 lines of headroom.
-(The measurement and ceiling here are the FINAL post-review figures, corrected in D-053; the 2226/2300
-pair this entry first recorded went stale as the review corrections landed.)
+and digests. ADR-0029 re-baselines the contracts ceiling from 2200 to 2400 through ADR-0018's amendment
+path. (This entry's own line measurement went stale twice as review corrections landed; the FINAL
+measured figure lives in D-054 and in ADR-0029's current-state re-baseline, and is the only one to
+plan against.)
 **Why:** these are the bounded F51-F57 review corrections. They close an unsound positivity guard, an
 unguarded escalation delay, a replay-metadata field that could never be used for replay, an operational
 boot regression on long-legal timezone identifiers, a comparator that could diverge from the record it
@@ -819,14 +819,59 @@ An `EvidenceSnapshotRef` can no longer claim it was retrieved BEFORE the observa
 and the fresh/stale/unknown label is derived from it, so an inverted pair is an illegal state rather
 than a lenient one - the same discipline the approval plane already carries.
 
-The contracts layer measures 2324 lines by the line-budget fence's own metric, so ADR-0029 re-baselines
-its ceiling from 2300 to 2400 through ADR-0018's amendment path, leaving 76 lines of headroom. The prior
-2300 left 15, which blocks the next edit of any size rather than budgeting a layer. The headroom is a
-budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`. No projected
-field, byte, or digest changes: schema and preimage versions stay 1.7.0.
+ADR-0029 re-baselines the contracts ceiling from 2300 to 2400 through ADR-0018's amendment path. The
+prior 2300 left 15 lines, which blocks the next edit of any size rather than budgeting a layer. The
+headroom is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`;
+the FINAL measured figure against that ceiling is recorded in D-054. No projected field, byte, or
+digest changes: schema and preimage versions stay 1.7.0.
 **Why:** these are the bounded F62-F64 review corrections. They close a configuration boundary that
 silently inherited a replay-only widening, an alias table that could not follow a registry adoption, an
 unconstrained evidence chronology, and a ceiling with no honest headroom.
 **Revert path:** return the configuration boundary to the cross-release union, flatten the release map
 back to Zone lists with one shared alias table, drop the `retrievedAt >= observedAt` refinement and its
 companion, and restore the 2300-line ceiling.
+
+### D-054 · 2026-07-27 · captain-decision · Placeholder zones are readable but not configurable, and the canonical refusal stays reachable
+
+The shipped tz release contains exactly one identifier the runtime cannot use: tzdb's `Factory`
+placeholder for a system whose zone was never set. CLDR/ICU deliberately omits it, so
+`Intl.DateTimeFormat` throws `RangeError` on it - confirmed by sweeping all 341 `Zone`s and 257 `Link`s
+against host ICU, where it is the only failure. `FIRM_TIMEZONE=Factory` therefore booted and then threw
+at the first local-time render: fail-late, the exact shape D-053's release-scoped boundary exists to
+refuse. Placeholders are now a THIRD per-release half beside `Zone`s and `Link`s, subtracted at the
+configuration boundary AFTER alias resolution, so an alias of a placeholder is refused too. A bundle
+that already recorded `Factory` still parses and hash-verifies - reading a persisted record and
+accepting a new operator value remain two boundaries. The companion is non-vacuous: it asserts the
+exclusion list is COMPLETE (every identifier the config boundary still admits is one the host runtime
+can format), so a placeholder in a future release cannot slip through unlisted.
+
+The canonical serializer's "only plain objects can be canonicalized" refusal was unreachable on the
+only paths that reach it in shipped code. Optional-property normalization rebuilt every nested object
+from its own entries, flattening a `Date`/`Map`/class instance to `{}` before `canonicalJson` ever saw
+it - two structurally different decision inputs collapsing onto one `bundleHash`, silently, in the
+audit-chain-critical path. Normalization now passes non-plain objects through untouched under ONE
+shared prototype rule, and the companion proves the refusal through `bundleHashPreimage` /
+`decisionHashPreimage` rather than through a direct call, which cannot see this gap. The bundle's
+canonical re-sort of its two reference collections moved BEFORE projection, so both preimages now have
+exactly one normalization path instead of a second one kept in sync by hand.
+
+`freshness` is documented as the evaluator's RECORDED verdict, not something this contract re-derives:
+the staleness threshold is per-evidence-kind policy this layer does not have. The dead
+`TIME_ZONE_DATA_VERSION` alias and the `TimeZoneSchema` pass-through export are gone, so the
+`DecisionInputBundleSchema` doc block attaches to the schema it describes.
+
+**Deferred, explicitly (charter: deferrals are named, never silent):** `EscalationStep.after` is
+constrained for strict positivity ONLY. Whether a delay must fall inside its stage's own `expiresAfter`,
+and whether two steps in one `escalationPath` may share a delay (there is no ordering authority on that
+array, unlike `ApprovalStage.order`), are approval-BINDING semantics owned by prompts 18/24. Prompt 5 is
+a schema layer and does not own them. **Un-defer trigger:** prompts 18/24 landing approval binding.
+
+The contracts layer measures **2364** lines by the line-budget fence's own metric against the 2400
+ceiling - **36 lines of headroom**, the FINAL post-review figure. No projected field, byte, or digest
+changes: schema and preimage versions stay 1.7.0 and every recorded hash still reproduces.
+**Why:** these are the bounded F65-F68 review corrections. They close a config boundary that admitted an
+unformattable zone, a normalization step that defeated the serializer's own refusal, a doc block
+orphaned by a dead alias, and a comment that overstated what the contract checks.
+**Revert path:** drop `placeholderZones` from the release shape and the config filter, restore the
+prototype-blind normalization and the post-projection re-sort spread, reinstate the
+`TIME_ZONE_DATA_VERSION` alias and the `TimeZoneSchema` re-export, and revert the two comments.
