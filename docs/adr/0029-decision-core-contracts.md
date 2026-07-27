@@ -32,6 +32,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.0.0
+  envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
+  stored hash, and sorts its set-like instruction/snapshot ID lists; the decision projection excludes
+  only its stored hash. Fixture digests are SHA-256 over canonical UTF-8 bytes and must equal the
+  stored hash. A projection change requires its own version bump and migration story.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
@@ -58,8 +63,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
 ## Trade-offs and Costs
 
 - **Gained:** illegal decision states are unrepresentable at every parse boundary; invariants 7–9
-  flip active with a runnable mechanism; replay gets a versioned canonical serializer with
-  committed byte-form fixtures.
+  flip active with a runnable mechanism; replay gets a versioned canonical serializer and
+  non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
   grew 600 → 1400 (a real growth, honestly sized and ratcheted).
 
@@ -74,6 +79,6 @@ parse time, not by reviewer discipline. Three constraints meet here:
 ## Revisit When
 
 - Prompt 8/9 land primitives + policy AST (next contracts re-baseline ADR), or
-- the canonical serializer must change form (serializer version bump + migration story for
-  recorded hashes), or
+- the canonical serializer or either hash projection must change form (matching version bump +
+  migration story for recorded hashes), or
 - a second external import is proposed for `contracts/` (needs its own ADR).

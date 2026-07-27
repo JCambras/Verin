@@ -1,14 +1,22 @@
 # Decision-core canonical-serialization fixtures (ADR-0029, D-036)
 
 Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
-displayed, never fed to a compliance decision). Each file is one `DecisionRecord` committed in its
-CANONICAL byte form (`canonicalJson` in `src/contracts/decision-core/serialization.ts`, serializer
-version 1.0.0): keys sorted at every depth, no insignificant whitespace, one trailing newline.
+displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle` and
+three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
+`src/contracts/decision-core/serialization.ts`, serializer version 1.0.0): keys sorted at every
+depth, no insignificant whitespace, one trailing newline.
 
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
-`DecisionRecordSchema` and re-serializes byte-identically. A byte difference means the canonical
-form drifted - that is a serializer VERSION BUMP with a migration story (recorded bundle/decision
-hashes bind to the old form), never a fixture edit to green the build.
+its schema and re-serializes byte-identically. It also hashes the canonical, domain-separated
+preimage bytes with SHA-256 and requires the digest to equal the fixture's stored `bundleHash` or
+`decisionHash`.
+
+Bundle preimage version `decision-input-bundle/1.0.0` excludes `id` and `bundleHash`, because
+identity is not a material evaluation input, and sorts the instruction-version and
+evidence-snapshot ID collections. Decision preimage version `decision-record/1.0.0` excludes only
+`decisionHash`; the decision ID and all order-significant traces, stages, and plan steps remain
+bound. Both projections enumerate fields explicitly. Any projection change requires its preimage
+version to change and a migration story for recorded hashes.
 
 The three records mirror golden cases GC-01 (proceed), GC-05 (blocked), GC-07 (prohibited) -
 `fixtures/golden/` remains the captain-signed truth set; these fixtures only lock the byte form of
