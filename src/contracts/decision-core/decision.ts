@@ -34,6 +34,11 @@ import {
   ScopeRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  canonicalizeValues,
+  compareOpaqueValues,
+  compareScopedReferences,
+  hasUniqueScopedReferences,
+  hasUniqueValues,
 } from "./ids";
 import { AnyActorRefSchema, TenantContextSchema } from "./actor";
 import { ResolvableBlockerSchema } from "./trigger";
@@ -66,6 +71,15 @@ export const VersionedSourceRefSchema = z
   .readonly();
 export type VersionedSourceRef = z.infer<typeof VersionedSourceRefSchema>;
 
+/** Governing-source set order: source kind, source record, then immutable version. */
+export const compareVersionedSourceRefs = (
+  left: VersionedSourceRef,
+  right: VersionedSourceRef,
+): number =>
+  compareOpaqueValues(left.sourceType, right.sourceType) ||
+  compareScopedReferences(left.sourceRef, right.sourceRef) ||
+  compareScopedReferences(left.versionRef, right.versionRef);
+
 /** One recorded precedence resolution between two governing sources. */
 export const PrecedenceStepSchema = z.strictObject({
   left: VersionedSourceRefSchema,
@@ -79,8 +93,19 @@ export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 export const ExplanationNodeSchema = z.strictObject({
   code: z.string().min(1),
   messageTemplate: z.string().min(1),
-  evidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
-  sourceRefs: z.array(VersionedSourceRefSchema).readonly(),
+  evidenceSnapshotRefs: z
+    .array(EvidenceSnapshotIdRefSchema)
+    .refine(hasUniqueScopedReferences, "duplicate explanation evidence snapshot reference")
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
+    .readonly(),
+  sourceRefs: z
+    .array(VersionedSourceRefSchema)
+    .refine(
+      (refs) => hasUniqueValues(refs, compareVersionedSourceRefs),
+      "duplicate explanation source reference",
+    )
+    .overwrite((refs) => canonicalizeValues(refs, compareVersionedSourceRefs))
+    .readonly(),
   get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
     return z.array(ExplanationNodeSchema).readonly();
   },

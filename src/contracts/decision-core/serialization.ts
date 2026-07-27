@@ -6,9 +6,24 @@
 import type { Result } from "../result";
 import { err, ok } from "../result";
 import { validationError, type AppError } from "../errors";
-import { compareScopedReferences } from "./ids";
+import {
+  canonicalizeValues,
+  compareOpaqueValues,
+  compareScopedReferences,
+  type ScopedReference,
+} from "./ids";
 import type { DecisionInputBundle } from "./evidence";
-import type { DecisionRecord } from "./decision";
+import {
+  compareVersionedSourceRefs,
+  type DecisionRecord,
+  type VersionedSourceRef,
+} from "./decision";
+import {
+  compareExecutionPreconditions,
+  type ExecutionPrecondition,
+} from "./execution";
+import { compareApprovalStageOrder } from "./authority";
+import { compareEvidenceSuppliers } from "./trigger";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
@@ -87,24 +102,13 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
   return {
     hashKind: "decision-input-bundle",
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
-    // Re-sorted BEFORE projection, not spread over it afterwards: every payload field
-    // then reaches the preimage through the ONE projectDefined walk, instead of two
-    // fields taking a second normalization path kept in sync by hand.
-    payload: projectDefined(
-      {
-        ...bundle,
-        householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedReferences),
-        evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedReferences),
-      },
-      BUNDLE_HASH_PAYLOAD_KEYS,
-    ),
+    payload: projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
   };
 }
 /**
- * A PURE projection, deliberately: a DecisionRecord's set-like collections are each
- * canonicalized by the schema declaring them, at depths a preimage-side mirror could only
- * restate as a hand-synced second field list. Fenced rather than assumed - reordering any
- * of them leaves decisionHash byte-identical (D-057).
+ * Defensive normalization is shared with the parse boundary through ids.ts's pure
+ * ordering authority and the schema comparators. This does not re-parse shaped values:
+ * class instances still reach canonicalJson and its plain-object refusal.
  */
 export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
   return {
@@ -115,7 +119,11 @@ export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreima
 }
 function projectDefined<T extends object, const K extends readonly (keyof T)[]>(value: T, keys: K): Pick<T, K[number]> {
   return Object.fromEntries(
-    keys.flatMap((key) => (value[key] === undefined ? [] : [[key, normalizeOptionalProperties(value[key])]])),
+    keys.flatMap((key) =>
+      value[key] === undefined
+        ? []
+        : [[key, normalizeCanonicalValue(value[key], String(key))]],
+    ),
   ) as Pick<T, K[number]>;
 }
 /** THE plain-object rule, shared so normalization and serialization cannot disagree. */
@@ -124,23 +132,70 @@ function isPlainObject(value: object): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 /**
- * Drops explicitly-undefined optional keys so an absent field spelled `undefined`
- * hashes identically to one omitted. A NON-plain object passes through untouched:
+ * Drops explicitly-undefined optional keys and reasserts every semantic-set order
+ * a hash payload may carry. A NON-plain object passes through untouched:
  * rebuilding one from its own entries would flatten a Date/Map/class instance to `{}`
  * and hash it as `{}` - different decision inputs collapsing onto one bundleHash - and
  * would make canonicalJson's refusal unreachable on the only path that reaches it.
  */
-function normalizeOptionalProperties<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(normalizeOptionalProperties) as T;
+function normalizeCanonicalValue<T>(value: T, key: string): T {
+  if (Array.isArray(value)) {
+    const normalized = value.map((nested) => normalizeCanonicalValue(nested, ""));
+    if (SCOPED_REFERENCE_SET_KEYS.has(key)) {
+      return canonicalizeValues(
+        normalized as ScopedReference[],
+        compareScopedReferences,
+      ) as T;
+    }
+    if (OPAQUE_SET_KEYS.has(key)) {
+      return canonicalizeValues(normalized as string[], compareOpaqueValues) as T;
+    }
+    if (key === "preconditions") {
+      return canonicalizeValues(
+        normalized as ExecutionPrecondition[],
+        compareExecutionPreconditions,
+      ) as T;
+    }
+    if (key === "sourceRefs") {
+      return canonicalizeValues(
+        normalized as VersionedSourceRef[],
+        compareVersionedSourceRefs,
+      ) as T;
+    }
+    if (key === "suppliableBy") {
+      return canonicalizeValues(
+        normalized as (string | ScopedReference)[],
+        compareEvidenceSuppliers,
+      ) as T;
+    }
+    if (key === "stages") {
+      return canonicalizeValues(
+        normalized as { readonly order: number }[],
+        compareApprovalStageOrder,
+      ) as T;
+    }
+    return normalized as T;
+  }
   if (value !== null && typeof value === "object" && isPlainObject(value)) {
     return Object.fromEntries(
       Object.entries(value).flatMap(([key, nested]) =>
-        nested === undefined ? [] : [[key, normalizeOptionalProperties(nested)]],
+        nested === undefined ? [] : [[key, normalizeCanonicalValue(nested, key)]],
       ),
     ) as T;
   }
   return value;
 }
+
+const SCOPED_REFERENCE_SET_KEYS = new Set([
+  "roleIds",
+  "eligibleRoleIds",
+  "specialistRoleIds",
+  "reservationRefs",
+  "requiredEvidenceSnapshotRefs",
+  "evidenceSnapshotRefs",
+  "householdInstructionVersionRefs",
+]);
+const OPAQUE_SET_KEYS = new Set(["conflictKeys", "dependsOn"]);
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.
  */

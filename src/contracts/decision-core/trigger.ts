@@ -19,6 +19,8 @@ import {
   SlotRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  type ScopedReference,
+  canonicalizeValues,
   compareScopedReferences,
   hasUniqueScopedReferences,
 } from "./ids";
@@ -130,7 +132,7 @@ export const AmbiguityRefSchema = z.strictObject({
   candidateRefs: z.array(SubjectRefSchema).min(1)
     .refine(hasUniqueScopedReferences, "duplicate candidate subject reference")
     .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "candidate subjects must belong to one tenant")
-    .overwrite((refs) => [...refs].sort(compareScopedReferences)).readonly(),
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences)).readonly(),
   humanQuestionCode: z.string().min(1),
 }).readonly();
 export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
@@ -141,10 +143,12 @@ export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
  * that state is a prohibition and must be modeled as one, never reached by decay.
  */
 const EvidenceSupplierSchema = z.union([z.literal("client"), z.literal("external"), RoleRefSchema]);
-type EvidenceSupplier = z.infer<typeof EvidenceSupplierSchema>;
 
 /** Well-known suppliers sort before role references; roles use THE scoped order. */
-const compareEvidenceSuppliers = (left: EvidenceSupplier, right: EvidenceSupplier): number => {
+export const compareEvidenceSuppliers = (
+  left: string | ScopedReference,
+  right: string | ScopedReference,
+): number => {
   if (typeof left === "string") {
     if (typeof right !== "string") return -1;
     return left < right ? -1 : left > right ? 1 : 0;
@@ -161,7 +165,7 @@ const EvidenceSupplierSetSchema = z
     const wellKnown = suppliers.filter((supplier) => typeof supplier === "string");
     return hasUniqueScopedReferences(roleRefs) && new Set(wellKnown).size === wellKnown.length;
   }, "duplicate evidence supplier")
-  .overwrite((suppliers) => [...suppliers].sort(compareEvidenceSuppliers))
+  .overwrite((suppliers) => canonicalizeValues(suppliers, compareEvidenceSuppliers))
   .readonly();
 
 export const EvidenceRequestSchema = z

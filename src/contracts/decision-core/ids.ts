@@ -152,6 +152,21 @@ export type ScopedReference = { readonly firmId: string; readonly id: string };
 /** THE order over one opaque value; sets of BARE ids (conflict keys, dependencies) sort by it. */
 export const compareOpaqueValues = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
 
+/** Pure canonical ordering shared by schema boundaries and hash preimages. */
+export const canonicalizeValues = <T>(
+  values: readonly T[],
+  compare: (left: T, right: T) => number,
+): T[] => [...values].sort(compare);
+
+/** Duplicate detection under the same comparator that defines canonical order. */
+export const hasUniqueValues = <T>(
+  values: readonly T[],
+  compare: (left: T, right: T) => number,
+): boolean => {
+  const ordered = canonicalizeValues(values, compare);
+  return ordered.every((value, index) => index === 0 || compare(ordered[index - 1]!, value) !== 0);
+};
+
 /**
  * THE canonical order for tenant-scoped references - firm first, then opaque id.
  * Every set-like collection and every hash preimage sorts through this one comparator,
@@ -180,7 +195,7 @@ const roleRefSet = (minimum: number) =>
     .min(minimum)
     .refine(hasUniqueScopedReferences, "duplicate role reference")
     .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "role references must belong to one tenant")
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
     .readonly();
 
 export const RoleRefSetSchema = roleRefSet(0);

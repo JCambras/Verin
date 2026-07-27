@@ -756,7 +756,7 @@ diagnostic path lazily.
 The schema and both hash-preimage envelopes advance to 1.7.0; fixtures pin the new projection fingerprint
 and digests. ADR-0029 re-baselines the contracts ceiling from 2200 to 2400 through ADR-0018's amendment
 path. (This entry's own line measurement went stale twice as review corrections landed; the FINAL
-measured figure lives in D-054 and in ADR-0029's current-state re-baseline, and is the only one to
+measured figure lives in D-058 and in ADR-0029's current-state re-baseline, and is the only one to
 plan against.)
 **Why:** these are the bounded F51-F57 review corrections. They close an unsound positivity guard, an
 unguarded escalation delay, a replay-metadata field that could never be used for replay, an operational
@@ -822,7 +822,7 @@ than a lenient one - the same discipline the approval plane already carries.
 ADR-0029 re-baselines the contracts ceiling from 2300 to 2400 through ADR-0018's amendment path. The
 prior 2300 left 15 lines, which blocks the next edit of any size rather than budgeting a layer. The
 headroom is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`;
-the FINAL measured figure against that ceiling is recorded in D-054. No projected field, byte, or
+the final completed-round measurement is recorded in D-058. No projected field, byte, or
 digest changes: schema and preimage versions stay 1.7.0.
 **Why:** these are the bounded F62-F64 review corrections. They close a configuration boundary that
 silently inherited a replay-only widening, an alias table that could not follow a registry adoption, an
@@ -866,8 +866,9 @@ and whether two steps in one `escalationPath` may share a delay (there is no ord
 array, unlike `ApprovalStage.order`), are approval-BINDING semantics owned by prompts 18/24. Prompt 5 is
 a schema layer and does not own them. **Un-defer trigger:** prompts 18/24 landing approval binding.
 
-The contracts layer measures **2364** lines by the line-budget fence's own metric against the 2400
-ceiling - **36 lines of headroom**, the FINAL post-review figure. No projected field, byte, or digest
+At this review round the contracts layer measured **2364** lines against the 2400 ceiling.
+That historical measurement is superseded by D-058's completed-round measurement. No projected
+field, byte, or digest
 changes: schema and preimage versions stay 1.7.0 and every recorded hash still reproduces.
 **Why:** these are the bounded F65-F68 review corrections. They close a config boundary that admitted an
 unformattable zone, a normalization step that defeated the serializer's own refusal, a doc block
@@ -900,8 +901,8 @@ host-ICU observation remains that can fail the build. The `firmTimezone` comment
 states the placeholder exclusion that `.env.example` and ADR-0029 already carried.
 
 No contract, schema, projection, or byte changes: schema and preimage versions stay 1.7.0, every
-recorded hash still reproduces, and the contracts layer still measures **2364** lines against the 2400
-ceiling - **36 lines of headroom**, unchanged, since only a test, an infrastructure comment, and docs
+recorded hash still reproduces. This round did not change D-054's then-current **2364/2400**
+measurement; D-058 records the completed-round ceiling and headroom, since only a test, an infrastructure comment, and docs
 moved. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched.
 **Why:** a fence that fails on a supported runtime is not a fence; the property worth proving is that
 the boundary subtracts exactly what the release declares, which the pinned registry can decide alone.
@@ -953,9 +954,10 @@ rules, belongs to no tzdb release, and has no canonical `Zone` to persist and ha
 carry the release-scoped replay semantics every accepted value does.
 
 No schema, projection, byte, or digest changes: schema and preimage versions stay 1.7.0, both registry
-pins are untouched, and every recorded fixture hash still reproduces. The contracts layer now measures
-**2360** lines against the 2400 ceiling - **40 lines of headroom**, up from 36, because the dead
-exports left. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched, and
+pins are untouched, and every recorded fixture hash still reproduces. At this round the contracts
+layer measured **2360** lines against the 2400 ceiling because the dead exports left; D-058
+supersedes that historical current-state number. `EscalationStep.after`'s deferral to prompts
+18/24 (D-054) stands untouched, and
 placeholder membership stays review-enforced at release adoption (ADR-0029 Revisit-When), not
 fence-enforced.
 **Why:** charter #5 does not exempt a layer knip cannot police; a fence that fails on unrelated code is
@@ -1004,7 +1006,7 @@ a declared placeholder from an unknown name. It fixes both surfaces at once, sin
 the config boundary share the factory. `.env.example` also stops filing `Etc/GMT+12` under the Link
 table; it is a canonical Zone, and ADR-0029 already said so correctly.
 
-**Not done, and why:** the reviewer's preimage asymmetry (`bundleHashPreimage` re-sorts defensively,
+**Historical ruling, superseded by D-058:** the reviewer's preimage asymmetry (`bundleHashPreimage` re-sorts defensively,
 `decisionHashPreimage` does not) is resolved as DOCUMENTED-AND-FENCED rather than mirrored. A mirror is
 not a small edit: a `DecisionRecord` canonicalizes set-like collections at three nesting depths, so the
 preimage-side copy would be ~65 lines of hand-synced second field list - the exact duplication the
@@ -1018,10 +1020,9 @@ own `superRefine` refuses and no parse can reach; the record has no such case. W
 meant to buy is fenced directly - reversing each set-like collection in turn leaves `decisionHash`
 byte-identical, with `steps` (an ordered list, not a set) as the control that must change it.
 
-Schema and preimage versions stay 1.7.0, both registry pins are untouched, all four fixture digests
-reproduce, and no projection changed. The contracts layer measures **2394** lines against the 2400
-ceiling - **6 lines of headroom**, down from 40. The ceiling is now the binding constraint on this
-layer and the next change of any size needs the prompt-8/9 re-baseline ADR first.
+Schema and preimage versions stayed 1.7.0, both registry pins were untouched, all four fixture digests
+reproduced, and no projection changed. At this round the contracts layer measured **2394** lines
+against the 2400 ceiling; D-058 records the completed-round measurement and honest ceiling.
 `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched, placeholder membership
 stays review-enforced at release adoption (ADR-0029 Revisit-When), and the three ratified guards stay
 exported and unchanged.
@@ -1032,3 +1033,39 @@ registry claims; and a boot refusal that cannot be acted on has not failed close
 `AmbiguityRefSchema.candidateRefs` to a bare array, remove the `ExecutionStepSchema` omission matrix
 and the registry note, restore zod's default enum message, and revert the `.env.example`, README,
 ADR-0029, and proof-log F75-F79 entries.
+
+### D-058 · 2026-07-27 · captain-decision · Canonical preconditions, defensive preimages, bounded timezone refusals, and exhaustive tenant subjects
+
+The completed recovery round supersedes D-057's documented preimage asymmetry. Execution
+preconditions are now a duplicate-free semantic set keyed and ordered by stable `code`.
+`ExplanationNode.evidenceSnapshotRefs` and `sourceRefs` are duplicate-free, canonically ordered
+sets at every recursive depth. Schema boundaries and both hash-preimage builders consume the same
+pure canonical-order authority and comparators; `decisionHashPreimage` defensively normalizes shaped
+records without routing them through `DecisionRecordSchema`, so `Date`, `Map`, and class instances
+still reach canonical JSON's deliberate plain-object refusal.
+
+Each IANA release value now carries its own diagnostic version, and the configuration-schema factory
+accepts no second version argument that could disagree with the data. Every rejected timezone value
+passes through one bounded formatter: at most 32 code points, control and line-separator characters
+escaped, long values marked as truncated, and non-string inputs named only by kind without echoing
+payload contents.
+
+The tenant-scope fence now owns a completeness-tested subject authority. It walks every exported
+decision-core Zod schema and discovers any shape that reaches a collection of `{firmId,id}`
+references; every discovered export must map to the schema that owns its explicit tenant constraint.
+The companion injects an unregistered future subject and proves the registry fails incomplete.
+
+ADR-0029 amends ADR-0018's contracts ceiling from 2400 to **2600**. The line-budget fence measures
+**2553** production lines after these correctness fixes, leaving **47 lines of nonzero maintenance
+headroom**. This is the smallest honest hundred-line ceiling above the measured implementation, not
+permission for unrelated contracts growth. Schema, serializer, and preimage versions remain 1.7.0 /
+1.0.0; no projected field changed, all four committed fixture files remain byte-identical, and every
+stored SHA-256 digest still reproduces.
+
+**Why:** these are the bounded corrections required by prompt 5's accepted determinism,
+tenant-integrity, replay, and operational-diagnostic contract. Correctness was not compressed or
+moved out of the governed layer to preserve an exhausted historical ceiling.
+**Revert path:** restore caller-ordered preconditions and explanation references, remove defensive
+decision normalization and the tenant subject authority, restore the two-argument timezone schema
+factory and unbounded refusal echo, then return ADR-0029 and the line-budget fence to 2400. No fixture
+or preimage migration is involved because the committed vectors were already canonical.

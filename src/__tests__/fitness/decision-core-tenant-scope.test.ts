@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import * as actorSchemas from "@contracts/decision-core/actor";
+import * as authoritySchemas from "@contracts/decision-core/authority";
+import * as decisionSchemas from "@contracts/decision-core/decision";
+import * as evidenceSchemas from "@contracts/decision-core/evidence";
+import * as executionSchemas from "@contracts/decision-core/execution";
+import * as idSchemas from "@contracts/decision-core/ids";
+import * as triggerSchemas from "@contracts/decision-core/trigger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
   DecisionInputBundleSchema,
@@ -85,7 +93,127 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
   versionRef: { ...source.versionRef, firmId: "firm-b" },
 });
 
+type TenantSubjectAuthority = {
+  readonly owner: string;
+  readonly constraint: string;
+};
+
+/**
+ * Authority for every EXPORTED schema whose accepted shape reaches a collection of
+ * `{firmId,id}` references. Composite exports name the schema that owns the direct
+ * constraint. A new export cannot silently inherit reviewer assumptions: the schema
+ * walk below makes an unclassified subject fail this fence.
+ */
+const TENANT_SCOPE_SUBJECT_AUTHORITY: Readonly<Record<string, TenantSubjectAuthority>> = {
+  ActorRefSchema: { owner: "RoleRefSetSchema", constraint: "actor roles match actor tenant" },
+  AnyActorRefSchema: { owner: "ActorRefSchema", constraint: "human arm delegates to actor-role constraint" },
+  ApprovalRequirementSchema: { owner: "NonEmptyRoleRefSetSchema", constraint: "eligible roles form one-tenant set" },
+  ApprovalStageSchema: { owner: "ApprovalRequirementSchema", constraint: "stage roles match template tenant" },
+  ApprovalStageTemplateSchema: { owner: "ApprovalRequirementSchema", constraint: "template roles share one tenant" },
+  ApprovalTemplateSchema: { owner: "ApprovalStageTemplateSchema", constraint: "all stage roles match template tenant" },
+  AuthorityRequirementSchema: { owner: "ApprovalStageSchema", constraint: "authority roles and stages share one tenant" },
+  EscalationStepSchema: { owner: "NonEmptyRoleRefSetSchema", constraint: "escalation roles form one-tenant set" },
+  BlockedDecisionSchema: { owner: "EvidenceRequestSchema", constraint: "resolving suppliers match subject tenant" },
+  DecisionRecordSchema: { owner: "DecisionRecordSchema", constraint: "recursive decision references match record tenant" },
+  DecisionResultSchema: { owner: "DecisionRecordSchema", constraint: "persisted result checked by record authority" },
+  ExplanationNodeSchema: { owner: "ExplanationNodeSchema", constraint: "evidence and source sets are tenant-scoped" },
+  ProceedDecisionSchema: { owner: "DecisionRecordSchema", constraint: "persisted authority and plan checked by record" },
+  DecisionInputBundleSchema: { owner: "DecisionInputBundleSchema", constraint: "all replay references match bundle tenant" },
+  CompensatingActionSchema: { owner: "RetrySafeExternalActionSchema", constraint: "compensation references match target tenant" },
+  ExecutionPlanSchema: { owner: "RetrySafeExternalActionSchema", constraint: "all plan actions share one tenant" },
+  ExecutionPreconditionSchema: { owner: "ExecutionPreconditionSchema", constraint: "evidence references form a scoped set" },
+  ExecutionStepSchema: { owner: "RetrySafeExternalActionSchema", constraint: "step references match target tenant" },
+  RetrySafeExternalActionSchema: { owner: "RetrySafeExternalActionSchema", constraint: "all action references match target tenant" },
+  NonEmptyRoleRefSetSchema: { owner: "NonEmptyRoleRefSetSchema", constraint: "roles are duplicate-free and one-tenant" },
+  RoleRefSetSchema: { owner: "RoleRefSetSchema", constraint: "roles are duplicate-free and one-tenant" },
+  AmbiguityRefSchema: { owner: "AmbiguityRefSchema", constraint: "candidates are duplicate-free and one-tenant" },
+  EvidenceRequestSchema: { owner: "EvidenceRequestSchema", constraint: "role suppliers match subject tenant" },
+  ResolutionStateSchema: { owner: "AmbiguityRefSchema", constraint: "nested candidate and supplier constraints apply" },
+  ResolvableBlockerSchema: { owner: "EvidenceRequestSchema", constraint: "nested resolving-evidence constraints apply" },
+};
+
+const decisionCoreSchemaExports = {
+  ...actorSchemas,
+  ...authoritySchemas,
+  ...decisionSchemas,
+  ...evidenceSchemas,
+  ...executionSchemas,
+  ...idSchemas,
+  ...triggerSchemas,
+};
+
+function reachesScopedReferenceCollection(schema: z.ZodType): boolean {
+  let document: Record<string, unknown>;
+  try {
+    document = z.toJSONSchema(schema) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const definitions = (document.$defs ?? {}) as Record<string, unknown>;
+  const seenOutsideArray = new Set<unknown>();
+  const seenInsideArray = new Set<unknown>();
+  const visit = (node: unknown, insideArray: boolean): boolean => {
+    if (node === null || typeof node !== "object") return false;
+    const seen = insideArray ? seenInsideArray : seenOutsideArray;
+    if (seen.has(node)) return false;
+    seen.add(node);
+    const value = node as Record<string, unknown>;
+    if (typeof value.$ref === "string" && value.$ref.startsWith("#/$defs/")) {
+      return visit(definitions[value.$ref.slice(8)], insideArray);
+    }
+    const properties = value.properties as Record<string, unknown> | undefined;
+    if (insideArray && properties?.firmId && properties.id) return true;
+    if (value.type === "array" && visit(value.items, true)) return true;
+    return Object.entries(value).some(([key, nested]) =>
+      !["$defs", "items", "properties"].includes(key) && visit(nested, insideArray),
+    ) || Object.values(properties ?? {}).some((nested) => visit(nested, insideArray));
+  };
+  return visit(document, false);
+}
+
+function scopedCollectionSchemaExports(): string[] {
+  return Object.entries(decisionCoreSchemaExports)
+    .filter(([name, value]) =>
+      name.endsWith("Schema") &&
+      typeof (value as { safeParse?: unknown }).safeParse === "function" &&
+      reachesScopedReferenceCollection(value as z.ZodType),
+    )
+    .map(([name]) => name)
+    .sort();
+}
+
+export function tenantSubjectRegistryViolations(
+  discovered: readonly string[],
+  authority: Readonly<Record<string, TenantSubjectAuthority>>,
+): string[] {
+  return discovered
+    .filter((name) => authority[name] === undefined)
+    .map((name) => `${name}: exported scoped-reference collection has no tenant subject authority`);
+}
+
 describe("decision-core tenant-scope fence", () => {
+  it("enforces: the tenant subject authority is complete for every exported scoped-reference collection", () => {
+    const discovered = scopedCollectionSchemaExports();
+    expect(discovered).toContain("DecisionRecordSchema");
+    expect(discovered).toContain("ExecutionPreconditionSchema");
+    expect(discovered).toContain("ExplanationNodeSchema");
+    expect(tenantSubjectRegistryViolations(discovered, TENANT_SCOPE_SUBJECT_AUTHORITY)).toEqual([]);
+    expect(Object.keys(TENANT_SCOPE_SUBJECT_AUTHORITY).sort()).toEqual(discovered);
+    for (const subject of Object.values(TENANT_SCOPE_SUBJECT_AUTHORITY)) {
+      expect(decisionCoreSchemaExports).toHaveProperty(subject.owner);
+      expect(subject.constraint.trim()).not.toBe("");
+    }
+  });
+
+  it("detects (companion): an unregistered future scoped-reference collection fails completeness", () => {
+    const discovered = [...scopedCollectionSchemaExports(), "FutureScopedCollectionSchema"];
+    expect(
+      tenantSubjectRegistryViolations(discovered, TENANT_SCOPE_SUBJECT_AUTHORITY),
+    ).toEqual([
+      "FutureScopedCollectionSchema: exported scoped-reference collection has no tenant subject authority",
+    ]);
+  });
+
   it("enforces: every immutable bundle reference belongs to the bundle tenant", () => {
     const bundle = fixture("decision-input-bundle") as {
       firmId: string;

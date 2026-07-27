@@ -20,9 +20,11 @@ import {
   ReservationRefSchema,
   SecureBlobRefSchema,
   VerificationRuleRefSchema,
+  canonicalizeValues,
   compareOpaqueValues,
   compareScopedReferences,
   hasUniqueScopedReferences,
+  hasUniqueValues,
 } from "./ids";
 
 /** The externally-executable command: payload behind a blob ref, pinned by hash. */
@@ -43,11 +45,29 @@ export const ExecutionPreconditionSchema = z.strictObject({
     .array(EvidenceSnapshotIdRefSchema)
     .min(1)
     .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
     .readonly(),
   mustStillHoldAtExecution: z.literal(true),
 }).readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;
+
+/** Preconditions are a semantic set identified and ordered by their stable code. */
+export const compareExecutionPreconditions = (
+  left: Pick<ExecutionPrecondition, "code">,
+  right: Pick<ExecutionPrecondition, "code">,
+): number => compareOpaqueValues(left.code, right.code);
+
+const ExecutionPreconditionSetSchema = z
+  .array(ExecutionPreconditionSchema)
+  .min(1)
+  .refine(
+    (preconditions) => hasUniqueValues(preconditions, compareExecutionPreconditions),
+    "duplicate execution precondition code",
+  )
+  .overwrite((preconditions) =>
+    canonicalizeValues(preconditions, compareExecutionPreconditions),
+  )
+  .readonly();
 
 const retrySafeExternalActionShape = {
   targetRef: ExecutionTargetRefSchema,
@@ -57,14 +77,14 @@ const retrySafeExternalActionShape = {
     .array(ConflictKeySchema)
     .min(1)
     .refine(uniqueStrings, "duplicate conflict key")
-    .overwrite((keys) => [...keys].sort(compareOpaqueValues))
+    .overwrite((keys) => canonicalizeValues(keys, compareOpaqueValues))
     .readonly(),
   reservationRefs: z
     .array(ReservationRefSchema)
     .refine(hasUniqueScopedReferences, "duplicate reservation reference")
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
     .readonly(),
-  preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
+  preconditions: ExecutionPreconditionSetSchema,
   verificationRuleRef: VerificationRuleRefSchema,
 };
 
@@ -130,7 +150,7 @@ export const ExecutionStepSchema = z
     dependsOn: z
       .array(ExecutionStepIdSchema)
       .refine(uniqueStrings, "duplicate execution dependency")
-      .overwrite((ids) => [...ids].sort(compareOpaqueValues))
+      .overwrite((ids) => canonicalizeValues(ids, compareOpaqueValues))
       .readonly(),
     compensatingAction: CompensatingActionSchema.optional(),
   })

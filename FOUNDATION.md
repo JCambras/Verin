@@ -33,7 +33,10 @@ parse-level facts) - plus a versioned canonical serializer whose byte form is lo
 replay-ID collections reject duplicates, and version-keyed recursive fingerprints prevent nested
 projection growth under an unchanged hash-preimage version. Every named tenant-owned link is a strict
 `{ firmId, id }` reference, compensating actions carry the same retry-safety contract as execution
-steps, and replay time zones are pinned to a persisted versioned registry instead of host ICU data.
+steps, execution and explanation reference sets are duplicate-free and canonically ordered, and both
+hash preimages defensively normalize through the schemas' pure ordering authorities without weakening
+canonical JSON's plain-object refusal. Replay time zones are pinned to a persisted versioned registry;
+release diagnostics cannot drift from their data and refusals are bounded/control-safe.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
@@ -72,7 +75,7 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-029).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-030).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -103,8 +106,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 | `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
 | `decision-core-illegal-states` | proceed requires usable authority with future expiration + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
-| `decision-core-tenant-scope` | every immutable prompt-5 record and named cross-record, role, or secure-storage reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045-D-050) | PF-028 + companions |
-| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation; plans remain single-tenant; idempotency keys cannot alias; set-like execution references are duplicate-free (#16, ADR-0029, D-047-D-049) | PF-029 + companions |
+| `decision-core-tenant-scope` | every immutable prompt-5 record and named cross-record, role, or secure-storage reference recursively matches its enclosing tenant; a schema-walk subject authority makes exported scoped-reference collection coverage exhaustive (v3 invariant 2, ADR-0029, D-045-D-058) | PF-028/PF-030 + companions |
+| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation; plans remain single-tenant; idempotency keys cannot alias; set-like execution references and preconditions are duplicate-free and canonical (#16, ADR-0029, D-047-D-058) | PF-029/PF-030 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

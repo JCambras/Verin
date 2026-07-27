@@ -143,8 +143,33 @@ describe("decision-core external-action safety fence", () => {
         }],
       },
     ],
+    [
+      "preconditions",
+      {
+        preconditions: [action.preconditions[0]!, action.preconditions[0]!],
+      },
+    ],
   ])("enforces: %s are duplicate-free", (_name, override) => {
     expect(RetrySafeExternalActionSchema.safeParse({ ...action, ...override }).success).toBe(false);
+  });
+
+  it("enforces: execution preconditions are canonically ordered semantic sets", () => {
+    const first = { ...action.preconditions[0]!, code: "a-still-fresh" };
+    const second = { ...action.preconditions[0]!, code: "z-still-fresh" };
+    const forward = RetrySafeExternalActionSchema.parse({
+      ...action,
+      preconditions: [first, second],
+    });
+    const reversed = RetrySafeExternalActionSchema.parse({
+      ...action,
+      preconditions: [second, first],
+    });
+    expect(reversed.preconditions).toEqual(forward.preconditions);
+    expect(forward.preconditions.map((precondition) => precondition.code)).toEqual([
+      "a-still-fresh",
+      "z-still-fresh",
+    ]);
+    expect(forward.preconditions).toHaveLength(2);
   });
 
   it.each([

@@ -31,6 +31,7 @@ const IANA_TIME_ZONE_PLACEHOLDER_ZONES: readonly string[] = Object.freeze(["Fact
 
 /** ONE tz release: its `Zone` names, its OWN `Link` aliases, its OWN placeholders. */
 export type IanaTimeZoneRelease = {
+  readonly version: string;
   readonly zones: readonly string[];
   readonly links: Readonly<Record<string, string>>;
   readonly placeholderZones: readonly string[];
@@ -47,6 +48,7 @@ export type IanaTimeZoneRelease = {
  */
 export const SUPPORTED_IANA_TIME_ZONE_RELEASES = Object.freeze({
   [IANA_TIME_ZONE_DATA_VERSION]: Object.freeze({
+    version: IANA_TIME_ZONE_DATA_VERSION,
     zones: CANONICAL_IANA_TIME_ZONES,
     links: CANONICAL_IANA_TIME_ZONE_LINKS,
     placeholderZones: IANA_TIME_ZONE_PLACEHOLDER_ZONES,
@@ -72,12 +74,42 @@ export const SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS = Object.freeze(
  * enum message enumerates all 341 options - a ~6 KB wall reaching the boot FATAL,
  * every bundle `timeZone` parse failure, and the logs those land in (D-057).
  */
-export const timeZoneNameSchema = (zones: readonly string[], refuse: (value: string) => string = (value) => `"${value}" is not a Zone of any supported IANA release`) => {
+const formatRejectedTimeZoneValue = (value: unknown): string => {
+  if (typeof value !== "string") {
+    if (value === null) return "<null>";
+    if (Array.isArray(value)) return "<array>";
+    return `<${typeof value}>`;
+  }
+  const characters = [...value];
+  const escaped = characters.slice(0, 32).map((character) => {
+    const code = character.codePointAt(0)!;
+    if (
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029
+    ) {
+      return `\\u${code.toString(16).padStart(4, "0")}`;
+    }
+    if (character === "\\") return "\\\\";
+    if (character === '"') return '\\"';
+    return character;
+  }).join("");
+  return `"${escaped}${characters.length > 32 ? "…" : ""}"`;
+};
+
+export const timeZoneNameSchema = (
+  zones: readonly string[],
+  refuse: (value: unknown) => string = (value) =>
+    `${formatRejectedTimeZoneValue(value)} is not a Zone of any supported IANA release`,
+) => {
   const byCaseFoldedName = new Map(zones.map((zone) => [zone.toLowerCase(), zone]));
   return z.preprocess(
     (value) =>
       typeof value === "string" ? (byCaseFoldedName.get(value.toLowerCase()) ?? value) : value,
-    z.enum([...zones] as [string, ...string[]], { error: (issue) => refuse(typeof issue.input === "string" ? issue.input : typeof issue.input) }).brand<"TimeZone">(),
+    z.enum([...zones] as [string, ...string[]], {
+      error: (issue) => refuse(issue.input),
+    }).brand<"TimeZone">(),
   );
 };
 
@@ -129,7 +161,7 @@ export const isTimeZoneInRecordedRegistry = timeZoneRegistryMembership(
  * release's placeholders are subtracted AFTER resolution, so neither one nor an alias
  * of one can be configured.
  */
-export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease, version: string = IANA_TIME_ZONE_DATA_VERSION) => {
+export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease) => {
   const zoneByCaseFoldedAlias = new Map(
     Object.entries(release.links).map(([alias, zone]) => [alias.toLowerCase(), zone]),
   );
@@ -140,9 +172,9 @@ export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease, version: 
     // The enum sees the alias-RESOLVED name, so a placeholder refused through an alias
     // still says WHY - the one signal an operator can act on (D-057).
     timeZoneNameSchema(release.zones.filter((zone) => !placeholders.has(zone)), (value) =>
-      placeholders.has(value)
-        ? `"${value}" is a placeholder Zone ${version} declares unconfigurable`
-        : `"${value}" is not a Zone or Link alias of ${version}`),
+      typeof value === "string" && placeholders.has(value)
+        ? `${formatRejectedTimeZoneValue(value)} is a placeholder Zone ${release.version} declares unconfigurable`
+        : `${formatRejectedTimeZoneValue(value)} is not a Zone or Link alias of ${release.version}`),
   );
 };
 

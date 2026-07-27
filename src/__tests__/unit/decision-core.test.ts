@@ -297,6 +297,7 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     ]);
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      expect(SUPPORTED_IANA_TIME_ZONE_RELEASES[version].version).toBe(version);
       for (const zone of ["America/New_York", "Etc/UTC", "Africa/Accra", "Not/AZone"]) {
         expect(isTimeZoneInRecordedRegistry(version, zone)).toBe(
           SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones.includes(zone),
@@ -395,11 +396,13 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // With one shipped release they coincide, so asserting through the shipped release
     // could only restate that - construct the two-release condition and probe directly.
     const older = {
+      version: "iana-tzdb/probe-older",
       zones: ["America/Nipigon", "America/Toronto"],
       links: { "Canada/Eastern": "America/Nipigon" },
       placeholderZones: [],
     };
     const newer = {
+      version: "iana-tzdb/probe-newer",
       zones: ["America/Toronto"],
       links: { "Canada/Eastern": "America/Toronto" },
       placeholderZones: [],
@@ -425,6 +428,9 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // so this arm cannot look covered while being empty. Adopting a second release
     // makes the loop live.
     const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
+    expect(current.version).toBe(IANA_TIME_ZONE_DATA_VERSION);
+    // @ts-expect-error - diagnostic version is inseparable from its release data.
+    expect(configuredTimeZoneSchema(current, "iana-tzdb/wrong-release")).toBeDefined();
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toHaveLength(1);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
       for (const zone of SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones) {
@@ -506,6 +512,7 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // placeholder and no alias pointing at it - the general rule would otherwise be
     // indistinguishable from "Factory is hardcoded somewhere".
     const release = {
+      version: "iana-tzdb/probe-placeholder",
       zones: ["America/Toronto", "Local"],
       links: { "Canada/Eastern": "America/Toronto", Unset: "Local" },
       placeholderZones: ["Local"],
@@ -517,6 +524,24 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(configured.safeParse("Unset").success).toBe(false);
     // A release that declares no placeholder still admits the same name.
     expect(configuredTimeZoneSchema({ ...release, placeholderZones: [] }).parse("Local")).toBe("Local");
+  });
+
+  it("formats every refused zone through one bounded, single-line, control-safe diagnostic", () => {
+    const issue = (value: unknown): string => {
+      const parsed = LinkResolvedTimeZoneSchema.safeParse(value);
+      expect(parsed.success).toBe(false);
+      return parsed.success ? "" : parsed.error.issues[0]!.message;
+    };
+    const unsafe = `bad\n\t\u0000\u2028${"x".repeat(2_000)}`;
+    const message = issue(unsafe);
+    expect(message).toContain('"bad\\u000a\\u0009\\u0000\\u2028');
+    expect(message).not.toContain("\n");
+    expect(message).not.toContain("\t");
+    expect(message).not.toContain("x".repeat(100));
+    expect(message.length).toBeLessThan(260);
+    expect(issue({ secret: "never echo this payload" })).toContain("<object>");
+    expect(issue(["never echo this payload"])).toContain("<array>");
+    expect(issue(null)).toContain("<null>");
   });
 
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
@@ -777,7 +802,13 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       preconditions: [
         {
           ...fixtureStep.preconditions[0]!,
+          code: "precondition:z",
           requiredEvidenceSnapshotRefs: [ref("evs:z"), ref("evs:a")],
+        },
+        {
+          ...fixtureStep.preconditions[0]!,
+          code: "precondition:a",
+          requiredEvidenceSnapshotRefs: [ref("evs:c"), ref("evs:b")],
         },
       ],
     };
@@ -803,8 +834,10 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       hashPreimage(decisionHashPreimage(DecisionRecordSchema.parse(value)));
     const canonical = digest(record([leaf("a"), leaf("b"), join], roleIds));
 
-    const reversed = (key: "dependsOn" | "conflictKeys" | "reservationRefs" | "requiredEvidenceSnapshotRefs") =>
-      key === "requiredEvidenceSnapshotRefs"
+    const reversed = (key: "dependsOn" | "conflictKeys" | "reservationRefs" | "preconditions" | "requiredEvidenceSnapshotRefs") =>
+      key === "preconditions"
+        ? { ...join, preconditions: [...join.preconditions].reverse() }
+        : key === "requiredEvidenceSnapshotRefs"
         ? {
             ...join,
             preconditions: [
@@ -812,10 +845,11 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
                 ...join.preconditions[0]!,
                 requiredEvidenceSnapshotRefs: [...join.preconditions[0]!.requiredEvidenceSnapshotRefs].reverse(),
               },
+              join.preconditions[1]!,
             ],
           }
         : { ...join, [key]: [...join[key]].reverse() };
-    for (const key of ["dependsOn", "conflictKeys", "reservationRefs", "requiredEvidenceSnapshotRefs"] as const) {
+    for (const key of ["dependsOn", "conflictKeys", "reservationRefs", "preconditions", "requiredEvidenceSnapshotRefs"] as const) {
       expect(digest(record([leaf("a"), leaf("b"), reversed(key)], roleIds)), key).toBe(canonical);
     }
     // The role-set control, which held before these four sorts landed.
@@ -824,6 +858,81 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // list, not a set, so reversing it MUST change the hash - otherwise every
     // assertion above would pass on a preimage that ignores ordering entirely.
     expect(digest(record([join, leaf("b"), leaf("a")], roleIds))).not.toBe(canonical);
+  });
+
+  it("gives explanation references set discipline and defensively normalizes shaped preimages", () => {
+    type Ref = { firmId: string; id: string };
+    type Source = {
+      sourceType: "firm_policy";
+      sourceRef: Ref;
+      versionRef: Ref;
+    };
+    type Node = {
+      messageTemplate: string;
+      evidenceSnapshotRefs: Ref[];
+      sourceRefs: Source[];
+      childNodes: Node[];
+    };
+    type Precondition = Record<string, unknown> & {
+      code: string;
+      requiredEvidenceSnapshotRefs: Ref[];
+    };
+    type RecordShape = Record<string, unknown> & {
+      explanationTrace: Node[];
+      result: {
+        executionPlan: {
+          steps: Array<Record<string, unknown> & { preconditions: Precondition[] }>;
+        };
+      };
+    };
+    const base = JSON.parse(readFixture("decision-record-proceed")) as RecordShape;
+    const node = base.explanationTrace[0]!;
+    const step = base.result.executionPlan.steps[0]!;
+    const ref = (id: string): Ref => ({ firmId: "firm-a", id });
+    const source = (id: string): Source => ({
+      sourceType: "firm_policy",
+      sourceRef: ref(`policy:${id}`),
+      versionRef: ref(`policy:${id}@1`),
+    });
+    const input: RecordShape = {
+      ...base,
+      explanationTrace: [{
+        ...node,
+        evidenceSnapshotRefs: [ref("evs:z"), ref("evs:a")],
+        sourceRefs: [source("z"), source("a")],
+      }],
+      result: {
+        ...base.result,
+        executionPlan: {
+          ...base.result.executionPlan,
+          steps: [{
+            ...step,
+            preconditions: [
+              { ...step.preconditions[0]!, code: "precondition:z" },
+              { ...step.preconditions[0]!, code: "precondition:a" },
+            ],
+          }],
+        },
+      },
+    };
+    const canonical = DecisionRecordSchema.parse(input);
+    const shaped = structuredClone(canonical) as unknown as RecordShape;
+    shaped.explanationTrace[0]!.evidenceSnapshotRefs.reverse();
+    shaped.explanationTrace[0]!.sourceRefs.reverse();
+    shaped.result.executionPlan.steps[0]!.preconditions.reverse();
+    const digest = (record: Parameters<typeof decisionHashPreimage>[0]) =>
+      hashPreimage(decisionHashPreimage(record));
+    expect(digest(shaped as unknown as typeof canonical)).toBe(digest(canonical));
+
+    for (const key of ["evidenceSnapshotRefs", "sourceRefs"] as const) {
+      const duplicate = structuredClone(input);
+      const first = duplicate.explanationTrace[0]![key][0]!;
+      duplicate.explanationTrace[0]![key] = [first, first] as Ref[] & Source[];
+      expect(DecisionRecordSchema.safeParse(duplicate).success, key).toBe(false);
+    }
+    const changed = structuredClone(canonical) as unknown as RecordShape;
+    changed.explanationTrace[0]!.messageTemplate = "materially changed explanation";
+    expect(digest(changed as unknown as typeof canonical)).not.toBe(digest(canonical));
   });
 
   it("refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON", () => {

@@ -1622,3 +1622,62 @@ full suite pass, with all four fixture digests unchanged, both registry pins unt
 at 2394/2400.
 
 **Date:** 2026-07-27 (review corrections F75-F79, D-057).
+
+## PF-030 · completed prompt-5 recovery round (D-058)
+
+**Invariants:** execution preconditions and recursive explanation citations are duplicate-free,
+canonically ordered sets; shaped decision preimages defensively normalize through the parse
+boundary's pure ordering authorities without weakening canonical JSON's non-plain-object refusal;
+timezone release data cannot be paired with a different diagnostic label and every rejected value
+is bounded/control-safe; the tenant-scope fence has a complete subject authority for every exported
+schema that reaches a scoped-reference collection.
+
+Six independent incomplete forms were injected into the fixed tree and reverted immediately:
+
+```
+1) remove ExecutionPreconditionSetSchema uniqueness + ordering
+   × enforces: preconditions are duplicate-free
+     expected true to be false
+     decision-core-external-action-safety.test.ts:153
+   × enforces: execution preconditions are canonically ordered semantic sets
+     expected [z-still-fresh, a-still-fresh] to equal [a-still-fresh, z-still-fresh]
+     decision-core-external-action-safety.test.ts:167
+
+2) remove ExplanationNode evidence/source uniqueness + ordering
+   × gives explanation references set discipline and defensively normalizes shaped preimages
+     evidenceSnapshotRefs: expected true to be false
+     decision-core.test.ts:931
+
+3) remove the preimage-side precondition normalizer only
+   × gives explanation references set discipline and defensively normalizes shaped preimages
+     expected decision hash 61efdd8d... to equal d0edd39f...
+     decision-core.test.ts:925
+
+4) pair the shipped release key with version "iana-tzdb/wrong-release"
+   × holds NEW configuration to the CURRENT release
+     expected "iana-tzdb/wrong-release" to be "iana-tzdb/2026b"
+     decision-core.test.ts:431
+
+5) restore an unbounded raw-string timezone refusal
+   × formats every refused zone through one bounded, single-line, control-safe diagnostic
+     expected raw newline/control-bearing 2,000-character echo to contain escaped controls
+     decision-core.test.ts:537
+
+6) delete ExplanationNodeSchema from the tenant subject authority
+   × the tenant subject authority is complete for every exported scoped-reference collection
+     "ExplanationNodeSchema: exported scoped-reference collection has no tenant subject authority"
+     decision-core-tenant-scope.test.ts:196
+```
+
+The preimage injection is independent of the schema injection: the shaped record is deliberately
+not reparsed, while the existing `Date`/`Map`/class-instance test still requires those values to
+reach canonical JSON's `only plain objects can be canonicalized` refusal. The ordering companions
+also carry material controls: two distinct preconditions remain present, changing explanation text
+changes the digest, and reversing the ordered execution-step list changes the digest.
+
+**Revert:** each injected defect was restored with `apply_patch`; the focused suites pass with 133
+tests, typecheck passes, all four canonical fixture files remain byte-identical to recovered commit
+`090c8ed5c076275047bd9c9fbd48332aac8cd2ad`, every stored digest reproduces, and the line-budget
+fence measures contracts at 2553/2600 (47 lines of headroom).
+
+**Date:** 2026-07-27 (recovered bounded round, D-058).

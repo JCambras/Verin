@@ -18,6 +18,7 @@ import {
   NonEmptyRoleRefSetSchema,
   ReasonCodeSchema,
   TimestampSchema,
+  canonicalizeValues,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 
@@ -109,6 +110,12 @@ const requireDistinctStages = (
   }
 };
 
+/** ApprovalStage.order is the sole stage-sequencing authority. */
+export const compareApprovalStageOrder = (
+  left: { readonly order: number },
+  right: { readonly order: number },
+): number => left.order - right.order;
+
 type StageRoleRefs = {
   requirements: readonly { eligibleRoleIds: readonly { firmId: string }[] }[];
   escalationPath: readonly { roleIds: readonly { firmId: string }[] }[];
@@ -160,7 +167,7 @@ const ApprovalStageTemplateListSchema = z
   .array(ApprovalStageTemplateSchema)
   .min(1)
   .superRefine(requireDistinctStages)
-  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .overwrite((stages) => canonicalizeValues(stages, compareApprovalStageOrder))
   .readonly();
 
 /** A reusable, referencable stack of stage templates. */
@@ -197,7 +204,7 @@ const ApprovalStageListSchema = z
   .array(ApprovalStageSchema)
   .min(1)
   .superRefine(requireDistinctStages)
-  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .overwrite((stages) => canonicalizeValues(stages, compareApprovalStageOrder))
   .readonly();
 
 /**

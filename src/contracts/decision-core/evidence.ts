@@ -21,6 +21,7 @@ import {
   SecureBlobRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  canonicalizeValues,
   compareScopedReferences,
   hasUniqueScopedReferences,
 } from "./ids";
@@ -110,14 +111,14 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
     .refine(hasUniqueScopedReferences, {
       message: "duplicate household instruction version reference",
     })
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
     .readonly(),
   evidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
     .refine(hasUniqueScopedReferences, {
       message: "duplicate evidence snapshot reference",
     })
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite((refs) => canonicalizeValues(refs, compareScopedReferences))
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,
