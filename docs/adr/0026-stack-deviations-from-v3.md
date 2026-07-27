@@ -45,8 +45,9 @@ record each deviation here so no future session "corrects" the repo toward v3's 
    fence, and the per-org audit chains are UNCHANGED - the substrate is not renamed. When the v3 domain
    contracts land (prompt 5), `FirmId` is the branded domain-contract spelling of the same identity, and
    the store adapter maps between them at the boundary. v3 invariant 2 ("every persisted record and
-   repository operation is tenant-scoped") is therefore ALREADY enforced by the org-id-required fence,
-   and `v3-invariants.json` records that fence as its live mechanism.
+   repository operation is tenant-scoped") is therefore ALREADY enforced by the org-id-required fence —
+   extended at prompt 6 by the `tenant-context-required` fence + the sealed `TenantContext` type — and
+   `v3-invariants.json` records both fences as its live mechanisms.
 
 Everything else in v3 §18 stands as written and is either already true here (Zod 4 parse-at-boundary,
 Vitest, forward-only versioned migrations per D-016/D-029, non-UTC test discipline) or lands with its
@@ -72,8 +73,9 @@ LLM adapter, typed versioned configuration loaded at boot).
 
 ## Consequences
 
-- `v3-invariants.json` invariant 2 points at `src/__tests__/fitness/org-id-required.test.ts` as its live
-  mechanism with the FirmId ≡ org_id note; invariant 4 (import boundaries match §16) activates per-wave
+- `v3-invariants.json` invariant 2 points at `src/__tests__/fitness/org-id-required.test.ts` (plus
+  `tenant-context-required.test.ts` as of prompt 6) as its live mechanisms with the FirmId ≡ org_id note;
+  invariant 4 (import boundaries match §16) activates per-wave
   as ts-morph fences, never as dependency-cruiser.
 - Prompt 4's scaffold items for Fastify/SQLite/Vite/dep-cruiser are DROPPED from the re-baselined
   sequence (marriage-map §6); its live remainder (invariant runner, PR template, arch checksum) ships

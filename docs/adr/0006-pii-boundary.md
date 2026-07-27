@@ -18,8 +18,10 @@ and scrubbing at three crossings. The domain keeps precise PII for the UI; it is
 numbers; values: separated or labeled SSN, email, NANP/E.164 phone) and `assertNoPIIValues(payload, boundary)`
 which throws `PII_VIOLATION` on any PII-shaped value that survives scrubbing. PII is scrubbed
 at three enforcement points: (1) the **audit write** boundary (before every audit entry is persisted —
-so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (deferred until an AI
-surface is wired — no AI scaffolding now, charter #5); (3) the **API response** boundary (today responses
+so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (the evidence-to-LLM
+projection layer and the `Tokenized<T>` scrubber landed with prompt 6, ahead of the first model caller, as a
+reviewed charter #5 exception — ADR-0031; fences prove no `PIIBearing`-marked type is reachable from
+`src/infrastructure/llm/`); (3) the **API response** boundary (today responses
 are RBAC-gated and limited to the identity fields the advisor UI displays by design; a masking helper for
 this edge was pruned as speculative until a surface needs it, D-028).
 The house-CRM store holds identity PII (it is the SoR); the audit/analytics
@@ -50,5 +52,6 @@ Fences (Phase B/E): PII-not-in-audit-store, audit-entry-scrubbed. Escape-at-rend
 
 ## Revisit When
 
-An AI/LLM surface is wired (activate the prompt boundary), or a field-level encryption scheme for PII at
-rest is added (WISP technical control).
+The first production LLM caller lands (prompt 13, activating the prompt boundary the projection layer
+already shipped per ADR-0031), or a field-level encryption scheme for PII at rest is added (WISP technical
+control).
