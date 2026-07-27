@@ -8,7 +8,7 @@
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";
-import { looksLikePIIValue, REDACTED } from "@contracts/pii";
+import { isPIIField, looksLikePIIValue, REDACTED } from "@contracts/pii";
 import { registerOtelProviderIfConfigured } from "./otel-provider";
 import { safeReason } from "./logger";
 
@@ -38,14 +38,16 @@ const tracer = trace.getTracer(getConfig().otel.serviceName);
 /**
  * PII backstop at the trace boundary (v3 §15.4): span attributes are exported
  * over OTLP, so a PII-shaped string VALUE is replaced wholesale before it can
- * leave the process. Callers pass identifiers (opaque userId, orgId) — this
- * guard exists for the day one doesn't.
+ * leave the process, and — mirroring scrub()'s key rule at the log boundary —
+ * any attribute under a PII-named KEY is redacted regardless of value type
+ * ({ phone: 2125550142 } must not survive as a raw number). Callers pass
+ * identifiers (opaque userId, orgId) — this guard exists for the day one doesn't.
  */
 function scrubAttributes(attributes: Attributes): Attributes {
   const scrub = (v: unknown): unknown => (typeof v === "string" && looksLikePIIValue(v) ? REDACTED : v);
   const out: Record<string, Attributes[string]> = {};
   for (const [k, v] of Object.entries(attributes)) {
-    out[k] = (Array.isArray(v) ? v.map(scrub) : scrub(v)) as Attributes[string];
+    out[k] = isPIIField(k) ? REDACTED : ((Array.isArray(v) ? v.map(scrub) : scrub(v)) as Attributes[string]);
   }
   return out;
 }

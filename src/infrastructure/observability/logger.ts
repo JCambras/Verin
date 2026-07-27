@@ -2,15 +2,13 @@
  * Structured logging (ADR-0013, charter #14). pino with PII redaction — the ONLY
  * sanctioned log path (raw console.* is banned by the no-console fence because only
  * this scrubs PII). Level and service name come from config (ADR-0003).
- * The PII-safe helpers below are the sanctioned way to log free-form structures
- * and exception text (v3 §15.4): callers log flat identifier objects; anything
- * dynamic goes through piiSafe/safeReason first.
+ * safeReason below is the sanctioned way to log exception text (v3 §15.4):
+ * callers log flat identifier objects; anything dynamic goes through it first.
  */
 import pino from "pino";
 import { getConfig } from "@infra/config";
 import { isAppError } from "@contracts/errors";
 import { looksLikePIIValue, REDACTED } from "@contracts/pii";
-import { scrub } from "@infra/pii/scrub";
 
 const cfg = getConfig();
 
@@ -36,15 +34,6 @@ export const loggerOptions: pino.LoggerOptions = {
 };
 
 export const log = pino(loggerOptions);
-
-/**
- * Deep-scrub a free-form structure before logging it. Field-name redaction above
- * only reaches depth 4 and only known names; this walks the whole value with the
- * same scrubber the audit boundary uses.
- */
-export function piiSafe(fields: Readonly<Record<string, unknown>>): Record<string, unknown> {
-  return scrub(fields) as Record<string, unknown>;
-}
 
 /**
  * PII-safe reason string for error logging: driver/exception text can quote row

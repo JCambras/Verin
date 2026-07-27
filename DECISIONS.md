@@ -541,8 +541,10 @@ D-036 refer to this entry; origin/main had already assigned D-036 through D-038.
   mirror.
 - **Secret containment** (`contracts/secret.ts`): config secrets become closure-held `SecretValue`s
   (every coercion path redacts; `.reveal()` allowlisted to the two HMAC consumers — PF-031). Span
-  attributes and span error messages are PII-scrubbed at the trace boundary; pino redact list extended to
-  account/routing numbers; `piiSafe`/`safeReason` are the sanctioned free-form log helpers.
+  attributes and span error messages are PII-scrubbed at the trace boundary (values by pattern, keys by
+  the same field-name rule as the log scrubber); pino redact list extended to account/routing numbers;
+  `safeReason` is the sanctioned exception-text log helper (a free-form deep-scrub helper lands with its
+  first real consumer at the prompt-13 LLM logging surface, per charter #5).
 - **ADR-0029**: line-budget amendment (contracts 600→1000, infrastructure 2500→3000) — the sanctioned
   ADR path for growth scheduled by the ratified sequence; ratchet-down at wave gates unchanged.
 **Why:** v3 prompt 6's acceptance is that the security seams are structural even though Phase 1 uses a
