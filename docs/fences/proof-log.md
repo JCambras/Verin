@@ -3180,3 +3180,152 @@ than by injecting into shipped code:
 or `src/app/api/audit/route.ts`). The full suite is green again: 48 files, 570 tests.
 
 **Date:** 2026-07-27 (twelfth review-fix round on v3 build-sequence prompt 6).
+
+---
+
+## Round 12 — one identity per request, type-decided mints, shape-decided detectors
+
+Every proof below was EXECUTED by reverting exactly one fix and running the suite,
+then restoring from a copy taken first. Where the defect is in production code the
+injection is in production code; where it is in a detector, the detector's own
+branch is reverted, because a companion that survives its branch's deletion is not
+a companion (charter #4).
+
+### PF-046 two grants on one request, past the session half-life
+
+`requirePrincipal`'s per-request memoization was removed, restoring the D-051
+shape (`return resolvePrincipalOnce(req)`). `/api/audit` was then driven through
+the REAL route handler with a session 20 minutes from a 60-minute expiry: the
+first grant rotates the id and writes the new cookie to the RESPONSE, the second
+re-reads `req.cookies` and finds a row renewal has deleted.
+
+```
+× serves an aged (past half-life) session, rotating exactly once
+  AssertionError: expected 401 to be 200
+  src/__tests__/integration/audit-route.test.ts
+```
+
+The fresh-session and fail-closed cases (advisor without `audit.export` → 403,
+no cookie → 401) stayed green throughout, so the fix restores the aged path
+without loosening either grant.
+
+### PF-047 a client-shaped entityId must not abort the write's own failure report
+
+`observabilityIdOrRedacted` was reverted to `observabilityId` in `auditedWrite`'s
+catch. `auditedWrite({ entityId: "Smith", perform: () => { throw NOT_FOUND } })`
+— the exact value `PATCH /api/crm/households` accepts — then threw `PII_VIOLATION`
+out of the helper before `failIntent` was enqueued.
+
+```
+× a CLIENT-SHAPED entityId still yields the typed error AND the failure-audit entry
+  src/__tests__/integration/audited-write.test.ts
+```
+
+The passing form asserts BOTH halves: the typed NOT_FOUND result, and a
+`task.create.failed` row whose `entity_id` is still `Smith` while the log line
+carries `[REDACTED]` — refused from observability, not from the chain.
+
+### PF-048 the sealed-annotation rule, four ways
+
+Each branch reverted separately; each fails a different companion.
+
+```
+# restore `if (call.getTypeArguments().length === 0) continue`
+× catches a coercion helper whose sealed type argument is INFERRED, not written
+
+# `sealedType(annotation)` -> `sealedValueType(annotation)`  (no container walk)
+× catches a PROMISE-wrapped laundering function (the normal async shape)
+× catches the four declaration positions the annotation scan used to skip
+
+# drop the source-side awaited() unwrap
+× catches a PROMISE-wrapped laundering function (the normal async shape)
+
+# `isUncheckedSource(...)` -> `sealedValueType(source)?.typeName === sealed.typeName`
+× enforces: sealed types are built only in their factory modules
+× allows the NULLABLE sealed shapes the rule promises to leave alone
+```
+
+The fourth is the two-sided proof: the old predicate fails the real repository AND
+the nullable companion, so the narrowing is not a deletion.
+
+### PF-049 element-access is the only reference source that fires alone
+
+Dropping `PropertyAccessExpression` from `detectUntrustedFactoryCalls`'s reference
+sources changed NOTHING (a member access's NAME node is itself an Identifier that
+already resolves), so it was removed as unprovable surface. `ElementAccessExpression`
+is different — `principal["principalFromIdentity"]({})` names the factory in a
+string, and no identifier on that line resolves to it.
+
+```
+# drop ElementAccessExpression
+× catches a factory named only in a STRING, through element access
+```
+
+### PF-050 detectors keyed on shape, not spelling
+
+```
+# isSqlExecutorCall requires a PropertyAccessExpression again
+× catches app-layer SQL issued through a DESTRUCTURED or indexed executor
+
+# mutatesPersistence -> "the body contains DML somewhere"
+× refuses to let a PII read buy its own exemption with an inline audit write
+
+# stop stripping quoted SQL values
+× keeps the write exemption for a locking pre-image read inside an update
+
+# drop index/alias type-argument walking from containsDeclaredType
+# (and, separately, drop class-property callables)
+× derives a PII sink from a MAP-shaped return and from a class-field arrow
+
+# read a port-annotated repository's DECLARED type instead of its initializer
+× checks the IMPLEMENTATION of a repository annotated with its domain port
+
+# authorized-value check: .every(call) -> .some(call)
+× rejects a SECOND, unauthorized call to the same sink in one handler
+
+# isAuthorizedValue -> "the subtree mentions the authorization"
+× rejects a `valueOf()` reference standing in for the authorized value
+× rejects a grant argument that merely MENTIONS the authorized value
+× rejects a grant LAUNDERED through a local binding that mixes in client data
+
+# enclosingHandlerName returns null for a non-exported enclosing function
+× attributes a sink called from a route-LOCAL helper to its exported handler
+
+# drop the invoked-receiver exemption from detectEscapedGovernedSinks
+× does not call a sink INVOKED inside a callback argument an escaped value
+
+# delete `binding.action === entry.action`
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+× flags a route wired to the WRONG action literal
+× accepts a handler that binds TWO grants before any route work, and rejects one bound after
+```
+
+The last one is a companion repair: the old fixture had no fail-closed guard, so
+`auth` was undefined regardless and the action comparison was never exercised. It
+now plants a COMPLETE prologue binding the wrong action and asserts the exact
+message, so only that comparison can produce it.
+
+### PF-051 observability attributes: the message-less form and the sometimes-opaque union
+
+```
+# attributesArgument -> `messageArgument(call) === args[1] ? args[0] : null`
+× checks the attribute bag of a MESSAGE-LESS log call (pino's single-argument form)
+
+# declaredAsObservabilityId -> members.some(...)
+× refuses an attribute that is only SOMETIMES an opaque id, and allows the optional form
+
+# OBSERVABILITY_ID_FACTORIES -> ["observabilityId"]
+× enforces: the attribute vocabularies match the shipped call sites exactly
+× derives id fields from the REDACTING mint too (an error-path field is not stale)
+```
+
+The second proof is two-sided in one test: `ObservabilityId | string` must be
+refused, `ObservabilityId | null` must not.
+
+**Revert:** every injected file was restored from a copy taken before its
+injection; `git status` shows no unintended diff. The full suite is green again:
+49 files, 593 tests. `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+`pnpm v3:invariants` (3 active-pass, 0 active-fail) and `pnpm golden:validate`
+(16/16) all pass.
+
+**Date:** 2026-07-27 (thirteenth review-fix round on v3 build-sequence prompt 6).

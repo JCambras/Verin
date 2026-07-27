@@ -144,7 +144,19 @@ const AUDIT_INTENT_SITES = [
   { file: "src/infrastructure/audit/audited-write.ts", name: "auditedWrite" },
   { file: "src/infrastructure/wire.ts", name: "auditEvent" },
 ] as const;
-const OBSERVABILITY_ID_FACTORY = "observabilityId";
+/**
+ * Both sealed-id mints. `observabilityIdOrRedacted` is the same factory with the
+ * throw traded for a REDACTED degrade (used on error paths, where a caller-shaped
+ * id must not abort the write) — so it stamps the same `field` and owes the same
+ * id-field derivation. Missing it here would report every error-path field stale.
+ */
+const OBSERVABILITY_ID_FACTORIES = ["observabilityId", "observabilityIdOrRedacted"] as const;
+
+function isObservabilityIdMint(call: CallExpression): boolean {
+  return OBSERVABILITY_ID_FACTORIES.some((name) =>
+    resolvesTo(call.getExpression(), SAFE_VALUES, name)
+  );
+}
 
 /** Every statically-known string value of a type: a literal, or each member of a literal union. */
 function literalUnionValues(type: Type): { values: string[]; numeric: boolean; dynamic: boolean } {
@@ -160,11 +172,20 @@ function literalUnionValues(type: Type): { values: string[]; numeric: boolean; d
   return { values, numeric, dynamic };
 }
 
-/** The attribute-bag ARGUMENT slot: withSpan's second argument, pino's merge object. */
+/**
+ * The attribute-bag ARGUMENT slot: withSpan's second argument, pino's merge object.
+ * pino's merge object is the first argument whenever it is not the message — INCLUDING
+ * the single-argument form `log.error({ status })`, which is valid pino and carries a
+ * bag that degrades at runtime exactly like the two-argument form. Comparing against
+ * `args[1]` alone dropped that whole call shape (no derived values, no dynamic-value
+ * violation, no id-field check) because `null === undefined` is false.
+ */
 function attributesArgument(call: CallExpression): Node | null {
   const args = call.getArguments();
   if (isWithSpanCall(call)) return args[1] ?? null;
-  return messageArgument(call) === args[1] ? args[0] ?? null : null;
+  const first = args[0];
+  if (!first || first === messageArgument(call)) return null;
+  return first;
 }
 
 /**
@@ -251,12 +272,7 @@ function attributeType(node: Node): Type {
 /** The `field` an `observabilityId("<field>", …)` mint stamps into the value, if statically known. */
 function mintedIdField(node: Node): string | null {
   const call = Node.isAwaitExpression(node) ? node.getExpression() : node;
-  if (
-    !Node.isCallExpression(call) ||
-    !resolvesTo(call.getExpression(), SAFE_VALUES, OBSERVABILITY_ID_FACTORY)
-  ) {
-    return null;
-  }
+  if (!Node.isCallExpression(call) || !isObservabilityIdMint(call)) return null;
   return literalText(call.getArguments()[0]);
 }
 
@@ -351,8 +367,10 @@ export function detectAttributeVocabularyDrift(
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const where = `${file}:${call.getStartLineNumber()}`;
       // The id-field vocabulary is exactly the first argument of every
-      // observabilityId(...) mint.
-      if (resolvesTo(call.getExpression(), SAFE_VALUES, OBSERVABILITY_ID_FACTORY)) {
+      // observabilityId(...) mint. The factory MODULE is not a call site: its two
+      // mints delegate to each other through the `field` parameter, which is typed
+      // against the vocabulary rather than written as a literal.
+      if (file !== SAFE_VALUES && isObservabilityIdMint(call)) {
         const field = literalText(call.getArguments()[0]);
         if (field === null) {
           out.push(`${where}: observabilityId needs a literal field name`);
@@ -408,9 +426,18 @@ export function detectAttributeVocabularyDrift(
   return out;
 }
 
+/**
+ * EVERY non-nullish member must be a sealed ObservabilityId, not merely one of them.
+ * `some` let one opaque member wave the whole attribute through: `{ orgId: ok ?
+ * observabilityId("orgId", raw) : raw }` types as `ObservabilityId | string`, and at
+ * runtime the string branch fails readObservabilityId and then the closed-set check,
+ * so the operator sees "[REDACTED]" — with the fence green. `null`/`undefined` are
+ * excluded because the optional form (`x ? mint(x) : null`) logs nothing at all.
+ */
 function declaredAsObservabilityId(type: Type): boolean {
-  const members = type.isUnion() ? type.getUnionTypes() : [type];
-  return members.some((member) =>
+  const members = (type.isUnion() ? type.getUnionTypes() : [type])
+    .filter((member) => !member.isNull() && !member.isUndefined());
+  return members.length > 0 && members.every((member) =>
     [member.getAliasSymbol(), member.getSymbol()].some((symbol) =>
       symbol?.getName() === "ObservabilityId" &&
       symbol.getDeclarations().some((declaration) =>
@@ -498,6 +525,9 @@ function attributeFixture(consumer: string): Project {
     `
       export interface ObservabilityId { readonly field: string; readonly value: string }
       export function observabilityId(field: string, value: string): ObservabilityId {
+        return { field, value };
+      }
+      export function observabilityIdOrRedacted(field: string, value: string): ObservabilityId {
         return { field, value };
       }
       export function registerTestSpanName(name: string): void { void name; }
@@ -778,6 +808,80 @@ describe("observability-vocabulary fence (charter #14)", () => {
       expect(drift.some((v) => v.includes("unregistered observability id field"))).toBe(false);
       expect(drift.some((v) =>
         v.includes(`logged as "actor" is minted with field "orgId"`)
+      )).toBe(true);
+    });
+
+    it("checks the attribute bag of a MESSAGE-LESS log call (pino's single-argument form)", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        export const emit = () => log.error({ status: "archived", durationMs: 12 });
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: [], actions: [], enums: { status: [] }, numericFields: [] },
+        () => false,
+      );
+      expect(drift.some((v) => v.includes(`unregistered status "archived"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered numeric attribute "durationMs"`))).toBe(true);
+    });
+
+    it("refuses an attribute that is only SOMETIMES an opaque id, and allows the optional form", () => {
+      const sometimes = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityId } from "@domain/observability/safe-values";
+        export const emit = (raw: string, ok: boolean) =>
+          log.info({ orgId: ok ? observabilityId("orgId", raw) : raw }, "emitted");
+      `);
+      expect(detectAttributeVocabularyDrift(
+        sometimes,
+        { idFields: ["orgId"], actions: [], enums: {}, numericFields: [] },
+        () => true,
+      ).some((v) => v.includes("dynamic orgId value"))).toBe(true);
+
+      // The OPTIONAL form is still opaque: `null` logs nothing, so it stays allowed
+      // (the narrowing above must not turn every nullable id into a violation).
+      const optional = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityId } from "@domain/observability/safe-values";
+        export const emit = (id: string | null) =>
+          log.info({ entityId: id ? observabilityId("entityId", id) : null }, "emitted");
+      `);
+      expect(detectAttributeVocabularyDrift(
+        optional,
+        { idFields: ["entityId"], actions: [], enums: {}, numericFields: [] },
+        () => false,
+      )).toEqual([]);
+    });
+
+    it("derives id fields from the REDACTING mint too (an error-path field is not stale)", () => {
+      const live = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityIdOrRedacted } from "@domain/observability/safe-values";
+        export const emit = (id: string) =>
+          log.error({ entityId: observabilityIdOrRedacted("entityId", id) }, "emitted");
+      `);
+      // The redacting mint IS a call site: nothing unregistered, nothing stale.
+      expect(detectAttributeVocabularyDrift(
+        live,
+        { idFields: ["entityId"], actions: [], enums: {}, numericFields: [] },
+        () => true,
+      )).toEqual([]);
+
+      const wrong = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityIdOrRedacted } from "@domain/observability/safe-values";
+        export const emit = (id: string) =>
+          log.error({ entityId: observabilityIdOrRedacted("sessionId", id) }, "emitted");
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        wrong,
+        { idFields: ["entityId"], actions: [], enums: {}, numericFields: [] },
+        () => true,
+      );
+      expect(drift.some((v) => v.includes(`unregistered observability id field "sessionId"`))).toBe(true);
+      // ...and its minted field is held to the attribute key, exactly like the throwing mint.
+      expect(drift.some((v) =>
+        v.includes(`logged as "entityId" is minted with field "sessionId"`)
       )).toBe(true);
     });
 

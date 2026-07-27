@@ -1676,11 +1676,13 @@ against the one place a persistence read could avoid both derivations entirely.
   resolving actor userIds to raw emails is a PII read that owes `pii.view`.
   `listOrgUserEmails` is a governed sink asserting its own grant, scoped by that
   grant's sealed tenant. Every role that could already export
-  (ops/cco/principal/admin) also holds `pii.view`, so no authorized caller sees a
-  behaviour change; an advisor is still refused at the first grant.
+  (ops/cco/principal/admin) also holds `pii.view`, so the ROLE taxonomy is
+  unchanged; an advisor is still refused at the first grant.
   `detectUnwiredGovernedRoutes` therefore reads an authorization PROLOGUE — a
   sequence of (bind, fail-closed guard) pairs before any route work — instead of
-  exactly one pair.
+  exactly one pair. (CORRECTED by D-052: "no authorized caller sees a behaviour
+  change" was true of roles and false of SESSIONS — a second grant meant a second
+  identity resolution, which 401s once the session passes its half-life.)
 - **A mint is decided by the initializer's TYPE, never its callee.** The
   annotation rule keyed on "is this a call into the factory?", which missed the
   whole `any`-sourced class (`function tenantFromCache(raw): TenantContext {
@@ -1730,3 +1732,94 @@ both, and they authorize different things).
 **Revert path:** revert this changeset. `listOrgUserEmails`/`readStoreReadiness`
 fold back into their routes, the audit export returns to a single grant, and the
 detectors return to their D-050 shapes.
+
+---
+
+## D-052 — One identity per request, and detectors that read shapes rather than spellings
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: ADR-0008, ADR-0018, ADR-0031,
+v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#12/#13/#14, D-030, D-050, D-051
+
+D-051 landed the audit export's second grant and decided mints from types. This
+round fixes the two REACHABLE regressions that came with it, closes the compile
+bypass under v3 invariant 1's activation, and stops five detectors from keying on
+how code is spelled instead of what it does.
+
+- **A request resolves its principal ONCE.** Two `requireActionGrant` calls meant
+  two `requirePrincipal` calls, and sliding renewal ROTATES the session id while
+  writing the new cookie to the RESPONSE — `req.cookies` still holds the id the
+  client presented, so the second lookup found a row renewal had already deleted
+  and returned 401. Reachable on `/api/audit` for any session past its half-life
+  (30 minutes of a 60-minute TTL), where `/app/audit` shows only "Could not load
+  the audit trail." The in-flight promise is memoized on a `WeakMap` keyed by the
+  request, so BOTH grants stay required and fail-closed, the prologue shape the
+  governed-actions fence reads is unchanged, and rotation stays exactly where
+  ADR-0008/D-030 put it. D-051's "no authorized caller sees a behaviour change"
+  is corrected in place: it held for roles, not for sessions.
+- **A logging helper never decides whether a write reports its own failure.**
+  `observabilityId` throws on a non-opaque value, and `entityId` is CLIENT-SUPPLIED
+  on `updateHouseholdName` (`PATCH /api/crm/households` validates only "non-empty
+  string ≤100 chars"). Inside `auditedWrite`'s catch that throw escaped BEFORE the
+  `[attempt failed]` entry was enqueued: `{"id":"Smith"}` returned an unenveloped
+  500 instead of the typed 404 and silently lost the chain entry that exists to
+  record the attempt (charter #13). `observabilityIdOrRedacted` degrades to
+  `[REDACTED]` instead — the answer the log formatter would have given anyway —
+  while the audit chain still records the real id for the examiner.
+- **The sealed-annotation rule reads the VALUE, not the syntax.** It is a mint when
+  the checker has stopped reasoning about what fills a sealed annotation (`any` /
+  `unknown` / `never`), which is the only thing assignable to a `unique symbol`
+  brand without a cast. That is two-sided: it catches `Promise<TenantContext>`
+  returning `JSON.parse` (the normal async laundering shape) and the four positions
+  the scan never visited (declare-then-assign, get accessor, parameter default,
+  container annotation), while `const p: Principal | null = null` — flagged by the
+  old "source is not already sealed" test — is a checked value, not a laundered
+  one. Separately, a call mints when the sealed type came from a type parameter the
+  signature INVENTS (named in the return, named by no parameter), so the inferred
+  `const t: TenantContext = coerce(raw)` fails exactly like the explicit
+  `coerce<TenantContext>(raw)`, while `unwrap<T>(r: Result<T>): T` — whose T was
+  already sealed on the way in — does not. v3 invariant 1 was active on the
+  explicit-only rule; it is now active on one that holds.
+- **Five detectors moved from spelling to shape.** A SQL executor is recognized by
+  the name it is DECLARED under, so `const { query } = db; query(sql)`,
+  `const { query: run } = db`, and `db["query"](sql)` are the same app-layer
+  persistence violation as `db.query(sql)`. The write exemption requires a write
+  BOUNDARY — DML whose only reads are the locking pre-image reads it takes — so a
+  PII read can no longer buy its exemption by writing an access record first, and a
+  quoted VALUE (`WHERE detail = 'update household name'`) is data, not a DML head.
+  PII reaches derivation through index signatures, alias arguments, and class-field
+  arrows. The authorized value must BE the authorized payload or a projection of it
+  at EVERY call site, not merely be mentioned near one at some call site. And a
+  message-less `log.error({ status })` carries a checked attribute bag, while an
+  attribute that is only SOMETIMES an opaque id is refused.
+- **Three shapes stopped being unsatisfiable.** A repository annotated with its
+  domain port is checked against its ADAPTER (the port's `MethodSignature` has no
+  body and could never hold the assertion the fence demanded); a route-local helper
+  is ordinary decomposition, resolved to the exported handler that calls it; and a
+  sink INVOKED inside a callback argument has a call site to authorize, so it has
+  not escaped. Each narrowing keeps its negative companion: the genuinely escaped
+  `runReport({ load: repo.listClients })` still fails.
+- **`ObservabilityAction` is typed, not sealed.** The claim that the union makes an
+  out-of-vocabulary action "unrepresentable" was overstated — plain string unions
+  have no factory and no brand, `raw as ObservabilityAction` still launders, and the
+  persisted chain is wider still (`audit-store` suffixes a failed write's action
+  with `.failed`). The comment now says what is true: the type closes the
+  honest-caller case, and the vocabulary fence keeps both directions honest.
+
+**Line budgets:** contracts 980/1000 (20 lines of headroom, unchanged), domain
+1186/1200 (up from 1189's 11 lines of headroom to 14), infrastructure 3153/3200.
+No ceiling was raised (charter #1). The two new domain mints were paid for by
+consolidating prose and single-use branches in the same file; behaviour is
+unchanged by every one of those edits.
+
+**Alternatives:** drop one of the audit route's two grants to avoid the second
+resolution (rejected — the ruling requires both, and they authorize different
+things); move renewal out of `requirePrincipal` (rejected — ADR-0008/D-030 makes
+that the single rotation point, and duplicating it is how the sharp edge in
+CLAUDE.md was earned); make `observabilityId` itself non-throwing (rejected — where
+an id is machine-generated a loud refusal is right, and it is what the account-
+opening route's canonicalization is proven against); raise the domain ceiling by
+ADR (rejected — the additions fit under it once duplicated prose was consolidated).
+
+**Revert path:** revert this changeset. `requirePrincipal` resolves per call again
+(and `/api/audit` 401s past the half-life), the error-path mints throw again, and
+the detectors return to their D-051 shapes.

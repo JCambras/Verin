@@ -27,7 +27,12 @@ const OBSERVABILITY_IDS = new WeakSet<object>();
  * Exported as TYPES, not just runtime sets: an `action: string` audit field lets a
  * caller hand the log formatter a value outside the closed set, which degrades to
  * "[REDACTED]" in the one line an operator needs. Typing the audit boundary against
- * these unions makes that unrepresentable rather than merely detectable.
+ * these unions closes the HONEST-CALLER case at compile time. It is NOT a seal —
+ * plain string unions, no factory, no brand, so `raw as ObservabilityAction` still
+ * launders and the runtime check stays string-keyed; the persisted chain is wider
+ * still (audit-store suffixes a failed write's action with ".failed"). The
+ * observability-vocabulary fence is what keeps both directions honest, deriving the
+ * live inventory from the real call sites.
  */
 const ACTION_NAMES = [
   "application.complete", "application.create", "application.request-esign",
@@ -81,59 +86,55 @@ const SPAN_NAMES = new Set([
 const TEST_SPAN_NAMES = new Set<string>();
 export function registerTestSpanName(name: string): void {
   if (!/^test\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(name)) {
-    throw appError(
-      "VALIDATION",
-      "A test span name must live in the reserved 'test.' namespace.",
-    );
+    throw appError("VALIDATION", "A test span name must live in the reserved 'test.' namespace.");
   }
   TEST_SPAN_NAMES.add(name);
 }
 
-// Opaque machine identifiers: hex/uuid/slug segments, CASE-INSENSITIVE — a
-// case-sensitive predicate would throw out of a log line AFTER the flow's writes
-// commit, and a logging helper must never abort a committed business operation.
+// Opaque machine identifiers: hex/uuid/slug segments, CASE-INSENSITIVE (a
+// case-sensitive predicate would refuse a mixed-case id AFTER its writes commit).
 const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
 // The person-name SHAPE: a capital immediately followed by a lowercase letter
-// ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex ids run
-// digit/uppercase runs and slugs are lowercase — so keying on the shape (rather
-// than "contains only letters") keeps "seed" and "org" from being refused.
+// ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex runs are
+// digits/uppercase and slugs are lowercase — so "seed" and "org" stay allowed.
 const NAME_SHAPED_RE = /\p{Lu}\p{Ll}/u;
+const REASON_RE = /^(?:unexpected-error|unknown-email|app-error:[A-Z_]+|driver-error:(?:\d{5}|\d{2}P\d{2}))$/;
 
-export function observabilityId(
-  field: ObservabilityIdField,
-  value: string,
-): ObservabilityId {
-  if (
-    !ID_FIELDS.has(field) ||
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.length > 128 ||
-    !OPAQUE_ID_RE.test(value) ||
-    NAME_SHAPED_RE.test(value) ||
-    /^\d{9,18}$/.test(value) ||
-    looksLikePIIValue(value)
-  ) {
-    throw appError(
-      "PII_VIOLATION",
-      `Observability ${field} identifiers must be opaque.`,
-    );
-  }
+function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
+  return ID_FIELDS.has(field) && typeof value === "string" &&
+    value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
+    !NAME_SHAPED_RE.test(value) && !/^\d{9,18}$/.test(value) &&
+    !looksLikePIIValue(value);
+}
+
+function sealId(field: ObservabilityIdField, value: string): ObservabilityId {
   const id = { field, value };
   OBSERVABILITY_IDS.add(id);
   return Object.freeze(id) as ObservabilityId;
 }
 
-export function readObservabilityId(
-  value: unknown,
-  field: string | undefined,
-): string | null {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !OBSERVABILITY_IDS.has(value)
-  ) {
-    return null;
+export function observabilityId(field: ObservabilityIdField, value: string): ObservabilityId {
+  if (!isOpaqueId(field, value)) {
+    throw appError("PII_VIOLATION", `Observability ${field} identifiers must be opaque.`);
   }
+  return sealId(field, value);
+}
+
+/**
+ * The same mint where the value is NOT the caller's to control — a client-supplied
+ * entity id on an ERROR path. Throwing is right where an id is machine-generated,
+ * but inside a catch block it makes a logging helper decide whether the operation
+ * reports its own failure: the throw escapes before the failure-audit entry is
+ * enqueued, turning a typed 404 into an unenveloped 500 and losing the
+ * "[attempt failed]" chain entry (charter #13). Degrade to REDACTED instead — the
+ * same answer the log formatter would give, reached without abandoning the write.
+ */
+export function observabilityIdOrRedacted(field: ObservabilityIdField, value: string): ObservabilityId {
+  return sealId(field, isOpaqueId(field, value) ? value : REDACTED);
+}
+
+export function readObservabilityId(value: unknown, field: string | undefined): string | null {
+  if (typeof value !== "object" || value === null || !OBSERVABILITY_IDS.has(value)) return null;
   const id = value as ObservabilityId;
   return id.field === field ? id.value : null;
 }
@@ -144,14 +145,10 @@ export function isSafeObservabilityPrimitive(
 ): boolean {
   if (typeof value === "boolean") return true;
   if (!field || isPIIField(field)) return false;
-  if (typeof value === "number" || typeof value === "bigint") {
-    return NUMERIC_FIELDS.has(field);
-  }
+  if (typeof value === "number" || typeof value === "bigint") return NUMERIC_FIELDS.has(field);
   if (value === REDACTED) return true;
   if (field === "action") return ACTIONS.has(value);
-  if (field === "reason") {
-    return /^(?:unexpected-error|unknown-email|app-error:[A-Z_]+|driver-error:(?:\d{5}|\d{2}P\d{2}))$/.test(value);
-  }
+  if (field === "reason") return REASON_RE.test(value);
   return ENUMS.get(field)?.has(value) ?? false;
 }
 
@@ -165,10 +162,10 @@ export function safeSpanName(value: string): string {
 
 /**
  * Every closed vocabulary the runtime degrades against, exposed so the
- * observability-vocabulary fence can derive each one from the real call sites
- * and check it BOTH ways. Span names and log messages degrade to
- * "operation"/"log event"; an unlisted action, enum member, or numeric field
- * degrades to "[REDACTED]" — silently, in the exact log line an operator needs.
+ * observability-vocabulary fence can derive each one from the real call sites and
+ * check it BOTH ways. Spans/messages degrade to "operation"/"log event"; an unlisted
+ * action, enum member, or numeric field degrades to "[REDACTED]" — silently, in the
+ * exact log line an operator needs.
  */
 export const OBSERVABILITY_VOCABULARY = Object.freeze({
   spanNames: Object.freeze([...SPAN_NAMES].sort()) as readonly string[],

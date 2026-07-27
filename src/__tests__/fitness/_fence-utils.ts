@@ -808,19 +808,22 @@ export function normalizedPath(path: string): string {
 const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
 
 /**
- * A RESOLVED SQL-executor call: `db.query(sql, …)` / `tx.exec(sql)`, where the
- * receiver's method really does take a SQL string. Resolved semantically so an
- * unrelated `.query()` on some other object is not mistaken for persistence.
+ * A RESOLVED SQL-executor call: `db.query(sql, …)` / `tx.exec(sql)`.
+ *
+ * Keyed on the CALLEE'S SIGNATURE — the name it is DECLARED under and the SQL string
+ * it takes — never on how the call is written at the site. Requiring a
+ * PropertyAccessExpression made the whole app-layer-persistence rule a one-line
+ * evasion: `const { query } = db; query("SELECT … FROM users …")`, `db["query"](…)`,
+ * and even `const { query: run } = db; run(…)` issue exactly the same SQL from
+ * exactly the same place, with no repository signature to carry an ActionGrant or a
+ * sealed TenantContext. Reading the DECLARED name (not the local binding) is what
+ * makes all three resolve alike; an unrelated `.query()` that takes no SQL string is
+ * still not mistaken for persistence.
  */
 export function isSqlExecutorCall(call: CallExpression): boolean {
-  const expression = call.getExpression();
-  if (
-    !Node.isPropertyAccessExpression(expression) ||
-    !SQL_EXECUTOR_METHODS.has(expression.getName())
-  ) {
-    return false;
-  }
-  return expression.getType().getCallSignatures().some((signature) => {
+  return call.getExpression().getType().getCallSignatures().some((signature) => {
+    const method = signature.getDeclaration().getSymbol()?.getName();
+    if (!method || !SQL_EXECUTOR_METHODS.has(method)) return false;
     const parameter = signature.getParameters()[0];
     const declaration = parameter?.getValueDeclaration() ??
       parameter?.getDeclarations()[0];
