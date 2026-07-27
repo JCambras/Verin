@@ -12,12 +12,12 @@ import {
   EvidenceSnapshotIdRefSchema,
   ExecutionPlanIdSchema,
   ExecutionStepIdSchema,
-  ExecutionTargetIdSchema,
+  ExecutionTargetRefSchema,
   HashSchema,
   ReasonCodeSchema,
-  ReservationIdSchema,
+  ReservationRefSchema,
   SecureBlobRefSchema,
-  VerificationRuleIdSchema,
+  VerificationRuleRefSchema,
 } from "./ids";
 
 /** The externally-executable command: payload behind a blob ref, pinned by hash. */
@@ -32,27 +32,32 @@ export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
   requiredEvidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
-  mustStillHoldAtExecution: z.boolean(),
+  mustStillHoldAtExecution: z.literal(true),
 }).readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;
 
-/** The recorded undo issued if a later step fails after this one succeeded. */
-export const CompensatingActionSchema = z.strictObject({
-  targetId: ExecutionTargetIdSchema,
+const retrySafeExternalActionShape = {
+  targetRef: ExecutionTargetRefSchema,
   command: ExecutionCommandSchema,
+  idempotencyKey: z.string().min(1),
+  conflictKeys: z.array(ConflictKeySchema).min(1).readonly(),
+  reservationRefs: z.array(ReservationRefSchema).readonly(),
+  preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
+  verificationRuleRef: VerificationRuleRefSchema,
+};
+
+export const RetrySafeExternalActionSchema = z.strictObject(retrySafeExternalActionShape).readonly();
+export type RetrySafeExternalAction = z.infer<typeof RetrySafeExternalActionSchema>;
+
+export const CompensatingActionSchema = z.strictObject({
+  ...retrySafeExternalActionShape,
   reasonCode: ReasonCodeSchema,
 }).readonly();
 export type CompensatingAction = z.infer<typeof CompensatingActionSchema>;
 
 export const ExecutionStepSchema = z.strictObject({
   id: ExecutionStepIdSchema,
-  targetId: ExecutionTargetIdSchema,
-  command: ExecutionCommandSchema,
-  idempotencyKey: z.string().min(1),
-  conflictKeys: z.array(ConflictKeySchema).readonly(),
-  reservationRefs: z.array(ReservationIdSchema).readonly(),
-  preconditions: z.array(ExecutionPreconditionSchema).readonly(),
-  verificationRuleId: VerificationRuleIdSchema,
+  ...retrySafeExternalActionShape,
   dependsOn: z.array(ExecutionStepIdSchema).readonly(),
   compensatingAction: CompensatingActionSchema.optional(),
 }).readonly();
@@ -71,13 +76,24 @@ export const ExecutionPlanSchema = z
     const ids = new Set<string>();
     const idemKeys = new Set<string>();
     let dependenciesValid = true;
-    for (const step of plan.steps) {
+    const registerIdempotencyKey = (key: string, path: (string | number)[]) => {
+      if (idemKeys.has(key)) {
+        ctx.addIssue({ code: "custom", message: `duplicate idempotency key "${key}"`, path });
+      }
+      idemKeys.add(key);
+    };
+    for (const [index, step] of plan.steps.entries()) {
       if (ids.has(step.id)) ctx.addIssue({ code: "custom", message: `duplicate step id "${step.id}"`, path: ["steps"] });
       ids.add(step.id);
-      if (idemKeys.has(step.idempotencyKey)) {
-        ctx.addIssue({ code: "custom", message: `duplicate idempotency key "${step.idempotencyKey}"`, path: ["steps"] });
+      registerIdempotencyKey(step.idempotencyKey, ["steps", index, "idempotencyKey"]);
+      if (step.compensatingAction) {
+        registerIdempotencyKey(step.compensatingAction.idempotencyKey, [
+          "steps",
+          index,
+          "compensatingAction",
+          "idempotencyKey",
+        ]);
       }
-      idemKeys.add(step.idempotencyKey);
     }
     plan.steps.forEach((step, i) => {
       for (const dep of step.dependsOn) {

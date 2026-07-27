@@ -287,6 +287,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-external-action-safety.test.ts"
         }
       ]
     }

@@ -32,7 +32,7 @@ resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
 | [0026](../adr/0026-stack-deviations-from-v3.md) | Stack deviations from v3 §18: PostgreSQL stays (D-001), Next.js App Router stays, ts-morph fences stay; FirmId ≡ org_id |
 | [0027](../adr/0027-demo-first-wave0-labeled-fakes.md) | Wave 0 walking skeleton on internally-labeled fakes is charter-legal (charter #5 extension; no mock theater) |
 | [0028](../adr/0028-demo-design-language.md) | Demo UI uses the ESTABLISHED Verin design system; v3 visual prescriptions rejected; v3 UX semantics re-expressed via `docs/demo-design-language.md` |
-| [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→1550 (amends ADR-0018); invariants 7-9 active |
+| [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→1800 (amends ADR-0018); invariants 7-9 active |
 
 ## The 30 invariants, phase-gated
 

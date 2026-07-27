@@ -144,6 +144,14 @@ describe("dependency-rule fence", () => {
       expect(v[0]).toMatchObject({ line: 1, specifier: "../infrastructure/store.ts" });
     });
 
+    it("JSX cannot create an implicit runtime dependency in contracts", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.tsx": `export const view = <div />;` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react/jsx-runtime" });
+    });
+
     it("relative traversal outside a project layer cannot reach an external package", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": `import React from "../../../node_modules/react/index.js";\nexport { React };` }),

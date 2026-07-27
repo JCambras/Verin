@@ -31,7 +31,9 @@ plan, blocked/prohibited carry neither, a prohibition has no resolving condition
 parse-level facts) - plus a versioned canonical serializer whose byte form is locked by the
 `fixtures/decision-core/` round-trip fixtures. Parsed contracts are recursively readonly and frozen,
 replay-ID collections reject duplicates, and version-keyed recursive fingerprints prevent nested
-projection growth under an unchanged hash-preimage version.
+projection growth under an unchanged hash-preimage version. Every named tenant-owned link is a strict
+`{ firmId, id }` reference, compensating actions carry the same retry-safety contract as execution
+steps, and replay time zones are pinned to a persisted versioned registry instead of host ICU data.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
@@ -70,12 +72,12 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-028).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-029).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
 | `charter-drift` | the constitution enforces its own enforcement | PF-001 |
-| `dependency-rule` (ts-morph: static+relative+dynamic+require+import-type+import-equals; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + PF-027 extension + companions |
+| `dependency-rule` (ts-morph: static+relative+dynamic+require+import-type+import-equals+triple-slash+implicit JSX runtime; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + extensions + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
@@ -101,7 +103,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 | `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
 | `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
-| `decision-core-tenant-scope` | every immutable bundle and decision reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045/D-046) | PF-028 + companions |
+| `decision-core-tenant-scope` | every immutable prompt-5 record and named cross-record reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045-D-047) | PF-028 + companions |
+| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata; idempotency keys cannot alias (#16, ADR-0029, D-047) | PF-029 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

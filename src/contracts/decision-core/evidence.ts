@@ -10,11 +10,11 @@
 import { z } from "zod";
 import {
   DecisionInputBundleIdSchema,
-  DomainConfigVersionIdSchema,
+  DomainConfigVersionRefSchema,
   EvidenceKindSchema,
   EvidenceSnapshotIdRefSchema,
   EvidenceSnapshotIdSchema,
-  EvidenceSourceIdSchema,
+  EvidenceSourceRefSchema,
   HashSchema,
   HouseholdInstructionVersionRefSchema,
   PolicyVersionRefSchema,
@@ -38,7 +38,7 @@ export type EvidenceFreshness = z.infer<typeof EvidenceFreshnessSchema>;
 export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
   id: EvidenceSnapshotIdSchema,
   kind: EvidenceKindSchema,
-  sourceId: EvidenceSourceIdSchema,
+  sourceRef: EvidenceSourceRefSchema,
   subjectRef: SubjectRefSchema,
   observedAt: TimestampSchema,
   retrievedAt: TimestampSchema,
@@ -47,7 +47,22 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
   encryptedStorageRef: SecureBlobRefSchema,
   contentHash: HashSchema,
   freshness: EvidenceFreshnessSchema,
-}).readonly();
+})
+  .superRefine((snapshot, ctx) => {
+    for (const [ref, path] of [
+      [snapshot.sourceRef, ["sourceRef", "firmId"]],
+      [snapshot.subjectRef, ["subjectRef", "firmId"]],
+    ] as const) {
+      if (ref.firmId !== snapshot.firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "referenced record must belong to the snapshot tenant",
+          path: [...path],
+        });
+      }
+    }
+  })
+  .readonly();
 export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
 
 /**
@@ -57,13 +72,8 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-const TimeZoneSchema = z.string().min(1).refine((timeZone) => {
-    try {
-      return new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions().timeZone === timeZone;
-    } catch {
-      return false;
-    }
-  }, { message: "unsupported or non-canonical IANA time-zone identifier" });
+export const TIME_ZONE_DATA_VERSION = "decision-core-time-zones/1.0.0";
+export const TimeZoneSchema = z.enum(["America/New_York"]);
 
 export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
@@ -71,7 +81,7 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
   engineVersion: z.string().min(1),
   primitiveSetVersion: z.string().min(1),
-  domainConfigVersionId: DomainConfigVersionIdSchema,
+  domainConfigVersionRef: DomainConfigVersionRefSchema,
   policyVersionRef: PolicyVersionRefSchema,
   householdInstructionVersionRefs: z
     .array(HouseholdInstructionVersionRefSchema)
@@ -87,6 +97,7 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,
+  timeZoneDataVersion: z.literal(TIME_ZONE_DATA_VERSION),
   bundleHash: HashSchema,
 })
   .superRefine((bundle, ctx) => {
@@ -95,6 +106,7 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
         ctx.addIssue({ code: "custom", message: "referenced record must belong to the bundle tenant", path });
       }
     };
+    requireSameFirm(bundle.domainConfigVersionRef, ["domainConfigVersionRef", "firmId"]);
     requireSameFirm(bundle.policyVersionRef, ["policyVersionRef", "firmId"]);
     bundle.householdInstructionVersionRefs.forEach((ref, index) =>
       requireSameFirm(ref, ["householdInstructionVersionRefs", index, "firmId"]),

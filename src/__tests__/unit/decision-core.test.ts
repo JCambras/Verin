@@ -12,7 +12,11 @@ import {
 } from "@contracts/decision-core/ids";
 import { TokenizedPayloadSchema } from "@contracts/decision-core/actor";
 import { IntentSchema } from "@contracts/decision-core/trigger";
-import { DecisionInputBundleSchema, EvidenceSnapshotRefSchema } from "@contracts/decision-core/evidence";
+import {
+  DecisionInputBundleSchema,
+  EvidenceSnapshotRefSchema,
+  TIME_ZONE_DATA_VERSION,
+} from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
 import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/decision-core/authority";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
@@ -53,7 +57,7 @@ const validIntent = {
     requestRef: "req:u:1",
     maskedRequest: { value: "distribute 75000 USD (tokenized)", piiFree: true },
   },
-  domainConfigVersionId: "dcv:money-movement:1",
+  domainConfigVersionRef: { firmId: "firm-a", id: "dcv:money-movement:1" },
   action: "primitive:distribute-cash",
   slots: { amount: "slot:amount:u:1" },
   createdAt: timestamp,
@@ -63,8 +67,8 @@ const validSnapshot = {
   firmId: "firm-a",
   id: "evs:u:1",
   kind: "account-balance",
-  sourceId: "src:house-crm",
-  subjectRef: "subject:smiths-joint-taxable",
+  sourceRef: { firmId: "firm-a", id: "src:house-crm" },
+  subjectRef: { firmId: "firm-a", id: "subject:smiths-joint-taxable" },
   observedAt: timestamp,
   retrievedAt: timestamp,
   attribution: "house-crm nightly sync",
@@ -81,12 +85,13 @@ const validBundle = {
   canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
   engineVersion: "0.0.0",
   primitiveSetVersion: "0",
-  domainConfigVersionId: "dcv:money-movement:1",
+  domainConfigVersionRef: { firmId: "firm-a", id: "dcv:money-movement:1" },
   policyVersionRef: { firmId: "firm-a", id: "pv:firm-a:1" },
   householdInstructionVersionRefs: [{ firmId: "firm-a", id: "hiv:smiths:1" }],
   evidenceSnapshotRefs: [{ firmId: "firm-a", id: "evs:u:1" }],
   asOf: timestamp,
   timeZone: "America/New_York",
+  timeZoneDataVersion: TIME_ZONE_DATA_VERSION,
   bundleHash: hash,
 };
 
@@ -114,6 +119,22 @@ describe("tenant scoping - unscoped persisted records are unrepresentable (v3 in
       },
     };
     expect(IntentSchema.safeParse(crossTenant).success).toBe(false);
+    expect(
+      IntentSchema.safeParse({
+        ...validIntent,
+        domainConfigVersionRef: { ...validIntent.domainConfigVersionRef, firmId: "firm-b" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects cross-tenant evidence source and subject references", () => {
+    expect(EvidenceSnapshotRefSchema.safeParse(validSnapshot).success).toBe(true);
+    for (const value of [
+      { ...validSnapshot, sourceRef: { ...validSnapshot.sourceRef, firmId: "firm-b" } },
+      { ...validSnapshot, subjectRef: { ...validSnapshot.subjectRef, firmId: "firm-b" } },
+    ]) {
+      expect(EvidenceSnapshotRefSchema.safeParse(value).success).toBe(false);
+    }
   });
 
   it("rejects cross-tenant attribution on a DecisionRecord", () => {
@@ -125,6 +146,10 @@ describe("tenant scoping - unscoped persisted records are unrepresentable (v3 in
   it("requires tenant-scoped bundle references and rejects every cross-tenant link", () => {
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
     for (const crossTenant of [
+      {
+        ...validBundle,
+        domainConfigVersionRef: { ...validBundle.domainConfigVersionRef, firmId: "firm-b" },
+      },
       { ...validBundle, policyVersionRef: { ...validBundle.policyVersionRef, firmId: "firm-b" } },
       {
         ...validBundle,
@@ -184,10 +209,26 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     ).toBe(false);
   });
 
-  it("rejects unsupported and non-canonical time zones before replay depends on firm-local time", () => {
+  it("uses a version-pinned time-zone registry independent of host ICU data", () => {
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Not/AZone" }).success).toBe(false);
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "US/Eastern" }).success).toBe(false);
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Europe/London" }).success).toBe(false);
+    expect(
+      DecisionInputBundleSchema.safeParse({
+        ...validBundle,
+        timeZoneDataVersion: "decision-core-time-zones/2.0.0",
+      }).success,
+    ).toBe(false);
+    const original = Intl.DateTimeFormat;
+    Reflect.set(Intl, "DateTimeFormat", () => {
+      throw new Error("host ICU unavailable");
+    });
+    try {
+      expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
+    } finally {
+      Reflect.set(Intl, "DateTimeFormat", original);
+    }
   });
 
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
@@ -393,13 +434,17 @@ describe("temporal + integrity primitives", () => {
 describe("structural-integrity refinements", () => {
   const step = (id: string, over: Record<string, unknown> = {}) => ({
     id,
-    targetId: "target:house-crm",
+    targetRef: { firmId: "firm-a", id: "target:house-crm" },
     command: { commandType: "submit", payloadRef: `blob:${id}`, payloadHash: hash },
     idempotencyKey: `idem:${id}`,
-    conflictKeys: [],
+    conflictKeys: [`conflict:${id}`],
     reservationRefs: [],
-    preconditions: [],
-    verificationRuleId: "vr:u:1",
+    preconditions: [{
+      code: "evidence-still-fresh",
+      requiredEvidenceSnapshotRefs: [],
+      mustStillHoldAtExecution: true,
+    }],
+    verificationRuleRef: { firmId: "firm-a", id: "vr:u:1" },
     dependsOn: [],
     ...over,
   });
@@ -454,7 +499,7 @@ describe("structural-integrity refinements", () => {
   });
   const approvalStage = (stageId: string, order: number) => ({
     ...stageBase(stageId, order),
-    templateId: "apt:u:1",
+    templateRef: { firmId: "firm-a", id: "apt:u:1" },
     expiresAt: timestamp,
   });
   const templateStage = (stageId: string, order: number) => ({
@@ -473,7 +518,7 @@ describe("structural-integrity refinements", () => {
     expect(AuthorityRequirementSchema.safeParse(review(distinct)).success).toBe(true);
     expect(AuthorityRequirementSchema.safeParse(review(dupId)).success).toBe(false);
     expect(AuthorityRequirementSchema.safeParse(review(dupOrder)).success).toBe(false);
-    const template = (stages: unknown) => ({ id: "apt:u:1", stages });
+    const template = (stages: unknown) => ({ firmId: "firm-a", id: "apt:u:1", stages });
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 1)])).success).toBe(true);
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:ops", 1)])).success).toBe(false);
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 0)])).success).toBe(false);

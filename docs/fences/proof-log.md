@@ -1005,3 +1005,63 @@ companion passed. The schema and hash-preimage envelopes advanced to 1.2.0, with
 fingerprints and fixture digests.
 
 **Date:** 2026-07-27 (review correction F23, D-046).
+
+**Extension (review correction F26):** the external-action target tenant check was removed from
+`DecisionRecordSchema`. The real fence rejected the weakening:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:390
+```
+**Revert (extension):** restored the target-reference check. The extended fence also exercises
+domain configuration, evidence sources, subjects, approval templates, scopes, reservations,
+verification rules, authority stages, blockers, revaluation conditions, and compensating actions.
+
+**Date:** 2026-07-27 (review correction F26, D-047).
+
+### PF-029 · decision-core external-action safety (charter #16) · `src/__tests__/fitness/decision-core-external-action-safety.test.ts`
+**Invariant (charter #1/#16; v3 §3 non-negotiable 10; ADR-0029, D-047):** every external
+execution action, including a compensating action, carries stable idempotency, conflict control,
+tenant-scoped reservations, pre-execution conditions, and a tenant-scoped verification rule.
+Parent and compensation idempotency keys cannot alias.
+
+`idempotencyKey` was made optional in the shared action shape. The real fence failed:
+```
+× enforces: compensation requires idempotencyKey
+  expected true to be false
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:43
+```
+**Revert:** restored the required key. The legal companion parsed the shared action,
+compensation, and full execution plan, proving the fence does not reject every plan.
+
+**Date:** 2026-07-27 (review correction F25, D-047).
+
+### PF-002 extension · implicit JSX runtime dependency
+**Invariant (charter #1; ADR-0001/0029, D-047):** Zod is the only permitted external dependency
+in `contracts/`; JSX cannot add an invisible `react/jsx-runtime` import.
+
+A real `src/contracts/decision-core/jsx-probe.tsx` containing `<div />` was injected. The
+dependency fence reported:
+```
+contracts external-import violations:
+src/contracts/decision-core/jsx-probe.tsx:1 (react/jsx-runtime)
+```
+**Revert:** removed the probe. The in-memory companion keeps the implicit import form covered.
+
+**Date:** 2026-07-27 (review correction F27, D-047).
+
+### PF-027 extension · version-pinned replay time zones
+**Invariant (charter #1; v3 replay contract §12.1; ADR-0029, D-047):** bundle validation uses
+the persisted time-zone-data version and a closed registry, never host ICU data.
+
+The closed `TimeZoneSchema` was weakened to an arbitrary non-empty string. The focused contract
+test failed:
+```
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected true to be false
+  src/__tests__/unit/decision-core.test.ts:213
+```
+**Revert:** restored the closed registry. The same test replaces `Intl.DateTimeFormat` with a
+throwing implementation and proves the supported bundle still parses.
+
+**Date:** 2026-07-27 (review correction F28, D-047).

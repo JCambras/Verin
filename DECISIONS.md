@@ -636,3 +636,29 @@ ADR-0029's ADR-0018 amendment path after the complete contract measured 1640 lin
 a hash-bound record cannot cite another firm's immutable inputs.
 **Revert path:** restore the 1.1.0 decision shapes, fixtures, projection fingerprints, and hashes
 together, remove the recursive PF-028 cases, and restore the 1550 ceiling.
+
+### D-047 · 2026-07-27 · captain-decision · External actions, tenant references, replay zones, and dependency fences are structurally complete
+
+Compensating actions now share the execution step's retry-safe external-action shape: stable
+idempotency key, conflict keys, tenant-scoped reservation references, preconditions, and a
+tenant-scoped verification-rule reference. Parent and compensation keys cannot alias. Approval
+templates are tenant-scoped records, and the remaining configuration, source, subject, scope,
+template, target, reservation, and verification links carry strict `{ firmId, id }` references.
+The decision refinement reaches blockers, revaluation conditions, authority stages, execution
+steps, and compensating actions.
+
+Replay time zones now come from a closed registry identified by the persisted
+`timeZoneDataVersion`, not the host runtime's ICU data. The schema and both hash-preimage envelopes
+advance to 1.3.0, and the canonical fixtures lock the new bytes, projection fingerprints, and
+digests. The contracts external-import fence treats JSX as an implicit `react/jsx-runtime` import,
+so Zod remains the only permitted external dependency.
+
+The complete contract measures 1779 lines. ADR-0029 re-baselines the contracts ceiling from 1650
+to 1800 through ADR-0018's amendment path, and both ADR indexes report the enforced ceiling.
+**Why:** these are the bounded F25-F29 correctness and governance corrections authorized by the
+captain; leaving compensation retry behavior, tenant ownership, replay validation, or implicit
+dependencies to runtime convention would contradict charter #1/#7/#16 and v3 non-negotiables
+10-11.
+**Revert path:** restore the 1.2.0 schemas and fixtures together, remove the external-action fence
+and JSX companion, restore ICU-based validation, and return the contracts ceiling and indexes to
+1650.

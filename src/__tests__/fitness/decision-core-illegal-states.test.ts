@@ -31,13 +31,17 @@ const plan = {
   steps: [
     {
       id: "step:fence:1",
-      targetId: "target:house-crm",
+      targetRef: { firmId: "firm-a", id: "target:house-crm" },
       command: { commandType: "submit", payloadRef: "blob:fence:1", payloadHash: "a".repeat(64) },
       idempotencyKey: "idem:fence:1",
-      conflictKeys: [],
+      conflictKeys: ["conflict:fence:1"],
       reservationRefs: [],
-      preconditions: [],
-      verificationRuleId: "vr:fence:1",
+      preconditions: [{
+        code: "evidence-still-fresh",
+        requiredEvidenceSnapshotRefs: [],
+        mustStillHoldAtExecution: true,
+      }],
+      verificationRuleRef: { firmId: "firm-a", id: "vr:fence:1" },
       dependsOn: [],
     },
   ],
@@ -46,7 +50,11 @@ const recommendation = { code: "act", summary: "Act.", parameters: {}, alternati
 const blocker = {
   code: "cash-reserve-breach",
   explanation: "Reserve would be breached.",
-  resolvingEvidence: [{ evidenceKind: "account-balance", subjectRef: "subject:x", suppliableBy: ["external"] }],
+  resolvingEvidence: [{
+    evidenceKind: "account-balance",
+    subjectRef: { firmId: "firm-a", id: "subject:x" },
+    suppliableBy: ["external"],
+  }],
 };
 const prohibition = {
   source: {
@@ -54,7 +62,7 @@ const prohibition = {
     sourceRef: { firmId: "firm-a", id: "reg-holds" },
     versionRef: { firmId: "firm-a", id: "reg-holds@2026.02" },
   },
-  scope: "scope:account:x",
+  scopeRef: { firmId: "firm-a", id: "scope:account:x" },
   reasonCode: "active-legal-hold",
   explanation: "Active legal hold.",
 };
@@ -186,7 +194,11 @@ describe("decision-core illegal-states fence", () => {
         expect(DecisionRecordSchema.safeParse(record(result)).success).toBe(true);
       }
       const blockedWithRevaluation = record(blocked, {
-        reevaluateWhen: [{ kind: "evidence_changed", subjectRef: "subject:x", evidenceKind: "account-balance" }],
+        reevaluateWhen: [{
+          kind: "evidence_changed",
+          subjectRef: { firmId: "firm-a", id: "subject:x" },
+          evidenceKind: "account-balance",
+        }],
       });
       expect(DecisionRecordSchema.safeParse(blockedWithRevaluation).success).toBe(true);
     });

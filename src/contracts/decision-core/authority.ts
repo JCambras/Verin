@@ -11,7 +11,15 @@
  * recorded instances, never re-derives them.
  */
 import { z } from "zod";
-import { ApprovalTemplateIdSchema, DurationSchema, ReasonCodeSchema, RoleIdSchema, TimestampSchema } from "./ids";
+import {
+  ApprovalTemplateIdSchema,
+  ApprovalTemplateRefSchema,
+  DurationSchema,
+  ReasonCodeSchema,
+  RoleIdSchema,
+  TimestampSchema,
+} from "./ids";
+import { TenantContextSchema } from "./actor";
 
 /** After `after` with no quorum, escalate to `roleIds` for `reasonCode`. */
 export const EscalationStepSchema = z.strictObject({
@@ -73,6 +81,7 @@ export type ApprovalStageTemplate = z.infer<typeof ApprovalStageTemplateSchema>;
 /** A reusable, referencable stack of stage templates. */
 export const ApprovalTemplateSchema = z
   .strictObject({
+    ...TenantContextSchema.unwrap().shape,
     id: ApprovalTemplateIdSchema,
     stages: z.array(ApprovalStageTemplateSchema).min(1).readonly(),
   })
@@ -86,7 +95,7 @@ export type ApprovalTemplate = z.infer<typeof ApprovalTemplateSchema>;
  */
 export const ApprovalStageSchema = z.strictObject({
   ...stageCore,
-  templateId: ApprovalTemplateIdSchema,
+  templateRef: ApprovalTemplateRefSchema,
   expiresAt: TimestampSchema,
 }).readonly();
 export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
