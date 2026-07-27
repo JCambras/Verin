@@ -50,6 +50,38 @@ INJECTED-DRIFT -> fitness:src/__tests__/fitness/this-fence-was-deleted.test.ts
 -> infrastructure (@infra/store)`. **Revert:** deleted the file; suite green. Also proven for relative,
 dynamic `import()`, and `require()` seams by the in-memory companions.
 
+**Extension (review finding F16):** configured alias suffixes are normalized before layer or external
+package classification. Test-first companions reproduced both bypasses against the prior classifier:
+```
+× alias traversal from contracts into infrastructure is normalized before classification
+  expected [] to include 'contracts->infrastructure'
+× alias traversal cannot disguise an external package as a contracts import
+  expected [] to have a length of 1 but got 0
+```
+The shared path classifier now accepts only paths inside the repository source root or the explicit
+in-memory source root. A third companion proves that an external package containing its own
+`src/contracts` directory cannot be mistaken for this repository's contracts layer.
+
+Real-tree injections then proved both requested forms independently:
+```
+# src/contracts/_adv_alias_traversal.ts
+import "@contracts/../infrastructure/store";
+
+dependency-rule violations:
+src/contracts/_adv_alias_traversal.ts: contracts -> infrastructure
+(@contracts/../infrastructure/store)
+
+# src/contracts/_adv_alias_traversal.ts
+import "@contracts/../../node_modules/react/index.js";
+
+contracts external-import violations:
+src/contracts/_adv_alias_traversal.ts:1
+(@contracts/../../node_modules/react/index.js)
+```
+**Revert (extension):** deleted the injected file; the focused dependency fence passed all 15 tests.
+
+**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-043).
+
 ## PF-003 · no-process-env · `src/__tests__/fitness/no-process-env.test.ts`
 **Invariant (ADR-0003):** `process.env` only in `infrastructure/config`. **Injection:** `src/domain/_adv_env.ts`
 with `export const k = process.env.SECRET_TOKEN;`. **Observed:** `process.env read outside config:
