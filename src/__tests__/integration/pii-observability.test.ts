@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import pino from "pino";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
-import { loggerOptions, piiSafe, safeReason } from "@infra/observability/logger";
+import { loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import type { Principal } from "@contracts/principal";
@@ -11,7 +11,7 @@ import type { Principal } from "@contracts/principal";
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
  * appear in logs or traces. The log half exercises the REAL production
  * redaction options (loggerOptions is the exact object `log` is built from)
- * plus the sanctioned free-form helpers; the trace half runs the REAL
+ * plus the sanctioned exception-text helper; the trace half runs the REAL
  * account-opening flow end-to-end and scans every recorded span.
  */
 const ORG = "org-pii";
@@ -45,13 +45,6 @@ describe("logs never carry raw names or account numbers", () => {
       expect(out).not.toContain(raw);
     }
     expect(out).toContain(REDACTED);
-  });
-  it("piiSafe deep-scrubs structures BEYOND the redactor's depth/name limits", () => {
-    const { lines, logger } = makeSink();
-    logger.info(piiSafe({ a: { b: { c: { d: { e: { name: FIXTURES.lastName, note: `call ${FIXTURES.phone}` } } } } } }), "deep");
-    const out = lines.join("");
-    expect(out).not.toContain(FIXTURES.lastName);
-    expect(out).not.toContain(FIXTURES.phone);
   });
   it("safeReason replaces PII-shaped exception text wholesale", () => {
     expect(safeReason(new Error(`duplicate key value: (${FIXTURES.email}) already exists`))).toBe(REDACTED);
@@ -103,5 +96,19 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.phone).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifiers survive
     expect(span!.attributes.refs).toEqual([REDACTED, ORG]); // array values are scrubbed element-wise
+  });
+
+  it("a PII-NAMED attribute KEY is redacted regardless of value type (numbers included)", async () => {
+    await withSpan(
+      "test.keyrule",
+      { phone: 2125550142, accountNumber: 941000517334, orgId: ORG, actor: advisor.userId },
+      async () => undefined,
+    );
+    const span = [...recentSpans()].reverse().find((s) => s.name === "test.keyrule");
+    expect(span).toBeTruthy();
+    expect(span!.attributes.phone).toBe(REDACTED);
+    expect(span!.attributes.accountNumber).toBe(REDACTED);
+    expect(span!.attributes.orgId).toBe(ORG); // identifier keys survive
+    expect(span!.attributes.actor).toBe(advisor.userId);
   });
 });
