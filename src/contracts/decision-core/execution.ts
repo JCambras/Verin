@@ -25,15 +25,15 @@ export const ExecutionCommandSchema = z.strictObject({
   commandType: z.string().min(1),
   payloadRef: SecureBlobRefSchema,
   payloadHash: HashSchema,
-});
+}).readonly();
 export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 
 /** A condition proven before the decision that must still hold when the step runs. */
 export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
-  requiredEvidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema),
+  requiredEvidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
   mustStillHoldAtExecution: z.boolean(),
-});
+}).readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;
 
 /** The recorded undo issued if a later step fails after this one succeeded. */
@@ -41,7 +41,7 @@ export const CompensatingActionSchema = z.strictObject({
   targetId: ExecutionTargetIdSchema,
   command: ExecutionCommandSchema,
   reasonCode: ReasonCodeSchema,
-});
+}).readonly();
 export type CompensatingAction = z.infer<typeof CompensatingActionSchema>;
 
 export const ExecutionStepSchema = z.strictObject({
@@ -49,13 +49,13 @@ export const ExecutionStepSchema = z.strictObject({
   targetId: ExecutionTargetIdSchema,
   command: ExecutionCommandSchema,
   idempotencyKey: z.string().min(1),
-  conflictKeys: z.array(ConflictKeySchema),
-  reservationRefs: z.array(ReservationIdSchema),
-  preconditions: z.array(ExecutionPreconditionSchema),
+  conflictKeys: z.array(ConflictKeySchema).readonly(),
+  reservationRefs: z.array(ReservationIdSchema).readonly(),
+  preconditions: z.array(ExecutionPreconditionSchema).readonly(),
   verificationRuleId: VerificationRuleIdSchema,
-  dependsOn: z.array(ExecutionStepIdSchema),
+  dependsOn: z.array(ExecutionStepIdSchema).readonly(),
   compensatingAction: CompensatingActionSchema.optional(),
-});
+}).readonly();
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
 /**
@@ -65,7 +65,7 @@ export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 export const ExecutionPlanSchema = z
   .strictObject({
     id: ExecutionPlanIdSchema,
-    steps: z.array(ExecutionStepSchema).min(1),
+    steps: z.array(ExecutionStepSchema).min(1).readonly(),
   })
   .superRefine((plan, ctx) => {
     const ids = new Set<string>();
@@ -108,5 +108,6 @@ export const ExecutionPlanSchema = z
         ctx.addIssue({ code: "custom", message: "execution plan dependency graph contains a cycle", path: ["steps"] });
       }
     }
-  });
+  })
+  .readonly();
 export type ExecutionPlan = z.infer<typeof ExecutionPlanSchema>;

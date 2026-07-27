@@ -85,7 +85,7 @@ export function specifierToLayer(fromFile: string, spec: string): Layer | null {
 export interface ModuleReference {
   specifier: string | null;
   line: number;
-  kind: "import" | "export" | "dynamic-import" | "require";
+  kind: "import" | "export" | "dynamic-import" | "require" | "import-type" | "import-equals";
 }
 
 /** Every module reference, including non-literal dynamic import/require calls. */
@@ -97,6 +97,31 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
     if (v) refs.push({ specifier: v, line: exp.getStartLineNumber(), kind: "export" });
+  }
+  for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportEqualsDeclaration)) {
+    const moduleRef = imp.getModuleReference();
+    if (!Node.isExternalModuleReference(moduleRef)) continue;
+    const expression = moduleRef.getExpression();
+    refs.push({
+      specifier:
+        Node.isStringLiteral(expression) || Node.isNoSubstitutionTemplateLiteral(expression)
+          ? expression.getLiteralText()
+          : null,
+      line: imp.getStartLineNumber(),
+      kind: "import-equals",
+    });
+  }
+  for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportType)) {
+    const argument = imp.getArgument();
+    const literal = Node.isLiteralTypeNode(argument) ? argument.getLiteral() : undefined;
+    refs.push({
+      specifier:
+        literal && (Node.isStringLiteral(literal) || Node.isNoSubstitutionTemplateLiteral(literal))
+          ? literal.getLiteralText()
+          : null,
+      line: imp.getStartLineNumber(),
+      kind: "import-type",
+    });
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expr = call.getExpression();

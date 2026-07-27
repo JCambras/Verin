@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { z } from "zod";
 import {
   DurationSchema,
   HashSchema,
   TimestampSchema,
 } from "@contracts/decision-core/ids";
+import { TokenizedPayloadSchema } from "@contracts/decision-core/actor";
 import { IntentSchema } from "@contracts/decision-core/trigger";
 import { DecisionInputBundleSchema, EvidenceSnapshotRefSchema } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
@@ -16,9 +18,12 @@ import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/d
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
   BUNDLE_HASH_PAYLOAD_KEYS,
+  BUNDLE_HASH_PREIMAGE_VERSION,
   CANONICAL_SERIALIZER_VERSION,
   DECISION_HASH_PAYLOAD_KEYS,
+  DECISION_HASH_PREIMAGE_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
+  HASH_PROJECTION_SCHEMA_FINGERPRINTS,
   bundleHashPreimage,
   canonicalJson,
   decisionHashPreimage,
@@ -127,7 +132,7 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const bundleKeys = Object.keys(DecisionInputBundleSchema.unwrap().shape).filter(
       (key) => key !== "id" && key !== "bundleHash",
     );
-    const decisionKeys = Object.keys(DecisionRecordSchema.shape).filter((key) => key !== "decisionHash");
+    const decisionKeys = Object.keys(DecisionRecordSchema.unwrap().shape).filter((key) => key !== "decisionHash");
     expect([...BUNDLE_HASH_PAYLOAD_KEYS].sort()).toEqual(bundleKeys.sort());
     expect([...DECISION_HASH_PAYLOAD_KEYS].sort()).toEqual(decisionKeys.sort());
     expect(DECISION_HASH_PAYLOAD_KEYS).toContain("derivedFromDecisionId");
@@ -145,6 +150,16 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
   });
 
+  it.each(["householdInstructionVersionIds", "evidenceSnapshotIds"] as const)(
+    "rejects duplicate replay IDs in %s",
+    (key) => {
+      const id = validBundle[key][0]!;
+      const parsed = DecisionInputBundleSchema.safeParse({ ...validBundle, [key]: [id, id] });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
+    },
+  );
+
   it("freezes parsed replay inputs and their nested collections", () => {
     const bundle = DecisionInputBundleSchema.parse(validBundle);
     expect(Object.isFrozen(bundle)).toBe(true);
@@ -152,6 +167,50 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(Object.isFrozen(bundle.evidenceSnapshotIds)).toBe(true);
     expect(Reflect.set(bundle, "policyVersionId", "pv:mutated")).toBe(false);
     expect(Reflect.set(bundle.evidenceSnapshotIds, 0, "evs:mutated")).toBe(false);
+  });
+
+  it.each(["decision-record-proceed", "decision-record-blocked", "decision-record-prohibited"])(
+    "deep-freezes every hash-bound object and collection in %s",
+    (name) => {
+      const record = DecisionRecordSchema.parse(JSON.parse(readFixture(name)));
+      expectDeepFrozen(record);
+      expect(Reflect.set(record, "result", {})).toBe(false);
+      if (record.result.kind === "proceed") {
+        expect(Reflect.set(record.result.executionPlan, "steps", [])).toBe(false);
+        expect(Reflect.set(record.result.executionPlan.steps, 0, {})).toBe(false);
+      }
+    },
+  );
+
+  it("deep-freezes other parsed decision-core boundary outputs", () => {
+    for (const value of [
+      IntentSchema.parse(validIntent),
+      EvidenceSnapshotRefSchema.parse(validSnapshot),
+      DecisionInputBundleSchema.parse(validBundle),
+      TokenizedPayloadSchema.parse({
+        value: { nested: { values: [1, 2, 3] } },
+        piiFree: true,
+      }),
+    ]) {
+      expectDeepFrozen(value);
+    }
+  });
+
+  it("binds each preimage version to its complete recursive projection schema", () => {
+    expect(projectionSchemaFingerprint(DecisionInputBundleSchema, ["id", "bundleHash"])).toBe(
+      HASH_PROJECTION_SCHEMA_FINGERPRINTS[BUNDLE_HASH_PREIMAGE_VERSION],
+    );
+    expect(projectionSchemaFingerprint(DecisionRecordSchema, ["decisionHash"])).toBe(
+      HASH_PROJECTION_SCHEMA_FINGERPRINTS[DECISION_HASH_PREIMAGE_VERSION],
+    );
+  });
+
+  it("changes the projection fingerprint when an optional nested field is added", () => {
+    const before = z.strictObject({ nested: z.strictObject({ required: z.string() }) });
+    const after = z.strictObject({
+      nested: z.strictObject({ required: z.string(), newlyOptional: z.string().optional() }),
+    });
+    expect(projectionSchemaFingerprint(before, [])).not.toBe(projectionSchemaFingerprint(after, []));
   });
 
   it("locks the versioned, non-self-referential bundle hash preimage and digest", () => {
@@ -228,13 +287,32 @@ function hashPreimage(value: Parameters<typeof canonicalJson>[0]): string {
   return createHash("sha256").update(unwrap(canonicalJson(value)), "utf8").digest("hex");
 }
 
+function projectionSchemaFingerprint(schema: z.ZodType, excludedRootKeys: readonly string[]): string {
+  const document = structuredClone(z.toJSONSchema(schema)) as Record<string, unknown>;
+  delete document.$schema;
+  const properties = document.properties as Record<string, unknown>;
+  for (const key of excludedRootKeys) delete properties[key];
+  if (Array.isArray(document.required)) {
+    document.required = document.required.filter((key) => !excludedRootKeys.includes(String(key)));
+  }
+  return createHash("sha256")
+    .update(unwrap(canonicalJson(document as JsonValue)), "utf8")
+    .digest("hex");
+}
+
+function expectDeepFrozen(value: unknown): void {
+  if (value === null || typeof value !== "object") return;
+  expect(Object.isFrozen(value)).toBe(true);
+  for (const nested of Object.values(value)) expectDeepFrozen(nested);
+}
+
 describe("vocabulary locks - aligned with what is on main", () => {
   it("DecisionResult kinds are EXACTLY the scenarios.yaml disposition vocabulary", () => {
     const yaml = parseYaml(readFileSync(join(ROOT, "config/demo/scenarios.yaml"), "utf8")) as {
       state_vocabulary: Array<{ id: string; class: string }>;
     };
     const dispositions = yaml.state_vocabulary.filter((s) => s.class === "disposition").map((s) => s.id);
-    const kinds = DecisionResultSchema.options.map((o) => o.shape.kind.value);
+    const kinds = DecisionResultSchema.unwrap().options.map((o) => o.shape.kind.value);
     expect([...kinds].sort()).toEqual([...dispositions].sort());
   });
 

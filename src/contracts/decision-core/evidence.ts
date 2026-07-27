@@ -34,7 +34,7 @@ export type EvidenceFreshness = z.infer<typeof EvidenceFreshnessSchema>;
  * lives, and the content hash that makes reuse tamper-evident. The snapshot never
  * carries the content itself - PII stays behind the blob ref.
  */
-export const EvidenceSnapshotRefSchema = TenantContextSchema.extend({
+export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
   id: EvidenceSnapshotIdSchema,
   kind: EvidenceKindSchema,
   sourceId: EvidenceSourceIdSchema,
@@ -46,7 +46,7 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.extend({
   encryptedStorageRef: SecureBlobRefSchema,
   contentHash: HashSchema,
   freshness: EvidenceFreshnessSchema,
-});
+}).readonly();
 export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
 
 /**
@@ -68,7 +68,7 @@ const TimeZoneSchema = z.string().min(1).refine(
   { message: "unsupported IANA time-zone identifier" },
 );
 
-export const DecisionInputBundleSchema = TenantContextSchema.extend({
+export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
   schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
   canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
@@ -76,8 +76,14 @@ export const DecisionInputBundleSchema = TenantContextSchema.extend({
   primitiveSetVersion: z.string().min(1),
   domainConfigVersionId: DomainConfigVersionIdSchema,
   policyVersionId: PolicyVersionIdSchema,
-  householdInstructionVersionIds: z.array(HouseholdInstructionVersionIdSchema).readonly(),
-  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
+  householdInstructionVersionIds: z
+    .array(HouseholdInstructionVersionIdSchema)
+    .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate household instruction version id" })
+    .readonly(),
+  evidenceSnapshotIds: z
+    .array(EvidenceSnapshotIdSchema)
+    .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate evidence snapshot id" })
+    .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,
   bundleHash: HashSchema,

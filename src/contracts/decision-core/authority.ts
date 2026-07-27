@@ -16,9 +16,9 @@ import { ApprovalTemplateIdSchema, DurationSchema, ReasonCodeSchema, RoleIdSchem
 /** After `after` with no quorum, escalate to `roleIds` for `reasonCode`. */
 export const EscalationStepSchema = z.strictObject({
   after: DurationSchema,
-  roleIds: z.array(RoleIdSchema).min(1),
+  roleIds: z.array(RoleIdSchema).min(1).readonly(),
   reasonCode: ReasonCodeSchema,
-});
+}).readonly();
 export type EscalationStep = z.infer<typeof EscalationStepSchema>;
 
 /**
@@ -27,21 +27,21 @@ export type EscalationStep = z.infer<typeof EscalationStepSchema>;
  * executor exclusion, reason-required override).
  */
 export const ApprovalRequirementSchema = z.strictObject({
-  eligibleRoleIds: z.array(RoleIdSchema).min(1),
+  eligibleRoleIds: z.array(RoleIdSchema).min(1).readonly(),
   approvalsRequired: z.int().positive(),
   distinctActorsRequired: z.boolean(),
   requesterMayApprove: z.boolean(),
   priorExecutorMayApprove: z.boolean(),
   reasonRequiredOnOverride: z.boolean(),
-});
+}).readonly();
 export type ApprovalRequirement = z.infer<typeof ApprovalRequirementSchema>;
 
 const stageCore = {
   stageId: z.string().min(1),
   order: z.int().nonnegative(),
   executionMode: z.enum(["sequential", "parallel"]),
-  requirements: z.array(ApprovalRequirementSchema).min(1),
-  escalationPath: z.array(EscalationStepSchema),
+  requirements: z.array(ApprovalRequirementSchema).min(1).readonly(),
+  escalationPath: z.array(EscalationStepSchema).readonly(),
 };
 
 /**
@@ -67,16 +67,17 @@ const requireDistinctStages = (
 export const ApprovalStageTemplateSchema = z.strictObject({
   ...stageCore,
   expiresAfter: DurationSchema,
-});
+}).readonly();
 export type ApprovalStageTemplate = z.infer<typeof ApprovalStageTemplateSchema>;
 
 /** A reusable, referencable stack of stage templates. */
 export const ApprovalTemplateSchema = z
   .strictObject({
     id: ApprovalTemplateIdSchema,
-    stages: z.array(ApprovalStageTemplateSchema).min(1),
+    stages: z.array(ApprovalStageTemplateSchema).min(1).readonly(),
   })
-  .superRefine((template, ctx) => requireDistinctStages(template.stages, ctx));
+  .superRefine((template, ctx) => requireDistinctStages(template.stages, ctx))
+  .readonly();
 export type ApprovalTemplate = z.infer<typeof ApprovalTemplateSchema>;
 
 /**
@@ -87,7 +88,7 @@ export const ApprovalStageSchema = z.strictObject({
   ...stageCore,
   templateId: ApprovalTemplateIdSchema,
   expiresAt: TimestampSchema,
-});
+}).readonly();
 export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
 
 /**
@@ -99,14 +100,14 @@ export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
 export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("automatic") }),
   z
-    .strictObject({ mode: z.literal("approval"), stages: z.array(ApprovalStageSchema).min(1) })
+    .strictObject({ mode: z.literal("approval"), stages: z.array(ApprovalStageSchema).min(1).readonly() })
     .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
   z
     .strictObject({
       mode: z.literal("specialist_review"),
-      specialistRoleIds: z.array(RoleIdSchema).min(1),
-      stages: z.array(ApprovalStageSchema).min(1),
+      specialistRoleIds: z.array(RoleIdSchema).min(1).readonly(),
+      stages: z.array(ApprovalStageSchema).min(1).readonly(),
     })
     .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
-]);
+]).readonly();
 export type AuthorityRequirement = z.infer<typeof AuthorityRequirementSchema>;
