@@ -33,7 +33,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.6.0
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.7.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
@@ -42,13 +42,31 @@ parse time, not by reviewer discipline. Three constraints meet here:
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
   and migration story.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.6.0 schema and
-  1.0.0 canonical serializer. It persists `iana-tzdb/2026b`, admits all 341 `Zone` identifiers
-  derived from that release's primary data files in the SHA-256-locked registry, canonicalizes
-  identifier casing, and rejects `Link` aliases outside the pinned set, so replay validation never
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.7.0 schema and
+  1.0.0 canonical serializer. It admits all 341 `Zone` identifiers
+  derived from `iana-tzdb/2026b`'s primary data files in the SHA-256-locked registry, canonicalizes
+  identifier casing, and rejects `Link` aliases, so replay validation never
   changes with host ICU data or gives aliases distinct replay bytes. Set-like instruction-version
   and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
   not only in the hash projection. The parsed bundle remains deeply frozen.
+- **Time-zone registry versions are a MAP, not a literal:** `timeZoneDataVersion` is an enum
+  derived from the keys of a supported-registry map (`iana-tzdb/2026b` is the only shipped entry).
+  The field exists so a recorded bundle can be replayed against the registry it was evaluated
+  with; a single-version literal would make every persisted bundle unparseable the day a newer
+  release ships, which is precisely the replay guarantee the field is there to provide. Entries are
+  ADDITIVE - adopting a future release adds a key and never removes one. (This records the
+  contract only; the replay engine itself remains prompt 19.)
+- **Link aliases canonicalize at the CONFIGURATION boundary, never at the replay boundary:** the
+  pinned release's 257 `Link` names are SHA-256-locked in their own registry alongside the 341
+  `Zone` names, resolved to their canonical `Zone` target. `FIRM_TIMEZONE` therefore accepts any of
+  the 598 identifiers of `iana-tzdb/2026b` - including long-legal spellings such as `UTC`,
+  `US/Eastern`, `Asia/Calcutta`, `Europe/Kiev`, and `Africa/Accra` - and stores only the canonical
+  `Zone` (`Etc/UTC`, `America/New_York`, `Asia/Kolkata`, `Europe/Kyiv`, `Africa/Abidjan`).
+  `TimeZone` itself stays closed over the 341 `Zone` names, so one zone still has exactly one
+  persisted and hashed spelling. **Migration:** no deployment action is required - a
+  `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
+  its canonical Zone rather than failing closed. `TimeZone` is branded, so a bare `string` cannot
+  reach a time-zone field without parsing through the registry.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
   snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target,
   reservation, verification-rule, secure request, secure event, and secure blob links are strict
@@ -67,9 +85,25 @@ parse time, not by reviewer discipline. Three constraints meet here:
   one tenant, and parent and compensation idempotency keys must be distinct across the plan. Set-like
   dependency, conflict, reservation, and precondition evidence collections reject duplicates, and a
   derived decision cannot name itself as its parent.
-- **Approval chronology:** approval-template expiration is strictly positive. Every approval or
+- **Approval chronology:** EVERY approval duration - relative stage expiration and escalation
+  delay alike - is strictly positive, decided by reading the duration's own component magnitudes
+  and refusing any sign, never by inspecting a leading character. A "does not start with `-`" rule
+  silently inherits whichever ISO-8601 profile the validator ships (8601-2 permits a sign per
+  component), so it would admit `PT-1H` as positive the day that profile widens. Every approval or
   specialist-review stage instantiated on a decision expires later than that decision's recorded
   creation timestamp.
+- **One comparator, one uniqueness rule for tenant-scoped references:** `contracts/decision-core/ids.ts`
+  exports THE canonical `{firmId, id}` order (firm, then opaque id) and THE set-identity helper.
+  Role sets, evidence-supplier sets, execution collections, replay collections, and both hash
+  preimages consume them, so a parsed record and its hash preimage cannot order the same list two
+  ways once references stop being single-tenant. Trigger arms carry their own tenant refinements
+  and the discriminated union is composed FROM the refined arms, so no check exists in two places
+  where only one copy runs.
+- **Canonical serialization refuses precisely and in bounded space:** cycles are detected against
+  the set of ancestors on the current path and named by their location, rather than surfacing as a
+  host-dependent `RangeError`; the diagnostic path is a parent link built into a readable string
+  only when a refusal is actually raised. This serializer will run over explanation trees whose
+  depth is data-driven, not schema-bounded.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
@@ -83,8 +117,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2200** (measured 2137 after the
-  version-pinned shared IANA registry and complete review hardening). The ratchet-down doctrine resumes from 2200; later contract-layer prompts
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2300** (measured 2226 after the
+  version-pinned shared IANA Zone/Link registries and complete review hardening). The ratchet-down doctrine resumes from 2300; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
@@ -108,11 +142,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 2200 (a real growth, honestly sized and ratcheted).
+  grew 600 → 2300 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 2200 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 2300 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
   its enclosing tenant.
@@ -128,4 +162,6 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - Prompt 8/9 land primitives + policy AST (next contracts re-baseline ADR), or
 - the canonical serializer or either hash projection must change form (matching version bump +
   migration story for recorded hashes), or
+- a newer IANA release is adopted (ADD its version key + registries; never remove a supported one,
+  or already-persisted bundles stop being replayable against the release they recorded), or
 - a second external import is proposed for `contracts/` (needs its own ADR).

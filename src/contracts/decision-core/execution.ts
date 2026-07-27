@@ -18,6 +18,7 @@ import {
   ReservationRefSchema,
   SecureBlobRefSchema,
   VerificationRuleRefSchema,
+  hasUniqueScopedReferences,
 } from "./ids";
 
 /** The externally-executable command: payload behind a blob ref, pinned by hash. */
@@ -31,18 +32,13 @@ export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 const uniqueStrings = (values: readonly string[]): boolean =>
   new Set(values).size === values.length;
 
-const uniqueScopedReferences = (
-  values: readonly { firmId: string; id: string }[],
-): boolean =>
-  new Set(values.map((value) => `${value.firmId}\u0000${value.id}`)).size === values.length;
-
 /** A condition proven before the decision that must still hold when the step runs. */
 export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
   requiredEvidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
     .min(1)
-    .refine(uniqueScopedReferences, "duplicate required evidence snapshot reference")
+    .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
     .readonly(),
   mustStillHoldAtExecution: z.literal(true),
 }).readonly();
@@ -59,7 +55,7 @@ const retrySafeExternalActionShape = {
     .readonly(),
   reservationRefs: z
     .array(ReservationRefSchema)
-    .refine(uniqueScopedReferences, "duplicate reservation reference")
+    .refine(hasUniqueScopedReferences, "duplicate reservation reference")
     .readonly(),
   preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
   verificationRuleRef: VerificationRuleRefSchema,

@@ -19,37 +19,49 @@ import {
   SlotRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  compareScopedReferences,
+  hasUniqueScopedReferences,
 } from "./ids";
 import { ActorRefSchema, TenantContextSchema, TokenizedPayloadSchema, TokenizedStringSchema } from "./actor";
 
-/** A human request: the raw text stays behind SecureRequestRef; only the tokenized form travels. */
-const HumanRequestTriggerObjectSchema = z.strictObject({
-  kind: z.literal("human_request"),
-  requester: ActorRefSchema,
-  requestRef: SecureRequestRefSchema,
-  maskedRequest: TokenizedStringSchema,
-});
+/**
+ * Each trigger arm carries its OWN tenant checks and the union is composed from the
+ * refined arms - never from bare object schemas with the checks restated inline. A
+ * second copy would be the copy that actually runs, so a check added here could
+ * silently not apply to a Trigger parsed through IntentSchema (ADR-0029, D-051).
+ */
 
-export const HumanRequestTriggerSchema = HumanRequestTriggerObjectSchema.refine(
-  (trigger) => trigger.requestRef.firmId === trigger.requester.firmId,
-  {
-    message: "requestRef.firmId must match the human request tenant",
-    path: ["requestRef", "firmId"],
-  },
-).readonly();
+/** A human request: the raw text stays behind SecureRequestRef; only the tokenized form travels. */
+const HumanRequestTriggerObjectSchema = z
+  .strictObject({
+    kind: z.literal("human_request"),
+    requester: ActorRefSchema,
+    requestRef: SecureRequestRefSchema,
+    maskedRequest: TokenizedStringSchema,
+  })
+  .superRefine((trigger, ctx) => {
+    if (trigger.requestRef.firmId !== trigger.requester.firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "requestRef.firmId must match the human request tenant",
+        path: ["requestRef", "firmId"],
+      });
+    }
+  });
+
+export const HumanRequestTriggerSchema = HumanRequestTriggerObjectSchema.readonly();
 
 /** A system event from an evidence source: payload tokenized, raw body behind SecureEventRef. */
-const SystemEventTriggerObjectSchema = z.strictObject({
-  kind: z.literal("system_event"),
-  firmId: FirmIdSchema,
-  sourceRef: EvidenceSourceRefSchema,
-  eventType: z.string().min(1),
-  eventRef: SecureEventRefSchema,
-  tokenizedPayload: TokenizedPayloadSchema,
-});
-
-export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.superRefine(
-  (trigger, ctx) => {
+const SystemEventTriggerObjectSchema = z
+  .strictObject({
+    kind: z.literal("system_event"),
+    firmId: FirmIdSchema,
+    sourceRef: EvidenceSourceRefSchema,
+    eventType: z.string().min(1),
+    eventRef: SecureEventRefSchema,
+    tokenizedPayload: TokenizedPayloadSchema,
+  })
+  .superRefine((trigger, ctx) => {
     if (trigger.sourceRef.firmId !== trigger.firmId) {
       ctx.addIssue({
         code: "custom",
@@ -64,37 +76,12 @@ export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.superRefi
         path: ["eventRef", "firmId"],
       });
     }
-  },
-).readonly();
+  });
+
+export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.readonly();
 
 export const TriggerSchema = z
   .discriminatedUnion("kind", [HumanRequestTriggerObjectSchema, SystemEventTriggerObjectSchema])
-  .superRefine((trigger, ctx) => {
-    if (trigger.kind === "human_request") {
-      if (trigger.requestRef.firmId !== trigger.requester.firmId) {
-        ctx.addIssue({
-          code: "custom",
-          message: "requestRef.firmId must match the human request tenant",
-          path: ["requestRef", "firmId"],
-        });
-      }
-    } else {
-      if (trigger.sourceRef.firmId !== trigger.firmId) {
-        ctx.addIssue({
-          code: "custom",
-          message: "sourceRef.firmId must match the system event tenant",
-          path: ["sourceRef", "firmId"],
-        });
-      }
-      if (trigger.eventRef.firmId !== trigger.firmId) {
-        ctx.addIssue({
-          code: "custom",
-          message: "eventRef.firmId must match the system event tenant",
-          path: ["eventRef", "firmId"],
-        });
-      }
-    }
-  })
   .readonly();
 export type Trigger = z.infer<typeof TriggerSchema>;
 
@@ -150,30 +137,27 @@ export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
  * that state is a prohibition and must be modeled as one, never reached by decay.
  */
 const EvidenceSupplierSchema = z.union([z.literal("client"), z.literal("external"), RoleRefSchema]);
+type EvidenceSupplier = z.infer<typeof EvidenceSupplierSchema>;
+
+/** Well-known suppliers sort before role references; roles use THE scoped order. */
+const compareEvidenceSuppliers = (left: EvidenceSupplier, right: EvidenceSupplier): number => {
+  if (typeof left === "string") {
+    if (typeof right !== "string") return -1;
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+  if (typeof right === "string") return 1;
+  return compareScopedReferences(left, right);
+};
+
 const EvidenceSupplierSetSchema = z
   .array(EvidenceSupplierSchema)
   .min(1)
-  .refine(
-    (suppliers) =>
-      suppliers.every(
-        (supplier, index) =>
-          !suppliers.slice(0, index).some((candidate) =>
-            typeof supplier === "string" || typeof candidate === "string"
-              ? supplier === candidate
-              : supplier.firmId === candidate.firmId && supplier.id === candidate.id,
-          ),
-      ),
-    "duplicate evidence supplier",
-  )
-  .overwrite((suppliers) => [...suppliers].sort((left, right) => {
-    if (typeof left === "string") {
-      if (typeof right !== "string") return -1;
-      return left < right ? -1 : left > right ? 1 : 0;
-    }
-    if (typeof right === "string") return 1;
-    if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-  }))
+  .refine((suppliers) => {
+    const roleRefs = suppliers.filter((supplier) => typeof supplier !== "string");
+    const wellKnown = suppliers.filter((supplier) => typeof supplier === "string");
+    return hasUniqueScopedReferences(roleRefs) && new Set(wellKnown).size === wellKnown.length;
+  }, "duplicate evidence supplier")
+  .overwrite((suppliers) => [...suppliers].sort(compareEvidenceSuppliers))
   .readonly();
 
 export const EvidenceRequestSchema = z

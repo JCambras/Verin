@@ -21,11 +21,14 @@ import {
   SecureBlobRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  compareScopedReferences,
+  hasUniqueScopedReferences,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 import { CANONICAL_SERIALIZER_VERSION, DECISION_CORE_SCHEMA_VERSION } from "./serialization";
 import {
   IANA_TIME_ZONE_DATA_VERSION,
+  SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   TimeZoneSchema,
 } from "../time-zone";
 export { TimeZoneSchema };
@@ -80,15 +83,6 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  */
 export const TIME_ZONE_DATA_VERSION = IANA_TIME_ZONE_DATA_VERSION;
 
-const compareScopedReferences = (
-  left: { firmId: string; id: string },
-  right: { firmId: string; id: string },
-): number => {
-  const firmOrder = left.firmId < right.firmId ? -1 : left.firmId > right.firmId ? 1 : 0;
-  if (firmOrder !== 0) return firmOrder;
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-};
-
 export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
   schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
@@ -99,21 +93,25 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   policyVersionRef: PolicyVersionRefSchema,
   householdInstructionVersionRefs: z
     .array(HouseholdInstructionVersionRefSchema)
-    .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
-      message: "duplicate household instruction version id",
+    .refine(hasUniqueScopedReferences, {
+      message: "duplicate household instruction version reference",
     })
     .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   evidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
-    .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
-      message: "duplicate evidence snapshot id",
+    .refine(hasUniqueScopedReferences, {
+      message: "duplicate evidence snapshot reference",
     })
     .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,
-  timeZoneDataVersion: z.literal(TIME_ZONE_DATA_VERSION),
+  // A supported-version ENUM, not the single shipped literal: a bundle records the
+  // registry it was evaluated against so it can be replayed against that registry,
+  // which is impossible if adopting a newer release makes every stored bundle
+  // unparseable. Versions are only ever ADDED (ADR-0029, D-051).
+  timeZoneDataVersion: z.enum(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS),
   bundleHash: HashSchema,
 })
   .superRefine((bundle, ctx) => {

@@ -729,3 +729,38 @@ without adding evaluator, policy, or execution behavior.
 **Revert path:** restore scalar role links and caller-ordered authority collections, return the schemas,
 fixtures, fingerprints, and hashes to 1.5.0, remove the dependency companions, and restore the 2000-line
 ceiling.
+
+### D-051 · 2026-07-27 · captain-decision · Approval positivity, replay registries, and one canonical scoped-reference order
+
+Every approval duration - relative stage expiration and escalation delay alike - is strictly positive,
+decided by reading the duration's own component magnitudes and refusing any sign. A leading-minus
+heuristic silently inherits whichever ISO-8601 profile the validator ships, so the predicate is exported
+and asserted directly: today's grammar refuses signed components before the guard ever runs, which would
+otherwise leave its soundness unverifiable.
+
+`timeZoneDataVersion` becomes an enum derived from a supported-registry MAP rather than the single
+shipped literal, so a bundle can be replayed against the registry it recorded; versions are only ever
+added. The pinned release's 257 `Link` aliases are SHA-256-locked in their own registry and resolved to
+their canonical `Zone` at the CONFIGURATION boundary only, so `FIRM_TIMEZONE=UTC` boots again while
+`TimeZone` stays closed over the 341 `Zone` names and one zone keeps exactly one persisted, hashed
+spelling. `TimeZone` is branded, so a bare string cannot reach a time-zone field.
+
+`ids.ts` now exports THE canonical `{firmId, id}` comparator and set-identity helper; role sets,
+evidence-supplier sets, execution collections, replay collections, and both hash preimages consume them,
+replacing five near-identical implementations (two of which deduped in O(n^2)). Trigger arms carry their
+own tenant refinements and the discriminated union is composed FROM the refined arms, so no check exists
+in two places where only one copy runs. Canonical serialization detects cycles against the ancestors on
+the current path and names them, instead of surfacing a host-dependent `RangeError`, and builds its
+diagnostic path lazily.
+
+The schema and both hash-preimage envelopes advance to 1.7.0; fixtures pin the new projection fingerprint
+and digests. The contracts layer measures 2226 lines, so ADR-0029 re-baselines its ceiling from 2200 to
+2300 through ADR-0018's amendment path.
+**Why:** these are the bounded F51-F57 review corrections. They close an unsound positivity guard, an
+unguarded escalation delay, a replay-metadata field that could never be used for replay, an operational
+boot regression on long-legal timezone identifiers, a comparator that could diverge from the record it
+hashes, a duplicated refinement where only one copy ran, and an imprecise unbounded serializer refusal -
+without adding evaluator, policy, or execution behavior.
+**Revert path:** restore the 1.6.0 schemas, fixtures, fingerprints, and digests together; return
+`timeZoneDataVersion` to its literal and the config boundary to Zone-only validation; remove the Link
+registry, the shared comparator helpers, and the cycle detector; and return the contracts ceiling to 2200.

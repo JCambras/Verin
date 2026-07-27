@@ -6,16 +6,17 @@
 import type { Result } from "../result";
 import { err, ok } from "../result";
 import { validationError, type AppError } from "../errors";
+import { compareScopedReferences } from "./ids";
 import type { DecisionInputBundle } from "./evidence";
 import type { DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
-export const DECISION_CORE_SCHEMA_VERSION = "1.6.0";
-export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.6.0";
-export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.6.0";
+export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
+export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
+export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.7.0";
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
   Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
 > = {
-  [BUNDLE_HASH_PREIMAGE_VERSION]: "be39b3055c9cd86322fbfaa9a0f56ee5d96dbaf4ed3eeb757a09c50db47a2f25",
+  [BUNDLE_HASH_PREIMAGE_VERSION]: "2087306d7834c731420550d14b14128b2ce1a3bafe0e2df75622098994f73efc",
   [DECISION_HASH_PREIMAGE_VERSION]: "9c45859468cd259e16037894a24117bbb431a1c5a839a519a7d0b624d549816c",
 };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -72,8 +73,8 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
     payload: {
       ...projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
-      householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedRefs),
-      evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedRefs),
+      householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedReferences),
+      evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedReferences),
     },
   };
 }
@@ -100,15 +101,12 @@ function normalizeOptionalProperties<T>(value: T): T {
   }
   return value;
 }
-function compareScopedRefs(left: { id: string }, right: { id: string }): number {
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-}
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.
  */
 export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHashPreimage): Result<string, AppError> {
   try {
-    return ok(serialize(value as JsonValue, []));
+    return ok(serialize(value as JsonValue, null, new Set()));
   } catch (e) {
     return err(validationError(e instanceof CanonicalizationRefusal ? e.reason : "value is not canonically serializable"));
   }
@@ -116,8 +114,25 @@ export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHa
 class CanonicalizationRefusal {
   constructor(readonly reason: string) {}
 }
-function serialize(value: JsonValue, path: readonly string[]): string {
-  const at = path.length === 0 ? "value" : `value.${path.join(".")}`;
+/**
+ * The path to the node being serialized, as a parent link rather than an array, so
+ * descending costs O(1) per node instead of copying the whole path at every step -
+ * this serializer will run over data-driven explanation trees whose depth is not
+ * bounded by the schema. The readable form is built ONLY when a refusal is raised.
+ */
+type Trail = { readonly parent: Trail; readonly key: string } | null;
+function describeTrail(trail: Trail): string {
+  const segments: string[] = [];
+  for (let node = trail; node !== null; node = node.parent) segments.push(node.key);
+  return segments.length === 0 ? "value" : `value.${segments.reverse().join(".")}`;
+}
+/**
+ * `ancestors` holds the objects on the path from the root to `value`, so a cycle is
+ * REFUSED BY NAME rather than by exhausting the call stack - a RangeError would
+ * surface as the generic "not canonically serializable" and would depend on the
+ * host's stack depth for whether it was caught at all.
+ */
+function serialize(value: JsonValue, trail: Trail, ancestors: Set<object>): string {
   if (value === null) return "null";
   switch (typeof value) {
     case "string":
@@ -125,31 +140,47 @@ function serialize(value: JsonValue, path: readonly string[]): string {
     case "boolean":
       return value ? "true" : "false";
     case "number":
-      if (!Number.isFinite(value)) throw new CanonicalizationRefusal(`${at}: non-finite number cannot be canonicalized`);
+      if (!Number.isFinite(value)) {
+        throw new CanonicalizationRefusal(`${describeTrail(trail)}: non-finite number cannot be canonicalized`);
+      }
       return JSON.stringify(value);
     case "object": {
-      if (Array.isArray(value)) {
-        const items: string[] = [];
-        for (let i = 0; i < value.length; i += 1) {
-          if (!Object.hasOwn(value, i)) {
-            throw new CanonicalizationRefusal(`${at}.${i}: sparse array holes cannot be canonicalized`);
-          }
-          items.push(serialize(value[i]!, [...path, String(i)]));
-        }
-        return `[${items.join(",")}]`;
+      if (ancestors.has(value)) {
+        throw new CanonicalizationRefusal(`${describeTrail(trail)}: circular reference cannot be canonicalized`);
       }
-      if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-        throw new CanonicalizationRefusal(`${at}: only plain objects can be canonicalized`);
+      ancestors.add(value);
+      try {
+        return serializeObject(value, trail, ancestors);
+      } finally {
+        ancestors.delete(value);
       }
-      const keys = Object.keys(value).sort();
-      const entries = keys.map((k) => {
-        const v = (value as Record<string, JsonValue | undefined>)[k];
-        if (v === undefined) throw new CanonicalizationRefusal(`${at}.${k}: undefined cannot be canonicalized`);
-        return `${JSON.stringify(k)}:${serialize(v, [...path, k])}`;
-      });
-      return `{${entries.join(",")}}`;
     }
     default:
-      throw new CanonicalizationRefusal(`${at}: ${typeof value} cannot be canonicalized`);
+      throw new CanonicalizationRefusal(`${describeTrail(trail)}: ${typeof value} cannot be canonicalized`);
   }
+}
+function serializeObject(value: object, trail: Trail, ancestors: Set<object>): string {
+  if (Array.isArray(value)) {
+    const items: string[] = [];
+    for (let i = 0; i < value.length; i += 1) {
+      if (!Object.hasOwn(value, i)) {
+        throw new CanonicalizationRefusal(`${describeTrail(trail)}.${i}: sparse array holes cannot be canonicalized`);
+      }
+      items.push(serialize(value[i] as JsonValue, { parent: trail, key: String(i) }, ancestors));
+    }
+    return `[${items.join(",")}]`;
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    throw new CanonicalizationRefusal(`${describeTrail(trail)}: only plain objects can be canonicalized`);
+  }
+  const entries = Object.keys(value)
+    .sort()
+    .map((k) => {
+      const v = (value as Record<string, JsonValue | undefined>)[k];
+      if (v === undefined) {
+        throw new CanonicalizationRefusal(`${describeTrail(trail)}.${k}: undefined cannot be canonicalized`);
+      }
+      return `${JSON.stringify(k)}:${serialize(v, { parent: trail, key: k }, ancestors)}`;
+    });
+  return `{${entries.join(",")}}`;
 }

@@ -5,7 +5,7 @@
  * config (test placeholders, wrong store driver) — fail closed, never degrade.
  */
 import { z } from "zod";
-import { TimeZoneSchema } from "@contracts/time-zone";
+import { DEFAULT_FIRM_TIME_ZONE, LinkResolvedTimeZoneSchema } from "@contracts/time-zone";
 
 const PLACEHOLDER_SECRET = /^(ci-only|e2e-only|CHANGEME|change-in-prod)/i;
 
@@ -14,7 +14,11 @@ const schema = z
     nodeEnv: z.enum(["development", "production", "test"]).default("development"),
     appEnv: z.enum(["development", "staging", "production"]).default("development"),
     appUrl: z.string().url().default("http://localhost:3000"),
-    firmTimezone: TimeZoneSchema.default("America/New_York"),
+    // Accepts any identifier from the pinned tzdb registry INCLUDING its Link
+    // aliases (UTC, US/Eastern, Asia/Calcutta, ...), and resolves each alias to its
+    // canonical Zone. Only the canonical Zone is ever stored or hashed, so replay
+    // bytes stay single-valued while an operator keeps the name they already use.
+    firmTimezone: LinkResolvedTimeZoneSchema.default(DEFAULT_FIRM_TIME_ZONE),
     store: z.object({
       driver: z.enum(["pglite", "postgres"]).default("pglite"),
       dataDir: z.string().default(".verin-data"),

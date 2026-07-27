@@ -55,23 +55,32 @@ describe("config fail-closed guards", () => {
     },
   );
 
-  it("canonicalizes case and rejects time-zone aliases outside the pinned registry", () => {
+  const bootWithTimezone = (firmTimezone: string) => {
     withEnv({
       APP_ENV: "development",
-      FIRM_TIMEZONE: "america/new_york",
+      FIRM_TIMEZONE: firmTimezone,
       VERIN_STORE_DRIVER: "pglite",
       SESSION_SECRET: goodSecret,
       ESIGN_WEBHOOK_SECRET: goodWebhook,
     });
-    expect(getConfig().firmTimezone).toBe("America/New_York");
-    withEnv({
-      APP_ENV: "development",
-      FIRM_TIMEZONE: "US/Eastern",
-      VERIN_STORE_DRIVER: "pglite",
-      SESSION_SECRET: goodSecret,
-      ESIGN_WEBHOOK_SECRET: goodWebhook,
-    });
-    expect(() => getConfig()).toThrow(/firmTimezone/);
+    return getConfig().firmTimezone;
+  };
+
+  it("canonicalizes case and resolves pinned Link aliases to their canonical Zone", () => {
+    // A Link alias has always been a legal IANA identifier, so an operator running
+    // FIRM_TIMEZONE=UTC must still boot. Only the canonical Zone is kept, so nothing
+    // downstream ever persists or hashes two spellings of one zone.
+    expect(bootWithTimezone("america/new_york")).toBe("America/New_York");
+    expect(bootWithTimezone("UTC")).toBe("Etc/UTC");
+    expect(bootWithTimezone("US/Eastern")).toBe("America/New_York");
+    expect(bootWithTimezone("Asia/Calcutta")).toBe("Asia/Kolkata");
+    expect(bootWithTimezone("Europe/Kiev")).toBe("Europe/Kyiv");
+    expect(bootWithTimezone("Africa/Accra")).toBe("Africa/Abidjan");
+  });
+
+  it("still refuses an identifier that is neither a pinned Zone nor a pinned Link", () => {
+    expect(() => bootWithTimezone("Not/AZone")).toThrow(/firmTimezone/);
+    expect(() => bootWithTimezone("America/New_York_2")).toThrow(/firmTimezone/);
   });
 
   it("refuses to boot in production without the postgres driver", () => {

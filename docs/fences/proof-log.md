@@ -1264,3 +1264,69 @@ stable diagnostic codes, and the companion pins TS2503 using `NodeJS.Timeout`.
 forms pass.
 
 **Date:** 2026-07-27 (review corrections F47-F50, D-050).
+
+### PF-027 extension · every approval duration is positive, read from the duration itself
+**Invariant (charter #1/#4; ADR-0029, D-051):** relative stage expiration AND escalation delay are
+strictly positive, decided by reading component magnitudes rather than by inspecting a leading
+character.
+
+Two independent regressions were injected. Restoring the raw `DurationSchema` on `EscalationStep.after`
+and reverting the predicate to the leading-minus heuristic each failed:
+```
+× requires EVERY approval duration (after) to be strictly positive, sign placement notwithstanding
+AssertionError: PT0S is not strictly positive: expected true to be false
+
+× decides positivity from the duration itself, not from the validator's ISO profile
+AssertionError: P-1D: expected true to be false
+```
+The second probe is the reason the predicate is asserted DIRECTLY: zod 4.4.3's ISO profile already
+refuses signed components, so through the schema alone the heuristic and the sound check are
+indistinguishable, and the guard's soundness would be an unproven accident of the current library.
+**Revert:** restored both; the focused contract suite passes.
+
+**Date:** 2026-07-27 (review correction F51, D-051).
+
+### PF-027 extension · supported tz registries, Link canonicalization, and the TimeZone brand
+**Invariant (charter #1/#4; ADR-0029, D-051):** a recorded bundle stays parseable against the registry
+version it recorded; `Link` aliases canonicalize at the configuration boundary only; `TimeZone` is a
+branded type, not `string`.
+
+Reverting `timeZoneDataVersion` to the single-version literal and dropping Link resolution at the
+config boundary each failed:
+```
+× binds each preimage version to its complete recursive projection schema
+AssertionError: expected 'b93536d06590326d1afe6f35aebed042d74b9…' to be '2087306d7834c731420550d14b14128b2ce1a…'
+
+× canonicalizes case and resolves pinned Link aliases to their canonical Zone
+```
+The brand is a COMPILE-TIME fence: removing `.brand<"TimeZone">()` turns the test's suppression into an
+unused directive, so `pnpm typecheck` fails rather than a runtime assertion passing vacuously:
+```
+src/__tests__/unit/decision-core.test.ts(294,5): error TS2578: Unused '@ts-expect-error' directive.
+```
+**Revert:** restored all three; typecheck and the focused suites pass.
+
+**Date:** 2026-07-27 (review corrections F52-F54, D-051).
+
+### PF-029 extension · one comparator, one trigger refinement, precise cycle refusal
+**Invariant (charter #1/#4; ADR-0029, D-051):** the hash preimage and the parsed record order
+tenant-scoped references identically; each trigger arm's tenant checks exist in exactly one place; a
+cycle is refused by name, not by stack exhaustion.
+
+The FIRST comparator probe passed vacuously - the bundle's single-tenant refinement makes id-only and
+(firm, id) order agree, so the divergence the fence exists to catch was invisible to it. The test was
+rewritten to probe the preimage with the cross-tenant lists that constraint currently prevents, which
+is exactly the relaxation the invariant protects. Re-injected, all three failed:
+```
+× orders the hash preimage by THE canonical comparator, not by id alone
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+
+× enforces: human request storage references belong to the request tenant
+AssertionError: expected true to be false
+
+× names a cycle precisely instead of relying on the stack running out
+AssertionError: expected 'value is not canonically serializable' to contain 'circular reference'
+```
+**Revert:** restored the shared comparator, the refined union arms, and the ancestor set; all suites pass.
+
+**Date:** 2026-07-27 (review corrections F55-F57, D-051).

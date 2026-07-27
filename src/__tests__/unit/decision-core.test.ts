@@ -9,6 +9,7 @@ import {
   DurationSchema,
   HashSchema,
   TimestampSchema,
+  compareScopedReferences,
 } from "@contracts/decision-core/ids";
 import { ActorRefSchema, TokenizedPayloadSchema } from "@contracts/decision-core/actor";
 import { EvidenceRequestSchema, IntentSchema } from "@contracts/decision-core/trigger";
@@ -24,6 +25,7 @@ import {
   ApprovalTemplateSchema,
   AuthorityRequirementSchema,
   EscalationStepSchema,
+  isStrictlyPositiveDuration,
 } from "@contracts/decision-core/authority";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
@@ -42,8 +44,14 @@ import {
 import { unwrap } from "@contracts/result";
 import {
   CANONICAL_IANA_TIME_ZONES,
+  CANONICAL_IANA_TIME_ZONE_LINKS,
   IANA_TIME_ZONE_DATA_VERSION,
+  IANA_TIME_ZONE_LINK_REGISTRY_SHA256,
   IANA_TIME_ZONE_REGISTRY_SHA256,
+  LinkResolvedTimeZoneSchema,
+  SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
+  SUPPORTED_IANA_TIME_ZONE_REGISTRIES,
+  type TimeZone,
 } from "@contracts/time-zone";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -258,6 +266,63 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     }
   });
 
+  it("admits every SUPPORTED registry version so a recorded bundle stays replayable", () => {
+    // The recorded version exists so a bundle can be replayed against the registry it
+    // was evaluated with. A single-version literal would make that impossible: the day
+    // a newer release ships, every stored bundle becomes a parse error.
+    expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
+    expect(Object.keys(SUPPORTED_IANA_TIME_ZONE_REGISTRIES)).toEqual([
+      ...SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
+    ]);
+    for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      expect(SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version]).toBeDefined();
+      expect(
+        DecisionInputBundleSchema.safeParse({ ...validBundle, timeZoneDataVersion: version }).success,
+      ).toBe(true);
+    }
+    expect(
+      DecisionInputBundleSchema.safeParse({ ...validBundle, timeZoneDataVersion: "iana-tzdb/1970a" }).success,
+    ).toBe(false);
+  });
+
+  it("brands TimeZone so a bare string cannot reach a time-zone field", () => {
+    // COMPILE-TIME fence: the registry enum is built from a JSON import, so without
+    // an explicit brand its inferred type collapses to `string` and every other
+    // constrained primitive's type-level boundary would not apply here. If the brand
+    // is removed, the suppression below becomes an unused-directive error and
+    // `pnpm typecheck` fails - this assertion is not merely a runtime one.
+    // @ts-expect-error - a raw string is NOT assignable to the branded TimeZone.
+    const unparsed: TimeZone = "America/New_York";
+    const parsed: TimeZone = TimeZoneSchema.parse("America/New_York");
+    expect(parsed).toBe(unparsed);
+  });
+
+  it("resolves pinned Link aliases to canonical Zones ONLY at the configuration boundary", () => {
+    // Replay bytes stay single-valued: an alias is never a distinct persisted value.
+    expect(Object.keys(CANONICAL_IANA_TIME_ZONE_LINKS)).toHaveLength(257);
+    expect(
+      createHash("sha256")
+        .update(
+          Object.entries(CANONICAL_IANA_TIME_ZONE_LINKS)
+            .map(([alias, zone]) => `${alias} ${zone}`)
+            .join("\n"),
+        )
+        .digest("hex"),
+    ).toBe(IANA_TIME_ZONE_LINK_REGISTRY_SHA256);
+    for (const [alias, zone] of Object.entries(CANONICAL_IANA_TIME_ZONE_LINKS)) {
+      expect(CANONICAL_IANA_TIME_ZONES).toContain(zone);
+      expect(CANONICAL_IANA_TIME_ZONES).not.toContain(alias);
+      expect(TimeZoneSchema.safeParse(alias).success).toBe(false);
+      expect(LinkResolvedTimeZoneSchema.parse(alias)).toBe(zone);
+    }
+    expect(LinkResolvedTimeZoneSchema.parse("UTC")).toBe("Etc/UTC");
+    expect(LinkResolvedTimeZoneSchema.parse("us/eastern")).toBe("America/New_York");
+    expect(LinkResolvedTimeZoneSchema.parse("America/New_York")).toBe("America/New_York");
+    expect(LinkResolvedTimeZoneSchema.safeParse("Not/AZone").success).toBe(false);
+    // The bundle keeps refusing aliases: they are not replay values.
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "UTC" }).success).toBe(false);
+  });
+
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
     "rejects duplicate replay IDs in %s",
     (key) => {
@@ -386,6 +451,59 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(canonicalJson(circular as JsonValue).ok).toBe(false);
   });
 
+  it("names a cycle precisely instead of relying on the stack running out", () => {
+    // Detection must not depend on RangeError: whether unbounded recursion is even
+    // caught is a host stack-depth accident, and the refusal it produces cannot say
+    // WHERE the cycle is - on an explanation tree that is the whole diagnostic.
+    const child: Record<string, unknown> = { label: "leaf" };
+    const root: Record<string, unknown> = { branch: { children: [child] } };
+    child.parent = root;
+    const refusal = canonicalJson(root as JsonValue);
+    expect(refusal.ok).toBe(false);
+    if (!refusal.ok) {
+      expect(refusal.error.message).toContain("circular reference");
+      expect(refusal.error.message).toContain("value.branch.children.0.parent");
+    }
+    // A repeated (non-circular) sibling is NOT a cycle and still serializes.
+    const shared = { n: 1 };
+    expect(unwrap(canonicalJson({ a: shared, b: shared } as JsonValue))).toBe('{"a":{"n":1},"b":{"n":1}}');
+  });
+
+  it("orders the hash preimage by THE canonical comparator, not by id alone", () => {
+    // The preimage and the parsed record must sort identically. Today the bundle's
+    // superRefine forces one tenant, which makes id-only and (firm, id) order agree
+    // and hides a divergence - so probe the preimage with the cross-tenant lists
+    // that constraint currently prevents. Relaxing it must not silently change the
+    // bytes of already-recorded hashes.
+    const crossTenant = [
+      { firmId: "firm-b", id: "aaa" },
+      { firmId: "firm-a", id: "zzz" },
+    ];
+    const byFirmThenId = [
+      { firmId: "firm-a", id: "zzz" },
+      { firmId: "firm-b", id: "aaa" },
+    ];
+    expect([...crossTenant].sort(compareScopedReferences)).toEqual(byFirmThenId);
+    const preimage = bundleHashPreimage({
+      ...DecisionInputBundleSchema.parse(validBundle),
+      householdInstructionVersionRefs: crossTenant,
+      evidenceSnapshotRefs: crossTenant,
+    } as unknown as Parameters<typeof bundleHashPreimage>[0]);
+    expect(preimage.payload.householdInstructionVersionRefs).toEqual(byFirmThenId);
+    expect(preimage.payload.evidenceSnapshotRefs).toEqual(byFirmThenId);
+    // A single-tenant list is canonicalized identically by parse and by preimage.
+    const bundle = DecisionInputBundleSchema.parse({
+      ...validBundle,
+      evidenceSnapshotRefs: [
+        { firmId: "firm-a", id: "evs:z" },
+        { firmId: "firm-a", id: "evs:a" },
+      ],
+    });
+    expect(bundleHashPreimage(bundle).payload.evidenceSnapshotRefs).toEqual([
+      ...bundle.evidenceSnapshotRefs,
+    ]);
+  });
+
   it("refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON", () => {
     expect(canonicalJson(Array(1) as JsonValue).ok).toBe(false);
     expect(canonicalJson(Array(2) as JsonValue).ok).toBe(false);
@@ -467,6 +585,70 @@ describe("temporal + integrity primitives", () => {
     expect(DurationSchema.safeParse("P3D").success).toBe(true);
     expect(DurationSchema.safeParse("PT30M").success).toBe(true);
     expect(DurationSchema.safeParse("3 days").success).toBe(false);
+  });
+
+  it.each(["expiresAfter", "after"] as const)(
+    "requires EVERY approval duration (%s) to be strictly positive, sign placement notwithstanding",
+    (field) => {
+      // The guard reads the duration itself instead of trusting the accepted grammar:
+      // 8601-2 permits a sign on each individual component, so a rule phrased as
+      // "must not start with -" would admit P-1D / PT-1H as "positive" the day the
+      // validator's ISO profile widens - stages born already expired.
+      const parse = (duration: string) =>
+        field === "after"
+          ? EscalationStepSchema.safeParse({ after: duration, roleIds: [role("ops")], reasonCode: "idle" }).success
+          : ApprovalTemplateSchema.safeParse({
+              firmId: "firm-a",
+              id: "apt:u:1",
+              stages: [
+                {
+                  stageId: "stg:ops",
+                  order: 0,
+                  executionMode: "sequential",
+                  requirements: [
+                    {
+                      eligibleRoleIds: [role("ops")],
+                      approvalsRequired: 1,
+                      distinctActorsRequired: true,
+                      requesterMayApprove: false,
+                      priorExecutorMayApprove: true,
+                      reasonRequiredOnOverride: true,
+                    },
+                  ],
+                  escalationPath: [],
+                  expiresAfter: duration,
+                },
+              ],
+            }).success;
+      for (const positive of ["P1D", "PT30M", "P1W", "PT0.001S", "P0Y0M1D"]) {
+        expect(parse(positive), `${positive} is strictly positive`).toBe(true);
+      }
+      for (const nonPositive of ["PT0S", "P0D", "P0Y0M0D", "-P1D", "P-1D", "PT-1H", "+P1D", "P1DT-1H"]) {
+        expect(parse(nonPositive), `${nonPositive} is not strictly positive`).toBe(false);
+      }
+    },
+  );
+
+  it("decides positivity from the duration itself, not from the validator's ISO profile", () => {
+    // zod 4.4.3's grammar happens to refuse signed components, so the schema alone
+    // cannot show whether the guard would still hold if that profile widened to
+    // 8601-2. Assert the predicate directly, where a leading-minus heuristic fails.
+    for (const positive of ["P1D", "PT30M", "P1W", "PT0.001S", "PT0,5S", "P0Y0M1D"]) {
+      expect(isStrictlyPositiveDuration(positive), positive).toBe(true);
+    }
+    for (const nonPositive of [
+      "P-1D",
+      "PT-1H",
+      "P1DT-1H",
+      "-P1D",
+      "+P1D",
+      "PT0S",
+      "P0D",
+      "P0Y0M0DT0H0M0S",
+      "PT0,0S",
+    ]) {
+      expect(isStrictlyPositiveDuration(nonPositive), nonPositive).toBe(false);
+    }
   });
 });
 
