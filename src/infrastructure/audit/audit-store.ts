@@ -356,5 +356,6 @@ export async function verifyAndListOrgChain(
 }
 
 export async function verifyOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainVerdict> {
+  assertTenantContext(tenant);
   return (await readAndVerifyOrgChain(db, tenant)).verdict;
 }

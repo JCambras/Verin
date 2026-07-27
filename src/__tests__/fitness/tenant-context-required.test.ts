@@ -110,6 +110,12 @@ interface RepositoryEntry {
   readonly signatures: Signature[];
 }
 
+interface RuntimeGuard {
+  readonly functionName: "assertActionGrant" | "assertTenantContext" | "assertWriteActor";
+  readonly file: string;
+  readonly argument: string;
+}
+
 function callableMembers(
   type: Type,
   owner: string,
@@ -157,6 +163,96 @@ function signatureHas(
       parameter.getDeclarations()[0];
     return Boolean(declaration && predicate(parameter.getTypeAtLocation(declaration)));
   });
+}
+
+function runtimeGuard(signature: Signature): RuntimeGuard | null {
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) continue;
+    const parameterType = parameter.getTypeAtLocation(declaration);
+    const parameterName = parameter.getName();
+    if (declaredAs(parameterType, "src/contracts/authz.ts", "ActionGrant")) {
+      return {
+        functionName: "assertActionGrant",
+        file: "src/contracts/authz.ts",
+        argument: parameterName,
+      };
+    }
+    if (declaredAs(parameterType, "src/contracts/principal.ts", "WriteActor")) {
+      return {
+        functionName: "assertWriteActor",
+        file: "src/contracts/principal.ts",
+        argument: parameterName,
+      };
+    }
+    if (declaredAs(parameterType, "src/contracts/tenant.ts", "TenantContext")) {
+      return {
+        functionName: "assertTenantContext",
+        file: "src/contracts/tenant.ts",
+        argument: parameterName,
+      };
+    }
+    for (const propertyName of ["actor", "tenant"] as const) {
+      const property = parameterType.getProperty(propertyName);
+      const propertyDeclaration = property?.getValueDeclaration() ??
+        property?.getDeclarations()[0];
+      if (!property || !propertyDeclaration) continue;
+      const propertyType = property.getTypeAtLocation(propertyDeclaration);
+      if (declaredAs(propertyType, "src/contracts/principal.ts", "WriteActor")) {
+        return {
+          functionName: "assertWriteActor",
+          file: "src/contracts/principal.ts",
+          argument: `${parameterName}.${propertyName}`,
+        };
+      }
+      if (declaredAs(propertyType, "src/contracts/tenant.ts", "TenantContext")) {
+        return {
+          functionName: "assertTenantContext",
+          file: "src/contracts/tenant.ts",
+          argument: `${parameterName}.${propertyName}`,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function callResolvesTo(
+  call: Node,
+  file: string,
+  name: string,
+): boolean {
+  if (!Node.isCallExpression(call)) return false;
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return target?.getName() === name &&
+    target.getDeclarations().some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) === file
+    );
+}
+
+function signatureHasFirstRuntimeGuard(
+  signature: Signature,
+  guard: RuntimeGuard,
+): boolean {
+  const declaration = signature.getDeclaration();
+  if (
+    !Node.isFunctionDeclaration(declaration) &&
+    !Node.isMethodDeclaration(declaration) &&
+    !Node.isFunctionExpression(declaration) &&
+    !Node.isArrowFunction(declaration)
+  ) {
+    return false;
+  }
+  const body = declaration.getBody();
+  if (!Node.isBlock(body)) return false;
+  const first = body.getStatements()[0];
+  if (!Node.isExpressionStatement(first)) return false;
+  const expression = first.getExpression();
+  return callResolvesTo(expression, guard.file, guard.functionName) &&
+    Node.isCallExpression(expression) &&
+    expression.getArguments()[0]?.getText() === guard.argument;
 }
 
 function exportedDomainCallableTypes(
@@ -316,6 +412,17 @@ export function detectMissingTenantParams(
           ref,
           detail: "repository callable has no sealed tenant context",
         });
+        continue;
+      }
+      const missingGuard = entry.signatures.some((signature) => {
+        const guard = runtimeGuard(signature);
+        return !guard || !signatureHasFirstRuntimeGuard(signature, guard);
+      });
+      if (missingGuard) {
+        out.push({
+          ref,
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        });
       }
     }
   }
@@ -365,10 +472,18 @@ function repositoryFixture(
       export interface SqlTx extends SqlQueryable {}
       export interface SqlDb extends SqlQueryable {}
     `,
-    "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+    "/src/contracts/tenant.ts": `
+      export interface TenantContext { orgId: string }
+      export function assertTenantContext(value: unknown): asserts value is TenantContext {
+        void value;
+      }
+    `,
     "/src/contracts/principal.ts": `
       import type { TenantContext } from "./tenant";
       export interface WriteActor { tenant: TenantContext; actorUserId: string }
+      export function assertWriteActor(value: unknown): asserts value is WriteActor {
+        void value;
+      }
     `,
     "/src/infrastructure/crm/subject.ts": source,
     ...extras,
@@ -553,12 +668,34 @@ describe("tenant-context-required fence", () => {
     it("allows direct TenantContext, aliased TenantContext, and WriteActor", () => {
       const project = repositoryFixture(`
         import type { SqlDb } from "../store/db";
-        import type { TenantContext as Scope } from "../../contracts/tenant";
-        import type { WriteActor } from "../../contracts/principal";
-        export function listGood(db: SqlDb, tenant: Scope) { return db.query("SELECT 1"); }
-        export function writeGood(db: SqlDb, actor: WriteActor) { return db.query("SELECT 1"); }
+        import { assertTenantContext, type TenantContext as Scope } from "../../contracts/tenant";
+        import { assertWriteActor, type WriteActor } from "../../contracts/principal";
+        export function listGood(db: SqlDb, tenant: Scope) {
+          assertTenantContext(tenant);
+          return db.query("SELECT 1");
+        }
+        export function writeGood(db: SqlDb, actor: WriteActor) {
+          assertWriteActor(actor);
+          return db.query("SELECT 1");
+        }
       `);
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([]);
+    });
+
+    it("flags a typed tenant parameter whose runtime seal is never asserted", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        export function listAll(db: SqlDb, tenant: TenantContext) {
+          return db.query("SELECT 1");
+        }
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
     });
 
     it("keeps repository escapes exact-match", () => {

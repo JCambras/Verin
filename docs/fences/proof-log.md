@@ -1393,3 +1393,77 @@ invariants, all 16 golden cases, the load budget, audit-chain verification, the
 license audit, and the high-severity dependency audit.
 
 **Date:** 2026-07-27 (fifth review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 6 (2026-07-27)
+
+All five findings reproduced before the fixes. The affected runtime and fitness
+checks were then proven against fresh source injections, and every injection
+was reverted.
+
+### Complete resolved-entity validation and evidence-key scanning
+
+The public completeness seal was removed. Projection now validates resolved
+values against slot kinds and the entire request-plus-evidence payload, then
+admits only a closed residual vocabulary after tokenization. Three source
+injections separately admitted an innocuous subject binding, admitted a
+lowercase name into the residual vocabulary, and removed object-key traversal.
+
+```
+# allowed "account" as a subject binding and "Alice" as safe residual text:
+× refuses an innocuous subject binding that leaves a leading name unresolved
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:305
+# admitted "alice" into the closed residual vocabulary:
+× refuses an omitted lowercase entity outside the closed residual vocabulary
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:305
+# changed residual scans from Object.entries to Object.values:
+× refuses resolved entity values retained in evidence keys
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:319
+```
+
+### PF-028 exact privileged factory consumers
+
+An exported wrapper around `systemTenant` was planted in the already reviewed
+audit-store module. The function-scoped allowance rejected the new owner.
+
+```
+× enforces: identity and system minting factories are called only at reviewed boundaries
+  src/infrastructure/audit/audit-store.ts:364 - systemTenant referenced outside
+  its reviewed boundary (unsafeTenantWrapper)
+  src/__tests__/fitness/tokenized-factory-only.test.ts:408
+```
+
+### PF-030 semantically derived governed sinks
+
+An exported tenant-only audit query returning action-marked chain rows was
+planted without adding any registry entry.
+
+```
+× enforces: governed sinks validate action-scoped grants at their execution boundaries
+  src/infrastructure/audit/audit-store.ts :: unsafeAuditExport:
+  boundary must require ActionGrant<"audit.export">
+  src/__tests__/fitness/governed-actions.test.ts:544
+```
+
+### PF-027 runtime tenant authority at repository entry
+
+The direct `assertWriteActor(a)` call was removed from `createHousehold` while
+its typed WriteActor parameter and audited-write delegation remained intact.
+
+```
+× enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+  src/infrastructure/crm/house-crm.ts :: createHousehold -
+  repository callable does not assert its sealed tenant authority before SQL access
+  src/__tests__/fitness/tenant-context-required.test.ts:499
+```
+
+**Revert:** every planted violation was removed. The four focused files passed
+81 tests after the reverts. Final validation passed type checking, lint, Knip,
+all 464 repository tests, all 17 Playwright and axe checks against the
+production build, all active v3 invariants, all 16 golden cases, the load
+budget, audit-chain verification, the license audit, and the high-severity
+dependency audit.
+
+**Date:** 2026-07-27 (sixth review-fix round on v3 build-sequence prompt 6).

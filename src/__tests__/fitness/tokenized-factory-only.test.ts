@@ -45,11 +45,6 @@ const SEALED = [
     declaration: "src/contracts/principal.ts",
     factory: "src/contracts/principal.ts",
   },
-  {
-    typeName: "CompleteEntityMaskSet",
-    declaration: "src/infrastructure/pii/llm-projection.ts",
-    factory: "src/infrastructure/pii/llm-projection.ts",
-  },
 ] as const;
 
 const TRUSTED_FACTORY_CALLS = [
@@ -57,58 +52,60 @@ const TRUSTED_FACTORY_CALLS = [
     name: "principalFromIdentity",
     declaration: "src/contracts/principal.ts",
     allowed: [
-      "src/infrastructure/identity/identity-store.ts",
-      "src/infrastructure/identity/session.ts",
+      { file: "src/infrastructure/identity/identity-store.ts", owner: "createSession" },
+      { file: "src/infrastructure/identity/session.ts", owner: "resolveSessionRow" },
+      { file: "src/infrastructure/identity/session.ts", owner: "resolveAndRenewSession" },
     ],
   },
   {
     name: "tenantFromIdentity",
     declaration: "src/contracts/tenant.ts",
-    allowed: ["src/infrastructure/identity/identity-store.ts"],
+    allowed: [
+      { file: "src/infrastructure/identity/identity-store.ts", owner: "authenticatedUser" },
+    ],
   },
   {
     name: "systemTenant",
     declaration: "src/contracts/tenant.ts",
     allowed: [
-      "scripts/audit-chain-verify.ts",
-      "scripts/db-seed.ts",
-      "scripts/load-smoke.ts",
-      "src/contracts/principal.ts",
-      "src/infrastructure/audit/audit-store.ts",
+      { file: "scripts/audit-chain-verify.ts", owner: "main" },
+      { file: "scripts/db-seed.ts", owner: "seed" },
+      { file: "scripts/load-smoke.ts", owner: "main" },
+      { file: "src/contracts/principal.ts", owner: "systemWriteActor" },
+      { file: "src/infrastructure/audit/audit-store.ts", owner: "discardedAuditEventWork" },
     ],
   },
   {
     name: "systemWriteActor",
     declaration: "src/contracts/principal.ts",
     allowed: [
-      "scripts/backup-restore-drill.ts",
-      "scripts/db-seed.ts",
-      "src/app/login/actions.ts",
-      "src/infrastructure/wire.ts",
+      { file: "scripts/backup-restore-drill.ts", owner: "main" },
+      { file: "scripts/db-seed.ts", owner: "seed" },
+      { file: "src/app/login/actions.ts", owner: "loginAction" },
+      { file: "src/infrastructure/wire.ts", owner: "resumeAccountOpeningByToken" },
     ],
   },
   {
     name: "delegatedWriteActor",
     declaration: "src/contracts/principal.ts",
     allowed: [
-      "src/app/login/actions.ts",
-      "src/infrastructure/wire.ts",
+      { file: "src/app/login/actions.ts", owner: "loginAction" },
+      { file: "src/infrastructure/wire.ts", owner: "makeDeps" },
     ],
-  },
-  {
-    name: "bindCompleteEntityMaskSet",
-    declaration: "src/infrastructure/pii/llm-projection.ts",
-    allowed: [],
   },
   {
     name: "tokenizeText",
     declaration: "src/infrastructure/pii/tokenize.ts",
-    allowed: ["src/infrastructure/pii/llm-projection.ts"],
+    allowed: [
+      { file: "src/infrastructure/pii/llm-projection.ts", owner: "projectForLlm" },
+    ],
   },
   {
     name: "tokenizeRecord",
     declaration: "src/infrastructure/pii/tokenize.ts",
-    allowed: ["src/infrastructure/pii/llm-projection.ts"],
+    allowed: [
+      { file: "src/infrastructure/pii/llm-projection.ts", owner: "projectForLlm" },
+    ],
   },
 ] as const;
 
@@ -156,6 +153,18 @@ function functionTarget(type: Type): {
         name,
         declaration: normalizedPath(declaration.getSourceFile().getFilePath()),
       };
+    }
+  }
+  return null;
+}
+
+function enclosingOwner(node: Node): string | null {
+  for (const ancestor of node.getAncestors()) {
+    if (Node.isFunctionDeclaration(ancestor) && ancestor.getName()) {
+      return ancestor.getName()!;
+    }
+    if (Node.isMethodDeclaration(ancestor)) {
+      return ancestor.getName();
     }
   }
   return null;
@@ -333,18 +342,27 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
     ];
     for (const reference of references) {
+      if (
+        reference.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) ||
+        reference.getFirstAncestorByKind(SyntaxKind.ExportDeclaration)
+      ) {
+        continue;
+      }
       const target = functionTarget(reference.getType());
       if (!target) continue;
       const factory = TRUSTED_FACTORY_CALLS.find((candidate) =>
         candidate.name === target.name &&
         candidate.declaration === target.declaration
       );
+      const owner = enclosingOwner(reference);
       if (
         factory &&
         normalized !== factory.declaration &&
-        !factory.allowed.includes(normalized as never)
+        !factory.allowed.some((scope) =>
+          scope.file === normalized && scope.owner === owner
+        )
       ) {
-        const violation = `${normalized}:${reference.getStartLineNumber()} - ${factory.name} referenced outside its reviewed boundary`;
+        const violation = `${normalized}:${reference.getStartLineNumber()} - ${factory.name} referenced outside its reviewed boundary${owner ? ` (${owner})` : ""}`;
         if (!seen.has(violation)) {
           seen.add(violation);
           out.push(violation);
@@ -376,10 +394,7 @@ function sealedFixture(path: string, source: string): Project {
       export function systemWriteActor(systemId: string, orgId: string): { tenant: TenantContext } { return { tenant: { orgId } } }
       export function delegatedWriteActor(actor: WriteActor, actorUserId: string): WriteActor { return { ...actor, actorUserId } }
     `,
-    "/src/infrastructure/pii/llm-projection.ts": `
-      export interface CompleteEntityMaskSet { bindings: readonly object[] }
-      export function bindCompleteEntityMaskSet(input: object[]): CompleteEntityMaskSet { return { bindings: input } as CompleteEntityMaskSet }
-    `,
+    "/src/infrastructure/pii/llm-projection.ts": "",
     [path]: source,
   });
 }
@@ -396,18 +411,19 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
   it("enforces: every trusted factory callsite remains live", () => {
     const project = realSemanticProject();
     for (const factory of TRUSTED_FACTORY_CALLS) {
-      for (const allowed of factory.allowed) {
+      for (const scope of factory.allowed) {
         const sf = project.getSourceFiles().find((candidate) =>
-          normalizedPath(candidate.getFilePath()) === allowed
+          normalizedPath(candidate.getFilePath()) === scope.file
         );
-        expect(sf, `${allowed} missing`).toBeTruthy();
+        expect(sf, `${scope.file} missing`).toBeTruthy();
         expect(
           sf!.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) => {
             const target = functionTarget(identifier.getType());
             return target?.name === factory.name &&
-              target.declaration === factory.declaration;
+              target.declaration === factory.declaration &&
+              enclosingOwner(identifier) === scope.owner;
           }),
-          `${allowed} no longer references ${factory.name}`,
+          `${scope.file} :: ${scope.owner} no longer references ${factory.name}`,
         ).toBe(true);
       }
     }
@@ -529,20 +545,18 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(hits.some((hit) => hit.includes("systemWriteActor"))).toBe(true);
     });
 
-    it("catches trusted entity-mask binding outside a reviewed boundary", () => {
+    it("catches privileged result wrappers added inside an otherwise reviewed module", () => {
       const project = sealedFixture(
-        "/src/app/evil.ts",
+        "/src/infrastructure/audit/audit-store.ts",
         `
-          import { bindCompleteEntityMaskSet } from "../infrastructure/pii/llm-projection";
-          bindCompleteEntityMaskSet([{
-            slotId: "slot_0001",
-            slotType: "subject",
-            rawValues: ["account"],
-          }]);
+          import { systemTenant } from "../../contracts/tenant";
+          export function mintForAnyone(orgId: string) {
+            return systemTenant("login-constant-work", orgId);
+          }
         `,
       );
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
-        hit.includes("bindCompleteEntityMaskSet")
+        hit.includes("systemTenant") && hit.includes("mintForAnyone")
       )).toBe(true);
     });
 

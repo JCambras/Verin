@@ -5,6 +5,7 @@
  * verifyChain(). One chain per org, ordered by sequence.
  */
 import { createHash } from "node:crypto";
+import type { GovernedOutput } from "@contracts/authz";
 
 export const GENESIS_HASH = "GENESIS";
 
@@ -41,7 +42,7 @@ export function computeEntryHash(e: ChainableEntry, prevHash: string): string {
   return createHash("sha256").update(canonicalize(e)).update("|").update(prevHash).digest("hex");
 }
 
-export interface ChainRow extends ChainableEntry {
+export interface ChainRow extends ChainableEntry, GovernedOutput<"audit.export"> {
   prevHash: string;
   entryHash: string;
 }

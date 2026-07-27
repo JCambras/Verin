@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import type { Result } from "@contracts/result";
-import type { WriteActor } from "@contracts/principal";
+import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import type { AccountType, ApplicationStatus } from "@domain/schema/entities";
 
 export interface ApplicationRow {
@@ -24,6 +24,7 @@ export interface ApplicationRow {
 export async function createApplication(
   db: SqlDb, a: WriteActor, input: { householdId: string; contactId: string; accountType: AccountType }, idempotencyKey?: string,
 ): Promise<Result<{ id: string; idempotencyKey: string }>> {
+  assertWriteActor(a);
   const id = randomUUID();
   const finalizeKey = `finalize:${id}`;
   const now = new Date().toISOString();
@@ -44,6 +45,7 @@ export async function createApplication(
 export async function setEsignRequested(
   db: SqlDb, a: WriteActor, applicationId: string, token: string, idempotencyKey?: string,
 ): Promise<Result<{ token: string }>> {
+  assertWriteActor(a);
   return auditedWrite<{ token: string }>({
     db, actor: a, action: "application.request-esign", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Sent application for e-signature", buildAfter: () => ({ status: "awaiting-signature" }),
@@ -69,6 +71,7 @@ export async function getApplicationByToken(db: SqlDb, token: string): Promise<A
 export async function completeApplication(
   db: SqlDb, a: WriteActor, applicationId: string, idempotencyKey: string,
 ): Promise<Result<{ id: string }>> {
+  assertWriteActor(a);
   return auditedWrite<{ id: string }>({
     db, actor: a, action: "application.complete", entityType: "AccountOpeningApplication", entityId: applicationId,
     idempotencyKey, detail: "Account opening completed (e-signature received)",

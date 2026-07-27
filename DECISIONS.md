@@ -767,3 +767,40 @@ green coverage).
 route-only governed authorization, directory-scoped tenant discovery, manual
 LLM path resolution, and direct-symbol-only privileged access checks. D-039
 through D-043 remain the underlying prompt-6 decisions.
+
+### D-045 · 2026-07-27 · reversible · Prompt-6 completeness proofs and governed repository entry guards hardened
+
+All five sixth-round findings were legitimate instances of four remaining
+false assurances: a caller could label an arbitrary entity list complete,
+evidence keys were outside residual scanning, privileged factory review was
+file-scoped, and repository governance checked declarations without deriving
+runtime behavior.
+
+- LLM projection no longer exposes a factory that seals caller-assembled
+  completeness. It validates resolved entities against their slot kinds and
+  the complete request-plus-evidence payload, admits only a closed residual
+  vocabulary after tokenization, and includes evidence keys in both residual
+  entity scans.
+- Privileged factory consumers are allowlisted by exact containing function.
+  A new wrapper in a reviewed module is rejected unless that function is itself
+  a reviewed authority boundary.
+- Governed sinks are derived from action-grant parameters, PII-bearing return
+  types, and action-marked export return types. Audit chain rows and account
+  opening start results carry semantic action markers, so new PII or audit
+  exports cannot depend on a manually updated sink table.
+- Every non-exempt SQL-backed repository entry must call the canonical runtime
+  assertion for its TenantContext, WriteActor, or ActionGrant as its first
+  statement. Write adapters now assert actor seals at their own entry points in
+  addition to the audited-write chokepoint.
+
+**Alternatives:** preserve the public complete-set seal and add more residual
+regexes (rejected because the seal would still certify caller intent); add
+wrapper names and governed functions to manual registries (rejected because
+new declarations would remain fail-open); trust compile-time tenant brands at
+repository entries (rejected because casts and deserialization cross runtime
+boundaries).
+
+**Revert path:** revert this changeset and restore the public complete-set
+factory, file-level privileged factory allowances, manual governed sink table,
+and signature-only tenant fence. D-039 through D-044 remain the underlying
+prompt-6 security decisions.
