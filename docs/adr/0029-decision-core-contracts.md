@@ -23,8 +23,10 @@ parse time, not by reviewer discipline. Three constraints meet here:
 
 - **Home:** `src/contracts/decision-core/` - `ids.ts` (branded IDs + temporal/integrity
   primitives), `actor.ts` (tenant scope, actor refs, tokenized shapes), `trigger.ts`,
-  `evidence.ts`, `authority.ts`, `execution.ts`, `decision.ts`, `serialization.ts` (canonical
-  serializer + versions), plus the shared `src/contracts/time-zone.ts` registry consumed by
+  `evidence.ts`, `authority.ts`, `execution.ts`, `decision.ts`, `explanation.ts` (the recursive
+  explanation tree + versioned source citations), `normalization.ts` (the shared pure collection and
+  explanation normalizers that parse boundaries and hash preimages both call), `serialization.ts`
+  (canonical serializer + versions), plus the shared `src/contracts/time-zone.ts` registry consumed by
   configuration and replay. Zod schemas are the single source; TypeScript types are `z.infer` derived.
 - **Structural invariants:** strict objects + discriminated unions make v3 invariants 7–9
   parse-level facts (proceed requires authority + non-empty plan; blocked/prohibited cannot carry
