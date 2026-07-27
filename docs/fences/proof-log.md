@@ -836,11 +836,27 @@ exact-matching.
 invariant 1 (now active) with `src/__tests__/fitness/tokenized-factory-only.test.ts`; `pnpm v3:invariants`
 reports `3 active-pass · 0 active-fail`.
 
+**Addendum (2026-07-26):** review hardening closed a derivation-floor gap - the marked set walked only
+interfaces, so a `type Client = { firstName: string }` alias (or a class with PII-named fields) was
+neither flagged nor treated as marked. `detectUnmarkedPIITypes`/`markedModules` now cover type-alias
+object literals (direct and union/intersection members) and class declarations; escape semantics stay
+exact-match. Re-proof, injected into `engine.ts` and reverted:
+```
+# added an UNMARKED type alias + class with PII fields (the extended derivation floor):
+  × enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked (or a reviewed machine-name escape)
+    AssertionError: unmarked PII-bearing types (extend PIIBearing or review into NON_PII_ESCAPES):
+    src/domain/workflow/engine.ts :: SneakyAliasClient.email
+    src/domain/workflow/engine.ts :: SneakyClassClient.phone: expected [ ...(2) ] to deeply equal []
+```
+Companions now also inject the alias evasion, the union-member evasion, the class evasion, and
+marked-alias/marked-class reachability from llm/; fence file `Tests 15 passed`.
+
 **Date:** 2026-07-26 (v3 build-sequence prompt 6).
 
 ### PF-030 · governed-actions (per-action authorization hooks) · `src/__tests__/fitness/governed-actions.test.ts`
 **Invariant (v3 §15.3; charter #12 — extends route-level RBAC):** the `GOVERNED_ACTIONS` registry covers
-exactly the seven governed actions; separation of duties is pinned in the registry itself (compliance
+exactly the seven §15.3 permission points (eight actions - policy drafting and approval are distinct);
+separation of duties is pinned in the registry itself (compliance
 authority — `policy.approve`, `decision.override`, `decision.approve` — never includes the IT-admin or
 requesting-advisor roles, D-039); and every SURFACED action's route calls
 `requireActionGrant(req, "<action>")` with the exact literal. `authorizeGovernedAction` refuses system

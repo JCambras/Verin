@@ -42,9 +42,10 @@ const tracer = trace.getTracer(getConfig().otel.serviceName);
  * guard exists for the day one doesn't.
  */
 function scrubAttributes(attributes: Attributes): Attributes {
+  const scrub = (v: unknown): unknown => (typeof v === "string" && looksLikePIIValue(v) ? REDACTED : v);
   const out: Record<string, Attributes[string]> = {};
   for (const [k, v] of Object.entries(attributes)) {
-    out[k] = typeof v === "string" && looksLikePIIValue(v) ? REDACTED : v;
+    out[k] = (Array.isArray(v) ? v.map(scrub) : scrub(v)) as Attributes[string];
   }
   return out;
 }

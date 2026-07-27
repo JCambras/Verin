@@ -8,8 +8,9 @@ import { ROLES } from "@contracts/roles";
 /**
  * GOVERNED-ACTIONS FENCE (v3 §15.3; extends charter #12's route-level RBAC).
  * Three structural guarantees:
- *  1. The registry covers EXACTLY the seven governed actions v3 §15.3 names —
- *     an action cannot be dropped (or renamed away) silently.
+ *  1. The registry covers EXACTLY the seven permission points v3 §15.3 names,
+ *     as eight actions (policy drafting and approval are distinct) — an action
+ *     cannot be dropped (or renamed away) silently.
  *  2. Separation of duties holds in the registry itself: compliance authority
  *     (policy.approve, decision.override) never includes the IT-admin role or
  *     the requesting advisor role (D-036) — a quiet allowlist widening fails
@@ -59,7 +60,7 @@ export function detectUnwiredGovernedRoutes(project: Project, entries: ReadonlyA
 }
 
 describe("governed-actions fence (v3 §15.3)", () => {
-  it("enforces: the registry covers exactly the seven v3 §15.3 actions", () => {
+  it("enforces: the registry covers exactly the eight actions of the seven v3 §15.3 permission points", () => {
     expect(Object.keys(GOVERNED_ACTIONS).sort()).toEqual([...V3_15_3_ACTIONS].sort());
   });
 

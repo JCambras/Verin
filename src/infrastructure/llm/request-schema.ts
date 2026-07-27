@@ -39,7 +39,7 @@ export interface MaskedLlmRequest {
 }
 
 // Machine names only — a slot name can never smuggle free text.
-const SLOT_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
+export const SLOT_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
 
 const sealedTokenizedText = z.custom<Tokenized<string>>(
   (v) => isSealedTokenized(v) && typeof v.value === "string" && !looksLikePIIValue(v.value),

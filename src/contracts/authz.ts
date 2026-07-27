@@ -26,7 +26,10 @@ export function actorRefOf(p: Principal): ActorRef {
   return { kind: "human", tenant: tenantOf(p), actorId: p.userId, role: p.role };
 }
 
-/** The seven governed actions of v3 §15.3, each with its allowed roles. */
+/**
+ * The seven v3 §15.3 permission points as eight actions (policy drafting and
+ * approval are distinct), each with its allowed roles.
+ */
 export const GOVERNED_ACTIONS = {
   "pii.view": ["advisor", "ops", "cco", "principal", "admin"],
   "evidence.supply": ["advisor", "ops", "principal", "admin"],

@@ -92,11 +92,16 @@ describe("traces never carry raw names or account numbers", () => {
   });
 
   it("a PII-shaped attribute VALUE is scrubbed at the span boundary (backstop)", async () => {
-    await withSpan("test.backstop", { contact: FIXTURES.email, phone: FIXTURES.phone, orgId: ORG }, async () => undefined);
+    await withSpan(
+      "test.backstop",
+      { contact: FIXTURES.email, phone: FIXTURES.phone, orgId: ORG, refs: [FIXTURES.email, ORG] },
+      async () => undefined,
+    );
     const span = [...recentSpans()].reverse().find((s) => s.name === "test.backstop");
     expect(span).toBeTruthy();
     expect(span!.attributes.contact).toBe(REDACTED);
     expect(span!.attributes.phone).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifiers survive
+    expect(span!.attributes.refs).toEqual([REDACTED, ORG]); // array values are scrubbed element-wise
   });
 });

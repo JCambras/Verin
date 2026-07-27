@@ -11,10 +11,10 @@
  *   3. the adapter ingress gate re-parses the result, so an incomplete scrub
  *      fails closed rather than reaching a model.
  */
-import { type Result } from "@contracts/result";
-import type { AppError } from "@contracts/errors";
+import { type Result, err } from "@contracts/result";
+import { appError, type AppError } from "@contracts/errors";
 import { tokenizeText, tokenizeRecord } from "@infra/pii/tokenize";
-import { parseMaskedLlmRequest, type LlmPurpose, type MaskedLlmRequest, type SlotPlaceholder } from "./request-schema";
+import { parseMaskedLlmRequest, SLOT_NAME_RE, type LlmPurpose, type MaskedLlmRequest, type SlotPlaceholder } from "./request-schema";
 
 /** A known entity string to mask out of the request text, and the slot that replaces it. */
 export interface SubjectMask {
@@ -38,15 +38,20 @@ function escapeRegExp(s: string): string {
 }
 
 function maskKnownEntities(text: string, masks: readonly SubjectMask[]): string {
+  const longestFirst = [...masks].sort((a, b) => b.rawText.length - a.rawText.length);
   let out = text;
-  for (const m of masks) {
+  for (const m of longestFirst) {
     if (!m.rawText) continue;
-    out = out.replace(new RegExp(escapeRegExp(m.rawText), "gi"), `{{${m.slotName}}}`);
+    const placeholder = `{{${m.slotName}}}`;
+    out = out.replace(new RegExp(escapeRegExp(m.rawText), "gi"), () => placeholder);
   }
   return out;
 }
 
 export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmRequest, AppError> {
+  if (input.masks.some((m) => !SLOT_NAME_RE.test(m.slotName))) {
+    return err(appError("PII_VIOLATION", "LLM projection refused at the scrub boundary: mask slot names must be machine names"));
+  }
   const candidate: MaskedLlmRequest = {
     purpose: input.purpose,
     maskedText: tokenizeText(maskKnownEntities(input.requestText, input.masks)),
