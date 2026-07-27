@@ -23,7 +23,7 @@ export interface PIIBearing {
 }
 
 export const PII_FIELD_RE =
-  /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|\bname\b|email|phone)/i;
+  /(ssn|social.?security|tax.?id|dob|date.?of.?birth|passport|driver.?licen[cs]e|account.?number|routing.?number|password|secret|credential|api.?key|private.?key|database.?url|connection.?string|access.?token|refresh.?token|auth.?token|bearer.?token|first.?name|last.?name|full.?name|display.?name|given.?name|family.?name|household.?name|request.?text|raw.?text|evidence|\bname\b|email|phone)/i;
 
 // Value patterns kept conservative to avoid over-redacting IDs / ISO timestamps.
 // The audit backstop THROWS on a match (rolling back the business write), so a
@@ -44,6 +44,40 @@ export function isPIIField(name: string): boolean {
 
 export function looksLikePIIValue(value: string): boolean {
   return PII_VALUE_PATTERNS.some((re) => re.test(value));
+}
+
+const LONG_UNMASKED_NUMBER_RE = /\b\d{9,18}\b/;
+const TITLE_CASE_PERSON_RE =
+  /(?:^|[^\p{L}])\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?\s+\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?(?:$|[^\p{L}])/u;
+const CREDENTIAL_VALUE_RE =
+  /(?:\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret)\b\s*[:=]\s*\S+|\bbearer\s+[A-Za-z0-9._~+/-]+=*|\b(?:sk_(?:live|test)|ghp_)[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)/i;
+
+export function looksLikeAmbiguousSensitiveText(value: string): boolean {
+  return value !== REDACTED && (
+    looksLikePIIValue(value) ||
+    LONG_UNMASKED_NUMBER_RE.test(value) ||
+    TITLE_CASE_PERSON_RE.test(value) ||
+    CREDENTIAL_VALUE_RE.test(value)
+  );
+}
+
+export function assertNoAmbiguousSensitiveText(
+  payload: unknown,
+  boundary: string,
+  seen = new WeakSet<object>(),
+): void {
+  if (payload == null) return;
+  if (typeof payload === "string") {
+    if (looksLikeAmbiguousSensitiveText(payload)) throw pii(boundary, "ambiguous sensitive text");
+    return;
+  }
+  if (typeof payload !== "object") return;
+  if (seen.has(payload)) return;
+  seen.add(payload);
+  for (const [key, value] of Object.entries(payload)) {
+    if (looksLikeAmbiguousSensitiveText(key)) throw pii(boundary, "ambiguous sensitive key");
+    assertNoAmbiguousSensitiveText(value, boundary, seen);
+  }
 }
 
 /**

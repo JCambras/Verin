@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { tenantOf, systemTenant, isTenantContext, assertTenantContext, type TenantContext } from "@contracts/tenant";
-import { writeActorOf, systemWriteActor, type Principal } from "@contracts/principal";
+import { principalFromIdentity, writeActorOf, systemWriteActor } from "@contracts/principal";
 
 /**
  * TenantContext sealing (v3 §15.2): "missing tenant context cannot compile or
@@ -10,7 +10,7 @@ import { writeActorOf, systemWriteActor, type Principal } from "@contracts/princ
  * every impostor shape an attacker or a refactor could produce is refused by
  * the runtime seal check repositories call before touching SQL.
  */
-const principal: Principal = { userId: "u1", orgId: "org-1", role: "advisor", actor: "a@firm.test", sessionId: "s1" };
+const principal = principalFromIdentity({ userId: "u1", orgId: "org-1", role: "advisor", actor: "a@firm.test", sessionId: "s1" });
 
 describe("TenantContext cannot compile from a literal", () => {
   it("rejects literals and unbranded objects at the type level", () => {
@@ -48,9 +48,28 @@ describe("TenantContext cannot parse unless factory-minted", () => {
   it("mints are frozen and refuse empty identifiers", () => {
     const t = tenantOf(principal);
     expect(Object.isFrozen(t)).toBe(true);
-    expect(() => systemTenant("", "org-1")).toThrow();
+    expect(() => systemTenant("" as never, "org-1")).toThrow();
+    expect(() => systemTenant("attacker" as never, "org-1")).toThrow();
     expect(() => systemTenant("seed", "")).toThrow();
-    expect(() => tenantOf({ ...principal, orgId: "" })).toThrow();
+    expect(() => tenantOf({ ...principal, orgId: "" } as never)).toThrow();
+  });
+  it("rejects a fabricated Principal and retains mint attribution", () => {
+    expect(() => tenantOf({
+      userId: "attacker",
+      orgId: "victim",
+      role: "admin",
+      actor: "attacker@example.test",
+      sessionId: "fake",
+    } as never)).toThrow();
+    expect(() => principalFromIdentity({
+      userId: "u1",
+      orgId: "org-1",
+      role: "advisor",
+      actor: "a@firm.test",
+      sessionId: "",
+    })).toThrow();
+    expect(tenantOf(principal).actor).toEqual({ kind: "human", actorId: "u1" });
+    expect(systemTenant("seed", "org-1").actor).toEqual({ kind: "system", actorId: "seed" });
   });
 });
 

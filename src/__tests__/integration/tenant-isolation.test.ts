@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { createHousehold, listHouseholds } from "@infra/crm/house-crm";
+import {
+  createContact,
+  createFinancialAccount,
+  createHousehold,
+  createTask,
+  listHouseholds,
+} from "@infra/crm/house-crm";
+import { createApplication } from "@infra/crm/application-store";
 import { systemWriteActor } from "@contracts/principal";
 import { systemTenant, type TenantContext } from "@contracts/tenant";
 import { makeExecutionStore } from "@infra/store/execution-store";
@@ -39,6 +46,44 @@ describe("tenant isolation (integration)", () => {
     expect(b.map((h) => h.orgId)).toEqual([ORG_B]);
     expect(a[0]!.name).toBe("Alpha Household");
     expect(b[0]!.name).toBe("Beta Household");
+  });
+
+  it("tenant-qualified parent relationships reject cross-tenant references", async () => {
+    const householdA = (await listHouseholds(db, tenantA))[0]!;
+    const actorA = systemWriteActor("seed", ORG_A);
+    const actorB = systemWriteActor("seed", ORG_B);
+    const contactA = unwrap(await createContact(db, actorA, {
+      householdId: householdA.id,
+      firstName: "Alpha",
+      lastName: "Contact",
+    }));
+
+    expect((await createContact(db, actorB, {
+      householdId: householdA.id,
+      firstName: "Cross",
+      lastName: "Tenant",
+    })).ok).toBe(false);
+    expect((await createFinancialAccount(db, actorB, {
+      householdId: householdA.id,
+      accountType: "individual",
+    })).ok).toBe(false);
+    expect((await createTask(db, actorB, {
+      householdId: householdA.id,
+      subject: "Cross-tenant task",
+    })).ok).toBe(false);
+    expect((await createApplication(db, actorB, {
+      householdId: householdA.id,
+      contactId: contactA.id,
+      accountType: "individual",
+    })).ok).toBe(false);
+
+    for (const table of ["contacts", "financial_accounts", "tasks", "account_opening_applications"]) {
+      const count = await db.query<{ n: string }>(
+        `SELECT count(*) AS n FROM ${table} WHERE org_id = $1`,
+        [ORG_B],
+      );
+      expect(Number(count.rows[0]!.n), table).toBe(0);
+    }
   });
 
   it("an impostor context cannot parse: a cast never reaches SQL", async () => {

@@ -1969,3 +1969,126 @@ call, and the allowlisted call.
 **Revert:** removed the injection; fence file green (all config-hygiene checks pass).
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening (2026-07-26) - executed injection proofs
+
+The review found real false-green paths in PF-027 through PF-031 and real
+cross-tenant relationship gaps below the repository signatures. Each existing
+rule was strengthened in place, with the following real-source violations
+injected, observed, and reverted.
+
+### PF-027 semantic repository coverage
+
+The repository fence now resolves SQL and tenant types semantically, including
+import aliases, inferred contextual parameters, nested options, and public
+methods on exported database-bound classes. The exact capability escapes and
+stale-escape checks remain.
+
+```
+# imported SqlDb as Database and added forbiddenAlias(db: Database) to house-crm.ts:
+  × enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+    AssertionError: src/infrastructure/crm/house-crm.ts :: forbiddenAlias - takes
+    (import(".../src/infrastructure/store/db").SqlDb) with no sealed tenant context
+    ❯ src/__tests__/fitness/tenant-context-required.test.ts:228
+```
+
+### PF-028 sealed construction and trusted mint boundaries
+
+`Tokenized`, `TenantContext`, `ActionGrant`, and `Principal` now carry
+compile-time brands. The semantic fence rejects aliased casts, contextual
+shorthand literals, class implementations, and calls to identity/system minting
+factories outside reviewed source and script boundaries.
+
+```
+# added a shorthand Tokenized literal to wire.ts:
+  × enforces: sealed types are built only in their factory modules
+    src/infrastructure/wire.ts:25 - object literal constructs sealed type 'Tokenized'
+    src/infrastructure/wire.ts:25 - object literal with 'piiFree' outside the scrubber factory
+    ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:225
+# called systemTenant from wire.ts:
+  × enforces: identity and system minting factories are called only at reviewed boundaries
+    src/infrastructure/wire.ts:9 - systemTenant referenced outside its reviewed boundary
+    src/infrastructure/wire.ts:23 - systemTenant referenced outside its reviewed boundary
+    ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:250
+```
+
+### PF-029 raw projection exclusion and fail-closed tokenization
+
+Raw evidence projection contracts now live under `infrastructure/pii`, not
+`infrastructure/llm`. The derivation floor recognizes `requestText`, `rawText`,
+and `evidence`; a marked declaration inside `llm/` is itself a violation.
+Runtime tokenization rejects unresolved person-name and bare account-number
+text after deterministic masking.
+
+```
+# declared ForbiddenRawRequest extends PIIBearing inside llm/request-schema.ts:
+  × enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it
+    src/infrastructure/llm/request-schema.ts declares a PII-bearing type inside llm/
+    ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:211
+```
+
+### PF-030 per-handler governed authorization
+
+Every surfaced HTTP handler must bind the exact `requireActionGrant` call as
+its first statement, fail closed on its result as the second statement, and
+thread the authorized value into the route's exact governed sink.
+
+```
+# moved getDb() before authorization in the audit GET handler:
+  × enforces: every surfaced governed action is wired through requireActionGrant in its route
+    src/app/api/audit/route.ts :: GET: first statement must bind
+    requireActionGrant(req, "audit.export")
+    ❯ src/__tests__/fitness/governed-actions.test.ts:154
+# kept a superficial tenant reference but removed it from verifyAndListOrgChain:
+  × enforces: every surfaced governed action is wired through requireActionGrant in its route
+    src/app/api/audit/route.ts :: GET: authorized value does not reach
+    'verifyAndListOrgChain'
+    ❯ src/__tests__/fitness/governed-actions.test.ts:182
+```
+
+### PF-031 semantic secret access
+
+Secret bytes are held in a module-private `WeakMap`; the public object exposes
+no raw accessor. The free `revealSecret` function is resolved semantically, so
+an aliased call fails outside the two reviewed HMAC consumers. Companions also
+prove computed and destructured access would fail if an accessor were
+reintroduced.
+
+```
+# imported revealSecret as unwrap and called it from wire.ts:
+  × enforces: raw secret access appears only in reviewed secret-consumer modules
+    AssertionError: unsanctioned secret reveals:
+    src/infrastructure/wire.ts:13
+    src/infrastructure/wire.ts:25
+    ❯ src/__tests__/fitness/no-secret-fallback.test.ts:233
+```
+
+### Tenant-qualified relationship constraints
+
+Migration 3 adds tenant-qualified composite foreign keys for sessions,
+household parents, contacts, financial accounts, applications, tasks, and user
+references. The adapters and session boundary also verify ownership. Real
+PGlite integration tests reject crossed relationships through both SQL and the
+repository interface.
+
+```
+# removed contacts_household_org_fk from migration 3:
+  × household references must belong to the row's org
+    AssertionError: promise resolved "{ rows: [] }" instead of rejecting
+    ❯ src/__tests__/integration/store-schema.test.ts:70
+  × tenant-qualified parent relationships reject cross-tenant references
+    AssertionError: expected true to be false
+    ❯ src/__tests__/integration/tenant-isolation.test.ts:65
+# removed sessions_user_org_fk from migration 3:
+  × a session user must belong to the session org
+    AssertionError: promise resolved "{ rows: [] }" instead of rejecting
+    ❯ src/__tests__/integration/store-schema.test.ts:93
+```
+
+**Revert:** every injection above was removed. Full verification is green:
+`pnpm test` (47 files, 412 tests), `pnpm test:e2e` (17 tests),
+`pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm knip`,
+`pnpm v3:invariants`, `pnpm golden:validate`, and `pnpm load:smoke`.
+The CI seed plus `pnpm audit:chain` also verified the migrated store.
+
+**Date:** 2026-07-26 (review-fix round on v3 build-sequence prompt 6).

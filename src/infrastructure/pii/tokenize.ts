@@ -12,7 +12,7 @@
  * boundary trusts); the typed slot-placeholder vocabulary of masked intent
  * shaping (prompt 13) lands INSIDE this factory, never beside it.
  */
-import { assertNoPIIValues } from "@contracts/pii";
+import { assertNoAmbiguousSensitiveText, assertNoPIIValues } from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { scrub } from "./scrub";
 
@@ -28,6 +28,7 @@ function seal<T>(value: T): Tokenized<T> {
 export function tokenizeText(raw: string): Tokenized<string> {
   const scrubbed = scrub(raw) as string;
   assertNoPIIValues(scrubbed, "llm");
+  assertNoAmbiguousSensitiveText(scrubbed, "llm");
   return seal(scrubbed);
 }
 
@@ -35,6 +36,7 @@ export function tokenizeText(raw: string): Tokenized<string> {
 export function tokenizeRecord(raw: Readonly<Record<string, unknown>>): Tokenized<Readonly<Record<string, unknown>>> {
   const scrubbed = scrub(raw) as Readonly<Record<string, unknown>>;
   assertNoPIIValues(scrubbed, "llm");
+  assertNoAmbiguousSensitiveText(scrubbed, "llm");
   return seal(scrubbed);
 }
 

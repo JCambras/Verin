@@ -9,12 +9,16 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import { getConfig } from "@infra/config";
+import { revealSecret } from "@contracts/secret";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
 import { type Role, isAllowedRole } from "@contracts/roles";
-import type { Principal } from "@contracts/principal";
+import {
+  principalFromIdentity,
+  type Principal,
+} from "@contracts/principal";
 import type { PIIBearing } from "@contracts/pii";
-import { log } from "@infra/observability/logger";
+import { log, safeReason } from "@infra/observability/logger";
 import { renewSession, deleteDeadSessions } from "./identity-store";
 
 export const SESSION_COOKIE = "verin_session";
@@ -29,8 +33,8 @@ const RENEW_WHEN_REMAINING_FRACTION = 0.5;
 const DEAD_SESSION_RETENTION_TTLS = 1;
 
 function sign(sessionId: string): string {
-  // reveal() is the explicit, fence-allowlisted secret read (v3 §15.4).
-  return createHmac("sha256", getConfig().session.secret.reveal()).update(sessionId).digest("hex");
+  // revealSecret is the explicit, fence-allowlisted secret read (v3 §15.4).
+  return createHmac("sha256", revealSecret(getConfig().session.secret)).update(sessionId).digest("hex");
 }
 
 /** Cookie value = "<sessionId>.<hmac>" so tampering is detected before a DB lookup. */
@@ -89,7 +93,9 @@ async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Pr
     // demotion/promotion takes effect on the next request (Vale V8), not at expiry.
     `SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at,
             u.id AS user_id, u.email, u.status AS user_status
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1`,
+     FROM sessions s
+     JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id
+     WHERE s.id = $1`,
     [sessionId],
   );
   const row = res.rows[0];
@@ -100,7 +106,13 @@ async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Pr
   if (new Date(row.expires_at).getTime() <= Date.now()) return err(appError("AUTH_EXPIRED", "Session has expired."));
 
   return ok({
-    principal: { userId: row.user_id, orgId: row.org_id, role: row.role, actor: row.email, sessionId: row.session_id },
+    principal: principalFromIdentity({
+      userId: row.user_id,
+      orgId: row.org_id,
+      role: row.role,
+      actor: row.email,
+      sessionId: row.session_id,
+    }),
     expiresAt: row.expires_at,
   });
 }
@@ -147,11 +159,17 @@ export async function resolveAndRenewSession(
   // Best-effort: never let a cleanup failure throw out after the rotation already
   // committed (it would orphan the rotated session); the next rotation retries.
   await deleteDeadSessions(db, cutoffIso).catch((e: unknown) =>
-    log.warn({ reason: e instanceof Error ? e.message : String(e) }, "opportunistic session cleanup failed"),
+    log.warn({ reason: safeReason(e) }, "opportunistic session cleanup failed"),
   );
 
   return ok({
-    principal: { ...resolved.value.principal, sessionId: renewed.id },
+    principal: principalFromIdentity({
+      userId: resolved.value.principal.userId,
+      orgId: resolved.value.principal.orgId,
+      role: resolved.value.principal.role,
+      actor: resolved.value.principal.actor,
+      sessionId: renewed.id,
+    }),
     renewedCookie: { value: signSessionCookie(renewed.id), maxAgeSeconds: ttlMinutes * 60 },
   });
 }

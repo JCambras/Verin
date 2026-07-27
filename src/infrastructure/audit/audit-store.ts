@@ -11,7 +11,7 @@ import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError } from "@contracts/errors";
 import { assertTenantContext, systemTenant, type TenantContext } from "@contracts/tenant";
-import { log } from "@infra/observability/logger";
+import { log, safeReason } from "@infra/observability/logger";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
@@ -125,7 +125,7 @@ export async function drainOutbox(db: SqlDb, tenant: TenantContext): Promise<num
         .catch(() => null);
       if (updated?.rows[0]?.status === "parked") {
         log.error(
-          { outboxRowId: row.id, orgId, attempts: Number(updated.rows[0].attempts), reason: err instanceof Error ? err.message : String(err) },
+          { outboxRowId: row.id, orgId, attempts: Number(updated.rows[0].attempts), reason: safeReason(err) },
           "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
         );
       }

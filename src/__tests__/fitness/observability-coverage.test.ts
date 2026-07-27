@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening } from "@infra/wire";
 import { withSpan, recentSpans } from "@infra/observability/tracer";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
 
 /**
  * OBSERVABILITY-COVERAGE FENCE (ADR-0013, charter #14). Proves flow steps and
@@ -10,7 +10,7 @@ import type { Principal } from "@contracts/principal";
  * modeled. If the engine or the CRM calls were not instrumented, these spans would
  * be absent.
  */
-const advisor: Principal = { userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" };
+const advisor = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();

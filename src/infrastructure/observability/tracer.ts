@@ -8,7 +8,11 @@
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";
-import { isPIIField, looksLikePIIValue, REDACTED } from "@contracts/pii";
+import {
+  isPIIField,
+  looksLikeAmbiguousSensitiveText,
+  REDACTED,
+} from "@contracts/pii";
 import { registerOtelProviderIfConfigured } from "./otel-provider";
 import { safeReason } from "./logger";
 
@@ -44,7 +48,11 @@ const tracer = trace.getTracer(getConfig().otel.serviceName);
  * identifiers (opaque userId, orgId) — this guard exists for the day one doesn't.
  */
 function scrubAttributes(attributes: Attributes): Attributes {
-  const scrub = (v: unknown): unknown => (typeof v === "string" && looksLikePIIValue(v) ? REDACTED : v);
+  const scrub = (v: unknown): unknown =>
+    (typeof v === "string" || typeof v === "number") &&
+    looksLikeAmbiguousSensitiveText(String(v))
+      ? REDACTED
+      : v;
   const out: Record<string, Attributes[string]> = {};
   for (const [k, v] of Object.entries(attributes)) {
     out[k] = isPIIField(k) ? REDACTED : ((Array.isArray(v) ? v.map(scrub) : scrub(v)) as Attributes[string]);

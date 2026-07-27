@@ -19,6 +19,7 @@ const TS = "2026-01-01T00:00:00.000Z";
 
 async function seed(db: SqlDb): Promise<void> {
   await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Firm',$2,'verin-crm',$2,'high')", [ORG, TS]);
+  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('org-2','Other Firm',$1,'verin-crm',$1,'high')", [TS]);
   await db.query(
     "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('u1',$1,'a@firm.test','A','advisor','active',$2,'verin-crm',$2,'high')",
     [ORG, TS],
@@ -26,6 +27,10 @@ async function seed(db: SqlDb): Promise<void> {
   await db.query(
     "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('hh1',$1,'H',NULL,NULL,'active',$2,'verin-crm',$2,'high')",
     [ORG, TS],
+  );
+  await db.query(
+    "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('hh2','org-2','H2',NULL,NULL,'active',$1,'verin-crm',$1,'high')",
+    [TS],
   );
 }
 
@@ -61,7 +66,12 @@ describe("store schema hardening (integration)", () => {
       await expect(insertAccount(db, "fa-ok", "hh1")).resolves.toBeDefined();
     });
 
-    it("sessions.org_id must reference an existing org", async () => {
+    it("household references must belong to the row's org", async () => {
+      await expect(insertContact(db, "c-cross", "hh2")).rejects.toThrow(/foreign key|violates|constraint/i);
+      await expect(insertAccount(db, "fa-cross", "hh2")).rejects.toThrow(/foreign key|violates|constraint/i);
+    });
+
+    it("a session user must belong to the session org", async () => {
       // Valid user, but a non-existent org: the newly-added sessions.org_id FK rejects it.
       await expect(
         db.query(
@@ -75,6 +85,12 @@ describe("store schema hardening (integration)", () => {
           [ORG, TS],
         ),
       ).resolves.toBeDefined();
+      await expect(
+        db.query(
+          "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-cross','u1','org-2','advisor',$1,$1,NULL)",
+          [TS],
+        ),
+      ).rejects.toThrow(/foreign key|violates|constraint/i);
     });
   });
 

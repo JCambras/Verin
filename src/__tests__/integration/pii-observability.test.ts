@@ -5,7 +5,7 @@ import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
 import { loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -15,7 +15,7 @@ import type { Principal } from "@contracts/principal";
  * account-opening flow end-to-end and scans every recorded span.
  */
 const ORG = "org-pii";
-const advisor: Principal = { userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" };
+const advisor = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
 const FIXTURES = {
   householdName: "Okonkwo-Blackwood Household",
   firstName: "Zephyrine",
@@ -47,8 +47,27 @@ describe("logs never carry raw names or account numbers", () => {
     expect(out).toContain(REDACTED);
   });
   it("safeReason replaces PII-shaped exception text wholesale", () => {
-    expect(safeReason(new Error(`duplicate key value: (${FIXTURES.email}) already exists`))).toBe(REDACTED);
-    expect(safeReason(new Error("connection refused"))).toContain("connection refused");
+    expect(safeReason(new Error(`duplicate key value: (${FIXTURES.email}) already exists`))).toBe("unexpected-error");
+    expect(safeReason(new Error(`password leaked for ${FIXTURES.householdName} account ${FIXTURES.accountNumber}`))).toBe("unexpected-error");
+    expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
+  });
+  it("the production logger scrubs ambiguous values even under generic keys", () => {
+    const { lines, logger } = makeSink();
+    logger.error(
+      {
+        customer: FIXTURES.householdName,
+        reference: FIXTURES.accountNumber,
+        apiKey: "not-a-real-api-key",
+        connection: "postgres://dbuser:dbpassword@database.internal/verin",
+      },
+      "test line",
+    );
+    const out = lines.join("");
+    expect(out).not.toContain(FIXTURES.householdName);
+    expect(out).not.toContain(FIXTURES.accountNumber);
+    expect(out).not.toContain("not-a-real-api-key");
+    expect(out).not.toContain("dbpassword");
+    expect(out).toContain(REDACTED);
   });
 });
 
@@ -110,5 +129,21 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.accountNumber).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifier keys survive
     expect(span!.attributes.actor).toBe(advisor.userId);
+  });
+
+  it("generic trace keys cannot carry unresolved names or bare account numbers", async () => {
+    await withSpan(
+      "test.ambiguous",
+      {
+        customer: FIXTURES.householdName,
+        reference: FIXTURES.accountNumber,
+        apiKey: "not-a-real-api-key",
+      },
+      async () => undefined,
+    );
+    const span = [...recentSpans()].reverse().find((s) => s.name === "test.ambiguous");
+    expect(span!.attributes.customer).toBe(REDACTED);
+    expect(span!.attributes.reference).toBe(REDACTED);
+    expect(span!.attributes.apiKey).toBe(REDACTED);
   });
 });

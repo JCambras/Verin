@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { REDACTED } from "@contracts/pii";
 import { systemTenant } from "@contracts/tenant";
 import { log } from "@infra/observability/logger";
 
@@ -101,10 +100,10 @@ describe("auditedWrite failure paths (finding #3)", () => {
         throw new TypeError("boom-visible");
       },
     });
-    const call = errorSpy.mock.calls.find(
-      (c) => typeof c[0] === "object" && c[0] !== null && String((c[0] as { reason?: unknown }).reason).includes("boom-visible"),
-    );
-    expect(call, "expected a log.error carrying the real underlying error").toBeTruthy();
+    const call = errorSpy.mock.calls.find((c) => c[1] === "audited write failed");
+    expect(call, "expected a structured failure log").toBeTruthy();
+    expect((call![0] as { reason?: unknown }).reason).toBe("unexpected-error");
+    expect(JSON.stringify(call![0])).not.toContain("boom-visible");
     expect(call![1]).toBe("audited write failed");
   });
 
@@ -119,6 +118,7 @@ describe("auditedWrite failure paths (finding #3)", () => {
     });
     const call = errorSpy.mock.calls.find((c) => c[1] === "audited write failed");
     expect(call, "expected the chokepoint failure log").toBeTruthy();
-    expect((call![0] as { reason?: unknown }).reason).toBe(REDACTED);
+    expect((call![0] as { reason?: unknown }).reason).toBe("unexpected-error");
+    expect(JSON.stringify(call![0])).not.toContain("ada@example.test");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { createUser, findUserByEmail, authenticate } from "@infra/identity/identity-store";
+import { createUser, findUserByEmail, authenticate, createSession } from "@infra/identity/identity-store";
 
 const ORG = "org-1";
 const TENANT = systemTenant("test", ORG);
@@ -29,5 +29,25 @@ describe("identity store email canonicalization (integration)", () => {
     await expect(
       createUser(db, TENANT, { email: "ALEX@Firm.test", displayName: "Case Variant", role: "advisor", password: "another-password" }),
     ).rejects.toThrow();
+  });
+
+  it("session minting verifies the authenticated user belongs to the sealed tenant", async () => {
+    await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('org-2','Other',$1,'verin-crm',$1,'high')", [new Date().toISOString()]);
+    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    const user = await authenticate(db, "alex@firm.test", "correct-horse-battery");
+    expect(user).not.toBeNull();
+    await createUser(db, TENANT, { email: "other@firm.test", displayName: "Other User", role: "advisor", password: "another-correct-password" });
+    const other = await authenticate(db, "other@firm.test", "another-correct-password");
+    expect(other).not.toBeNull();
+    await expect(
+      createSession(db, other!.tenant, user!, 60),
+    ).rejects.toMatchObject({ code: "AUTH_FAILED" });
+    await expect(
+      createSession(db, systemTenant("test", "org-2"), user!, 60),
+    ).rejects.toMatchObject({ code: "AUTH_FAILED" });
+    expect(Number((await db.query<{ n: string }>("SELECT count(*) AS n FROM sessions")).rows[0]!.n)).toBe(0);
+    const principal = await createSession(db, user!.tenant, user!, 60);
+    expect(principal.orgId).toBe(ORG);
+    expect(principal.userId).toBe(user!.id);
   });
 });

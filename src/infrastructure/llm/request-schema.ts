@@ -12,7 +12,11 @@
  * prompt 13); this schema + gate is the seam it must pass through.
  */
 import { z } from "zod";
-import { looksLikePIIValue, assertNoPIIValues } from "@contracts/pii";
+import {
+  assertNoAmbiguousSensitiveText,
+  assertNoPIIValues,
+  looksLikeAmbiguousSensitiveText,
+} from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
@@ -42,7 +46,10 @@ export interface MaskedLlmRequest {
 export const SLOT_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
 
 const sealedTokenizedText = z.custom<Tokenized<string>>(
-  (v) => isSealedTokenized(v) && typeof v.value === "string" && !looksLikePIIValue(v.value),
+  (v) =>
+    isSealedTokenized(v) &&
+    typeof v.value === "string" &&
+    !looksLikeAmbiguousSensitiveText(v.value),
   "must be a factory-sealed, PII-free Tokenized<string>",
 );
 
@@ -50,6 +57,7 @@ const sealedTokenizedRecord = z.custom<Tokenized<Readonly<Record<string, unknown
   if (!isSealedTokenized(v) || typeof v.value !== "object" || v.value === null) return false;
   try {
     assertNoPIIValues(v.value, "llm");
+    assertNoAmbiguousSensitiveText(v.value, "llm");
     return true;
   } catch {
     return false;

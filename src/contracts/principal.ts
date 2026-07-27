@@ -5,9 +5,17 @@
  * into every audited write — never "system". `actor` is the user's email for
  * DISPLAY surfaces only (nav, /api/me); views resolve userId → email at render.
  */
-import type { Role } from "./roles";
+import { isRole, type Role } from "./roles";
 import type { PIIBearing } from "./pii";
-import { tenantOf, systemTenant, type TenantContext } from "./tenant";
+import { appError } from "./errors";
+import {
+  tenantOf,
+  systemTenant,
+  type SystemActorId,
+  type TenantContext,
+} from "./tenant";
+
+declare const PrincipalBrand: unique symbol;
 
 /** PIIBearing: `actor` carries the user's raw email for display surfaces. */
 export interface Principal extends PIIBearing {
@@ -16,6 +24,44 @@ export interface Principal extends PIIBearing {
   readonly role: Role;
   readonly actor: string;
   readonly sessionId: string;
+  readonly [PrincipalBrand]: "Principal";
+}
+
+const SEAL = Symbol("verin.principal.seal");
+
+export function principalFromIdentity(input: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: Role;
+  readonly actor: string;
+  readonly sessionId: string;
+}): Principal {
+  if (
+    !input.userId ||
+    !input.orgId ||
+    !input.actor ||
+    !input.sessionId ||
+    !isRole(input.role)
+  ) {
+    throw appError("AUTH_FAILED", "Identity boundary returned an invalid principal.");
+  }
+  const principal = Object.defineProperty({ ...input }, SEAL, {
+    value: true,
+    enumerable: false,
+  });
+  return Object.freeze(principal) as unknown as Principal;
+}
+
+export function isPrincipal(value: unknown): value is Principal {
+  return typeof value === "object" &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[SEAL] === true;
+}
+
+export function assertPrincipal(value: unknown): asserts value is Principal {
+  if (!isPrincipal(value)) {
+    throw appError("AUTH_FAILED", "Principal was not minted by the identity boundary.");
+  }
 }
 
 /**
@@ -38,6 +84,6 @@ export function writeActorOf(p: Principal): WriteActor {
 }
 
 /** Reserved system-actor writes (webhook finalize, seed) — never a fabricated Principal. */
-export function systemWriteActor(systemId: string, orgId: string): WriteActor {
+export function systemWriteActor(systemId: SystemActorId, orgId: string): WriteActor {
   return { tenant: systemTenant(systemId, orgId), actorUserId: systemId };
 }
