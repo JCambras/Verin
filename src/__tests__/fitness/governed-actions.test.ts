@@ -250,34 +250,34 @@ interface ExportedCallable {
   readonly anchors: readonly Node[];
 }
 
-function objectCallables(
-  expression: Node,
+function semanticCallables(
+  type: Type,
   owner: string,
+  rootAnchors: readonly Node[],
 ): ExportedCallable[] {
-  if (!Node.isObjectLiteralExpression(expression)) return [];
   const callables: ExportedCallable[] = [];
-  for (const property of expression.getProperties()) {
-    if (Node.isMethodDeclaration(property)) {
+  for (const signature of type.getCallSignatures()) {
+    const declaration = signature.getDeclaration();
+    callables.push({
+      name: owner,
+      declaration,
+      signature,
+      anchors: [...rootAnchors, declaration],
+    });
+  }
+  for (const property of type.getProperties()) {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0];
+    if (!declaration) continue;
+    for (const signature of property.getTypeAtLocation(declaration).getCallSignatures()) {
+      const signatureDeclaration = signature.getDeclaration();
       callables.push({
         name: `${owner}.${property.getName()}`,
-        declaration: property,
-        signature: property.getSignature(),
-        anchors: [property],
+        declaration: signatureDeclaration,
+        signature,
+        anchors: [...rootAnchors, declaration, signatureDeclaration],
       });
-      continue;
     }
-    if (!Node.isPropertyAssignment(property)) continue;
-    const initializer = property.getInitializer();
-    if (!initializer ||
-      (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer))) {
-      continue;
-    }
-    callables.push({
-      name: `${owner}.${property.getName()}`,
-      declaration: initializer,
-      signature: initializer.getSignature(),
-      anchors: [property, initializer],
-    });
   }
   return callables;
 }
@@ -297,18 +297,9 @@ function exportedCallables(sf: SourceFile): ExportedCallable[] {
   for (const variable of sf.getVariableDeclarations().filter((candidate) =>
     candidate.isExported()
   )) {
-    const initializer = variable.getInitializer();
-    if (!initializer) continue;
-    if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
-      callables.push({
-        name: variable.getName(),
-        declaration: initializer,
-        signature: initializer.getSignature(),
-        anchors: [variable, initializer],
-      });
-      continue;
-    }
-    callables.push(...objectCallables(initializer, variable.getName()));
+    callables.push(
+      ...semanticCallables(variable.getType(), variable.getName(), [variable]),
+    );
   }
   for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
     for (const method of cls.getMethods()) {
@@ -322,7 +313,13 @@ function exportedCallables(sf: SourceFile): ExportedCallable[] {
     }
   }
   for (const assignment of sf.getExportAssignments()) {
-    callables.push(...objectCallables(assignment.getExpression(), "default"));
+    callables.push(
+      ...semanticCallables(
+        assignment.getExpression().getType(),
+        "default",
+        [assignment],
+      ),
+    );
   }
   return callables;
 }
@@ -878,6 +875,29 @@ describe("governed-actions fence (v3 §15.3)", () => {
         `src/infrastructure/new-adapter/repository.ts :: loadClients: boundary must require ActionGrant<"pii.view">`,
         `src/infrastructure/new-adapter/repository.ts :: clientRepo.listClients: boundary must require ActionGrant<"pii.view">`,
         `src/infrastructure/new-adapter/repository.ts :: ClientStore.load: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+    it("derives PII read sinks from objects wrapped in Object.freeze", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `
+          export interface PIIBearing { readonly pii?: "bearing" }
+        `,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+        `,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface ClientRecord extends PIIBearing { fullName: string }
+          export const clientRepo = Object.freeze({
+            listClients(tenant: TenantContext): ClientRecord[] {
+              return [{ fullName: tenant.orgId }];
+            },
+          });
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/new-adapter/repository.ts :: clientRepo.listClients: boundary must require ActionGrant<"pii.view">`,
       ]);
     });
     it("derives audit-export sinks from governed output markers", () => {

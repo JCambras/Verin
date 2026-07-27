@@ -516,24 +516,12 @@ function exportedOpaqueRefs(sf: SourceFile): string[] {
   for (const variable of sf.getVariableDeclarations().filter((candidate) =>
     candidate.isExported()
   )) {
-    const initializer = variable.getInitializer();
-    if (!initializer) continue;
-    if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
-      add(variable.getName(), initializer.getSignature());
-      continue;
-    }
-    if (!Node.isObjectLiteralExpression(initializer)) continue;
-    for (const property of initializer.getProperties()) {
-      if (Node.isMethodDeclaration(property)) {
-        add(`${variable.getName()}.${property.getName()}`, property.getSignature());
-        continue;
-      }
-      if (!Node.isPropertyAssignment(property)) continue;
-      const member = property.getInitializer();
-      if (member && (Node.isArrowFunction(member) || Node.isFunctionExpression(member))) {
-        add(`${variable.getName()}.${property.getName()}`, member.getSignature());
-      }
-    }
+    refs.push(...opaqueTypeExposures(
+      variable.getType(),
+      variable.getName(),
+      new Set(),
+      variable,
+    ).map((exposure) => `${file} :: ${exposure}`));
   }
   for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
     for (const property of cls.getProperties()) {
@@ -564,12 +552,6 @@ function exportedOpaqueRefs(sf: SourceFile): string[] {
       new Set(),
       alias,
     ).map((exposure) => `${file} :: ${exposure}`));
-  }
-  for (const variable of sf.getVariableDeclarations().filter((candidate) =>
-    candidate.isExported() &&
-    (candidate.getType().isAny() || candidate.getType().isUnknown())
-  )) {
-    refs.push(`${file} :: ${variable.getName()}`);
   }
   return [...new Set(refs)];
 }
@@ -997,6 +979,24 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       });
       expect(detectPIIReachableFromLlm(project).some((violation) =>
         violation.includes("loadClient.return")
+      )).toBe(true);
+    });
+    it("rejects opaque callable objects wrapped in Object.freeze", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/helper.ts": `
+          export const clients = Object.freeze({
+            loadClient(): unknown {
+              return { firstName: "Alice" };
+            },
+          });
+        `,
+        "/src/infrastructure/llm/evil.ts": `
+          import { clients } from "../helper";
+          export const value = clients.loadClient();
+        `,
+      });
+      expect(detectPIIReachableFromLlm(project).some((violation) =>
+        violation.includes("clients.loadClient")
       )).toBe(true);
     });
     it("rejects unwrapped opaque aliases reachable from llm", () => {

@@ -14,6 +14,7 @@ import {
 } from "@contracts/pii";
 import {
   isSafeObservabilityPrimitive,
+  readObservabilityId,
   safeSpanName,
 } from "@domain/observability/safe-values";
 import { registerOtelProviderIfConfigured } from "./otel-provider";
@@ -50,8 +51,10 @@ const tracer = trace.getTracer(getConfig().otel.serviceName);
  * ({ phone: 2125550142 } must not survive as a raw number). Callers pass
  * identifiers (opaque userId, orgId) — this guard exists for the day one doesn't.
  */
-function scrubAttributes(attributes: Attributes): Attributes {
+function scrubAttributes(attributes: Readonly<Record<string, unknown>>): Attributes {
   const scrub = (field: string, value: unknown): unknown => {
+    const opaqueId = readObservabilityId(value, field);
+    if (opaqueId !== null) return opaqueId;
     if (
       typeof value === "string" ||
       typeof value === "number" ||
@@ -72,7 +75,11 @@ function scrubAttributes(attributes: Attributes): Attributes {
 }
 
 /** Run `fn` inside a span. Records to OTel and the in-memory ring. */
-export async function withSpan<T>(name: string, attributes: Attributes, fn: () => Promise<T>): Promise<T> {
+export async function withSpan<T>(
+  name: string,
+  attributes: Readonly<Record<string, unknown>>,
+  fn: () => Promise<T>,
+): Promise<T> {
   const attrs = scrubAttributes(attributes);
   const operation = safeSpanName(name);
   const span = tracer.startSpan(operation, { attributes: attrs });

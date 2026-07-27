@@ -2625,3 +2625,85 @@ the load budget, audit-chain verification, the license audit, and the
 high-severity dependency audit.
 
 **Date:** 2026-07-27 (seventh review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 8 (2026-07-27)
+
+All seven findings reproduced against the vulnerable implementation. Seven new
+runtime and in-memory source companions failed before the fixes, then passed
+after the boundary and fence changes.
+
+### Trusted LLM evidence schema
+
+A sensitive-length account number was placed under the previously trusted
+`plannedWithdrawals` key. The projection accepted and sealed it before numeric
+classification became key-independent and masked evidence gained a closed
+schema.
+
+```
+× refuses sensitive-length numbers under an otherwise safe evidence key
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:273
+```
+
+### Sealed observability identifiers
+
+An action-shaped client name and an account number were sent under fields the
+old regex allowlist trusted. Both appeared in the production log output before
+actions became closed values and identifiers required runtime-sealed,
+field-bound wrappers.
+
+```
+× closed semantic fields reject name and account-number smuggling
+  expected output not to contain "alice"
+  received action="alice", entityId="941000517334"
+  src/__tests__/integration/pii-observability.test.ts:87
+```
+
+### PF-031 secret declaration-module confinement
+
+An exported function inside `contracts/secret.ts` returned
+`revealSecret(value)`. The prior scan skipped the declaration module.
+
+```
+× rejects a reveal wrapper exported by the secret declaration module
+  AssertionError: expected 0 to be greater than 0
+  src/__tests__/fitness/no-secret-fallback.test.ts:447
+```
+
+### PF-028 privileged factory declaration-module confinement
+
+Wrappers around `systemTenant`, `systemWriteActor`, and `tokenizeText` were
+exported from their own declaration modules. The previous reviewed-callsite
+check exempted those modules.
+
+```
+× catches privileged result wrappers exported by factory declaration modules
+  AssertionError: systemTenant: expected false to be true
+  src/__tests__/fitness/tokenized-factory-only.test.ts:663
+```
+
+### PF-027, PF-030, and PF-029 transparent-wrapper coverage
+
+Three in-memory source injections wrapped callable objects in `Object.freeze`.
+The tenant fence missed an unguarded returned repository method, the governed
+fence missed a PII-returning sink, and the LLM fence missed an `unknown` return.
+
+```
+× flags an unguarded method returned through Object.freeze
+  expected one runtime-guard violation, received none
+  src/__tests__/fitness/tenant-context-required.test.ts:828
+× derives PII read sinks from objects wrapped in Object.freeze
+  expected one ActionGrant violation, received none
+  src/__tests__/fitness/governed-actions.test.ts:880
+× rejects opaque callable objects wrapped in Object.freeze
+  AssertionError: expected false to be true
+  src/__tests__/fitness/llm-pii-boundary.test.ts:984
+```
+
+**Revert:** every planted source fixture was in-memory and discarded after its
+companion. The seven focused files passed 151 tests after hardening. Type
+checking, lint, all 329 fitness assertions, all 484 unit and integration tests,
+Knip, the production build, all 17 Playwright journeys, load smoke, the v3
+invariant report, and all 16 signed golden cases also passed.
+
+**Date:** 2026-07-27 (eighth review-fix round on v3 build-sequence prompt 6).

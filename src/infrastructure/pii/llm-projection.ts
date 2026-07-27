@@ -92,6 +92,47 @@ function containsText(value: unknown, needle: string, seen = new WeakSet<object>
   );
 }
 
+const TEXT_EVIDENCE_KEYS = new Set([
+  "accountNumber", "accountRef", "account_number", "account_ref", "firstName",
+  "fullName", "householdName", "lastName", "name", "note", "requestKind", "ssn",
+]);
+
+function isSensitiveLengthNumber(value: number): boolean {
+  return Number.isInteger(value) && /^\d{9,18}$/.test(String(Math.abs(value)));
+}
+
+function matchesMaskedEvidenceSchema(
+  value: unknown,
+  key?: string,
+  seen = new WeakSet<object>(),
+): boolean {
+  if (value == null) return true;
+  if (typeof value === "string") {
+    return Boolean(
+      key &&
+      (TEXT_EVIDENCE_KEYS.has(key) || /^\{\{slot_\d{4}\}\}$/.test(key)),
+    );
+  }
+  if (typeof value === "number") {
+    return key === "plannedWithdrawals" &&
+      Number.isFinite(value) &&
+      value >= 0 &&
+      !isSensitiveLengthNumber(value);
+  }
+  if (typeof value !== "object" || seen.has(value) || Array.isArray(value)) {
+    return false;
+  }
+  if (key && key !== "household") return false;
+  seen.add(value);
+  return Object.entries(value).every(([nestedKey, item]) =>
+    (nestedKey === "household" ||
+      nestedKey === "plannedWithdrawals" ||
+      TEXT_EVIDENCE_KEYS.has(nestedKey) ||
+      /^\{\{slot_\d{4}\}\}$/.test(nestedKey)) &&
+    matchesMaskedEvidenceSchema(item, nestedKey, seen)
+  );
+}
+
 function resolveCompleteBindings(input: EvidenceProjectionInput): readonly ResolvedSensitiveEntity[] | null {
   if (
     typeof input !== "object" ||
@@ -130,6 +171,9 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
     const masks = orderedMasks(masksFromBindings(bindings));
     const maskedText = maskText(input.requestText, masks);
     const maskedEvidence = maskRecord(input.evidence, masks) as Readonly<Record<string, unknown>>;
+    if (!matchesMaskedEvidenceSchema(maskedEvidence)) {
+      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted schema.");
+    }
     if (masks.some((mask) =>
       containsText(maskedText, mask.rawText) ||
       containsText(maskedEvidence, mask.rawText)

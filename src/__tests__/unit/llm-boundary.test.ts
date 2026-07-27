@@ -270,6 +270,15 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     });
     expect(result.ok).toBe(false);
   });
+  it("refuses sensitive-length numbers under an otherwise safe evidence key", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Review Alice",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { plannedWithdrawals: 941000517334 },
+    });
+    expect(result.ok).toBe(false);
+  });
   it("refuses an omitted lowercase entity outside the closed residual vocabulary", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",

@@ -19,7 +19,7 @@ const CEILINGS = {
   // pre-decision-core base). Both raises are ADR-authorized; ratchet-down resumes here.
   contracts: 4000,
   domain: 1200,
-  infrastructure: 3000, // raised by ADR-0029 (scrubber factory + llm/ boundary)
+  infrastructure: 3200, // raised by ADR-0030 (prompt-6 adversarial review hardening)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

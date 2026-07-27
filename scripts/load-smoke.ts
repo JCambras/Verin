@@ -222,6 +222,14 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  process.stderr.write(`load-smoke error: ${e instanceof Error ? e.message : String(e)}\n`);
+  const message = e instanceof Error
+    ? e.message
+    : typeof e === "object" &&
+        e !== null &&
+        "message" in e &&
+        typeof (e as { message: unknown }).message === "string"
+      ? (e as { message: string }).message
+      : String(e);
+  process.stderr.write(`load-smoke error: ${message}\n`);
   process.exit(1);
 });
