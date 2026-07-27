@@ -1,0 +1,122 @@
+{
+  "caseId": "GC-13-partial-salesforce-success",
+  "title": "Partial Salesforce success - completed and incomplete parts recorded honestly; exception decision requested",
+  "specName": "partial Salesforce success",
+  "scenarioRef": "partial-salesforce-success",
+  "scenarioRefNote": "Maps to scenarios.yaml `partial-salesforce-success` (partial success recorded honestly; exception decision requested). Specified against the in-memory fake ExecutionTarget/StatusSource per the captain's standing Salesforce directive; the REAL managed-package behavior re-proves this case when the sandbox trigger fires.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": "deferred-pending-sandbox",
+  "signoff": {
+    "status": "signed",
+    "authority": "captain",
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request; after approval and revalidation the external capability accepts the instruction record but fails to schedule the disbursement leg.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-13",
+    "maskedRequestSummary": "distribute 75000 USD; external capability reports partial acceptance (tokenized)",
+    "asOf": "2026-07-26T16:45:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T16:40:00-04:00",
+      "retrievedAt": "2026-07-26T16:45:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Balance and reserve satisfied; evaluation is clean - the partial outcome is an execution-plane event."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T16:40:00-04:00",
+      "retrievedAt": "2026-07-26T16:45:02-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Six-month reserve preserved after the movement."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Destination on-list; satisfied."
+    }
+  ],
+  "expectedDisposition": "proceed",
+  "expectedAuthority": {
+    "mode": "approval",
+    "stages": [
+      {
+        "stageId": "ops-dual-approval",
+        "order": 1,
+        "executionMode": "parallel",
+        "eligibleRoleIds": ["operations"],
+        "approvalsRequired": 2,
+        "distinctActorsRequired": true,
+        "requesterMayApprove": false,
+        "expiresAfter": "P3D",
+        "escalationPath": [
+          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+        ]
+      }
+    ],
+    "note": "Standard Firm A dual approval above 25000 USD; the interesting behavior begins after execution starts."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": true,
+    "reason": "Approvals recorded and revalidation passed - execution legitimately started; the partial outcome is discovered from the external receipt, not predicted.",
+    "idempotencyKey": "idem:GC-13:smiths-75000-2026-08-15",
+    "reservations": [
+      { "reservationId": "res:GC-13:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+    ],
+    "preconditions": [
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+    ]
+  },
+  "expectedExplanationNodes": [
+    { "code": "partial-outcome-recorded", "summary": "The external receipt reports completed part 'instruction-created' and incomplete part 'disbursement-scheduled' - both lists are displayed verbatim with the exact source status; nothing is rounded up to success." },
+    { "code": "exception-requires-judgment", "summary": "A partial movement is neither done nor safely retryable as a whole, so policy requires a derived exception decision (complete the remainder, compensate, or hold) instead of an automatic retry - the failure never disappears into logs (v3 invariant 24)." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
+    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan." },
+    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete." },
+    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
+    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves." },
+    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
+    { "type": "ExecutionPartiallySucceeded", "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string." },
+    { "type": "StatusObserved", "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside." },
+    { "type": "ExceptionDecisionRequested", "note": "The partial outcome derives a new decision request referencing the prior decision and the triggering ledger entry (reason: partial-execution)." }
+  ],
+  "expectedVerificationState": {
+    "reached": true,
+    "observedStatus": "unknown",
+    "settledClaim": "partial-is-not-settled",
+    "note": "Verification cannot close: the completed part is proven, the incomplete part is not, and the surface says exactly that. All external responses here are fake-adapter-response until the sandbox trigger fires; this case is re-proven against the real managed package then (deferred-pending-sandbox)."
+  }
+}

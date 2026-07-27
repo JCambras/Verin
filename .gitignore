@@ -9,6 +9,7 @@
 /coverage
 /playwright-report
 /test-results
+/demo-screens
 *.tsbuildinfo
 next-env.d.ts
 /sbom.json

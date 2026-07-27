@@ -21,12 +21,13 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
     }
   }
   const links = [
+    { href: "/app/demo", label: "Demo" },
     { href: "/app/account-opening", label: "Open account" },
     { href: "/app/console", label: "Console" },
     { href: "/app/audit", label: "Audit trail" },
   ];
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3">
+    <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3 print-hide">
       <nav className="flex items-center gap-5 text-sm" aria-label="Primary">
         <Link href="/app" className="text-lg" aria-current={pathname === "/app" ? "page" : undefined}>
           <Wordmark />

@@ -416,6 +416,38 @@
           "ref": "src/__tests__/fitness/demo-scenarios-contract.test.ts"
         }
       ]
+    },
+    {
+      "id": "golden-cases-truth-set",
+      "title": "Golden-case truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (v3 prompt 2)",
+      "status": "enforced",
+      "phase": "v3-p2",
+      "mechanisms": [
+        {
+          "type": "file",
+          "ref": "docs/golden-cases.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/golden-cases.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "golden-cases"
+        }
+      ]
+    },
+    {
+      "id": "demo-skeleton-honesty",
+      "title": "Walking-skeleton UI cannot invent decisions: demo branch data pinned equal to scenarios.yaml; surface components render view models only (D-036)",
+      "status": "enforced",
+      "phase": "v3-p3",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        }
+      ]
     }
   ]
 }

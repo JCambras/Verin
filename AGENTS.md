@@ -22,6 +22,17 @@ investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scen
 and acceptance map [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). Salesforce is
 deferred-pending-sandbox (labeled fakes until then; Phase 1 never declared complete on fakes), and all
 demo UI derives its look from `docs/demo-design-language.md`, not v3's visual prescriptions.
+Expected engine outcomes are fixed by the golden-case truth set [`docs/golden-cases.md`](./docs/golden-cases.md)
+plus `fixtures/golden/` (D-035): captain-signoff-gated (agents never sign; the captain signed all 16 cases
+on 2026-07-26, making their expected outcomes binding product truth), validated by `pnpm golden:validate`
+(CI job `golden-cases`) and the `golden-cases` fence.
+
+The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
+typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
+branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
+`src/app/demo/surfaces/` fenced to import only view models + presentation (both rules:
+`src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Landing a real path = replace the
+corresponding builder and remove its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
 ## Non-negotiable working rules (from the charter)
 
@@ -54,7 +65,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
-(Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report). All gates
+(Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
+`pnpm golden:validate` (16-case golden truth set). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
@@ -92,6 +104,11 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
 - Fences prefer AST (`ts-morph`) over regex; a weak/tautological fence is worse than none — the self-audit
   caught two of my own fences passing vacuously (`no-pii-in-audit-store`, `org-id-required`). When adding a
   fence, prove its companion actually rejects a real violation.
+- **Receded (0.7-opacity) treatments and axe:** fade CONTENT, never a StatusBadge (a blended
+  amber badge lands ~4.1:1 and fails), and secondary text inside a faded block must be slate-800+
+  (slate-600 at 0.7 is ~3.5:1). E2E axe scans settle animations first
+  (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
+  contrast failures.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered
