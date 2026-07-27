@@ -30,7 +30,15 @@ const noProcessEnv = {
 // Sealed security types (v3 §15.1/§15.2, invariant 1): constructible ONLY in
 // their factory modules. Edit-time mirror of the AUTHORITATIVE
 // tokenized-factory-only fitness fence — the fence asserts these two lists match
-// its own SEALED registry exactly, so the mirror cannot silently drift narrower.
+// its own SEALED registry exactly, so the mirror cannot silently drift narrower,
+// and separately asserts that this rule is WIRED into every shipped layer.
+//
+// SCOPE: the mirror covers the NAME-KEYED subset — a cast/assertion/satisfies
+// naming a sealed type, and a `piiFree` object literal. The shapes that need the
+// type checker to see (a sub-interface that merely EXTENDS a sealed type, a type
+// predicate, a generic type argument that flows out of a call, an annotation
+// filled from an `any`) are caught by the fitness fence alone; a selector keyed
+// on an identifier's text cannot resolve `AnyTenant` back to `TenantContext`.
 const SEALED_TYPES = [
   "ActionGrant",
   "ActorRef",
@@ -110,7 +118,6 @@ export default tseslint.config(
   },
   {
     files: ["src/infrastructure/**/*.{ts,tsx}"],
-    ignores: ["src/infrastructure/config/**"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -120,7 +127,16 @@ export default tseslint.config(
           ],
         },
       ],
+      // config/** is exempt from noProcessEnv ONLY (charter #7 names it as the one
+      // module allowed to read the environment) — never from the sealed-type rule.
       "no-restricted-syntax": ["error", ...noSealedTypeConstruction],
+    },
+  },
+  {
+    files: ["src/infrastructure/**/*.{ts,tsx}"],
+    ignores: ["src/infrastructure/config/**"],
+    rules: {
+      "no-restricted-syntax": ["error", noProcessEnv, ...noSealedTypeConstruction],
     },
   },
   {

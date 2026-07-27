@@ -1598,10 +1598,9 @@ line-by-line:
   cast.** `sealedType()` now walks base types (so `interface X extends
   TenantContext {}` cannot launder), and construction detection covers type
   predicates / assertion signatures, explicit generic type arguments, and a
-  sealed ANNOTATION filled by a call from outside the factory. The one sanctioned
-  generic shape is a call that CONSULTS the factory's runtime seal (the zod
-  ingress gate's `isSealedTokenized`) — proving provenance rather than asserting
-  it. The ESLint mirror now seals all seven types and its two lists are asserted
+  sealed ANNOTATION filled by a call from outside the factory (superseded by
+  D-051, which decides that case from the initializer's TYPE rather than its
+  callee). The ESLint mirror now seals all seven types and its two lists are asserted
   equal to the fence's registry, so it cannot drift narrower unnoticed.
 - **The write exemption keys on a real DML statement reaching a resolved SQL
   executor.** The old unanchored regex matched the `FOR UPDATE` row lock already
@@ -1652,3 +1651,82 @@ an authority surface with no consumer); raise the contracts ceiling by ADR
 
 **Revert path:** revert this changeset. The narrower fences and the previous
 vocabularies return; ADR-0031 and D-048/D-049 stand independently.
+
+## D-051 — The app layer holds no SQL, and every mint is decided by type
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.2/§15.3/§15.4,
+charter #4/#7/#13/#14, ADR-0018, ADR-0031, D-036, D-050
+
+D-050 closed the sealed-type and governed-sink stories against named evasions.
+This round closes them against the SHAPES those detectors could not see, and
+against the one place a persistence read could avoid both derivations entirely.
+
+- **Raw SQL is an infrastructure privilege.** Governed-sink derivation and
+  tenant-scope derivation both read repository SIGNATURES under
+  `src/infrastructure/`, so an inline `db.query("SELECT id, email FROM users
+  WHERE org_id = $1")` in a route is not a smaller repository call — it is
+  outside both fences, with no signature to carry an `ActionGrant` or a sealed
+  `TenantContext`. One shared detector (`detectAppLayerSqlAccess`) now fails the
+  build on a resolved SQL-executor call anywhere under `src/app/`, and BOTH
+  fences assert it so the two halves cannot drift apart. Two call sites moved:
+  the audit export's actor-email lookup (below) and the readiness probe, now
+  `readStoreReadiness` — a reviewed cross-tenant escape, since it reads no
+  tenant rows.
+- **The audit export needs TWO grants.** Exporting the chain is `audit.export`;
+  resolving actor userIds to raw emails is a PII read that owes `pii.view`.
+  `listOrgUserEmails` is a governed sink asserting its own grant, scoped by that
+  grant's sealed tenant. Every role that could already export
+  (ops/cco/principal/admin) also holds `pii.view`, so no authorized caller sees a
+  behaviour change; an advisor is still refused at the first grant.
+  `detectUnwiredGovernedRoutes` therefore reads an authorization PROLOGUE — a
+  sequence of (bind, fail-closed guard) pairs before any route work — instead of
+  exactly one pair.
+- **A mint is decided by the initializer's TYPE, never its callee.** The
+  annotation rule keyed on "is this a call into the factory?", which missed the
+  whole `any`-sourced class (`function tenantFromCache(raw): TenantContext {
+  return JSON.parse(raw) }`, a class property, a bare `body.grant`) and inverted
+  into a false positive on ordinary propagation, which only compiles when the
+  right-hand side is ALREADY sealed. It now flags a sealed annotation, RETURN
+  type, or class property filled from anything that is not already that sealed
+  type. With that in place the `consultsFactory` escape had no remaining caller
+  and was deleted — a dead escape is worse than none.
+- **Naming a sealed type is not minting one.** Type-argument detection now keys
+  on what a call YIELDS, so `new Map<string, TenantContext>()` and
+  `useState<Principal | null>(null)` no longer fail the build while minting
+  nothing, and `coerce<TenantContext>(raw)` still does.
+- **A closed observability vocabulary is a TYPE.** `AuditedWriteOpts.action` and
+  `.entityType` were `string`, so the two log lines carrying them derived nothing
+  and flagged nothing. They are now `ObservabilityAction` /
+  `ObservabilityEntityType` unions, and an attribute whose type is merely
+  `string` is a build failure (as a dynamic span name already was). Attribute
+  derivation also reads a hoisted bag, a resolvable spread, and a shorthand
+  audit intent, refuses an unresolvable spread, and checks that an
+  `observabilityId` mint's field matches the key it is logged under.
+- **Sink discovery follows values, and refuses the ones it cannot follow.** A
+  sink held in a literal bag, a conditional, or an array element is discovered
+  and checked; one handed to another function as a value has no call site to
+  authorize and is refused outright.
+- **The unsupported-surface rule keys on what the surface IS** — a `"use server"`
+  module, a reserved App Router component file name, a default-exported
+  component — not on "not named route.ts", which rejected an ordinary app-layer
+  handler helper whose remedy text it already satisfied. `src/app/route.ts` and
+  the `export const GET = async (req) => …` form are now supported shapes.
+- **Companions are measured against what they plant.** The shared sealed-type
+  fixture no longer violates its own detector (it built a `TenantContext` from an
+  object literal), so no companion in that file can pass on a baseline hit it did
+  not plant; the two counting companions now assert per-branch messages.
+
+**Line budgets:** contracts 980/1000 (20 lines of headroom, unchanged), domain
+1189/1200, infrastructure 3146/3200. No ceiling was raised.
+
+**Alternatives:** narrow the app-layer SQL rule to PII-shaped queries only
+(rejected — "which columns are PII" is exactly the judgement a fence should not
+be making at a call site with no boundary to declare); keep `consultsFactory` as
+a guarded escape (rejected — with the type-based annotation rule nothing needed
+it, and an escape with no caller cannot be proven load-bearing); substitute
+`pii.view` for `audit.export` on the audit route (rejected — the ruling requires
+both, and they authorize different things).
+
+**Revert path:** revert this changeset. `listOrgUserEmails`/`readStoreReadiness`
+fold back into their routes, the audit export returns to a single grant, and the
+detectors return to their D-050 shapes.

@@ -155,15 +155,119 @@ function literalUnionValues(type: Type): { values: string[]; numeric: boolean; d
   for (const member of members) {
     if (member.isStringLiteral()) values.push(String(member.getLiteralValue()));
     else if (member.isNumber() || member.isNumberLiteral() || member.isBigInt()) numeric = true;
-    else if (member.isString()) dynamic = true;
+    else if (member.isString() || member.isAny() || member.isUnknown()) dynamic = true;
   }
   return { values, numeric, dynamic };
 }
 
-function attributesObject(call: CallExpression): Node | null {
-  const args = isWithSpanCall(call) ? [call.getArguments()[1]] : call.getArguments();
-  return args.find((argument) => argument && Node.isObjectLiteralExpression(argument)) ?? null;
+/** The attribute-bag ARGUMENT slot: withSpan's second argument, pino's merge object. */
+function attributesArgument(call: CallExpression): Node | null {
+  const args = call.getArguments();
+  if (isWithSpanCall(call)) return args[1] ?? null;
+  return messageArgument(call) === args[1] ? args[0] ?? null : null;
 }
+
+/**
+ * The object literal a node IS, or the one a hoisted constant stands for. The
+ * sibling `literalText` already resolves a hoisted STRING through its declaration;
+ * an attribute BAG hoisted to a const degrades at runtime exactly the same way, so
+ * it has to be read the same way rather than silently contributing nothing.
+ */
+function objectLiteralOf(node: Node | undefined): Node | null {
+  if (!node) return null;
+  if (Node.isObjectLiteralExpression(node)) return node;
+  if (!Node.isIdentifier(node)) return null;
+  const symbol = node.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  for (const declaration of target?.getDeclarations() ?? []) {
+    if (!Node.isVariableDeclaration(declaration)) continue;
+    const initializer = declaration.getInitializer();
+    if (initializer && Node.isObjectLiteralExpression(initializer)) return initializer;
+  }
+  return null;
+}
+
+interface AttributeEntry {
+  readonly field: string;
+  readonly valueNode: Node;
+}
+
+/**
+ * Every (field, value) pair an attribute bag contributes, following a spread into
+ * the literal it spreads. An UNRESOLVABLE spread is reported rather than skipped:
+ * `log.info({ ...ids, status: "archived" }, …)` would otherwise hide everything in
+ * `ids` from a fence whose whole job is to know what gets logged.
+ */
+function attributeEntries(
+  object: Node,
+  where: string,
+  out: string[],
+  seen = new Set<string>(),
+): AttributeEntry[] {
+  if (!Node.isObjectLiteralExpression(object)) return [];
+  const key = `${object.getSourceFile().getFilePath()}:${object.getStart()}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+  const entries: AttributeEntry[] = [];
+  for (const property of object.getProperties()) {
+    if (Node.isSpreadAssignment(property)) {
+      const spread = objectLiteralOf(property.getExpression());
+      if (!spread) {
+        out.push(`${where}: attribute spread cannot be resolved to a literal bag — its fields cannot be checked`);
+        continue;
+      }
+      entries.push(...attributeEntries(spread, where, out, seen));
+      continue;
+    }
+    if (Node.isPropertyAssignment(property)) {
+      const initializer = property.getInitializer();
+      if (initializer) entries.push({ field: property.getName(), valueNode: initializer });
+      continue;
+    }
+    if (Node.isShorthandPropertyAssignment(property)) {
+      entries.push({ field: property.getName(), valueNode: property.getNameNode() });
+    }
+  }
+  return entries;
+}
+
+/**
+ * The type a value node contributes. A SHORTHAND property (`{ action }`) types
+ * its name node as the WIDENED property type, so the literal a hoisted constant
+ * actually holds has to be recovered from the declaration the name refers to —
+ * otherwise `const action = "household.archive"; auditedWrite({ action, … })`
+ * derives nothing while degrading at runtime exactly like the inline form.
+ */
+function attributeType(node: Node): Type {
+  const type = node.getType();
+  if (!Node.isIdentifier(node) || type.isStringLiteral() || type.isUnion()) return type;
+  for (const definition of node.getDefinitionNodes()) {
+    const declared = definition.getType();
+    if (declared.isStringLiteral() || declared.isUnion()) return declared;
+  }
+  return type;
+}
+
+/** The `field` an `observabilityId("<field>", …)` mint stamps into the value, if statically known. */
+function mintedIdField(node: Node): string | null {
+  const call = Node.isAwaitExpression(node) ? node.getExpression() : node;
+  if (
+    !Node.isCallExpression(call) ||
+    !resolvesTo(call.getExpression(), SAFE_VALUES, OBSERVABILITY_ID_FACTORY)
+  ) {
+    return null;
+  }
+  return literalText(call.getArguments()[0]);
+}
+
+/**
+ * Fields the audit boundary TYPES against the vocabulary itself (AuditedWriteOpts
+ * action/entityType). Expanding that union at a call site would check the
+ * vocabulary against itself and mark every member "live" — so a genuinely dead
+ * action could never be reported stale. The type is the guarantee; staleness for
+ * these two comes from the literal choices at the audit-intent sites.
+ */
+const VOCABULARY_TYPED_FIELDS = new Set(["action", "entityType"]);
 
 /**
  * The attribute vocabulary the RUNTIME degrades against. safeSpanName /
@@ -193,6 +297,53 @@ export function detectAttributeVocabularyDrift(
     values.add(value);
     liveValues.set(field, values);
   };
+  const registeredFor = (field: string): readonly string[] =>
+    field === "action" ? vocabulary.actions : vocabulary.enums[field] ?? [];
+
+  /** One (field, value) pair, from an attribute bag or an audit intent. */
+  const checkAttribute = (where: string, field: string, valueNode: Node): void => {
+    const type = attributeType(valueNode);
+    if (declaredAsObservabilityId(type)) {
+      // The value is opaque, but its minted FIELD must match the key it is logged
+      // under: readObservabilityId compares the two, and a mismatch degrades the
+      // whole attribute to "[REDACTED]" at runtime.
+      const minted = mintedIdField(valueNode);
+      if (minted !== null && minted !== field) {
+        out.push(`${where}: observability id logged as "${field}" is minted with field "${minted}" — it would be logged as "[REDACTED]"`);
+      }
+      return;
+    }
+    const { values, numeric, dynamic } = literalUnionValues(type);
+    const registered = registeredFor(field);
+    if (
+      VOCABULARY_TYPED_FIELDS.has(field) &&
+      values.length > 1 &&
+      registered.length === values.length &&
+      registered.every((value) => values.includes(value))
+    ) {
+      return;
+    }
+    if (numeric) {
+      liveNumericFields.add(field);
+      if (!accepts(field, 1)) {
+        out.push(`${where}: unregistered numeric attribute "${field}" — it would be logged as "[REDACTED]"`);
+      }
+    }
+    // A value the checker only knows as `string` can never be verified here, and
+    // degrades at runtime whenever it falls outside the closed set — the same
+    // silent-identity loss a dynamic span name gets failed for. `reason` is the
+    // one field governed by a PATTERN rather than a closed set, so a computed
+    // reason is legitimate; its literals are still checked below.
+    if (dynamic && field !== "reason") {
+      out.push(`${where}: dynamic ${field} value — it cannot be checked and would be logged as "[REDACTED]" unless it happens to be registered`);
+    }
+    for (const value of values) {
+      if (field !== "reason") record(field, value);
+      if (!accepts(field, value)) {
+        out.push(`${where}: unregistered ${field} "${value}" — it would be logged as "[REDACTED]"`);
+      }
+    }
+  };
 
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
@@ -212,52 +363,28 @@ export function detectAttributeVocabularyDrift(
           }
         }
       }
-      // The audit intents that become the `action`/`entityType` log attributes.
+      // The audit intents that become the `action`/`entityType` log attributes,
+      // and the only place staleness for those two can honestly be measured.
       if (AUDIT_INTENT_SITES.some((site) => resolvesTo(call.getExpression(), site.file, site.name))) {
         for (const argument of call.getArguments()) {
-          if (!Node.isObjectLiteralExpression(argument)) continue;
-          for (const field of ["action", "entityType"] as const) {
-            const property = argument.getProperty(field);
-            if (!property || !Node.isPropertyAssignment(property)) continue;
-            const value = literalText(property.getInitializer());
-            if (value === null) continue;
-            record(field, value);
-            if (!accepts(field, value)) {
-              out.push(`${where}: unregistered ${field} "${value}" — it would be logged as "[REDACTED]"`);
-            }
+          const intent = objectLiteralOf(argument);
+          if (!intent) continue;
+          for (const entry of attributeEntries(intent, where, out)) {
+            if (!VOCABULARY_TYPED_FIELDS.has(entry.field)) continue;
+            checkAttribute(where, entry.field, entry.valueNode);
           }
         }
       }
       if (!isWithSpanCall(call) && !isLoggerCall(call)) continue;
-      const attributes = attributesObject(call);
-      if (!attributes || !Node.isObjectLiteralExpression(attributes)) continue;
-      for (const property of attributes.getProperties()) {
-        const valueNode = Node.isPropertyAssignment(property)
-          ? property.getInitializer()
-          : Node.isShorthandPropertyAssignment(property)
-          ? property.getNameNode()
-          : undefined;
-        const field = Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)
-          ? property.getName()
-          : null;
-        if (!field || !valueNode) continue;
-        const type = valueNode.getType();
-        // Opaque ids carry their own sealed factory check; `reason` is governed
-        // by a pattern rather than a closed set.
-        if (declaredAsObservabilityId(type) || field === "reason") continue;
-        const { values, numeric } = literalUnionValues(type);
-        if (numeric) {
-          liveNumericFields.add(field);
-          if (!accepts(field, 1)) {
-            out.push(`${where}: unregistered numeric attribute "${field}" — it would be logged as "[REDACTED]"`);
-          }
-        }
-        for (const value of values) {
-          record(field, value);
-          if (!accepts(field, value)) {
-            out.push(`${where}: unregistered ${field} "${value}" — it would be logged as "[REDACTED]"`);
-          }
-        }
+      const argument = attributesArgument(call);
+      if (!argument) continue;
+      const attributes = objectLiteralOf(argument);
+      if (!attributes) {
+        out.push(`${where}: attributes must be a literal object (a dynamic bag cannot be checked)`);
+        continue;
+      }
+      for (const entry of attributeEntries(attributes, where, out)) {
+        checkAttribute(where, entry.field, entry.valueNode);
       }
     }
   }
@@ -574,6 +701,102 @@ describe("observability-vocabulary fence (charter #14)", () => {
         { idFields: ["orgId"], actions: [], enums: {}, numericFields: [] },
         () => false,
       )).toEqual([]);
+    });
+
+    it("flags a DYNAMIC attribute value, which can never be checked statically", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        export const emit = (status: string) => log.info({ status }, "emitted");
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: [], actions: [], enums: { status: ["completed"] }, numericFields: [] },
+        () => true,
+      );
+      expect(drift.some((v) => v.includes(`dynamic status value`))).toBe(true);
+    });
+
+    it("reads a HOISTED attribute bag and a resolvable spread, and refuses an unresolvable one", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        const ids = { flow: "onboarding" };
+        const attrs = { ...ids, status: "archived" };
+        export const emit = () => log.info(attrs, "emitted");
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: [], actions: [], enums: {}, numericFields: [] },
+        () => false,
+      );
+      // Hoisted bag AND the spread inside it both contribute.
+      expect(drift.some((v) => v.includes(`unregistered status "archived"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered flow "onboarding"`))).toBe(true);
+
+      const opaque = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        declare const ids: Record<string, string>;
+        export const emit = () => log.info({ ...ids, status: "archived" }, "emitted");
+      `);
+      expect(detectAttributeVocabularyDrift(
+        opaque,
+        { idFields: [], actions: [], enums: {}, numericFields: [] },
+        () => true,
+      ).some((v) => v.includes("attribute spread cannot be resolved"))).toBe(true);
+    });
+
+    it("reads a SHORTHAND audit-intent action instead of pushing authors toward the degrading form", () => {
+      const project = attributeFixture(`
+        import { auditedWrite } from "@infra/audit/audited-write";
+        export const archive = async () => {
+          const action = "household.archive";
+          const entityType = "Ledger";
+          await auditedWrite({ action, entityType });
+        };
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: [], actions: [], enums: {}, numericFields: [] },
+        () => false,
+      );
+      expect(drift.some((v) => v.includes(`unregistered action "household.archive"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered entityType "Ledger"`))).toBe(true);
+    });
+
+    it("flags an observability id whose minted field does not match the attribute key", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityId } from "@domain/observability/safe-values";
+        export const emit = () =>
+          log.info({ actor: observabilityId("orgId", "org") }, "emitted");
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: ["actor", "orgId"], actions: [], enums: {}, numericFields: [] },
+        () => true,
+      );
+      // Both fields are REGISTERED — only the key/field disagreement is wrong.
+      expect(drift.some((v) => v.includes("unregistered observability id field"))).toBe(false);
+      expect(drift.some((v) =>
+        v.includes(`logged as "actor" is minted with field "orgId"`)
+      )).toBe(true);
+    });
+
+    it("does not charge a vocabulary-TYPED action union to liveness (it would check itself)", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        declare const opts: { action: "household.create" | "task.create" };
+        export const emit = () => log.info({ action: opts.action }, "emitted");
+      `);
+      // The union IS the registered vocabulary: nothing to check, nothing live.
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: [], actions: ["household.create", "task.create"], enums: {}, numericFields: [] },
+        () => true,
+      );
+      expect(drift).toEqual([
+        `stale action "household.create" — no shipped call site emits it`,
+        `stale action "task.create" — no shipped call site emits it`,
+      ]);
     });
 
     it("ignores a same-named helper that is not the observability boundary", () => {

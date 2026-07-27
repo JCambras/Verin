@@ -29,7 +29,11 @@ import { createApplication, setEsignRequested, completeApplication, getApplicati
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
 import { log } from "@infra/observability/logger";
-import { observabilityId } from "@domain/observability/safe-values";
+import {
+  observabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 
 /** Unwrap a Result inside a step; on error, throw the typed AppError (the engine catches it). */
 function must<T>(r: Result<T>): T {
@@ -316,7 +320,7 @@ export function computeEsignSignature(token: string): string {
  */
 export async function auditEvent(
   db: SqlDb,
-  opts: { actor: WriteActor; action: string; entityType: string; entityId: string; detail: string },
+  opts: { actor: WriteActor; action: ObservabilityAction; entityType: ObservabilityEntityType; entityId: string; detail: string },
 ): Promise<void> {
   assertWriteActor(opts.actor);
   const recorded = await auditedWrite({

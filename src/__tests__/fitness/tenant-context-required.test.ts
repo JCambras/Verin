@@ -12,6 +12,7 @@ import {
 import {
   realSemanticProject,
   inMemoryProject,
+  detectAppLayerSqlAccess,
   REPO_ROOT,
 } from "./_fence-utils";
 
@@ -21,6 +22,7 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
   { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
   { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
+  { ref: "src/infrastructure/store/readiness.ts :: readStoreReadiness", why: "cross-tenant deployment probe that reads no tenant rows" },
   { ref: "src/infrastructure/identity/identity-store.ts :: findUserByEmail", why: "login resolves the tenant from the identity row" },
   { ref: "src/infrastructure/identity/identity-store.ts :: getPasswordHash", why: "user-PK capability before authentication" },
   { ref: "src/infrastructure/identity/identity-store.ts :: authenticate", why: "identity boundary that produces the sealed tenant" },
@@ -659,6 +661,18 @@ describe("tenant-context-required fence", () => {
     ).toEqual([]);
   });
 
+  it("enforces: tenant scoping cannot be side-stepped by writing the SQL in the app layer", () => {
+    // This fence derives tenant scope from repository SIGNATURES under
+    // src/infrastructure/, so an inline `db.query("… WHERE org_id = $1")` in a
+    // route is not a smaller version of a repository call — it is outside the
+    // fence entirely, with no signature to carry a sealed TenantContext.
+    const violations = detectAppLayerSqlAccess(realSemanticProject());
+    expect(
+      violations,
+      `app-layer persistence access:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
+
   it("enforces: every exported domain port method requires TenantContext unless capability-keyed", () => {
     const project = realSemanticProject();
     const callableTypes = project.getSourceFiles()
@@ -694,6 +708,37 @@ describe("tenant-context-required fence", () => {
   });
 
   describe("detects (companion): semantic and declaration-form evasions are caught", () => {
+    it("flags a tenant-scoped read moved INLINE into an app-layer route", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        // Scoped by org_id and authorized upstream — and still invisible to every
+        // signature-based check, which is exactly the escape.
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            return db.query<{ email: string }>("SELECT email FROM users WHERE org_id = $1", ["org"]);
+          }
+        `,
+      });
+      expect(detectAppLayerSqlAccess(project)).toHaveLength(1);
+      // The same read behind a repository is what the fence CAN check.
+      expect(detectAppLayerSqlAccess(inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+        `,
+        "/src/infrastructure/identity/identity-store.ts": `
+          import type { SqlDb } from "../store/db";
+          export async function listEmails(db: SqlDb, orgId: string) {
+            return db.query<{ email: string }>("SELECT email FROM users WHERE org_id = $1", [orgId]);
+          }
+        `,
+      }))).toEqual([]);
+    });
+
     it("flags an exported repository function without tenant scope", () => {
       const project = repositoryFixture(`
         import type { SqlDb } from "../store/db";

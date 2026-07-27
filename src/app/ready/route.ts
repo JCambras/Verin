@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@infra/store/db";
+import { readStoreReadiness } from "@infra/store/readiness";
 import { log } from "@infra/observability/logger";
 
 export const runtime = "nodejs";
@@ -17,9 +18,7 @@ export const dynamic = "force-dynamic";
 export async function GET(): Promise<NextResponse> {
   try {
     const db = await getDb();
-    await db.query("SELECT 1");
-    const backlog = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE status IN ('pending','claimed')");
-    const pending = Number(backlog.rows[0]?.n ?? 0);
+    const { outboxPending: pending } = await readStoreReadiness(db);
     const ready = pending < 1000;
     if (!ready) log.warn({ outboxPending: pending }, "readiness degraded: audit outbox backlog over threshold");
     return NextResponse.json({ status: ready ? "ready" : "degraded" }, { status: ready ? 200 : 503 });

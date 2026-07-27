@@ -3048,3 +3048,135 @@ unintended diff in `eslint.config.mjs`, `src/infrastructure/config/index.ts`,
 is green again: 48 files, 543 tests.
 
 **Date:** 2026-07-27 (eleventh review-fix round on v3 build-sequence prompt 6).
+
+### PF-054 a PII read moved INLINE into the route
+
+`src/app/api/audit/route.ts` was reverted to the shape this round replaced —
+`db.query("SELECT id, email FROM users WHERE org_id = $1", …)` inline in the
+handler. It is org-scoped and reached under a valid `audit.export` grant, and
+that is the point: governed-sink derivation and tenant-scope derivation both read
+repository signatures under `src/infrastructure/`, so an inline query has no
+signature to carry an `ActionGrant` or a sealed `TenantContext` and neither fence
+could ever see it. Both halves of the rule fire.
+
+```
+× enforces: no app-layer module issues raw SQL (it would escape sink derivation entirely)
+  src/app/api/audit/route.ts:34 - raw SQL in the app layer bypasses governed-sink
+    and tenant-scope derivation; move it behind an infrastructure repository
+  src/__tests__/fitness/governed-actions.test.ts
+
+× enforces: tenant scoping cannot be side-stepped by writing the SQL in the app layer
+  src/app/api/audit/route.ts:34 - raw SQL in the app layer bypasses governed-sink
+    and tenant-scope derivation; move it behind an infrastructure repository
+  src/__tests__/fitness/tenant-context-required.test.ts
+```
+
+### PF-055 an `any`-sourced sealed annotation
+
+`const forged: ActionGrant<"pii.view"> = JSON.parse("{}")` was added to the audit
+route. No cast names a sealed type, so ESLint sees nothing; the previous
+annotation rule keyed on the initializer's CALLEE and only ever looked at
+`VariableDeclaration`, so `JSON.parse` — and equally a return-type annotation, a
+class property, or a bare `body.grant` — walked past it.
+
+```
+× enforces: sealed types are built only in their factory modules
+  src/app/api/audit/route.ts:33 - sealed type 'ActionGrant' annotated onto a value
+    produced outside its factory
+  src/__tests__/fitness/tokenized-factory-only.test.ts
+```
+
+### PF-056 a client-supplied grant in the grant parameter
+
+The audit route was rewired to `listOrgUserEmails(auth.value as never,
+body.value.grant)` — the authorized value present, but in the WRONG argument,
+with the grant itself read from the request body. The previous rule asked only
+whether SOME argument referenced the authorized value, so this read as correctly
+wired.
+
+```
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+  src/app/api/audit/route.ts :: GET: authorized value does not reach the
+    ActionGrant parameter of 'listOrgUserEmails'
+  src/__tests__/fitness/governed-actions.test.ts
+```
+
+### PF-057 a governed sink handed out as a value
+
+`void Array.of(listOrgUserEmails);` was added to the same handler. The sink is
+never called here, so no route entry exists and the whole first-statement /
+fail-closed / authorized-value chain would have applied to nothing.
+
+```
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+  src/app/api/audit/route.ts:32: governed sink 'listOrgUserEmails' is passed as a
+    VALUE — it has no call site this fence can authorize
+  src/__tests__/fitness/governed-actions.test.ts
+```
+
+### PF-058 an audit action typed as `string`
+
+`AuditedWriteOpts.action` was reverted from `ObservabilityAction` to `string`.
+Both log lines that carry it derived nothing and flagged nothing before this
+round, while at runtime `isSafeObservabilityPrimitive` would degrade an unlisted
+value to `[REDACTED]` in the one line explaining a failed write.
+
+```
+× enforces: the attribute vocabularies match the shipped call sites exactly
+  src/infrastructure/audit/audited-write.ts:120: dynamic action value — it cannot
+    be checked and would be logged as "[REDACTED]" unless it happens to be registered
+  src/infrastructure/audit/audited-write.ts:148: dynamic action value — …
+  src/__tests__/fitness/observability-vocabulary.test.ts
+```
+
+### PF-059 a compound-assignment secret fallback
+
+A `??=` compound assignment defaulting `process.env.SESSION_SECRET` to a
+hardcoded dev string was planted in `config/index.ts` (spelled out here only in
+prose — this fence scans its own docs, and PF-051 dodged the same way by using
+element access). `??=`/`||=` were in neither the operator set nor the text regex,
+whose `\s*` after the operator cannot cross the `=`.
+
+```
+× enforces: no secret has a hardcoded fallback
+  AssertionError: secret fallbacks:
+  src/infrastructure/config/index.ts
+  src/__tests__/fitness/no-secret-fallback.test.ts
+```
+
+### PF-060 the ESLint mirror unwired from a layer
+
+`...noSealedTypeConstruction` was removed from the `src/app/**` block. Both
+name-list assertions stayed green — they compare the mirror's two arrays, which
+were untouched — so nothing proved the rule was still applied anywhere. That is
+how `src/infrastructure/config/**` came to have no sealed-type rule at all.
+
+```
+× enforces: the ESLint mirror is WIRED for every shipped layer, factories excepted
+  src/app/api/audit/route.ts is not covered by the sealed-type ESLint rule
+  src/__tests__/fitness/tokenized-factory-only.test.ts
+```
+
+**Companion-level proofs (this round's other half).** A companion that passes
+because of a shared fixture rather than because it detects the planted defect
+proves nothing, so three were re-proven by deleting the branch under test rather
+than by injecting into shipped code:
+
+- deleting the `cls.getImplements()` branch now fails *catches a class
+  implementing an aliased sealed type*. It did NOT before: every `sealedFixture`
+  project carried a baseline hit from the fixture's own `principal.ts`
+  (`return { tenant: { orgId } }`), so a `toBeGreaterThanOrEqual(2)` count was
+  satisfied by the baseline plus the class's `piiFree` property. The fixture now
+  builds its tenant through the factory, and the two counting companions assert
+  per-branch MESSAGES.
+- deleting `objectLiteralOf`'s identifier resolution fails *reads a HOISTED
+  attribute bag and a resolvable spread*.
+- dropping `PropertyAssignment` from `resolveCallTargets` fails *discovers a
+  governed sink held in a literal bag*.
+
+**Revert:** every edited file was restored from a copy taken before its injection
+(`git status` shows no unintended diff in `eslint.config.mjs`,
+`src/infrastructure/config/index.ts`, `src/infrastructure/audit/audited-write.ts`,
+or `src/app/api/audit/route.ts`). The full suite is green again: 48 files, 570 tests.
+
+**Date:** 2026-07-27 (twelfth review-fix round on v3 build-sequence prompt 6).

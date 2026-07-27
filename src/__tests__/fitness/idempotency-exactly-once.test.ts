@@ -66,7 +66,7 @@ describe("idempotency exactly-once fence", () => {
     it("unwrap sanity on the happy replay", async () => {
       const db = await seed();
       const r = await auditedWrite({
-        db, actor: ACTOR, action: "x.create", entityType: "X", entityId: "x", idempotencyKey: "kx", detail: "d",
+        db, actor: ACTOR, action: "household.create", entityType: "Household", entityId: "x", idempotencyKey: "kx", detail: "d",
         perform: async () => ({ ok: true }),
       });
       expect(unwrap(r)).toEqual({ ok: true });
