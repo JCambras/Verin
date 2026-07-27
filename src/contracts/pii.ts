@@ -46,7 +46,28 @@ export function looksLikePIIValue(value: string): boolean {
   return PII_VALUE_PATTERNS.some((re) => re.test(value));
 }
 
-const LONG_UNMASKED_NUMBER_RE = /\b\d{9,18}\b/;
+/**
+ * The account/tax-identifier shape: an unbroken 9-18 digit run. A source fragment
+ * for the same reason as TITLE_CASE_WORD_SOURCE — the evidence→LLM projection
+ * binds exactly the spans this predicate refuses, so the masker and the residual
+ * check cannot drift apart.
+ */
+export const SENSITIVE_DIGIT_RUN_SOURCE = String.raw`\b\d{9,18}\b`;
+const LONG_UNMASKED_NUMBER_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE);
+
+/**
+ * What redaction removes from free text. THE authority, so the audit scrubber and
+ * the projection layer agree on which spans redaction handles (and which
+ * therefore need no slot binding). Each pattern keeps its own flags and gains /g
+ * — `new RegExp(re, "g")` silently DROPS the source flags, so redaction would
+ * miss what the fail-closed backstop then throws on.
+ */
+export function redactPIIValues(text: string): string {
+  return PII_VALUE_PATTERNS.reduce(
+    (out, re) => out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), REDACTED),
+    text,
+  );
+}
 
 /**
  * The ONE title-case word shape ambiguous-text detection keys on (a possible

@@ -18,7 +18,7 @@ import {
 } from "@contracts/authz";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
-import { type Result } from "@contracts/result";
+import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
@@ -143,6 +143,34 @@ function editedReplayConflict(executionId: string): FlowRunResult {
   };
 }
 
+/**
+ * THE shape of a client-minted request id (D-027) — the account-opening route
+ * validates against this same constant, so the surface and the flow can never
+ * disagree about what it accepts. UUIDs are minted in either case.
+ */
+export const CLIENT_REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The request id BECOMES the executionId, which is emitted in the flow's span
+ * and log line — so it must already be an opaque observability identifier, and
+ * that is proven HERE, before any household/contact/application write commits. A
+ * uuid is canonicalized to lowercase (the observability predicate reads a
+ * `Lu`-then-`Ll` pair as a person name, which mixed-case hex carries); anything
+ * else is left as sent and refused as a typed VALIDATION failure rather than
+ * throwing out of a log line whose effects are already durable.
+ */
+function canonicalExecutionId(clientRequestId: string | undefined): Result<string, AppError> {
+  const id = clientRequestId === undefined
+    ? randomUUID()
+    : CLIENT_REQUEST_ID_RE.test(clientRequestId) ? clientRequestId.toLowerCase() : clientRequestId;
+  try {
+    observabilityId("executionId", id);
+  } catch {
+    return err(appError("VALIDATION", "A client request id must be an opaque machine identifier (a UUID minted once per form session)."));
+  }
+  return ok(id);
+}
+
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
 async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
   try {
@@ -159,8 +187,12 @@ export async function startAccountOpening(
   input: StartAccountOpeningInput,
 ): Promise<AccountOpeningStartResult> {
   assertActionGrant(grant, "execution.initiate");
+  const canonical = canonicalExecutionId(input.clientRequestId);
+  if (!canonical.ok) {
+    return { executionId: input.clientRequestId ?? "", status: "failed", error: canonical.error, data: {} };
+  }
   const store = makeExecutionStore(db);
-  const executionId = input.clientRequestId ?? randomUUID();
+  const executionId = canonical.value;
   const tenant = grant.tenant;
   const deps = makeDeps(db, grant.writeActor, executionId);
   // A client-minted id that already started is a double-submit: report the

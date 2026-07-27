@@ -51,11 +51,19 @@ function isShipped(file: string): boolean {
     !file.includes("/__tests__/");
 }
 
+/**
+ * The statically known text of a message/span argument. A HOISTED constant
+ * (`const MSG = "…"; log.info(MSG)`) is as checkable as an inline literal — its
+ * TYPE is that string literal — and degrades identically at runtime, so it must
+ * be read the same way.
+ */
 function literalText(node: Node | undefined): string | null {
   if (!node) return null;
-  return Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)
-    ? node.getLiteralValue()
-    : null;
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return node.getLiteralValue();
+  }
+  const type = node.getType();
+  return type.isStringLiteral() ? String(type.getLiteralValue()) : null;
 }
 
 function resolvesTo(node: Node, file: string, name: string): boolean {
@@ -152,14 +160,17 @@ export function detectVocabularyDrift(
   return out;
 }
 
-/** The test-only span injection point must be unreachable from shipped code. */
+/**
+ * The test-only span injection point must be unreachable from shipped code.
+ * Keyed SEMANTICALLY (never on the identifier's text), so an aliased import —
+ * `import { registerTestSpanName as reg }` then `reg("test.x")` — is caught.
+ */
 export function detectShippedTestVocabularyUse(project: Project): string[] {
   const out: string[] = [];
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
     if (!isShipped(file) || file === SAFE_VALUES) continue;
     for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
-      if (identifier.getText() !== TEST_INJECTION_POINT) continue;
       if (identifier.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)) continue;
       if (!resolvesTo(identifier, SAFE_VALUES, TEST_INJECTION_POINT)) continue;
       out.push(`${file}:${identifier.getStartLineNumber()} references ${TEST_INJECTION_POINT}`);
@@ -286,6 +297,37 @@ describe("observability-vocabulary fence (charter #14)", () => {
       `);
       expect(detectShippedTestVocabularyUse(project)).toEqual([
         "src/infrastructure/consumer.ts:3 references registerTestSpanName",
+      ]);
+    });
+
+    it("catches an ALIASED call to the test-only injection point", () => {
+      const project = vocabularyFixture(`
+        import { registerTestSpanName as reg } from "@domain/observability/safe-values";
+        reg("test.sneaky");
+      `);
+      expect(detectShippedTestVocabularyUse(project)).toEqual([
+        "src/infrastructure/consumer.ts:3 references registerTestSpanName",
+      ]);
+    });
+
+    it("checks a HOISTED span name and log message constant like an inline literal", () => {
+      const found = collectObservabilityVocabulary(vocabularyFixture(`
+        import { withSpan } from "@infra/observability/tracer";
+        import { log } from "@infra/observability/logger";
+        const SPAN = "crm.household.archive";
+        const MSG = "brand new operator message";
+        export const run = () => {
+          log.info({ code: "X" }, MSG);
+          log.warn(MSG);
+          return withSpan(SPAN, {}, async () => 1);
+        };
+      `));
+      expect(found.spanNames).toEqual(["crm.household.archive"]);
+      expect(found.logMessages).toEqual(["brand new operator message"]);
+      expect(found.violations).toEqual([]);
+      expect(detectVocabularyDrift(found, { spanNames: [], logMessages: [] })).toEqual([
+        `unregistered span name "crm.household.archive" — it would be emitted as "operation"`,
+        `unregistered log message "brand new operator message" — it would be emitted as "log event"`,
       ]);
     });
 

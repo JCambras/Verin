@@ -4,18 +4,12 @@
  * DOB, email, phone, etc. Escape-at-render, not at storage — we redact PII here
  * but never HTML-escape (avoids Iris's double-escape bug, retro-r7 don't-again #40).
  */
-import { isPIIField, PII_VALUE_PATTERNS, REDACTED } from "@contracts/pii";
+import { isPIIField, redactPIIValues, REDACTED } from "@contracts/pii";
 
 export function scrub(value: unknown, keyIsPII = false): unknown {
   if (value == null) return value;
   if (typeof value === "string") {
-    if (keyIsPII) return REDACTED;
-    let out = value;
-    // Preserve each pattern's own flags (e.g. /i) and add /g — `new RegExp(re, "g")`
-    // silently DROPS the source flags, so scrub would miss what the fail-closed
-    // backstop then throws on.
-    for (const re of PII_VALUE_PATTERNS) out = out.replace(new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`), REDACTED);
-    return out;
+    return keyIsPII ? REDACTED : redactPIIValues(value);
   }
   // keyIsPII propagates through arrays and nested objects: everything UNDER a
   // PII-named key ({ name: { first: "John" } }, { phones: [5551234567] }) is PII.

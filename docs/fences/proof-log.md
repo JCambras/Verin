@@ -2808,3 +2808,81 @@ failure (the two source injections were restored from a copy; `git diff` on
 `src/__tests__/fitness/no-secret-fallback.test.ts` was empty afterwards).
 
 **Date:** 2026-07-27 (ninth review-fix round on v3 build-sequence prompt 6).
+
+## Round 10 — leading-name binding, aligned account shape, semantic vocabulary fence
+
+### PF-039 a MULTI-word name that opens the prose is bound whole
+
+`proseSubjectCandidates` was reverted to dropping the first word of ANY
+leading title-case run (`words.shift()`), the rule that let a given name reach a
+model raw while its surname was masked.
+
+```
+× binds a MULTI-word name that OPENS the prose whole, never just its surname
+  AssertionError: expected 'Adaeze {{slot_0001}} wants to open an…'
+    to be '{{slot_0001}} wants to open an account'
+  src/__tests__/unit/llm-boundary.test.ts
+```
+
+### PF-040 account candidates are exactly the runs the residual check refuses
+
+`accountCandidates` was reverted to `\b\d{3,18}\b` over currency-stripped text
+behind a whole-string `looksLikePIIValue` early return. A year then demanded an
+account-ref slot, and a 9-18 digit run alongside a phone number produced a
+refusal no caller could satisfy.
+
+```
+× an account-ref candidate is EXACTLY what the residual check refuses (9-18 digits)
+  AssertionError: expected false to be true
+  src/__tests__/unit/llm-boundary.test.ts
+```
+
+### PF-041 a mixed-case request id cannot abort a committed flow
+
+The lowercase canonicalization AND the pre-write `observabilityId` proof were
+both removed from `startAccountOpening`. A mixed-case UUID (the route's shape
+check is case-insensitive) committed its household/contact/application writes and
+then threw out of the "flow started" log line — `NAME_SHAPED_RE` reads the
+`[A-F][a-f]` adjacency of hex as a person name.
+
+```
+× a MIXED-case client request id … completes instead of throwing after its writes commit
+× a request id that could never be logged is refused BEFORE any write commits
+  Unknown Error: Observability executionId identifiers must be opaque.
+  src/__tests__/integration/account-opening.test.ts
+```
+
+### PF-042 the test-only injection point is keyed semantically, not by text
+
+The `identifier.getText() !== TEST_INJECTION_POINT` pre-filter was restored ahead
+of `resolvesTo`, so shipped code importing the injection point under an alias
+(`import { registerTestSpanName as reg }` … `reg("test.sneaky")`) was invisible
+to the fence.
+
+```
+× catches an ALIASED call to the test-only injection point
+  AssertionError: expected [] to deeply equal [ Array(1) ]
+  src/__tests__/fitness/observability-vocabulary.test.ts
+```
+
+### PF-043 a hoisted message/span constant is checked like an inline literal
+
+`literalText` was reverted to syntax-only matching. `const SPAN = "…"` /
+`const MSG = "…"` call sites then produced no vocabulary entry and no
+dynamic-identity violation — the exact silent degradation the fence exists to
+prevent.
+
+```
+× checks a HOISTED span name and log message constant like an inline literal
+  AssertionError: expected [] to deeply equal [ 'crm.household.archive' ]
+  src/__tests__/fitness/observability-vocabulary.test.ts
+```
+
+**Revert:** every planted change was reverted immediately after capturing the
+failure (each edited file was restored from a copy taken before the injection;
+`git diff` against the restored copies of `src/domain/pii/projection-resolution.ts`,
+`src/infrastructure/wire.ts`, and
+`src/__tests__/fitness/observability-vocabulary.test.ts` was empty afterwards,
+and the full suite is green again).
+
+**Date:** 2026-07-27 (tenth review-fix round on v3 build-sequence prompt 6).

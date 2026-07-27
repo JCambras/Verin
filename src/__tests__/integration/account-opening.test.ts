@@ -106,27 +106,48 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
-  it("an UPPERCASE-hex client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
-    // Regression: the observability id predicate was case-SENSITIVE while the
-    // route accepts a case-insensitive UUID, so the flow committed the
+  it("a MIXED-case client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
+    // Regression: the observability id predicate refuses a `Lu`-then-`Ll` pair as
+    // a person-name shape, which mixed-case hex carries ("...3Ab5..."), while the
+    // route accepts a case-insensitive UUID. The flow committed the
     // household/contact/application writes and THEN threw PII_VIOLATION out of
-    // the log line — an unenveloped 500 with side effects already durable.
-    const clientRequestId = "3F2504E0-4F89-11D3-9A0C-0305E82C3301";
+    // the log line — an unenveloped 500 with side effects already durable. The id
+    // is now canonicalized to lowercase before it becomes the executionId.
+    const clientRequestId = "3Ab504e0-4f89-11d3-9a0c-0305E82c3301";
     const started = await startAccountOpening(db, advisor, {
-      householdName: "Uppercase Household", firstName: "Upper", lastName: "Case", email: null,
+      householdName: "Mixed Case Household", firstName: "Mixed", lastName: "Case", email: null,
       accountType: "individual", clientRequestId,
     });
     expect(started.status).toBe("suspended");
-    expect(started.executionId).toBe(clientRequestId);
+    expect(started.executionId).toBe(clientRequestId.toLowerCase());
     const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(households.rows[0]!.n)).toBe(1);
-    // The replay path (which logs the same identifier again) also survives.
+    // The replay path (which logs the same identifier again) also survives, and a
+    // case variant of the same uuid replays instead of duplicating the household.
     const replayed = await startAccountOpening(db, advisor, {
-      householdName: "Uppercase Household", firstName: "Upper", lastName: "Case", email: null,
-      accountType: "individual", clientRequestId,
+      householdName: "Mixed Case Household", firstName: "Mixed", lastName: "Case", email: null,
+      accountType: "individual", clientRequestId: clientRequestId.toUpperCase(),
     });
-    expect(replayed.executionId).toBe(clientRequestId);
+    expect(replayed.executionId).toBe(clientRequestId.toLowerCase());
     expect(replayed.status).toBe("suspended");
+    expect(Number((await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG])).rows[0]!.n)).toBe(1);
+  });
+
+  it("a request id that could never be logged is refused BEFORE any write commits", async () => {
+    // The executionId is emitted inside the flow's span, so an id the
+    // observability predicate refuses must fail as a typed VALIDATION error —
+    // never by throwing out of a log line whose writes are already durable.
+    const result = await startAccountOpening(db, advisor, {
+      householdName: "Refused Household", firstName: "Refused", lastName: "Start", email: null,
+      accountType: "individual", clientRequestId: "Adaeze Okonkwo-Blackwood",
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("VALIDATION");
+    const households = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM households WHERE org_id = $1 AND name = $2",
+      [ORG, "Refused Household"],
+    );
+    expect(Number(households.rows[0]!.n)).toBe(0);
   });
 
   it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {

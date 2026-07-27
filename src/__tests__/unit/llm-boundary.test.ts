@@ -344,12 +344,76 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: {},
     });
+    // Refused because the lone leading word is grammar, so nothing binds the
+    // slot — assert the reason, not just the refusal (the earlier version of
+    // this test passed on the count mismatch alone).
     expect(result.ok).toBe(false);
+    expect(hasUnresolvedProjectionText("Alice uses account")).toBe(false);
+    const bound = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Alice uses account",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { firstName: "Alice" },
+    });
+    expect(bound.ok).toBe(true);
+    if (bound.ok) expect(bound.value.maskedText.value).toBe("{{slot_0001}} uses account");
+  });
+  it("binds a MULTI-word name that OPENS the prose whole, never just its surname", () => {
+    // A lone capitalized opener is sentence grammar; a multi-word title-case run
+    // is the person-name shape wherever it sits. Dropping only its first word
+    // left the given name raw in the text the model would see.
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `${RAW.name} wants to open an account`,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maskedText.value).toBe("{{slot_0001}} wants to open an account");
+    expect(result.value.maskedText.value).not.toContain("Adaeze");
+    expect(result.value.maskedText.value).not.toContain("Okonkwo");
+  });
+  it("an account-ref candidate is EXACTLY what the residual check refuses (9-18 digits)", () => {
+    // Ordinary numbers are not account references: no slot is required, and the
+    // caller does not have to re-run the extractor to guess how many to declare.
+    const year = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "escalate before the 2026 filing deadline",
+      slots: [],
+      evidence: { requestKind: "escalation", plannedWithdrawals: 4200 },
+    });
+    expect(year.ok).toBe(true);
+    if (year.ok) {
+      expect(year.value.maskedText.value).toBe("escalate before the 2026 filing deadline");
+    }
+    // A 9-18 digit run with no declared account-ref slot is still refused.
+    const account = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "wire to 941000517334 today",
+      slots: [],
+      evidence: {},
+    });
+    expect(account.ok).toBe(false);
+    // ...and IS satisfiable once the caller declares the slot the residual check
+    // demands — even alongside a redacted phone, which needs no slot of its own.
+    const bound = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `wire to 941000517334 today, reach the desk at ${RAW.phone}`,
+      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
+      evidence: {},
+    });
+    expect(bound.ok).toBe(true);
+    if (bound.ok) {
+      expect(bound.value.maskedText.value).toContain("{{slot_0001}}");
+      expect(bound.value.maskedText.value).not.toContain("941000517334");
+      expect(bound.value.maskedText.value).toContain(REDACTED);
+    }
   });
   it("masks resolved entity values retained in evidence keys", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Review Alice",
+      requestText: "Please review Alice",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: { Alice: "requested review" },
     });
@@ -361,7 +425,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("masks known entities in untyped evidence values before tokenization", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
-      requestText: `Review ${RAW.name}`,
+      requestText: `Please review ${RAW.name}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: { note: `${RAW.name} requested a review` },
     });
@@ -374,7 +438,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("derives account references from the complete payload", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Review account 401",
+      requestText: "Review account 941000517334",
       slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
       evidence: {},
     });
