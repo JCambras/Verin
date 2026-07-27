@@ -588,3 +588,19 @@ normalized destination; keep prefix classification and special-case the two repo
 rejected because equivalent traversal shapes would remain.
 **Revert path:** restore prefix-only alias classification and remove the three traversal companions
 and PF-002 extension.
+
+### D-044 · 2026-07-27 · reversible · Dependency references fail closed and nested source paths stay enforced
+
+The authoritative dependency detector now consumes every collected module reference directly.
+Non-literal dynamic `import()` and `require()` references in contracts, domain, or infrastructure are
+reported as unresolved violations because their destination layer cannot be proven; the outermost app
+layer remains free to load runtime-selected modules. Detector-local `__tests__` exclusions were removed,
+so every file supplied by shipped-source discovery is enforced, including a nested
+`src/contracts/__tests__/` path. Only the root `src/__tests__/` tooling tree remains outside shipped
+source discovery. The acceptance artifact no longer publishes exact test totals that drift whenever
+parameterized coverage grows.
+**Alternatives:** drop unresolved references as before - rejected because it fails open; exclude every
+nested `__tests__` directory - rejected because those paths are included by the repository's shipped
+source and TypeScript discovery.
+**Revert path:** restore statically-resolvable-only iteration and detector-local test exclusions, remove
+the four companions and PF-002 extension, and restore manual test totals only if they become generated.

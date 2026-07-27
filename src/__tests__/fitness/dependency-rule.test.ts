@@ -19,7 +19,7 @@ describe("dependency-rule fence", () => {
     const violations = detectLayerViolations(project);
     expect(
       violations,
-      `dependency-rule violations:\n${violations.map((v) => `${v.file}: ${v.fromLayer} -> ${v.toLayer} (${v.specifier})`).join("\n")}`,
+      `dependency-rule violations:\n${violations.map((v) => `${v.file}:${v.line}: ${v.fromLayer} -> ${v.toLayer} (${v.specifier})`).join("\n")}`,
     ).toEqual([]);
     const external = detectContractsExternalImportViolations(project);
     expect(
@@ -65,6 +65,26 @@ describe("dependency-rule fence", () => {
         inMemoryProject({ "src/infrastructure/evil.ts": `export const p = require("@app/page");` }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("infrastructure->app");
+    });
+
+    it("non-literal dynamic import() fails closed in an inner layer", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": `const target = "@infra/store";\nexport const load = () => import(target);`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
+      expect(v[0]?.specifier).toBe("<non-literal dynamic-import>");
+    });
+
+    it("non-literal require() fails closed in an inner layer", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/infrastructure/evil.ts": `const target = "@app/page";\nexport const load = () => require(target);`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("infrastructure->unresolved");
+      expect(v[0]?.specifier).toBe("<non-literal require>");
     });
 
     it("clean inner->inner imports do NOT trip the fence", () => {
@@ -130,6 +150,25 @@ describe("dependency-rule fence", () => {
       );
       expect(v).toHaveLength(1);
       expect(v[0]?.specifier).toBe(specifier);
+    });
+
+    it("nested __tests__ paths remain subject to layer enforcement", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/contracts/__tests__/evil.ts": `import { x } from "@infra/store";\nexport const y = x;`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("contracts->infrastructure");
+    });
+
+    it("nested __tests__ paths remain subject to the contracts external allowlist", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/__tests__/evil.ts": `import { createElement } from "react";\nexport { createElement };`,
+        }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
     });
 
     it("zod is the only permitted contracts external dependency", () => {

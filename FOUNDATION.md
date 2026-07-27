@@ -6,8 +6,8 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (313 unit/integration/fitness, non-UTC clock) ·
-> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (unit, integration, and fitness on a non-UTC clock) ·
+> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
 > `pnpm golden:validate` (the 16-case golden truth set, D-035). Every
@@ -52,8 +52,8 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 12
-  tests) plus axe, green on a non-UTC clock.
+- **Four Playwright spec files** covering smoke, happy walkthrough, failure/access-control, and console
+  CRUD plus axe, green on a non-UTC clock.
 
 **Governance:** 29 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
