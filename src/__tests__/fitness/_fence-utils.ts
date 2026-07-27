@@ -5,7 +5,7 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Project, SyntaxKind, type SourceFile } from "ts-morph";
+import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve, dirname } from "node:path";
@@ -82,28 +82,47 @@ export function specifierToLayer(fromFile: string, spec: string): Layer | null {
   return null; // bare/external
 }
 
-/** Every import specifier in a source file: static imports, dynamic import(), and require(). */
-export function importSpecifiers(sf: SourceFile): string[] {
-  const specs: string[] = [];
-  for (const imp of sf.getImportDeclarations()) specs.push(imp.getModuleSpecifierValue());
+export interface ModuleReference {
+  specifier: string | null;
+  line: number;
+  kind: "import" | "export" | "dynamic-import" | "require";
+}
+
+/** Every module reference, including non-literal dynamic import/require calls. */
+export function moduleReferences(sf: SourceFile): ModuleReference[] {
+  const refs: ModuleReference[] = [];
+  for (const imp of sf.getImportDeclarations()) {
+    refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
+  }
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
-    if (v) specs.push(v);
+    if (v) refs.push({ specifier: v, line: exp.getStartLineNumber(), kind: "export" });
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expr = call.getExpression();
-    // dynamic import("…")
     if (expr.getKind() === SyntaxKind.ImportKeyword) {
       const arg = call.getArguments()[0];
-      if (arg && arg.getKind() === SyntaxKind.StringLiteral) specs.push(arg.getText().slice(1, -1));
+      refs.push({
+        specifier: arg && (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg)) ? arg.getLiteralText() : null,
+        line: call.getStartLineNumber(),
+        kind: "dynamic-import",
+      });
     }
-    // require("…")
     if (expr.getText() === "require") {
       const arg = call.getArguments()[0];
-      if (arg && arg.getKind() === SyntaxKind.StringLiteral) specs.push(arg.getText().slice(1, -1));
+      refs.push({
+        specifier: arg && (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg)) ? arg.getLiteralText() : null,
+        line: call.getStartLineNumber(),
+        kind: "require",
+      });
     }
   }
-  return specs;
+  return refs;
+}
+
+/** Every statically resolvable module specifier in a source file. */
+export function importSpecifiers(sf: SourceFile): string[] {
+  return moduleReferences(sf).flatMap((ref) => (ref.specifier === null ? [] : [ref.specifier]));
 }
 
 export interface LayerViolation {
@@ -131,6 +150,32 @@ export function detectLayerViolations(project: Project): LayerViolation[] {
       if (RANK[toLayer] > RANK[fromLayer]) {
         violations.push({ file: relative(REPO_ROOT, filePath), specifier: spec, fromLayer, toLayer });
       }
+    }
+  }
+  return violations;
+}
+
+export interface ContractsExternalImportViolation {
+  file: string;
+  line: number;
+  specifier: string;
+}
+
+/** ADR-0029 allows contracts to import only Zod among external packages. */
+export function detectContractsExternalImportViolations(project: Project): ContractsExternalImportViolation[] {
+  const violations: ContractsExternalImportViolation[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const filePath = sf.getFilePath();
+    if (filePath.includes("/__tests__/") || layerOfPath(filePath) !== "contracts") continue;
+    for (const ref of moduleReferences(sf)) {
+      const specifier = ref.specifier;
+      if (specifier !== null && specifierToLayer(filePath, specifier) !== null) continue;
+      if (specifier === "zod" || specifier?.startsWith("zod/")) continue;
+      violations.push({
+        file: relative(REPO_ROOT, filePath),
+        line: ref.line,
+        specifier: specifier ?? `<non-literal ${ref.kind}>`,
+      });
     }
   }
   return violations;
@@ -191,4 +236,3 @@ export function stripComments(line: string): string {
   }
   return out;
 }
-

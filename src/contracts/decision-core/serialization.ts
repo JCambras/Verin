@@ -1,5 +1,5 @@
 /**
- * Canonical serialization for replay (v3 §5 replay metadata; ADR-0029, D-036).
+ * Canonical serialization for replay (v3 §5 replay metadata; ADR-0029, D-040).
  * Versioned, domain-separated projections define the bundle and decision hash
  * preimages; fixtures lock their canonical byte form and SHA-256 digest.
  */
@@ -15,6 +15,40 @@ export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.0.0";
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
 type DecisionHashPayload = Omit<DecisionRecord, "decisionHash">;
+const exactProjectionKeys =
+  <T extends object>() =>
+  <const K extends readonly (keyof T)[]>(
+    keys: K & Record<Exclude<keyof T, K[number]>, never>,
+  ): K =>
+    keys;
+export const BUNDLE_HASH_PAYLOAD_KEYS = exactProjectionKeys<BundleHashPayload>()([
+  "firmId",
+  "schemaVersion",
+  "canonicalSerializerVersion",
+  "engineVersion",
+  "primitiveSetVersion",
+  "domainConfigVersionId",
+  "policyVersionId",
+  "householdInstructionVersionIds",
+  "evidenceSnapshotIds",
+  "asOf",
+  "timeZone",
+] as const);
+export const DECISION_HASH_PAYLOAD_KEYS = exactProjectionKeys<DecisionHashPayload>()([
+  "firmId",
+  "id",
+  "intentId",
+  "inputBundleId",
+  "result",
+  "precedenceTrace",
+  "explanationTrace",
+  "riskClass",
+  "reversibility",
+  "reevaluateWhen",
+  "derivedFromDecisionId",
+  "createdBy",
+  "createdAt",
+] as const);
 export type BundleHashPreimage = Readonly<{
   readonly hashKind: "decision-input-bundle";
   readonly preimageVersion: typeof BUNDLE_HASH_PREIMAGE_VERSION;
@@ -30,17 +64,9 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
     hashKind: "decision-input-bundle",
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
     payload: {
-      firmId: bundle.firmId,
-      schemaVersion: bundle.schemaVersion,
-      canonicalSerializerVersion: bundle.canonicalSerializerVersion,
-      engineVersion: bundle.engineVersion,
-      primitiveSetVersion: bundle.primitiveSetVersion,
-      domainConfigVersionId: bundle.domainConfigVersionId,
-      policyVersionId: bundle.policyVersionId,
+      ...projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
       householdInstructionVersionIds: [...bundle.householdInstructionVersionIds].sort(),
       evidenceSnapshotIds: [...bundle.evidenceSnapshotIds].sort(),
-      asOf: bundle.asOf,
-      timeZone: bundle.timeZone,
     },
   };
 }
@@ -48,22 +74,24 @@ export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreima
   return {
     hashKind: "decision-record",
     preimageVersion: DECISION_HASH_PREIMAGE_VERSION,
-    payload: {
-      firmId: record.firmId,
-      id: record.id,
-      intentId: record.intentId,
-      inputBundleId: record.inputBundleId,
-      result: record.result,
-      precedenceTrace: record.precedenceTrace,
-      explanationTrace: record.explanationTrace,
-      riskClass: record.riskClass,
-      reversibility: record.reversibility,
-      reevaluateWhen: record.reevaluateWhen,
-      ...(record.derivedFromDecisionId === undefined ? {} : { derivedFromDecisionId: record.derivedFromDecisionId }),
-      createdBy: record.createdBy,
-      createdAt: record.createdAt,
-    },
+    payload: projectDefined(record, DECISION_HASH_PAYLOAD_KEYS),
   };
+}
+function projectDefined<T extends object, const K extends readonly (keyof T)[]>(value: T, keys: K): Pick<T, K[number]> {
+  return Object.fromEntries(
+    keys.flatMap((key) => (value[key] === undefined ? [] : [[key, normalizeOptionalProperties(value[key])]])),
+  ) as Pick<T, K[number]>;
+}
+function normalizeOptionalProperties<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(normalizeOptionalProperties) as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, nested]) =>
+        nested === undefined ? [] : [[key, normalizeOptionalProperties(nested)]],
+      ),
+    ) as T;
+  }
+  return value;
 }
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.
@@ -91,7 +119,14 @@ function serialize(value: JsonValue, path: readonly string[]): string {
       return JSON.stringify(value);
     case "object": {
       if (Array.isArray(value)) {
-        return `[${value.map((v, i) => serialize(v, [...path, String(i)])).join(",")}]`;
+        const items: string[] = [];
+        for (let i = 0; i < value.length; i += 1) {
+          if (!Object.hasOwn(value, i)) {
+            throw new CanonicalizationRefusal(`${at}.${i}: sparse array holes cannot be canonicalized`);
+          }
+          items.push(serialize(value[i]!, [...path, String(i)]));
+        }
+        return `[${items.join(",")}]`;
       }
       if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
         throw new CanonicalizationRefusal(`${at}: only plain objects can be canonicalized`);

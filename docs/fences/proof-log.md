@@ -761,7 +761,7 @@ execution-timeline row mapper into `surfaces/shared.tsx` - neither changes any f
 ---
 
 ### PF-027 · decision-core illegal-states (v3 invariants 7-9, prompt 5) · `src/__tests__/fitness/decision-core-illegal-states.test.ts`
-**Invariant (charter #1; v3 §5; ADR-0029, D-036):** the canonical type system makes the decision-core
+**Invariant (charter #1; v3 §5; ADR-0029, D-040):** the canonical type system makes the decision-core
 distinctions structural - a proceed decision REQUIRES an authority requirement and a non-empty
 execution plan (inv 7); a blocked decision cannot carry authority or a plan and its blockers must be
 genuinely resolvable (inv 8); a prohibited decision carries no resolving condition, authority, or plan,
@@ -805,3 +805,39 @@ Injection + observed failure (verbatim), reverted:
 **Revert (extension):** restored cycle rejection; the fitness and decision-core unit files pass
 together (`Tests 37 passed`). The unit suite also accepts an acyclic diamond and rejects two- and
 three-step cycles, so the boundary does not enforce only the injected shape.
+
+**Extension (review corrections F2-F5 and F8-F10):** focused boundary tests were added before the
+implementation changed and reproduced five independent failures: unsupported schema/serializer
+versions parsed, an invalid time zone parsed, replay inputs remained mutable, a sparse array
+canonicalized to the same bytes as `[]`, and a parsed decision with explicit undefined optional
+properties could not be hashed. Observed failures:
+```
+× rejects replay metadata versions without a matching implementation
+  expected true to be false
+× rejects unsupported time zones before replay depends on firm-local time
+  expected true to be false
+× freezes parsed replay inputs and their nested collections
+  expected false to be true
+× refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON
+  expected true to be false
+× hashes every schema-valid decision even when optional keys were explicitly undefined
+  expected false to be true
+```
+The dependency fence and exhaustive projection-key assertion were then adversarially proven:
+```
+# Added `import { createElement } from "react"` to serialization.ts:
+× dependency-rule fence > enforces: the real src/ tree has zero layer violations
+  contracts external-import violations:
+  src/contracts/decision-core/serialization.ts:9 (react)
+
+# Added `futureOptional: z.string().optional()` to DecisionInputBundleSchema without
+# adding it to BUNDLE_HASH_PAYLOAD_KEYS:
+src/contracts/decision-core/serialization.ts(24,82): error TS2345
+  Property 'futureOptional' is missing ... but required in type 'Record<"futureOptional", never>'.
+```
+**Revert (extension):** both planted violations were removed. The focused unit and fitness run passed
+58 tests, including companions for non-literal dynamic imports, relative traversal to an external
+package, the one-package Zod allowlist, exact runtime schema-key coverage including the optional
+`derivedFromDecisionId`, replay immutability, and canonicalization totality.
+
+**Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-041).

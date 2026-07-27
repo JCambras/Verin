@@ -1,6 +1,6 @@
 /**
  * Tenant scope, actor attribution, and the tokenized-value shape (v3 §5; ratified
- * shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-036).
+ * shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-040).
  *
  * TenantContext is the scoping spine: every persisted decision-core record extends
  * it, so an unscoped record is a PARSE ERROR, not a review comment (v3 invariant 2).

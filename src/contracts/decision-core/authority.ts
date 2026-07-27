@@ -1,6 +1,6 @@
 /**
  * Authority contracts: approval requirements, stages, and the authority modes
- * (v3 §5; ratified shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-036).
+ * (v3 §5; ratified shapes: docs/v3/verin-core-contracts.ts; ADR-0029, D-040).
  *
  * AUTHORITY IS NOT DISPOSITION. These types describe WHO must consent before an
  * already-decided proceed executes; they never appear on blocked or prohibited

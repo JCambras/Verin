@@ -509,7 +509,7 @@ Two follow-up rounds on the D-036/D-037 skeleton, no fence weakened:
   (`display: contents`), so design §9's running-header/footer requirement is met unchanged.
 **Revert path:** revert the two commits; the D-036/D-037 skeleton stands unchanged beneath them.
 
-### D-036 · 2026-07-26 · reversible · Decision-core canonical type system landed (v3 build sequence, prompt 5) as Zod-first contracts
+### D-040 · 2026-07-26 · reversible · Decision-core canonical type system landed (v3 build sequence, prompt 5) as Zod-first contracts
 
 The v3 §5 contracts land as `src/contracts/decision-core/` (ids, actor, trigger, evidence,
 authority, execution, decision, serialization): Zod strict schemas are the single source, TypeScript
@@ -529,7 +529,7 @@ inherits the guarantees by parsing.
 **Enforcement (charter #1, same PR):** fence `src/__tests__/fitness/decision-core-illegal-states.test.ts`
 (registered as the mechanism for v3 invariants 7-9, now ACTIVE; ratchet extended to [2,5,7,8,9];
 proof PF-027), unit suite `src/__tests__/unit/decision-core.test.ts`, contracts ceiling re-baselined
-600→1400 by ADR-0029 (the ADR-0018 amendment path; zod admitted into `contracts/` by the same ADR).
+600→1550 by ADR-0029 (the ADR-0018 amendment path; zod admitted into `contracts/` by the same ADR).
 **Alternatives:** land in domain / split types-vs-schemas across layers / trim to fit the 600
 ceiling - all rejected in ADR-0029's table.
 **Revert path:** delete `src/contracts/decision-core/`, `fixtures/decision-core/`, the fence and
@@ -549,3 +549,16 @@ boundary, because a non-empty but unschedulable graph is not an executable plan 
 **Revert path:** remove the two projection contracts and digest assertions, restore the prior fixture
 hashes, and remove cycle detection and its fence case; no production approval or replay consumer
 depends on these prompt-5 contracts yet.
+
+### D-041 · 2026-07-26 · reversible · Replay boundary hardening closes review findings F2-F5 and F7-F10
+
+`DecisionInputBundle` now admits only the implemented 1.0.0 schema and canonical serializer, validates
+its time zone through the runtime's supported IANA data, and freezes both the parsed bundle and its
+replay-ID collections. Hash projections derive from exhaustive key lists checked against the inferred
+schema keys, while decision preimages omit explicit undefined optional properties so every parsed
+record is hashable. Canonical serialization rejects sparse arrays. The dependency fence now permits
+only Zod as an external `contracts/` import and rejects non-literal dynamic imports. The ADR-0029
+contracts ceiling is re-baselined from 1400 to 1550 through ADR-0018's amendment path after the
+review-hardened implementation measured 1446 lines.
+**Revert path:** revert the schema, serializer, projection-key, dependency-fence, and focused test
+changes together, then restore the 1400 ceiling and its ADR references.

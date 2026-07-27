@@ -1,6 +1,6 @@
 /**
  * Trigger, Intent, and resolution-state contracts (v3 §5; ratified shapes:
- * docs/v3/verin-core-contracts.ts; ADR-0029, D-036). Human requests and system
+ * docs/v3/verin-core-contracts.ts; ADR-0029, D-040). Human requests and system
  * events converge on ONE Intent shape (prompt 12 builds the pipeline; the type
  * lands here so both entry paths are already the same thing).
  */

@@ -25,7 +25,7 @@ rule, and a walking skeleton that runs end-to-end in a browser.
 Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 27 build-failing fitness
 fences; ratchet-down line budgets + a separate presentation budget.
 
-**v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-036):** the canonical decision
+**v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-040):** the canonical decision
 type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
 plan, blocked/prohibited carry neither, a prohibition has no resolving condition (v3 invariants 7-9 as
 parse-level facts) - plus a versioned canonical serializer whose byte form is locked by the
@@ -73,7 +73,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
 | `charter-drift` | the constitution enforces its own enforcement | PF-001 |
-| `dependency-rule` (ts-morph: static+relative+dynamic+require) | layer boundary (#1) | PF-002 + companions |
+| `dependency-rule` (ts-morph: static+relative+dynamic+require; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + PF-027 extension + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
@@ -97,7 +97,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
-| `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-036) | PF-027 + companions |
+| `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

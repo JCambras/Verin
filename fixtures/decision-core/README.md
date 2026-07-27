@@ -1,4 +1,4 @@
-# Decision-core canonical-serialization fixtures (ADR-0029, D-036)
+# Decision-core canonical-serialization fixtures (ADR-0029, D-040)
 
 Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
 displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle` and

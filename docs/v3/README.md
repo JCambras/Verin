@@ -19,7 +19,7 @@ resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
 | [`verin-architecture-v3.md`](./verin-architecture-v3.md) | The architecture: thesis (§1), Phase 1 demo contract (§2), 12 non-negotiables (§3), the 15-stage decision spine (§4), contracts (§5), policy AST (§6), module map (§16), **30 phase-gated invariants (§17)**, stack (§18), phases (§19), known risks (§20) |
 | [`verin-prompt-sequence-v3.md`](./verin-prompt-sequence-v3.md) | The 30-prompt build sequence, waves 0/A-I with gates; orchestrator rules (incl. rule 6: never declare done on fakes) |
 | [`verin-demo-contract-v1.md`](./verin-demo-contract-v1.md) | Phase 1 investor demo contract: the seven-minute Smiths $75k journey, Firm A/B, provenance labels (§6), completion test (§8) |
-| [`verin-core-contracts.ts`](./verin-core-contracts.ts) | Canonical decision-core contracts (reference document, NOT compiled product code - landed as `src/contracts/decision-core/` Zod-first strict schemas in Wave A prompt 5, ADR-0029/D-036) |
+| [`verin-core-contracts.ts`](./verin-core-contracts.ts) | Canonical decision-core contracts (reference document, NOT compiled product code - landed as `src/contracts/decision-core/` Zod-first strict schemas in Wave A prompt 5, ADR-0029/D-040) |
 | [`marriage-map.md`](./marriage-map.md) | The alignment analysis that produced the ADRs: what stands, conflicts C1-C15, the 30-prompt sequence re-baselined onto this repo (§6), and the captain's two ruling directives of 2026-07-26 |
 
 ## How v3 binds this repo (the ADR trail)
@@ -32,7 +32,7 @@ resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
 | [0026](../adr/0026-stack-deviations-from-v3.md) | Stack deviations from v3 §18: PostgreSQL stays (D-001), Next.js App Router stays, ts-morph fences stay; FirmId ≡ org_id |
 | [0027](../adr/0027-demo-first-wave0-labeled-fakes.md) | Wave 0 walking skeleton on internally-labeled fakes is charter-legal (charter #5 extension; no mock theater) |
 | [0028](../adr/0028-demo-design-language.md) | Demo UI uses the ESTABLISHED Verin design system; v3 visual prescriptions rejected; v3 UX semantics re-expressed via `docs/demo-design-language.md` |
-| [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→1400 (amends ADR-0018); invariants 7-9 active |
+| [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→1550 (amends ADR-0018); invariants 7-9 active |
 
 ## The 30 invariants, phase-gated
 

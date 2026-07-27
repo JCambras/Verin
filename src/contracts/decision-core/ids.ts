@@ -1,6 +1,6 @@
 /**
  * Decision-core branded identifiers (v3 §5; ratified shapes: docs/v3/verin-core-contracts.ts;
- * ADR-0029, D-036). Every ID is a BRANDED string: a plain string cannot cross an ID
+ * ADR-0029, D-040). Every ID is a BRANDED string: a plain string cannot cross an ID
  * boundary without parsing through its schema, so a DecisionId can never be handed
  * where an IntentId is required - the tenant-scoping and replay guarantees start here.
  *
