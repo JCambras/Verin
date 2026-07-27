@@ -1286,3 +1286,43 @@ their semantic callable shape is enforceable).
 start, tuple-shaped audited-write attribution, unmarked workflow state, and the
 prior declaration-form-specific PF-027/PF-029 implementations. D-039 through
 D-041 remain the underlying security-boundary decisions.
+
+### D-043 · 2026-07-27 · reversible · Prompt-6 recovery and completeness fences hardened
+
+All eight fourth-round findings were legitimate instances of five remaining
+structural gaps: retry attribution did not distinguish the initiating human
+from the webhook system actor, LLM slot labels admitted free text, PII and
+tenant fences did not close over all executable forms, governed-route coverage
+was manually enumerated, and secret reveals were trusted at file scope.
+
+- Failed webhook finalization now reuses the matching sealed human
+  `WriteActor` on an identical form resubmit. Only the webhook-owned path
+  delegates from the reviewed `esign-webhook` system actor.
+- LLM placeholders use generated opaque ids in the closed
+  `slot_0001` through `slot_9999` format. Projection bindings and adapter
+  parsing use `slotId`, so a name cannot be carried in placeholder metadata.
+- The PII fence recursively inspects nested project types, mapped utilities,
+  and exported callables. It treats `Tokenized` and `SecretValue` as the two
+  sanctioned sealed wrappers and rejects nonliteral module loads anywhere in
+  the LLM import closure.
+- Repository directories are closed by default: every exported callable must
+  carry `TenantContext` or `WriteActor`, with exact reviewed escapes and exact
+  non-repository module exclusions. This covers internal `getDb`, captured
+  handles, and future repository files without relying on exposed SQL types.
+- Governed route entries are derived from semantically resolved governed-sink
+  calls. Authorization and fail-closed helpers resolve to
+  `app/_server/context.ts`; local shadows do not count. Secret access is
+  restricted to direct `revealSecret` arguments at the exact reviewed
+  `createHmac` calls, not merely their containing files.
+
+**Alternatives:** preserve friendly slot labels and scan them for names
+(rejected because single-token names remain ambiguous); detect hidden database
+use through body dataflow only (rejected because closed repository directories
+are simpler and cover future capture forms); retain manual route entries or
+file-level secret allowlists (rejected because both fail open when call sites
+move).
+
+**Revert path:** revert this changeset and restore the prior retry actor
+selection, slot-name schema, SQL-signature repository classification, manual
+surface table, and file-level reveal allowlist. D-039 through D-042 remain the
+underlying security-boundary decisions.

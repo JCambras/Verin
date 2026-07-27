@@ -66,11 +66,10 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
       }),
     finalize: (input, tenant) =>
       withSpan("account-opening.finalize", { orgId: tenant.orgId, applicationId: input.applicationId }, async () => {
-        // Typed truth (finding #13): this write was driven by an external event
-        // on behalf of the initiating advisor — a narrow WriteActor carrying the
-        // starter's sealed tenant, never a fabricated Principal with an invented
-        // role/session.
-        const actor = delegatedWriteActor(actorFor(tenant), input.actor);
+        const starterActor = actorFor(tenant);
+        const actor = starterActor.actorUserId === input.actor
+          ? starterActor
+          : delegatedWriteActor(starterActor, input.actor);
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
         // Per-write keys derive from the application's minted idempotency key
         // (threaded through the flow context), so the key the application row

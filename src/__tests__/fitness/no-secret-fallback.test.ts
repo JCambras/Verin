@@ -79,11 +79,10 @@ const PLACEHOLDER_VALUE =
   /^(|CHANGEME[_A-Za-z0-9]*|development|production|test|info|error|debug|warn|verin|pglite|postgres|America\/New_York|America\/[A-Za-z_]+|http:\/\/localhost(:\d+)?|\.verin-data[\w-]*|\d+|postgres:\/\/USER:CHANGEME_PASSWORD@HOST:5432\/verin)$/;
 
 // --- SecretValue containment (v3 §15.4, prompt 6) ---------------------------
-const REVEAL_ALLOWLIST: Array<{ file: string; why: string }> = [
-  { file: "src/infrastructure/identity/session.ts", why: "HMAC-signs the session cookie" },
-  { file: "src/infrastructure/esign/esign.ts", why: "HMAC-signs/verifies the e-sign webhook callback" },
+const REVEAL_ALLOWLIST: Array<{ file: string; functionName: string; why: string }> = [
+  { file: "src/infrastructure/identity/session.ts", functionName: "sign", why: "HMAC-signs the session cookie" },
+  { file: "src/infrastructure/esign/esign.ts", functionName: "signCallback", why: "HMAC-signs/verifies the e-sign webhook callback" },
 ];
-const REVEAL_ALLOWED = new Set(REVEAL_ALLOWLIST.map((e) => e.file));
 
 function normalizedPath(path: string): string {
   const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
@@ -101,31 +100,43 @@ function declaredAsSecretValue(type: Type): boolean {
 }
 
 function revealSecretCall(call: CallExpression): boolean {
-  return call.getExpression().getType().getCallSignatures().some((signature) => {
-    const declaration = signature.getDeclaration();
-    return declaration.getSymbol()?.getName() === "revealSecret" &&
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return target?.getName() === "revealSecret" &&
+    target.getDeclarations().some((declaration) =>
       normalizedPath(declaration.getSourceFile().getFilePath()) ===
-      "src/contracts/secret.ts";
-  });
+      "src/contracts/secret.ts"
+    );
 }
 
 function revealSecretReference(node: Node): boolean {
-  return node.getType().getCallSignatures().some((signature) => {
-    const declaration = signature.getDeclaration();
-    return declaration.getSymbol()?.getName() === "revealSecret" &&
+  const symbol = node.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return target?.getName() === "revealSecret" &&
+    target.getDeclarations().some((declaration) =>
       normalizedPath(declaration.getSourceFile().getFilePath()) ===
-      "src/contracts/secret.ts";
-  });
+      "src/contracts/secret.ts"
+    );
 }
 
-function secretAccessLocations(project: Project): Array<{ file: string; line: number }> {
-  const out: Array<{ file: string; line: number }> = [];
+interface SecretAccess {
+  readonly file: string;
+  readonly line: number;
+  readonly call: CallExpression | null;
+}
+
+function secretAccesses(project: Project): SecretAccess[] {
+  const out: SecretAccess[] = [];
   const seen = new Set<string>();
-  const add = (file: string, line: number): void => {
-    const ref = `${file}:${line}`;
+  const add = (
+    file: string,
+    line: number,
+    call: CallExpression | null,
+  ): void => {
+    const ref = `${file}:${line}:${call?.getStart() ?? "reference"}`;
     if (!seen.has(ref)) {
       seen.add(ref);
-      out.push({ file, line });
+      out.push({ file, line, call });
     }
   };
   for (const sf of project.getSourceFiles()) {
@@ -135,27 +146,34 @@ function secretAccessLocations(project: Project): Array<{ file: string; line: nu
       file.includes("/__tests__/") ||
       file === "src/contracts/secret.ts"
     ) continue;
-    const references: Node[] = [
-      ...sf.getDescendantsOfKind(SyntaxKind.Identifier),
-      ...sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
-      ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
-    ];
-    for (const reference of references) {
-      if (revealSecretReference(reference)) {
-        add(file, reference.getStartLineNumber());
-      }
-    }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       if (revealSecretCall(call)) {
-        add(file, call.getStartLineNumber());
+        add(file, call.getStartLineNumber(), call);
       }
+    }
+    for (const reference of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      if (
+        reference.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) ||
+        !revealSecretReference(reference)
+      ) {
+        continue;
+      }
+      const parent = reference.getParent();
+      if (
+        Node.isCallExpression(parent) &&
+        parent.getExpression() === reference &&
+        revealSecretCall(parent)
+      ) {
+        continue;
+      }
+      add(file, reference.getStartLineNumber(), null);
     }
     for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
       if (
         access.getName() === "reveal" &&
         declaredAsSecretValue(access.getExpression().getType())
       ) {
-        add(file, access.getStartLineNumber());
+        add(file, access.getStartLineNumber(), null);
       }
     }
     for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
@@ -165,7 +183,7 @@ function secretAccessLocations(project: Project): Array<{ file: string; line: nu
         argument.getLiteralValue() === "reveal" &&
         declaredAsSecretValue(access.getExpression().getType())
       ) {
-        add(file, access.getStartLineNumber());
+        add(file, access.getStartLineNumber(), null);
       }
     }
     for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
@@ -179,21 +197,44 @@ function secretAccessLocations(project: Project): Array<{ file: string; line: nu
           (element.getPropertyNameNode()?.getText() ?? element.getName()) === "reveal"
         )
       ) {
-        add(file, declaration.getStartLineNumber());
+        add(file, declaration.getStartLineNumber(), null);
       }
     }
   }
   return out;
 }
 
+function importedNodeCreateHmac(call: CallExpression): boolean {
+  const symbol = call.getExpression().getSymbol();
+  return Boolean(symbol?.getDeclarations().some((declaration) =>
+    Node.isImportSpecifier(declaration) &&
+    declaration.getName() === "createHmac" &&
+    declaration.getImportDeclaration().getModuleSpecifierValue() === "node:crypto"
+  ));
+}
+
+function sanctionedHmacReveal(access: SecretAccess): boolean {
+  if (!access.call) return false;
+  const fn = access.call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
+  const allowed = REVEAL_ALLOWLIST.some((entry) =>
+    entry.file === access.file &&
+    entry.functionName === fn?.getName()
+  );
+  if (!allowed) return false;
+  const parent = access.call.getParent();
+  return Node.isCallExpression(parent) &&
+    parent.getArguments()[1] === access.call &&
+    importedNodeCreateHmac(parent);
+}
+
 export function detectUnsanctionedReveal(project: Project): string[] {
   const out: string[] = [];
-  for (const location of secretAccessLocations(project)) {
-    if (!REVEAL_ALLOWED.has(location.file)) {
-      out.push(`${location.file}:${location.line}`);
+  for (const access of secretAccesses(project)) {
+    if (!sanctionedHmacReveal(access)) {
+      out.push(`${access.file}:${access.line}`);
     }
   }
-  return out;
+  return [...new Set(out)];
 }
 
 export function detectEnvExampleNonPlaceholder(): string[] {
@@ -233,11 +274,15 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
-    const calls = secretAccessLocations(realSemanticProject());
+    const calls = secretAccesses(realSemanticProject());
     for (const entry of REVEAL_ALLOWLIST) {
       expect(
-        calls.some((call) => call.file === entry.file),
-        `${entry.file} no longer reveals a secret - prune the allowlist entry`,
+        calls.some((call) =>
+          call.file === entry.file &&
+          call.call?.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration)
+            ?.getName() === entry.functionName
+        ),
+        `${entry.file} :: ${entry.functionName} no longer reveals a secret - prune the allowlist entry`,
       ).toBe(true);
     }
   });
@@ -299,6 +344,21 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
         `,
       });
       expect(detectUnsanctionedReveal(project)).toHaveLength(2);
+    });
+    it("rejects a reveal wrapper inside an allowlisted HMAC module", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/infrastructure/identity/session.ts": `
+          import { revealSecret, SecretValue } from "../../contracts/secret";
+          declare const secret: SecretValue;
+          function sign(): string {
+            return revealSecret(secret);
+          }
+        `,
+      });
+      expect(detectUnsanctionedReveal(project)).toEqual([
+        "src/infrastructure/identity/session.ts:5",
+      ]);
     });
   });
 });

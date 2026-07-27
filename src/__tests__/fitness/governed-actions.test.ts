@@ -1,7 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { relative } from "node:path";
-import { Node, SyntaxKind, type Project, type Statement } from "ts-morph";
-import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
+import {
+  Node,
+  SyntaxKind,
+  type CallExpression,
+  type Project,
+  type Statement,
+} from "ts-morph";
+import {
+  realSemanticProject,
+  inMemoryProject,
+  REPO_ROOT,
+} from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
 import { ROLES } from "@contracts/roles";
 
@@ -29,12 +39,121 @@ const V3_15_3_ACTIONS = [
   "audit.export", // viewing audit exports
 ] as const;
 
-/** The governed actions that have a live HTTP surface today (Wave A). */
-const SURFACED: Array<{ file: string; handler: string; action: string; sink: string }> = [
-  { file: "src/app/api/crm/households/route.ts", handler: "GET", action: "pii.view", sink: "listHouseholds" },
-  { file: "src/app/api/flows/account-opening/route.ts", handler: "POST", action: "execution.initiate", sink: "startAccountOpening" },
-  { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "verifyAndListOrgChain" },
-];
+const GOVERNED_SINKS = [
+  { file: "src/infrastructure/crm/house-crm.ts", name: "listHouseholds", action: "pii.view" },
+  { file: "src/infrastructure/wire.ts", name: "startAccountOpening", action: "execution.initiate" },
+  { file: "src/infrastructure/audit/audit-store.ts", name: "verifyAndListOrgChain", action: "audit.export" },
+] as const;
+
+interface GovernedRouteEntry {
+  readonly file: string;
+  readonly handler: string;
+  readonly action: string;
+  readonly sink: string;
+  readonly sinkFile?: string;
+}
+
+function normalizedPath(path: string): string {
+  const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
+  return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
+}
+
+function callResolvesTo(
+  call: CallExpression,
+  file: string,
+  name: string,
+): boolean {
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return target?.getName() === name &&
+    target.getDeclarations().some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) === file
+    );
+}
+
+function governedSinkForCall(
+  call: CallExpression,
+): (typeof GOVERNED_SINKS)[number] | null {
+  return GOVERNED_SINKS.find((sink) =>
+    callResolvesTo(call, sink.file, sink.name)
+  ) ?? null;
+}
+
+export function discoverGovernedRoutes(
+  project: Project,
+): { entries: GovernedRouteEntry[]; violations: string[] } {
+  const entries: GovernedRouteEntry[] = [];
+  const violations: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!/^src\/app\/.*\/route\.ts$/.test(file)) continue;
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const sink = governedSinkForCall(call);
+      if (!sink) continue;
+      const handler = call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
+      if (!handler?.isExported() || !handler.getName()) {
+        violations.push(
+          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported route handler`,
+        );
+        continue;
+      }
+      entries.push({
+        file,
+        handler: handler.getName()!,
+        action: sink.action,
+        sink: sink.name,
+        sinkFile: sink.file,
+      });
+    }
+  }
+  return {
+    entries: entries.filter((entry, index) =>
+      entries.findIndex((candidate) =>
+        candidate.file === entry.file &&
+        candidate.handler === entry.handler &&
+        candidate.sink === entry.sink &&
+        candidate.sinkFile === entry.sinkFile
+      ) === index
+    ),
+    violations,
+  };
+}
+
+function governedTestProject(route: string): Project {
+  return inMemoryProject({
+    "/src/app/_server/context.ts": `
+      export async function requireActionGrant(req: Request, action: string): Promise<any> {
+        return { ok: true };
+      }
+      export function errorResponse(error: unknown): Response {
+        return new Response();
+      }
+    `,
+    "/src/app/api/audit/route.ts": `
+      import { requireActionGrant, errorResponse } from "@app/_server/context";
+      ${route}
+    `,
+  });
+}
+
+function governedDiscoveryProject(route: string): Project {
+  return inMemoryProject({
+    "/src/app/_server/context.ts": `
+      export async function requireActionGrant(req: Request, action: string): Promise<any> {
+        return { ok: true };
+      }
+      export function errorResponse(error: unknown): Response {
+        return new Response();
+      }
+    `,
+    "/src/infrastructure/audit/audit-store.ts": `
+      export function verifyAndListOrgChain(db: unknown, tenant: unknown): unknown {
+        return { db, tenant };
+      }
+    `,
+    "/src/app/api/other/route.ts": route,
+  });
+}
 
 function authDeclaration(
   statement: Statement,
@@ -48,8 +167,17 @@ function authDeclaration(
   if (initializer && Node.isAwaitExpression(initializer)) {
     initializer = initializer.getExpression();
   }
-  if (!initializer || !Node.isCallExpression(initializer)) return null;
-  if (initializer.getExpression().getText() !== "requireActionGrant") return null;
+  if (
+    !initializer ||
+    !Node.isCallExpression(initializer) ||
+    !callResolvesTo(
+      initializer,
+      "src/app/_server/context.ts",
+      "requireActionGrant",
+    )
+  ) {
+    return null;
+  }
   const args = initializer.getArguments();
   if (
     args[0]?.getText() !== "req" ||
@@ -72,14 +200,18 @@ function isFailClosedGuard(statement: Statement, variable: string): boolean {
   return returns.some((node) => {
     const expression = node.getExpression();
     return Node.isCallExpression(expression) &&
-      expression.getExpression().getText() === "errorResponse" &&
+      callResolvesTo(
+        expression,
+        "src/app/_server/context.ts",
+        "errorResponse",
+      ) &&
       expression.getArguments()[0]?.getText() === `${variable}.error`;
   });
 }
 
 export function detectUnwiredGovernedRoutes(
   project: Project,
-  entries: ReadonlyArray<{ file: string; handler: string; action: string; sink: string }>,
+  entries: ReadonlyArray<GovernedRouteEntry>,
 ): string[] {
   const out: string[] = [];
   for (const entry of entries) {
@@ -146,6 +278,8 @@ export function detectUnwiredGovernedRoutes(
       )
       .some((call) =>
         call.getExpression().getText() === entry.sink &&
+        (!entry.sinkFile ||
+          callResolvesTo(call, entry.sinkFile, entry.sink)) &&
         call.getArguments().some(referencesAuthorization)
       );
     if (!authorizedSink) {
@@ -178,22 +312,31 @@ describe("governed-actions fence (v3 §15.3)", () => {
   });
 
   it("enforces: every surfaced governed action is wired through requireActionGrant in its route", () => {
-    const unwired = detectUnwiredGovernedRoutes(realProject(), SURFACED);
+    const project = realSemanticProject();
+    const discovered = discoverGovernedRoutes(project);
+    expect(
+      discovered.violations,
+      `invalid governed sink call sites:\n${discovered.violations.join("\n")}`,
+    ).toEqual([]);
+    expect(
+      [...new Set(discovered.entries.map((entry) => entry.sink))].sort(),
+    ).toEqual(GOVERNED_SINKS.map((sink) => sink.name).sort());
+    const unwired = detectUnwiredGovernedRoutes(project, discovered.entries);
     expect(unwired, `unwired governed routes:\n${unwired.join("\n")}`).toEqual([]);
   });
 
   describe("detects (companion): an unwired or miswired route is caught", () => {
     it("flags a route that never calls requireActionGrant", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) { return listEverything(); }`,
-      });
+      const project = governedTestProject(
+        `export async function GET(req: Request) { return listEverything(); }`,
+      );
       const v = detectUnwiredGovernedRoutes(project, [{ file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" }]);
       expect(v.length).toBe(1);
     });
     it("flags a route wired to the WRONG action literal", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) { const a = await requireActionGrant(req, "pii.view"); }`,
-      });
+      const project = governedTestProject(
+        `export async function GET(req: Request) { const a = await requireActionGrant(req, "pii.view"); }`,
+      );
       const v = detectUnwiredGovernedRoutes(project, [{ file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" }]);
       expect(v.length).toBe(1);
     });
@@ -203,66 +346,123 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(v[0]).toContain("file missing");
     });
     it("flags authorization placed after data access", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) {
+      const project = governedTestProject(`export async function GET(req: Request) {
           const db = await getDb();
           const auth = await requireActionGrant(req, "audit.export");
           if (!auth.ok) return errorResponse(auth.error);
           return list(db, auth.value.grant.tenant);
-        }`,
-      });
+        }`);
       expect(detectUnwiredGovernedRoutes(project, [
         { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "list" },
       ])).toHaveLength(1);
     });
     it("flags a call in another HTTP verb", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `
+      const project = governedTestProject(`
           export async function POST(req: Request) {
             const auth = await requireActionGrant(req, "audit.export");
             if (!auth.ok) return errorResponse(auth.error);
             return use(auth.value);
           }
           export async function GET(req: Request) { return listEverything(); }
+        `);
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
+      ])).toHaveLength(1);
+    });
+    it("flags an ignored authorization result", () => {
+      const project = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          return listEverything();
+        }`);
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
+      ])).toHaveLength(1);
+    });
+    it("flags a superficial authorization reference that does not reach the governed sink", () => {
+      const project = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          void auth.value;
+          return listEverything();
+        }`);
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
+      ])).toHaveLength(1);
+    });
+    it("discovers a new route calling a governed sink without a manual surface entry", () => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          return verifyAndListOrgChain({}, {});
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries).toEqual([
+        {
+          file: "src/app/api/other/route.ts",
+          handler: "GET",
+          action: "audit.export",
+          sink: "verifyAndListOrgChain",
+          sinkFile: "src/infrastructure/audit/audit-store.ts",
+        },
+      ]);
+      expect(
+        detectUnwiredGovernedRoutes(project, discovered.entries),
+      ).toHaveLength(1);
+    });
+    it("rejects a route-local helper shadowing requireActionGrant", () => {
+      const project = inMemoryProject({
+        "/src/app/_server/context.ts": `
+          export function errorResponse(error: unknown): Response {
+            return new Response();
+          }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { errorResponse } from "@app/_server/context";
+          function requireActionGrant() {
+            return { ok: true, value: { grant: { tenant: {} } } };
+          }
+          export async function GET(req: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return listEverything(auth.value.grant.tenant);
+          }
         `,
       });
       expect(detectUnwiredGovernedRoutes(project, [
         { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
       ])).toHaveLength(1);
     });
-    it("flags an ignored authorization result", () => {
+    it("rejects a route-local helper shadowing errorResponse", () => {
       const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) {
-          const auth = await requireActionGrant(req, "audit.export");
-          if (!auth.ok) return errorResponse(auth.error);
-          return listEverything();
-        }`,
-      });
-      expect(detectUnwiredGovernedRoutes(project, [
-        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
-      ])).toHaveLength(1);
-    });
-    it("flags a superficial authorization reference that does not reach the governed sink", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) {
-          const auth = await requireActionGrant(req, "audit.export");
-          if (!auth.ok) return errorResponse(auth.error);
-          void auth.value;
-          return listEverything();
-        }`,
+        "/src/app/_server/context.ts": `
+          export async function requireActionGrant(req: Request, action: string): Promise<any> {
+            return { ok: true };
+          }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { requireActionGrant } from "@app/_server/context";
+          function errorResponse(): Response {
+            return new Response();
+          }
+          export async function GET(req: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return listEverything(auth.value.grant.tenant);
+          }
+        `,
       });
       expect(detectUnwiredGovernedRoutes(project, [
         { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
       ])).toHaveLength(1);
     });
     it("passes a correctly wired route", () => {
-      const project = inMemoryProject({
-        "/src/app/api/audit/route.ts": `export async function GET(req: Request) {
+      const project = governedTestProject(`export async function GET(req: Request) {
           const auth = await requireActionGrant(req, "audit.export");
           if (!auth.ok) return errorResponse(auth.error);
           return list(auth.value.grant.tenant);
-        }`,
-      });
+        }`);
       expect(detectUnwiredGovernedRoutes(project, [{ file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "list" }])).toEqual([]);
     });
   });

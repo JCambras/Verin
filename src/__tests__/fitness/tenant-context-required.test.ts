@@ -21,6 +21,16 @@ const REPO_MODULE_DIRS = [
 ];
 
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
+  { ref: "src/infrastructure/store/db.ts :: createDbFromDump", why: "global database restoration factory" },
+  { ref: "src/infrastructure/store/db.ts :: createDb", why: "global database connection factory" },
+  { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
+  { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
+  { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
+  { ref: "src/infrastructure/audit/hash-chain.ts :: canonicalize", why: "pure hash-chain serialization" },
+  { ref: "src/infrastructure/audit/hash-chain.ts :: computeEntryHash", why: "pure hash-chain computation" },
+  { ref: "src/infrastructure/audit/hash-chain.ts :: verifyChain", why: "pure hash-chain verification" },
+  { ref: "src/infrastructure/identity/password.ts :: hashPassword", why: "pure credential hashing" },
+  { ref: "src/infrastructure/identity/password.ts :: verifyPassword", why: "pure credential verification" },
   { ref: "src/infrastructure/identity/identity-store.ts :: findUserByEmail", why: "login resolves the tenant from the identity row" },
   { ref: "src/infrastructure/identity/identity-store.ts :: getPasswordHash", why: "user-PK capability before authentication" },
   { ref: "src/infrastructure/identity/identity-store.ts :: authenticate", why: "identity boundary that produces the sealed tenant" },
@@ -29,8 +39,10 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/identity/identity-store.ts :: deleteDeadSessions", why: "global session maintenance" },
   { ref: "src/infrastructure/identity/session.ts :: resolveSession", why: "signed-cookie identity boundary" },
   { ref: "src/infrastructure/identity/session.ts :: resolveAndRenewSession", why: "signed-cookie identity boundary" },
+  { ref: "src/infrastructure/identity/session.ts :: signSessionCookie", why: "pure signed-cookie creation" },
+  { ref: "src/infrastructure/identity/session.ts :: parseSignedCookie", why: "pure signed-cookie verification" },
+  { ref: "src/infrastructure/identity/session.ts :: requireRole", why: "pure role authorization" },
   { ref: "src/infrastructure/crm/application-store.ts :: getApplicationByToken", why: "e-sign capability load" },
-  { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
   { ref: "src/infrastructure/store/execution-store.ts :: makeExecutionStore", why: "factory whose returned port is checked independently" },
   { ref: "src/infrastructure/audit/audit-store.ts :: enqueueAudit", why: "transaction-local auditedWrite internal" },
   { ref: "src/infrastructure/audit/audit-store.ts :: discardedAuditEventWork", why: "non-persisting login constant work" },
@@ -73,19 +85,6 @@ function declaredAs(type: Type, file: string, name: string): boolean {
   return false;
 }
 
-function isSqlType(type: Type): boolean {
-  return ["SqlDb", "SqlQueryable", "SqlTx"].some((name) =>
-    declaredAs(type, "src/infrastructure/store/db.ts", name)
-  );
-}
-
-function carriesSql(type: Type): boolean {
-  if (isSqlType(type)) return true;
-  const property = type.getProperty("db");
-  const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
-  return Boolean(declaration && isSqlType(property!.getTypeAtLocation(declaration)));
-}
-
 function carriesTenant(type: Type): boolean {
   if (
     declaredAs(type, "src/contracts/tenant.ts", "TenantContext") ||
@@ -112,7 +111,6 @@ function carriesTenant(type: Type): boolean {
 interface RepositoryEntry {
   readonly name: string;
   readonly signatures: Signature[];
-  readonly boundSql: boolean;
 }
 
 function callableMembers(
@@ -122,6 +120,25 @@ function callableMembers(
   const entries: Array<{ name: string; signatures: Signature[] }> = [];
   const direct = type.getCallSignatures();
   if (direct.length) entries.push({ name: owner, signatures: direct });
+  if (
+    type.isString() ||
+    type.isStringLiteral() ||
+    type.isNumber() ||
+    type.isNumberLiteral() ||
+    type.isBoolean() ||
+    type.isBooleanLiteral()
+  ) {
+    return entries;
+  }
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  if (
+    symbol &&
+    !symbol.getDeclarations().some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+    )
+  ) {
+    return entries;
+  }
   for (const property of type.getProperties()) {
     const declaration = property.getValueDeclaration() ??
       property.getDeclarations()[0];
@@ -183,7 +200,6 @@ export function detectMissingTenantParams(
         entries.push({
           name: fn.getName() ?? "<anonymous>",
           signatures: [fn.getSignature()],
-          boundSql: false,
         });
       }
     }
@@ -193,7 +209,6 @@ export function detectMissingTenantParams(
         entries.push({
           name: member.name,
           signatures: member.signatures,
-          boundSql: false,
         });
       }
     }
@@ -204,20 +219,15 @@ export function detectMissingTenantParams(
         entries.push({
           name: member.name,
           signatures: member.signatures,
-          boundSql: false,
         });
       }
     }
     for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
-      const boundSql = cls.getConstructors().some((constructor) =>
-        constructor.getParameters().some((parameter) => carriesSql(parameter.getType()))
-      );
       for (const method of cls.getMethods()) {
         if (method.getScope() === "private" || method.getScope() === "protected") continue;
         entries.push({
           name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
           signatures: [method.getSignature()],
-          boundSql,
         });
       }
     }
@@ -226,13 +236,12 @@ export function detectMissingTenantParams(
       const ref = `${normalized} :: ${entry.name}`;
       if (escapes.has(ref)) continue;
       const unscoped = entry.signatures.some((signature) =>
-        (entry.boundSql || signatureHas(signature, carriesSql)) &&
         !signatureHas(signature, carriesTenant)
       );
       if (unscoped) {
         out.push({
           ref,
-          detail: "SQL-backed callable has no sealed tenant context",
+          detail: "repository callable has no sealed tenant context",
         });
       }
     }
@@ -304,15 +313,14 @@ describe("tenant-context-required fence", () => {
 
   it("enforces: no stale repository escapes", () => {
     const project = realSemanticProject();
-    const live = new Set<string>();
-    for (const sf of project.getSourceFiles()) {
-      const normalized = normalizedPath(sf.getFilePath());
-      for (const fn of sf.getFunctions()) {
-        if (fn.isExported() && fn.getName()) live.add(`${normalized} :: ${fn.getName()}`);
-      }
-    }
+    const unescaped = new Set(
+      detectMissingTenantParams(project, new Set())
+        .map((violation) => violation.ref),
+    );
     expect(
-      REVIEWED_ESCAPES.filter((entry) => !live.has(entry.ref)).map((entry) => entry.ref),
+      REVIEWED_ESCAPES
+        .filter((entry) => !unescaped.has(entry.ref))
+        .map((entry) => entry.ref),
     ).toEqual([]);
   });
 
@@ -365,6 +373,24 @@ describe("tenant-context-required fence", () => {
         type Read = (db: SqlDb) => unknown;
         export const listAll: Read = (db) => db.query("SELECT 1");
       `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
+    });
+
+    it("flags an exported repository function that obtains its database internally", () => {
+      const project = repositoryFixture(`
+        import { getDb } from "../store/db";
+        export async function listAll() {
+          const db = await getDb();
+          return db.query("SELECT 1");
+        }
+      `, {
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlQueryable { query(sql: string): unknown }
+          export interface SqlTx extends SqlQueryable {}
+          export interface SqlDb extends SqlQueryable {}
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+      });
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
     });
 

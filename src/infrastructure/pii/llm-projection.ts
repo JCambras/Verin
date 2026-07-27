@@ -3,7 +3,7 @@ import { appError, type AppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import {
   parseMaskedLlmRequest,
-  SLOT_NAME_RE,
+  SLOT_ID_RE,
   type LlmPurpose,
   type MaskedLlmRequest,
   type SlotPlaceholder,
@@ -13,7 +13,7 @@ import { tokenizeText, tokenizeRecord } from "./tokenize";
 declare const EntityMaskBindingBrand: unique symbol;
 
 export interface EntityMaskBinding extends PIIBearing {
-  readonly slotName: string;
+  readonly slotId: string;
   readonly slotType: "subject" | "account-ref";
   readonly rawValues: readonly string[];
   readonly [EntityMaskBindingBrand]: "EntityMaskBinding";
@@ -31,13 +31,13 @@ const ENTITY_BINDING_SEAL = Symbol("verin.entity-mask-binding.seal");
 const ENTITY_BINDINGS = new WeakSet<object>();
 
 export function bindEntityMask(input: {
-  readonly slotName: string;
+  readonly slotId: string;
   readonly slotType: "subject" | "account-ref";
   readonly rawValues: readonly string[];
 }): EntityMaskBinding {
   const rawValues = [...new Set(input.rawValues.map((value) => value.trim()))];
   if (
-    !SLOT_NAME_RE.test(input.slotName) ||
+    !SLOT_ID_RE.test(input.slotId) ||
     rawValues.length === 0 ||
     rawValues.some((value) => value.length < 2)
   ) {
@@ -45,7 +45,7 @@ export function bindEntityMask(input: {
   }
   const binding = Object.defineProperty(
     {
-      slotName: input.slotName,
+      slotId: input.slotId,
       slotType: input.slotType,
       rawValues: Object.freeze(rawValues),
     },
@@ -63,7 +63,7 @@ function isEntityMaskBinding(value: unknown): value is EntityMaskBinding {
 }
 
 interface SensitiveMask extends PIIBearing {
-  readonly slotName: string;
+  readonly slotId: string;
   readonly rawText: string;
 }
 
@@ -71,7 +71,7 @@ function masksFromBindings(
   bindings: readonly EntityMaskBinding[],
 ): readonly SensitiveMask[] {
   return bindings.flatMap((binding) =>
-    binding.rawValues.map((rawText) => ({ slotName: binding.slotName, rawText }))
+    binding.rawValues.map((rawText) => ({ slotId: binding.slotId, rawText }))
   );
 }
 
@@ -88,7 +88,7 @@ function maskText(text: string, masks: readonly SensitiveMask[]): string {
   for (const mask of masks) {
     masked = masked.replace(
       new RegExp(escapeRegExp(mask.rawText), "gi"),
-      () => `{{${mask.slotName}}}`,
+      () => `{{${mask.slotId}}}`,
     );
   }
   return masked;
@@ -133,7 +133,7 @@ function masksAreValid(input: EvidenceProjectionInput): boolean {
     !input.slots.every((slot) =>
       typeof slot === "object" &&
       slot !== null &&
-      typeof slot.slotName === "string" &&
+      typeof slot.slotId === "string" &&
       typeof slot.slotType === "string"
     ) ||
     !Array.isArray(input.bindings) ||
@@ -141,22 +141,22 @@ function masksAreValid(input: EvidenceProjectionInput): boolean {
   ) {
     return false;
   }
-  const slots = new Map(input.slots.map((slot) => [slot.slotName, slot.slotType]));
+  const slots = new Map(input.slots.map((slot) => [slot.slotId, slot.slotType]));
   const sensitiveSlots = input.slots
     .filter((slot) =>
       slot.slotType === "subject" || slot.slotType === "account-ref"
     )
-    .map((slot) => slot.slotName);
-  const maskedSlots = new Set(input.bindings.map((binding) => binding.slotName));
+    .map((slot) => slot.slotId);
+  const maskedSlots = new Set(input.bindings.map((binding) => binding.slotId));
   if (
     (input.purpose === "intent-shaping" && sensitiveSlots.length === 0) ||
     maskedSlots.size !== input.bindings.length ||
-    sensitiveSlots.some((slotName) => !maskedSlots.has(slotName))
+    sensitiveSlots.some((slotId) => !maskedSlots.has(slotId))
   ) {
     return false;
   }
   return input.bindings.every((binding) => {
-    const slotType = slots.get(binding.slotName);
+    const slotType = slots.get(binding.slotId);
     return slotType === binding.slotType &&
       binding.rawValues.some((rawText) =>
         input.requestText.toLocaleLowerCase().includes(rawText.toLocaleLowerCase()) ||
