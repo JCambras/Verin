@@ -30,6 +30,7 @@ import {
   IANA_TIME_ZONE_DATA_VERSION,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   TimeZoneSchema,
+  isTimeZoneInRecordedRegistry,
 } from "../time-zone";
 export { TimeZoneSchema };
 
@@ -128,6 +129,16 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
     bundle.evidenceSnapshotRefs.forEach((ref, index) =>
       requireSameFirm(ref, ["evidenceSnapshotRefs", index, "firmId"]),
     );
+    // TimeZoneSchema spans every supported registry so an older bundle stays
+    // parseable; the registry THIS bundle is held to is the one it recorded, which
+    // is what makes the recorded version a replay input rather than a label.
+    if (!isTimeZoneInRecordedRegistry(bundle.timeZoneDataVersion, bundle.timeZone)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "timeZone must belong to the registry named by timeZoneDataVersion",
+        path: ["timeZone"],
+      });
+    }
   })
   .readonly();
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

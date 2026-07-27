@@ -41,32 +41,48 @@ parse time, not by reviewer discipline. Three constraints meet here:
   every nested projected object, array, union arm, and optional property. Explicit undefined optional
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
-  and migration story.
+  and migration story. The fingerprint digests Zod's JSON Schema EMITTER output, which is a representation
+  detail rather than a property of these contracts: a Zod upgrade that changes only how an unchanged schema
+  is emitted (`$defs` naming, `additionalProperties`, `required` ordering) is deliberately reviewed and
+  RE-PINNED **without** a preimage-version bump and **without** regenerating any recorded
+  `bundleHash`/`decisionHash`, which hash canonical payload bytes an emitter change cannot touch. The
+  re-pin is permitted only once evidence shows the project-owned schema semantics AND the canonical
+  projection bytes are unchanged - the fixture digest tests must pass unmodified. The fingerprint stays
+  blocking precisely so a dependency bump forces that review instead of silently altering the contract.
 - **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.7.0 schema and
-  1.0.0 canonical serializer. It admits all 341 `Zone` identifiers
-  derived from `iana-tzdb/2026b`'s primary data files in the SHA-256-locked registry, canonicalizes
+  1.0.0 canonical serializer. Its `timeZone` must belong to the registry the bundle's OWN
+  `timeZoneDataVersion` names - today all 341 `Zone` identifiers derived from `iana-tzdb/2026b`'s
+  primary data files in the SHA-256-locked registry. It canonicalizes
   identifier casing, and rejects `Link` aliases, so replay validation never
   changes with host ICU data or gives aliases distinct replay bytes. Set-like instruction-version
   and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
   not only in the hash projection. The parsed bundle remains deeply frozen.
-- **Time-zone registry versions are a MAP, not a literal:** `timeZoneDataVersion` is an enum
-  derived from the keys of a supported-registry map (`iana-tzdb/2026b` is the only shipped entry).
-  The field exists so a recorded bundle can be replayed against the registry it was evaluated
-  with; a single-version literal would make every persisted bundle unparseable the day a newer
-  release ships, which is precisely the replay guarantee the field is there to provide. Entries are
-  ADDITIVE - adopting a future release adds a key and never removes one. (This records the
-  contract only; the replay engine itself remains prompt 19.)
+- **Time-zone registry versions are a MAP, and the map is CONSULTED:** `timeZoneDataVersion` is an
+  enum derived from the keys of a supported-registry map (`iana-tzdb/2026b` is the only shipped
+  entry), and the map's VALUES decide validity: a bundle's `timeZone` is checked against the
+  registry that bundle's own recorded version names, while the standalone `TimeZone` admits the
+  union of every supported registry. Both halves are needed. A single-version literal would make
+  every persisted bundle unparseable the day a newer release ships; a `TimeZone` closed over only
+  the newest registry would do the same to any bundle naming a `Zone` the newer release demoted to
+  a `Link` (tzdb does this routinely - `America/Nipigon`, `America/Godthab`, `Europe/Uzhgorod`) -
+  and a union with no per-bundle check would let a NEW bundle claim a zone its recorded release
+  never had. Entries are ADDITIVE - adopting a future release adds a key and never removes one. The
+  version-keyed selection is proven on a CONSTRUCTED two-registry map, because with one shipped
+  registry "the recorded version selects the registry" and "there is one registry" are
+  indistinguishable through the shipped map alone. (This records the contract only; the replay
+  engine itself remains prompt 19.)
 - **Link aliases canonicalize at the CONFIGURATION boundary, never at the replay boundary:** the
   pinned release's 257 `Link` names are SHA-256-locked in their own registry alongside the 341
   `Zone` names, resolved to their canonical `Zone` target. `FIRM_TIMEZONE` therefore accepts any of
   the 598 identifiers of `iana-tzdb/2026b` - including long-legal spellings such as `UTC`,
   `US/Eastern`, `Asia/Calcutta`, `Europe/Kiev`, and `Africa/Accra` - and stores only the canonical
   `Zone` (`Etc/UTC`, `America/New_York`, `Asia/Kolkata`, `Europe/Kyiv`, `Africa/Abidjan`).
-  `TimeZone` itself stays closed over the 341 `Zone` names, so one zone still has exactly one
-  persisted and hashed spelling. **Migration:** no deployment action is required - a
+  `TimeZone` itself stays closed over supported-registry `Zone` names (341 today), so one zone still
+  has exactly one persisted and hashed spelling. **Migration:** no deployment action is required - a
   `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
-  its canonical Zone rather than failing closed. `TimeZone` is branded, so a bare `string` cannot
-  reach a time-zone field without parsing through the registry.
+  its canonical Zone rather than failing closed. `TimeZone` is branded and `timeZoneDataVersion` is
+  typed by the registry map's key union, so neither a bare `string` nor an unshipped version string
+  can reach a replay field without parsing.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
   snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target,
   reservation, verification-rule, secure request, secure event, and secure blob links are strict
@@ -74,8 +90,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
   collections reject duplicates and normalize by firm then opaque ID. Decision-record refinements recursively
   check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
-  execution steps, compensating actions, actor roles, authority roles, and evidence-supplier roles,
-  rejecting every cross-tenant link. Approval-stage arrays normalize by their explicit `order`.
+  actor roles, authority roles, and evidence-supplier roles, rejecting every cross-tenant link. For the
+  execution plan the record binds ONE edge per step - the step's `targetRef` - because the action and plan
+  refinements below already bind every reference inside an action to that action's target and every
+  step's and compensation's target to the first step's; re-walking them here would be a second copy of
+  the same rule to keep in sync by hand. Approval-stage arrays normalize by their explicit `order`.
   Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **Retry-safe external actions:** execution steps and their non-recursive compensating actions share one

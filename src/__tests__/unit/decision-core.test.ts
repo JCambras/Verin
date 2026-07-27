@@ -18,6 +18,7 @@ import {
   EvidenceSnapshotRefSchema,
   TIME_ZONE_DATA_VERSION,
   TimeZoneSchema,
+  type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
 import {
@@ -51,6 +52,8 @@ import {
   LinkResolvedTimeZoneSchema,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   SUPPORTED_IANA_TIME_ZONE_REGISTRIES,
+  isTimeZoneInRecordedRegistry,
+  timeZoneRegistryMembership,
   type TimeZone,
 } from "@contracts/time-zone";
 
@@ -266,22 +269,86 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     }
   });
 
-  it("admits every SUPPORTED registry version so a recorded bundle stays replayable", () => {
+  it("selects the registry a bundle RECORDS, proven on a constructed multi-registry map", () => {
     // The recorded version exists so a bundle can be replayed against the registry it
-    // was evaluated with. A single-version literal would make that impossible: the day
-    // a newer release ships, every stored bundle becomes a parse error.
-    expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
+    // was evaluated with. Asserting that through the SHIPPED map can only restate that
+    // its one key is its one key - with a single registry, "the recorded version picks
+    // the registry" and "there is one registry" are indistinguishable. So construct the
+    // two-registry condition the map exists for and probe the selection directly.
+    const older = "iana-tzdb/probe-older";
+    const newer = "iana-tzdb/probe-newer";
+    // tzdb routinely demotes a Zone to a Link: America/Nipigon is a Zone in the older
+    // release and gone from the newer one. A bundle stamped with the older version must
+    // still validate - and hash-verify - against the release it actually recorded.
+    const membership = timeZoneRegistryMembership({
+      [older]: ["America/Nipigon", "America/Toronto"],
+      [newer]: ["America/Toronto"],
+    });
+    expect(membership(older, "America/Nipigon")).toBe(true);
+    expect(membership(newer, "America/Nipigon")).toBe(false);
+    expect(membership(older, "America/Toronto")).toBe(true);
+    expect(membership(newer, "America/Toronto")).toBe(true);
+    expect(membership("iana-tzdb/never-shipped", "America/Toronto")).toBe(false);
+
+    // The boundary consumes exactly that selection over the SHIPPED map - not a
+    // free-standing enum that closes over whichever release ships today.
     expect(Object.keys(SUPPORTED_IANA_TIME_ZONE_REGISTRIES)).toEqual([
       ...SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
     ]);
+    expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
-      expect(SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version]).toBeDefined();
+      for (const zone of ["America/New_York", "Etc/UTC", "Africa/Accra", "Not/AZone"]) {
+        expect(isTimeZoneInRecordedRegistry(version, zone)).toBe(
+          SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version].includes(zone),
+        );
+      }
       expect(
         DecisionInputBundleSchema.safeParse({ ...validBundle, timeZoneDataVersion: version }).success,
       ).toBe(true);
     }
+    expect(isTimeZoneInRecordedRegistry("iana-tzdb/1970a", "America/New_York")).toBe(false);
     expect(
       DecisionInputBundleSchema.safeParse({ ...validBundle, timeZoneDataVersion: "iana-tzdb/1970a" }).success,
+    ).toBe(false);
+
+    // A standalone TimeZone spans every supported registry (so a historical Zone stays
+    // parseable), while a BUNDLE is held to the one it recorded. Exactly one registry
+    // ships, so the two sets coincide and no input can currently tell them apart -
+    // asserted here rather than left implied, so this case cannot look covered while
+    // being empty. Adopting a second release makes the loop below live.
+    expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toHaveLength(1);
+    const spanningRegistries = new Set(
+      SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS.flatMap((version) => [
+        ...SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version],
+      ]),
+    );
+    for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      for (const zone of spanningRegistries) {
+        if (SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version].includes(zone)) continue;
+        expect(TimeZoneSchema.safeParse(zone).success).toBe(true);
+        expect(
+          DecisionInputBundleSchema.safeParse({
+            ...validBundle,
+            timeZone: zone,
+            timeZoneDataVersion: version,
+          }).success,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("types timeZoneDataVersion as the supported-version union, not as a bare string", () => {
+    // COMPILE-TIME fence, like the TimeZone brand below: the version enum is derived
+    // from Object.keys(), whose result is `string[]` unless the registry map's key
+    // union is carried through it. If that boundary collapses, the suppression here
+    // becomes an unused directive and `pnpm typecheck` fails - a replay-metadata field
+    // would otherwise accept any string without ever parsing.
+    // @ts-expect-error - an unshipped registry version is NOT a DataVersion.
+    const unsupported: DecisionInputBundle["timeZoneDataVersion"] = "iana-tzdb/1970a";
+    const supported: DecisionInputBundle["timeZoneDataVersion"] = IANA_TIME_ZONE_DATA_VERSION;
+    expect(supported).toBe(IANA_TIME_ZONE_DATA_VERSION);
+    expect(
+      DecisionInputBundleSchema.safeParse({ ...validBundle, timeZoneDataVersion: unsupported }).success,
     ).toBe(false);
   });
 

@@ -764,3 +764,36 @@ without adding evaluator, policy, or execution behavior.
 **Revert path:** restore the 1.6.0 schemas, fixtures, fingerprints, and digests together; return
 `timeZoneDataVersion` to its literal and the config boundary to Zone-only validation; remove the Link
 registry, the shared comparator helpers, and the cycle detector; and return the contracts ceiling to 2200.
+
+### D-052 · 2026-07-27 · captain-decision · The replay registry map is consulted, and one tenant edge is not checked twice
+
+The supported-registry map now decides validity instead of only naming versions. A bundle's `timeZone`
+is validated against the registry its OWN `timeZoneDataVersion` names, while a standalone `TimeZone`
+admits the union of every supported registry. Both halves are required: a `TimeZone` closed over the
+newest registry would make a persisted bundle unparseable the moment a later release demotes one of its
+Zones to a Link (tzdb does this routinely), and a union with no per-bundle check would let a NEW bundle
+claim a zone its recorded release never had. `timeZoneDataVersion` is typed by the map's key union again,
+so an arbitrary string cannot reach a replay-metadata field without parsing.
+
+The version-keyed selection is proven on a CONSTRUCTED two-registry map. With one shipped registry, "the
+recorded version selects the registry" and "there is one registry" are indistinguishable through the
+shipped map, so the prior companion could only assert that its keys were its keys.
+
+`requireExternalAction` in the decision record collapses to the single step-target edge that adds
+information: `execution.ts` already binds every reference inside an action to that action's own
+`targetRef`, and every step's and compensation's `targetRef` to the first step's. The removed traversal
+was a hand-synchronized second copy; a coherent other-tenant plan inside a decision - the one case only
+the record can see - is now an explicit fence case.
+
+`HASH_PROJECTION_SCHEMA_FINGERPRINTS` keeps its Zod-emitter digest and gains its maintenance rule: a Zod
+upgrade that changes only emitter representation is reviewed and re-pinned WITHOUT a preimage-version bump
+and WITHOUT regenerating recorded hashes, and only once the schema semantics and canonical projection
+bytes are shown unchanged. Schema and preimage versions stay 1.7.0 - no projected field, byte, or digest
+changes.
+**Why:** these are the bounded F58-F61 review corrections. They close a replay-registry map that was
+declared but never read, a replay-version type that had degenerated to `string`, a duplicated tenant
+traversal, and a blocking fingerprint whose maintenance path pointed at an unnecessary data migration.
+**Revert path:** return `TimeZone` to the single shipped registry and drop the bundle's registry check,
+restore the `Object.keys(...) as [string, ...string[]]` cast, restore the full external-action traversal
+in `decision.ts`, and remove the fingerprint maintenance rule from the constant, ADR-0029, and the
+fixtures README.

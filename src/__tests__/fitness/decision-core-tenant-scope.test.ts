@@ -66,6 +66,19 @@ type DecisionFixture = Record<string, unknown> & {
 const decisionFixture = (name: string): DecisionFixture =>
   fixture(name) as DecisionFixture;
 
+/** Re-tenants an entire subtree, producing a value that is COHERENT in another firm. */
+const reTenant = <T>(value: T, firmId: string): T => {
+  if (Array.isArray(value)) return value.map((item) => reTenant(item, firmId)) as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) =>
+        key === "firmId" ? [key, firmId] : [key, reTenant(nested, firmId)],
+      ),
+    ) as T;
+  }
+  return value;
+};
+
 const crossTenantSource = (source: SourceRef): SourceRef => ({
   ...source,
   sourceRef: { ...source.sourceRef, firmId: "firm-b" },
@@ -487,6 +500,13 @@ describe("decision-core tenant-scope fence", () => {
             steps: [{ ...step, targetRef: { ...step.targetRef, firmId: "firm-b" } }],
           },
         },
+      },
+      // A plan that is INTERNALLY coherent in another firm: execution.ts's own
+      // refinements are all satisfied, so the record-level step-target edge is the
+      // only thing standing between a firm-a decision and a firm-b plan.
+      {
+        ...proceed,
+        result: { ...proceed.result, executionPlan: reTenant(executionPlan, "firm-b") },
       },
       {
         ...proceed,
