@@ -57,7 +57,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Four Playwright spec files** covering smoke, happy walkthrough, failure/access-control, and console
   CRUD plus axe, green on a non-UTC clock.
 
-**Governance:** 29 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 32 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -72,7 +72,8 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-029).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-031; prompt 5 and prompt 6 each
+claimed PF-027..PF-029 in parallel — see the numbering note in the log, entries cite fence file paths).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -81,7 +82,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
-| `no-secret-fallback` / no-live-org-domain / placeholder-.env | config hygiene (#7) | PF-006 |
+| `no-secret-fallback` / no-live-org-domain / placeholder-.env / `SecretValue` containment | config hygiene + secret containment (#7, v3 §15.4) | PF-006, PF-031 |
 | `line-budget` (platform ratchet + separate presentation) / `max-file-size` | budgets (#1,#10) | companions |
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
@@ -105,6 +106,11 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `decision-core-illegal-states` | proceed requires usable authority with future expiration + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
 | `decision-core-tenant-scope` | registered prompt-5 reference boundaries reject cross-tenant values; an exact schema-derived inventory follows aliases, wrappers, and composites and fails on any unregistered scoped-reference collection (v3 invariant 2, ADR-0029, D-045-D-058) | PF-028 + companions |
 | `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation at standalone and plan boundaries; idempotency keys cannot alias; set-like execution references are duplicate-free and canonical (#16, ADR-0029, D-047-D-058) | PF-029 + companions |
+| `tenant-context-required` (ts-morph: sealed `TenantContext` on every repository/port signature) | every repository/port call is tenant-scoped — missing tenant context cannot compile or parse (#7, v3 §15.2, invariant 2) | PF-027 + companions |
+| `tokenized-factory-only` (AST: `Tokenized<T>` + the seven sealed security types construct only via their factories) | PII leaves for a model only as scrubber-minted `Tokenized<T>` (#3, #13, v3 §15) | PF-028 + companions |
+| `llm-pii-boundary` (import-reachability: no `PIIBearing`-marked type reachable from `src/infrastructure/llm/`) | no PII-bearing type reaches a model surface (#3, #13, v3 invariant 1, ADR-0031) | PF-029 + companions |
+| `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-030 + companions |
+| `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-032 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

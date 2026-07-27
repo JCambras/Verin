@@ -17,8 +17,11 @@ days. Please allow coordinated disclosure before any public write-up.
   Install scripts are blocked by default (pnpm), allowed only for an explicit, reviewed list.
 - **Secrets & tenancy hygiene:** `process.env` is read only in `src/infrastructure/config` (fenced);
   `.env.example` is placeholder-only; CI fails on any live org domain, username, or credential in
-  committed files; `org_id` on every query; no client-controlled role headers; no secret fallbacks.
-- **Identity:** real authentication; server-side RBAC enforced at the port; SSO/OIDC-ready session design.
+  committed files; `org_id` on every query; a sealed `TenantContext` is required on every repository/port
+  call; no client-controlled role headers; no secret fallbacks; config secrets are sealed `SecretValue`s,
+  revealed only through `revealSecret` in the allowlisted HMAC consumers (never a dump, log, trace, or exception).
+- **Identity & authorization:** real authentication; server-side RBAC enforced at the port; per-action
+  authorization (a sealed `ActionGrant`) on every governed action, not a bare role check; SSO/OIDC-ready session design.
 - **Audit:** append-only, hash-chained, tamper-evident audit trail re-verified by a scheduled job.
 - **Change control:** protected `main`, no direct pushes, no self-approval; every change through an
   independent gate review (CODEOWNERS + the no-mistakes pipeline + the persona board's fresh-context rule).
