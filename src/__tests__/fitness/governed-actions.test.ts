@@ -13,6 +13,8 @@ import {
 import {
   realSemanticProject,
   inMemoryProject,
+  detectAppLayerSqlAccess,
+  isSqlExecutorCall,
   REPO_ROOT,
 } from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
@@ -57,6 +59,13 @@ interface GovernedRouteEntry {
   readonly action: string;
   readonly sink: string;
   readonly sinkFile?: string;
+  /**
+   * Which parameter of the sink is its ActionGrant. THAT argument must carry the
+   * authorized value — "some argument mentions auth.value" would let a route pass
+   * `listHouseholds(scopedDb(auth.value.tenant), body.value.grant)`, where the
+   * grant itself is client-supplied.
+   */
+  readonly grantIndex?: number | null;
 }
 
 function normalizedPath(path: string): string {
@@ -83,9 +92,13 @@ function nodeKey(node: Node): string {
 
 /**
  * Every declaration a callee expression can reach. getAliasedSymbol() unwraps
- * import/export aliases only, so a one-line LOCAL alias
- * (`const listChain = verifyAndListOrgChain`) would otherwise hide a governed
- * sink from discovery — and a route that is never discovered is never checked.
+ * import/export aliases only, so a governed sink held as a VALUE would otherwise
+ * hide from discovery — and a route that is never discovered is never checked.
+ * The value forms followed here are the ones whose call site is still visible:
+ * a local alias (`const listChain = verifyAndListOrgChain`), a property of a
+ * literal bag (`const readers = { households: listHouseholds }`), a conditional,
+ * and an array element. A sink handed to ANOTHER function has no visible call
+ * site at all and is refused outright (detectEscapedGovernedSinks).
  */
 function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] {
   const key = nodeKey(expression);
@@ -107,14 +120,35 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
   ) {
     return resolveCallTargets(expression.getRight(), seen);
   }
+  if (Node.isConditionalExpression(expression)) {
+    return [
+      ...resolveCallTargets(expression.getWhenTrue(), seen),
+      ...resolveCallTargets(expression.getWhenFalse(), seen),
+    ];
+  }
+  // `[listHouseholds][0](…)` — every element is a possible callee.
+  if (Node.isElementAccessExpression(expression)) {
+    const receiver = expression.getExpression();
+    if (Node.isArrayLiteralExpression(receiver)) {
+      return receiver.getElements().flatMap((element) =>
+        resolveCallTargets(element, seen)
+      );
+    }
+  }
   const symbol = expression.getSymbol();
   const target = symbol?.getAliasedSymbol() ?? symbol;
   const declarations = target?.getDeclarations() ?? [];
   const out = [...declarations];
   for (const declaration of declarations) {
-    if (!Node.isVariableDeclaration(declaration)) continue;
-    const initializer = declaration.getInitializer();
-    if (initializer) out.push(...resolveCallTargets(initializer, seen));
+    if (
+      Node.isVariableDeclaration(declaration) ||
+      Node.isPropertyAssignment(declaration)
+    ) {
+      const initializer = declaration.getInitializer();
+      if (initializer) out.push(...resolveCallTargets(initializer, seen));
+    } else if (Node.isShorthandPropertyAssignment(declaration)) {
+      out.push(...resolveCallTargets(declaration.getNameNode(), seen));
+    }
   }
   return out;
 }
@@ -266,6 +300,25 @@ function governedOutputAction(type: Type): string | null {
   return null;
 }
 
+/** The parameter POSITION of the sink's `ActionGrant<action>`, or null if it has none. */
+function actionGrantParameterIndex(
+  signature: Signature,
+  action: string,
+): number | null {
+  const parameters = signature.getParameters();
+  for (const [index, parameter] of parameters.entries()) {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (
+      declaration &&
+      actionGrantParameter(parameter.getTypeAtLocation(declaration), action)
+    ) {
+      return index;
+    }
+  }
+  return null;
+}
+
 function actionGrantAction(signature: Signature): string | null {
   for (const parameter of signature.getParameters()) {
     const declaration = parameter.getValueDeclaration() ??
@@ -294,32 +347,26 @@ function hasTenantBoundaryParameter(signature: Signature): boolean {
   });
 }
 
-// STATEMENT-ANCHORED. An unanchored /\bUPDATE\b/ matches the trailing row-lock
-// clause of `SELECT … FOR UPDATE` — the idiom already live in house-crm.ts — and
-// would silently drop that PII read out of governed-sink derivation.
-const SQL_MUTATION_RE = /^\s*(?:--[^\n]*\n\s*)*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i;
-const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
+// A DML head, matched against a statement whose row-LOCK clause has been removed
+// first. `SELECT … FOR UPDATE` — the idiom already live in house-crm.ts — is a
+// read, and treating it as a write would silently drop that PII read out of
+// governed-sink derivation. Anchoring at the statement start instead is not the
+// answer either: `WITH d AS (DELETE FROM …) INSERT INTO …` is a genuine write
+// whose first token is WITH, and a `/* … */`-prefixed statement is a write whose
+// first token is a comment. So: strip comments and the lock clause, then look for
+// a DML head anywhere in what remains.
+const SQL_ROW_LOCK_RE = /\bFOR\s+(?:NO\s+KEY\s+)?UPDATE\b|\bFOR\s+(?:KEY\s+)?SHARE\b/gi;
+const SQL_MUTATION_RE =
+  /\b(?:INSERT\s+INTO|UPDATE\s+(?:ONLY\s+)?["\w]|DELETE\s+FROM|TRUNCATE\b)/i;
 
 function mutatesSql(sql: string): boolean {
-  return sql.split(";").some((statement) => SQL_MUTATION_RE.test(statement));
-}
-
-/** A resolved SQL-executor call: `db.query(sql, …)` / `tx.exec(sql)`. */
-function isSqlExecutorCall(call: CallExpression): boolean {
-  const expression = call.getExpression();
-  if (
-    !Node.isPropertyAccessExpression(expression) ||
-    !SQL_EXECUTOR_METHODS.has(expression.getName())
-  ) {
-    return false;
-  }
-  return expression.getType().getCallSignatures().some((signature) => {
-    const parameter = signature.getParameters()[0];
-    const declaration = parameter?.getValueDeclaration() ??
-      parameter?.getDeclarations()[0];
-    return Boolean(parameter && declaration &&
-      parameter.getTypeAtLocation(declaration).isString());
-  });
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ")
+    .split(";")
+    .some((statement) =>
+      SQL_MUTATION_RE.test(statement.replace(SQL_ROW_LOCK_RE, " "))
+    );
 }
 
 /**
@@ -327,7 +374,11 @@ function isSqlExecutorCall(call: CallExpression): boolean {
  * the AST (not from declaration.getText(), and not from every string argument of
  * every call) is what keeps the write exemption from being one word wide: an
  * identifier named `update`, a `.update()` method call, prose saying "nothing to
- * update", and a `FOR UPDATE` row lock are all reads.
+ * update", and a `FOR UPDATE` row lock are all reads. A template's DELIMITERS are
+ * stripped (getText() would hand the matcher a leading backtick) and its
+ * interpolations become a placeholder, so an interpolated writer keeps its write
+ * exemption instead of being demanded to hold a READ grant. A hoisted SQL
+ * constant is read through its literal type, like any other statically-known text.
  */
 function sqlStatementTexts(declaration: Node): string[] {
   return declaration.getDescendantsOfKind(SyntaxKind.CallExpression)
@@ -341,7 +392,16 @@ function sqlStatementTexts(declaration: Node): string[] {
       ) {
         return [argument.getLiteralValue()];
       }
-      return Node.isTemplateExpression(argument) ? [argument.getText()] : [];
+      if (Node.isTemplateExpression(argument)) {
+        return [
+          argument.getHead().getLiteralText() +
+          argument.getTemplateSpans()
+            .map((span) => ` ? ${span.getLiteral().getLiteralText()}`)
+            .join(""),
+        ];
+      }
+      const type = argument.getType();
+      return type.isStringLiteral() ? [String(type.getLiteralValue())] : [];
     });
 }
 
@@ -517,7 +577,12 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
 }
 
 const APP_SURFACE_RE = /^src\/app\/.*\.tsx?$/;
-const ROUTE_HANDLER_RE = /^src\/app\/.*\/route\.ts$/;
+// A root-level `src/app/route.ts` is a valid route handler; the previous form
+// required a directory segment and silently excluded it.
+const ROUTE_HANDLER_RE = /^src\/app\/(?:.*\/)?route\.tsx?$/;
+// The App Router's reserved component file names. These render, they do not handle.
+const RESERVED_COMPONENT_RE =
+  /^(?:page|layout|template|default|error|global-error|loading|not-found)\.tsx?$/;
 
 /**
  * THE UNSUPPORTED-SURFACE RULE. Per-action authorization runs through
@@ -529,11 +594,129 @@ const ROUTE_HANDLER_RE = /^src\/app\/.*\/route\.ts$/;
  * not exist, reaching a governed sink from one is its own FAIL-CLOSED build
  * failure: move the sink behind a route handler. A request-less authorization
  * entry point is later architecture (ADR-0031 scope note), not a prompt-6 escape.
+ *
+ * The rule keys on what the surface IS — a "use server" module, a reserved
+ * component file name, a default-exported component — never on "not named
+ * route.ts". src/app/_server/context.ts is the standing proof that ordinary
+ * (non-surface) modules live under src/app; one that takes the framework request
+ * and wires the hook correctly satisfies this fence exactly like a route file.
  */
 const UNSUPPORTED_SURFACE_RULE =
-  "governed sinks are reachable only from a route handler (src/app/**/route.ts): " +
-  "requireActionGrant needs the framework's NextRequest, which a Server Action or " +
-  "server component never has";
+  "governed sinks are reachable only from a request-handling surface (src/app/**/route.ts " +
+  "or a handler it delegates to): requireActionGrant needs the framework's NextRequest, " +
+  "which a Server Action or server component never has";
+
+function hasUseServerDirective(statements: readonly Statement[]): boolean {
+  return statements.some((statement) => {
+    if (!Node.isExpressionStatement(statement)) return false;
+    const expression = statement.getExpression();
+    return Node.isStringLiteral(expression) &&
+      expression.getLiteralValue() === "use server";
+  });
+}
+
+/** Why this surface can never satisfy requireActionGrant, or null if it can. */
+function unsupportedSurfaceKind(sf: SourceFile, file: string): string | null {
+  if (ROUTE_HANDLER_RE.test(file)) return null;
+  if (
+    hasUseServerDirective(sf.getStatements()) ||
+    sf.getDescendantsOfKind(SyntaxKind.Block).some((block) =>
+      hasUseServerDirective(block.getStatements())
+    )
+  ) {
+    return "a Server Action";
+  }
+  const base = file.split("/").pop() ?? "";
+  if (RESERVED_COMPONENT_RE.test(base)) return "an App Router component file";
+  if (sf.getDefaultExportSymbol()) return "a default-exported component";
+  return null;
+}
+
+interface AppHandler {
+  readonly name: string;
+  readonly body: Node;
+  readonly parameters: ReadonlySet<string>;
+}
+
+/** The exported handler a call sits inside — `export function GET` or `export const GET = async (req) => …`. */
+function enclosingHandlerName(call: CallExpression): string | null {
+  for (const ancestor of call.getAncestors()) {
+    if (Node.isFunctionDeclaration(ancestor)) {
+      return ancestor.isExported() ? ancestor.getName() ?? null : null;
+    }
+    if (Node.isArrowFunction(ancestor) || Node.isFunctionExpression(ancestor)) {
+      const declaration = ancestor.getParent();
+      // A nested arrow (a withSpan callback) is still INSIDE its handler: keep
+      // walking unless this arrow is itself the exported handler.
+      if (Node.isVariableDeclaration(declaration) && declaration.isExported()) {
+        return declaration.getName();
+      }
+    }
+  }
+  return null;
+}
+
+function appHandler(sf: SourceFile, name: string): AppHandler | null {
+  const fn = sf.getFunction(name);
+  const fnBody = fn?.getBody();
+  if (fn && fnBody) {
+    return fn.isExported()
+      ? { name, body: fnBody, parameters: new Set(fn.getParameters().map((p) => p.getName())) }
+      : null;
+  }
+  const variable = sf.getVariableDeclaration(name);
+  const initializer = variable?.getInitializer();
+  if (
+    variable?.isExported() && initializer &&
+    (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+  ) {
+    return {
+      name,
+      body: initializer.getBody(),
+      parameters: new Set(initializer.getParameters().map((p) => p.getName())),
+    };
+  }
+  return null;
+}
+
+/**
+ * A governed sink handed to ANOTHER function as a value —
+ * `runReport(store, { load: listHouseholds })`. resolveCallTargets can follow a
+ * sink through a local binding because the call site is still in this file; once
+ * the sink crosses an argument boundary there is no call site to check, so the
+ * whole authorization chain would apply to nothing. Refused outright.
+ */
+function detectEscapedGovernedSinks(
+  sf: SourceFile,
+  file: string,
+  sinks: readonly GovernedSink[],
+): string[] {
+  const out: string[] = [];
+  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    for (const argument of call.getArguments()) {
+      for (const node of [argument, ...argument.getDescendants()]) {
+        if (!Node.isIdentifier(node) && !Node.isPropertyAccessExpression(node)) continue;
+        const parent = node.getParent();
+        // Invoked right here (`f(() => sink(…))`, `f(sink(…))`), or the `.name`
+        // half of a property access whose whole expression is checked separately.
+        if (Node.isCallExpression(parent) && parent.getExpression() === node) continue;
+        if (Node.isPropertyAccessExpression(parent) && parent.getNameNode() === node) continue;
+        const targets = resolveCallTargets(node);
+        const sink = sinks.find((candidate) =>
+          targets.some((declaration) =>
+            candidate.anchors.some((anchor) => nodeKey(declaration) === nodeKey(anchor))
+          )
+        );
+        if (sink) {
+          out.push(
+            `${file}:${node.getStartLineNumber()}: governed sink '${sink.name}' is passed as a VALUE — it has no call site this fence can authorize`,
+          );
+        }
+      }
+    }
+  }
+  return [...new Set(out)];
+}
 
 export function discoverGovernedRoutes(
   project: Project,
@@ -547,18 +730,20 @@ export function discoverGovernedRoutes(
     // (src/app/login/actions.ts) and server components are App Router surfaces
     // that can call a governed sink, and an unscanned surface class is an
     // unfenced one.
-    if (!APP_SURFACE_RE.test(file)) continue;
+    if (!APP_SURFACE_RE.test(file) || file.includes("/__tests__/")) continue;
+    const unsupported = unsupportedSurfaceKind(sf, file);
+    violations.push(...detectEscapedGovernedSinks(sf, file, sinks));
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const sink = governedSinkForCall(call, sinks);
       if (!sink) continue;
-      if (!ROUTE_HANDLER_RE.test(file)) {
+      if (unsupported) {
         violations.push(
-          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' on an unsupported surface — ${UNSUPPORTED_SURFACE_RULE}`,
+          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' on an unsupported surface (${unsupported}) — ${UNSUPPORTED_SURFACE_RULE}`,
         );
         continue;
       }
-      const handler = call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
-      if (!handler?.isExported() || !handler.getName()) {
+      const handler = enclosingHandlerName(call);
+      if (!handler) {
         violations.push(
           `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported app-surface handler`,
         );
@@ -566,10 +751,11 @@ export function discoverGovernedRoutes(
       }
       entries.push({
         file,
-        handler: handler.getName()!,
+        handler,
         action: sink.action,
         sink: sink.name,
         sinkFile: sink.file,
+        grantIndex: actionGrantParameterIndex(sink.signature, sink.action),
       });
     }
   }
@@ -637,11 +823,16 @@ function governedDiscoveryProject(route: string): Project {
   });
 }
 
+interface AuthBinding {
+  readonly action: string;
+  readonly variable: string;
+  readonly declaration: Node;
+}
+
 function authDeclaration(
   statement: Statement,
-  action: string,
   handlerParameters: ReadonlySet<string>,
-): { variable: string; declaration: Node } | null {
+): AuthBinding | null {
   if (!Node.isVariableStatement(statement)) return null;
   const declarations = statement.getDeclarations();
   if (declarations.length !== 1) return null;
@@ -666,16 +857,48 @@ function authDeclaration(
   // of the handler), not a name that merely reads "req" — a Server Action with
   // no request parameter therefore cannot satisfy the hook by inventing one.
   const request = args[0];
+  const action = args[1];
   if (
     !request ||
     !Node.isIdentifier(request) ||
     !handlerParameters.has(request.getText()) ||
-    !Node.isStringLiteral(args[1]) ||
-    args[1].getLiteralValue() !== action
+    !action ||
+    !Node.isStringLiteral(action)
   ) {
     return null;
   }
-  return { variable: declaration.getName(), declaration };
+  return {
+    action: action.getLiteralValue(),
+    variable: declaration.getName(),
+    declaration,
+  };
+}
+
+/**
+ * The handler's authorization PROLOGUE: consecutive (bind, fail-closed guard)
+ * pairs at the very top of the body, before any route work. A surface may need
+ * more than one authority — the audit export reads the chain under
+ * `audit.export` AND resolves actor emails under `pii.view` — so the shape is a
+ * sequence, not a single pair; the "before any route work" property is what the
+ * prologue preserves, since the first non-authorization statement ends it.
+ */
+function readAuthorizationPrologue(
+  statements: readonly Statement[],
+  handlerParameters: ReadonlySet<string>,
+): { bindings: AuthBinding[]; unguarded: AuthBinding | null; length: number } {
+  const bindings: AuthBinding[] = [];
+  let index = 0;
+  while (index < statements.length) {
+    const bound = authDeclaration(statements[index]!, handlerParameters);
+    if (!bound) break;
+    const guard = statements[index + 1];
+    if (!guard || !isFailClosedGuard(guard, bound.variable)) {
+      return { bindings, unguarded: bound, length: index };
+    }
+    bindings.push(bound);
+    index += 2;
+  }
+  return { bindings, unguarded: null, length: index };
 }
 
 function isFailClosedGuard(statement: Statement, variable: string): boolean {
@@ -718,32 +941,24 @@ export function detectUnwiredGovernedRoutes(
       out.push(`${entry.file}: file missing (surfaced action '${entry.action}' has no route)`);
       continue;
     }
-    const handler = sf.getFunction(entry.handler);
-    if (!handler?.isExported() || !handler.getBody()) {
+    const handler = appHandler(sf, entry.handler);
+    if (!handler) {
       out.push(`${entry.file}: exported ${entry.handler} handler missing`);
       continue;
     }
-    const body = handler.getBodyOrThrow();
+    const body = handler.body;
     if (!Node.isBlock(body)) {
       out.push(`${entry.file} :: ${entry.handler}: handler body must be a block`);
       continue;
     }
     const statements = body.getStatements();
-    const handlerParameters = new Set(
-      handler.getParameters().map((parameter) => parameter.getName()),
-    );
-    const auth = statements[0]
-      ? authDeclaration(statements[0], entry.action, handlerParameters)
-      : null;
+    const prologue = readAuthorizationPrologue(statements, handler.parameters);
+    const auth = prologue.bindings.find((binding) => binding.action === entry.action);
     if (!auth) {
       out.push(
-        `${entry.file} :: ${entry.handler}: first statement must bind requireActionGrant(req, "${entry.action}")`,
-      );
-      continue;
-    }
-    if (!statements[1] || !isFailClosedGuard(statements[1], auth.variable)) {
-      out.push(
-        `${entry.file} :: ${entry.handler}: authorization result must be fail-closed before route work`,
+        prologue.unguarded?.action === entry.action
+          ? `${entry.file} :: ${entry.handler}: authorization result must be fail-closed before route work`
+          : `${entry.file} :: ${entry.handler}: authorization prologue must bind requireActionGrant(req, "${entry.action}") before any route work`,
       );
       continue;
     }
@@ -754,15 +969,18 @@ export function detectUnwiredGovernedRoutes(
     // bare `auth`, `auth.error`, or `auth.valueOf()` is not the authorized payload.
     const authKey = nodeKey(auth.declaration);
     const derivedKeys = new Set<string>();
+    const declarationKeys = (node: Node): string[] => {
+      const symbol = node.getSymbol();
+      const target = symbol?.getAliasedSymbol() ?? symbol;
+      return (target?.getDeclarations() ?? []).map(nodeKey);
+    };
     const referencesAuthorization = (node: Node): boolean => {
       const identifiers = [
         ...(Node.isIdentifier(node) ? [node] : []),
         ...node.getDescendantsOfKind(SyntaxKind.Identifier),
       ];
       return identifiers.some((identifier) => {
-        const symbol = identifier.getSymbol();
-        const target = symbol?.getAliasedSymbol() ?? symbol;
-        const keys = (target?.getDeclarations() ?? []).map(nodeKey);
+        const keys = declarationKeys(identifier);
         if (keys.some((key) => derivedKeys.has(key))) return true;
         if (!keys.includes(authKey)) return false;
         const parent = identifier.getParent();
@@ -771,26 +989,56 @@ export function detectUnwiredGovernedRoutes(
           parent.getName() === "value";
       });
     };
-    for (const statement of statements.slice(2)) {
-      if (!Node.isVariableStatement(statement)) continue;
-      for (const declaration of statement.getDeclarations()) {
+    // A destructured name resolves to its BindingElement, a different node from
+    // the VariableDeclaration, so both must be marked — otherwise the ordinary
+    // `const { tenant, writeActor } = auth.value;` refactor is reported as never
+    // reaching the sink. Descendants, not just top-level statements, so a binding
+    // made inside a block or a `try` is tracked too.
+    const markDerived = (declaration: Node): void => {
+      derivedKeys.add(nodeKey(declaration));
+      for (const element of declaration.getDescendantsOfKind(SyntaxKind.BindingElement)) {
+        derivedKeys.add(nodeKey(element));
+      }
+    };
+    const routeWork = statements.slice(prologue.length);
+    for (const statement of routeWork) {
+      for (const declaration of statement.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
         const initializer = declaration.getInitializer();
-        if (initializer && referencesAuthorization(initializer)) {
-          derivedKeys.add(nodeKey(declaration));
+        if (!initializer) continue;
+        if (referencesAuthorization(initializer)) {
+          markDerived(declaration);
+          continue;
+        }
+        // `const { value: grant } = auth;` — the authorized payload reached
+        // through destructuring rather than through a `.value` access.
+        const name = declaration.getNameNode();
+        if (
+          !Node.isObjectBindingPattern(name) ||
+          !declarationKeys(initializer).includes(authKey)
+        ) continue;
+        for (const element of name.getElements()) {
+          const property = element.getPropertyNameNode()?.getText() ?? element.getName();
+          if (property === "value") markDerived(element);
         }
       }
     }
-    const authorizedSink = statements.slice(2)
+    const authorizedSink = routeWork
       .flatMap((statement) =>
         statement.getDescendantsOfKind(SyntaxKind.CallExpression)
       )
-      .some((call) =>
-        callMatchesSink(call, entry) &&
-        call.getArguments().some(referencesAuthorization)
-      );
+      .some((call) => {
+        if (!callMatchesSink(call, entry)) return false;
+        const args = call.getArguments();
+        // The GRANT argument specifically — not "some argument".
+        if (entry.grantIndex === undefined || entry.grantIndex === null) {
+          return args.some(referencesAuthorization);
+        }
+        const grantArgument = args[entry.grantIndex];
+        return Boolean(grantArgument && referencesAuthorization(grantArgument));
+      });
     if (!authorizedSink) {
       out.push(
-        `${entry.file} :: ${entry.handler}: authorized value does not reach '${entry.sink}'`,
+        `${entry.file} :: ${entry.handler}: authorized value does not reach the ActionGrant parameter of '${entry.sink}'`,
       );
     }
   }
@@ -823,6 +1071,24 @@ describe("governed-actions fence (v3 §15.3)", () => {
       violations,
       `unguarded governed sinks:\n${violations.join("\n")}`,
     ).toEqual([]);
+  });
+
+  it("enforces: no app-layer module issues raw SQL (it would escape sink derivation entirely)", () => {
+    const violations = detectAppLayerSqlAccess(realSemanticProject());
+    expect(
+      violations,
+      `app-layer persistence access:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("enforces: the derived sink set is real (a collapsed derivation would pass vacuously — charter #4)", () => {
+    const sinks = deriveGovernedSinks(realSemanticProject());
+    expect(sinks.length, "governed-sink derivation found nothing").toBeGreaterThanOrEqual(3);
+    // The two PII reads that must never lose their grant: the household listing
+    // and the audit export's actor-email resolution.
+    for (const name of ["listHouseholds", "listOrgUserEmails"]) {
+      expect(sinks.some((sink) => sink.name === name), name).toBe(true);
+    }
   });
 
   it("enforces: every surfaced governed action is wired through requireActionGrant in its route", () => {
@@ -922,6 +1188,7 @@ describe("governed-actions fence (v3 §15.3)", () => {
           action: "audit.export",
           sink: "verifyAndListOrgChain",
           sinkFile: "src/infrastructure/audit/audit-store.ts",
+          grantIndex: 1,
         },
       ]);
       expect(
@@ -1353,6 +1620,7 @@ describe("governed-actions fence (v3 §15.3)", () => {
           action: "audit.export",
           sink: "verifyAndListOrgChain",
           sinkFile: "src/infrastructure/audit/audit-store.ts",
+          grantIndex: 1,
         },
       ]);
       expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
@@ -1404,6 +1672,267 @@ describe("governed-actions fence (v3 §15.3)", () => {
           return list(auth.value.grant.tenant);
         }`);
       expect(detectUnwiredGovernedRoutes(project, [{ file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "list" }])).toEqual([]);
+    });
+
+    it("catches raw SQL in an app-layer surface", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            return db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", ["org"]);
+          }
+        `,
+      });
+      expect(detectAppLayerSqlAccess(project)).toHaveLength(1);
+      expect(detectAppLayerSqlAccess(project)[0]).toContain(
+        "src/app/api/audit/route.ts:5",
+      );
+    });
+
+    it("does not mistake a same-named non-SQL method for persistence", () => {
+      const project = inMemoryProject({
+        "/src/app/api/audit/route.ts": `
+          const cache = { query(spec: { id: string }): string { return spec.id; } };
+          export async function GET() { return cache.query({ id: "x" }); }
+        `,
+      });
+      expect(detectAppLayerSqlAccess(project)).toEqual([]);
+    });
+
+    it("rejects a client-supplied grant even when another argument carries the authorized value", () => {
+      const project = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          const body = await readBody(req);
+          return listEverything(auth.value.tenant, body.value.grant);
+        }`);
+      const entry = {
+        file: "src/app/api/audit/route.ts",
+        handler: "GET",
+        action: "audit.export",
+        sink: "listEverything",
+      };
+      expect(detectUnwiredGovernedRoutes(project, [{ ...entry, grantIndex: 1 }])).toHaveLength(1);
+      // Non-vacuity: WITHOUT the parameter position — the pre-fix "some argument
+      // mentions auth.value" rule — this same route reads as correctly wired.
+      expect(detectUnwiredGovernedRoutes(project, [entry])).toEqual([]);
+    });
+
+    it("passes a route whose GRANT argument carries the authorized value", () => {
+      const project = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          const db = await getDb();
+          return listEverything(db, auth.value);
+        }`);
+      expect(detectUnwiredGovernedRoutes(project, [{
+        file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export",
+        sink: "listEverything", grantIndex: 1,
+      }])).toEqual([]);
+    });
+
+    it("accepts an authorized payload reached through destructuring", () => {
+      for (const binding of ["const { grant } = auth.value;", "const { value: grant } = auth;"]) {
+        const project = governedTestProject(`export async function GET(req: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            ${binding}
+            return listEverything(grant);
+          }`);
+        expect(detectUnwiredGovernedRoutes(project, [{
+          file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export",
+          sink: "listEverything", grantIndex: 0,
+        }]), binding).toEqual([]);
+      }
+    });
+
+    it("accepts a handler that binds TWO grants before any route work, and rejects one bound after", () => {
+      const wired = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          const pii = await requireActionGrant(req, "pii.view");
+          if (!pii.ok) return errorResponse(pii.error);
+          const chain = await listEverything(auth.value);
+          return listEmails(pii.value);
+        }`);
+      const entries = [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything", grantIndex: 0 },
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "pii.view", sink: "listEmails", grantIndex: 0 },
+      ];
+      expect(detectUnwiredGovernedRoutes(wired, entries)).toEqual([]);
+
+      const late = governedTestProject(`export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          const chain = await listEverything(auth.value);
+          const pii = await requireActionGrant(req, "pii.view");
+          if (!pii.ok) return errorResponse(pii.error);
+          return listEmails(pii.value);
+        }`);
+      // The second authority is bound AFTER a governed read has already run.
+      expect(detectUnwiredGovernedRoutes(late, entries)).toHaveLength(1);
+    });
+
+    it("discovers a governed sink held in a literal bag, and refuses one passed as a value", () => {
+      const bagged = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        const readers = { chain: verifyAndListOrgChain };
+        export async function GET(req: Request) {
+          return readers.chain({}, {} as never);
+        }
+      `);
+      const discovered = discoverGovernedRoutes(bagged);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toHaveLength(1);
+      expect(detectUnwiredGovernedRoutes(bagged, discovered.entries)).toHaveLength(1);
+
+      const escaped = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        declare function runReport(load: unknown): unknown;
+        export async function GET(req: Request) {
+          return runReport({ load: verifyAndListOrgChain });
+        }
+      `);
+      const leak = discoverGovernedRoutes(escaped);
+      expect(leak.entries).toEqual([]);
+      expect(leak.violations).toHaveLength(1);
+      expect(leak.violations[0]).toContain("passed as a VALUE");
+    });
+
+    it("discovers an arrow-function handler and a root-level src/app/route.ts", () => {
+      const project = inMemoryProject({
+        "/src/app/_server/context.ts": `
+          export async function requireActionGrant(req: Request, action: string): Promise<any> { return { ok: true }; }
+          export function errorResponse(error: unknown): Response { return new Response(); }
+        `,
+        "/src/contracts/authz.ts": `
+          export interface ActionGrant<A extends string> { action: A }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
+            void value; void action;
+          }
+        `,
+        "/src/infrastructure/audit/audit-store.ts": `
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          export function verifyAndListOrgChain(db: unknown, grant: ActionGrant<"audit.export">): unknown {
+            assertActionGrant(grant, "audit.export");
+            return { db, grant };
+          }
+        `,
+        "/src/app/route.ts": `
+          import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+          export const GET = async (req: Request) => verifyAndListOrgChain({}, {} as never);
+        `,
+      });
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toEqual([{
+        file: "src/app/route.ts",
+        handler: "GET",
+        action: "audit.export",
+        sink: "verifyAndListOrgChain",
+        sinkFile: "src/infrastructure/audit/audit-store.ts",
+        grantIndex: 1,
+      }]);
+      // An arrow handler is held to the same chain, so the unwired form still fails.
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it("passes a non-route app handler that takes the request and wires the hook", () => {
+      const project = inMemoryProject({
+        "/src/app/_server/context.ts": `
+          export async function requireActionGrant(req: Request, action: string): Promise<any> { return { ok: true }; }
+          export function errorResponse(error: unknown): Response { return new Response(); }
+        `,
+        "/src/contracts/authz.ts": `
+          export interface ActionGrant<A extends string> { action: A }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
+            void value; void action;
+          }
+        `,
+        "/src/infrastructure/audit/audit-store.ts": `
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          export function verifyAndListOrgChain(db: unknown, grant: ActionGrant<"audit.export">): unknown {
+            assertActionGrant(grant, "audit.export");
+            return { db, grant };
+          }
+        `,
+        "/src/app/api/audit/_handlers.ts": `
+          import { requireActionGrant, errorResponse } from "@app/_server/context";
+          import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+          export async function chainResponse(req: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return verifyAndListOrgChain({}, auth.value);
+          }
+        `,
+      });
+      const discovered = discoverGovernedRoutes(project);
+      expect(
+        discovered.violations,
+        "a correctly-wired app handler is not an unsupported surface",
+      ).toEqual([]);
+      expect(discovered.entries).toHaveLength(1);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toEqual([]);
+    });
+
+    it("refuses a governed sink in a default-exported component outside a reserved file name", () => {
+      const project = inMemoryProject({
+        "/src/contracts/authz.ts": `
+          export interface ActionGrant<A extends string> { action: A }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
+            void value; void action;
+          }
+        `,
+        "/src/infrastructure/audit/audit-store.ts": `
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          export function verifyAndListOrgChain(db: unknown, grant: ActionGrant<"audit.export">): unknown {
+            assertActionGrant(grant, "audit.export");
+            return { db, grant };
+          }
+        `,
+        "/src/app/reports/chain-card.tsx": `
+          import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+          export default async function ChainCard() {
+            return verifyAndListOrgChain({}, {} as never);
+          }
+        `,
+      });
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries).toEqual([]);
+      expect(discovered.violations).toHaveLength(1);
+      expect(discovered.violations[0]).toContain("unsupported surface");
+      expect(discovered.violations[0]).toContain("default-exported component");
+    });
+
+    it("keeps the write exemption for interpolated and CTE mutations", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/principal.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface WriteActor { tenant: TenantContext; actorUserId: string }
+        `,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { WriteActor } from "../../contracts/principal";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query(sql: string, params?: unknown[]): Promise<void> };
+          export async function updateContactEmail(a: WriteActor, column: string): Promise<Contact> {
+            await db.query(\`UPDATE contacts SET \${column} = $3 WHERE id = $1 AND org_id = $2\`, [a.tenant.orgId]);
+            return { fullName: a.actorUserId };
+          }
+          export async function archiveContact(a: WriteActor): Promise<Contact> {
+            await db.query("/* archive */ WITH d AS (DELETE FROM contacts RETURNING *) INSERT INTO archived_contacts SELECT * FROM d");
+            return { fullName: a.actorUserId };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([]);
     });
 
     it("passes a correctly wired route whose sink is an owner.property member", () => {

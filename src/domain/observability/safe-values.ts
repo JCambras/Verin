@@ -23,20 +23,25 @@ export interface ObservabilityId {
   readonly [ObservabilityIdBrand]: "ObservabilityId";
 }
 const OBSERVABILITY_IDS = new WeakSet<object>();
-const ACTIONS = new Set([
-  "application.complete",
-  "application.create",
-  "application.request-esign",
-  "contact.create",
-  "financial_account.create",
-  "household.create",
-  "household.update",
-  "org.seed",
-  "session.create",
-  "session.login_failed",
-  "session.revoke",
-  "task.create",
-]);
+/**
+ * Exported as TYPES, not just runtime sets: an `action: string` audit field lets a
+ * caller hand the log formatter a value outside the closed set, which degrades to
+ * "[REDACTED]" in the one line an operator needs. Typing the audit boundary against
+ * these unions makes that unrepresentable rather than merely detectable.
+ */
+const ACTION_NAMES = [
+  "application.complete", "application.create", "application.request-esign",
+  "contact.create", "financial_account.create", "household.create",
+  "household.update", "org.seed", "session.create", "session.login_failed",
+  "session.revoke", "task.create",
+] as const;
+export type ObservabilityAction = (typeof ACTION_NAMES)[number];
+const ENTITY_TYPE_NAMES = [
+  "AccountOpeningApplication", "Contact", "FinancialAccount", "Household",
+  "Org", "Session", "Task", "User",
+] as const;
+export type ObservabilityEntityType = (typeof ENTITY_TYPE_NAMES)[number];
+const ACTIONS = new Set<string>(ACTION_NAMES);
 const ENUMS = new Map<string, ReadonlySet<string>>([
   ["code", new Set([
     "AUTH_EXPIRED", "AUTH_FAILED", "CONFLICT", "FLOW_SUSPENDED", "FORBIDDEN",
@@ -44,10 +49,7 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
     "NOT_FOUND", "PII_VIOLATION", "PROVENANCE_MISSING", "STORE_CONSTRAINT",
     "STORE_UNAVAILABLE", "VALIDATION",
   ])],
-  ["entityType", new Set([
-    "AccountOpeningApplication", "Contact", "FinancialAccount", "Household",
-    "Org", "Session", "Task", "User",
-  ])],
+  ["entityType", new Set<string>(ENTITY_TYPE_NAMES)],
   ["flow", new Set(["account-opening"])],
   ["status", new Set(["completed", "failed", "running", "suspended"])],
 ]);

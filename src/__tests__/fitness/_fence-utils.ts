@@ -5,7 +5,7 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Project, SyntaxKind, type SourceFile } from "ts-morph";
+import { Node, Project, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve, dirname } from "node:path";
@@ -174,6 +174,62 @@ export function inMemoryProject(files: Record<string, string>): Project {
   return project;
 }
 
+
+/** A repo-relative, forward-slashed path (in-memory companion paths keep their leading segment). */
+export function normalizedPath(path: string): string {
+  const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
+  return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
+}
+
+const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
+
+/**
+ * A RESOLVED SQL-executor call: `db.query(sql, …)` / `tx.exec(sql)`, where the
+ * receiver's method really does take a SQL string. Resolved semantically so an
+ * unrelated `.query()` on some other object is not mistaken for persistence.
+ */
+export function isSqlExecutorCall(call: CallExpression): boolean {
+  const expression = call.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(expression) ||
+    !SQL_EXECUTOR_METHODS.has(expression.getName())
+  ) {
+    return false;
+  }
+  return expression.getType().getCallSignatures().some((signature) => {
+    const parameter = signature.getParameters()[0];
+    const declaration = parameter?.getValueDeclaration() ??
+      parameter?.getDeclarations()[0];
+    return Boolean(parameter && declaration &&
+      parameter.getTypeAtLocation(declaration).isString());
+  });
+}
+
+/**
+ * Raw SQL issued from the APP layer. Both security derivations that stand behind
+ * a persistence read — governed-sink derivation (does this PII read owe an
+ * ActionGrant?) and tenant-scope derivation (does this query carry a sealed
+ * TenantContext?) — scan src/infrastructure/ only, because a repository is where
+ * a boundary can be declared. So an inline `db.query("SELECT … FROM users …")` in
+ * a route is not a smaller version of a repository call: it is outside both
+ * fences entirely. Shared by the governed-actions and tenant-context fences so
+ * the two halves of the rule can never drift apart.
+ */
+export function detectAppLayerSqlAccess(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!file.startsWith("src/app/") || file.includes("/__tests__/")) continue;
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (isSqlExecutorCall(call)) {
+        out.push(
+          `${file}:${call.getStartLineNumber()} - raw SQL in the app layer bypasses governed-sink and tenant-scope derivation; move it behind an infrastructure repository`,
+        );
+      }
+    }
+  }
+  return out;
+}
 
 /** Read a shipped source file's contents (for content-scan fences). */
 export function readShipped(): Array<{ path: string; rel: string; text: string }> {

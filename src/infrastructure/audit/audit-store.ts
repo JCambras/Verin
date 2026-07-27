@@ -16,14 +16,18 @@ import {
   type ActionGrant,
 } from "@contracts/authz";
 import { log, safeReason } from "@infra/observability/logger";
-import { observabilityId } from "@domain/observability/safe-values";
+import {
+  observabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
   orgId: string;
   actor: string;
-  action: string;
-  entityType: string;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId: string | null;
   before?: unknown;
   after?: unknown;
@@ -33,8 +37,8 @@ export interface AuditIntent {
 interface OutboxPayload {
   orgId: string;
   actor: string;
-  action: string;
-  entityType: string;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId: string | null;
   beforeJson: string | null;
   afterJson: string | null;

@@ -46,8 +46,10 @@ const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL|DSN|DATABASE_U
 const SECRET_NAME_RE = new RegExp(`[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*`, "i");
 // Applied to the comment-stripped WHOLE file (\s spans newlines), so wrapping the
 // `??`/`||` fallback across lines is not an evasion.
+// `??=` / `||=` are the same defect spelled as a compound assignment, and the
+// old `\s*` after the operator could not cross the `=`.
 const SECRET_FALLBACK_RE = new RegExp(
-  `process\\s*\\.\\s*env\\s*\\.\\s*[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*\\s*(\\|\\||\\?\\?)\\s*["'\`]`,
+  `process\\s*\\.\\s*env\\s*\\.\\s*[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*\\s*(\\|\\|=?|\\?\\?=?)\\s*["'\`]`,
   "i",
 );
 // Destructuring default: `const { X_SECRET = "…" } = process.env`.
@@ -79,23 +81,70 @@ export function detectSecretFallback(files: Array<{ rel: string; text: string }>
 const DEFAULTING_OPERATORS = new Set([
   SyntaxKind.QuestionQuestionToken,
   SyntaxKind.BarBarToken,
+  SyntaxKind.QuestionQuestionEqualsToken,
+  SyntaxKind.BarBarEqualsToken,
 ]);
 
-function isStringishLiteral(node: Node | undefined): boolean {
-  return Boolean(node) && (
-    Node.isStringLiteral(node!) ||
-    Node.isNoSubstitutionTemplateLiteral(node!) ||
-    Node.isTemplateExpression(node!)
-  );
+/** Strip the wrappers a value passes through unchanged. */
+function unwrapValue(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isSatisfiesExpression(current) ||
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
 }
 
-/** Is this node the LEFT operand of a `??`/`||` whose right side is a string literal? */
+/** The outermost expression this node's value flows out through unchanged. */
+function valuePosition(node: Node): Node {
+  let current = node;
+  for (;;) {
+    const parent = current.getParent();
+    if (
+      !parent ||
+      !(Node.isParenthesizedExpression(parent) || Node.isAsExpression(parent) ||
+        Node.isSatisfiesExpression(parent) || Node.isTypeAssertion(parent) ||
+        Node.isNonNullExpression(parent))
+    ) {
+      return current;
+    }
+    current = parent;
+  }
+}
+
+/**
+ * A statically-known string on the fallback side. Node-kind alone is not enough:
+ * `const DEV = "dev-secret"; process.env.SESSION_SECRET ?? DEV` hardcodes exactly
+ * the same credential through one extra binding, and its TYPE says so.
+ */
+function isStringishLiteral(node: Node | undefined): boolean {
+  if (!node) return false;
+  const inner = unwrapValue(node);
+  return Node.isStringLiteral(inner) ||
+    Node.isNoSubstitutionTemplateLiteral(inner) ||
+    Node.isTemplateExpression(inner) ||
+    inner.getType().isStringLiteral();
+}
+
+/** Is this read defaulted to a string literal — by `??`/`||`, `??=`/`||=`, or a ternary? */
 function defaultedToLiteral(node: Node): boolean {
-  const parent = node.getParent();
-  if (!parent || !Node.isBinaryExpression(parent)) return false;
-  return DEFAULTING_OPERATORS.has(parent.getOperatorToken().getKind()) &&
-    parent.getLeft() === node &&
-    isStringishLiteral(parent.getRight());
+  const positioned = valuePosition(node);
+  const parent = positioned.getParent();
+  if (!parent) return false;
+  if (Node.isBinaryExpression(parent)) {
+    return DEFAULTING_OPERATORS.has(parent.getOperatorToken().getKind()) &&
+      parent.getLeft() === positioned &&
+      isStringishLiteral(parent.getRight());
+  }
+  // `process.env.X ? process.env.X : "…"` — the same default, spelled long-hand.
+  return Node.isConditionalExpression(parent) &&
+    parent.getCondition() === positioned &&
+    isStringishLiteral(parent.getWhenFalse());
 }
 
 function readsProcessEnv(node: Node): boolean {
@@ -552,6 +601,36 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
         ).toBe(true);
       }
     });
+    it("catches COMPOUND, PARENTHESIZED, indirect-literal, and ternary fallbacks", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/config/compound.ts": `
+          export function boot(): void {
+            process.env.SESSION_SECRET ??= "dev-secret-not-for-prod";
+            process.env.ESIGN_WEBHOOK_SECRET ||= "dev-secret-not-for-prod";
+          }
+        `,
+        "/src/infrastructure/config/wrapped.ts": `
+          export const first = (process.env.SESSION_SECRET) ?? "dev-secret-not-for-prod";
+        `,
+        "/src/infrastructure/config/indirect.ts": `
+          const DEV = "dev-secret-not-for-prod";
+          export const second = process.env.SESSION_SECRET ?? DEV;
+        `,
+        "/src/infrastructure/config/ternary.ts": `
+          export const third = process.env.SESSION_SECRET ? process.env.SESSION_SECRET : "dev-secret-not-for-prod";
+        `,
+      });
+      const hits = detectSecretFallbackInCode(project);
+      for (const file of ["compound", "wrapped", "indirect", "ternary"]) {
+        expect(hits.some((hit) => hit.startsWith(`src/infrastructure/config/${file}.ts`)), file).toBe(true);
+      }
+      // The compound form is a text miss too, until the regex learns `??=`/`||=`.
+      expect(detectSecretFallback([{
+        rel: "src/infrastructure/config/compound.ts",
+        text: `process.env.SESSION_SECRET ??= "dev-secret-not-for-prod";`,
+      }])).toHaveLength(1);
+    });
+
     it("does not flag a non-secret env default or an undefaulted secret read", () => {
       const project = inMemoryProject({
         "/src/infrastructure/config/fine.ts": `

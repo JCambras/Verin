@@ -139,7 +139,7 @@ describe("tenant isolation (integration)", () => {
     const impostor = { orgId: ORG_A } as unknown as TenantContext;
     const actor = { tenant: impostor, actorUserId: "evil", delegatedBy: null } as unknown as WriteActor;
     await expect(
-      auditedWrite({ db, actor, action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) }),
+      auditedWrite({ db, actor, action: "household.create", entityType: "Household", entityId: "x", detail: "d", perform: async () => ({}) }),
     ).rejects.toMatchObject({ code: "INTERNAL" });
     const outbox = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE org_id = $1", [ORG_A]);
     expect(Number(outbox.rows[0]!.n)).toBe(0);

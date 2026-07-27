@@ -16,6 +16,7 @@ import {
   tenantFromIdentity,
   type TenantContext,
 } from "@contracts/tenant";
+import { assertActionGrant, type ActionGrant } from "@contracts/authz";
 import {
   principalFromIdentity,
   type Principal,
@@ -103,6 +104,31 @@ export async function createUser(
     await tx.query("INSERT INTO credentials (user_id, password_hash) VALUES ($1,$2)", [id, await hashPassword(input.password)]);
   });
   return { id, org_id: tenant.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
+}
+
+/** One org user's display identity. PIIBearing: `email` is raw contact PII. */
+export interface OrgUserEmail extends PIIBearing {
+  readonly id: string;
+  readonly email: string;
+}
+
+/**
+ * The org's user emails, keyed by opaque userId — the render-time resolution the
+ * audit export needs to show WHO acted (the chain persists only the userId,
+ * ADR-0006/0007). A raw-PII read, so it is a governed sink in its own right: the
+ * caller's `audit.export` authority does not extend to reading contact PII, and
+ * the grant's sealed tenant is the only org scope this query will accept.
+ */
+export async function listOrgUserEmails(
+  db: SqlDb,
+  grant: ActionGrant<"pii.view">,
+): Promise<OrgUserEmail[]> {
+  assertActionGrant(grant, "pii.view");
+  const res = await db.query<OrgUserEmail>(
+    "SELECT id, email FROM users WHERE org_id = $1",
+    [grant.tenant.orgId],
+  );
+  return res.rows;
 }
 
 export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow | null> {

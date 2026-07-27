@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, errorResponse } from "@app/_server/context";
 import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+import { listOrgUserEmails } from "@infra/identity/identity-store";
 
 export const runtime = "nodejs";
 
@@ -15,17 +16,24 @@ const MAX_ENTRIES = 200;
  * integrity verdict on every load (the verify covers the WHOLE chain in the
  * same single scan that feeds the listing); the listing is capped to the latest
  * entries, newest first, plus the total. The persisted actor is an opaque
- * userId (ADR-0006/0007); the email is resolved here, at RENDER time, for this
- * org's users only. System actors (seed, esign-webhook) display as-is.
+ * userId (ADR-0006/0007); the email is resolved at RENDER time, for this org's
+ * users only. System actors (seed, esign-webhook) display as-is.
+ *
+ * TWO grants, not one: exporting the chain is `audit.export`, and resolving actor
+ * userIds to raw emails is a PII read that owes its own `pii.view` authority. The
+ * lookup runs behind the identity repository, because raw SQL in the app layer
+ * escapes both governed-sink and tenant-scope derivation.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const auth = await requireActionGrant(req, "audit.export");
   if (!auth.ok) return errorResponse(auth.error);
-  const tenant = auth.value.tenant;
+  const pii = await requireActionGrant(req, "pii.view");
+  if (!pii.ok) return errorResponse(pii.error);
   const db = await getDb();
   const { verdict, rows } = await verifyAndListOrgChain(db, auth.value);
-  const users = await db.query<{ id: string; email: string }>("SELECT id, email FROM users WHERE org_id = $1", [tenant.orgId]);
-  const emailById = new Map(users.rows.map((u) => [u.id, u.email]));
+  const emailById = new Map(
+    (await listOrgUserEmails(db, pii.value)).map((u) => [u.id, u.email]),
+  );
   return NextResponse.json({
     verdict,
     total: rows.length,

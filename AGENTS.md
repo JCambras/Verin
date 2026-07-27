@@ -121,20 +121,39 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
   `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`; `observabilityId` in
   `domain/observability/safe-values.ts`). A cast, literal, sub-interface that merely EXTENDS one, type
-  predicate, or generic type argument anywhere else fails the `tokenized-factory-only` fence; the ESLint
-  mirror's `SEALED_TYPES`/`SEALED_FACTORY_FILES` must match that fence's registry, and it asserts so.
+  predicate, a type argument the call YIELDS, or a sealed annotation/return type/class property filled
+  from anything not already sealed (an `any` from `JSON.parse`) fails the `tokenized-factory-only` fence.
+  Merely NAMING a sealed type in a generic position is fine (`new Map<string, TenantContext>()` mints
+  nothing). The ESLint mirror is the edit-time cast/literal SUBSET only: its `SEALED_TYPES`/
+  `SEALED_FACTORY_FILES` must match that fence's registry AND the rule must stay wired into every shipped
+  layer - the fence asserts both, resolving the real config for representative files.
   Every repository/port call requires a TenantContext (`tenant-context-required` fence; capability-keyed
   loads are exact-match escapes IN the fence). Nothing under `src/infrastructure/llm/` may (transitively)
   import a PIIBearing-marked type or a PII-shaped exported VALUE (`llm-pii-boundary` fence - a new
   interface with a raw PII-named field must extend `PIIBearing` or be reviewed into that fence's escapes).
   Config secrets are `SecretValue`s: the raw string leaves only through the free function `revealSecret()`
   (there is no `.reveal()` member), and only in the fence-allowlisted HMAC consumers.
-- **Governed sinks are reachable only from a route handler** (`src/app/**/route.ts`), which calls
+- **Governed sinks are reachable only from a REQUEST-HANDLING surface**, which calls
   `requireActionGrant(req, "<action>")` rather than a bare role check. That hook needs the framework's
-  `NextRequest` and calls `requirePrincipal` (which writes a rotated cookie), so a Server Action or server
-  component can never satisfy it - reaching a governed sink from `actions.ts`, a `page.tsx`, or any server
-  component is its own fail-closed `governed-actions` violation. Move the sink behind a route handler;
-  a request-less authorization entry point is later architecture, not an escape.
+  `NextRequest` and calls `requirePrincipal` (which writes a rotated cookie), so a Server Action
+  (`"use server"`), a reserved App Router component file (`page`/`layout`/…), or any default-exported
+  component can never satisfy it - reaching a governed sink from one is its own fail-closed
+  `governed-actions` violation. A plain app-layer helper that takes the request IS supported (the rule
+  keys on what the surface is, not on the file name); a request-less authorization entry point is later
+  architecture, not an escape. The authorization PROLOGUE may bind several grants - `/api/audit` holds
+  `audit.export` AND `pii.view` - but every (bind, fail-closed guard) pair comes before any route work,
+  and the authorized value must reach the sink's own `ActionGrant` PARAMETER. A sink handed to another
+  function as a value is refused: there is no call site left to authorize.
+- **The app layer holds NO raw SQL.** A resolved `db.query(...)`/`tx.exec(...)` anywhere under `src/app/`
+  fails the build (`detectAppLayerSqlAccess`, asserted by BOTH the governed-actions and
+  tenant-context-required fences). Both derivations read repository signatures under
+  `src/infrastructure/`, so an inline query has no signature to carry an `ActionGrant` or a sealed
+  `TenantContext` - it is outside both fences, not a smaller version of a repository call.
+- **Audit actions and entity types are TYPES, not strings**: `ObservabilityAction` /
+  `ObservabilityEntityType` (`domain/observability/safe-values.ts`) are what `auditedWrite`/`auditEvent`
+  accept. A `string` there is a build failure - an unlisted value degrades to `[REDACTED]` in the very
+  log line an operator needs, and the vocabulary fence flags a dynamic attribute value the same way it
+  flags a dynamic span name.
 - **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
   `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
   (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an

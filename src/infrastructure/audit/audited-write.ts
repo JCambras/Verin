@@ -14,7 +14,11 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
-import { observabilityId } from "@domain/observability/safe-values";
+import {
+  observabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
@@ -31,8 +35,8 @@ function isDriverConstraintError(e: unknown): boolean {
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
   actor: WriteActor;
-  action: string;
-  entityType: string;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId?: string | null;
   idempotencyKey?: string;
   before?: unknown;
