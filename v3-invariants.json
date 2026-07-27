@@ -52,9 +52,13 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/org-id-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Domain contracts brand it FirmId when they land (prompt 5)."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and reject any referenced policy, instruction, evidence snapshot, intent, or input bundle whose FirmId differs from the enclosing record."
     },
     {
       "id": 3,

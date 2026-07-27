@@ -42,11 +42,11 @@ milestone, never Phase 1 completion.
 **Ledger-vocabulary notes (recorded, not improvised around):**
 
 - **Intent capture has no dedicated `LedgerEntry` type.** The intent is pinned by the later
-  `DecisionRecorded` entry through `DecisionRecord.intentId`. Whether intake deserves its own ledger
+  `DecisionRecorded` entry through `DecisionRecord.intentRef`. Whether intake deserves its own ledger
   event is an open architecture question for the ledger prompt (build-sequence prompt 7).
 - **Policy-version activation has no dedicated `LedgerEntry` type.** The draft's approval,
   activation, and the changed rerun are proven by the rerun's `DecisionRecorded`, whose input bundle
-  pins the new `policyVersionId`. Whether policy lifecycle transitions get their own ledger events
+  pins the new `policyVersionRef`. Whether policy lifecycle transitions get their own ledger events
   is an open architecture question for the policy-lifecycle prompt (build-sequence prompt 20).
 
 ---
@@ -60,7 +60,7 @@ Surfaces: **1 Household workspace**, **2 Contextual intent panel**.
 - [ ] The request is interpreted into typed intent and slots, visibly.
 
 Backing: no ledger entry yet; the typed intent is later pinned by `DecisionRecorded`
-(`DecisionRecord.intentId`). The typed-intent display carries the `llm-proposed-draft` provenance
+(`DecisionRecord.intentRef`). The typed-intent display carries the `llm-proposed-draft` provenance
 label for the shaped interpretation and `user-entered-demo-input` for the request text.
 
 ## Minute 0:45-1:30 - Evidence
@@ -168,7 +168,7 @@ Surface: **11 Policy draft and simulation impact**.
 - [ ] Changed rerun result shown.
 
 Backing: the rerun `DecisionRecorded`, whose input bundle pins the newly activated
-`policyVersionId` (see ledger-vocabulary note above on policy lifecycle events).
+`policyVersionRef` (see ledger-vocabulary note above on policy lifecycle events).
 
 ## Wrap - the examiner-grade record
 

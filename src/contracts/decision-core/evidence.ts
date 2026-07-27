@@ -12,11 +12,12 @@ import {
   DecisionInputBundleIdSchema,
   DomainConfigVersionIdSchema,
   EvidenceKindSchema,
+  EvidenceSnapshotIdRefSchema,
   EvidenceSnapshotIdSchema,
   EvidenceSourceIdSchema,
   HashSchema,
-  HouseholdInstructionVersionIdSchema,
-  PolicyVersionIdSchema,
+  HouseholdInstructionVersionRefSchema,
+  PolicyVersionRefSchema,
   SecureBlobRefSchema,
   SubjectRefSchema,
   TimestampSchema,
@@ -52,21 +53,17 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
 /**
  * Everything an evaluation reads, pinned (replay metadata). schemaVersion,
  * canonicalSerializerVersion, engineVersion, and primitiveSetVersion identify the
- * exact machinery; the policy/config/instruction version ids and evidence snapshot
- * ids identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
+ * exact machinery; the policy/config/instruction versions and evidence snapshot
+ * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-const TimeZoneSchema = z.string().min(1).refine(
-  (timeZone) => {
+const TimeZoneSchema = z.string().min(1).refine((timeZone) => {
     try {
-      new Intl.DateTimeFormat("en-US", { timeZone });
-      return true;
+      return new Intl.DateTimeFormat("en-US", { timeZone }).resolvedOptions().timeZone === timeZone;
     } catch {
       return false;
     }
-  },
-  { message: "unsupported IANA time-zone identifier" },
-);
+  }, { message: "unsupported or non-canonical IANA time-zone identifier" });
 
 export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
@@ -75,17 +72,36 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   engineVersion: z.string().min(1),
   primitiveSetVersion: z.string().min(1),
   domainConfigVersionId: DomainConfigVersionIdSchema,
-  policyVersionId: PolicyVersionIdSchema,
-  householdInstructionVersionIds: z
-    .array(HouseholdInstructionVersionIdSchema)
-    .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate household instruction version id" })
+  policyVersionRef: PolicyVersionRefSchema,
+  householdInstructionVersionRefs: z
+    .array(HouseholdInstructionVersionRefSchema)
+    .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
+      message: "duplicate household instruction version id",
+    })
     .readonly(),
-  evidenceSnapshotIds: z
-    .array(EvidenceSnapshotIdSchema)
-    .refine((ids) => new Set(ids).size === ids.length, { message: "duplicate evidence snapshot id" })
+  evidenceSnapshotRefs: z
+    .array(EvidenceSnapshotIdRefSchema)
+    .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
+      message: "duplicate evidence snapshot id",
+    })
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,
   bundleHash: HashSchema,
-}).readonly();
+})
+  .superRefine((bundle, ctx) => {
+    const requireSameFirm = (ref: { firmId: string }, path: (string | number)[]) => {
+      if (ref.firmId !== bundle.firmId) {
+        ctx.addIssue({ code: "custom", message: "referenced record must belong to the bundle tenant", path });
+      }
+    };
+    requireSameFirm(bundle.policyVersionRef, ["policyVersionRef", "firmId"]);
+    bundle.householdInstructionVersionRefs.forEach((ref, index) =>
+      requireSameFirm(ref, ["householdInstructionVersionRefs", index, "firmId"]),
+    );
+    bundle.evidenceSnapshotRefs.forEach((ref, index) =>
+      requireSameFirm(ref, ["evidenceSnapshotRefs", index, "firmId"]),
+    );
+  })
+  .readonly();
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

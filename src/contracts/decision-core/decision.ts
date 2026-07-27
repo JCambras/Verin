@@ -18,11 +18,11 @@
 import { z } from "zod";
 import {
   DecisionIdSchema,
-  DecisionInputBundleIdSchema,
+  DecisionInputBundleRefSchema,
   EvidenceKindSchema,
   EvidenceSnapshotIdSchema,
   HashSchema,
-  IntentIdSchema,
+  IntentRefSchema,
   ReasonCodeSchema,
   ScopeRefSchema,
   SubjectRefSchema,
@@ -179,8 +179,8 @@ export type RevaluationCondition = z.infer<typeof RevaluationConditionSchema>;
  */
 export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
   id: DecisionIdSchema,
-  intentId: IntentIdSchema,
-  inputBundleId: DecisionInputBundleIdSchema,
+  intentRef: IntentRefSchema,
+  inputBundleRef: DecisionInputBundleRefSchema,
   result: DecisionResultSchema,
   precedenceTrace: z.array(PrecedenceStepSchema).readonly(),
   explanationTrace: z.array(ExplanationNodeSchema).readonly(),
@@ -195,6 +195,14 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
   .refine((record) => record.createdBy.firmId === record.firmId, {
     message: "createdBy.firmId must match the record's tenant (cross-tenant attribution is unrepresentable)",
     path: ["createdBy"],
+  })
+  .refine((record) => record.intentRef.firmId === record.firmId, {
+    message: "intentRef.firmId must match the record's tenant",
+    path: ["intentRef", "firmId"],
+  })
+  .refine((record) => record.inputBundleRef.firmId === record.firmId, {
+    message: "inputBundleRef.firmId must match the record's tenant",
+    path: ["inputBundleRef", "firmId"],
   })
   .refine((record) => record.result.kind !== "prohibited" || record.reevaluateWhen.length === 0, {
     message: "a prohibited decision cannot carry revaluation conditions (a prohibition has no resolving condition)",

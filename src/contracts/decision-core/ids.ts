@@ -80,6 +80,24 @@ export type HouseholdInstructionVersionId = z.infer<typeof HouseholdInstructionV
 export const DomainConfigVersionIdSchema = brandedString<"DomainConfigVersionId">();
 export type DomainConfigVersionId = z.infer<typeof DomainConfigVersionIdSchema>;
 
+const tenantScopedReference = <T>(id: z.ZodType<T>) =>
+  z.strictObject({ firmId: FirmIdSchema, id }).readonly();
+
+export const IntentRefSchema = tenantScopedReference(IntentIdSchema);
+export type IntentRef = z.infer<typeof IntentRefSchema>;
+
+export const DecisionInputBundleRefSchema = tenantScopedReference(DecisionInputBundleIdSchema);
+export type DecisionInputBundleRef = z.infer<typeof DecisionInputBundleRefSchema>;
+
+export const EvidenceSnapshotIdRefSchema = tenantScopedReference(EvidenceSnapshotIdSchema);
+export type EvidenceSnapshotIdRef = z.infer<typeof EvidenceSnapshotIdRefSchema>;
+
+export const PolicyVersionRefSchema = tenantScopedReference(PolicyVersionIdSchema);
+export type PolicyVersionRef = z.infer<typeof PolicyVersionRefSchema>;
+
+export const HouseholdInstructionVersionRefSchema = tenantScopedReference(HouseholdInstructionVersionIdSchema);
+export type HouseholdInstructionVersionRef = z.infer<typeof HouseholdInstructionVersionRefSchema>;
+
 export const PrimitiveIdSchema = brandedString<"PrimitiveId">();
 export type PrimitiveId = z.infer<typeof PrimitiveIdSchema>;
 

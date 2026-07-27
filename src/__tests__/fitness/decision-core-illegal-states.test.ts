@@ -61,8 +61,8 @@ const prohibited = { kind: "prohibited", prohibition };
 const record = (result: unknown, over: Record<string, unknown> = {}) => ({
   firmId: "firm-a",
   id: "dec:fence:1",
-  intentId: "intent:fence:1",
-  inputBundleId: "bundle:fence:1",
+  intentRef: { firmId: "firm-a", id: "intent:fence:1" },
+  inputBundleRef: { firmId: "firm-a", id: "bundle:fence:1" },
   result,
   precedenceTrace: [],
   explanationTrace: [],

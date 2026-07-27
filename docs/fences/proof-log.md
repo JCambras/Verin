@@ -104,6 +104,34 @@ src/contracts/__tests__/_adv_nested_test.ts:1 (react)
 
 **Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-043/D-044).
 
+**Extension (review finding F21):** the shared reference collector now includes TypeScript
+triple-slash `types` and `path` directives. Test-first companions reproduced both omissions against
+the prior collector:
+```
+× triple-slash type references cannot evade the contracts allowlist
+  expected [] to have a length of 1 but got 0
+× triple-slash path references cannot cross project layers
+  expected [] to include 'contracts->infrastructure'
+```
+Real-tree injections then proved both forms independently:
+```
+# src/contracts/_adv_triple_slash.ts
+/// <reference path="../infrastructure/store/db.ts" />
+
+dependency-rule violations:
+src/contracts/_adv_triple_slash.ts:2: contracts -> infrastructure
+(../infrastructure/store/db.ts)
+
+# src/contracts/_adv_triple_slash.ts
+/// <reference types="react" />
+
+contracts external-import violations:
+src/contracts/_adv_triple_slash.ts:1 (react)
+```
+**Revert (extension):** deleted the injected file; the focused dependency fence passed all 21 tests.
+
+**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-045).
+
 ## PF-003 · no-process-env · `src/__tests__/fitness/no-process-env.test.ts`
 **Invariant (ADR-0003):** `process.env` only in `infrastructure/config`. **Injection:** `src/domain/_adv_env.ts`
 with `export const k = process.env.SECRET_TOKEN;`. **Observed:** `process.env read outside config:
@@ -922,3 +950,32 @@ detection, and both previously invisible TypeScript import forms. The contracts 
 1480 lines under its unchanged 1550 ceiling.
 
 **Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-042).
+
+### PF-028 · decision-core tenant scope (v3 invariant 2) · `src/__tests__/fitness/decision-core-tenant-scope.test.ts`
+**Invariant (charter #1/#7; v3 invariant 2 and §3 non-negotiable 11; ADR-0029, D-045):** every
+immutable policy-version, household-instruction-version, evidence-snapshot, intent, and input-bundle
+link carries its own `firmId` plus opaque branded ID. The bundle and decision schemas reject any nested
+tenant that differs from the enclosing record. The legal companion parses all four canonical fixtures
+so a reject-everything schema cannot pass.
+
+The target commit reproduced the missing contract before implementation:
+```
+{"crossTenantBundleAccepted":true}
+```
+The focused tests also proved the non-canonical replay context before the time-zone boundary tightened:
+```
+{"aliasAccepted":true,"timeZone":"US/Eastern"}
+```
+After the structured references landed, two real schema weakenings were injected together: the
+`policyVersionRef` tenant check and the `intentRef` tenant refinement were removed. Observed:
+```
+× enforces: every immutable bundle reference belongs to the bundle tenant
+  expected true to be false
+× enforces: intent, bundle, and actor references belong to the decision tenant
+  expected true to be false
+```
+**Revert:** restored both tenant checks; the focused fence passed. The unit suite separately rejects
+every bundle-reference class, both decision-record links, non-canonical IANA aliases, duplicate scoped
+IDs, and hash-preimage or schema-fingerprint drift.
+
+**Date:** 2026-07-27 (review corrections F20 and F22, D-045).
