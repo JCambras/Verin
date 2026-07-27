@@ -88,14 +88,20 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - **Placeholder `Zone`s are readable but not configurable:** the 598th identifier is tzdb's
   `Factory`, the placeholder for a system whose zone was never set. CLDR/ICU deliberately omits it,
   so `Intl.DateTimeFormat` throws `RangeError` on it - it is the ONE name in the shipped release the
-  runtime cannot use (verified by sweeping all 341 `Zone`s + 257 `Link`s against host ICU). It stays
+  runtime cannot use. It stays
   in the `Zone` list so a record that already persisted it parses and hash-verifies, and is
   subtracted at the CONFIGURATION boundary, where admitting it would boot a firm whose first
   local-time render throws - the same fail-late shape the release scoping above refuses. Each
   release carries its OWN placeholder list beside its `Zone`s and `Link`s, subtracted AFTER alias
-  resolution so an alias of a placeholder is refused too. The companion is non-vacuous: it asserts
-  the exclusion list is COMPLETE - every identifier the config boundary still admits is one the host
-  runtime can actually format - so a placeholder in a future release cannot slip through unlisted.
+  resolution so an alias of a placeholder is refused too. Which names are placeholders is DECLARED
+  by the release and reviewed when that release is adopted - never probed from the host at test
+  time: a blocking assertion that swept the registry through `Intl` would demand the running
+  runtime's bundled tzdata be at least as new as the pinned release (which already carries
+  `America/Coyhaique`, added in tzdata 2025a), re-introducing on the test side the OS coupling the
+  pinned registry exists to remove. The companions are non-vacuous against the pinned data instead:
+  the admitted set is EXACTLY the release minus its declared placeholders (an unlisted placeholder
+  still boots, an over-broad subtraction refuses a real `Zone` - both fail), no `Link` targets a
+  placeholder, and on a CONSTRUCTED release the subtraction is release-scoped rather than hardcoded.
   `TimeZone` itself stays closed over supported-release `Zone` names (341 today), so one zone still
   has exactly one persisted and hashed spelling. **Migration:** no deployment action is required - a
   `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
@@ -222,6 +228,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - Prompt 8/9 land primitives + policy AST (next contracts re-baseline ADR), or
 - the canonical serializer or either hash projection must change form (matching version bump +
   migration story for recorded hashes), or
-- a newer IANA release is adopted (ADD its version key + registries; never remove a supported one,
-  or already-persisted bundles stop being replayable against the release they recorded), or
+- a newer IANA release is adopted (ADD its version key + registries, DECLARING that release's own
+  placeholder `Zone`s in the same entry; never remove a supported one, or already-persisted bundles
+  stop being replayable against the release they recorded), or
 - a second external import is proposed for `contracts/` (needs its own ADR).

@@ -441,15 +441,21 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(LinkResolvedTimeZoneSchema.parse("UTC")).toBe(current.links["UTC"]);
   });
 
-  it("refuses to BOOT on a zone the runtime cannot format, while still reading one that persisted", () => {
+  it("refuses to BOOT on a declared placeholder zone, while still reading one that persisted", () => {
     // tzdb ships `Factory` as the placeholder for an unconfigured system and CLDR/ICU
     // omits it, so it is a legal registry name that no formatter resolves. Configuring
     // it would boot and then throw at the first local-time render - the fail-late
-    // shape the release-scoped config boundary exists to refuse.
+    // shape the release-scoped config boundary exists to refuse. WHICH names are
+    // placeholders is DECLARED by the pinned release and reviewed when a release is
+    // adopted, never probed from the host here: sweeping the registry through `Intl`
+    // would require the running Node's bundled tzdata to be at least as new as the
+    // pinned release (which already carries America/Coyhaique, added in tzdata 2025a),
+    // re-introducing on the test side the OS coupling the pinned registry removes.
     const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
-    for (const placeholder of IANA_TIME_ZONE_PLACEHOLDER_ZONES) {
+    expect([...current.placeholderZones]).toEqual([...IANA_TIME_ZONE_PLACEHOLDER_ZONES]);
+    expect([...IANA_TIME_ZONE_PLACEHOLDER_ZONES].sort()).toEqual(["Factory"]);
+    for (const placeholder of current.placeholderZones) {
       expect(current.zones).toContain(placeholder);
-      expect(() => new Intl.DateTimeFormat("en", { timeZone: placeholder })).toThrow(RangeError);
       expect(LinkResolvedTimeZoneSchema.safeParse(placeholder).success).toBe(false);
       // ...and it stays a readable, hash-verifiable PERSISTED value.
       expect(TimeZoneSchema.safeParse(placeholder).success).toBe(true);
@@ -457,20 +463,21 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       expect(persisted.timeZone).toBe(placeholder);
       expect(hashPreimage(bundleHashPreimage(persisted))).toHaveLength(64);
     }
-    // NON-VACUOUS: the exclusion list is COMPLETE, not just "contains Factory". Every
-    // name the config boundary still admits must be one the host runtime can format,
-    // so a placeholder added to a future release cannot slip through unlisted.
-    const placeholders = new Set<string>(IANA_TIME_ZONE_PLACEHOLDER_ZONES);
-    const unformattable = [...current.zones, ...Object.keys(current.links)].filter((zone) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: zone }).format(0);
-        return false;
-      } catch {
-        return true;
-      }
-    });
-    expect(unformattable.filter((zone) => !placeholders.has(zone))).toEqual([]);
-    expect(unformattable).toEqual([...IANA_TIME_ZONE_PLACEHOLDER_ZONES]);
+    // NON-VACUOUS: the admitted set is EXACTLY this release minus its declared
+    // placeholders, not just "Factory is refused somewhere". A placeholder left off the
+    // list would still boot here, and an over-broad subtraction would refuse a real
+    // Zone - both fail this loop, deterministically from the pinned registry.
+    const placeholders = new Set<string>(current.placeholderZones);
+    for (const zone of current.zones) {
+      expect(LinkResolvedTimeZoneSchema.safeParse(zone).success).toBe(!placeholders.has(zone));
+    }
+    // Every alias of THIS release resolves inside it, and none of them targets a
+    // placeholder - so no alias spelling can smuggle an unconfigurable Zone past the
+    // subtraction, which runs after resolution.
+    for (const [alias, zone] of Object.entries(current.links)) {
+      expect(placeholders.has(zone)).toBe(false);
+      expect(LinkResolvedTimeZoneSchema.parse(alias)).toBe(zone);
+    }
   });
 
   it("subtracts placeholders per RELEASE, after alias resolution", () => {

@@ -1431,9 +1431,9 @@ AssertionError: expected true to be false // Object.is equality
 ```
 The second case is the general rule, proven on a CONSTRUCTED release: the shipped one has a single
 placeholder and no alias pointing at it, so "subtracted per release, after resolution" would otherwise be
-indistinguishable from "Factory is hardcoded somewhere". The completeness arm is not a Factory-shaped
-assertion either - it sweeps every identifier the config boundary still admits against host ICU and
-requires the unformattable set to equal the declared placeholder list exactly.
+indistinguishable from "Factory is hardcoded somewhere". The completeness arm recorded here swept every
+identifier the config boundary admits against host ICU; **F69 below replaces it** with a proof that is
+deterministic from the pinned registry, and re-proves completeness adversarially.
 
 Removing the prototype check from `normalizeOptionalProperties` (restoring the unconditional
 `Object.fromEntries` rebuild) failed the reachability companion:
@@ -1454,3 +1454,50 @@ knip, build, v3:invariants, golden:validate, and the full 450-test suite pass, w
 digests unchanged.
 
 **Date:** 2026-07-27 (review corrections F65-F68, D-054).
+
+## F69-F70 · decision-core review corrections (D-055)
+
+**Invariant:** the configuration boundary admits EXACTLY the pinned release minus its DECLARED
+placeholder `Zone`s - proven deterministically from the registry, with no assertion whose result
+varies with the host's bundled ICU/tzdata.
+
+The replaced arm swept all 341 `Zone`s + 257 `Link`s through `Intl.DateTimeFormat` and required the
+unformattable set to equal the declared list exactly, so a runtime older than the pin (the registry
+carries `America/Coyhaique`, tzdata 2025a; `engines.node` is `>=20`) reddened the build with no code
+change. Four independent injections were run against the replacement; each failed it:
+
+```
+1) placeholder left UNLISTED     IANA_TIME_ZONE_PLACEHOLDER_ZONES = []
+   × refuses to BOOT on a declared placeholder zone, while still reading one that persisted
+   AssertionError: expected [] to deeply equal [ 'Factory' ]   (decision-core.test.ts:456)
+
+2) OVER-BROAD declaration        [..., "America/Toronto"]
+   AssertionError: expected [ 'America/Toronto', 'Factory' ] to deeply equal [ 'Factory' ]
+
+3) subtraction made a NO-OP      timeZoneNameSchema(release.zones)
+   × refuses to BOOT ... / × subtracts placeholders per RELEASE, after alias resolution
+   AssertionError: expected true to be false   (LinkResolvedTimeZoneSchema admits the placeholder)
+
+4) OVER-BROAD subtraction        !placeholders.has(zone) && zone !== "America/Toronto"
+   AssertionError: expected false to be true   (a real Zone the boundary must still admit)
+```
+
+Injection 3 was also run against the config suite, where the refusal is now proven through `getConfig()`
+itself rather than only through the schema the boundary happens to use:
+```
+   × refuses a declared placeholder Zone even though it IS a pinned Zone name
+   (bootWithTimezone("Factory") no longer throws /firmTimezone/)
+```
+Injections 3 and 4 are the ones the pinned-list assertions cannot see: they prove the admitted-set
+loop itself is live in both directions - an unlisted placeholder still boots, an over-broad
+subtraction refuses a real `Zone`. The CONSTRUCTED two-release companion is retained unchanged, so
+"subtracted per release, after alias resolution" is still proven against a release that declares a
+DIFFERENT placeholder with an alias pointing at it, and cannot pass if the handling were hardcoded to
+`Factory`. `Factory` itself stays refused at the configuration boundary and parseable, hashable, and
+digest-stable as an already-persisted bundle value.
+
+**Revert:** restored `IANA_TIME_ZONE_PLACEHOLDER_ZONES` and `configuredTimeZoneSchema` after each
+injection (`git diff` clean); typecheck, lint, knip, build, v3:invariants, golden:validate, and the
+full suite pass, with all four fixture digests unchanged and contracts still at 2364/2400.
+
+**Date:** 2026-07-27 (review corrections F69-F70, D-055).
