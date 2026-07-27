@@ -30,10 +30,11 @@ import {
   DECISION_CORE_SCHEMA_VERSION,
 } from "./serialization";
 import {
-  SUPPORTED_IANA_TIME_ZONE_RELEASES,
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
   formatTimeZoneRefusal,
   timeZoneNameSchema,
   timeZoneRegistryMembership,
+  type IanaTimeZoneRelease,
 } from "../time-zone";
 
 /**
@@ -101,19 +102,24 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-type TimeZoneReleaseRegistry = Readonly<
-  Record<string, { readonly zones: readonly string[] }>
->;
-
 export const decisionInputBundleSchemaForReleases = <
-  const R extends TimeZoneReleaseRegistry,
+  const R extends readonly [
+    IanaTimeZoneRelease,
+    ...IanaTimeZoneRelease[],
+  ],
 >(
   releases: R,
 ) => {
-  type Version = Extract<keyof R, string>;
-  const versions = Object.keys(releases) as [Version, ...Version[]];
+  type Version = R[number]["dataVersion"];
+  const versions = releases.map((release) => release.dataVersion) as [
+    Version,
+    ...Version[],
+  ];
+  if (new Set(versions).size !== versions.length) {
+    throw new Error("time-zone release data versions must be unique");
+  }
   const zones = [
-    ...new Set(versions.flatMap((version) => releases[version]!.zones)),
+    ...new Set(releases.flatMap((release) => release.zones)),
   ].sort() as [string, ...string[]];
   const membership = timeZoneRegistryMembership(releases);
   return TenantContextSchema.unwrap().extend({
@@ -192,5 +198,7 @@ export const decisionInputBundleSchemaForReleases = <
 };
 
 export const DecisionInputBundleSchema =
-  decisionInputBundleSchemaForReleases(SUPPORTED_IANA_TIME_ZONE_RELEASES);
+  decisionInputBundleSchemaForReleases(
+    SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
+  );
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

@@ -156,54 +156,80 @@ function describeTrail(trail: Trail): string {
  * and hash it as `{}` - different decision inputs collapsing onto one bundleHash - and
  * would make canonicalJson's refusal unreachable on the only path that reaches it.
  */
-function normalizeOptionalProperties<T>(
-  value: T,
-  trail: Trail = null,
-  ancestors: Set<object> = new Set(),
-): T {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    (Array.isArray(value) || isPlainRecord(value))
-  ) {
-    if (ancestors.has(value)) return value;
-    ancestors.add(value);
-    try {
-      if (Array.isArray(value)) {
-        return value.map((nested, index) =>
-          normalizeOptionalProperties(
-            nested,
-            { parent: trail, key: String(index) },
-            ancestors,
-          ),
-        ) as T;
+function normalizeOptionalProperties<T>(value: T): T {
+  type Task =
+    | {
+        readonly kind: "visit";
+        readonly input: unknown;
+        readonly assign: (normalized: unknown) => void;
       }
-      return Object.fromEntries(
-        Object.entries(value).flatMap(([key, nested]) =>
-          nested === undefined
-            ? []
-            : [[
-                key,
-                normalizeOptionalProperties(
-                  nested,
-                  { parent: trail, key },
-                  ancestors,
-                ),
-              ]],
-        ),
-      ) as T;
-    } finally {
-      ancestors.delete(value);
+    | { readonly kind: "leave"; readonly input: object };
+  const ancestors = new Set<object>();
+  let normalized: unknown = value;
+  const tasks: Task[] = [{
+    kind: "visit",
+    input: value,
+    assign: (result) => {
+      normalized = result;
+    },
+  }];
+  while (tasks.length > 0) {
+    const task = tasks.pop()!;
+    if (task.kind === "leave") {
+      ancestors.delete(task.input);
+      continue;
+    }
+    const input = task.input;
+    if (
+      input === null ||
+      typeof input !== "object" ||
+      (!Array.isArray(input) && !isPlainRecord(input))
+    ) {
+      task.assign(input);
+      continue;
+    }
+    if (ancestors.has(input)) {
+      task.assign(input);
+      continue;
+    }
+    ancestors.add(input);
+    tasks.push({ kind: "leave", input });
+    if (Array.isArray(input)) {
+      const output = new Array<unknown>(input.length);
+      task.assign(output);
+      for (let index = input.length - 1; index >= 0; index -= 1) {
+        if (!Object.hasOwn(input, index)) continue;
+        tasks.push({
+          kind: "visit",
+          input: input[index],
+          assign: (result) => {
+            output[index] = result;
+          },
+        });
+      }
+      continue;
+    }
+    const output: Record<string, unknown> = {};
+    task.assign(output);
+    for (const [key, nested] of Object.entries(input).reverse()) {
+      if (nested === undefined) continue;
+      tasks.push({
+        kind: "visit",
+        input: nested,
+        assign: (result) => {
+          output[key] = result;
+        },
+      });
     }
   }
-  return value;
+  return normalized as T;
 }
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.
  */
 export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHashPreimage): Result<string, AppError> {
   try {
-    return ok(serialize(value as JsonValue, null, new Set()));
+    return ok(serialize(value as JsonValue));
   } catch (e) {
     return err(validationError(e instanceof CanonicalizationRefusal ? e.reason : "value is not canonically serializable"));
   }
@@ -220,55 +246,106 @@ export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHa
  * surface as the generic "not canonically serializable" and would depend on the
  * host's stack depth for whether it was caught at all.
  */
-function serialize(value: JsonValue, trail: Trail, ancestors: Set<object>): string {
-  if (value === null) return "null";
-  switch (typeof value) {
-    case "string":
-      return JSON.stringify(value);
-    case "boolean":
-      return value ? "true" : "false";
-    case "number":
-      if (!Number.isFinite(value)) {
-        throw new CanonicalizationRefusal(`${describeTrail(trail)}: non-finite number cannot be canonicalized`);
+function serialize(value: JsonValue): string {
+  type Task =
+    | {
+        readonly kind: "visit";
+        readonly value: unknown;
+        readonly trail: Trail;
       }
-      return JSON.stringify(value);
-    case "object": {
-      if (ancestors.has(value)) {
-        throw new CanonicalizationRefusal(`${describeTrail(trail)}: circular reference cannot be canonicalized`);
-      }
-      ancestors.add(value);
-      try {
-        return serializeObject(value, trail, ancestors);
-      } finally {
-        ancestors.delete(value);
-      }
+    | { readonly kind: "text"; readonly value: string }
+    | { readonly kind: "leave"; readonly value: object };
+  const ancestors = new Set<object>();
+  const output: string[] = [];
+  const tasks: Task[] = [{ kind: "visit", value, trail: null }];
+  while (tasks.length > 0) {
+    const task = tasks.pop()!;
+    if (task.kind === "text") {
+      output.push(task.value);
+      continue;
     }
-    default:
-      throw new CanonicalizationRefusal(`${describeTrail(trail)}: ${typeof value} cannot be canonicalized`);
-  }
-}
-function serializeObject(value: object, trail: Trail, ancestors: Set<object>): string {
-  if (Array.isArray(value)) {
-    const items: string[] = [];
-    for (let i = 0; i < value.length; i += 1) {
-      if (!Object.hasOwn(value, i)) {
-        throw new CanonicalizationRefusal(`${describeTrail(trail)}.${i}: sparse array holes cannot be canonicalized`);
-      }
-      items.push(serialize(value[i] as JsonValue, { parent: trail, key: String(i) }, ancestors));
+    if (task.kind === "leave") {
+      ancestors.delete(task.value);
+      continue;
     }
-    return `[${items.join(",")}]`;
-  }
-  if (!isPlainRecord(value)) {
-    throw new CanonicalizationRefusal(`${describeTrail(trail)}: only plain objects can be canonicalized`);
-  }
-  const entries = Object.keys(value)
-    .sort()
-    .map((k) => {
-      const v = (value as Record<string, JsonValue | undefined>)[k];
-      if (v === undefined) {
-        throw new CanonicalizationRefusal(`${describeTrail(trail)}.${k}: undefined cannot be canonicalized`);
+    const current = task.value;
+    if (current === null) {
+      output.push("null");
+      continue;
+    }
+    switch (typeof current) {
+      case "string":
+        output.push(JSON.stringify(current));
+        break;
+      case "boolean":
+        output.push(current ? "true" : "false");
+        break;
+      case "number":
+        if (!Number.isFinite(current)) {
+          throw new CanonicalizationRefusal(
+            `${describeTrail(task.trail)}: non-finite number cannot be canonicalized`,
+          );
+        }
+        output.push(JSON.stringify(current));
+        break;
+      case "object": {
+        if (ancestors.has(current)) {
+          throw new CanonicalizationRefusal(
+            `${describeTrail(task.trail)}: circular reference cannot be canonicalized`,
+          );
+        }
+        if (!Array.isArray(current) && !isPlainRecord(current)) {
+          throw new CanonicalizationRefusal(
+            `${describeTrail(task.trail)}: only plain objects can be canonicalized`,
+          );
+        }
+        ancestors.add(current);
+        tasks.push({ kind: "leave", value: current });
+        if (Array.isArray(current)) {
+          tasks.push({ kind: "text", value: "]" });
+          for (let index = current.length - 1; index >= 0; index -= 1) {
+            if (!Object.hasOwn(current, index)) {
+              throw new CanonicalizationRefusal(
+                `${describeTrail(task.trail)}.${index}: sparse array holes cannot be canonicalized`,
+              );
+            }
+            tasks.push({
+              kind: "visit",
+              value: current[index],
+              trail: { parent: task.trail, key: String(index) },
+            });
+            if (index > 0) tasks.push({ kind: "text", value: "," });
+          }
+          tasks.push({ kind: "text", value: "[" });
+          break;
+        }
+        const keys = Object.keys(current).sort();
+        tasks.push({ kind: "text", value: "}" });
+        for (let index = keys.length - 1; index >= 0; index -= 1) {
+          const key = keys[index]!;
+          const nested = current[key];
+          if (nested === undefined) {
+            throw new CanonicalizationRefusal(
+              `${describeTrail(task.trail)}.${key}: undefined cannot be canonicalized`,
+            );
+          }
+          tasks.push({
+            kind: "visit",
+            value: nested,
+            trail: { parent: task.trail, key },
+          });
+          tasks.push({ kind: "text", value: ":" });
+          tasks.push({ kind: "text", value: JSON.stringify(key) });
+          if (index > 0) tasks.push({ kind: "text", value: "," });
+        }
+        tasks.push({ kind: "text", value: "{" });
+        break;
       }
-      return `${JSON.stringify(k)}:${serialize(v, { parent: trail, key: k }, ancestors)}`;
-    });
-  return `{${entries.join(",")}}`;
+      default:
+        throw new CanonicalizationRefusal(
+          `${describeTrail(task.trail)}: ${typeof current} cannot be canonicalized`,
+        );
+    }
+  }
+  return output.join("");
 }

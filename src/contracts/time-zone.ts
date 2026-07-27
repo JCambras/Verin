@@ -44,6 +44,10 @@ export const CURRENT_IANA_TIME_ZONE_RELEASE = Object.freeze({
   placeholderZones: IANA_TIME_ZONE_PLACEHOLDER_ZONES,
 });
 
+export const SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST = Object.freeze([
+  CURRENT_IANA_TIME_ZONE_RELEASE,
+] as const);
+
 const indexTimeZoneReleases = <
   const R extends readonly IanaTimeZoneRelease[],
 >(
@@ -69,7 +73,7 @@ const indexTimeZoneReleases = <
  * parseable against the registry it was evaluated with (D-051, D-053).
  */
 export const SUPPORTED_IANA_TIME_ZONE_RELEASES = indexTimeZoneReleases(
-  CURRENT_IANA_TIME_ZONE_RELEASE,
+  ...SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
 );
 
 /** The map's key union - a replay-metadata version is never a bare `string`. */
@@ -168,16 +172,19 @@ export type TimeZone = z.infer<typeof TimeZoneSchema>;
  * ship today. Built as a factory over the release map for the same reason.
  */
 export const timeZoneRegistryMembership = <V extends string>(
-  releases: Readonly<Record<V, { readonly zones: readonly string[] }>>,
+  releases: readonly IanaTimeZoneRelease<V>[],
 ): ((dataVersion: string, timeZone: string) => boolean) => {
   const zonesByVersion = new Map<string, ReadonlySet<string>>(
-    (Object.keys(releases) as V[]).map((version) => [version, new Set(releases[version].zones)]),
+    releases.map((release) => [
+      release.dataVersion,
+      new Set(release.zones),
+    ]),
   );
   return (dataVersion, timeZone) => zonesByVersion.get(dataVersion)?.has(timeZone) ?? false;
 };
 
 export const isTimeZoneInRecordedRegistry = timeZoneRegistryMembership(
-  SUPPORTED_IANA_TIME_ZONE_RELEASES,
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
 );
 
 const canonicalizeTimeZoneByVersion = new Map(

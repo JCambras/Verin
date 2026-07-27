@@ -1676,3 +1676,78 @@ registry pins remain unchanged. Fitness (338), the full suite (504), Playwright 
 knip, production build, v3:invariants, golden:validate, and the 3016/3100 line-budget fence pass.
 
 **Date:** 2026-07-27 (review corrections F84-F91, D-058).
+
+## F92-F95 · semantic schema, release, traversal, and loader corrections (D-059)
+
+**Invariants:** scoped-reference inventory follows the exported schema graph rather than source syntax;
+release labels cannot separate from release data; valid explanation depth does not depend on the host
+stack; destructured loaders retain provenance across computed and assignment forms.
+
+The pre-fix production-boundary reproduction reported all four defects directly:
+```
+recommendation_cross_tenant_accepted true
+detached_timezone_label_accepted true
+deep_preimage_threw true Maximum call stack size exceeded
+loader_violations 0
+loader_violations 0
+```
+
+Adding an exported `z.record(z.string(), SubjectRefSchema)` without a registry entry failed the real
+tenant inventory with the semantic schema identity:
+```
++ "decision.ts:ProofOnlyScopedRecordSchema"
+```
+The continuous companions also build record and tuple containers through local wrapper factories. Both
+are discovered as `probe.ts:AddedSchema`, so changing constructor spelling cannot make the inventory
+forget the collection. The production inventory now names
+`decision.ts:RecommendationSchema.parameters`.
+Adding an unregistered `proof-only.ts` decision-core module failed the same exhaustive test before any
+schema within that module could escape inspection:
+```
++ "proof-only.ts"
+```
+
+Replacing the iterative explanation child task with a recursive
+`normalizeExplanationNode(child)` call failed the 12,000-level production preimage companion:
+```
+× hashes a deeply nested acyclic decision without overflowing
+RangeError: Maximum call stack size exceeded
+```
+The same companion traverses optional-property normalization, explanation normalization, and canonical
+serialization in sequence. Existing production-path cycle companions still require the named
+`circular reference` AppError, and nested explanation plus execution class instances still require the
+`only plain objects` refusal.
+
+Removing the duplicate embedded release-version guard failed the constructed multi-release companion:
+```
+× selects the registry a bundle RECORDS, proven on a constructed multi-registry map
+AssertionError: expected [Function] to throw an error
+```
+The bundle schema factory accepts only inseparable release values and derives every enum label and
+membership table from their embedded `dataVersion`.
+
+Returning `null` for computed property names failed four companions, covering `require` and
+`createRequire` through direct and type-erased receivers. Skipping assignment-destructuring provenance
+failed four more:
+```
+× destructured ambient require provenance remains enforced: computed literal
+× destructured ambient require provenance remains enforced: assignment
+× destructured createRequire provenance remains enforced: computed literal
+× destructured createRequire provenance remains enforced: assignment
+```
+The type-erased counterparts failed in the same injections. Both loader families use the same
+destructured receiver-provenance collector.
+Preferring a variable's initializer over its latest preceding assignment failed the reassigned-receiver
+companions for both loader families:
+```
+× destructured ambient require provenance remains enforced: reassigned receiver
+× destructured createRequire provenance remains enforced: reassigned receiver
+```
+
+**Revert:** every injected incomplete form was removed after its focused failure. The iterative
+explanation normalizer was split into the shared normalization authority after the max-file-size fence
+caught `decision.ts` at 505/500. The final contracts measurement is 3158/3200 with 42 measured lines of
+headroom. All decision-core fixture files remain byte-identical and their recorded hashes reproduce
+without a schema or preimage version change.
+
+**Date:** 2026-07-27 (review corrections F92-F95, D-059).

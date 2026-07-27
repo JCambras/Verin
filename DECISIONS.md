@@ -1036,3 +1036,33 @@ every nested normalizer, tenant and dependency fences must fail under ordinary s
 diagnostics must describe the actual replay release.
 **Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, execution,
 timezone, and dependency boundaries remain supported.
+
+### D-059 · 2026-07-27 · captain-decision · Schema discovery and replay traversal are semantic and stack-safe
+
+The decision-core tenant inventory now walks the exported runtime Zod schema graph. It recognizes every
+array, record, tuple, set, or map from which a `{firmId, id}` reference is reachable, independent of the
+source expression or wrapper factory that constructed it. The exact registry now includes
+`RecommendationSchema.parameters`, and record plus wrapper-factory companions prove those forms cannot
+escape discovery. The module inventory is exact as well, so adding a decision-core source module without
+classifying its exports fails the fence.
+
+Supported time-zone releases are one ordered list of inseparable release values. Both the supported map
+and bundle-schema factory derive version labels from each value's embedded `dataVersion`, and duplicate
+embedded versions are refused, so a caller cannot pair one release's zone data with another label.
+
+Optional-property normalization, recursive explanation normalization, and canonical serialization now
+use iterative traversals. A 12,000-level acyclic explanation passes through the complete production
+decision-preimage path, while the existing cycle and nested class-instance refusals remain unchanged.
+CommonJS loader detection resolves destructured receiver provenance through declaration and assignment
+forms for both `require` and `createRequire`, including computed literal keys and type-erased aliases.
+
+The shared-normalization rationale in D-057 remains independent of the line budget. These completion
+corrections measure `contracts/` at **3158** lines. ADR-0029 re-baselines the ceiling from 3100 to
+**3200** through ADR-0018's amendment path, leaving **42 lines of measured headroom**. The ratchet
+resumes from 3200 and does not authorize unrelated growth. Recorded bundle and decision fixture digests
+remain byte-identical, so schema and preimage versions stay 1.7.0.
+
+**Why:** a completeness fence must follow schema meaning instead of constructor spelling, replay labels
+must be inseparable from their data, and unbounded valid inputs must not depend on the host call stack.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, replay, and
+dependency boundaries remain supported.

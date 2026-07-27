@@ -540,6 +540,38 @@ describe("dependency-rule fence", () => {
         "type-erased",
         `const ambient: any = module;\nconst { require: load } = ambient;\nexport const value = load("@infra/store");`,
       ],
+      [
+        "computed literal",
+        `const { ["require"]: load } = module;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "computed literal type-erased",
+        `const ambient: any = module;\nconst { ["require"]: load } = ambient;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "computed constant",
+        `const key = "require" as const;\nconst { [key]: load } = module;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "assignment",
+        `let load: any;\n({ require: load } = module);\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "assignment type-erased",
+        `const ambient: any = module;\nlet load: any;\n({ ["require"]: load } = ambient);\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "assigned receiver",
+        `let ambient: any;\nambient = module;\nconst { require: load } = ambient;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "reassigned receiver",
+        `let ambient: any = {};\nambient = module;\nconst { require: load } = ambient;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "parameter",
+        `export function value({ require: load } = module) { return load("@infra/store"); }`,
+      ],
     ])("destructured ambient require provenance remains enforced: %s", (_name, source) => {
       const v = detectLayerViolations(
         inMemoryProject({
@@ -552,6 +584,51 @@ describe("dependency-rule fence", () => {
         "domain->unresolved",
       );
       expect(v[0]?.specifier).toBe("<non-literal require-reference>");
+    });
+
+    it.each([
+      [
+        "computed literal",
+        `const { ["createRequire"]: make } = require("node:module");\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "computed literal type-erased",
+        `const namespace: any = await import("node:module");\nconst { ["createRequire"]: make } = namespace;\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "computed constant",
+        `const key = "createRequire" as const;\nconst { [key]: make } = await import("node:module");\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "assignment",
+        `let make: any;\n({ createRequire: make } = await import("node:module"));\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "assignment type-erased",
+        `const namespace: any = await import("node:module");\nlet make: any;\n({ ["createRequire"]: make } = namespace);\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "assigned receiver",
+        `let namespace: any;\nnamespace = await import("node:module");\nconst { createRequire: make } = namespace;\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "reassigned receiver",
+        `let namespace: any = {};\nnamespace = await import("node:module");\nconst { createRequire: make } = namespace;\nexport const load = make(import.meta.url);`,
+      ],
+      [
+        "parameter",
+        `export function load({ createRequire: make } = require("node:module")) { return make(import.meta.url); }`,
+      ],
+    ])("destructured createRequire provenance remains enforced: %s", (_name, source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({ "src/domain/evil.ts": source }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+      expect(v.some((violation) =>
+        violation.specifier === "<non-literal create-require>",
+      )).toBe(true);
     });
   });
 });

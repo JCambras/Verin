@@ -54,6 +54,7 @@ import {
   IANA_TIME_ZONE_REGISTRY_SHA256,
   LinkResolvedTimeZoneSchema,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
   SUPPORTED_IANA_TIME_ZONE_RELEASES,
   TimeZoneSchema,
   configuredTimeZoneSchema,
@@ -285,23 +286,33 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // tzdb routinely demotes a Zone to a Link: America/Nipigon is a Zone in the older
     // release and gone from the newer one. A bundle stamped with the older version must
     // still validate - and hash-verify - against the release it actually recorded.
-    const membership = timeZoneRegistryMembership({
-      [older]: { zones: ["America/Nipigon", "America/Toronto"] },
-      [newer]: { zones: ["America/Toronto"] },
-    });
+    const olderRelease = {
+      dataVersion: older,
+      zones: ["America/Nipigon", "America/Toronto"],
+      links: {},
+      placeholderZones: [],
+    } as const;
+    const newerRelease = {
+      dataVersion: newer,
+      zones: ["America/Toronto"],
+      links: {},
+      placeholderZones: [],
+    } as const;
+    const releases = [olderRelease, newerRelease] as const;
+    expect(() =>
+      decisionInputBundleSchemaForReleases([
+        olderRelease,
+        { ...newerRelease, dataVersion: older },
+      ]),
+    ).toThrow("time-zone release data versions must be unique");
+    const membership = timeZoneRegistryMembership(releases);
     expect(membership(older, "America/Nipigon")).toBe(true);
     expect(membership(newer, "America/Nipigon")).toBe(false);
     expect(membership(older, "America/Toronto")).toBe(true);
     expect(membership(newer, "America/Toronto")).toBe(true);
     expect(membership("iana-tzdb/never-shipped", "America/Toronto")).toBe(false);
-    const constructedSchema = decisionInputBundleSchemaForReleases({
-      [older]: {
-        zones: ["America/Nipigon", "America/Toronto"],
-      },
-      [newer]: {
-        zones: ["America/Toronto"],
-      },
-    });
+    const constructedSchema =
+      decisionInputBundleSchemaForReleases(releases);
     expect(
       constructedSchema.safeParse({
         ...validBundle,
@@ -328,6 +339,11 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(Object.keys(SUPPORTED_IANA_TIME_ZONE_RELEASES)).toEqual([
       ...SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
     ]);
+    expect(
+      SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST.map(
+        (release) => release.dataVersion,
+      ),
+    ).toEqual(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS);
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
       for (const zone of ["America/New_York", "Etc/UTC", "Africa/Accra", "Not/AZone"]) {
@@ -963,6 +979,48 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       }
     },
   );
+
+  it("hashes a deeply nested acyclic decision without overflowing", () => {
+    const record = structuredClone(
+      DecisionRecordSchema.parse(
+        JSON.parse(readFixture("decision-record-proceed")),
+      ),
+    );
+    type MutableExplanation = {
+      code: string;
+      messageTemplate: string;
+      evidenceSnapshotRefs: unknown[];
+      sourceRefs: unknown[];
+      childNodes: MutableExplanation[];
+    };
+    let explanation: MutableExplanation = {
+      code: "deep",
+      messageTemplate: "deep",
+      evidenceSnapshotRefs: [],
+      sourceRefs: [],
+      childNodes: [],
+    };
+    for (let depth = 0; depth < 12_000; depth += 1) {
+      explanation = {
+        code: "deep",
+        messageTemplate: "deep",
+        evidenceSnapshotRefs: [],
+        sourceRefs: [],
+        childNodes: [explanation],
+      };
+    }
+    const persistenceHydrated = record as unknown as {
+      explanationTrace: MutableExplanation[];
+    };
+    persistenceHydrated.explanationTrace = [explanation];
+    expect(
+      canonicalJson(
+        decisionHashPreimage(
+          record as Parameters<typeof decisionHashPreimage>[0],
+        ),
+      ).ok,
+    ).toBe(true);
+  });
 
   const hashBoundCollections = [
     "conflictKeys",

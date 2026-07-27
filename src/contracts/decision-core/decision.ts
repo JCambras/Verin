@@ -54,7 +54,10 @@ import {
   normalizeAuthorityRequirement,
 } from "./authority";
 import { ExecutionPlanSchema, normalizeExecutionPlan } from "./execution";
-import { isPlainRecord } from "./normalization";
+import {
+  isPlainRecord,
+  normalizeExplanationNode,
+} from "./normalization";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
 export const VersionedSourceRefSchema = z
@@ -92,38 +95,6 @@ export const PrecedenceStepSchema = z.strictObject({
 export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 
 /** Recursive explanation tree - every decision explains itself, citing evidence + sources. */
-type NormalizableExplanationNode = {
-  readonly evidenceSnapshotRefs: readonly {
-    readonly firmId: string;
-    readonly id: string;
-  }[];
-  readonly sourceRefs: readonly VersionedSourceRef[];
-  readonly childNodes: readonly NormalizableExplanationNode[];
-};
-
-const normalizeExplanationNode = <T extends NormalizableExplanationNode>(
-  node: T,
-  ancestors: Set<object> = new Set(),
-): T => {
-  if (!isPlainRecord(node)) return node;
-  if (ancestors.has(node)) return node;
-  ancestors.add(node);
-  try {
-    return {
-      ...node,
-      evidenceSnapshotRefs: normalizeScopedReferences(
-        node.evidenceSnapshotRefs,
-      ),
-      sourceRefs: normalizeVersionedScopedReferences(node.sourceRefs),
-      childNodes: node.childNodes.map((child) =>
-        normalizeExplanationNode(child, ancestors),
-      ),
-    } as T;
-  } finally {
-    ancestors.delete(node);
-  }
-};
-
 export const ExplanationNodeSchema = z
   .strictObject({
     code: z.string().min(1),
@@ -205,7 +176,9 @@ export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
     ...record,
     createdBy: normalizeActorRef(record.createdBy),
     explanationTrace: record.explanationTrace.map((node) =>
-      normalizeExplanationNode(node as NormalizableExplanationNode),
+      normalizeExplanationNode(
+        node as Parameters<typeof normalizeExplanationNode>[0],
+      ),
     ),
     result: normalizeDecisionResult(record.result),
   } as T;

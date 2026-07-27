@@ -223,6 +223,111 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
     return expression;
   };
+  const propertyName = (
+    node: Node | undefined,
+    fallback: string,
+  ): string | null => {
+    if (node === undefined) return fallback;
+    if (Node.isIdentifier(node)) return node.getText();
+    if (
+      Node.isStringLiteral(node) ||
+      Node.isNoSubstitutionTemplateLiteral(node)
+    ) {
+      return node.getLiteralText();
+    }
+    if (Node.isComputedPropertyName(node)) {
+      const literalValue = (
+        value: Node | undefined,
+        seen: Set<Node> = new Set(),
+      ): string | null => {
+        const expression = unwrapExpression(value);
+        if (
+          Node.isStringLiteral(expression) ||
+          Node.isNoSubstitutionTemplateLiteral(expression)
+        ) {
+          return expression.getLiteralText();
+        }
+        if (!Node.isIdentifier(expression) || seen.has(expression)) {
+          return null;
+        }
+        seen.add(expression);
+        const declaration = expression
+          .getSymbol()
+          ?.getDeclarations()
+          .find(Node.isVariableDeclaration);
+        return literalValue(declaration?.getInitializer(), seen);
+      };
+      return literalValue(node.getExpression());
+    }
+    return null;
+  };
+  const destructuredMembers = (): Array<{
+    readonly name: string;
+    readonly receiver: Node;
+    readonly line: number;
+  }> => {
+    const members: Array<{
+      readonly name: string;
+      readonly receiver: Node;
+      readonly line: number;
+    }> = [];
+    for (const binding of sf.getDescendantsOfKind(
+      SyntaxKind.ObjectBindingPattern,
+    )) {
+      const declaration = binding.getParent();
+      const receiver =
+        Node.isVariableDeclaration(declaration) ||
+        Node.isParameterDeclaration(declaration)
+          ? declaration.getInitializer()
+          : undefined;
+      if (receiver === undefined) continue;
+      for (const element of binding.getElements()) {
+        const name = propertyName(
+          element.getPropertyNameNode(),
+          element.getName(),
+        );
+        if (name !== null) {
+          members.push({
+            name,
+            receiver,
+            line: element.getStartLineNumber(),
+          });
+        }
+      }
+    }
+    for (const assignment of sf.getDescendantsOfKind(
+      SyntaxKind.BinaryExpression,
+    )) {
+      if (
+        assignment.getOperatorToken().getKind() !==
+        SyntaxKind.EqualsToken
+      ) {
+        continue;
+      }
+      const binding = unwrapExpression(assignment.getLeft());
+      if (!Node.isObjectLiteralExpression(binding)) continue;
+      for (const property of binding.getProperties()) {
+        if (
+          !Node.isPropertyAssignment(property) &&
+          !Node.isShorthandPropertyAssignment(property)
+        ) {
+          continue;
+        }
+        const name = propertyName(
+          property.getNameNode(),
+          property.getName(),
+        );
+        if (name !== null) {
+          members.push({
+            name,
+            receiver: assignment.getRight(),
+            line: property.getStartLineNumber(),
+          });
+        }
+      }
+    }
+    return members;
+  };
   const expressionProvenance = (
     node: Node | undefined,
     seen: Set<Node> = new Set(),
@@ -236,10 +341,22 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       .getSymbol()
       ?.getDeclarations()
       .find(Node.isVariableDeclaration);
-    const initializer = declaration?.getInitializer();
-    return initializer === undefined
+    const assignment = sf
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .filter(
+        (candidate) =>
+          candidate.getOperatorToken().getKind() ===
+            SyntaxKind.EqualsToken &&
+          candidate.getStart() < expression.getStart() &&
+          Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
+          unwrapExpression(candidate.getLeft())?.getSymbol() ===
+            expression.getSymbol(),
+      )
+      .sort((left, right) => right.getStart() - left.getStart())[0];
+    const source = assignment?.getRight() ?? declaration?.getInitializer();
+    return source === undefined
       ? expression
-      : expressionProvenance(initializer, seen);
+      : expressionProvenance(source, seen);
   };
   /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
   const isAmbientGlobalReference = (node: Node | undefined): boolean => {
@@ -302,7 +419,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
   }
   const isCreateRequireNamespace = (node: Node | undefined): boolean => {
-    const expression = unwrapExpression(node);
+    const expression = expressionProvenance(node);
     return (
       (Node.isIdentifier(expression) &&
         createRequireNamespaces.has(expression.getText())) ||
@@ -320,37 +437,28 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const name = declaration.getNameNode();
     if (Node.isIdentifier(name)) {
       createRequireNamespaces.add(name.getText());
-      continue;
     }
-    if (!Node.isObjectBindingPattern(name)) continue;
-    for (const element of name.getElements()) {
-      if ((element.getPropertyNameNode()?.getText() ?? element.getName()) !== "createRequire") continue;
+  }
+  for (const member of destructuredMembers()) {
+    if (
+      member.name === "createRequire" &&
+      isCreateRequireNamespace(member.receiver)
+    ) {
       refs.push({
         specifier: null,
-        line: element.getStartLineNumber(),
+        line: member.line,
         kind: "create-require",
       });
     }
-  }
-  for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-    const name = declaration.getNameNode();
     if (
-      !Node.isObjectBindingPattern(name) ||
-      !isAmbientGlobalReference(declaration.getInitializer())
+      member.name === "require" &&
+      isAmbientGlobalReference(member.receiver)
     ) {
-      continue;
-    }
-    for (const element of name.getElements()) {
-      if (
-        (element.getPropertyNameNode()?.getText() ?? element.getName()) ===
-        "require"
-      ) {
-        refs.push({
-          specifier: null,
-          line: element.getStartLineNumber(),
-          kind: "require-reference",
-        });
-      }
+      refs.push({
+        specifier: null,
+        line: member.line,
+        kind: "require-reference",
+      });
     }
   }
   for (const exp of sf.getExportDeclarations()) {

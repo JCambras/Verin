@@ -183,7 +183,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
   the set of ancestors on the current path and named by their location, rather than surfacing as a
   host-dependent `RangeError`; the diagnostic path is a parent link built into a readable string
   only when a refusal is actually raised. This serializer will run over explanation trees whose
-  depth is data-driven, not schema-bounded. Its "only plain objects" refusal stays REACHABLE on the
+  depth is data-driven, not schema-bounded, so optional-property normalization, explanation
+  normalization, and canonical serialization all use iterative traversal. Its "only plain objects"
+  refusal stays REACHABLE on the
   paths that actually reach it: optional-property normalization passes non-plain objects through
   untouched (one shared prototype rule), because rebuilding them from their own entries would
   flatten a `Date`/`Map`/class instance to `{}` and hash it as `{}` - different decision inputs
@@ -203,6 +205,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
   configuration, rejects `createRequire` and local paths outside the four source layers, rejects
   ambient runtime or namespace declarations, and type-checks contracts against the ES-only library
   surface using diagnostic codes so implicit DOM and Node globals cannot add platform coupling.
+  Destructured `require` and `createRequire` references share receiver-provenance resolution across
+  declarations, computed literal keys, type-erased aliases, and assignment destructuring.
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
@@ -212,11 +216,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   explanation structure, then drift whenever either schema grows. Parsing inside a hash builder
   would instead change the accepted runtime object boundary and hide non-plain object refusals.
   Shared pure authorities avoid both defects while preserving explicit versioned projections.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3100**. The final implementation
-  measures **3016** lines by the line-budget fence's own metric, leaving **84 lines of headroom**.
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3200**. The final implementation
+  measures **3158** lines by the line-budget fence's own metric, leaving **42 lines of headroom**.
   This is the final post-review figure and the only current-state measurement to plan against. The
-  former 2800 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
-  resumes from 3100; later contract-layer prompts
+  former 3100 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
+  resumes from 3200; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
@@ -241,15 +245,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 3100 (a real growth, honestly sized and ratcheted).
+  grew 600 → 3200 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 3100 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 3200 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
-  cross-tenant values and the scoped-reference collection registry exactly matches the collections
-  discovered transitively from the decision-core schemas.
+  cross-tenant values and the scoped-reference collection registry exactly matches every container
+  that reaches a scoped reference in the exported runtime Zod schema graph, independently of source
+  constructor syntax. Its exact module inventory prevents a newly added decision-core source module
+  from escaping that graph walk.
 - `charter-map.json` #16 executes `decision-core-external-action-safety`, which rejects incomplete
   compensating actions and idempotency-key aliasing.
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended
