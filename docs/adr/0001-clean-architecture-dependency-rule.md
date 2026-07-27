@@ -30,7 +30,9 @@ Enforced three ways (defense in depth): ESLint `no-restricted-imports` at edit t
 static imports, re-exports, relative references, dynamic `import()`, direct and indirect CommonJS
 loaders, TypeScript import types, import-equals declarations, source-local declaration files,
 triple-slash type/path/lib references, and the implicit JSX runtime; classifies each by resolved layer;
-and enforces the Zod-only external allowlist for `contracts/`; and TS path aliases.
+resolves aliases, baseUrl modules, package imports, and package self-references through TypeScript;
+rejects `createRequire`, local paths outside the layers, ambient contract declarations, and platform
+globals by diagnostic code; enforces the Zod-only external allowlist for `contracts/`; and TS path aliases.
 
 ## Alternatives Rejected
 

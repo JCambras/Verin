@@ -144,7 +144,7 @@ describe("decision-core illegal-states fence", () => {
       expectRejected(AuthorityRequirementSchema, { mode: "approval", stages: [] }, "stages");
     });
     it("rejects a specialist review with zero stages (the same costume, audit F7)", () => {
-      expectRejected(AuthorityRequirementSchema, { mode: "specialist_review", specialistRoleIds: ["cco"], stages: [] }, "stages");
+      expectRejected(AuthorityRequirementSchema, { mode: "specialist_review", specialistRoleIds: [{ firmId: "firm-a", id: "cco" }], stages: [] }, "stages");
     });
     it("rejects a template stage with zero expiration", () => {
       expectRejected(
@@ -157,7 +157,7 @@ describe("decision-core illegal-states fence", () => {
             order: 0,
             executionMode: "sequential",
             requirements: [{
-              eligibleRoleIds: ["operations"],
+              eligibleRoleIds: [{ firmId: "firm-a", id: "operations" }],
               approvalsRequired: 1,
               distinctActorsRequired: true,
               requesterMayApprove: false,
@@ -180,7 +180,7 @@ describe("decision-core illegal-states fence", () => {
           order: 0,
           executionMode: "sequential",
           requirements: [{
-            eligibleRoleIds: ["operations"],
+            eligibleRoleIds: [{ firmId: "firm-a", id: "operations" }],
             approvalsRequired: 1,
             distinctActorsRequired: true,
             requesterMayApprove: false,
@@ -193,7 +193,7 @@ describe("decision-core illegal-states fence", () => {
         const stageAuthority =
           mode === "approval"
             ? { mode, stages }
-            : { mode, specialistRoleIds: ["cco"], stages };
+            : { mode, specialistRoleIds: [{ firmId: "firm-a", id: "cco" }], stages };
         expectRejected(
           DecisionRecordSchema,
           record({ ...proceed, authority: stageAuthority }),

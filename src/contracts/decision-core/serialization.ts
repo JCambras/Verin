@@ -9,14 +9,14 @@ import { validationError, type AppError } from "../errors";
 import type { DecisionInputBundle } from "./evidence";
 import type { DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
-export const DECISION_CORE_SCHEMA_VERSION = "1.5.0";
-export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.5.0";
-export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.5.0";
+export const DECISION_CORE_SCHEMA_VERSION = "1.6.0";
+export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.6.0";
+export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.6.0";
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
   Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
 > = {
-  [BUNDLE_HASH_PREIMAGE_VERSION]: "59c9e36cd6fa224760e7bde49d2034af3811a56b075aad4f88a80dd5b68dbeec",
-  [DECISION_HASH_PREIMAGE_VERSION]: "5ef23c088774827077a3d633572434efe97219e29ce2dc91ae6c6bcce3d67805",
+  [BUNDLE_HASH_PREIMAGE_VERSION]: "be39b3055c9cd86322fbfaa9a0f56ee5d96dbaf4ed3eeb757a09c50db47a2f25",
+  [DECISION_HASH_PREIMAGE_VERSION]: "9c45859468cd259e16037894a24117bbb431a1c5a839a519a7d0b624d549816c",
 };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;

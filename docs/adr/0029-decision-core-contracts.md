@@ -33,7 +33,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.5.0
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.6.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
@@ -42,7 +42,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
   and migration story.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.5.0 schema and
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.6.0 schema and
   1.0.0 canonical serializer. It persists `iana-tzdb/2026b`, admits all 341 `Zone` identifiers
   derived from that release's primary data files in the SHA-256-locked registry, canonicalizes
   identifier casing, and rejects `Link` aliases outside the pinned set, so replay validation never
@@ -53,9 +53,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target,
   reservation, verification-rule, secure request, secure event, and secure blob links are strict
   structured references carrying `firmId` plus the opaque branded ID. Approval templates are
-  tenant-scoped records. Decision-record refinements recursively
+  tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
+  collections reject duplicates and normalize by firm then opaque ID. Decision-record refinements recursively
   check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
-  execution steps, and compensating actions, rejecting every cross-tenant link.
+  execution steps, compensating actions, actor roles, authority roles, and evidence-supplier roles,
+  rejecting every cross-tenant link. Approval-stage arrays normalize by their explicit `order`.
   Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **Retry-safe external actions:** execution steps and their non-recursive compensating actions share one
@@ -74,13 +76,15 @@ parse time, not by reviewer discipline. Three constraints meet here:
   The dependency fence enforces the external allowlist across static imports, re-exports, dynamic
   imports, direct and indirect CommonJS loaders, TypeScript import types, import-equals declarations,
   source-local declaration files, and triple-slash type/path/lib references. It resolves path aliases
-  from the active TypeScript compiler configuration, rejects local paths outside the four source
-  layers, and type-checks contracts against the ES-only library surface so implicit DOM and Node
-  globals cannot add platform coupling. JSX in `contracts/` is rejected because `jsx: react-jsx`
+  plus baseUrl, package imports, and package self-references through the active TypeScript compiler
+  configuration, rejects `createRequire` and local paths outside the four source layers, rejects
+  ambient runtime or namespace declarations, and type-checks contracts against the ES-only library
+  surface using diagnostic codes so implicit DOM and Node globals cannot add platform coupling.
+  JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2000** (measured 1981 after the
-  version-pinned shared IANA registry and complete review hardening). The ratchet-down doctrine resumes from 2000; later contract-layer prompts
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2200** (measured 2137 after the
+  version-pinned shared IANA registry and complete review hardening). The ratchet-down doctrine resumes from 2200; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
@@ -104,11 +108,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 2000 (a real growth, honestly sized and ratcheted).
+  grew 600 → 2200 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 2000 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 2200 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
   its enclosing tenant.

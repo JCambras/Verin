@@ -10,8 +10,8 @@ import {
   HashSchema,
   TimestampSchema,
 } from "@contracts/decision-core/ids";
-import { TokenizedPayloadSchema } from "@contracts/decision-core/actor";
-import { IntentSchema } from "@contracts/decision-core/trigger";
+import { ActorRefSchema, TokenizedPayloadSchema } from "@contracts/decision-core/actor";
+import { EvidenceRequestSchema, IntentSchema } from "@contracts/decision-core/trigger";
 import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
@@ -19,7 +19,12 @@ import {
   TimeZoneSchema,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
-import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/decision-core/authority";
+import {
+  ApprovalRequirementSchema,
+  ApprovalTemplateSchema,
+  AuthorityRequirementSchema,
+  EscalationStepSchema,
+} from "@contracts/decision-core/authority";
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
   BUNDLE_HASH_PAYLOAD_KEYS,
@@ -53,13 +58,14 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 const timestamp = "2026-07-26T13:30:00.000Z";
 const hash = "c".repeat(64);
+const role = (id: string, firmId = "firm-a") => ({ firmId, id });
 
 const validIntent = {
   firmId: "firm-a",
   id: "intent:u:1",
   trigger: {
     kind: "human_request",
-    requester: { firmId: "firm-a", actorId: "actor:u:1", roleIds: ["advisor"] },
+    requester: { firmId: "firm-a", actorId: "actor:u:1", roleIds: [role("advisor")] },
     requestRef: { firmId: "firm-a", id: "req:u:1" },
     maskedRequest: { value: "distribute 75000 USD (tokenized)", piiFree: true },
   },
@@ -562,7 +568,7 @@ describe("structural-integrity refinements", () => {
     executionMode: "sequential",
     requirements: [
       {
-        eligibleRoleIds: ["operations-manager"],
+        eligibleRoleIds: [role("operations-manager")],
         approvalsRequired: 1,
         distinctActorsRequired: true,
         requesterMayApprove: false,
@@ -589,7 +595,7 @@ describe("structural-integrity refinements", () => {
     expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: distinct }).success).toBe(true);
     expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: dupId }).success).toBe(false);
     expect(AuthorityRequirementSchema.safeParse({ mode: "approval", stages: dupOrder }).success).toBe(false);
-    const review = (stages: unknown) => ({ mode: "specialist_review", specialistRoleIds: ["cco"], stages });
+    const review = (stages: unknown) => ({ mode: "specialist_review", specialistRoleIds: [role("cco")], stages });
     expect(AuthorityRequirementSchema.safeParse(review(distinct)).success).toBe(true);
     expect(AuthorityRequirementSchema.safeParse(review(dupId)).success).toBe(false);
     expect(AuthorityRequirementSchema.safeParse(review(dupOrder)).success).toBe(false);
@@ -597,6 +603,74 @@ describe("structural-integrity refinements", () => {
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 1)])).success).toBe(true);
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:ops", 1)])).success).toBe(false);
     expect(ApprovalTemplateSchema.safeParse(template([templateStage("stg:ops", 0), templateStage("stg:manager", 0)])).success).toBe(false);
+  });
+
+  it("rejects duplicate role sets", () => {
+    const duplicateRoles = [role("operations"), role("operations")];
+    expect(ActorRefSchema.safeParse({
+      firmId: "firm-a",
+      actorId: "actor:1",
+      roleIds: duplicateRoles,
+    }).success).toBe(false);
+    expect(ApprovalRequirementSchema.safeParse({
+      ...stageBase("stage", 0).requirements[0],
+      eligibleRoleIds: duplicateRoles,
+    }).success).toBe(false);
+    expect(EscalationStepSchema.safeParse({
+      after: "P1D",
+      roleIds: duplicateRoles,
+      reasonCode: "idle",
+    }).success).toBe(false);
+    expect(AuthorityRequirementSchema.safeParse({
+      mode: "specialist_review",
+      specialistRoleIds: duplicateRoles,
+      stages: [approvalStage("stage", 0)],
+    }).success).toBe(false);
+  });
+
+  it("canonicalizes role and stage order", () => {
+    const actor = ActorRefSchema.parse({
+      firmId: "firm-a",
+      actorId: "actor:1",
+      roleIds: [role("z-role"), role("a-role")],
+    });
+    const approvalRequirement = ApprovalRequirementSchema.parse({
+      ...stageBase("stage", 0).requirements[0],
+      eligibleRoleIds: [role("z-role"), role("a-role")],
+    });
+    const escalation = EscalationStepSchema.parse({
+      after: "P1D",
+      roleIds: [role("z-role"), role("a-role")],
+      reasonCode: "idle",
+    });
+    const authority = AuthorityRequirementSchema.parse({
+      mode: "specialist_review",
+      specialistRoleIds: [role("z-role"), role("a-role")],
+      stages: [approvalStage("second", 2), approvalStage("first", 1)],
+    });
+    expect(actor.roleIds.map((ref) => ref.id)).toEqual(["a-role", "z-role"]);
+    expect(approvalRequirement.eligibleRoleIds.map((ref) => ref.id)).toEqual(["a-role", "z-role"]);
+    expect(escalation.roleIds.map((ref) => ref.id)).toEqual(["a-role", "z-role"]);
+    if (authority.mode !== "specialist_review") throw new Error("expected specialist review");
+    expect(authority.specialistRoleIds.map((ref) => ref.id)).toEqual(["a-role", "z-role"]);
+    expect(authority.stages.map((stage) => stage.order)).toEqual([1, 2]);
+  });
+
+  it("canonicalizes and tenant-checks role-based evidence suppliers", () => {
+    const request = {
+      evidenceKind: "account-balance",
+      subjectRef: { firmId: "firm-a", id: "subject:1" },
+      suppliableBy: [role("z-role"), "external", role("a-role")],
+    };
+    expect(
+      EvidenceRequestSchema.parse(request).suppliableBy.map((supplier) =>
+        typeof supplier === "string" ? supplier : supplier.id,
+      ),
+    ).toEqual(["external", "a-role", "z-role"]);
+    expect(EvidenceRequestSchema.safeParse({
+      ...request,
+      suppliableBy: [role("operations", "firm-b")],
+    }).success).toBe(false);
   });
 
   it("deadline_reached requires a deadline; other kinds do not", () => {

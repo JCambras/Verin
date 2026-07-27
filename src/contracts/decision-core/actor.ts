@@ -9,7 +9,7 @@
  * rather than merely unread.
  */
 import { z } from "zod";
-import { ActorIdSchema, FirmIdSchema, RoleIdSchema } from "./ids";
+import { ActorIdSchema, FirmIdSchema, RoleRefSetSchema } from "./ids";
 
 type DeepReadonly<T> = T extends readonly (infer U)[]
   ? readonly DeepReadonly<U>[]
@@ -36,8 +36,13 @@ export type TenantContext = z.infer<typeof TenantContextSchema>;
 /** A human actor, tenant-scoped, with the roles attribution recorded at act time. */
 export const ActorRefSchema = TenantContextSchema.unwrap().extend({
   actorId: ActorIdSchema,
-  roleIds: z.array(RoleIdSchema).readonly(),
-}).readonly();
+  roleIds: RoleRefSetSchema,
+})
+  .refine((actor) => actor.roleIds.every((role) => role.firmId === actor.firmId), {
+    message: "role references must belong to the actor tenant",
+    path: ["roleIds"],
+  })
+  .readonly();
 export type ActorRef = z.infer<typeof ActorRefSchema>;
 
 /** A system actor (engine, scheduler, reconciler), tenant-scoped like any human. */

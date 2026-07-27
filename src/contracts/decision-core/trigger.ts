@@ -13,7 +13,7 @@ import {
   IntentIdSchema,
   PrimitiveIdSchema,
   ReasonCodeSchema,
-  RoleIdSchema,
+  RoleRefSchema,
   SecureEventRefSchema,
   SecureRequestRefSchema,
   SlotRefSchema,
@@ -149,11 +149,50 @@ export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
  * an evidence request nobody may satisfy would make its blocker unresolvable -
  * that state is a prohibition and must be modeled as one, never reached by decay.
  */
-export const EvidenceRequestSchema = z.strictObject({
-  evidenceKind: EvidenceKindSchema,
-  subjectRef: SubjectRefSchema,
-  suppliableBy: z.array(z.union([z.literal("client"), z.literal("external"), RoleIdSchema])).min(1).readonly(),
-}).readonly();
+const EvidenceSupplierSchema = z.union([z.literal("client"), z.literal("external"), RoleRefSchema]);
+const EvidenceSupplierSetSchema = z
+  .array(EvidenceSupplierSchema)
+  .min(1)
+  .refine(
+    (suppliers) =>
+      suppliers.every(
+        (supplier, index) =>
+          !suppliers.slice(0, index).some((candidate) =>
+            typeof supplier === "string" || typeof candidate === "string"
+              ? supplier === candidate
+              : supplier.firmId === candidate.firmId && supplier.id === candidate.id,
+          ),
+      ),
+    "duplicate evidence supplier",
+  )
+  .overwrite((suppliers) => [...suppliers].sort((left, right) => {
+    if (typeof left === "string") {
+      if (typeof right !== "string") return -1;
+      return left < right ? -1 : left > right ? 1 : 0;
+    }
+    if (typeof right === "string") return 1;
+    if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  }))
+  .readonly();
+
+export const EvidenceRequestSchema = z
+  .strictObject({
+    evidenceKind: EvidenceKindSchema,
+    subjectRef: SubjectRefSchema,
+    suppliableBy: EvidenceSupplierSetSchema,
+  })
+  .refine(
+    (request) =>
+      request.suppliableBy.every(
+        (supplier) => typeof supplier === "string" || supplier.firmId === request.subjectRef.firmId,
+      ),
+    {
+      message: "role suppliers must belong to the evidence subject tenant",
+      path: ["suppliableBy"],
+    },
+  )
+  .readonly();
 export type EvidenceRequest = z.infer<typeof EvidenceRequestSchema>;
 
 /**

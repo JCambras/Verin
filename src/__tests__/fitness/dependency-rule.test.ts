@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Project } from "ts-morph";
+import { Project, ts } from "ts-morph";
 import { join } from "node:path";
 import {
   detectContractsExternalImportViolations,
@@ -64,10 +64,74 @@ describe("dependency-rule fence", () => {
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
     });
 
+    it("baseUrl modules are classified through TypeScript resolution", () => {
+      const project = new Project({
+        useInMemoryFileSystem: true,
+        compilerOptions: {
+          baseUrl: "/",
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+        },
+      });
+      project.createSourceFile(
+        "/src/domain/evil.ts",
+        `import { x } from "src/infrastructure/store";\nexport const y = x;`,
+      );
+      project.createSourceFile("/src/infrastructure/store.ts", "export const x = 1;");
+      const v = detectLayerViolations(project);
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
+    });
+
+    it.each([
+      [
+        "package imports",
+        { name: "verin", type: "module", imports: { "#infra/*": "./src/infrastructure/*.ts" } },
+        "#infra/store",
+      ],
+      [
+        "package self-references",
+        { name: "verin", type: "module", exports: { "./infra/*": "./src/infrastructure/*.ts" } },
+        "verin/infra/store",
+      ],
+    ] as Array<[string, Record<string, unknown>, string]>)(
+      "%s are classified through TypeScript resolution",
+      (_name, packageJson, specifier) => {
+        const project = new Project({
+          useInMemoryFileSystem: true,
+          compilerOptions: {
+            module: ts.ModuleKind.ESNext,
+            moduleResolution: ts.ModuleResolutionKind.Bundler,
+            resolvePackageJsonExports: true,
+            resolvePackageJsonImports: true,
+          },
+        });
+        project.createSourceFile("/package.json", JSON.stringify(packageJson), {
+          scriptKind: ts.ScriptKind.JSON,
+        });
+        project.createSourceFile(
+          "/src/domain/evil.ts",
+          `import { x } from "${specifier}";\nexport const y = x;`,
+        );
+        project.createSourceFile("/src/infrastructure/store.ts", "export const x = 1;");
+        const v = detectLayerViolations(project);
+        expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
+      },
+    );
+
     it("local imports outside the four source layers fail closed", () => {
       const v = detectLayerViolations(
         inMemoryProject({
           "src/domain/evil.ts": `import { x } from "../../scripts/local";\nexport const y = x;`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
+    });
+
+    it("resolved source files outside the project fail closed", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": `import { x } from "../../shared/local";\nexport const y = x;`,
+          "shared/local.ts": "export const x = 1;",
         }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
@@ -122,6 +186,22 @@ describe("dependency-rule fence", () => {
       `export const value = module.require("@infra/store");`,
       `export const value = module["require"]("@infra/store");`,
     ])("indirect CommonJS loaders fail closed", (source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({ "src/domain/evil.ts": source }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it.each([
+      `import { createRequire } from "node:module";\nconst load = createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = nodeModule.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `const { createRequire } = require("node:module");\nconst load = createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `const nodeModule = require("node:module");\nconst load = nodeModule["createRequire"](import.meta.url);\nexport const value = load("@infra/store");`,
+      `const nodeModule = await import("node:module");\nconst load = nodeModule.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `const nodeModule = await import("node:module");\nconst key = "createRequire";\nconst load = nodeModule[key](import.meta.url);\nexport const value = load("@infra/store");`,
+    ])("createRequire loaders fail closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
       );
@@ -222,6 +302,41 @@ describe("dependency-rule fence", () => {
         expect(v[0]?.line).toBe(1);
       },
     );
+
+    it("platform namespaces are rejected by diagnostic code", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts": "export type Timer = NodeJS.Timeout;",
+        }),
+      );
+      expect(v).toEqual([
+        expect.objectContaining({ line: 1, specifier: "<platform-global NodeJS>" }),
+      ]);
+    });
+
+    it.each([
+      {
+        "src/contracts/evil.ts":
+          "declare const fetch: (url: string) => unknown;\nexport const value = fetch('https://example.test');",
+      },
+      {
+        "src/contracts/platform.d.ts":
+          "declare const fetch: (url: string) => unknown;",
+        "src/contracts/use.ts":
+          "export const value = fetch('https://example.test');",
+      },
+      {
+        "src/contracts/platform.d.ts":
+          "declare namespace NodeJS { interface Timeout {} }",
+        "src/contracts/use.ts":
+          "export type Timer = NodeJS.Timeout;",
+      },
+    ] as Array<Record<string, string>>)("ambient declarations cannot restore platform dependencies", (files) => {
+      const v = detectContractsExternalImportViolations(inMemoryProject(files));
+      expect(v.some((violation) =>
+        violation.specifier.startsWith("<ambient-declaration "),
+      )).toBe(true);
+    });
 
     it("locally declared platform-like names do not trip contracts isolation", () => {
       const v = detectContractsExternalImportViolations(
