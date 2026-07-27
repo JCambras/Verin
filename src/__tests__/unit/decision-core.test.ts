@@ -51,8 +51,10 @@ import {
   IANA_TIME_ZONE_REGISTRY_SHA256,
   LinkResolvedTimeZoneSchema,
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
-  SUPPORTED_IANA_TIME_ZONE_REGISTRIES,
+  SUPPORTED_IANA_TIME_ZONE_RELEASES,
+  configuredTimeZoneSchema,
   isTimeZoneInRecordedRegistry,
+  timeZoneNameSchema,
   timeZoneRegistryMembership,
   type TimeZone,
 } from "@contracts/time-zone";
@@ -281,8 +283,8 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // release and gone from the newer one. A bundle stamped with the older version must
     // still validate - and hash-verify - against the release it actually recorded.
     const membership = timeZoneRegistryMembership({
-      [older]: ["America/Nipigon", "America/Toronto"],
-      [newer]: ["America/Toronto"],
+      [older]: { zones: ["America/Nipigon", "America/Toronto"] },
+      [newer]: { zones: ["America/Toronto"] },
     });
     expect(membership(older, "America/Nipigon")).toBe(true);
     expect(membership(newer, "America/Nipigon")).toBe(false);
@@ -292,14 +294,14 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
 
     // The boundary consumes exactly that selection over the SHIPPED map - not a
     // free-standing enum that closes over whichever release ships today.
-    expect(Object.keys(SUPPORTED_IANA_TIME_ZONE_REGISTRIES)).toEqual([
+    expect(Object.keys(SUPPORTED_IANA_TIME_ZONE_RELEASES)).toEqual([
       ...SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
     ]);
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toContain(IANA_TIME_ZONE_DATA_VERSION);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
       for (const zone of ["America/New_York", "Etc/UTC", "Africa/Accra", "Not/AZone"]) {
         expect(isTimeZoneInRecordedRegistry(version, zone)).toBe(
-          SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version].includes(zone),
+          SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones.includes(zone),
         );
       }
       expect(
@@ -319,12 +321,12 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toHaveLength(1);
     const spanningRegistries = new Set(
       SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS.flatMap((version) => [
-        ...SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version],
+        ...SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones,
       ]),
     );
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
       for (const zone of spanningRegistries) {
-        if (SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version].includes(zone)) continue;
+        if (SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones.includes(zone)) continue;
         expect(TimeZoneSchema.safeParse(zone).success).toBe(true);
         expect(
           DecisionInputBundleSchema.safeParse({
@@ -388,6 +390,51 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(LinkResolvedTimeZoneSchema.safeParse("Not/AZone").success).toBe(false);
     // The bundle keeps refusing aliases: they are not replay values.
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "UTC" }).success).toBe(false);
+  });
+
+  it("holds NEW configuration to the CURRENT release, proven on a constructed two-release pair", () => {
+    // The config boundary and the persisted-record boundary must NOT be the same set.
+    // With one shipped release they coincide, so asserting through the shipped release
+    // could only restate that - construct the two-release condition and probe directly.
+    const older = {
+      zones: ["America/Nipigon", "America/Toronto"],
+      links: { "Canada/Eastern": "America/Nipigon" },
+    };
+    const newer = { zones: ["America/Toronto"], links: { "Canada/Eastern": "America/Toronto" } };
+
+    // The alias table travels with ITS release: one spelling, two canonical answers.
+    // A single un-versioned Link table could not express this, so it lives in the map.
+    expect(configuredTimeZoneSchema(older).parse("Canada/Eastern")).toBe("America/Nipigon");
+    expect(configuredTimeZoneSchema(newer).parse("canada/eastern")).toBe("America/Toronto");
+
+    // A Zone the current release dropped stays parseable as a PERSISTED value (that is
+    // what the cross-release union is for) but must NOT boot: a new bundle stamps the
+    // CURRENT version, so accepting it would boot a config no bundle can be built from.
+    const spanning = timeZoneNameSchema([...older.zones, ...newer.zones]);
+    expect(spanning.safeParse("America/Nipigon").success).toBe(true);
+    expect(configuredTimeZoneSchema(newer).safeParse("America/Nipigon").success).toBe(false);
+    expect(configuredTimeZoneSchema(older).parse("America/Nipigon")).toBe("America/Nipigon");
+
+    // The SHIPPED boundary is that factory applied to the current release, so a Zone
+    // only an older supported release ships stays readable as a persisted value and
+    // still refuses to boot. Exactly one release ships, so the two sets coincide and
+    // no input can currently tell them apart - asserted here rather than left implied,
+    // so this arm cannot look covered while being empty. Adopting a second release
+    // makes the loop live.
+    const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
+    expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toHaveLength(1);
+    for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      for (const zone of SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones) {
+        if (current.zones.includes(zone)) continue;
+        expect(TimeZoneSchema.safeParse(zone).success).toBe(true);
+        expect(LinkResolvedTimeZoneSchema.safeParse(zone).success).toBe(false);
+      }
+    }
+    for (const zone of ["America/New_York", "Etc/UTC", "Factory"]) {
+      expect(current.zones).toContain(zone);
+      expect(LinkResolvedTimeZoneSchema.parse(zone)).toBe(zone);
+    }
+    expect(LinkResolvedTimeZoneSchema.parse("UTC")).toBe(current.links["UTC"]);
   });
 
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
@@ -773,6 +820,33 @@ describe("structural-integrity refinements", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+
+  it("rejects an evidence snapshot retrieved BEFORE the observation it records", () => {
+    // The pair is hash-bound and immutable once parsed, and freshness is derived from
+    // it - an inverted pair is a nonsense input, not a lenient one. Equality is legal.
+    const observedAt = "2026-07-26T13:30:00.000Z";
+    const inverted = {
+      ...validSnapshot,
+      observedAt,
+      retrievedAt: "2026-07-26T13:29:59.999Z",
+    };
+    const parsed = EvidenceSnapshotRefSchema.safeParse(inverted);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path[0] === "retrievedAt")).toBe(true);
+    }
+    // The companion: the LEGAL counterparts still parse, so the rejection is
+    // attributable to the inversion and not to a schema that refuses this shape.
+    expect(
+      EvidenceSnapshotRefSchema.safeParse({ ...inverted, retrievedAt: observedAt }).success,
+    ).toBe(true);
+    expect(
+      EvidenceSnapshotRefSchema.safeParse({
+        ...inverted,
+        retrievedAt: "2026-07-26T13:30:00.001Z",
+      }).success,
+    ).toBe(true);
   });
 
   it.each([

@@ -22,7 +22,9 @@ approval, execution, reservation, verification, and secure-storage reference, re
 compensation, canonicalize set-like evaluator inputs, validate each bundle's `timeZone` against the
 registry its own recorded `timeZoneDataVersion` names while a standalone `TimeZone` spans every supported
 registry (so a recorded bundle stays replayable against the release it names even after a later release
-reclassifies one of that release's Zones), require one tenant throughout every external action and plan,
+reclassifies one of that release's Zones - while NEW configuration is held to the current release alone,
+so it fails closed at boot rather than at every later parse), require one tenant throughout every
+external action and plan, refuse an evidence snapshot retrieved before the observation it records,
 tenant-scope and canonicalize role sets,
 normalize authority stages by their explicit order, and reject stale initial approval stages.
 Both projections enumerate fields explicitly. Any

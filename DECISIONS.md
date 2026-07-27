@@ -754,8 +754,10 @@ the current path and names them, instead of surfacing a host-dependent `RangeErr
 diagnostic path lazily.
 
 The schema and both hash-preimage envelopes advance to 1.7.0; fixtures pin the new projection fingerprint
-and digests. The contracts layer measures 2226 lines, so ADR-0029 re-baselines its ceiling from 2200 to
-2300 through ADR-0018's amendment path.
+and digests. The contracts layer measures 2324 lines by the line-budget fence's own metric, so ADR-0029
+re-baselines its ceiling from 2200 to 2400 through ADR-0018's amendment path - 76 lines of headroom.
+(The measurement and ceiling here are the FINAL post-review figures, corrected in D-053; the 2226/2300
+pair this entry first recorded went stale as the review corrections landed.)
 **Why:** these are the bounded F51-F57 review corrections. They close an unsound positivity guard, an
 unguarded escalation delay, a replay-metadata field that could never be used for replay, an operational
 boot regression on long-legal timezone identifiers, a comparator that could diverge from the record it
@@ -797,3 +799,34 @@ traversal, and a blocking fingerprint whose maintenance path pointed at an unnec
 restore the `Object.keys(...) as [string, ...string[]]` cast, restore the full external-action traversal
 in `decision.ts`, and remove the fingerprint maintenance rule from the constant, ADR-0029, and the
 fixtures README.
+
+### D-053 · 2026-07-27 · captain-decision · The configuration boundary is release-scoped, and evidence chronology is structural
+
+Reading an already-persisted record and accepting a NEW operator value are two different time-zone
+boundaries, and only the first spans releases. `TimeZone` keeps admitting the union of every supported
+release so a persisted bundle stays parseable after a later release reclassifies one of its Zones, but
+`FIRM_TIMEZONE` is now validated against the CURRENT release alone. Otherwise a configured Zone that
+only an older release shipped would boot and then fail at EVERY bundle parse, because a new bundle
+stamps the current version - fail-late, where charter #7's config discipline is fail-closed at boot.
+
+The supported map now keys whole RELEASES, not Zone lists: each entry carries its own `Zone` names and
+its own `Link` alias table. A single un-versioned alias table could not follow ADR-0029's own adoption
+procedure, which adds "its version key + registries" (plural), so the alias half would have stayed
+pinned to 2026b while the Zone half advanced. Both halves are now selected together by version.
+
+An `EvidenceSnapshotRef` can no longer claim it was retrieved BEFORE the observation it records
+(`retrievedAt >= observedAt`; equality stays legal). The pair is a hash-bound immutable decision input
+and the fresh/stale/unknown label is derived from it, so an inverted pair is an illegal state rather
+than a lenient one - the same discipline the approval plane already carries.
+
+The contracts layer measures 2324 lines by the line-budget fence's own metric, so ADR-0029 re-baselines
+its ceiling from 2300 to 2400 through ADR-0018's amendment path, leaving 76 lines of headroom. The prior
+2300 left 15, which blocks the next edit of any size rather than budgeting a layer. The headroom is a
+budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`. No projected
+field, byte, or digest changes: schema and preimage versions stay 1.7.0.
+**Why:** these are the bounded F62-F64 review corrections. They close a configuration boundary that
+silently inherited a replay-only widening, an alias table that could not follow a registry adoption, an
+unconstrained evidence chronology, and a ceiling with no honest headroom.
+**Revert path:** return the configuration boundary to the cross-release union, flatten the release map
+back to Zone lists with one shared alias table, drop the `retrievedAt >= observedAt` refinement and its
+companion, and restore the 2300-line ceiling.

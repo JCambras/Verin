@@ -71,6 +71,18 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
         });
       }
     }
+    // observedAt is the instant the fact itself holds; retrievedAt is when Verin
+    // fetched it. Retrieval cannot precede observation - an inverted pair would bind
+    // into the decision hash as an immutable input and yield a freshness label
+    // (fresh/stale/unknown is derived from this pair) no evaluator can interpret.
+    // Equality is legal: a source that reports as-of == fetched-at is ordinary.
+    if (snapshot.retrievedAt < snapshot.observedAt) {
+      ctx.addIssue({
+        code: "custom",
+        message: "evidence retrieval cannot precede the observation it records",
+        path: ["retrievedAt"],
+      });
+    }
   })
   .readonly();
 export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
