@@ -83,6 +83,18 @@ describe("config fail-closed guards", () => {
     expect(() => bootWithTimezone("America/New_York_2")).toThrow(/firmTimezone/);
   });
 
+  it("keeps invalid timezone boot diagnostics bounded and single-line", () => {
+    expect.assertions(3);
+    try {
+      bootWithTimezone(`Not/AZone\n${"x".repeat(10_000)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("iana-tzdb/2026b");
+      expect(message.length).toBeLessThan(240);
+      expect(message).not.toMatch(/[\r\n]/u);
+    }
+  });
+
   it("refuses a declared placeholder Zone even though it IS a pinned Zone name", () => {
     // `Factory` is in the pinned release - a bundle that recorded it still parses and
     // hash-verifies - but no formatter resolves it, so booting on it would only throw

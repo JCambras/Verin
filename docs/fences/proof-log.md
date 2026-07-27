@@ -1563,3 +1563,69 @@ golden:validate, and the full suite pass, with all four fixture digests unchange
 untouched, and contracts at 2360/2400.
 
 **Date:** 2026-07-27 (review corrections F71-F74, D-056).
+
+## F75-F83 · canonical decision-boundary review corrections (D-057)
+
+**Invariants:** every hash-bound set has one duplicate-free canonical representation; both preimage
+builders return structured cycle refusals; every direct decision-core scoped-reference collection is
+registered with a tenant constraint; timezone refusals are bounded and release-correct; dependency
+loaders cannot hide behind type erasure.
+
+Replacing the shared string, scoped-reference, versioned-source, and precondition normalizers with
+identity functions, and their uniqueness checks with unconditional success, failed 19 parameterized
+companions. The failures covered permutation and duplicate inputs independently for all five
+execution collections (`conflictKeys`, `reservationRefs`, `preconditions`,
+`requiredEvidenceSnapshotRefs`, `dependsOn`) and both recursive explanation collections
+(`evidenceSnapshotRefs`, `sourceRefs`). Restoring schema normalization but bypassing
+`normalizeDecisionRecord` in `decisionHashPreimage` then failed all 11 defensive permutation arms:
+the five step collections, the four collections also present on compensation, and both recursive
+explanation collections.
+
+Removing the ancestor check from optional-property normalization failed both production-path cycle
+companions with host stack overflows:
+```
+× returns a circular-reference AppError through the bundle preimage path
+RangeError: Maximum call stack size exceeded
+× returns a circular-reference AppError through the decision preimage path
+RangeError: Maximum call stack size exceeded
+```
+
+Adding `export const TenantFenceProbeSchema = z.array(SubjectRefSchema)` without registering a tenant
+constraint failed the inventory companion with the exact new subject:
+```
++ "trigger.ts:TenantFenceProbeSchema"
+```
+Removing only the `candidateRefs` same-tenant refinement failed the functional ambiguity companion
+because the mixed `firm-a` / `firm-b` candidate set parsed successfully. The duplicate arm had
+already failed under the shared-uniqueness injection above.
+
+Two timezone injections failed independently. Replacing a constructed release's embedded version
+with the global current version in the refusal path produced:
+```
+Expected: "iana-test/refusal"
+Received: "\"Not/Test\" is not a Zone in iana-tzdb/2026b"
+```
+Removing the shared enum error formatter restored Zod's full 341-member option list, failed the
+release-name assertion, and made the message exceed the bounded diagnostic contract. The retained
+tests also exercise newline and Unicode line-separator removal plus non-string input through the same
+formatter and through `getConfig()`.
+
+Removing `AsExpression` from the general expression unwrapper and replacing provenance resolution
+with a one-node unwrap failed both dependency companions:
+```
+× type-asserted node:module loaders cannot evade createRequire detection
+AssertionError: expected [] to include 'domain->unresolved'
+× an ambient module alias typed as any remains loader provenance
+AssertionError: expected [] to include 'domain->unresolved'
+```
+
+Finally, the pre-amendment line-budget fence measured the review fix at 2727 and failed against 2400.
+The final dependency-direction cleanup reduced the contracts layer to 2726; ADR-0029 now owns the
+2800 ceiling with 74 measured lines of headroom. The
+shared-normalization rationale is recorded separately from that measurement in D-057 and ADR-0029.
+
+**Revert:** restored every injected defect after its focused failure. All recorded hash fixtures and
+registry pins remain unchanged. Fitness (331), the full suite (488), Playwright (17), typecheck,
+lint, knip, production build, v3:invariants, and golden:validate all pass.
+
+**Date:** 2026-07-27 (review corrections F75-F83, D-057).

@@ -35,8 +35,12 @@ parse time, not by reviewer discipline. Three constraints meet here:
   vectors, labeled in their README).
 - **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.7.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
-  stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
-  only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
+  stored hash; the decision projection excludes only its stored hash. Both projections run through
+  the same pure collection normalizers used by their parse boundaries, including recursive
+  explanation citations, execution steps, and compensating actions. This defensive normalization
+  does not parse a structurally typed or persistence-hydrated record, and non-plain objects still
+  reach `canonicalJson`'s refusal unchanged. Exhaustive key lists are checked against the inferred
+  schema keys so optional
   schema growth cannot evade a preimage-version bump. Version-keyed recursive schema fingerprints cover
   every nested projected object, array, union arm, and optional property. Explicit undefined optional
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
@@ -61,7 +65,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
   enum derived from the keys of a supported-release map (`iana-tzdb/2026b` is the only shipped
   entry), and the map's VALUES decide validity: a bundle's `timeZone` is checked against the
   registry that bundle's own recorded version names, while the standalone `TimeZone` admits the
-  union of every supported registry. Each entry carries BOTH halves of its release - the canonical
+  union of every supported registry. A release carries its version, registries, and placeholders as
+  one inseparable value; the supported map derives its key from that embedded version, so no caller
+  can label one release's data with another release's version. Each entry carries BOTH halves of its release - the canonical
   `Zone` names AND that release's own `Link` alias table - because tzdb moves names between them; a
   single un-versioned alias table could not follow an adoption that adds "its version key +
   registries" (plural). Both halves are needed. A single-version literal would make
@@ -117,13 +123,19 @@ parse time, not by reviewer discipline. Three constraints meet here:
   configured with one fails FATAL at boot and must name the IANA Zone for that offset instead.
   `TimeZone` is branded and `timeZoneDataVersion` is
   typed by the release map's key union, so neither a bare `string` nor an unshipped version string
-  can reach a replay field without parsing.
+  can reach a replay field without parsing. Every rejected configured value uses one release-aware
+  formatter that removes line-breaking control characters, bounds echoed text, and distinguishes
+  non-string inputs without rendering their payload.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
   snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target,
   reservation, verification-rule, secure request, secure event, and secure blob links are strict
   structured references carrying `firmId` plus the opaque branded ID. Approval templates are
   tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
-  collections reject duplicates and normalize by firm then opaque ID. Decision-record refinements recursively
+  collections reject duplicates and normalize by firm then opaque ID. Ambiguity candidates are a
+  duplicate-free canonical set constrained to one tenant. The tenant-scope fence discovers every
+  direct scoped-reference and composite-reference collection in decision-core and requires an exact
+  match with its explicit constraint registry; a newly exported collection fails until its tenant
+  rule and companion are registered. Decision-record refinements recursively
   check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
   actor roles, authority roles, and evidence-supplier roles, rejecting every cross-tenant link. For the
   execution plan the record binds ONE edge per step - the step's `targetRef` - because the action and plan
@@ -137,7 +149,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
   pre-execution conditions naming at least one evidence snapshot, and a tenant-scoped verification rule.
   Every reference within an action matches its target tenant, every step and compensation in a plan shares
   one tenant, and parent and compensation idempotency keys must be distinct across the plan. Set-like
-  dependency, conflict, reservation, and precondition evidence collections reject duplicates, and a
+  dependency, conflict, reservation, precondition, and precondition-evidence collections reject
+  duplicates and normalize canonically, and a
   derived decision cannot name itself as its parent.
 - **Approval chronology:** EVERY approval duration - relative stage expiration and escalation
   delay alike - is strictly positive, decided by reading the duration's own component magnitudes
@@ -158,9 +171,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   claiming to check it.
 - **One comparator, one uniqueness rule for tenant-scoped references:** `contracts/decision-core/ids.ts`
   exports THE canonical `{firmId, id}` order (firm, then opaque id) and THE set-identity helper.
-  Role sets, evidence-supplier sets, execution collections, replay collections, and both hash
-  preimages consume them, so a parsed record and its hash preimage cannot order the same list two
-  ways once references stop being single-tenant. Trigger arms carry their own tenant refinements
+  It also owns the composite order for versioned source citations and execution preconditions.
+  Role sets, evidence-supplier sets, ambiguity candidates, execution collections, replay
+  collections, explanation citations, and both hash preimages consume these shared authorities, so
+  a parsed record and its hash preimage cannot order the same list two ways once references stop
+  being single-tenant. Trigger arms carry their own tenant refinements
   and the discriminated union is composed FROM the refined arms, so no check exists in two places
   where only one copy runs.
 - **Canonical serialization refuses precisely and in bounded space:** cycles are detected against
@@ -171,10 +186,12 @@ parse time, not by reviewer discipline. Three constraints meet here:
   paths that actually reach it: optional-property normalization passes non-plain objects through
   untouched (one shared prototype rule), because rebuilding them from their own entries would
   flatten a `Date`/`Map`/class instance to `{}` and hash it as `{}` - different decision inputs
-  collapsing onto one `bundleHash`. Both hash preimages have exactly ONE normalization path: the
-  bundle's canonical re-sort of its two reference collections runs BEFORE projection rather than
-  being spread over it, so no payload field bypasses that walk. Proven through the preimage
-  builders, not by calling the serializer directly - the direct call cannot see this gap.
+  collapsing onto one `bundleHash`. Optional-property normalization tracks ancestors before it
+  rebuilds arrays or plain objects, leaving a back-edge intact for `canonicalJson` to return the
+  documented circular-reference `AppError` instead of overflowing the host stack. Both preimage
+  builders project once, remove explicit undefined values once, then use the shared pure payload
+  normalizers. Proven through both preimage builders, not by calling the serializer directly - the
+  direct call cannot see either normalization gap.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
@@ -188,13 +205,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2360** after the
-  version-keyed IANA release map, the release-scoped configuration boundary, the placeholder-Zone
-  subtraction, and complete review hardening including the removal of the non-ratified dead exports -
-  **40 lines of headroom**; this is the FINAL post-review
-  figure, and the only current-state measurement to plan against). The prior 2300 left 15 lines, a ceiling that
-  blocks the next edit of any size rather than one that budgets a layer. The ratchet-down doctrine
-  resumes from 2400; later contract-layer prompts
+- **Shared normalization authority:** independently of any line measurement, parse boundaries and
+  hash preimages must call the same pure normalization functions. A separate hand-maintained
+  decision-preimage field walk would duplicate roughly 65 lines of recursive execution and
+  explanation structure, then drift whenever either schema grows. Parsing inside a hash builder
+  would instead change the accepted runtime object boundary and hide non-plain object refusals.
+  Shared pure authorities avoid both defects while preserving explicit versioned projections.
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2800**. The final implementation
+  measures **2726** lines by the line-budget fence's own metric, leaving **74 lines of headroom**.
+  This is the final post-review figure and the only current-state measurement to plan against. The
+  former 2400 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
+  resumes from 2800; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
@@ -219,14 +240,15 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 2400 (a real growth, honestly sized and ratcheted).
+  grew 600 → 2800 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 2400 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 2800 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
-  `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
-  its enclosing tenant.
+  `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
+  cross-tenant values and the direct scoped-reference collection registry exactly matches the
+  collections discovered from the decision-core schemas.
 - `charter-map.json` #16 executes `decision-core-external-action-safety`, which rejects incomplete
   compensating actions and idempotency-key aliasing.
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended

@@ -216,15 +216,34 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       Node.isAsExpression(expression) ||
       Node.isSatisfiesExpression(expression) ||
       Node.isNonNullExpression(expression) ||
-      Node.isTypeAssertion(expression)
+      Node.isTypeAssertion(expression) ||
+      Node.isAwaitExpression(expression)
     ) {
       expression = expression.getExpression();
     }
     return expression;
   };
+  const expressionProvenance = (
+    node: Node | undefined,
+    seen: Set<Node> = new Set(),
+  ): Node | undefined => {
+    const expression = unwrapExpression(node);
+    if (!Node.isIdentifier(expression) || seen.has(expression)) {
+      return expression;
+    }
+    seen.add(expression);
+    const declaration = expression
+      .getSymbol()
+      ?.getDeclarations()
+      .find(Node.isVariableDeclaration);
+    const initializer = declaration?.getInitializer();
+    return initializer === undefined
+      ? expression
+      : expressionProvenance(initializer, seen);
+  };
   /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
   const isAmbientGlobalReference = (node: Node | undefined): boolean => {
-    const expression = unwrapExpression(node);
+    const expression = expressionProvenance(node);
     if (!Node.isIdentifier(expression)) return false;
     return (expression.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
       declaration.getSourceFile().isDeclarationFile(),
@@ -245,12 +264,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     );
   };
   const loaderSpecifier = (node: Node | undefined): string | null => {
-    let expression = node;
-    while (Node.isAwaitExpression(expression) || Node.isParenthesizedExpression(expression)) {
-      expression = expression.getExpression();
-    }
+    const expression = unwrapExpression(node);
     if (!Node.isCallExpression(expression)) return null;
-    const callee = expression.getExpression();
+    const callee = unwrapExpression(expression.getExpression());
+    if (callee === undefined) return null;
     if (
       callee.getKind() !== SyntaxKind.ImportKeyword &&
       (callee.getText() !== "require" || isDeclaredLocally(callee))
@@ -284,11 +301,21 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
+  const isCreateRequireNamespace = (node: Node | undefined): boolean => {
+    const expression = unwrapExpression(node);
+    return (
+      (Node.isIdentifier(expression) &&
+        createRequireNamespaces.has(expression.getText())) ||
+      isNodeModuleSpecifier(loaderSpecifier(expression))
+    );
+  };
   for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     const initializer = declaration.getInitializer();
+    const expression = unwrapExpression(initializer);
     const initializedFromNodeModule =
       isNodeModuleSpecifier(loaderSpecifier(initializer)) ||
-      (Node.isIdentifier(initializer) && createRequireNamespaces.has(initializer.getText()));
+      (Node.isIdentifier(expression) &&
+        createRequireNamespaces.has(expression.getText()));
     if (!initializedFromNodeModule) continue;
     const name = declaration.getNameNode();
     if (Node.isIdentifier(name)) {
@@ -393,8 +420,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const expression = access.getExpression();
     if (
       access.getName() === "createRequire" &&
-      (createRequireNamespaces.has(expression.getText()) ||
-        isNodeModuleSpecifier(loaderSpecifier(expression)))
+      isCreateRequireNamespace(expression)
     ) {
       refs.push({
         specifier: null,
@@ -427,8 +453,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
     const argument = access.getArgumentExpression();
     if (
-      (createRequireNamespaces.has(access.getExpression().getText()) ||
-        isNodeModuleSpecifier(loaderSpecifier(access.getExpression()))) &&
+      isCreateRequireNamespace(access.getExpression()) &&
       (!argument ||
         !(
           Node.isStringLiteral(argument) ||

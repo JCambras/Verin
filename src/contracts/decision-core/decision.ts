@@ -34,11 +34,16 @@ import {
   ScopeRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  compareVersionedScopedReferences,
+  hasUniqueByComparator,
+  hasUniqueScopedReferences,
+  normalizeScopedReferences,
+  normalizeVersionedScopedReferences,
 } from "./ids";
 import { AnyActorRefSchema, TenantContextSchema } from "./actor";
 import { ResolvableBlockerSchema } from "./trigger";
 import { AuthorityRequirementSchema } from "./authority";
-import { ExecutionPlanSchema } from "./execution";
+import { ExecutionPlanSchema, normalizeExecutionPlan } from "./execution";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
 export const VersionedSourceRefSchema = z
@@ -76,15 +81,63 @@ export const PrecedenceStepSchema = z.strictObject({
 export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 
 /** Recursive explanation tree - every decision explains itself, citing evidence + sources. */
-export const ExplanationNodeSchema = z.strictObject({
-  code: z.string().min(1),
-  messageTemplate: z.string().min(1),
-  evidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
-  sourceRefs: z.array(VersionedSourceRefSchema).readonly(),
-  get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
-    return z.array(ExplanationNodeSchema).readonly();
-  },
-}).readonly();
+type NormalizableExplanationNode = {
+  readonly evidenceSnapshotRefs: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+  readonly sourceRefs: readonly VersionedSourceRef[];
+  readonly childNodes: readonly NormalizableExplanationNode[];
+};
+
+const normalizeExplanationNode = <T extends NormalizableExplanationNode>(
+  node: T,
+  ancestors: Set<object> = new Set(),
+): T => {
+  if (ancestors.has(node)) return node;
+  ancestors.add(node);
+  try {
+    return {
+      ...node,
+      evidenceSnapshotRefs: normalizeScopedReferences(
+        node.evidenceSnapshotRefs,
+      ),
+      sourceRefs: normalizeVersionedScopedReferences(node.sourceRefs),
+      childNodes: node.childNodes.map((child) =>
+        normalizeExplanationNode(child, ancestors),
+      ),
+    } as T;
+  } finally {
+    ancestors.delete(node);
+  }
+};
+
+export const ExplanationNodeSchema = z
+  .strictObject({
+    code: z.string().min(1),
+    messageTemplate: z.string().min(1),
+    evidenceSnapshotRefs: z
+      .array(EvidenceSnapshotIdRefSchema)
+      .refine(
+        hasUniqueScopedReferences,
+        "duplicate explanation evidence snapshot reference",
+      )
+      .overwrite(normalizeScopedReferences)
+      .readonly(),
+    sourceRefs: z
+      .array(VersionedSourceRefSchema)
+      .refine(
+        (refs) =>
+          hasUniqueByComparator(refs, compareVersionedScopedReferences),
+        "duplicate explanation source reference",
+      )
+      .overwrite(normalizeVersionedScopedReferences)
+      .readonly(),
+    get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
+      return z.array(ExplanationNodeSchema).readonly();
+    },
+  })
+  .readonly();
 export type ExplanationNode = z.infer<typeof ExplanationNodeSchema>;
 
 type ExplanationTenantReferences = {
@@ -92,6 +145,32 @@ type ExplanationTenantReferences = {
   sourceRefs: readonly VersionedSourceRef[];
   childNodes: readonly ExplanationTenantReferences[];
 };
+
+type NormalizableDecisionRecord = {
+  readonly explanationTrace: readonly unknown[];
+  readonly result: {
+    readonly kind: string;
+    readonly executionPlan?: Parameters<typeof normalizeExecutionPlan>[0];
+  };
+};
+
+export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
+  record: T,
+): T =>
+  ({
+    ...record,
+    explanationTrace: record.explanationTrace.map((node) =>
+      normalizeExplanationNode(node as NormalizableExplanationNode),
+    ),
+    result:
+      record.result.kind === "proceed" &&
+      record.result.executionPlan !== undefined
+        ? {
+            ...record.result,
+            executionPlan: normalizeExecutionPlan(record.result.executionPlan),
+          }
+        : record.result,
+  }) as T;
 
 /** JSON-scalar parameter values (canonically serializable; never objects-in-disguise). */
 export const ScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);

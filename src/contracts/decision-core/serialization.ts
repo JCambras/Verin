@@ -6,9 +6,9 @@
 import type { Result } from "../result";
 import { err, ok } from "../result";
 import { validationError, type AppError } from "../errors";
-import { compareScopedReferences } from "./ids";
+import { normalizeScopedReferences } from "./ids";
 import type { DecisionInputBundle } from "./evidence";
-import type { DecisionRecord } from "./decision";
+import { normalizeDecisionRecord, type DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
@@ -83,39 +83,68 @@ export type DecisionHashPreimage = Readonly<{
   readonly preimageVersion: typeof DECISION_HASH_PREIMAGE_VERSION;
   readonly payload: DecisionHashPayload;
 }>;
+type NormalizableDecisionInputBundle = {
+  readonly householdInstructionVersionRefs: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+  readonly evidenceSnapshotRefs: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+};
+export const normalizeDecisionInputBundle = <
+  T extends NormalizableDecisionInputBundle,
+>(
+  bundle: T,
+): T =>
+  ({
+    ...bundle,
+    householdInstructionVersionRefs: normalizeScopedReferences(
+      bundle.householdInstructionVersionRefs,
+    ),
+    evidenceSnapshotRefs: normalizeScopedReferences(
+      bundle.evidenceSnapshotRefs,
+    ),
+  }) as T;
 export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreimage {
+  const payload = normalizeOptionalProperties(
+    projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
+  );
   return {
     hashKind: "decision-input-bundle",
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
-    // Re-sorted BEFORE projection, not spread over it afterwards: every payload field
-    // then reaches the preimage through the ONE projectDefined walk, instead of two
-    // fields taking a second normalization path kept in sync by hand.
-    payload: projectDefined(
-      {
-        ...bundle,
-        householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedReferences),
-        evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedReferences),
-      },
-      BUNDLE_HASH_PAYLOAD_KEYS,
-    ),
+    payload: normalizeDecisionInputBundle(payload),
   };
 }
 export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
+  const payload = normalizeOptionalProperties(
+    projectDefined(record, DECISION_HASH_PAYLOAD_KEYS),
+  );
   return {
     hashKind: "decision-record",
     preimageVersion: DECISION_HASH_PREIMAGE_VERSION,
-    payload: projectDefined(record, DECISION_HASH_PAYLOAD_KEYS),
+    payload: normalizeDecisionRecord(payload),
   };
 }
 function projectDefined<T extends object, const K extends readonly (keyof T)[]>(value: T, keys: K): Pick<T, K[number]> {
   return Object.fromEntries(
-    keys.flatMap((key) => (value[key] === undefined ? [] : [[key, normalizeOptionalProperties(value[key])]])),
+    keys.flatMap((key) => (value[key] === undefined ? [] : [[key, value[key]]])),
   ) as Pick<T, K[number]>;
 }
 /** THE plain-object rule, shared so normalization and serialization cannot disagree. */
 function isPlainObject(value: object): boolean {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+class CanonicalizationRefusal {
+  constructor(readonly reason: string) {}
+}
+type Trail = { readonly parent: Trail; readonly key: string } | null;
+function describeTrail(trail: Trail): string {
+  const segments: string[] = [];
+  for (let node = trail; node !== null; node = node.parent) segments.push(node.key);
+  return segments.length === 0 ? "value" : `value.${segments.reverse().join(".")}`;
 }
 /**
  * Drops explicitly-undefined optional keys so an absent field spelled `undefined`
@@ -124,14 +153,45 @@ function isPlainObject(value: object): boolean {
  * and hash it as `{}` - different decision inputs collapsing onto one bundleHash - and
  * would make canonicalJson's refusal unreachable on the only path that reaches it.
  */
-function normalizeOptionalProperties<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(normalizeOptionalProperties) as T;
-  if (value !== null && typeof value === "object" && isPlainObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value).flatMap(([key, nested]) =>
-        nested === undefined ? [] : [[key, normalizeOptionalProperties(nested)]],
-      ),
-    ) as T;
+function normalizeOptionalProperties<T>(
+  value: T,
+  trail: Trail = null,
+  ancestors: Set<object> = new Set(),
+): T {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    (Array.isArray(value) || isPlainObject(value))
+  ) {
+    if (ancestors.has(value)) return value;
+    ancestors.add(value);
+    try {
+      if (Array.isArray(value)) {
+        return value.map((nested, index) =>
+          normalizeOptionalProperties(
+            nested,
+            { parent: trail, key: String(index) },
+            ancestors,
+          ),
+        ) as T;
+      }
+      return Object.fromEntries(
+        Object.entries(value).flatMap(([key, nested]) =>
+          nested === undefined
+            ? []
+            : [[
+                key,
+                normalizeOptionalProperties(
+                  nested,
+                  { parent: trail, key },
+                  ancestors,
+                ),
+              ]],
+        ),
+      ) as T;
+    } finally {
+      ancestors.delete(value);
+    }
   }
   return value;
 }
@@ -145,21 +205,12 @@ export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHa
     return err(validationError(e instanceof CanonicalizationRefusal ? e.reason : "value is not canonically serializable"));
   }
 }
-class CanonicalizationRefusal {
-  constructor(readonly reason: string) {}
-}
 /**
  * The path to the node being serialized, as a parent link rather than an array, so
  * descending costs O(1) per node instead of copying the whole path at every step -
  * this serializer will run over data-driven explanation trees whose depth is not
  * bounded by the schema. The readable form is built ONLY when a refusal is raised.
  */
-type Trail = { readonly parent: Trail; readonly key: string } | null;
-function describeTrail(trail: Trail): string {
-  const segments: string[] = [];
-  for (let node = trail; node !== null; node = node.parent) segments.push(node.key);
-  return segments.length === 0 ? "value" : `value.${segments.reverse().join(".")}`;
-}
 /**
  * `ancestors` holds the objects on the path from the root to `value`, so a cycle is
  * REFUSED BY NAME rather than by exhausting the call stack - a RangeError would

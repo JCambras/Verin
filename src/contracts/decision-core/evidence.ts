@@ -21,11 +21,14 @@ import {
   SecureBlobRefSchema,
   SubjectRefSchema,
   TimestampSchema,
-  compareScopedReferences,
   hasUniqueScopedReferences,
+  normalizeScopedReferences,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
-import { CANONICAL_SERIALIZER_VERSION, DECISION_CORE_SCHEMA_VERSION } from "./serialization";
+import {
+  CANONICAL_SERIALIZER_VERSION,
+  DECISION_CORE_SCHEMA_VERSION,
+} from "./serialization";
 import {
   SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
   TimeZoneSchema,
@@ -110,14 +113,14 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
     .refine(hasUniqueScopedReferences, {
       message: "duplicate household instruction version reference",
     })
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite(normalizeScopedReferences)
     .readonly(),
   evidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
     .refine(hasUniqueScopedReferences, {
       message: "duplicate evidence snapshot reference",
     })
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite(normalizeScopedReferences)
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,

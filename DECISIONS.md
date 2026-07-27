@@ -964,3 +964,46 @@ meant to protect.
 **Revert path:** re-export the four helpers, restore the file-local `require` symbol test and the
 whole-AST JSX probe, restore the `no Link targets a placeholder` and module-constant assertions, and
 revert the `.env.example` / ADR-0029 migration wording.
+
+### D-057 · 2026-07-27 · captain-decision · Hash-bound sets share canonical authorities and defensive preimages
+
+Every set-like execution collection now rejects duplicates and normalizes through the shared
+authorities in `ids.ts`: conflict keys, reservation references, preconditions, each precondition's
+required evidence references, and dependency edges. Explanation evidence references and composite
+versioned-source citations follow the same discipline recursively. The decision hash preimage
+defensively applies the same pure execution and explanation normalizers as the parse boundaries,
+without parsing persistence-hydrated objects or weakening `canonicalJson`'s non-plain-object
+refusal. Optional-property normalization tracks ancestors before rebuilding containers, so cycles
+through either production preimage path return the documented circular-reference `AppError` instead
+of overflowing the host stack.
+
+This shared-normalization choice stands independently of the line budget. A separate handwritten
+decision-preimage normalizer would duplicate roughly 65 lines of recursive execution and explanation
+structure and create a second field list that could drift from the schemas. Parsing inside the hash
+builder would change the accepted runtime object boundary and hide intentional serializer refusals.
+Shared pure authorities avoid both defects while preserving the explicit, versioned preimage
+projections.
+
+`AmbiguityRef.candidateRefs` is now duplicate-free, canonical, and constrained to one tenant. The
+tenant fence derives the direct scoped-reference and composite-reference collection inventory from
+the decision-core schemas, compares it exactly with the explicit constraint registry, and separately
+exercises mixed-tenant and duplicate ambiguity candidates. It therefore proves the registered
+boundaries and inventory it actually checks, without claiming a broader subject list.
+
+Each IANA release now carries its data version, Zone registry, Link registry, and placeholders as one
+value, and the supported-release map derives its key from that embedded version. All timezone
+refusals use one bounded, single-line, release-aware formatter that removes control characters and
+reports non-string kinds without echoing arbitrary payloads. The dependency fence now uses its
+general expression unwrapper for asserted `node:module` loaders and follows variable provenance so
+an ambient `module` alias typed as `any` remains a CommonJS loader.
+
+The final contracts implementation measures **2726** lines by the line-budget fence's own metric.
+ADR-0029 re-baselines the contracts ceiling from 2400 to **2800** through ADR-0018's amendment path,
+leaving **74 lines of measured headroom**. The ratchet resumes from 2800; this is not standing
+permission for unrelated growth. All recorded bundle and decision fixture digests remain
+byte-identical, so schema and preimage versions stay 1.7.0.
+**Why:** semantically equivalent decisions must bind to one hash, tenant-scoped collections must
+reject mixed ownership, structured refusals must survive malformed runtime objects, and blocking
+fences must prove the bypasses they claim to close.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant/configuration
+boundaries remain supported.

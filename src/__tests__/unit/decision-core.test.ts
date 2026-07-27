@@ -12,7 +12,11 @@ import {
   compareScopedReferences,
 } from "@contracts/decision-core/ids";
 import { ActorRefSchema, TokenizedPayloadSchema } from "@contracts/decision-core/actor";
-import { EvidenceRequestSchema, IntentSchema } from "@contracts/decision-core/trigger";
+import {
+  AmbiguityRefSchema,
+  EvidenceRequestSchema,
+  IntentSchema,
+} from "@contracts/decision-core/trigger";
 import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
@@ -395,11 +399,13 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // With one shipped release they coincide, so asserting through the shipped release
     // could only restate that - construct the two-release condition and probe directly.
     const older = {
+      dataVersion: "iana-test/older",
       zones: ["America/Nipigon", "America/Toronto"],
       links: { "Canada/Eastern": "America/Nipigon" },
       placeholderZones: [],
     };
     const newer = {
+      dataVersion: "iana-test/newer",
       zones: ["America/Toronto"],
       links: { "Canada/Eastern": "America/Toronto" },
       placeholderZones: [],
@@ -413,7 +419,10 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // A Zone the current release dropped stays parseable as a PERSISTED value (that is
     // what the cross-release union is for) but must NOT boot: a new bundle stamps the
     // CURRENT version, so accepting it would boot a config no bundle can be built from.
-    const spanning = timeZoneNameSchema([...older.zones, ...newer.zones]);
+    const spanning = timeZoneNameSchema(
+      [...older.zones, ...newer.zones],
+      "constructed union",
+    );
     expect(spanning.safeParse("America/Nipigon").success).toBe(true);
     expect(configuredTimeZoneSchema(newer).safeParse("America/Nipigon").success).toBe(false);
     expect(configuredTimeZoneSchema(older).parse("America/Nipigon")).toBe("America/Nipigon");
@@ -427,6 +436,9 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const current = SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION];
     expect(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS).toHaveLength(1);
     for (const version of SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS) {
+      expect(SUPPORTED_IANA_TIME_ZONE_RELEASES[version].dataVersion).toBe(
+        version,
+      );
       for (const zone of SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones) {
         if (current.zones.includes(zone)) continue;
         expect(TimeZoneSchema.safeParse(zone).success).toBe(true);
@@ -506,6 +518,7 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     // placeholder and no alias pointing at it - the general rule would otherwise be
     // indistinguishable from "Factory is hardcoded somewhere".
     const release = {
+      dataVersion: "iana-test/placeholders",
       zones: ["America/Toronto", "Local"],
       links: { "Canada/Eastern": "America/Toronto", Unset: "Local" },
       placeholderZones: ["Local"],
@@ -517,6 +530,67 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(configured.safeParse("Unset").success).toBe(false);
     // A release that declares no placeholder still admits the same name.
     expect(configuredTimeZoneSchema({ ...release, placeholderZones: [] }).parse("Local")).toBe("Local");
+  });
+
+  it("bounds time-zone refusals and names the release without echoing unsafe input", () => {
+    const refused = LinkResolvedTimeZoneSchema.safeParse(
+      `Not/AZone\n\u2028${"x".repeat(10_000)}`,
+    );
+    expect(refused.success).toBe(false);
+    if (!refused.success) {
+      const message = refused.error.issues[0]!.message;
+      expect(message).toContain(IANA_TIME_ZONE_DATA_VERSION);
+      expect(message.length).toBeLessThan(180);
+      expect(message).not.toMatch(/[\r\n\u2028\u2029]/u);
+    }
+
+    const nonString = LinkResolvedTimeZoneSchema.safeParse(42);
+    expect(nonString.success).toBe(false);
+    if (!nonString.success) {
+      expect(nonString.error.issues[0]!.message).toContain("received number");
+      expect(nonString.error.issues[0]!.message).not.toContain('"number"');
+    }
+
+    const constructed = configuredTimeZoneSchema({
+      dataVersion: "iana-test/refusal",
+      zones: ["Etc/Test"],
+      links: {},
+      placeholderZones: [],
+    }).safeParse("Not/Test");
+    expect(constructed.success).toBe(false);
+    if (!constructed.success) {
+      expect(constructed.error.issues[0]!.message).toContain(
+        "iana-test/refusal",
+      );
+    }
+  });
+
+  it("keeps ambiguity candidates duplicate-free, canonical, and single-tenant", () => {
+    const first = { firmId: "firm-a", id: "subject:a" };
+    const second = { firmId: "firm-a", id: "subject:b" };
+    const parsed = AmbiguityRefSchema.parse({
+      slotName: "household",
+      candidateRefs: [second, first],
+      humanQuestionCode: "choose-household",
+    });
+    expect(parsed.candidateRefs).toEqual([first, second]);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        slotName: "household",
+        candidateRefs: [first, first],
+        humanQuestionCode: "choose-household",
+      }).success,
+    ).toBe(false);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        slotName: "household",
+        candidateRefs: [
+          first,
+          { firmId: "firm-b", id: "subject:b" },
+        ],
+        humanQuestionCode: "choose-household",
+      }).success,
+    ).toBe(false);
   });
 
   it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
@@ -540,6 +614,82 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(reversed.householdInstructionVersionRefs).toEqual(canonical.householdInstructionVersionRefs);
     expect(reversed.evidenceSnapshotRefs).toEqual(canonical.evidenceSnapshotRefs);
   });
+
+  const explanationInput = () => {
+    const input = JSON.parse(
+      readFixture("decision-record-proceed"),
+    ) as Record<string, unknown> & {
+      explanationTrace: Array<{
+        sourceRefs: Array<{
+          sourceType: string;
+          sourceRef: { firmId: string; id: string };
+          versionRef: { firmId: string; id: string };
+        }>;
+        childNodes: Array<{
+          evidenceSnapshotRefs: Array<{ firmId: string; id: string }>;
+          sourceRefs: Array<{
+            sourceType: string;
+            sourceRef: { firmId: string; id: string };
+            versionRef: { firmId: string; id: string };
+          }>;
+        }>;
+      }>;
+    };
+    const child = input.explanationTrace[0]!.childNodes[0]!;
+    const evidence = child.evidenceSnapshotRefs[0]!;
+    const source = input.explanationTrace[0]!.sourceRefs[0]!;
+    child.evidenceSnapshotRefs = [
+      evidence,
+      { ...evidence, id: `${evidence.id}:second` },
+    ];
+    child.sourceRefs = [
+      source,
+      {
+        ...source,
+        sourceRef: { ...source.sourceRef, id: `${source.sourceRef.id}:second` },
+        versionRef: {
+          ...source.versionRef,
+          id: `${source.versionRef.id}:second`,
+        },
+      },
+    ];
+    return input;
+  };
+
+  it.each(["evidenceSnapshotRefs", "sourceRefs"] as const)(
+    "canonicalizes recursive explanation collection %s",
+    (collection) => {
+      const canonicalInput = explanationInput();
+      const permutedInput = structuredClone(canonicalInput);
+      permutedInput.explanationTrace[0]!.childNodes[0]![collection].reverse();
+      const canonical = DecisionRecordSchema.parse(canonicalInput);
+      const permuted = DecisionRecordSchema.parse(permutedInput);
+      const canonicalChild = (canonical as unknown as typeof canonicalInput)
+        .explanationTrace[0]!.childNodes[0]!;
+      const permutedChild = (permuted as unknown as typeof canonicalInput)
+        .explanationTrace[0]!.childNodes[0]!;
+      expect(permutedChild[collection], collection).toEqual(
+        canonicalChild[collection],
+      );
+    },
+  );
+
+  it.each(["evidenceSnapshotRefs", "sourceRefs"] as const)(
+    "rejects duplicate recursive explanation collection %s",
+    (collection) => {
+      const duplicate = explanationInput();
+      const child = duplicate.explanationTrace[0]!.childNodes[0]!;
+      if (collection === "evidenceSnapshotRefs") {
+        child.evidenceSnapshotRefs = [
+          child.evidenceSnapshotRefs[0]!,
+          child.evidenceSnapshotRefs[0]!,
+        ];
+      } else {
+        child.sourceRefs = [child.sourceRefs[0]!, child.sourceRefs[0]!];
+      }
+      expect(DecisionRecordSchema.safeParse(duplicate).success).toBe(false);
+    },
+  );
 
   it("freezes parsed replay inputs and their nested collections", () => {
     const bundle = DecisionInputBundleSchema.parse(validBundle);
@@ -702,6 +852,221 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const shared = { n: 1 };
     expect(unwrap(canonicalJson({ a: shared, b: shared } as JsonValue))).toBe('{"a":{"n":1},"b":{"n":1}}');
   });
+
+  it.each(["bundle", "decision"] as const)(
+    "returns a circular-reference AppError through the %s preimage path",
+    (path) => {
+      if (path === "bundle") {
+        const bundle = DecisionInputBundleSchema.parse(
+          JSON.parse(readFixture("decision-input-bundle")),
+        );
+        const bundleRef = {
+          ...bundle.domainConfigVersionRef,
+        } as Record<string, unknown>;
+        bundleRef.self = bundleRef;
+        const refusal = canonicalJson(
+          bundleHashPreimage({
+            ...bundle,
+            domainConfigVersionRef: bundleRef,
+          } as unknown as typeof bundle),
+        );
+        expect(refusal.ok).toBe(false);
+        if (!refusal.ok) {
+          expect(refusal.error.message).toContain("circular reference");
+        }
+        return;
+      }
+
+      const record = DecisionRecordSchema.parse(
+        JSON.parse(readFixture("decision-record-proceed")),
+      );
+      const intentRef = { ...record.intentRef } as Record<string, unknown>;
+      intentRef.self = intentRef;
+      const refusal = canonicalJson(
+        decisionHashPreimage({
+          ...record,
+          intentRef,
+        } as unknown as typeof record),
+      );
+      expect(refusal.ok).toBe(false);
+      if (!refusal.ok) {
+        expect(refusal.error.message).toContain("circular reference");
+      }
+    },
+  );
+
+  const hashBoundCollections = [
+    "conflictKeys",
+    "reservationRefs",
+    "preconditions",
+    "requiredEvidenceSnapshotRefs",
+    "dependsOn",
+    "compensatingConflictKeys",
+    "compensatingReservationRefs",
+    "compensatingPreconditions",
+    "compensatingRequiredEvidenceSnapshotRefs",
+    "explanationEvidenceSnapshotRefs",
+    "explanationSourceRefs",
+  ] as const;
+
+  const assertHashBoundCollectionNormalization = (
+    permutation: (typeof hashBoundCollections)[number],
+  ) => {
+    const record = DecisionRecordSchema.parse(
+      JSON.parse(readFixture("decision-record-proceed")),
+    );
+    const makeRecord = (reverse: boolean) => {
+      const value = structuredClone(record) as typeof record;
+      if (value.result.kind !== "proceed") throw new Error("fixture must proceed");
+      const step = value.result.executionPlan.steps[0]!;
+      const action = step as unknown as {
+        conflictKeys: string[];
+        reservationRefs: Array<{ firmId: string; id: string }>;
+        preconditions: Array<{
+          code: string;
+          requiredEvidenceSnapshotRefs: Array<{ firmId: string; id: string }>;
+          mustStillHoldAtExecution: true;
+        }>;
+        dependsOn: string[];
+        compensatingAction?: {
+          conflictKeys: string[];
+          reservationRefs: Array<{ firmId: string; id: string }>;
+          preconditions: Array<{
+            code: string;
+            requiredEvidenceSnapshotRefs: Array<{ firmId: string; id: string }>;
+            mustStillHoldAtExecution: true;
+          }>;
+          reasonCode: string;
+        };
+      };
+      action.conflictKeys = ["conflict:a", "conflict:b"];
+      action.reservationRefs = [
+        { firmId: "firm-a", id: "reservation:a" },
+        { firmId: "firm-a", id: "reservation:b" },
+      ];
+      action.preconditions = [
+        {
+          code: "a",
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:a" },
+            { firmId: "firm-a", id: "evidence:b" },
+          ],
+          mustStillHoldAtExecution: true,
+        },
+        {
+          code: "b",
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:c" },
+          ],
+          mustStillHoldAtExecution: true,
+        },
+      ];
+      action.dependsOn = ["step:a", "step:b"];
+      const compensation = structuredClone(step) as Record<string, unknown>;
+      delete compensation.id;
+      delete compensation.dependsOn;
+      delete compensation.compensatingAction;
+      action.compensatingAction = {
+        ...compensation,
+        conflictKeys: [...action.conflictKeys],
+        reservationRefs: [...action.reservationRefs],
+        preconditions: structuredClone(action.preconditions),
+        reasonCode: "later-step-failed",
+      };
+
+      const root = value.explanationTrace[0] as unknown as {
+        childNodes: Array<{
+          evidenceSnapshotRefs: Array<{ firmId: string; id: string }>;
+          sourceRefs: Array<{
+            sourceType: string;
+            sourceRef: { firmId: string; id: string };
+            versionRef: { firmId: string; id: string };
+          }>;
+        }>;
+      };
+      const node = root.childNodes[0]!;
+      const evidenceRef = node.evidenceSnapshotRefs[0]!;
+      const sourceRef = (
+        value.explanationTrace[0] as unknown as {
+          sourceRefs: Array<{
+            sourceType: string;
+            sourceRef: { firmId: string; id: string };
+            versionRef: { firmId: string; id: string };
+          }>;
+        }
+      ).sourceRefs[0]!;
+      const mutableNode = node as unknown as {
+        evidenceSnapshotRefs: Array<{ firmId: string; id: string }>;
+        sourceRefs: Array<typeof sourceRef>;
+      };
+      mutableNode.evidenceSnapshotRefs = [
+        evidenceRef,
+        { ...evidenceRef, id: `${evidenceRef.id}:second` },
+      ];
+      mutableNode.sourceRefs = [
+        sourceRef,
+        {
+          ...sourceRef,
+          sourceRef: {
+            ...sourceRef.sourceRef,
+            id: `${sourceRef.sourceRef.id}:second`,
+          },
+          versionRef: {
+            ...sourceRef.versionRef,
+            id: `${sourceRef.versionRef.id}:second`,
+          },
+        },
+      ];
+
+      if (reverse) {
+        switch (permutation) {
+          case "conflictKeys":
+            action.conflictKeys.reverse();
+            break;
+          case "reservationRefs":
+            action.reservationRefs.reverse();
+            break;
+          case "preconditions":
+            action.preconditions.reverse();
+            break;
+          case "requiredEvidenceSnapshotRefs":
+            action.preconditions[0]!.requiredEvidenceSnapshotRefs.reverse();
+            break;
+          case "dependsOn":
+            action.dependsOn.reverse();
+            break;
+          case "compensatingConflictKeys":
+            action.compensatingAction!.conflictKeys.reverse();
+            break;
+          case "compensatingReservationRefs":
+            action.compensatingAction!.reservationRefs.reverse();
+            break;
+          case "compensatingPreconditions":
+            action.compensatingAction!.preconditions.reverse();
+            break;
+          case "compensatingRequiredEvidenceSnapshotRefs":
+            action.compensatingAction!.preconditions[0]!
+              .requiredEvidenceSnapshotRefs.reverse();
+            break;
+          case "explanationEvidenceSnapshotRefs":
+            mutableNode.evidenceSnapshotRefs.reverse();
+            break;
+          case "explanationSourceRefs":
+            mutableNode.sourceRefs.reverse();
+            break;
+        }
+      }
+      return value;
+    };
+    const forward = canonicalJson(decisionHashPreimage(makeRecord(false)));
+    const reversed = canonicalJson(decisionHashPreimage(makeRecord(true)));
+    expect(unwrap(reversed)).toBe(unwrap(forward));
+  };
+
+  it.each(hashBoundCollections)(
+    "normalizes hash-bound collection %s defensively",
+    assertHashBoundCollectionNormalization,
+  );
 
   it("orders the hash preimage by THE canonical comparator, not by id alone", () => {
     // The preimage and the parsed record must sort identically. Today the bundle's
@@ -970,6 +1335,71 @@ describe("structural-integrity refinements", () => {
   });
 
   it.each([
+    "conflictKeys",
+    "reservationRefs",
+    "preconditions",
+    "requiredEvidenceSnapshotRefs",
+    "dependsOn",
+  ] as const)("canonicalizes set-like execution collection %s", (collection) => {
+    const ordered = {
+      conflictKeys: ["conflict:a", "conflict:b"],
+      reservationRefs: [
+        { firmId: "firm-a", id: "reservation:a" },
+        { firmId: "firm-a", id: "reservation:b" },
+      ],
+      preconditions: [
+        {
+          code: "a",
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:a" },
+            { firmId: "firm-a", id: "evidence:b" },
+          ],
+          mustStillHoldAtExecution: true,
+        },
+        {
+          code: "b",
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:c" },
+          ],
+          mustStillHoldAtExecution: true,
+        },
+      ],
+      dependsOn: ["s0", "s1"],
+    };
+    const canonical = ExecutionPlanSchema.parse({
+      id: "plan:u:ordered",
+      steps: [step("s0"), step("s1"), step("s2", ordered)],
+    }).steps[2]!;
+    const permutedInput = structuredClone(ordered);
+    switch (collection) {
+      case "conflictKeys":
+        permutedInput.conflictKeys.reverse();
+        break;
+      case "reservationRefs":
+        permutedInput.reservationRefs.reverse();
+        break;
+      case "preconditions":
+        permutedInput.preconditions.reverse();
+        break;
+      case "requiredEvidenceSnapshotRefs":
+        permutedInput.preconditions[0]!.requiredEvidenceSnapshotRefs.reverse();
+        break;
+      case "dependsOn":
+        permutedInput.dependsOn.reverse();
+        break;
+    }
+    const permuted = ExecutionPlanSchema.parse({
+      id: "plan:u:permuted",
+      steps: [
+        step("s0"),
+        step("s1"),
+        step("s2", permutedInput),
+      ],
+    }).steps[2]!;
+    expect(permuted, collection).toEqual(canonical);
+  });
+
+  it.each([
     ["dependsOn", { dependsOn: ["s0", "s0"] }],
     ["conflictKeys", { conflictKeys: ["conflict:s1", "conflict:s1"] }],
     [
@@ -992,6 +1422,27 @@ describe("structural-integrity refinements", () => {
           ],
           mustStillHoldAtExecution: true,
         }],
+      },
+    ],
+    [
+      "preconditions",
+      {
+        preconditions: [
+          {
+            code: "evidence-still-fresh",
+            requiredEvidenceSnapshotRefs: [
+              { firmId: "firm-a", id: "evidence:s1" },
+            ],
+            mustStillHoldAtExecution: true,
+          },
+          {
+            code: "evidence-still-fresh",
+            requiredEvidenceSnapshotRefs: [
+              { firmId: "firm-a", id: "evidence:s1" },
+            ],
+            mustStillHoldAtExecution: true,
+          },
+        ],
       },
     ],
   ] as const)("rejects duplicate set-like execution collection %s", (_name, over) => {

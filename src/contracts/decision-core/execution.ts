@@ -18,7 +18,13 @@ import {
   ReservationRefSchema,
   SecureBlobRefSchema,
   VerificationRuleRefSchema,
+  compareCanonicalStrings,
+  compareExecutionPreconditions,
+  hasUniqueByComparator,
   hasUniqueScopedReferences,
+  normalizeCanonicalStrings,
+  normalizeExecutionPreconditions,
+  normalizeScopedReferences,
 } from "./ids";
 
 /** The externally-executable command: payload behind a blob ref, pinned by hash. */
@@ -29,19 +35,38 @@ export const ExecutionCommandSchema = z.strictObject({
 }).readonly();
 export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 
-const uniqueStrings = (values: readonly string[]): boolean =>
-  new Set(values).size === values.length;
+type NormalizableExecutionPrecondition = {
+  readonly code: string;
+  readonly requiredEvidenceSnapshotRefs: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+  readonly mustStillHoldAtExecution: true;
+};
+
+const normalizeExecutionPrecondition = <T extends NormalizableExecutionPrecondition>(
+  precondition: T,
+): T =>
+  ({
+    ...precondition,
+    requiredEvidenceSnapshotRefs: normalizeScopedReferences(
+      precondition.requiredEvidenceSnapshotRefs,
+    ),
+  }) as T;
 
 /** A condition proven before the decision that must still hold when the step runs. */
-export const ExecutionPreconditionSchema = z.strictObject({
-  code: z.string().min(1),
-  requiredEvidenceSnapshotRefs: z
-    .array(EvidenceSnapshotIdRefSchema)
-    .min(1)
-    .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
-    .readonly(),
-  mustStillHoldAtExecution: z.literal(true),
-}).readonly();
+export const ExecutionPreconditionSchema = z
+  .strictObject({
+    code: z.string().min(1),
+    requiredEvidenceSnapshotRefs: z
+      .array(EvidenceSnapshotIdRefSchema)
+      .min(1)
+      .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
+      .overwrite(normalizeScopedReferences)
+      .readonly(),
+    mustStillHoldAtExecution: z.literal(true),
+  })
+  .readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;
 
 const retrySafeExternalActionShape = {
@@ -51,15 +76,48 @@ const retrySafeExternalActionShape = {
   conflictKeys: z
     .array(ConflictKeySchema)
     .min(1)
-    .refine(uniqueStrings, "duplicate conflict key")
+    .refine(
+      (keys) => hasUniqueByComparator(keys, compareCanonicalStrings),
+      "duplicate conflict key",
+    )
+    .overwrite(normalizeCanonicalStrings)
     .readonly(),
   reservationRefs: z
     .array(ReservationRefSchema)
     .refine(hasUniqueScopedReferences, "duplicate reservation reference")
+    .overwrite(normalizeScopedReferences)
     .readonly(),
-  preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
+  preconditions: z
+    .array(ExecutionPreconditionSchema)
+    .min(1)
+    .refine(
+      (preconditions) =>
+        hasUniqueByComparator(preconditions, compareExecutionPreconditions),
+      "duplicate execution precondition",
+    )
+    .overwrite(normalizeExecutionPreconditions)
+    .readonly(),
   verificationRuleRef: VerificationRuleRefSchema,
 };
+
+type NormalizableExternalAction = {
+  readonly conflictKeys: readonly string[];
+  readonly reservationRefs: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+  readonly preconditions: readonly NormalizableExecutionPrecondition[];
+};
+
+const normalizeExternalAction = <T extends NormalizableExternalAction>(action: T): T =>
+  ({
+    ...action,
+    conflictKeys: normalizeCanonicalStrings(action.conflictKeys),
+    reservationRefs: normalizeScopedReferences(action.reservationRefs),
+    preconditions: normalizeExecutionPreconditions(
+      action.preconditions.map(normalizeExecutionPrecondition),
+    ),
+  }) as T;
 
 const requireActionTenant = (
   action: {
@@ -122,13 +180,39 @@ export const ExecutionStepSchema = z
     ...retrySafeExternalActionShape,
     dependsOn: z
       .array(ExecutionStepIdSchema)
-      .refine(uniqueStrings, "duplicate execution dependency")
+      .refine(
+        (dependencies) =>
+          hasUniqueByComparator(dependencies, compareCanonicalStrings),
+        "duplicate execution dependency",
+      )
+      .overwrite(normalizeCanonicalStrings)
       .readonly(),
     compensatingAction: CompensatingActionSchema.optional(),
   })
   .superRefine(requireActionTenant)
   .readonly();
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
+
+type NormalizableExecutionPlan = {
+  readonly steps: readonly (NormalizableExternalAction & {
+    readonly dependsOn: readonly string[];
+    readonly compensatingAction?: NormalizableExternalAction;
+  })[];
+};
+
+export const normalizeExecutionPlan = <T extends NormalizableExecutionPlan>(
+  plan: T,
+): T =>
+  ({
+    ...plan,
+    steps: plan.steps.map((step) => ({
+      ...normalizeExternalAction(step),
+      dependsOn: normalizeCanonicalStrings(step.dependsOn),
+      ...(step.compensatingAction === undefined
+        ? {}
+        : { compensatingAction: normalizeExternalAction(step.compensatingAction) }),
+    })),
+  }) as T;
 
 /**
  * A non-empty plan with unique identities, resolvable dependency edges, and an

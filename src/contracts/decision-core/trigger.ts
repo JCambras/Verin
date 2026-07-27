@@ -19,8 +19,9 @@ import {
   SlotRefSchema,
   SubjectRefSchema,
   TimestampSchema,
-  compareScopedReferences,
+  compareStringOrScopedReferences,
   hasUniqueScopedReferences,
+  normalizeScopedReferences,
 } from "./ids";
 import { ActorRefSchema, TenantContextSchema, TokenizedPayloadSchema, TokenizedStringSchema } from "./actor";
 
@@ -120,11 +121,22 @@ export const IntentSchema = TenantContextSchema.unwrap().extend({
 export type Intent = z.infer<typeof IntentSchema>;
 
 /** An unresolved slot: candidate subjects plus the coded question a human must answer. */
-export const AmbiguityRefSchema = z.strictObject({
-  slotName: z.string().min(1),
-  candidateRefs: z.array(SubjectRefSchema).min(1).readonly(),
-  humanQuestionCode: z.string().min(1),
-}).readonly();
+export const AmbiguityRefSchema = z
+  .strictObject({
+    slotName: z.string().min(1),
+    candidateRefs: z
+      .array(SubjectRefSchema)
+      .min(1)
+      .refine(hasUniqueScopedReferences, "duplicate ambiguity candidate reference")
+      .refine(
+        (refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId),
+        "ambiguity candidates must belong to one tenant",
+      )
+      .overwrite(normalizeScopedReferences)
+      .readonly(),
+    humanQuestionCode: z.string().min(1),
+  })
+  .readonly();
 export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
 
 /**
@@ -133,17 +145,6 @@ export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
  * that state is a prohibition and must be modeled as one, never reached by decay.
  */
 const EvidenceSupplierSchema = z.union([z.literal("client"), z.literal("external"), RoleRefSchema]);
-type EvidenceSupplier = z.infer<typeof EvidenceSupplierSchema>;
-
-/** Well-known suppliers sort before role references; roles use THE scoped order. */
-const compareEvidenceSuppliers = (left: EvidenceSupplier, right: EvidenceSupplier): number => {
-  if (typeof left === "string") {
-    if (typeof right !== "string") return -1;
-    return left < right ? -1 : left > right ? 1 : 0;
-  }
-  if (typeof right === "string") return 1;
-  return compareScopedReferences(left, right);
-};
 
 const EvidenceSupplierSetSchema = z
   .array(EvidenceSupplierSchema)
@@ -153,7 +154,9 @@ const EvidenceSupplierSetSchema = z
     const wellKnown = suppliers.filter((supplier) => typeof supplier === "string");
     return hasUniqueScopedReferences(roleRefs) && new Set(wellKnown).size === wellKnown.length;
   }, "duplicate evidence supplier")
-  .overwrite((suppliers) => [...suppliers].sort(compareEvidenceSuppliers))
+  .overwrite((suppliers) =>
+    [...suppliers].sort(compareStringOrScopedReferences),
+  )
   .readonly();
 
 export const EvidenceRequestSchema = z

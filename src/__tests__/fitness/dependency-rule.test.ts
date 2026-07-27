@@ -210,6 +210,20 @@ describe("dependency-rule fence", () => {
       );
     });
 
+    it("type-asserted node:module loaders cannot evade createRequire detection", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": [
+            `const load = (await import("node:module") as any).createRequire(import.meta.url);`,
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
     it("clean inner->inner imports do NOT trip the fence", () => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/ok.ts": `import { Result } from "@contracts/result";\nexport const r: Result<number> | null = null;` }),
@@ -482,6 +496,23 @@ describe("dependency-rule fence", () => {
         }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
+      expect(v[0]?.specifier).toBe("<non-literal require-reference>");
+    });
+
+    it("an ambient module alias typed as any remains loader provenance", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/types/node-shim.d.ts":
+            "declare const module: { require(id: string): unknown };",
+          "src/domain/evil.ts": [
+            "const moduleAlias: any = module;",
+            `export const value = moduleAlias.require("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
       expect(v[0]?.specifier).toBe("<non-literal require-reference>");
     });
   });

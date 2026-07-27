@@ -58,7 +58,7 @@
           "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and recursively reject any referenced configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, or verification rule whose FirmId differs from the enclosing record."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and their registered boundaries reject cross-tenant configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, verification rule, and ambiguity-candidate values. An exact schema-derived inventory fails when a direct scoped-reference collection is added without an explicit registered constraint."
     },
     {
       "id": 3,

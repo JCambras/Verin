@@ -115,6 +115,15 @@ describe("decision-core external-action safety fence", () => {
         }],
       },
     ],
+    [
+      "preconditions",
+      {
+        preconditions: [
+          action.preconditions[0]!,
+          action.preconditions[0]!,
+        ],
+      },
+    ],
   ])("enforces: %s are duplicate-free", (_name, override) => {
     expect(RetrySafeExternalActionSchema.safeParse({ ...action, ...override }).success).toBe(false);
   });

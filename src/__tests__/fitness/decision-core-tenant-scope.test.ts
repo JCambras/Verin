@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
@@ -7,8 +8,76 @@ import {
   EvidenceSnapshotRefSchema,
 } from "@contracts/decision-core/evidence";
 import { ApprovalTemplateSchema } from "@contracts/decision-core/authority";
-import { IntentSchema } from "@contracts/decision-core/trigger";
-import { REPO_ROOT } from "./_fence-utils";
+import {
+  AmbiguityRefSchema,
+  IntentSchema,
+} from "@contracts/decision-core/trigger";
+import { REPO_ROOT, realProject } from "./_fence-utils";
+
+const SCOPED_REFERENCE_COLLECTION_CONSTRAINTS = {
+  "decision.ts:evidenceSnapshotRefs": "decision-record-recursive",
+  "decision.ts:sourceRefs": "decision-record-recursive",
+  "evidence.ts:evidenceSnapshotRefs": "bundle-enclosing-firm",
+  "evidence.ts:householdInstructionVersionRefs": "bundle-enclosing-firm",
+  "execution.ts:requiredEvidenceSnapshotRefs": "action-target-firm",
+  "execution.ts:reservationRefs": "action-target-firm",
+  "ids.ts:roleRefSet": "single-tenant-role-set",
+  "trigger.ts:EvidenceSupplierSetSchema": "evidence-subject-firm",
+  "trigger.ts:candidateRefs": "single-tenant-ambiguity",
+} as const;
+
+const discoveredScopedReferenceCollections = (): string[] => {
+  const project = realProject();
+  const decisionCoreFiles = project
+    .getSourceFiles()
+    .filter((sourceFile) =>
+      sourceFile.getFilePath().includes("/src/contracts/decision-core/"),
+    );
+  const ids = decisionCoreFiles.find(
+    (sourceFile) => basename(sourceFile.getFilePath()) === "ids.ts",
+  )!;
+  const scopedSchemas = new Set(
+    ids
+      .getVariableDeclarations()
+      .filter((declaration) =>
+        declaration.getInitializer()?.getText().startsWith(
+          "tenantScopedReference(",
+        ),
+      )
+      .map((declaration) => declaration.getName()),
+  );
+  scopedSchemas.add("VersionedSourceRefSchema");
+  scopedSchemas.add("EvidenceSupplierSchema");
+
+  return decisionCoreFiles
+    .flatMap((sourceFile) =>
+      sourceFile
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .flatMap((call) => {
+          const expression = call.getExpression();
+          const argument = call.getArguments()[0];
+          if (
+            !Node.isPropertyAccessExpression(expression) ||
+            expression.getName() !== "array" ||
+            !Node.isIdentifier(argument) ||
+            !scopedSchemas.has(argument.getText())
+          ) {
+            return [];
+          }
+          const property = call.getFirstAncestorByKind(
+            SyntaxKind.PropertyAssignment,
+          );
+          const declaration = call.getFirstAncestorByKind(
+            SyntaxKind.VariableDeclaration,
+          );
+          const owner = property?.getName() ?? declaration?.getName();
+          return owner === undefined
+            ? []
+            : [`${basename(sourceFile.getFilePath())}:${owner}`];
+        }),
+    )
+    .sort();
+};
 
 const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(join(REPO_ROOT, "fixtures/decision-core", `${name}.json`), "utf8")) as Record<string, unknown>;
@@ -86,6 +155,42 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
 });
 
 describe("decision-core tenant-scope fence", () => {
+  it("keeps the scoped-reference collection registry exhaustive", () => {
+    const discovered = discoveredScopedReferenceCollections();
+    expect(discovered).toContain("trigger.ts:candidateRefs");
+    expect(discovered).toEqual(
+      Object.keys(SCOPED_REFERENCE_COLLECTION_CONSTRAINTS).sort(),
+    );
+  });
+
+  it("enforces: ambiguity candidates are duplicate-free and belong to one tenant", () => {
+    const candidate = { firmId: "firm-a", id: "subject:a" };
+    const legal = {
+      slotName: "household",
+      candidateRefs: [
+        { firmId: "firm-a", id: "subject:b" },
+        candidate,
+      ],
+      humanQuestionCode: "choose-household",
+    };
+    expect(AmbiguityRefSchema.safeParse(legal).success).toBe(true);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        ...legal,
+        candidateRefs: [
+          candidate,
+          { firmId: "firm-b", id: "subject:b" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        ...legal,
+        candidateRefs: [candidate, candidate],
+      }).success,
+    ).toBe(false);
+  });
+
   it("enforces: every immutable bundle reference belongs to the bundle tenant", () => {
     const bundle = fixture("decision-input-bundle") as {
       firmId: string;

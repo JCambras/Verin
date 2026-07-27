@@ -29,12 +29,35 @@ export const CANONICAL_IANA_TIME_ZONE_LINKS: Readonly<Record<string, string>> =
  */
 export const IANA_TIME_ZONE_PLACEHOLDER_ZONES: readonly string[] = Object.freeze(["Factory"]);
 
-/** ONE tz release: its `Zone` names, its OWN `Link` aliases, its OWN placeholders. */
-export type IanaTimeZoneRelease = {
+/** ONE tz release: its version, `Zone` names, `Link` aliases, and placeholders. */
+export type IanaTimeZoneRelease<V extends string = string> = {
+  readonly dataVersion: V;
   readonly zones: readonly string[];
   readonly links: Readonly<Record<string, string>>;
   readonly placeholderZones: readonly string[];
 };
+
+export const CURRENT_IANA_TIME_ZONE_RELEASE = Object.freeze({
+  dataVersion: IANA_TIME_ZONE_DATA_VERSION,
+  zones: CANONICAL_IANA_TIME_ZONES,
+  links: CANONICAL_IANA_TIME_ZONE_LINKS,
+  placeholderZones: IANA_TIME_ZONE_PLACEHOLDER_ZONES,
+});
+
+const indexTimeZoneReleases = <
+  const R extends readonly IanaTimeZoneRelease[],
+>(
+  ...releases: R
+): Readonly<{
+  [V in R[number]["dataVersion"]]: Extract<R[number], { dataVersion: V }>;
+}> =>
+  Object.freeze(
+    Object.fromEntries(
+      releases.map((release) => [release.dataVersion, release]),
+    ),
+  ) as {
+    [V in R[number]["dataVersion"]]: Extract<R[number], { dataVersion: V }>;
+  };
 
 /**
  * Every tz release a persisted bundle may be replayed against, keyed by the version it
@@ -45,13 +68,9 @@ export type IanaTimeZoneRelease = {
  * ADDITIVE and never removed: a bundle stamped with an older release must stay
  * parseable against the registry it was evaluated with (D-051, D-053).
  */
-export const SUPPORTED_IANA_TIME_ZONE_RELEASES = Object.freeze({
-  [IANA_TIME_ZONE_DATA_VERSION]: Object.freeze({
-    zones: CANONICAL_IANA_TIME_ZONES,
-    links: CANONICAL_IANA_TIME_ZONE_LINKS,
-    placeholderZones: IANA_TIME_ZONE_PLACEHOLDER_ZONES,
-  }),
-});
+export const SUPPORTED_IANA_TIME_ZONE_RELEASES = indexTimeZoneReleases(
+  CURRENT_IANA_TIME_ZONE_RELEASE,
+);
 
 /** The map's key union - a replay-metadata version is never a bare `string`. */
 export type IanaTimeZoneDataVersion = keyof typeof SUPPORTED_IANA_TIME_ZONE_RELEASES;
@@ -69,12 +88,40 @@ export const SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS = Object.freeze(
  * every release" and "this release" are different sets - is constructible, and
  * therefore provable, before a second release is ever adopted.
  */
-export const timeZoneNameSchema = (zones: readonly string[]) => {
+const TIME_ZONE_VALUE_LIMIT = 80;
+const formatTimeZoneRefusal = (value: unknown, release: string): string => {
+  if (typeof value !== "string") {
+    const kind =
+      value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    return `time zone for ${release} must be a string; received ${kind}`;
+  }
+  const singleLine = value.replace(
+    /[\p{Cc}\p{Zl}\p{Zp}]/gu,
+    "",
+  );
+  const bounded =
+    singleLine.length > TIME_ZONE_VALUE_LIMIT
+      ? `${singleLine.slice(0, TIME_ZONE_VALUE_LIMIT)}...`
+      : singleLine;
+  return `"${bounded}" is not a Zone in ${release}`;
+};
+
+export const timeZoneNameSchema = (
+  zones: readonly string[],
+  release: string,
+) => {
   const byCaseFoldedName = new Map(zones.map((zone) => [zone.toLowerCase(), zone]));
+  const admitted = new Set(zones);
   return z.preprocess(
     (value) =>
-      typeof value === "string" ? (byCaseFoldedName.get(value.toLowerCase()) ?? value) : value,
-    z.enum([...zones] as [string, ...string[]]).brand<"TimeZone">(),
+      typeof value === "string"
+        ? (byCaseFoldedName.get(value.toLowerCase()) ?? value)
+        : value,
+    z
+      .enum([...admitted] as [string, ...string[]], {
+        error: (issue) => formatTimeZoneRefusal(issue.input, release),
+      })
+      .brand<"TimeZone">(),
   );
 };
 
@@ -98,7 +145,10 @@ const SUPPORTED_IANA_TIME_ZONE_NAMES = Object.freeze(
   ].sort() as [string, ...string[]],
 );
 
-export const TimeZoneSchema = timeZoneNameSchema(SUPPORTED_IANA_TIME_ZONE_NAMES);
+export const TimeZoneSchema = timeZoneNameSchema(
+  SUPPORTED_IANA_TIME_ZONE_NAMES,
+  `supported releases ${SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS.join(", ")}`,
+);
 export type TimeZone = z.infer<typeof TimeZoneSchema>;
 
 /**
@@ -134,7 +184,10 @@ export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease) => {
   return z.preprocess(
     (value) =>
       typeof value === "string" ? (zoneByCaseFoldedAlias.get(value.toLowerCase()) ?? value) : value,
-    timeZoneNameSchema(release.zones.filter((zone) => !placeholders.has(zone))),
+    timeZoneNameSchema(
+      release.zones.filter((zone) => !placeholders.has(zone)),
+      release.dataVersion,
+    ),
   );
 };
 
@@ -146,7 +199,7 @@ export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease) => {
  * first render. Configuration fails closed at boot (charter #7), never late.
  */
 export const LinkResolvedTimeZoneSchema = configuredTimeZoneSchema(
-  SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION],
+  CURRENT_IANA_TIME_ZONE_RELEASE,
 );
 
 /** The default firm zone, parsed so it cannot drift out of the current release. */

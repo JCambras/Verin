@@ -149,6 +149,13 @@ export type RoleRef = z.infer<typeof RoleRefSchema>;
 /** The shape every tenant-scoped reference shares: firm plus opaque branded id. */
 export type ScopedReference = { readonly firmId: string; readonly id: string };
 
+export const compareCanonicalStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+export const normalizeCanonicalStrings = <T extends string>(
+  values: readonly T[],
+): T[] => [...values].sort(compareCanonicalStrings);
+
 /**
  * THE canonical order for tenant-scoped references - firm first, then opaque id.
  * Every set-like collection and every hash preimage sorts through this one
@@ -156,9 +163,13 @@ export type ScopedReference = { readonly firmId: string; readonly id: string };
  * disagree the day references stop being single-tenant (ADR-0029, D-051).
  */
 export const compareScopedReferences = (left: ScopedReference, right: ScopedReference): number => {
-  if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  const firmOrder = compareCanonicalStrings(left.firmId, right.firmId);
+  return firmOrder === 0 ? compareCanonicalStrings(left.id, right.id) : firmOrder;
 };
+
+export const normalizeScopedReferences = <T extends ScopedReference>(
+  references: readonly T[],
+): T[] => [...references].sort(compareScopedReferences);
 
 const scopedReferenceKey = (reference: ScopedReference): string =>
   `${reference.firmId}\u0000${reference.id}`;
@@ -170,13 +181,95 @@ const scopedReferenceKey = (reference: ScopedReference): string =>
 export const hasUniqueScopedReferences = (references: readonly ScopedReference[]): boolean =>
   new Set(references.map(scopedReferenceKey)).size === references.length;
 
+export const hasUniqueByComparator = <T>(
+  values: readonly T[],
+  comparator: (left: T, right: T) => number,
+): boolean => {
+  const ordered = [...values].sort(comparator);
+  return ordered.every((value, index) => index === 0 || comparator(ordered[index - 1]!, value) !== 0);
+};
+
+export type VersionedScopedReference = {
+  readonly sourceType: string;
+  readonly sourceRef: ScopedReference;
+  readonly versionRef: ScopedReference;
+};
+
+export const compareVersionedScopedReferences = (
+  left: VersionedScopedReference,
+  right: VersionedScopedReference,
+): number => {
+  const typeOrder = compareCanonicalStrings(left.sourceType, right.sourceType);
+  if (typeOrder !== 0) return typeOrder;
+  const sourceOrder = compareScopedReferences(left.sourceRef, right.sourceRef);
+  return sourceOrder === 0
+    ? compareScopedReferences(left.versionRef, right.versionRef)
+    : sourceOrder;
+};
+
+export const normalizeVersionedScopedReferences = <
+  T extends VersionedScopedReference,
+>(
+  references: readonly T[],
+): T[] => [...references].sort(compareVersionedScopedReferences);
+
+export const compareStringOrScopedReferences = (
+  left: string | ScopedReference,
+  right: string | ScopedReference,
+): number => {
+  if (typeof left === "string") {
+    return typeof right === "string"
+      ? compareCanonicalStrings(left, right)
+      : -1;
+  }
+  return typeof right === "string"
+    ? 1
+    : compareScopedReferences(left, right);
+};
+
+export type ExecutionPreconditionReferenceSet = {
+  readonly code: string;
+  readonly requiredEvidenceSnapshotRefs: readonly ScopedReference[];
+  readonly mustStillHoldAtExecution: true;
+};
+
+const compareScopedReferenceLists = (
+  left: readonly ScopedReference[],
+  right: readonly ScopedReference[],
+): number => {
+  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+    const order = compareScopedReferences(left[index]!, right[index]!);
+    if (order !== 0) return order;
+  }
+  return left.length - right.length;
+};
+
+export const compareExecutionPreconditions = (
+  left: ExecutionPreconditionReferenceSet,
+  right: ExecutionPreconditionReferenceSet,
+): number => {
+  const codeOrder = compareCanonicalStrings(left.code, right.code);
+  return codeOrder === 0
+    ? compareScopedReferenceLists(
+        left.requiredEvidenceSnapshotRefs,
+        right.requiredEvidenceSnapshotRefs,
+      )
+    : codeOrder;
+};
+
+export const normalizeExecutionPreconditions = <
+  T extends ExecutionPreconditionReferenceSet,
+>(
+  preconditions: readonly T[],
+): T[] => [...preconditions].sort(compareExecutionPreconditions);
+
 const roleRefSet = (minimum: number) =>
   z
     .array(RoleRefSchema)
     .min(minimum)
     .refine(hasUniqueScopedReferences, "duplicate role reference")
     .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "role references must belong to one tenant")
-    .overwrite((refs) => [...refs].sort(compareScopedReferences))
+    .overwrite(normalizeScopedReferences)
     .readonly();
 
 export const RoleRefSetSchema = roleRefSet(0);
