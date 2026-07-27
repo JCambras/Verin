@@ -29,7 +29,9 @@ fences; ratchet-down line budgets + a separate presentation budget.
 type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
 plan, blocked/prohibited carry neither, a prohibition has no resolving condition (v3 invariants 7-9 as
 parse-level facts) - plus a versioned canonical serializer whose byte form is locked by the
-`fixtures/decision-core/` round-trip fixtures.
+`fixtures/decision-core/` round-trip fixtures. Parsed contracts are recursively readonly and frozen,
+replay-ID collections reject duplicates, and version-keyed recursive fingerprints prevent nested
+projection growth under an unchanged hash-preimage version.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
@@ -73,7 +75,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
 | `charter-drift` | the constitution enforces its own enforcement | PF-001 |
-| `dependency-rule` (ts-morph: static+relative+dynamic+require; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + PF-027 extension + companions |
+| `dependency-rule` (ts-morph: static+relative+dynamic+require+import-type+import-equals; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + PF-027 extension + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |

@@ -562,3 +562,16 @@ contracts ceiling is re-baselined from 1400 to 1550 through ADR-0018's amendment
 review-hardened implementation measured 1446 lines.
 **Revert path:** revert the schema, serializer, projection-key, dependency-fence, and focused test
 changes together, then restore the 1400 ceiling and its ADR references.
+
+### D-042 · 2026-07-26 · reversible · Decision-core mutation, projection-growth, import-form, and duplicate-ID gaps closed
+
+Every parsed decision-core object and nested collection is now recursively readonly and frozen, so
+post-parse mutation cannot empty a plan, create a cycle, alter authority, or change hash-bound content.
+Replay bundles reject duplicate instruction-version and evidence-snapshot IDs at the schema boundary.
+Each hash preimage version is bound to a recursive Zod projection-schema fingerprint, including nested
+optional properties and union arms. The shared dependency-reference collector now covers TypeScript
+import types and import-equals declarations, closing the Zod-only contracts allowlist for all supported
+module-reference forms. Adversarial proof extends PF-027; the contracts measurement is 1480 under the
+unchanged 1550 ceiling.
+**Revert path:** revert the recursive readonly schemas, duplicate refinements, fingerprint lock, and
+AST collector additions together; no runtime consumer persists these prompt-5 contracts yet.

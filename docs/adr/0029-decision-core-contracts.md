@@ -36,18 +36,23 @@ parse time, not by reviewer discipline. Three constraints meet here:
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot ID lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
-  schema growth cannot evade a preimage-version bump. Explicit undefined optional properties normalize
-  to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over canonical UTF-8 bytes
-  and must equal the stored hash. A projection change requires its own version bump and migration story.
+  schema growth cannot evade a preimage-version bump. Version-keyed recursive schema fingerprints cover
+  every nested projected object, array, union arm, and optional property. Explicit undefined optional
+  properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
+  canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
+  and migration story.
 - **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.0.0 schema and
   canonical serializer versions, validates the time zone against the runtime's supported IANA data,
-  and freezes the parsed bundle plus its replay-ID collections.
+  rejects duplicate instruction-version and evidence-snapshot IDs, and freezes the parsed bundle.
+  Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
+  validated decision cannot be mutated into an illegal or hash-divergent state.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
-  The dependency fence enforces the external allowlist and rejects non-literal dynamic imports.
+  The dependency fence enforces the external allowlist across static imports, re-exports, dynamic
+  imports, `require`, TypeScript import types, and import-equals declarations.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1446 after replay-boundary
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1480 after replay-boundary
   review hardening + modest headroom). The ratchet-down doctrine resumes from 1550; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive

@@ -38,7 +38,7 @@ export const VersionedSourceRefSchema = z.strictObject({
   sourceType: z.enum(["firm_policy", "household_instruction", "regulatory"]),
   sourceId: z.string().min(1),
   versionId: z.string().min(1),
-});
+}).readonly();
 export type VersionedSourceRef = z.infer<typeof VersionedSourceRefSchema>;
 
 /** One recorded precedence resolution between two governing sources. */
@@ -47,19 +47,19 @@ export const PrecedenceStepSchema = z.strictObject({
   right: VersionedSourceRefSchema,
   resolution: z.enum(["left_wins", "right_wins", "narrowed", "exception_required", "blocked"]),
   reasonCode: ReasonCodeSchema,
-});
+}).readonly();
 export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 
 /** Recursive explanation tree - every decision explains itself, citing evidence + sources. */
 export const ExplanationNodeSchema = z.strictObject({
   code: z.string().min(1),
   messageTemplate: z.string().min(1),
-  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema),
-  sourceRefs: z.array(VersionedSourceRefSchema),
-  get childNodes() {
-    return z.array(ExplanationNodeSchema);
+  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
+  sourceRefs: z.array(VersionedSourceRefSchema).readonly(),
+  get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
+    return z.array(ExplanationNodeSchema).readonly();
   },
-});
+}).readonly();
 export type ExplanationNode = z.infer<typeof ExplanationNodeSchema>;
 
 /** JSON-scalar parameter values (canonically serializable; never objects-in-disguise). */
@@ -70,17 +70,17 @@ export type Scalar = z.infer<typeof ScalarSchema>;
 export const RecommendationAlternativeSchema = z.strictObject({
   code: z.string().min(1),
   summary: z.string().min(1),
-  rejectedBecause: z.array(ReasonCodeSchema).min(1),
-});
+  rejectedBecause: z.array(ReasonCodeSchema).min(1).readonly(),
+}).readonly();
 export type RecommendationAlternative = z.infer<typeof RecommendationAlternativeSchema>;
 
 /** The governed action a proceed decision recommends, with its rejected alternatives. */
 export const RecommendationSchema = z.strictObject({
   code: z.string().min(1),
   summary: z.string().min(1),
-  parameters: z.record(z.string().min(1), ScalarSchema),
-  alternatives: z.array(RecommendationAlternativeSchema),
-});
+  parameters: z.record(z.string().min(1), ScalarSchema).readonly(),
+  alternatives: z.array(RecommendationAlternativeSchema).readonly(),
+}).readonly();
 export type Recommendation = z.infer<typeof RecommendationSchema>;
 
 /**
@@ -93,7 +93,7 @@ export const ProhibitionSchema = z.strictObject({
   scope: ScopeRefSchema,
   reasonCode: ReasonCodeSchema,
   explanation: z.string().min(1),
-});
+}).readonly();
 export type Prohibition = z.infer<typeof ProhibitionSchema>;
 
 /** Proceed: recommendation + authority + plan, all REQUIRED (v3 invariant 7). */
@@ -102,7 +102,7 @@ export const ProceedDecisionSchema = z.strictObject({
   recommendation: RecommendationSchema,
   authority: AuthorityRequirementSchema,
   executionPlan: ExecutionPlanSchema,
-});
+}).readonly();
 export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
 
 /**
@@ -112,22 +112,22 @@ export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
  */
 export const BlockedDecisionSchema = z.strictObject({
   kind: z.literal("blocked"),
-  blockers: z.array(ResolvableBlockerSchema).min(1),
-});
+  blockers: z.array(ResolvableBlockerSchema).min(1).readonly(),
+}).readonly();
 export type BlockedDecision = z.infer<typeof BlockedDecisionSchema>;
 
 /** Prohibited: the prohibition, nothing else (v3 invariant 9). */
 export const ProhibitedDecisionSchema = z.strictObject({
   kind: z.literal("prohibited"),
   prohibition: ProhibitionSchema,
-});
+}).readonly();
 export type ProhibitedDecision = z.infer<typeof ProhibitedDecisionSchema>;
 
 export const DecisionResultSchema = z.discriminatedUnion("kind", [
-  ProceedDecisionSchema,
-  BlockedDecisionSchema,
-  ProhibitedDecisionSchema,
-]);
+  ProceedDecisionSchema.unwrap(),
+  BlockedDecisionSchema.unwrap(),
+  ProhibitedDecisionSchema.unwrap(),
+]).readonly();
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 
 export function isProceedDecision(result: DecisionResult): result is ProceedDecision {
@@ -166,7 +166,8 @@ export const RevaluationConditionSchema = z
   .refine((c) => c.kind !== "deadline_reached" || c.deadline !== undefined, {
     message: "deadline_reached requires a deadline",
     path: ["deadline"],
-  });
+  })
+  .readonly();
 export type RevaluationCondition = z.infer<typeof RevaluationConditionSchema>;
 
 /**
@@ -176,16 +177,16 @@ export type RevaluationCondition = z.infer<typeof RevaluationConditionSchema>;
  * tenant-consistent by construction; a prohibited record carries no revaluation
  * conditions (see the module header).
  */
-export const DecisionRecordSchema = TenantContextSchema.extend({
+export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
   id: DecisionIdSchema,
   intentId: IntentIdSchema,
   inputBundleId: DecisionInputBundleIdSchema,
   result: DecisionResultSchema,
-  precedenceTrace: z.array(PrecedenceStepSchema),
-  explanationTrace: z.array(ExplanationNodeSchema),
+  precedenceTrace: z.array(PrecedenceStepSchema).readonly(),
+  explanationTrace: z.array(ExplanationNodeSchema).readonly(),
   riskClass: RiskClassSchema,
   reversibility: z.enum(["reversible", "partially_reversible", "irreversible"]),
-  reevaluateWhen: z.array(RevaluationConditionSchema),
+  reevaluateWhen: z.array(RevaluationConditionSchema).readonly(),
   derivedFromDecisionId: DecisionIdSchema.optional(),
   decisionHash: HashSchema,
   createdBy: AnyActorRefSchema,
@@ -198,5 +199,6 @@ export const DecisionRecordSchema = TenantContextSchema.extend({
   .refine((record) => record.result.kind !== "prohibited" || record.reevaluateWhen.length === 0, {
     message: "a prohibited decision cannot carry revaluation conditions (a prohibition has no resolving condition)",
     path: ["reevaluateWhen"],
-  });
+  })
+  .readonly();
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;

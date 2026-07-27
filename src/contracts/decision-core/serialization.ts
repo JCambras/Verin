@@ -12,6 +12,12 @@ export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.0.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.0.0";
 export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.0.0";
+export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
+  Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
+> = {
+  [BUNDLE_HASH_PREIMAGE_VERSION]: "4fca8a3051f2a7da483840210f27525976b3d5a239db511e47fbd74981309e2f",
+  [DECISION_HASH_PREIMAGE_VERSION]: "5116bea473ea037d0b8e2be46e087ca658165a084f9672b9b5f1f4a56b100450",
+};
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
 type DecisionHashPayload = Omit<DecisionRecord, "decisionHash">;

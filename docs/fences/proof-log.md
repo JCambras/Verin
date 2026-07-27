@@ -841,3 +841,30 @@ package, the one-package Zod allowlist, exact runtime schema-key coverage includ
 `derivedFromDecisionId`, replay immutability, and canonicalization totality.
 
 **Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-041).
+
+**Extension (review corrections F12-F15):** the target commit reproduced all four gaps before
+implementation: parsed DecisionRecord, ExecutionPlan, and steps were mutable; duplicate replay IDs
+parsed; TypeScript import types and import-equals declarations produced zero dependency violations;
+and nested decision values entered the hash projection without a recursive version-shape lock.
+The dependency collector and nested projection lock were then adversarially proven:
+```
+# Added both forms to src/contracts/decision-core/actor.ts:
+# import React = require("react");
+# type ForbiddenImportType = import("react").ReactNode;
+× dependency-rule fence > enforces: the real src/ tree has zero layer violations
+  contracts external-import violations:
+  src/contracts/decision-core/actor.ts:13 (react)
+  src/contracts/decision-core/actor.ts:14 (react)
+
+# Added `futureOptional: z.string().optional()` to nested
+# RecommendationAlternativeSchema without changing decision-record/1.0.0:
+× binds each preimage version to its complete recursive projection schema
+  Expected: 5116bea473ea037d0b8e2be46e087ca658165a084f9672b9b5f1f4a56b100450
+  Received: 2c04705b992a3de633eb9addfe9bee9e5d29b0f8fdc99a53affaa7695ec01fcd
+```
+**Revert (extension):** both planted violations were removed. Focused tests cover deep runtime
+freezing, inferred readonly collections, duplicate replay-ID rejection, recursive optional-field
+detection, and both previously invisible TypeScript import forms. The contracts layer measures
+1480 lines under its unchanged 1550 ceiling.
+
+**Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-042).

@@ -28,7 +28,7 @@ export const HumanRequestTriggerSchema = z.strictObject({
   requester: ActorRefSchema,
   requestRef: SecureRequestRefSchema,
   maskedRequest: TokenizedStringSchema,
-});
+}).readonly();
 
 /** A system event from an evidence source: payload tokenized, raw body behind SecureEventRef. */
 export const SystemEventTriggerSchema = z.strictObject({
@@ -38,9 +38,11 @@ export const SystemEventTriggerSchema = z.strictObject({
   eventType: z.string().min(1),
   eventRef: SecureEventRefSchema,
   tokenizedPayload: TokenizedPayloadSchema,
-});
+}).readonly();
 
-export const TriggerSchema = z.discriminatedUnion("kind", [HumanRequestTriggerSchema, SystemEventTriggerSchema]);
+export const TriggerSchema = z
+  .discriminatedUnion("kind", [HumanRequestTriggerSchema.unwrap(), SystemEventTriggerSchema.unwrap()])
+  .readonly();
 export type Trigger = z.infer<typeof TriggerSchema>;
 
 /** The tenant a trigger belongs to (requester's firm for human requests). */
@@ -54,25 +56,25 @@ export function triggerFirmId(trigger: Trigger): z.infer<typeof FirmIdSchema> {
  * assembly (an Intent scoped to one firm carrying another firm's trigger) is a
  * parse error, not a convention.
  */
-export const IntentSchema = TenantContextSchema.extend({
+export const IntentSchema = TenantContextSchema.unwrap().extend({
   id: IntentIdSchema,
   trigger: TriggerSchema,
   domainConfigVersionId: DomainConfigVersionIdSchema,
   action: PrimitiveIdSchema,
-  slots: z.record(z.string().min(1), SlotRefSchema),
+  slots: z.record(z.string().min(1), SlotRefSchema).readonly(),
   createdAt: TimestampSchema,
 }).refine((intent) => triggerFirmId(intent.trigger) === intent.firmId, {
   message: "intent.firmId must match the trigger's tenant (cross-tenant intents are unrepresentable)",
   path: ["firmId"],
-});
+}).readonly();
 export type Intent = z.infer<typeof IntentSchema>;
 
 /** An unresolved slot: candidate subjects plus the coded question a human must answer. */
 export const AmbiguityRefSchema = z.strictObject({
   slotName: z.string().min(1),
-  candidateRefs: z.array(SubjectRefSchema).min(1),
+  candidateRefs: z.array(SubjectRefSchema).min(1).readonly(),
   humanQuestionCode: z.string().min(1),
-});
+}).readonly();
 export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
 
 /**
@@ -83,8 +85,8 @@ export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;
 export const EvidenceRequestSchema = z.strictObject({
   evidenceKind: EvidenceKindSchema,
   subjectRef: SubjectRefSchema,
-  suppliableBy: z.array(z.union([z.literal("client"), z.literal("external"), RoleIdSchema])).min(1),
-});
+  suppliableBy: z.array(z.union([z.literal("client"), z.literal("external"), RoleIdSchema])).min(1).readonly(),
+}).readonly();
 export type EvidenceRequest = z.infer<typeof EvidenceRequestSchema>;
 
 /**
@@ -95,14 +97,14 @@ export type EvidenceRequest = z.infer<typeof EvidenceRequestSchema>;
 export const ResolvableBlockerSchema = z.strictObject({
   code: ReasonCodeSchema,
   explanation: z.string().min(1),
-  resolvingEvidence: z.array(EvidenceRequestSchema).min(1),
-});
+  resolvingEvidence: z.array(EvidenceRequestSchema).min(1).readonly(),
+}).readonly();
 export type ResolvableBlocker = z.infer<typeof ResolvableBlockerSchema>;
 
 /** Where slot binding stands: bound, ambiguous (awaiting a human), or missing evidence. */
 export const ResolutionStateSchema = z.strictObject({
-  bound: z.array(SlotRefSchema),
-  ambiguous: z.array(AmbiguityRefSchema),
-  gaps: z.array(EvidenceRequestSchema),
-});
+  bound: z.array(SlotRefSchema).readonly(),
+  ambiguous: z.array(AmbiguityRefSchema).readonly(),
+  gaps: z.array(EvidenceRequestSchema).readonly(),
+}).readonly();
 export type ResolutionState = z.infer<typeof ResolutionStateSchema>;

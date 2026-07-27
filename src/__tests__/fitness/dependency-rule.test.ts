@@ -81,6 +81,22 @@ describe("dependency-rule fence", () => {
       expect(v[0]?.specifier).toBe("<non-literal dynamic-import>");
     });
 
+    it("import types cannot evade the contracts allowlist", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `export type View = import("react").ReactNode;` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
+    });
+
+    it("import-equals declarations cannot evade the contracts allowlist", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `import React = require("react");\nexport type View = React.ReactNode;` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
+    });
+
     it("relative traversal outside a project layer cannot reach an external package", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": `import React from "../../../node_modules/react/index.js";\nexport { React };` }),

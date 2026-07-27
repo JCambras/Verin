@@ -11,30 +11,46 @@
 import { z } from "zod";
 import { ActorIdSchema, FirmIdSchema, RoleIdSchema } from "./ids";
 
+type DeepReadonly<T> = T extends readonly (infer U)[]
+  ? readonly DeepReadonly<U>[]
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
+
+function freezeJson<T>(value: T): DeepReadonly<T> {
+  if (value !== null && typeof value === "object") {
+    for (const nested of Object.values(value)) freezeJson(nested);
+    Object.freeze(value);
+  }
+  return value as DeepReadonly<T>;
+}
+
+const FrozenJsonValueSchema = z.json().transform(freezeJson);
+
 /** The tenant scope every persisted decision-core record must carry. */
 export const TenantContextSchema = z.strictObject({
   firmId: FirmIdSchema,
-});
+}).readonly();
 export type TenantContext = z.infer<typeof TenantContextSchema>;
 
 /** A human actor, tenant-scoped, with the roles attribution recorded at act time. */
-export const ActorRefSchema = TenantContextSchema.extend({
+export const ActorRefSchema = TenantContextSchema.unwrap().extend({
   actorId: ActorIdSchema,
-  roleIds: z.array(RoleIdSchema),
-});
+  roleIds: z.array(RoleIdSchema).readonly(),
+}).readonly();
 export type ActorRef = z.infer<typeof ActorRefSchema>;
 
 /** A system actor (engine, scheduler, reconciler), tenant-scoped like any human. */
-export const SystemActorRefSchema = TenantContextSchema.extend({
+export const SystemActorRefSchema = TenantContextSchema.unwrap().extend({
   systemId: z.string().min(1),
-});
+}).readonly();
 export type SystemActorRef = z.infer<typeof SystemActorRefSchema>;
 
 /**
  * Human or system attribution. The members are strict objects with disjoint keys
  * (actorId vs systemId), so the union is unambiguous without a discriminator.
  */
-export const AnyActorRefSchema = z.union([ActorRefSchema, SystemActorRefSchema]);
+export const AnyActorRefSchema = z.union([ActorRefSchema, SystemActorRefSchema]).readonly();
 export type AnyActorRef = z.infer<typeof AnyActorRefSchema>;
 
 /**
@@ -48,12 +64,12 @@ export type AnyActorRef = z.infer<typeof AnyActorRefSchema>;
 export const TokenizedStringSchema = z.strictObject({
   value: z.string(),
   piiFree: z.literal(true),
-});
+}).readonly();
 export type TokenizedString = z.infer<typeof TokenizedStringSchema>;
 
 /** Tokenized structured payload (system-event bodies after scrubbing). */
 export const TokenizedPayloadSchema = z.strictObject({
-  value: z.record(z.string().min(1), z.unknown()),
+  value: z.record(z.string().min(1), FrozenJsonValueSchema).readonly(),
   piiFree: z.literal(true),
-});
+}).readonly();
 export type TokenizedPayload = z.infer<typeof TokenizedPayloadSchema>;
