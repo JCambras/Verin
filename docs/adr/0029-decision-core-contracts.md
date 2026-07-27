@@ -32,7 +32,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.1.0
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.2.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
   stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
@@ -41,12 +41,13 @@ parse time, not by reviewer discipline. Three constraints meet here:
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
   and migration story.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.1.0 schema and
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.2.0 schema and
   1.0.0 canonical serializer, rejects unsupported or non-canonical IANA time-zone identifiers,
   rejects duplicate instruction-version and evidence-snapshot references, and freezes the parsed bundle.
-  Policy, instruction-version, evidence-snapshot, intent, and input-bundle links are strict structured
-  references carrying `firmId` plus the opaque branded ID; enclosing-record refinements reject every
-  cross-tenant link.
+  Policy, instruction-version, evidence-snapshot, intent, input-bundle, and derived-decision links are
+  strict structured references carrying `firmId` plus the opaque branded ID. Decision-record refinements
+  recursively check precedence, explanation children, prohibitions, and execution preconditions, rejecting
+  every cross-tenant link.
   Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
@@ -56,8 +57,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
   imports, `require`, TypeScript import types, import-equals declarations, and triple-slash type/path
   references.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1525 after replay-boundary
-  review hardening + modest headroom). The ratchet-down doctrine resumes from 1550; later contract-layer prompts
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1650** (measured 1640 after recursive
+  tenant-scope review hardening + modest headroom). The ratchet-down doctrine resumes from 1650; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
@@ -81,11 +82,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 1550 (a real growth, honestly sized and ratcheted).
+  grew 600 → 1650 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 1550 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 1650 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
   its enclosing tenant.

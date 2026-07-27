@@ -920,7 +920,7 @@ src/contracts/decision-core/serialization.ts(24,82): error TS2345
 **Revert (extension):** both planted violations were removed. The focused unit and fitness run passed
 58 tests, including companions for non-literal dynamic imports, relative traversal to an external
 package, the one-package Zod allowlist, exact runtime schema-key coverage including the optional
-`derivedFromDecisionId`, replay immutability, and canonicalization totality.
+`derivedFromDecisionRef`, replay immutability, and canonicalization totality.
 
 **Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-041).
 
@@ -952,11 +952,12 @@ detection, and both previously invisible TypeScript import forms. The contracts 
 **Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-042).
 
 ### PF-028 · decision-core tenant scope (v3 invariant 2) · `src/__tests__/fitness/decision-core-tenant-scope.test.ts`
-**Invariant (charter #1/#7; v3 invariant 2 and §3 non-negotiable 11; ADR-0029, D-045):** every
-immutable policy-version, household-instruction-version, evidence-snapshot, intent, and input-bundle
-link carries its own `firmId` plus opaque branded ID. The bundle and decision schemas reject any nested
-tenant that differs from the enclosing record. The legal companion parses all four canonical fixtures
-so a reject-everything schema cannot pass.
+**Invariant (charter #1/#7; v3 invariant 2 and §3 non-negotiable 11; ADR-0029, D-045/D-046):** every
+immutable policy-version, household-instruction-version, evidence-snapshot, intent, input-bundle, and
+derived-decision link carries its own `firmId` plus opaque branded ID. The bundle and decision schemas
+recursively reject any nested tenant that differs from the enclosing record, including precedence
+citations, explanation child nodes, prohibitions, and execution preconditions. The legal companion
+parses all four canonical fixtures so a reject-everything schema cannot pass.
 
 The target commit reproduced the missing contract before implementation:
 ```
@@ -979,3 +980,28 @@ every bundle-reference class, both decision-record links, non-canonical IANA ali
 IDs, and hash-preimage or schema-fingerprint drift.
 
 **Date:** 2026-07-27 (review corrections F20 and F22, D-045).
+
+**Extension (review correction F23):** the target commit accepted cross-tenant policy citations,
+explanation evidence, and execution-precondition evidence:
+```
+{
+  policyCitation: true,
+  explanationEvidence: true,
+  executionEvidence: true
+}
+```
+After scoped recursive references landed, the precedence and execution-precondition tenant checks
+were removed together. The real fence failed at the owning paths:
+```
+× enforces: precedence and explanation references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:119
+× enforces: prohibition and execution-precondition references belong to the decision tenant
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:162
+```
+**Revert (extension):** restored both recursive checks; the focused fence and canonical-fixture
+companion passed. The schema and hash-preimage envelopes advanced to 1.2.0, with new projection
+fingerprints and fixture digests.
+
+**Date:** 2026-07-27 (review correction F23, D-046).

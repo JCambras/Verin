@@ -19,11 +19,18 @@ import { z } from "zod";
 import {
   DecisionIdSchema,
   DecisionInputBundleRefSchema,
+  DecisionRefSchema,
   EvidenceKindSchema,
-  EvidenceSnapshotIdSchema,
+  EvidenceSnapshotIdRefSchema,
   HashSchema,
+  HouseholdInstructionRefSchema,
+  HouseholdInstructionVersionRefSchema,
   IntentRefSchema,
+  PolicyRefSchema,
+  PolicyVersionRefSchema,
   ReasonCodeSchema,
+  RegulatorySourceRefSchema,
+  RegulatoryVersionRefSchema,
   ScopeRefSchema,
   SubjectRefSchema,
   TimestampSchema,
@@ -34,11 +41,29 @@ import { AuthorityRequirementSchema } from "./authority";
 import { ExecutionPlanSchema } from "./execution";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
-export const VersionedSourceRefSchema = z.strictObject({
-  sourceType: z.enum(["firm_policy", "household_instruction", "regulatory"]),
-  sourceId: z.string().min(1),
-  versionId: z.string().min(1),
-}).readonly();
+export const VersionedSourceRefSchema = z
+  .discriminatedUnion("sourceType", [
+    z.strictObject({
+      sourceType: z.literal("firm_policy"),
+      sourceRef: PolicyRefSchema,
+      versionRef: PolicyVersionRefSchema,
+    }),
+    z.strictObject({
+      sourceType: z.literal("household_instruction"),
+      sourceRef: HouseholdInstructionRefSchema,
+      versionRef: HouseholdInstructionVersionRefSchema,
+    }),
+    z.strictObject({
+      sourceType: z.literal("regulatory"),
+      sourceRef: RegulatorySourceRefSchema,
+      versionRef: RegulatoryVersionRefSchema,
+    }),
+  ])
+  .refine((source) => source.sourceRef.firmId === source.versionRef.firmId, {
+    message: "sourceRef.firmId and versionRef.firmId must match",
+    path: ["sourceRef", "firmId"],
+  })
+  .readonly();
 export type VersionedSourceRef = z.infer<typeof VersionedSourceRefSchema>;
 
 /** One recorded precedence resolution between two governing sources. */
@@ -54,13 +79,19 @@ export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 export const ExplanationNodeSchema = z.strictObject({
   code: z.string().min(1),
   messageTemplate: z.string().min(1),
-  evidenceSnapshotIds: z.array(EvidenceSnapshotIdSchema).readonly(),
+  evidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
   sourceRefs: z.array(VersionedSourceRefSchema).readonly(),
   get childNodes(): z.ZodReadonly<z.ZodArray<typeof ExplanationNodeSchema>> {
     return z.array(ExplanationNodeSchema).readonly();
   },
 }).readonly();
 export type ExplanationNode = z.infer<typeof ExplanationNodeSchema>;
+
+type ExplanationTenantReferences = {
+  evidenceSnapshotRefs: readonly { firmId: string }[];
+  sourceRefs: readonly VersionedSourceRef[];
+  childNodes: readonly ExplanationTenantReferences[];
+};
 
 /** JSON-scalar parameter values (canonically serializable; never objects-in-disguise). */
 export const ScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -187,7 +218,7 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
   riskClass: RiskClassSchema,
   reversibility: z.enum(["reversible", "partially_reversible", "irreversible"]),
   reevaluateWhen: z.array(RevaluationConditionSchema).readonly(),
-  derivedFromDecisionId: DecisionIdSchema.optional(),
+  derivedFromDecisionRef: DecisionRefSchema.optional(),
   decisionHash: HashSchema,
   createdBy: AnyActorRefSchema,
   createdAt: TimestampSchema,
@@ -203,6 +234,63 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
   .refine((record) => record.inputBundleRef.firmId === record.firmId, {
     message: "inputBundleRef.firmId must match the record's tenant",
     path: ["inputBundleRef", "firmId"],
+  })
+  .superRefine((record, ctx) => {
+    const requireSameFirm = (ref: { firmId: string }, path: (string | number)[]) => {
+      if (ref.firmId !== record.firmId) {
+        ctx.addIssue({ code: "custom", message: "referenced record must belong to the decision tenant", path });
+      }
+    };
+    const requireSource = (source: VersionedSourceRef, path: (string | number)[]) => {
+      requireSameFirm(source.sourceRef, [...path, "sourceRef", "firmId"]);
+      requireSameFirm(source.versionRef, [...path, "versionRef", "firmId"]);
+    };
+    const requireExplanation = (
+      node: ExplanationTenantReferences,
+      path: (string | number)[],
+    ) => {
+      node.evidenceSnapshotRefs.forEach((ref, index) =>
+        requireSameFirm(ref, [...path, "evidenceSnapshotRefs", index, "firmId"]),
+      );
+      node.sourceRefs.forEach((source, index) =>
+        requireSource(source, [...path, "sourceRefs", index]),
+      );
+      node.childNodes.forEach((child, index) =>
+        requireExplanation(child, [...path, "childNodes", index]),
+      );
+    };
+    record.precedenceTrace.forEach((step, index) => {
+      requireSource(step.left, ["precedenceTrace", index, "left"]);
+      requireSource(step.right, ["precedenceTrace", index, "right"]);
+    });
+    (record.explanationTrace as readonly ExplanationTenantReferences[]).forEach((node, index) =>
+      requireExplanation(node, ["explanationTrace", index]),
+    );
+    if (record.result.kind === "prohibited") {
+      requireSource(record.result.prohibition.source, ["result", "prohibition", "source"]);
+    }
+    if (record.result.kind === "proceed") {
+      record.result.executionPlan.steps.forEach((step, stepIndex) =>
+        step.preconditions.forEach((precondition, preconditionIndex) =>
+          precondition.requiredEvidenceSnapshotRefs.forEach((ref, refIndex) =>
+            requireSameFirm(ref, [
+              "result",
+              "executionPlan",
+              "steps",
+              stepIndex,
+              "preconditions",
+              preconditionIndex,
+              "requiredEvidenceSnapshotRefs",
+              refIndex,
+              "firmId",
+            ]),
+          ),
+        ),
+      );
+    }
+    if (record.derivedFromDecisionRef) {
+      requireSameFirm(record.derivedFromDecisionRef, ["derivedFromDecisionRef", "firmId"]);
+    }
   })
   .refine((record) => record.result.kind !== "prohibited" || record.reevaluateWhen.length === 0, {
     message: "a prohibited decision cannot carry revaluation conditions (a prohibition has no resolving condition)",

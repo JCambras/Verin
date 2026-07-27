@@ -22,8 +22,8 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 27 build-failing fitness
-fences; ratchet-down line budgets + a separate presentation budget.
+Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); a build-failing
+fitness-fence suite; ratchet-down line budgets + a separate presentation budget.
 
 **v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-040):** the canonical decision
 type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
@@ -66,11 +66,11 @@ captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/
 
 ## 2. Every fence, with its proof
 
-27 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
+The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Each ships a co-located
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-027).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-028).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -99,7 +99,9 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
+| `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
 | `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
+| `decision-core-tenant-scope` | every immutable bundle and decision reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045/D-046) | PF-028 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

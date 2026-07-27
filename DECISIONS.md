@@ -622,3 +622,17 @@ invariant 2 and the same-PR fencing rule.
 **Revert path:** restore scalar links and the 1.0.0 fixtures/preimages together, remove the tenant-scope
 fence from charter #7 and invariant 2, accept non-canonical time-zone aliases, and remove the two
 triple-slash companions plus PF-002/PF-028 evidence.
+
+### D-046 · 2026-07-27 · reversible · Decision-record tenant scope is enforced recursively
+
+The D-045 rule now reaches every hash-bound policy, instruction, evidence-snapshot, and
+derived-decision link inside a `DecisionRecord`: precedence citations, recursive explanation nodes,
+prohibitions, execution preconditions, and derived-decision ancestry all carry strict `{ firmId, id }`
+references and must match the enclosing firm. Schema and both hash-preimage envelopes advance to 1.2.0;
+the canonical serializer remains 1.0.0, and canonical fixtures lock the new bytes and digests. PF-028
+now exercises each recursive path. The contracts ceiling is re-baselined from 1550 to 1650 through
+ADR-0029's ADR-0018 amendment path after the complete contract measured 1640 lines.
+**Why:** this fixes F23 at the ownership boundary instead of special-casing the three reported fields;
+a hash-bound record cannot cite another firm's immutable inputs.
+**Revert path:** restore the 1.1.0 decision shapes, fixtures, projection fingerprints, and hashes
+together, remove the recursive PF-028 cases, and restore the 1550 ceiling.

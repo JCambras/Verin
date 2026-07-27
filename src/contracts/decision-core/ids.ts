@@ -71,11 +71,23 @@ export type EvidenceSnapshotId = z.infer<typeof EvidenceSnapshotIdSchema>;
 export const EvidenceSourceIdSchema = brandedString<"EvidenceSourceId">();
 export type EvidenceSourceId = z.infer<typeof EvidenceSourceIdSchema>;
 
+export const PolicyIdSchema = brandedString<"PolicyId">();
+export type PolicyId = z.infer<typeof PolicyIdSchema>;
+
 export const PolicyVersionIdSchema = brandedString<"PolicyVersionId">();
 export type PolicyVersionId = z.infer<typeof PolicyVersionIdSchema>;
 
+export const HouseholdInstructionIdSchema = brandedString<"HouseholdInstructionId">();
+export type HouseholdInstructionId = z.infer<typeof HouseholdInstructionIdSchema>;
+
 export const HouseholdInstructionVersionIdSchema = brandedString<"HouseholdInstructionVersionId">();
 export type HouseholdInstructionVersionId = z.infer<typeof HouseholdInstructionVersionIdSchema>;
+
+export const RegulatorySourceIdSchema = brandedString<"RegulatorySourceId">();
+export type RegulatorySourceId = z.infer<typeof RegulatorySourceIdSchema>;
+
+export const RegulatoryVersionIdSchema = brandedString<"RegulatoryVersionId">();
+export type RegulatoryVersionId = z.infer<typeof RegulatoryVersionIdSchema>;
 
 export const DomainConfigVersionIdSchema = brandedString<"DomainConfigVersionId">();
 export type DomainConfigVersionId = z.infer<typeof DomainConfigVersionIdSchema>;
@@ -86,17 +98,32 @@ const tenantScopedReference = <T>(id: z.ZodType<T>) =>
 export const IntentRefSchema = tenantScopedReference(IntentIdSchema);
 export type IntentRef = z.infer<typeof IntentRefSchema>;
 
+export const DecisionRefSchema = tenantScopedReference(DecisionIdSchema);
+export type DecisionRef = z.infer<typeof DecisionRefSchema>;
+
 export const DecisionInputBundleRefSchema = tenantScopedReference(DecisionInputBundleIdSchema);
 export type DecisionInputBundleRef = z.infer<typeof DecisionInputBundleRefSchema>;
 
 export const EvidenceSnapshotIdRefSchema = tenantScopedReference(EvidenceSnapshotIdSchema);
 export type EvidenceSnapshotIdRef = z.infer<typeof EvidenceSnapshotIdRefSchema>;
 
+export const PolicyRefSchema = tenantScopedReference(PolicyIdSchema);
+export type PolicyRef = z.infer<typeof PolicyRefSchema>;
+
 export const PolicyVersionRefSchema = tenantScopedReference(PolicyVersionIdSchema);
 export type PolicyVersionRef = z.infer<typeof PolicyVersionRefSchema>;
 
+export const HouseholdInstructionRefSchema = tenantScopedReference(HouseholdInstructionIdSchema);
+export type HouseholdInstructionRef = z.infer<typeof HouseholdInstructionRefSchema>;
+
 export const HouseholdInstructionVersionRefSchema = tenantScopedReference(HouseholdInstructionVersionIdSchema);
 export type HouseholdInstructionVersionRef = z.infer<typeof HouseholdInstructionVersionRefSchema>;
+
+export const RegulatorySourceRefSchema = tenantScopedReference(RegulatorySourceIdSchema);
+export type RegulatorySourceRef = z.infer<typeof RegulatorySourceRefSchema>;
+
+export const RegulatoryVersionRefSchema = tenantScopedReference(RegulatoryVersionIdSchema);
+export type RegulatoryVersionRef = z.infer<typeof RegulatoryVersionRefSchema>;
 
 export const PrimitiveIdSchema = brandedString<"PrimitiveId">();
 export type PrimitiveId = z.infer<typeof PrimitiveIdSchema>;

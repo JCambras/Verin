@@ -174,7 +174,7 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const decisionKeys = Object.keys(DecisionRecordSchema.unwrap().shape).filter((key) => key !== "decisionHash");
     expect([...BUNDLE_HASH_PAYLOAD_KEYS].sort()).toEqual(bundleKeys.sort());
     expect([...DECISION_HASH_PAYLOAD_KEYS].sort()).toEqual(decisionKeys.sort());
-    expect(DECISION_HASH_PAYLOAD_KEYS).toContain("derivedFromDecisionId");
+    expect(DECISION_HASH_PAYLOAD_KEYS).toContain("derivedFromDecisionRef");
   });
 
   it("rejects replay metadata versions without a matching implementation", () => {
