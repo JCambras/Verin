@@ -575,3 +575,16 @@ module-reference forms. Adversarial proof extends PF-027; the contracts measurem
 unchanged 1550 ceiling.
 **Revert path:** revert the recursive readonly schemas, duplicate refinements, fingerprint lock, and
 AST collector additions together; no runtime consumer persists these prompt-5 contracts yet.
+
+### D-043 · 2026-07-27 · reversible · Dependency aliases resolve before boundary classification
+
+The shared dependency-fence classifier now resolves and normalizes every configured alias suffix
+against its source root before classifying the destination layer. Layer detection accepts only the
+repository source root and the explicit in-memory companion root, so traversal into `node_modules`
+cannot become project-local merely because a package contains its own `src` directory. This closes
+both alias-traversal forms from review finding F16 without rejecting valid same-layer aliases.
+**Alternatives:** reject every aliased `..` segment - safe but less precise than classifying the real
+normalized destination; keep prefix classification and special-case the two reported strings -
+rejected because equivalent traversal shapes would remain.
+**Revert path:** restore prefix-only alias classification and remove the three traversal companions
+and PF-002 extension.

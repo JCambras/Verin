@@ -8,13 +8,21 @@
 import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, relative, resolve, dirname } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const SRC_ROOT = join(REPO_ROOT, "src");
+const IN_MEMORY_SRC_ROOT = resolve("/src");
 
 export type Layer = "contracts" | "domain" | "infrastructure" | "app";
 const RANK: Record<Layer, number> = { contracts: 0, domain: 1, infrastructure: 2, app: 3 };
+const ALIAS_PATHS: ReadonlyArray<readonly [string, string]> = [
+  ["@contracts", "contracts"],
+  ["@domain", "domain"],
+  ["@infra", "infrastructure"],
+  ["@app", "app"],
+  ["@", ""],
+];
 
 /** Recursively list files under `dir` whose name matches `filter`. */
 export function walk(dir: string, filter: (f: string) => boolean): string[] {
@@ -39,18 +47,30 @@ export function shippedSourceFiles(): string[] {
   );
 }
 
-/**
- * Which layer does a path under src/ belong to? Classifies by the segment after
- * the LAST "src" segment, so it works for both real absolute paths
- * (/…/verin/src/domain/x.ts) and in-memory companion paths (/src/domain/evil.ts).
- */
-export function layerOfPath(absPath: string): Layer | null {
-  const parts = absPath.split(/[/\\]/);
-  const srcIdx = parts.lastIndexOf("src");
-  if (srcIdx < 0 || srcIdx + 1 >= parts.length) return null;
-  const seg = parts[srcIdx + 1];
+function layerWithinSourceRoot(absPath: string, sourceRoot: string): Layer | null {
+  const pathFromRoot = relative(sourceRoot, resolve(absPath));
+  if (
+    pathFromRoot.length === 0 ||
+    pathFromRoot === ".." ||
+    pathFromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(pathFromRoot)
+  ) {
+    return null;
+  }
+  const seg = pathFromRoot.split(/[/\\]/)[0];
   if (seg === "contracts" || seg === "domain" || seg === "infrastructure" || seg === "app") return seg;
   return null;
+}
+
+function sourceRootOf(absPath: string): string | null {
+  if (layerWithinSourceRoot(absPath, SRC_ROOT) !== null) return SRC_ROOT;
+  if (layerWithinSourceRoot(absPath, IN_MEMORY_SRC_ROOT) !== null) return IN_MEMORY_SRC_ROOT;
+  return null;
+}
+
+/** Which layer does a path under the real or in-memory src/ root belong to? */
+export function layerOfPath(absPath: string): Layer | null {
+  return layerWithinSourceRoot(absPath, SRC_ROOT) ?? layerWithinSourceRoot(absPath, IN_MEMORY_SRC_ROOT);
 }
 
 /**
@@ -59,25 +79,19 @@ export function layerOfPath(absPath: string): Layer | null {
  * bare "@/<layer>/…", and relative (./ ../) paths.
  */
 export function specifierToLayer(fromFile: string, spec: string): Layer | null {
-  const aliasMap: Array<[RegExp, Layer]> = [
-    [/^@contracts(\/|$)/, "contracts"],
-    [/^@domain(\/|$)/, "domain"],
-    [/^@infra(\/|$)/, "infrastructure"],
-    [/^@app(\/|$)/, "app"],
-    [/^@\/contracts(\/|$)/, "contracts"],
-    [/^@\/domain(\/|$)/, "domain"],
-    [/^@\/infrastructure(\/|$)/, "infrastructure"],
-    [/^@\/app(\/|$)/, "app"],
-  ];
-  for (const [re, layer] of aliasMap) if (re.test(spec)) return layer;
-  if (spec.startsWith("@/")) {
-    const seg = spec.slice(2).split("/")[0];
-    if (seg === "contracts" || seg === "domain" || seg === "infrastructure" || seg === "app") return seg;
-    return null;
+  const sourceRoot = sourceRootOf(fromFile);
+  if (sourceRoot === null) return null;
+  for (const [alias, pathFromSourceRoot] of ALIAS_PATHS) {
+    const root = resolve(sourceRoot, pathFromSourceRoot);
+    if (spec === alias) return layerWithinSourceRoot(root, sourceRoot);
+    const prefix = `${alias}/`;
+    if (spec.startsWith(prefix)) {
+      return layerWithinSourceRoot(resolve(root, ...spec.slice(prefix.length).split("/")), sourceRoot);
+    }
   }
   if (spec.startsWith(".")) {
     const resolved = resolve(dirname(fromFile), spec);
-    return layerOfPath(resolved);
+    return layerWithinSourceRoot(resolved, sourceRoot);
   }
   return null; // bare/external
 }

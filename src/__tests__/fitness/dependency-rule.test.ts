@@ -44,6 +44,15 @@ describe("dependency-rule fence", () => {
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->infrastructure");
     });
 
+    it("alias traversal from contracts into infrastructure is normalized before classification", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts": `import { x } from "@contracts/../infrastructure/store";\nexport const y = x;`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("contracts->infrastructure");
+    });
+
     it("dynamic import() from contracts into app", () => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/contracts/evil.ts": `export async function go() { return import("@app/page"); }` }),
@@ -103,6 +112,24 @@ describe("dependency-rule fence", () => {
       );
       expect(v).toHaveLength(1);
       expect(v[0]?.specifier).toBe("../../../node_modules/react/index.js");
+    });
+
+    it("alias traversal cannot disguise an external package as a contracts import", () => {
+      const specifier = "@contracts/../../node_modules/react/index.js";
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `import React from "${specifier}";\nexport { React };` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]?.specifier).toBe(specifier);
+    });
+
+    it("an external package nested under its own src directory remains external", () => {
+      const specifier = "@contracts/../../node_modules/example/src/contracts/index.js";
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `import value from "${specifier}";\nexport { value };` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]?.specifier).toBe(specifier);
     });
 
     it("zod is the only permitted contracts external dependency", () => {
