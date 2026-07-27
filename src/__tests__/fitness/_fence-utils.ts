@@ -771,7 +771,20 @@ export function realSemanticProject(): Project {
 export function inMemoryProject(files: Record<string, string>): Project {
   const project = new Project({
     useInMemoryFileSystem: true,
-    compilerOptions: REPO_COMPILER_OPTIONS,
+    // The repo's real compiler options (lib/target/strictness) rebased onto the
+    // in-memory root, so companion fixtures resolve `@contracts/*` & co. against
+    // the in-memory /src tree instead of the host repo path.
+    compilerOptions: {
+      ...REPO_COMPILER_OPTIONS,
+      baseUrl: "/",
+      paths: {
+        "@contracts/*": ["src/contracts/*"],
+        "@domain/*": ["src/domain/*"],
+        "@infra/*": ["src/infrastructure/*"],
+        "@app/*": ["src/app/*"],
+        "@/*": ["src/*"],
+      },
+    },
   });
   for (const [path, content] of Object.entries(files)) project.createSourceFile(path, content);
   return project;

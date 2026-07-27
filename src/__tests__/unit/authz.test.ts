@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { GOVERNED_ACTIONS, actorRefOf, authorizeGovernedAction, isActionGrant, type ActionGrant, type GovernedAction } from "@contracts/authz";
-import { systemTenant } from "@contracts/tenant";
+import {
+  GOVERNED_ACTIONS,
+  actorRefOf,
+  authorizeGovernedAction,
+  isActionGrant,
+  isActorRef,
+  type ActionGrant,
+  type ActorRef,
+  type GovernedAction,
+} from "@contracts/authz";
+import { systemTenant, tenantOf } from "@contracts/tenant";
 import { principalFromIdentity } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
 
@@ -13,7 +22,11 @@ function humanActor(role: Role) {
   const p = principalFromIdentity({ userId: `u-${role}`, orgId: "org-1", role, actor: `${role}@firm.test`, sessionId: "s1" });
   return actorRefOf(p);
 }
-const systemActor = { kind: "system" as const, tenant: systemTenant("esign-webhook", "org-1"), actorId: "esign-webhook" };
+const systemActor = {
+  kind: "system",
+  tenant: systemTenant("esign-webhook", "org-1"),
+  actorId: "esign-webhook",
+} as unknown as ActorRef;
 
 describe("authorizeGovernedAction denies the unauthorized", () => {
   it("an advisor cannot approve decisions, approve policy, override, or export audits", () => {
@@ -39,6 +52,25 @@ describe("authorizeGovernedAction denies the unauthorized", () => {
       if (!r.ok) expect(r.error.code).toBe("FORBIDDEN");
     }
   });
+  it("a caller cannot elevate a sealed principal by fabricating an actor role", () => {
+    const principal = principalFromIdentity({
+      userId: "u-advisor",
+      orgId: "org-1",
+      role: "advisor",
+      actor: "advisor@firm.test",
+      sessionId: "s1",
+    });
+    const forged = {
+      kind: "human",
+      tenant: tenantOf(principal),
+      actorId: principal.userId,
+      role: "principal",
+    } as unknown as ActorRef;
+    expect(authorizeGovernedAction(forged, "decision.override").ok).toBe(false);
+
+    const spread = { ...actorRefOf(principal), role: "principal" } as unknown as ActorRef;
+    expect(authorizeGovernedAction(spread, "decision.override").ok).toBe(false);
+  });
 });
 
 describe("authorizeGovernedAction grants the authorized", () => {
@@ -52,6 +84,7 @@ describe("authorizeGovernedAction grants the authorized", () => {
     expect(r.value.role).toBe("cco");
     expect(isActionGrant(r.value)).toBe(true);
     expect(Object.isFrozen(r.value)).toBe(true);
+    expect(isActorRef(humanActor("cco"))).toBe(true);
   });
   it("every registry allowlist actually authorizes each of its roles (no dead allowlist rows)", () => {
     for (const [action, allowed] of Object.entries(GOVERNED_ACTIONS) as Array<[GovernedAction, readonly Role[]]>) {
@@ -73,5 +106,18 @@ describe("ActionGrant is sealed", () => {
     if (!real.ok) throw new Error("expected grant");
     expect(isActionGrant({ ...real.value })).toBe(false);
     expect(isActionGrant({ action: "audit.export" } as unknown as ActionGrant)).toBe(false);
+  });
+});
+
+describe("ActorRef is sealed", () => {
+  it("cannot compile from a literal", () => {
+    // @ts-expect-error an object literal cannot produce the sealed brand
+    const impostor: ActorRef = {
+      kind: "human",
+      tenant: systemTenant("test", "o"),
+      actorId: "x",
+      role: "principal",
+    };
+    expect(isActorRef(impostor)).toBe(false);
   });
 });

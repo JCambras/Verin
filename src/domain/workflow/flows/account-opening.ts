@@ -8,21 +8,23 @@
  * infrastructure) — the flow stays in the domain layer, adapters are wired in app.
  */
 import type { FlowDefinition, FlowStep } from "../engine";
+import type { PIIBearing } from "@contracts/pii";
+import type { TenantContext } from "@contracts/tenant";
 import { ACCOUNT_TYPES, type AccountType } from "@domain/schema/entities";
 
-export interface AccountOpeningDeps {
-  createHousehold(name: string): Promise<{ id: string }>;
-  createContact(input: { householdId: string; firstName: string; lastName: string; email: string | null }): Promise<{ id: string }>;
-  createApplication(input: { householdId: string; contactId: string; accountType: AccountType }): Promise<{ id: string; idempotencyKey: string }>;
-  requestEsign(applicationId: string): Promise<{ token: string }>;
-  finalize(input: { applicationId: string; householdId: string; accountType: AccountType; idempotencyKey: string; actor: string; signedAt: string }): Promise<void>;
+export interface AccountOpeningDeps extends PIIBearing {
+  createHousehold(name: string, tenant: TenantContext): Promise<{ id: string }>;
+  createContact(input: { householdId: string; firstName: string; lastName: string; email: string | null }, tenant: TenantContext): Promise<{ id: string }>;
+  createApplication(input: { householdId: string; contactId: string; accountType: AccountType }, tenant: TenantContext): Promise<{ id: string; idempotencyKey: string }>;
+  requestEsign(applicationId: string, tenant: TenantContext): Promise<{ token: string }>;
+  finalize(input: { applicationId: string; householdId: string; accountType: AccountType; idempotencyKey: string; actor: string; signedAt: string }, tenant: TenantContext): Promise<void>;
 }
 
 const createHousehold: FlowStep<AccountOpeningDeps> = {
   id: "create-household",
   name: "Create household",
-  async execute(ctx, deps) {
-    const { id } = await deps.createHousehold(String(ctx.householdName));
+  async execute(ctx, deps, tenant) {
+    const { id } = await deps.createHousehold(String(ctx.householdName), tenant);
     return { kind: "continue", patch: { householdId: id } };
   },
 };
@@ -30,13 +32,13 @@ const createHousehold: FlowStep<AccountOpeningDeps> = {
 const createContact: FlowStep<AccountOpeningDeps> = {
   id: "create-contact",
   name: "Add primary contact",
-  async execute(ctx, deps) {
+  async execute(ctx, deps, tenant) {
     const { id } = await deps.createContact({
       householdId: String(ctx.householdId),
       firstName: String(ctx.firstName),
       lastName: String(ctx.lastName),
       email: ctx.email ? String(ctx.email) : null,
-    });
+    }, tenant);
     return { kind: "continue", patch: { contactId: id } };
   },
 };
@@ -44,12 +46,12 @@ const createContact: FlowStep<AccountOpeningDeps> = {
 const createApplication: FlowStep<AccountOpeningDeps> = {
   id: "create-application",
   name: "Open application",
-  async execute(ctx, deps) {
+  async execute(ctx, deps, tenant) {
     const { id, idempotencyKey } = await deps.createApplication({
       householdId: String(ctx.householdId),
       contactId: String(ctx.contactId),
       accountType: ctx.accountType as AccountType,
-    });
+    }, tenant);
     return { kind: "continue", patch: { applicationId: id, finalizeIdempotencyKey: idempotencyKey } };
   },
 };
@@ -57,9 +59,9 @@ const createApplication: FlowStep<AccountOpeningDeps> = {
 const requestEsign: FlowStep<AccountOpeningDeps> = {
   id: "request-esign",
   name: "Send for e-signature",
-  async execute(ctx, deps) {
+  async execute(ctx, deps, tenant) {
     // Fire-and-return: send the e-sign request, then SUSPEND awaiting the webhook.
-    const { token } = await deps.requestEsign(String(ctx.applicationId));
+    const { token } = await deps.requestEsign(String(ctx.applicationId), tenant);
     return { kind: "suspend", token, awaiting: "esign-signature", patch: { esignToken: token } };
   },
 };
@@ -67,7 +69,7 @@ const requestEsign: FlowStep<AccountOpeningDeps> = {
 const finalize: FlowStep<AccountOpeningDeps> = {
   id: "finalize",
   name: "Finalize account opening",
-  async execute(ctx, deps) {
+  async execute(ctx, deps, tenant) {
     // Runs on RESUME (after the signature webhook). Idempotent + audited. The
     // signature moment opens the account (finding #2): signedAt comes from the
     // server-constructed webhook payload, falling back to now if a caller resumed
@@ -79,7 +81,7 @@ const finalize: FlowStep<AccountOpeningDeps> = {
       idempotencyKey: String(ctx.finalizeIdempotencyKey),
       actor: String(ctx.initiatedBy),
       signedAt: typeof ctx.signedAt === "string" && ctx.signedAt ? ctx.signedAt : new Date().toISOString(),
-    });
+    }, tenant);
     return { kind: "continue", patch: { finalized: true } };
   },
 };

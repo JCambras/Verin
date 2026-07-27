@@ -10,8 +10,15 @@
  */
 declare const TokenizedBrand: unique symbol;
 
+export type DeepReadonly<T> =
+  T extends (...args: never[]) => unknown
+    ? T
+    : T extends object
+      ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+      : T;
+
 export interface Tokenized<T> {
-  readonly value: T;
+  readonly value: DeepReadonly<T>;
   readonly piiFree: true;
   readonly [TokenizedBrand]: "Tokenized";
 }

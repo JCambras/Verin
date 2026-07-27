@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import { writeActorOf, systemWriteActor, type Principal, type WriteActor } from "@contracts/principal";
-import { tenantOf, type TenantContext } from "@contracts/tenant";
+import { assertTenantContext, tenantOf, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
@@ -40,26 +40,32 @@ function isUniqueViolation(e: unknown): boolean {
  * running-with-NULL-token crash window remains a recorded ADR-0011 deferral.
  */
 function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
-  const orgId = starter.tenant.orgId;
+  const actorFor = (tenant: TenantContext, actorUserId = starter.actorUserId): WriteActor => {
+    assertTenantContext(tenant);
+    if (tenant.orgId !== starter.tenant.orgId) {
+      throw appError("INTERNAL", "Flow dependency tenant does not match its bound adapter scope.");
+    }
+    return { tenant, actorUserId };
+  };
   return {
-    createHousehold: (name) =>
-      withSpan("crm.household.create", { orgId }, async () => must(await createHousehold(db, starter, { name }, `household:${executionId}`))),
-    createContact: (input) =>
-      withSpan("crm.contact.create", { orgId }, async () => must(await createContact(db, starter, input, `contact:${executionId}`))),
-    createApplication: (input) =>
-      withSpan("crm.application.create", { orgId }, async () => must(await createApplication(db, starter, input, `application:${executionId}`))),
-    requestEsign: (applicationId) =>
-      withSpan("esign.request", { orgId }, async () => {
+    createHousehold: (name, tenant) =>
+      withSpan("crm.household.create", { orgId: tenant.orgId }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
+    createContact: (input, tenant) =>
+      withSpan("crm.contact.create", { orgId: tenant.orgId }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
+    createApplication: (input, tenant) =>
+      withSpan("crm.application.create", { orgId: tenant.orgId }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
+    requestEsign: (applicationId, tenant) =>
+      withSpan("esign.request", { orgId: tenant.orgId }, async () => {
         const token = newEsignToken();
-        return must(await setEsignRequested(db, starter, applicationId, token, `esign:${executionId}`));
+        return must(await setEsignRequested(db, actorFor(tenant), applicationId, token, `esign:${executionId}`));
       }),
-    finalize: (input) =>
-      withSpan("account-opening.finalize", { orgId, applicationId: input.applicationId }, async () => {
+    finalize: (input, tenant) =>
+      withSpan("account-opening.finalize", { orgId: tenant.orgId, applicationId: input.applicationId }, async () => {
         // Typed truth (finding #13): this write was driven by an external event
         // on behalf of the initiating advisor — a narrow WriteActor carrying the
         // starter's sealed tenant, never a fabricated Principal with an invented
         // role/session.
-        const actor: WriteActor = { tenant: starter.tenant, actorUserId: input.actor };
+        const actor = actorFor(tenant, input.actor);
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
         // Per-write keys derive from the application's minted idempotency key
         // (threaded through the flow context), so the key the application row

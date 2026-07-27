@@ -29,9 +29,19 @@ const SEALED = [
     factory: "src/contracts/authz.ts",
   },
   {
+    typeName: "ActorRef",
+    declaration: "src/contracts/authz.ts",
+    factory: "src/contracts/authz.ts",
+  },
+  {
     typeName: "Principal",
     declaration: "src/contracts/principal.ts",
     factory: "src/contracts/principal.ts",
+  },
+  {
+    typeName: "EntityMaskBinding",
+    declaration: "src/infrastructure/pii/llm-projection.ts",
+    factory: "src/infrastructure/pii/llm-projection.ts",
   },
 ] as const;
 
@@ -66,6 +76,21 @@ const TRUSTED_FACTORY_CALLS = [
     name: "systemWriteActor",
     declaration: "src/contracts/principal.ts",
     allowed: ["src/infrastructure/wire.ts"],
+  },
+  {
+    name: "bindEntityMask",
+    declaration: "src/infrastructure/pii/llm-projection.ts",
+    allowed: [],
+  },
+  {
+    name: "tokenizeText",
+    declaration: "src/infrastructure/pii/tokenize.ts",
+    allowed: ["src/infrastructure/pii/llm-projection.ts"],
+  },
+  {
+    name: "tokenizeRecord",
+    declaration: "src/infrastructure/pii/tokenize.ts",
+    allowed: ["src/infrastructure/pii/llm-projection.ts"],
   },
 ] as const;
 
@@ -230,12 +255,19 @@ function sealedFixture(path: string, source: string): Project {
       export function tenantFromIdentity(actorId: string, orgId: string): TenantContext { return { orgId } }
       export function systemTenant(systemId: string, orgId: string): TenantContext { return { orgId } }
     `,
-    "/src/contracts/authz.ts": `export interface ActionGrant { action: string }`,
+    "/src/contracts/authz.ts": `
+      export interface ActorRef { actorId: string }
+      export interface ActionGrant { action: string }
+    `,
     "/src/contracts/principal.ts": `
       import type { TenantContext } from "./tenant";
       export interface Principal { userId: string }
       export function principalFromIdentity(input: object): Principal { return input as Principal }
       export function systemWriteActor(systemId: string, orgId: string): { tenant: TenantContext } { return { tenant: { orgId } } }
+    `,
+    "/src/infrastructure/pii/llm-projection.ts": `
+      export interface EntityMaskBinding { slotName: string }
+      export function bindEntityMask(input: object): EntityMaskBinding { return input as EntityMaskBinding }
     `,
     [path]: source,
   });
@@ -315,22 +347,23 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(detectSealedTypeConstruction(project).length).toBeGreaterThanOrEqual(2);
     });
 
-    it("catches TenantContext, ActionGrant, and Principal assertions", () => {
+    it("catches TenantContext, ActorRef, ActionGrant, and Principal assertions", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
         `
           import type { TenantContext } from "../contracts/tenant";
-          import type { ActionGrant } from "../contracts/authz";
+          import type { ActorRef, ActionGrant } from "../contracts/authz";
           import type { Principal } from "../contracts/principal";
           const a = {} as TenantContext;
-          const b = {} as ActionGrant;
-          const c = {} as Principal;
+          const b = {} as ActorRef;
+          const c = {} as ActionGrant;
+          const d = {} as Principal;
         `,
       );
       const hits = detectSealedTypeConstruction(project).filter((hit) =>
         hit.startsWith("src/app/evil.ts")
       );
-      for (const typeName of ["TenantContext", "ActionGrant", "Principal"]) {
+      for (const typeName of ["TenantContext", "ActorRef", "ActionGrant", "Principal"]) {
         expect(hits.some((hit) => hit.includes(typeName)), typeName).toBe(true);
       }
     });
@@ -369,6 +402,41 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       const hits = detectUntrustedFactoryCalls(project);
       expect(hits.some((hit) => hit.includes("systemTenant"))).toBe(true);
       expect(hits.some((hit) => hit.includes("systemWriteActor"))).toBe(true);
+    });
+
+    it("catches trusted entity-mask binding outside a reviewed boundary", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import { bindEntityMask } from "../infrastructure/pii/llm-projection";
+          bindEntityMask({
+            slotName: "subject_1",
+            slotType: "subject",
+            rawValues: ["account"],
+          });
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.includes("bindEntityMask")
+      )).toBe(true);
+    });
+
+    it("catches direct tokenization outside the projection boundary", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import { tokenizeText } from "../infrastructure/pii/tokenize";
+          tokenizeText("Alice wants account");
+        `,
+      );
+      project.createSourceFile(
+        "/src/infrastructure/pii/tokenize.ts",
+        `export function tokenizeText(raw: string): object { return { value: raw } }`,
+        { overwrite: true },
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.includes("tokenizeText")
+      )).toBe(true);
     });
   });
 });

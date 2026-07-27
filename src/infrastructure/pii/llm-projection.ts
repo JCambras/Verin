@@ -10,28 +10,78 @@ import {
 } from "@infra/llm/request-schema";
 import { tokenizeText, tokenizeRecord } from "./tokenize";
 
-export interface SubjectMask extends PIIBearing {
+declare const EntityMaskBindingBrand: unique symbol;
+
+export interface EntityMaskBinding extends PIIBearing {
   readonly slotName: string;
-  readonly rawText: string;
+  readonly slotType: "subject" | "account-ref";
+  readonly rawValues: readonly string[];
+  readonly [EntityMaskBindingBrand]: "EntityMaskBinding";
 }
 
 export interface EvidenceProjectionInput extends PIIBearing {
   readonly purpose: LlmPurpose;
   readonly requestText: string;
   readonly slots: readonly SlotPlaceholder[];
-  readonly masks: readonly SubjectMask[];
+  readonly bindings: readonly EntityMaskBinding[];
   readonly evidence: Readonly<Record<string, unknown>>;
+}
+
+const ENTITY_BINDING_SEAL = Symbol("verin.entity-mask-binding.seal");
+
+export function bindEntityMask(input: {
+  readonly slotName: string;
+  readonly slotType: "subject" | "account-ref";
+  readonly rawValues: readonly string[];
+}): EntityMaskBinding {
+  const rawValues = [...new Set(input.rawValues.map((value) => value.trim()))];
+  if (
+    !SLOT_NAME_RE.test(input.slotName) ||
+    rawValues.length === 0 ||
+    rawValues.some((value) => value.length < 2)
+  ) {
+    throw appError("PII_VIOLATION", "Trusted entity binding was invalid.");
+  }
+  const binding = Object.defineProperty(
+    {
+      slotName: input.slotName,
+      slotType: input.slotType,
+      rawValues: Object.freeze(rawValues),
+    },
+    ENTITY_BINDING_SEAL,
+    { value: true, enumerable: false },
+  );
+  return Object.freeze(binding) as unknown as EntityMaskBinding;
+}
+
+function isEntityMaskBinding(value: unknown): value is EntityMaskBinding {
+  return typeof value === "object" &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[ENTITY_BINDING_SEAL] === true;
+}
+
+interface SensitiveMask extends PIIBearing {
+  readonly slotName: string;
+  readonly rawText: string;
+}
+
+function masksFromBindings(
+  bindings: readonly EntityMaskBinding[],
+): readonly SensitiveMask[] {
+  return bindings.flatMap((binding) =>
+    binding.rawValues.map((rawText) => ({ slotName: binding.slotName, rawText }))
+  );
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function orderedMasks(masks: readonly SubjectMask[]): readonly SubjectMask[] {
+function orderedMasks(masks: readonly SensitiveMask[]): readonly SensitiveMask[] {
   return [...masks].sort((a, b) => b.rawText.length - a.rawText.length);
 }
 
-function maskText(text: string, masks: readonly SubjectMask[]): string {
+function maskText(text: string, masks: readonly SensitiveMask[]): string {
   let masked = text;
   for (const mask of masks) {
     masked = masked.replace(
@@ -44,7 +94,7 @@ function maskText(text: string, masks: readonly SubjectMask[]): string {
 
 function maskRecord(
   value: unknown,
-  masks: readonly SubjectMask[],
+  masks: readonly SensitiveMask[],
   seen = new WeakSet<object>(),
 ): unknown {
   if (typeof value === "string") return maskText(value, masks);
@@ -73,28 +123,42 @@ function containsText(
 }
 
 function masksAreValid(input: EvidenceProjectionInput): boolean {
+  if (
+    typeof input !== "object" ||
+    input === null ||
+    typeof input.requestText !== "string" ||
+    !Array.isArray(input.slots) ||
+    !input.slots.every((slot) =>
+      typeof slot === "object" &&
+      slot !== null &&
+      typeof slot.slotName === "string" &&
+      typeof slot.slotType === "string"
+    ) ||
+    !Array.isArray(input.bindings) ||
+    !input.bindings.every(isEntityMaskBinding)
+  ) {
+    return false;
+  }
   const slots = new Map(input.slots.map((slot) => [slot.slotName, slot.slotType]));
   const sensitiveSlots = input.slots
     .filter((slot) =>
       slot.slotType === "subject" || slot.slotType === "account-ref"
     )
     .map((slot) => slot.slotName);
-  const maskedSlots = new Set(input.masks.map((mask) => mask.slotName));
+  const maskedSlots = new Set(input.bindings.map((binding) => binding.slotName));
   if (
     (input.purpose === "intent-shaping" && sensitiveSlots.length === 0) ||
-    maskedSlots.size !== input.masks.length ||
+    maskedSlots.size !== input.bindings.length ||
     sensitiveSlots.some((slotName) => !maskedSlots.has(slotName))
   ) {
     return false;
   }
-  return input.masks.every((mask) => {
-    const slotType = slots.get(mask.slotName);
-    return SLOT_NAME_RE.test(mask.slotName) &&
-      mask.rawText.trim().length >= 2 &&
-      (slotType === "subject" || slotType === "account-ref") &&
-      (
-        input.requestText.toLocaleLowerCase().includes(mask.rawText.toLocaleLowerCase()) ||
-        containsText(input.evidence, mask.rawText)
+  return input.bindings.every((binding) => {
+    const slotType = slots.get(binding.slotName);
+    return slotType === binding.slotType &&
+      binding.rawValues.some((rawText) =>
+        input.requestText.toLocaleLowerCase().includes(rawText.toLocaleLowerCase()) ||
+        containsText(input.evidence, rawText)
       );
   });
 }
@@ -109,7 +173,7 @@ export function projectForLlm(
     ));
   }
   try {
-    const masks = orderedMasks(input.masks);
+    const masks = orderedMasks(masksFromBindings(input.bindings));
     const candidate: MaskedLlmRequest = {
       purpose: input.purpose,
       maskedText: tokenizeText(maskText(input.requestText, masks)),

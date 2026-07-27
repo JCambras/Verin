@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { relative, resolve, dirname } from "node:path";
-import { SyntaxKind, type Project, type SourceFile, type TypeAliasDeclaration, type TypeLiteralNode } from "ts-morph";
-import { realProject, inMemoryProject, importSpecifiers, REPO_ROOT, SRC_ROOT } from "./_fence-utils";
+import {
+  Node,
+  SyntaxKind,
+  type Project,
+  type Signature,
+  type SourceFile,
+  type Type,
+  type TypeAliasDeclaration,
+  type TypeLiteralNode,
+} from "ts-morph";
+import {
+  realSemanticProject,
+  inMemoryProject,
+  importSpecifiers,
+  REPO_ROOT,
+  SRC_ROOT,
+} from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
 
 /**
@@ -49,7 +64,146 @@ function normalizePath(sf: SourceFile): string {
 interface PIITypeDecl {
   readonly name: string;
   readonly marked: boolean;
-  readonly props: ReadonlyArray<{ readonly name: string; readonly typeText: string }>;
+  readonly props: ReadonlyArray<{ readonly name: string; readonly type: Type }>;
+  readonly callableExposures: readonly string[];
+}
+
+function declaredAs(type: Type, file: string, name: string): boolean {
+  const queue = [type];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const current = queue.shift()!;
+    const key = `${current.getText()}::${current.getFlags()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
+      if (
+        symbol?.getName() === name &&
+        symbol.getDeclarations().some((declaration) =>
+          normalizePath(declaration.getSourceFile()) === file
+        )
+      ) {
+        return true;
+      }
+    }
+    queue.push(
+      ...current.getUnionTypes(),
+      ...current.getIntersectionTypes(),
+      ...current.getBaseTypes(),
+      ...current.getAliasTypeArguments(),
+      ...current.getTypeArguments(),
+    );
+  }
+  return false;
+}
+
+function isTokenized(type: Type): boolean {
+  return declaredAs(type, "src/contracts/tokenized.ts", "Tokenized");
+}
+
+function isPIIBearingType(type: Type): boolean {
+  return declaredAs(type, "src/contracts/pii.ts", "PIIBearing");
+}
+
+function isLeafType(type: Type): boolean {
+  return type.isAny() ||
+    type.isUnknown() ||
+    type.isNever() ||
+    type.isString() ||
+    type.isStringLiteral() ||
+    type.isNumber() ||
+    type.isNumberLiteral() ||
+    type.isBoolean() ||
+    type.isBooleanLiteral() ||
+    type.isNull() ||
+    type.isUndefined() ||
+    type.isVoid();
+}
+
+function inlinePIIExposures(
+  type: Type,
+  path: string,
+  seen = new Set<string>(),
+): string[] {
+  if (isTokenized(type)) return [];
+  if (isPIIBearingType(type)) return [path];
+  if (isLeafType(type)) return [];
+  const key = `${type.getText()}::${type.getFlags()}`;
+  if (seen.has(key)) return [];
+  const nextSeen = new Set(seen).add(key);
+  const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  if (composite.length) {
+    return composite.flatMap((member) =>
+      inlinePIIExposures(member, path, nextSeen)
+    );
+  }
+  const typeArguments = [
+    ...type.getAliasTypeArguments(),
+    ...type.getTypeArguments(),
+  ];
+  const nestedArguments = typeArguments.flatMap((argument) =>
+    inlinePIIExposures(argument, path, nextSeen)
+  );
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const inline = !symbol || symbol.getDeclarations().some((declaration) =>
+    Node.isTypeLiteral(declaration)
+  );
+  if (!inline) return nestedArguments;
+  const nestedProperties = type.getProperties().flatMap((property) => {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0];
+    if (!declaration) return [];
+    const propertyType = property.getTypeAtLocation(declaration);
+    const propertyPath = `${path}.${property.getName()}`;
+    if (isPIIField(property.getName()) && !isTokenized(propertyType)) {
+      return [propertyPath];
+    }
+    return inlinePIIExposures(propertyType, propertyPath, nextSeen);
+  });
+  const nestedCalls = type.getCallSignatures().flatMap((signature) =>
+    signaturePIIExposures(signature, `${path}.<call>`, nextSeen)
+  );
+  return [...nestedArguments, ...nestedProperties, ...nestedCalls];
+}
+
+function signaturePIIExposures(
+  signature: Signature,
+  path: string,
+  seen = new Set<string>(),
+): string[] {
+  const parameters = signature.getParameters().flatMap((parameter) => {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) return [];
+    const parameterType = parameter.getTypeAtLocation(declaration);
+    const parameterPath = `${path}(${parameter.getName()})`;
+    if (isPIIField(parameter.getName()) && !isTokenized(parameterType)) {
+      return [parameterPath];
+    }
+    return inlinePIIExposures(parameterType, parameterPath, seen);
+  });
+  return [
+    ...parameters,
+    ...inlinePIIExposures(signature.getReturnType(), `${path}.return`, seen),
+  ];
+}
+
+function callablePIIExposures(type: Type): string[] {
+  const exposures = type.getCallSignatures().flatMap((signature) =>
+    signaturePIIExposures(signature, "<call>")
+  );
+  for (const property of type.getProperties()) {
+    const declaration = property.getValueDeclaration() ??
+      property.getDeclarations()[0];
+    if (!declaration) continue;
+    const propertyType = property.getTypeAtLocation(declaration);
+    for (const signature of propertyType.getCallSignatures()) {
+      exposures.push(
+        ...signaturePIIExposures(signature, property.getName()),
+      );
+    }
+  }
+  return [...new Set(exposures)];
 }
 
 /** Top-level object literals of a type alias (direct, or members of a union/intersection). */
@@ -69,24 +223,42 @@ function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
     if (iface.getName() === "PIIBearing") continue; // the marker itself
     out.push({
       name: iface.getName(),
-      marked: iface.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText())),
-      props: iface.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" })),
+      marked: isPIIBearingType(iface.getType()),
+      props: iface.getProperties().map((property) => ({
+        name: property.getName(),
+        type: property.getType(),
+      })),
+      callableExposures: callablePIIExposures(iface.getType()),
     });
   }
   for (const alias of sf.getTypeAliases()) {
     const literals = aliasObjectLiterals(alias);
-    if (!literals.length) continue;
+    const aliasType = alias.getType();
+    if (!literals.length && !aliasType.getCallSignatures().length) continue;
     out.push({
       name: alias.getName(),
-      marked: /\bPIIBearing\b/.test(alias.getTypeNode()?.getText() ?? ""),
-      props: literals.flatMap((lit) => lit.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" }))),
+      marked: isPIIBearingType(aliasType),
+      props: literals.flatMap((literal) =>
+        literal.getProperties().map((property) => ({
+          name: property.getName(),
+          type: property.getType(),
+        }))
+      ),
+      callableExposures: callablePIIExposures(aliasType),
     });
   }
   for (const cls of sf.getClasses()) {
     out.push({
       name: cls.getName() ?? "(anonymous class)",
-      marked: cls.getHeritageClauses().some((h) => /\bPIIBearing\b/.test(h.getText())),
-      props: cls.getProperties().map((p) => ({ name: p.getName(), typeText: p.getTypeNode()?.getText() ?? "" })),
+      marked: isPIIBearingType(cls.getType()) ||
+        cls.getImplements().some((heritage) =>
+          isPIIBearingType(heritage.getType())
+        ),
+      props: cls.getProperties().map((property) => ({
+        name: property.getName(),
+        type: property.getType(),
+      })),
+      callableExposures: callablePIIExposures(cls.getType()),
     });
   }
   return out;
@@ -101,13 +273,17 @@ export function detectUnmarkedPIITypes(project: Project, escapes: ReadonlySet<st
     for (const decl of piiTypeDeclarations(sf)) {
       if (decl.marked) continue;
       for (const prop of decl.props) {
-        if (!isPIIField(prop.name) || /\bTokenized\b/.test(prop.typeText)) continue;
+        if (!isPIIField(prop.name) || isTokenized(prop.type)) continue;
         const ref = `${normalized} :: ${decl.name}.${prop.name}`;
+        if (!escapes.has(ref)) out.push(ref);
+      }
+      for (const exposure of decl.callableExposures) {
+        const ref = `${normalized} :: ${decl.name}.${exposure}`;
         if (!escapes.has(ref)) out.push(ref);
       }
     }
   }
-  return out;
+  return [...new Set(out)];
 }
 
 /** Modules that declare at least one PIIBearing-marked type (interface, alias, or class). */
@@ -183,7 +359,7 @@ export function detectPIIReachableFromLlm(project: Project): string[] {
 }
 
 describe("llm-pii-boundary fence (v3 invariant 1)", () => {
-  const project = realProject();
+  const project = realSemanticProject();
 
   it("enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked (or a reviewed machine-name escape)", () => {
     const unmarked = detectUnmarkedPIITypes(project, ESCAPE_SET);
@@ -272,7 +448,54 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     });
     it("does not flag a Tokenized-typed PII-named field (tokens are the point)", () => {
       const project = inMemoryProject({
+        "/src/contracts/tokenized.ts": `export interface Tokenized<T> { value: T; piiFree: true }`,
         "/src/domain/fine.ts": `import type { Tokenized } from "@contracts/tokenized";\nexport interface Masked { firstName: Tokenized<string> }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([]);
+    });
+    it("resolves Tokenized aliases semantically and rejects same-named impostors", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tokenized.ts": `export interface Tokenized<T> { value: T; piiFree: true }`,
+        "/src/domain/fine.ts": `
+          import type { Tokenized as Sealed } from "@contracts/tokenized";
+          export interface Masked { firstName: Sealed<string> }
+        `,
+        "/src/domain/evil.ts": `
+          interface Tokenized<T> { value: T }
+          export interface Raw { firstName: Tokenized<string> }
+        `,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/domain/evil.ts :: Raw.firstName",
+      ]);
+    });
+    it("flags PII nested in method parameters and callable signatures", () => {
+      const project = inMemoryProject({
+        "/src/domain/evil.ts": `
+          export interface DependencyShape {
+            persist(input: { firstName: string }): Promise<void>;
+          }
+          export interface CallableShape {
+            (input: { accountNumber: string }): void;
+          }
+          export type FunctionShape = (input: { email: string }) => void;
+        `,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/domain/evil.ts :: DependencyShape.persist(input).firstName",
+        "src/domain/evil.ts :: CallableShape.<call>(input).accountNumber",
+        "src/domain/evil.ts :: FunctionShape.<call>(input).email",
+      ]);
+    });
+    it("does not flag Tokenized values nested in callable parameters", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tokenized.ts": `export interface Tokenized<T> { value: T; piiFree: true }`,
+        "/src/domain/fine.ts": `
+          import type { Tokenized as Sealed } from "@contracts/tokenized";
+          export interface Handler {
+            submit(input: { firstName: Sealed<string> }): void;
+          }
+        `,
       });
       expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([]);
     });

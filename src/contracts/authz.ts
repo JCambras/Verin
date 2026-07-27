@@ -17,13 +17,32 @@ import { appError, type AppError } from "./errors";
 import { tenantOf, type TenantContext } from "./tenant";
 import type { Principal } from "./principal";
 
-/** The attributed actor behind an action (maps to the ratified ActorRef/SystemActorRef pair). */
-export type ActorRef =
-  | { readonly kind: "human"; readonly tenant: TenantContext; readonly actorId: string; readonly role: Role }
-  | { readonly kind: "system"; readonly tenant: TenantContext; readonly actorId: string };
+declare const ActorRefBrand: unique symbol;
+
+/** The attributed human actor behind a governed action. */
+export interface ActorRef {
+  readonly kind: "human";
+  readonly tenant: TenantContext;
+  readonly actorId: string;
+  readonly role: Role;
+  readonly [ActorRefBrand]: "ActorRef";
+}
+
+const ACTOR_REF_SEAL = Symbol("verin.actor-ref.seal");
 
 export function actorRefOf(p: Principal): ActorRef {
-  return { kind: "human", tenant: tenantOf(p), actorId: p.userId, role: p.role };
+  const actor = Object.defineProperty(
+    { kind: "human", tenant: tenantOf(p), actorId: p.userId, role: p.role },
+    ACTOR_REF_SEAL,
+    { value: true, enumerable: false },
+  );
+  return Object.freeze(actor) as unknown as ActorRef;
+}
+
+export function isActorRef(value: unknown): value is ActorRef {
+  return typeof value === "object" &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[ACTOR_REF_SEAL] === true;
 }
 
 /**
@@ -57,8 +76,8 @@ export interface ActionGrant {
 const SEAL = Symbol("verin.action-grant.seal");
 
 export function authorizeGovernedAction(actor: ActorRef, action: GovernedAction): Result<ActionGrant, AppError> {
-  if (actor.kind === "system") {
-    return err(appError("FORBIDDEN", "System actors can never hold governed-action authority.", { action }));
+  if (!isActorRef(actor)) {
+    return err(appError("FORBIDDEN", "Governed-action authority requires an authenticated human actor.", { action }));
   }
   if (!isAllowedRole(actor.role, GOVERNED_ACTIONS[action])) {
     // Same client-facing message as requireRole, so surfaced behavior is unchanged.

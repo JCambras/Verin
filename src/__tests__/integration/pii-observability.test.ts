@@ -50,6 +50,8 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason(new Error(`duplicate key value: (${FIXTURES.email}) already exists`))).toBe("unexpected-error");
     expect(safeReason(new Error(`password leaked for ${FIXTURES.householdName} account ${FIXTURES.accountNumber}`))).toBe("unexpected-error");
     expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
+    expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
+    expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
   });
   it("the production logger scrubs ambiguous values even under generic keys", () => {
     const { lines, logger } = makeSink();
