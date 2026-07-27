@@ -8,7 +8,7 @@ import {
   listHouseholds,
 } from "@infra/crm/house-crm";
 import { createApplication } from "@infra/crm/application-store";
-import { systemWriteActor } from "@contracts/principal";
+import { systemWriteActor, type WriteActor } from "@contracts/principal";
 import { systemTenant, type TenantContext } from "@contracts/tenant";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { resumeFlow, type FlowDefinition } from "@domain/workflow/engine";
@@ -98,11 +98,21 @@ describe("tenant isolation (integration)", () => {
 
   it("the write chokepoint refuses an impostor BEFORE any business write or audit row", async () => {
     const impostor = { orgId: ORG_A } as unknown as TenantContext;
+    const actor = { tenant: impostor, actorUserId: "evil", delegatedBy: null } as unknown as WriteActor;
     await expect(
-      auditedWrite({ db, tenant: impostor, actor: "evil", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) }),
+      auditedWrite({ db, actor, action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) }),
     ).rejects.toMatchObject({ code: "INTERNAL" });
     const outbox = await db.query<{ n: string }>("SELECT count(*) AS n FROM audit_outbox WHERE org_id = $1", [ORG_A]);
     expect(Number(outbox.rows[0]!.n)).toBe(0);
+  });
+
+  it("the write chokepoint refuses actor attribution paired with a borrowed tenant", async () => {
+    const forged = { tenant: tenantA, actorUserId: "forged-user" } as unknown as WriteActor;
+    await expect(
+      createHousehold(db, forged, { name: "Forged Attribution" }),
+    ).rejects.toMatchObject({ code: "INTERNAL" });
+    const households = await listHouseholds(db, tenantA);
+    expect(households.map((household) => household.name)).not.toContain("Forged Attribution");
   });
 
   it("execution continuations are tenant-scoped: a guessed foreign execution id reads as absent", async () => {

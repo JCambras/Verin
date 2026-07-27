@@ -23,8 +23,12 @@
  */
 import { createMemoryDb } from "../src/infrastructure/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken } from "../src/infrastructure/wire";
-import type { Principal } from "../src/contracts/principal";
 import { systemTenant } from "../src/contracts/tenant";
+import {
+  actorRefOf,
+  authorizeGovernedAction,
+  type ActionGrant,
+} from "../src/contracts/authz";
 import {
   authenticate,
   createSession,
@@ -57,7 +61,7 @@ function pct(sorted: number[], p: number): number {
  */
 async function runFlow(
   db: Awaited<ReturnType<typeof createMemoryDb>>,
-  advisor: Principal,
+  advisor: ActionGrant<"execution.initiate">,
   i: number,
 ): Promise<{ startMs: number; resumeMs: number }> {
   const s0 = performance.now();
@@ -94,12 +98,18 @@ async function main(): Promise<void> {
   });
   const authenticated = await authenticate(db, "load@firm.test", ADVISOR_PASSWORD);
   if (!authenticated) throw new Error("load advisor authentication failed");
-  const advisor = await createSession(
+  const advisorPrincipal = await createSession(
     db,
     authenticated.tenant,
     authenticated,
     60,
   );
+  const advisorAuthorization = authorizeGovernedAction(
+    actorRefOf(advisorPrincipal),
+    "execution.initiate",
+  );
+  if (!advisorAuthorization.ok) throw new Error("load advisor lacks execution.initiate");
+  const advisor = advisorAuthorization.value;
 
   const seedStart = performance.now();
   await db.transaction(async (tx) => {

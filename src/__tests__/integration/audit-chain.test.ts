@@ -3,10 +3,17 @@ import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain, verifyOrgChain, drainOutbox, discardedAuditEventWork } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
-import { systemTenant } from "@contracts/tenant";
+import { principalFromIdentity, writeActorOf } from "@contracts/principal";
 
 const ORG = "org-1";
-const TENANT = systemTenant("test", ORG);
+const ACTOR = writeActorOf(principalFromIdentity({
+  userId: "advisor@test",
+  orgId: ORG,
+  role: "advisor",
+  actor: "advisor@example.test",
+  sessionId: "session-test",
+}));
+const TENANT = ACTOR.tenant;
 
 async function seedOrg(db: SqlDb) {
   await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,'verin-crm',$3,'high')", [ORG, "Test Org", new Date().toISOString()]);
@@ -22,8 +29,7 @@ describe("tamper-evident audit chain (integration)", () => {
   it("an audited write produces a verifiable chain entry with the real actor", async () => {
     const r = await auditedWrite({
       db,
-      tenant: TENANT,
-      actor: "advisor@test",
+      actor: ACTOR,
       action: "household.create",
       entityType: "Household",
       entityId: "hh-1",
@@ -52,8 +58,7 @@ describe("tamper-evident audit chain (integration)", () => {
     const write = () =>
       auditedWrite({
         db,
-        tenant: TENANT,
-        actor: "system@webhook",
+        actor: ACTOR,
         action: "task.create",
         entityType: "Task",
         entityId: "task-1",
@@ -84,7 +89,7 @@ describe("tamper-evident audit chain (integration)", () => {
 
   it("editing an audit row is rejected by the append-only trigger", async () => {
     await auditedWrite({
-      db, tenant: TENANT, actor: "a@test", action: "x.create", entityType: "X", entityId: "x1",
+      db, actor: ACTOR, action: "x.create", entityType: "X", entityId: "x1",
       detail: "d", perform: async () => ({ ok: true }),
     });
     await expect(
@@ -95,7 +100,7 @@ describe("tamper-evident audit chain (integration)", () => {
 
   it("verifyChain detects a tampered entry (defeating triggers at the raw level)", async () => {
     for (let i = 0; i < 3; i++) {
-      await auditedWrite({ db, tenant: TENANT, actor: "a@test", action: `e${i}.create`, entityType: "E", entityId: `e${i}`, detail: `entry ${i}`, perform: async () => ({ i }) });
+      await auditedWrite({ db, actor: ACTOR, action: `e${i}.create`, entityType: "E", entityId: `e${i}`, detail: `entry ${i}`, perform: async () => ({ i }) });
     }
     expect((await verifyOrgChain(db, TENANT)).ok).toBe(true);
 
@@ -111,7 +116,7 @@ describe("tamper-evident audit chain (integration)", () => {
 
   it("detects TAIL-TRUNCATION and full deletion via the out-of-band anchor (Vale V1)", async () => {
     for (let i = 0; i < 4; i++) {
-      await auditedWrite({ db, tenant: TENANT, actor: "a@test", action: `e${i}.create`, entityType: "E", entityId: `e${i}`, detail: `entry ${i}`, perform: async () => ({ i }) });
+      await auditedWrite({ db, actor: ACTOR, action: `e${i}.create`, entityType: "E", entityId: `e${i}`, detail: `entry ${i}`, perform: async () => ({ i }) });
     }
     expect((await verifyOrgChain(db, TENANT)).ok).toBe(true);
 
@@ -127,12 +132,12 @@ describe("tamper-evident audit chain (integration)", () => {
   });
 
   it("TRUNCATE on audit_log is blocked by the append-only trigger", async () => {
-    await auditedWrite({ db, tenant: TENANT, actor: "a@test", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    await auditedWrite({ db, actor: ACTOR, action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
     await expect(db.exec("TRUNCATE audit_log")).rejects.toThrow(/append-only/);
   });
 
   it("detects entries WITHOUT an anchor row (anchor removed to cover a deletion)", async () => {
-    await auditedWrite({ db, tenant: TENANT, actor: "a@test", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    await auditedWrite({ db, actor: ACTOR, action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
     expect((await verifyOrgChain(db, TENANT)).ok).toBe(true);
 
     await db.query("DELETE FROM audit_anchor WHERE org_id = $1", [ORG]);
@@ -196,7 +201,7 @@ describe("tamper-evident audit chain (integration)", () => {
 
     // With a real chain present: the mirror adds nothing anywhere and the real
     // org's chain still verifies (no dummy entry may attribute a failed login).
-    await auditedWrite({ db, tenant: TENANT, actor: "u-1", action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
+    await auditedWrite({ db, actor: ACTOR, action: "x.create", entityType: "X", entityId: "x", detail: "d", perform: async () => ({}) });
     const before = await counts();
     await discardedAuditEventWork(db);
     expect(await counts()).toEqual(before);

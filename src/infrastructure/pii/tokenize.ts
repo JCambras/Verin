@@ -17,6 +17,7 @@ import type { DeepReadonly, Tokenized } from "@contracts/tokenized";
 import { scrub } from "./scrub";
 
 const SEAL = Symbol("verin.tokenized.seal");
+const TOKENS = new WeakSet<object>();
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> {
   if (value === null || typeof value !== "object" || seen.has(value)) {
@@ -33,6 +34,7 @@ function seal<T>(value: T): Tokenized<T> {
     SEAL,
     { value: true, enumerable: false },
   );
+  TOKENS.add(t);
   // The ONE sanctioned Tokenized cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(t) as Tokenized<T>;
 }
@@ -57,5 +59,5 @@ export function tokenizeRecord<T extends Readonly<Record<string, unknown>>>(
 
 /** True only for values built by THIS factory — a structural impostor fails. */
 export function isSealedTokenized(value: unknown): value is Tokenized<unknown> {
-  return typeof value === "object" && value !== null && (value as Record<symbol, unknown>)[SEAL] === true;
+  return typeof value === "object" && value !== null && TOKENS.has(value);
 }

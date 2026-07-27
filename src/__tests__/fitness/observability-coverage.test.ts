@@ -3,6 +3,7 @@ import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening } from "@infra/wire";
 import { withSpan, recentSpans } from "@infra/observability/tracer";
 import { principalFromIdentity } from "@contracts/principal";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 
 /**
  * OBSERVABILITY-COVERAGE FENCE (ADR-0013, charter #14). Proves flow steps and
@@ -10,7 +11,10 @@ import { principalFromIdentity } from "@contracts/principal";
  * modeled. If the engine or the CRM calls were not instrumented, these spans would
  * be absent.
  */
-const advisor = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
+const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
+const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
+if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
+const advisor = advisorAuthorization.value;
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();

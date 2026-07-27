@@ -12,7 +12,7 @@
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
-import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
@@ -29,8 +29,7 @@ function isDriverConstraintError(e: unknown): boolean {
 
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
-  tenant: TenantContext;
-  actor: string;
+  actor: WriteActor;
   action: string;
   entityType: string;
   entityId?: string | null;
@@ -53,10 +52,11 @@ async function cachedResult<T>(db: SqlDb, orgId: string, key: string): Promise<T
 }
 
 export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result<T>> {
-  const { db, tenant, idempotencyKey } = opts;
+  const { db, actor, idempotencyKey } = opts;
   // The write chokepoint refuses an impostor context before any SQL runs
   // ("missing tenant context cannot parse", v3 §15.2).
-  assertTenantContext(tenant);
+  assertWriteActor(actor);
+  const tenant = actor.tenant;
   const orgId = tenant.orgId;
   const now = new Date().toISOString();
 
@@ -89,7 +89,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       }
       const intent: AuditIntent = {
         orgId,
-        actor: opts.actor,
+        actor: actor.actorUserId,
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId ?? null,
@@ -122,7 +122,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     );
     const failIntent: AuditIntent = {
       orgId,
-      actor: opts.actor,
+      actor: actor.actorUserId,
       action: opts.action,
       entityType: opts.entityType,
       entityId: opts.entityId ?? null,

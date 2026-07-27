@@ -14,8 +14,13 @@
 import { type Role, isAllowedRole } from "./roles";
 import { type Result, ok, err } from "./result";
 import { appError, type AppError } from "./errors";
-import { tenantOf, type TenantContext } from "./tenant";
-import type { Principal } from "./principal";
+import type { TenantContext } from "./tenant";
+import {
+  assertWriteActor,
+  writeActorOf,
+  type Principal,
+  type WriteActor,
+} from "./principal";
 
 declare const ActorRefBrand: unique symbol;
 
@@ -25,24 +30,34 @@ export interface ActorRef {
   readonly tenant: TenantContext;
   readonly actorId: string;
   readonly role: Role;
+  readonly writeActor: WriteActor;
   readonly [ActorRefBrand]: "ActorRef";
 }
 
 const ACTOR_REF_SEAL = Symbol("verin.actor-ref.seal");
+const ACTOR_REFS = new WeakSet<object>();
 
 export function actorRefOf(p: Principal): ActorRef {
+  const writeActor = writeActorOf(p);
   const actor = Object.defineProperty(
-    { kind: "human", tenant: tenantOf(p), actorId: p.userId, role: p.role },
+    {
+      kind: "human",
+      tenant: writeActor.tenant,
+      actorId: p.userId,
+      role: p.role,
+      writeActor,
+    },
     ACTOR_REF_SEAL,
     { value: true, enumerable: false },
   );
+  ACTOR_REFS.add(actor);
   return Object.freeze(actor) as unknown as ActorRef;
 }
 
 export function isActorRef(value: unknown): value is ActorRef {
   return typeof value === "object" &&
     value !== null &&
-    (value as Record<symbol, unknown>)[ACTOR_REF_SEAL] === true;
+    ACTOR_REFS.has(value);
 }
 
 /**
@@ -65,17 +80,22 @@ export type GovernedAction = keyof typeof GOVERNED_ACTIONS;
 declare const ActionGrantBrand: unique symbol;
 
 /** Proof that authorizeGovernedAction approved this actor for this action. */
-export interface ActionGrant {
-  readonly action: GovernedAction;
+export interface ActionGrant<A extends GovernedAction = GovernedAction> {
+  readonly action: A;
   readonly tenant: TenantContext;
   readonly actorId: string;
   readonly role: Role;
+  readonly writeActor: WriteActor;
   readonly [ActionGrantBrand]: "ActionGrant";
 }
 
 const SEAL = Symbol("verin.action-grant.seal");
+const ACTION_GRANTS = new WeakSet<object>();
 
-export function authorizeGovernedAction(actor: ActorRef, action: GovernedAction): Result<ActionGrant, AppError> {
+export function authorizeGovernedAction<A extends GovernedAction>(
+  actor: ActorRef,
+  action: A,
+): Result<ActionGrant<A>, AppError> {
   if (!isActorRef(actor)) {
     return err(appError("FORBIDDEN", "Governed-action authority requires an authenticated human actor.", { action }));
   }
@@ -84,14 +104,40 @@ export function authorizeGovernedAction(actor: ActorRef, action: GovernedAction)
     return err(appError("FORBIDDEN", "You do not have permission to perform this action.", { action }));
   }
   const grant = Object.defineProperty(
-    { action, tenant: actor.tenant, actorId: actor.actorId, role: actor.role },
+    {
+      action,
+      tenant: actor.tenant,
+      actorId: actor.actorId,
+      role: actor.role,
+      writeActor: actor.writeActor,
+    },
     SEAL,
     { value: true, enumerable: false },
   );
+  ACTION_GRANTS.add(grant);
   // The ONE sanctioned ActionGrant cast (tokenized-factory-only fence allowlists this module).
-  return ok(Object.freeze(grant) as unknown as ActionGrant);
+  return ok(Object.freeze(grant) as unknown as ActionGrant<A>);
 }
 
 export function isActionGrant(value: unknown): value is ActionGrant {
-  return typeof value === "object" && value !== null && (value as Record<symbol, unknown>)[SEAL] === true;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !ACTION_GRANTS.has(value)
+  ) {
+    return false;
+  }
+  const grant = value as ActionGrant;
+  return grant.tenant === grant.writeActor.tenant &&
+    grant.actorId === grant.writeActor.actorUserId;
+}
+
+export function assertActionGrant<A extends GovernedAction>(
+  value: unknown,
+  action: A,
+): asserts value is ActionGrant<A> {
+  if (!isActionGrant(value) || value.action !== action) {
+    throw appError("FORBIDDEN", "The required governed-action grant is missing.", { action });
+  }
+  assertWriteActor(value.writeActor);
 }

@@ -28,6 +28,7 @@ export interface Principal extends PIIBearing {
 }
 
 const SEAL = Symbol("verin.principal.seal");
+const PRINCIPALS = new WeakSet<object>();
 
 export function principalFromIdentity(input: {
   readonly userId: string;
@@ -49,13 +50,14 @@ export function principalFromIdentity(input: {
     value: true,
     enumerable: false,
   });
+  PRINCIPALS.add(principal);
   return Object.freeze(principal) as unknown as Principal;
 }
 
 export function isPrincipal(value: unknown): value is Principal {
   return typeof value === "object" &&
     value !== null &&
-    (value as Record<symbol, unknown>)[SEAL] === true;
+    PRINCIPALS.has(value);
 }
 
 export function assertPrincipal(value: unknown): asserts value is Principal {
@@ -77,13 +79,68 @@ export function assertPrincipal(value: unknown): asserts value is Principal {
 export interface WriteActor {
   readonly tenant: TenantContext;
   readonly actorUserId: string;
+  readonly delegatedBy: SystemActorId | null;
+  readonly [WriteActorBrand]: "WriteActor";
+}
+
+declare const WriteActorBrand: unique symbol;
+const WRITE_ACTOR_SEAL = Symbol("verin.write-actor.seal");
+const WRITE_ACTORS = new WeakSet<object>();
+
+function mintWriteActor(
+  tenant: TenantContext,
+  actorUserId: string,
+  delegatedBy: SystemActorId | null,
+): WriteActor {
+  if (!actorUserId) {
+    throw appError("INTERNAL", "WriteActor requires an attributed actor.");
+  }
+  const value = Object.defineProperty(
+    { tenant, actorUserId, delegatedBy },
+    WRITE_ACTOR_SEAL,
+    { value: true, enumerable: false },
+  );
+  WRITE_ACTORS.add(value);
+  return Object.freeze(value) as unknown as WriteActor;
 }
 
 export function writeActorOf(p: Principal): WriteActor {
-  return { tenant: tenantOf(p), actorUserId: p.userId };
+  return mintWriteActor(tenantOf(p), p.userId, null);
 }
 
 /** Reserved system-actor writes (webhook finalize, seed) — never a fabricated Principal. */
 export function systemWriteActor(systemId: SystemActorId, orgId: string): WriteActor {
-  return { tenant: systemTenant(systemId, orgId), actorUserId: systemId };
+  return mintWriteActor(systemTenant(systemId, orgId), systemId, null);
+}
+
+export function delegatedWriteActor(systemActor: WriteActor, actorUserId: string): WriteActor {
+  assertWriteActor(systemActor);
+  const tenantActor = systemActor.tenant.actor;
+  if (
+    tenantActor.kind !== "system" ||
+    !["esign-webhook", "login-boundary"].includes(tenantActor.actorId)
+  ) {
+    throw appError("INTERNAL", "This system actor cannot delegate write attribution.");
+  }
+  return mintWriteActor(systemActor.tenant, actorUserId, tenantActor.actorId);
+}
+
+export function isWriteActor(value: unknown): value is WriteActor {
+  return typeof value === "object" &&
+    value !== null &&
+    WRITE_ACTORS.has(value);
+}
+
+export function assertWriteActor(value: unknown): asserts value is WriteActor {
+  if (!isWriteActor(value)) {
+    throw appError("INTERNAL", "Write attribution requires a sealed WriteActor.");
+  }
+  const tenantActor = value.tenant.actor;
+  const direct = value.delegatedBy === null &&
+    value.actorUserId === tenantActor.actorId;
+  const delegated = tenantActor.kind === "system" &&
+    value.delegatedBy === tenantActor.actorId;
+  if (!direct && !delegated) {
+    throw appError("INTERNAL", "Write actor attribution does not match its tenant authority.");
+  }
 }

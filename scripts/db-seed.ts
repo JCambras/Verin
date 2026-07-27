@@ -12,6 +12,7 @@ import { createUser, findUserByEmail } from "../src/infrastructure/identity/iden
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 import { getConfig } from "../src/infrastructure/config";
 import { systemTenant } from "../src/contracts/tenant";
+import { systemWriteActor } from "../src/contracts/principal";
 
 export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
@@ -43,8 +44,7 @@ export async function seed(): Promise<void> {
   // instead of appending another entry.
   const audited = await auditedWrite({
     db,
-    tenant,
-    actor: "seed",
+    actor: systemWriteActor("seed", DEMO_ORG_ID),
     action: "org.seed",
     entityType: "Org",
     entityId: DEMO_ORG_ID,

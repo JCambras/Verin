@@ -61,6 +61,7 @@ describe("the Tokenized factory scrubs by construction", () => {
   it("a structural impostor literal is NOT sealed (the runtime check behind the fence)", () => {
     const impostor = { value: RAW.name, piiFree: true } as Tokenized<string>;
     expect(isSealedTokenized(impostor)).toBe(false);
+    expect(isSealedTokenized(Object.create(tokenizeText("safe text")))).toBe(false);
   });
   it("fails closed on unresolved names and bare account-number text", () => {
     expect(() => tokenizeText("John Smith account 941000517334")).toThrow(/PII_VIOLATION/);
@@ -106,6 +107,22 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
 });
 
 describe("the evidence-to-LLM projection scrubs at the boundary", () => {
+  it("rejects a prototype clone of a trusted entity binding", () => {
+    const binding = bindEntityMask({
+      slotName: "subject_1",
+      slotType: "subject",
+      rawValues: [RAW.name],
+    });
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `Open an account for ${RAW.name}`,
+      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      bindings: [Object.create(binding) as EntityMaskBinding],
+      evidence: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("masks known entities into slot placeholders and scrubs the rest (v3 §15.1 stage 1)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",

@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { tenantOf, systemTenant, isTenantContext, assertTenantContext, type TenantContext } from "@contracts/tenant";
-import { principalFromIdentity, writeActorOf, systemWriteActor } from "@contracts/principal";
+import {
+  assertWriteActor,
+  delegatedWriteActor,
+  isWriteActor,
+  principalFromIdentity,
+  systemWriteActor,
+  writeActorOf,
+  type WriteActor,
+} from "@contracts/principal";
 
 /**
  * TenantContext sealing (v3 §15.2): "missing tenant context cannot compile or
@@ -33,6 +41,8 @@ describe("TenantContext cannot parse unless factory-minted", () => {
     const impostor = { orgId: "victim-org" } as unknown as TenantContext;
     expect(isTenantContext(impostor)).toBe(false);
     expect(() => assertTenantContext(impostor)).toThrow();
+    expect(() => assertTenantContext(Object.create(tenantOf(principal)))).toThrow();
+    expect(() => tenantOf(Object.create(principal))).toThrow();
   });
   it("rejects a JSON round-trip (serialization strips the seal by design)", () => {
     const laundered = JSON.parse(JSON.stringify(tenantOf(principal))) as unknown;
@@ -74,6 +84,13 @@ describe("TenantContext cannot parse unless factory-minted", () => {
 });
 
 describe("WriteActor carries the sealed tenant", () => {
+  it("cannot compile or parse from a literal", () => {
+    // @ts-expect-error WriteActor is factory-sealed
+    const impostor: WriteActor = { tenant: tenantOf(principal), actorUserId: "u1", delegatedBy: null };
+    expect(isWriteActor(impostor)).toBe(false);
+    expect(() => assertWriteActor(impostor)).toThrow();
+    expect(isWriteActor(Object.create(writeActorOf(principal)))).toBe(false);
+  });
   it("writeActorOf embeds a factory-minted context", () => {
     const a = writeActorOf(principal);
     expect(a.actorUserId).toBe("u1");
@@ -85,5 +102,13 @@ describe("WriteActor carries the sealed tenant", () => {
     expect(a.actorUserId).toBe("esign-webhook");
     expect(a.tenant.orgId).toBe("org-2");
     expect(isTenantContext(a.tenant)).toBe(true);
+  });
+  it("delegates webhook attribution explicitly and rejects unreviewed delegation", () => {
+    const webhook = systemWriteActor("esign-webhook", "org-2");
+    const delegated = delegatedWriteActor(webhook, "u1");
+    expect(delegated.actorUserId).toBe("u1");
+    expect(delegated.delegatedBy).toBe("esign-webhook");
+    expect(isWriteActor(delegated)).toBe(true);
+    expect(() => delegatedWriteActor(systemWriteActor("seed", "org-2"), "u1")).toThrow();
   });
 });

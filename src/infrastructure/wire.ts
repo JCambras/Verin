@@ -5,8 +5,13 @@
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
-import { writeActorOf, systemWriteActor, type Principal, type WriteActor } from "@contracts/principal";
-import { assertTenantContext, tenantOf, type TenantContext } from "@contracts/tenant";
+import {
+  delegatedWriteActor,
+  systemWriteActor,
+  type WriteActor,
+} from "@contracts/principal";
+import { assertActionGrant, type ActionGrant } from "@contracts/authz";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
@@ -40,12 +45,12 @@ function isUniqueViolation(e: unknown): boolean {
  * running-with-NULL-token crash window remains a recorded ADR-0011 deferral.
  */
 function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
-  const actorFor = (tenant: TenantContext, actorUserId = starter.actorUserId): WriteActor => {
+  const actorFor = (tenant: TenantContext): WriteActor => {
     assertTenantContext(tenant);
     if (tenant.orgId !== starter.tenant.orgId) {
       throw appError("INTERNAL", "Flow dependency tenant does not match its bound adapter scope.");
     }
-    return { tenant, actorUserId };
+    return starter;
   };
   return {
     createHousehold: (name, tenant) =>
@@ -65,7 +70,7 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
         // on behalf of the initiating advisor — a narrow WriteActor carrying the
         // starter's sealed tenant, never a fabricated Principal with an invented
         // role/session.
-        const actor = actorFor(tenant, input.actor);
+        const actor = delegatedWriteActor(actorFor(tenant), input.actor);
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
         // Per-write keys derive from the application's minted idempotency key
         // (threaded through the flow context), so the key the application row
@@ -136,11 +141,16 @@ async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps,
   }
 }
 
-export async function startAccountOpening(db: SqlDb, principal: Principal, input: StartAccountOpeningInput): Promise<FlowRunResult> {
+export async function startAccountOpening(
+  db: SqlDb,
+  grant: ActionGrant<"execution.initiate">,
+  input: StartAccountOpeningInput,
+): Promise<FlowRunResult> {
+  assertActionGrant(grant, "execution.initiate");
   const store = makeExecutionStore(db);
   const executionId = input.clientRequestId ?? randomUUID();
-  const tenant = tenantOf(principal);
-  const deps = makeDeps(db, writeActorOf(principal), executionId);
+  const tenant = grant.tenant;
+  const deps = makeDeps(db, grant.writeActor, executionId);
   // A client-minted id that already started is a double-submit: report the
   // existing execution's state instead of starting a duplicate. The tenant-scoped
   // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
@@ -158,22 +168,22 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       // (resumeFlow's Vale V7 retry, applied to the start path): the per-write
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
-      return withSpan("flow.account-opening.retry", { orgId: principal.orgId, actor: principal.userId }, async () => {
+      return withSpan("flow.account-opening.retry", { orgId: tenant.orgId, actor: grant.actorId }, async () => {
         const result = await retryFailedStart(store, deps, existing, tenant);
-        log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
+        log.info({ orgId: tenant.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
         return result;
       });
     }
   }
   // Span attribution is the opaque userId, never the email — OTel attributes are
   // exported to the OTLP endpoint and must not carry PII (ADR-0006/0013).
-  return withSpan("flow.account-opening.start", { orgId: principal.orgId, actor: principal.userId }, async () => {
+  return withSpan("flow.account-opening.start", { orgId: tenant.orgId, actor: grant.actorId }, async () => {
     let result: FlowRunResult;
     try {
       result = await startFlow(accountOpeningFlow, store, deps, {
         executionId,
         tenant,
-        data: { ...input, initiatedBy: principal.userId },
+        data: { ...input, initiatedBy: grant.actorId },
       });
     } catch (e) {
       // Two concurrent submits can both miss the pre-check; ONLY the loser's
@@ -191,7 +201,7 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       }
     }
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.
-    log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow started");
+    log.info({ orgId: tenant.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow started");
     return result;
   });
 }
@@ -244,17 +254,17 @@ export function computeEsignSignature(token: string): string {
  */
 export async function auditEvent(
   db: SqlDb,
-  opts: { tenant: TenantContext; actor: string; action: string; entityType: string; entityId: string; detail: string },
+  opts: { actor: WriteActor; action: string; entityType: string; entityId: string; detail: string },
 ): Promise<void> {
   const recorded = await auditedWrite({
-    db, tenant: opts.tenant, actor: opts.actor, action: opts.action, entityType: opts.entityType,
+    db, actor: opts.actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
   });
   if (!recorded.ok) {
     // The auth operation proceeds (availability over completeness — an explicit
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
-      { orgId: opts.tenant.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
+      { orgId: opts.actor.tenant.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
       "security-event audit could not be recorded",
     );
   }

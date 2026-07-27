@@ -7,19 +7,20 @@
 import { createMemoryDb, createDbFromDump } from "../src/infrastructure/store/db";
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 import { verifyOrgChain, listOrgChain } from "../src/infrastructure/audit/audit-store";
-import { systemTenant } from "../src/contracts/tenant";
+import { systemWriteActor } from "../src/contracts/principal";
 
 async function main(): Promise<void> {
   const t0 = performance.now();
   const src = await createMemoryDb();
-  const tenant = systemTenant("backup-restore-drill", "org");
+  const actor = systemWriteActor("backup-restore-drill", "org");
+  const tenant = actor.tenant;
   const now = "2026-07-19T00:00:00.000Z";
   await src.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('org','Firm',$1,'verin-crm',$1,'high')", [now]);
 
   // Generate a few real audited (hash-chained) writes.
   for (let i = 0; i < 5; i++) {
     await auditedWrite({
-      db: src, tenant, actor: "drill@verin", action: "household.create", entityType: "Household", entityId: `hh-${i}`,
+      db: src, actor, action: "household.create", entityType: "Household", entityId: `hh-${i}`,
       detail: `household ${i}`,
       perform: async (tx) => {
         await tx.query(

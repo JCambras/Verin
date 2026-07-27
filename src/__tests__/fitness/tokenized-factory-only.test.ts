@@ -39,6 +39,11 @@ const SEALED = [
     factory: "src/contracts/principal.ts",
   },
   {
+    typeName: "WriteActor",
+    declaration: "src/contracts/principal.ts",
+    factory: "src/contracts/principal.ts",
+  },
+  {
     typeName: "EntityMaskBinding",
     declaration: "src/infrastructure/pii/llm-projection.ts",
     factory: "src/infrastructure/pii/llm-projection.ts",
@@ -64,18 +69,29 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/tenant.ts",
     allowed: [
       "scripts/audit-chain-verify.ts",
-      "scripts/backup-restore-drill.ts",
       "scripts/db-seed.ts",
       "scripts/load-smoke.ts",
       "src/contracts/principal.ts",
       "src/infrastructure/audit/audit-store.ts",
-      "src/app/login/actions.ts",
     ],
   },
   {
     name: "systemWriteActor",
     declaration: "src/contracts/principal.ts",
-    allowed: ["src/infrastructure/wire.ts"],
+    allowed: [
+      "scripts/backup-restore-drill.ts",
+      "scripts/db-seed.ts",
+      "src/app/login/actions.ts",
+      "src/infrastructure/wire.ts",
+    ],
+  },
+  {
+    name: "delegatedWriteActor",
+    declaration: "src/contracts/principal.ts",
+    allowed: [
+      "src/app/login/actions.ts",
+      "src/infrastructure/wire.ts",
+    ],
   },
   {
     name: "bindEntityMask",
@@ -262,8 +278,10 @@ function sealedFixture(path: string, source: string): Project {
     "/src/contracts/principal.ts": `
       import type { TenantContext } from "./tenant";
       export interface Principal { userId: string }
+      export interface WriteActor { tenant: TenantContext; actorUserId: string }
       export function principalFromIdentity(input: object): Principal { return input as Principal }
       export function systemWriteActor(systemId: string, orgId: string): { tenant: TenantContext } { return { tenant: { orgId } } }
+      export function delegatedWriteActor(actor: WriteActor, actorUserId: string): WriteActor { return { ...actor, actorUserId } }
     `,
     "/src/infrastructure/pii/llm-projection.ts": `
       export interface EntityMaskBinding { slotName: string }
@@ -347,23 +365,24 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(detectSealedTypeConstruction(project).length).toBeGreaterThanOrEqual(2);
     });
 
-    it("catches TenantContext, ActorRef, ActionGrant, and Principal assertions", () => {
+    it("catches TenantContext, ActorRef, ActionGrant, Principal, and WriteActor assertions", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
         `
           import type { TenantContext } from "../contracts/tenant";
           import type { ActorRef, ActionGrant } from "../contracts/authz";
-          import type { Principal } from "../contracts/principal";
+          import type { Principal, WriteActor } from "../contracts/principal";
           const a = {} as TenantContext;
           const b = {} as ActorRef;
           const c = {} as ActionGrant;
           const d = {} as Principal;
+          const e = {} as WriteActor;
         `,
       );
       const hits = detectSealedTypeConstruction(project).filter((hit) =>
         hit.startsWith("src/app/evil.ts")
       );
-      for (const typeName of ["TenantContext", "ActorRef", "ActionGrant", "Principal"]) {
+      for (const typeName of ["TenantContext", "ActorRef", "ActionGrant", "Principal", "WriteActor"]) {
         expect(hits.some((hit) => hit.includes(typeName)), typeName).toBe(true);
       }
     });

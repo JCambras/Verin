@@ -655,3 +655,40 @@ would recreate the false green).
 projection input, shallow token contract, flow dependency signatures, driver
 code pattern, and PF-027 through PF-029 implementations. D-039 and D-040 remain
 the underlying prompt-6 decisions.
+
+### D-042 · 2026-07-27 · reversible · Prompt-6 execution proof, write attribution, workflow PII, and declaration-form fences hardened
+
+All five third-round findings were legitimate instances of three deeper gaps:
+authorization proof stopped at the HTTP route, actor attribution was not sealed
+at the audit chokepoint, and semantic fences still depended on declaration
+syntax.
+
+- Account opening now requires a sealed, action-parameterized
+  `ActionGrant<"execution.initiate">` at the execution boundary. The runtime
+  verifies the exact action and derives both tenant and write actor from the
+  grant.
+- `WriteActor` is branded, WeakSet-sealed, and frozen. `auditedWrite` accepts
+  the actor object rather than independent tenant and actor strings, then
+  validates it before SQL. Direct actors must match the identity retained by
+  their tenant; e-sign and failed-login attribution use an explicit delegated
+  factory restricted to reviewed system actors and call sites.
+- Prompt-6 runtime seals now verify factory-minted object identity through
+  module-private WeakSets. Prototype-derived or reflected-symbol copies cannot
+  inherit authority from a valid principal, tenant, actor, grant, token, or
+  entity-mask binding.
+- Workflow data, persisted execution state, and flow results retain the
+  `PIIBearing` marker. The PII fence resolves mapped, union, and intersection
+  alias properties. The tenant fence resolves exported callable objects,
+  interfaces, type aliases, and classes while ignoring inherited standard
+  library methods, including bindings exported in a separate declaration.
+
+**Alternatives:** keep authorization as a route-only convention (rejected
+because internal callers could bypass it); validate actor strings independently
+at every repository (rejected because the next write path could omit the
+check); reject type aliases and object repositories entirely (rejected because
+their semantic callable shape is enforceable).
+
+**Revert path:** revert this review changeset and restore Principal-based flow
+start, tuple-shaped audited-write attribution, unmarked workflow state, and the
+prior declaration-form-specific PF-027/PF-029 implementations. D-039 through
+D-041 remain the underlying security-boundary decisions.

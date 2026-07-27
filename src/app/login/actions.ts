@@ -9,7 +9,11 @@ import { discardedAuditEventWork } from "@infra/audit/audit-store";
 import { auditEvent } from "@infra/wire";
 import { getConfig } from "@infra/config";
 import { log, safeReason } from "@infra/observability/logger";
-import { tenantOf, systemTenant } from "@contracts/tenant";
+import {
+  delegatedWriteActor,
+  systemWriteActor,
+  writeActorOf,
+} from "@contracts/principal";
 
 export interface LoginState {
   error?: string;
@@ -40,7 +44,8 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
       // No session exists on this branch — the login boundary mints a SYSTEM
       // tenant scoped to the known account's org (the identity module is the
       // tenant-minting boundary, v3 §15.2).
-      await auditEvent(db, { tenant: systemTenant("login-boundary", known.org_id), actor: known.id, action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
+      const boundaryActor = systemWriteActor("login-boundary", known.org_id);
+      await auditEvent(db, { actor: delegatedWriteActor(boundaryActor, known.id), action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
     } else {
       await discardedAuditEventWork(db).catch((e: unknown) =>
         log.warn({ reason: safeReason(e) }, "constant-work audit mirror failed"),
@@ -56,7 +61,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     user,
     getConfig().session.ttlMinutes,
   );
-  await auditEvent(db, { tenant: tenantOf(principal), actor: user.id, action: "session.create", entityType: "Session", entityId: principal.sessionId, detail: "Signed in" });
+  await auditEvent(db, { actor: writeActorOf(principal), action: "session.create", entityType: "Session", entityId: principal.sessionId, detail: "Signed in" });
   (await cookies()).set(SESSION_COOKIE, signSessionCookie(principal.sessionId), sessionCookieOptions());
   redirect("/app");
 }

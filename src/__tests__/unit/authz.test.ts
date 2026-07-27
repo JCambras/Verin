@@ -70,6 +70,10 @@ describe("authorizeGovernedAction denies the unauthorized", () => {
 
     const spread = { ...actorRefOf(principal), role: "principal" } as unknown as ActorRef;
     expect(authorizeGovernedAction(spread, "decision.override").ok).toBe(false);
+
+    const prototypeClone = Object.create(actorRefOf(principal)) as ActorRef;
+    Object.defineProperty(prototypeClone, "role", { value: "principal" });
+    expect(authorizeGovernedAction(prototypeClone, "decision.override").ok).toBe(false);
   });
 });
 
@@ -106,6 +110,7 @@ describe("ActionGrant is sealed", () => {
     if (!real.ok) throw new Error("expected grant");
     expect(isActionGrant({ ...real.value })).toBe(false);
     expect(isActionGrant({ action: "audit.export" } as unknown as ActionGrant)).toBe(false);
+    expect(isActionGrant(Object.create(real.value))).toBe(false);
   });
 });
 
