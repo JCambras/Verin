@@ -279,19 +279,6 @@ function toChainRow(r: AuditLogRow): ChainRow {
   };
 }
 
-/** Load a tenant's audit chain (examiner export / console). */
-export async function listOrgChain(
-  db: SqlDb,
-  grant: ActionGrant<"audit.export">,
-): Promise<ChainRow[]> {
-  assertActionGrant(grant, "audit.export");
-  const res = await db.query<AuditLogRow>(
-    "SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC",
-    [grant.tenant.orgId],
-  );
-  return res.rows.map(toChainRow);
-}
-
 export async function countOrgChain(
   db: SqlDb,
   tenant: TenantContext,

@@ -7,7 +7,7 @@ import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
-import { observabilityId } from "@domain/observability/safe-values";
+import { observabilityId, registerTestSpanName } from "@domain/observability/safe-values";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -16,6 +16,11 @@ import { observabilityId } from "@domain/observability/safe-values";
  * plus the sanctioned exception-text helper; the trace half runs the REAL
  * account-opening flow end-to-end and scans every recorded span.
  */
+// Test-only span vocabulary (the production allowlist carries no test names).
+for (const name of ["test.backstop", "test.keyrule", "test.ambiguous", "test.single-name"]) {
+  registerTestSpanName(name);
+}
+
 const ORG = "org-pii";
 const advisorPrincipal = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
@@ -110,6 +115,27 @@ describe("logs never carry raw names or account numbers", () => {
       "test line",
     );
     expect(lines.join("")).toContain("123e4567-e89b-12d3-a456-123456789012");
+  });
+  it("accepts every real machine id shape and still refuses name- and account-shaped values", () => {
+    for (const value of [
+      "3F2504E0-4F89-11D3-9A0C-0305E82C3301", // uppercase-hex UUID (the route accepts these)
+      "org", // the backup-restore drill's org id
+      "o",
+      "esign-webhook",
+      "seed",
+      "household:3f1f9c2e-8f7a-4b6e-9e2d-1a2b3c4d5e6f",
+    ]) {
+      expect(observabilityId("orgId", value).value, value).toBe(value);
+    }
+    for (const value of [
+      "Alice", // a person-name shape
+      "Okonkwo-Blackwood",
+      FIXTURES.accountNumber,
+      FIXTURES.email,
+      "078-05-1120",
+    ]) {
+      expect(() => observabilityId("entityId", value), value).toThrow(/opaque/);
+    }
   });
 });
 

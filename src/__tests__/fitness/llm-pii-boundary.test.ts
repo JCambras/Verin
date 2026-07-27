@@ -46,8 +46,8 @@ import { isPIIField } from "@contracts/pii";
 // person's data. Anything new must be marked or reviewed into this list.
 const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/schema/entities.ts :: Org.name", why: "the firm's own identity, not client PII (audit scrubbing still redacts it belt-and-braces)" },
-  { ref: "src/domain/workflow/engine.ts :: FlowStep.name", why: "machine-readable step id" },
   { ref: "src/domain/workflow/engine.ts :: FlowDefinition.name", why: "machine-readable flow id" },
+  { ref: "src/domain/workflow/engine.ts :: FlowDefinition.steps.name", why: "machine-readable step id, reached as a nested path through FlowDefinition.steps" },
   { ref: "src/domain/workflow/flows/account-opening.ts :: FlowFieldSpec.name", why: "form-field key for the generic renderer" },
   { ref: "src/infrastructure/observability/tracer.ts :: RecordedSpan.name", why: "OTel span name (machine)" },
   { ref: "src/infrastructure/store/migrations.ts :: Migration.name", why: "migration label (machine)" },
@@ -211,7 +211,7 @@ function inlinePIIExposures(
         isPIIField(property.getName()) &&
         !isTokenized(propertyType) &&
         !isSecretValue(propertyType) &&
-        !propertyIsEscaped(property, declaration)
+        !propertyIsEscaped(propertyPath, declaration)
       ) {
         return [propertyPath];
       }
@@ -312,8 +312,14 @@ function callablePIIExposures(
   return [...new Set(exposures)];
 }
 
+/**
+ * An escape is keyed on the FULL dotted path the detector emits, not on the
+ * property's nearest ancestor declaration: keying on the ancestor would let an
+ * escape written for a top-level machine-named field silently cover a
+ * same-named field inside any INLINE nested type literal of that declaration.
+ */
 function propertyIsEscaped(
-  property: { getName(): string },
+  propertyPath: string,
   declaration: Node,
 ): boolean {
   const owner = declaration.getFirstAncestor((ancestor) =>
@@ -329,7 +335,7 @@ function propertyIsEscaped(
     : undefined;
   if (!name) return false;
   return ESCAPE_SET.has(
-    `${normalizePath(declaration.getSourceFile())} :: ${name}.${property.getName()}`,
+    `${normalizePath(declaration.getSourceFile())} :: ${name}.${propertyPath}`,
   );
 }
 
@@ -695,14 +701,14 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     expect(unmarked, `unmarked PII-bearing types (extend PIIBearing or review into NON_PII_ESCAPES):\n${unmarked.join("\n")}`).toEqual([]);
   });
 
-  it("enforces: no stale escapes (each escape still names a live declared property)", () => {
-    const live = new Set<string>();
-    for (const sf of project.getSourceFiles()) {
-      const normalized = normalizePath(sf);
-      for (const decl of piiTypeDeclarations(sf)) for (const prop of decl.props) live.add(`${normalized} :: ${decl.name}.${prop.name}`);
-    }
-    const stale = NON_PII_ESCAPES.filter((e) => !live.has(e.ref)).map((e) => e.ref);
-    expect(stale, `stale escapes:\n${stale.join("\n")}`).toEqual([]);
+  it("enforces: every escape is LOAD-BEARING (it suppresses a finding the detector really emits)", () => {
+    // Proving the property is merely DECLARED lets a dead escape (one whose
+    // declaration is PIIBearing-marked, and therefore skipped before its
+    // properties are read) live forever. Run the detector with NO escapes: an
+    // entry that does not appear there suppresses nothing.
+    const unescaped = new Set(detectUnmarkedPIITypes(project, new Set()));
+    const stale = NON_PII_ESCAPES.filter((e) => !unescaped.has(e.ref)).map((e) => e.ref);
+    expect(stale, `escapes that suppress nothing:\n${stale.join("\n")}`).toEqual([]);
   });
 
   it("enforces: opaque ingress escapes are exact and live", () => {
@@ -875,10 +881,18 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     });
     it("an escape is EXACT-match: a new PII prop on an escaped interface is still flagged", () => {
       const project = inMemoryProject({
-        "/src/domain/workflow/engine.ts": `export interface FlowStep { name: string; email: string }`,
+        "/src/domain/workflow/engine.ts": `export interface FlowDefinition { name: string; email: string }`,
       });
       const v = detectUnmarkedPIITypes(project, ESCAPE_SET);
-      expect(v).toEqual(["src/domain/workflow/engine.ts :: FlowStep.email"]);
+      expect(v).toEqual(["src/domain/workflow/engine.ts :: FlowDefinition.email"]);
+    });
+    it("an escape does NOT cover a same-named field in an inline nested type literal", () => {
+      const project = inMemoryProject({
+        "/src/domain/workflow/engine.ts": `export interface FlowDefinition { name: string; client: { name: string } }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/domain/workflow/engine.ts :: FlowDefinition.client.name",
+      ]);
     });
     it("flags an UNMARKED type-alias object literal with a raw PII field (alias evasion)", () => {
       const project = inMemoryProject({

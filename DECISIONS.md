@@ -1467,3 +1467,71 @@ would suffer).
 syntax-only wrapper discovery, remove ADR-0030, and restore the 3,000-line
 infrastructure ceiling. D-039 through D-046 remain the underlying prompt-6
 security decisions.
+
+### D-048 · 2026-07-27 · reversible · Ninth-round review: structural resolution, derived observability vocabulary, and boundary-honest fences
+
+The ninth adversarial round found one live crash path and a set of checks whose
+authority came from enumerated vocabularies rather than from structure.
+
+- **`observabilityId` no longer aborts committed work.** The account-opening
+  route validates `clientRequestId` with a CASE-INSENSITIVE UUID regex and that
+  value becomes the `executionId`, while the observability predicate was
+  case-sensitive: an uppercase-hex request id committed the household, contact,
+  and application writes and then threw `PII_VIOLATION` out of the "flow
+  started" log line as an unenveloped 500. The opaque-id pattern is now
+  case-insensitive, and the blanket "purely alphabetic" refusal — which also
+  rejected registered machine tokens such as `org` and `seed` — is replaced by a
+  person-name SHAPE rule (a capital immediately followed by a lowercase letter).
+  Whitespace was already impossible under the opaque pattern, so a multi-word
+  name still cannot reach the helper. `"running"` joins the status enum so a
+  double-submit replay stops logging `[REDACTED]` for the one field that
+  explains it.
+- **LLM projection resolution is structural.** `SAFE_WORDS`, `SAFE_TITLES`,
+  `SAFE_ACRONYMS`, `SAFE_NUMERIC_KEYS`, `SAFE_KEYS`, and `TEXT_EVIDENCE_KEYS`
+  are gone. A value is RESOLVED when every structurally sensitive span has been
+  replaced by a factory-minted slot placeholder or the redaction sentinel, judged
+  by `contracts/pii.ts`'s own predicates — the same ones guarding the audit, log,
+  and trace boundaries. Candidate extraction is derived from those predicates, so
+  anything the residual check would refuse was already required to be bound.
+  Arbitrary prose now passes; raw names, account numbers, and 9-18 digit runs
+  still do not. The shared digit-run predicate and title-case word shape are
+  hoisted into `contracts/pii.ts` so masking and residual detection cannot drift.
+- **Observability vocabulary is derived and fenced.** The six test-only span
+  names left production domain code for `registerTestSpanName`, a `test.`-namespaced
+  injection point with no shipped caller. The new
+  `observability-vocabulary` fence derives the span and log inventory from the
+  AST of real `withSpan` / `log.*` call sites and checks it both ways
+  (unregistered value, stale entry, dynamic identity).
+- **Fences stopped trusting text and nearest ancestors.** Governed-sink mutation
+  classification reads SQL passed as call ARGUMENTS, not raw declaration text
+  (a comment saying "nothing to update" no longer exempts a PII read); governed
+  surface discovery covers every `src/app/**` file, so a Server Action or server
+  component reaching a governed sink fails instead of being invisible, and the
+  authorization must bind the handler's OWN request parameter; LLM escapes key on
+  the full dotted path the detector emits and must be load-bearing; the
+  domain-port escape liveness check applies the detector's own domain filter; the
+  config-hygiene fence has a non-vacuity floor and a detector that takes its
+  input so it can be fed a synthetic violation.
+- **Smaller boundary corrections.** The ESLint sealed-type override now matches
+  the fence exactly (`src/infrastructure/pii/tokenize.ts` only, not the whole
+  `pii/` tree); the dead `listOrgChain` export is gone and its tests read the
+  chain through `verifyAndListOrgChain`, the function `/api/audit` really uses;
+  a persisted role outside the taxonomy resolves to a typed `AUTH_FAILED`
+  instead of throwing out of the read-only `/app` guard.
+- **ADR-0031** records why the evidence-to-LLM projection layer stays despite
+  having no production caller until prompt 13, and how that differs from the
+  `piiSafe` helper deleted earlier on this branch.
+
+**Alternatives:** normalize the request id to lowercase at the route (rejected —
+it hides the mismatch and the next id source repeats it); keep the word lists and
+extend them (rejected — a vocabulary fitted to its own fixtures proves only that
+the fixtures were enumerated); leave span names undetected at build time
+(rejected — silent loss of trace identity is exactly what charter #14 exists to
+prevent); delete the projection layer (rejected by the supervising authority —
+see ADR-0031).
+
+**Revert path:** revert this changeset to restore the case-sensitive
+observability predicate, the enumerated projection vocabularies, the text-regex
+mutation classifier, the route-only governed surface scan, and `listOrgChain`.
+ADR-0031 would be withdrawn with it. D-039 through D-047 remain the underlying
+prompt-6 security decisions.

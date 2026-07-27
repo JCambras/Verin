@@ -308,26 +308,58 @@ export function detectUnsanctionedReveal(project: Project): string[] {
   return [...new Set(out)];
 }
 
-export function detectEnvExampleNonPlaceholder(): string[] {
+/** The committed template's lines, or null when the file is missing entirely. */
+export function readEnvExampleLines(): string[] | null {
   const p = join(REPO_ROOT, ".env.example");
-  if (!existsSync(p)) return ["MISSING .env.example"];
-  const out: string[] = [];
-  readFileSync(p, "utf8")
-    .split("\n")
-    .forEach((line, i) => {
-      const s = line.trim();
-      if (!s || s.startsWith("#")) return;
-      const eq = s.indexOf("=");
-      if (eq < 0) return;
-      const value = s.slice(eq + 1).trim();
-      if (!PLACEHOLDER_VALUE.test(value)) out.push(`.env.example:${i + 1} (${s.slice(0, eq)}=${value})`);
-    });
+  return existsSync(p) ? readFileSync(p, "utf8").split("\n") : null;
+}
+
+interface EnvAssignment {
+  readonly line: number;
+  readonly key: string;
+  readonly value: string;
+}
+
+/**
+ * Exported so the companion can prove the PARSER works, not just the regex
+ * constant: a detector gutted to `return []` must fail a real synthetic
+ * violation, and an assignment count floor catches a parser that stops seeing
+ * anything at all (charter #4).
+ */
+export function envExampleAssignments(lines: readonly string[]): EnvAssignment[] {
+  const out: EnvAssignment[] = [];
+  lines.forEach((line, i) => {
+    const s = line.trim();
+    if (!s || s.startsWith("#")) return;
+    const eq = s.indexOf("=");
+    if (eq < 0) return;
+    out.push({ line: i + 1, key: s.slice(0, eq), value: s.slice(eq + 1).trim() });
+  });
   return out;
+}
+
+/** Takes its input, so the companion can feed it a synthetic violation. */
+export function detectEnvExampleNonPlaceholder(lines: readonly string[]): string[] {
+  return envExampleAssignments(lines)
+    .filter((assignment) => !PLACEHOLDER_VALUE.test(assignment.value))
+    .map((assignment) => `.env.example:${assignment.line} (${assignment.key}=${assignment.value})`);
 }
 
 describe("config-hygiene fence (no secret fallback / no live org domain / placeholder .env)", () => {
   const files = committedTextFiles();
+  const envLines = readEnvExampleLines();
 
+  it("enforces: the scanned corpus is real (a collapsed corpus would pass vacuously — charter #4)", () => {
+    expect(files.length, "committedTextFiles() found nothing to scan").toBeGreaterThanOrEqual(50);
+    for (const required of ["package.json", "src/infrastructure/config/index.ts", "docs/fences/proof-log.md"]) {
+      expect(files.some((f) => f.rel === required), `corpus is missing ${required}`).toBe(true);
+    }
+    expect(envLines, "MISSING .env.example").not.toBeNull();
+    expect(
+      envExampleAssignments(envLines ?? []).length,
+      ".env.example parsed to zero assignments",
+    ).toBeGreaterThanOrEqual(5);
+  });
   it("enforces: no secret has a hardcoded fallback", () => {
     const o = detectSecretFallback(files);
     expect(o, `secret fallbacks:\n${o.join("\n")}`).toEqual([]);
@@ -337,7 +369,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     expect(o, `live org domains:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: .env.example is placeholder-only", () => {
-    const o = detectEnvExampleNonPlaceholder();
+    const o = detectEnvExampleNonPlaceholder(envLines ?? []);
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
@@ -377,10 +409,23 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     it("catches a live Salesforce org domain", () => {
       expect(detectLiveOrgDomain([{ rel: "docs/HANDOFF.md", text: `Login at https://acme-corp.my.salesforce.com` }]).length).toBe(1);
     });
-    it("catches a non-placeholder env value shape", () => {
-      // simulate the parser directly on a suspicious value
+    it("catches a non-placeholder env value through the REAL detector", () => {
       const suspicious = "sk_live_51H8xQ2eZvKYlo2C"; // gitleaks:allow - deliberately secret-shaped test fixture, not a real key
-      expect(PLACEHOLDER_VALUE.test(suspicious)).toBe(false);
+      expect(detectEnvExampleNonPlaceholder([
+        "# a comment with an = sign",
+        "",
+        "APP_ENV=development",
+        `STRIPE_KEY=${suspicious}`,
+      ])).toEqual([`.env.example:4 (STRIPE_KEY=${suspicious})`]);
+    });
+    it("skips comments, blanks, and non-assignments instead of mis-parsing them", () => {
+      expect(envExampleAssignments([
+        "# APP_ENV=leaked",
+        "   ",
+        "not-an-assignment",
+        "  LOG_LEVEL=info  ",
+      ])).toEqual([{ line: 4, key: "LOG_LEVEL", value: "info" }]);
+      expect(detectEnvExampleNonPlaceholder(["# APP_ENV=leaked", "LOG_LEVEL=info"])).toEqual([]);
     });
     it("catches an aliased revealSecret call outside the allowlist", () => {
       const project = inMemoryProject({

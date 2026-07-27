@@ -120,8 +120,10 @@ export default tseslint.config(
       "no-restricted-syntax": ["error", noProcessEnv],
     },
   },
+  // Exactly the file the authoritative tokenized-factory-only fence allowlists —
+  // sibling modules (scrub.ts, llm-projection.ts) stay under the sealed-type rule.
   {
-    files: ["src/infrastructure/pii/**/*.{ts,tsx}"],
+    files: ["src/infrastructure/pii/tokenize.ts"],
     rules: {
       "no-restricted-syntax": "off",
     },

@@ -47,13 +47,32 @@ export function looksLikePIIValue(value: string): boolean {
 }
 
 const LONG_UNMASKED_NUMBER_RE = /\b\d{9,18}\b/;
+
+/**
+ * The ONE title-case word shape ambiguous-text detection keys on (a possible
+ * person name). Exported as a source fragment so every boundary that has to
+ * agree with this detector — notably the evidence→LLM projection, which decides
+ * which spans MUST be masked — composes the same pattern instead of re-typing it.
+ */
+export const TITLE_CASE_WORD_SOURCE = String.raw`\b\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?`;
+
+/**
+ * The account/tax-identifier shape: an unbroken 9-18 digit run. One predicate so
+ * the masking layer and the residual check cannot disagree about what counts.
+ */
+export function hasSensitiveDigitRun(value: string | number | bigint): boolean {
+  return LONG_UNMASKED_NUMBER_RE.test(String(value).replace(/^-/, ""));
+}
+
 const TITLE_CASE_PERSON_RE =
   /(?:^|[^\p{L}])\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?\s+\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?(?:$|[^\p{L}])/u;
 const CREDENTIAL_VALUE_RE =
   /(?:\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret)\b\s*[:=]\s*\S+|\bbearer\s+[A-Za-z0-9._~+/-]+=*|\b(?:sk_(?:live|test)|ghp_)[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)/i;
 
+const TITLE_CASE_WORD_G = new RegExp(`${TITLE_CASE_WORD_SOURCE}\\b`, "gu");
+
 export function looksLikeAmbiguousSensitiveText(value: string): boolean {
-  const titleCaseWords = [...value.matchAll(/\b\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?\b/gu)];
+  const titleCaseWords = [...value.matchAll(TITLE_CASE_WORD_G)];
   const embeddedTitleCaseWord = titleCaseWords.some((match) =>
     match.index !== undefined &&
     value.slice(0, match.index).trim().length > 0

@@ -47,6 +47,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0029](./0029-decision-core-contracts.md) | Decision-core canonical contracts (v3 prompt 5) as Zod schemas in `contracts/`; ceiling re-baseline 600→3500 | Accepted (amends ADR-0018) |
 | [0029](./0029-line-budget-wave-a-security-boundaries.md) | Line-budget amendment for Wave A security boundaries (number claimed in parallel with the decision-core ADR above; cite by filename) | Accepted (amends ADR-0018) |
 | [0030](./0030-line-budget-prompt-6-review-hardening.md) | Line-budget amendment for prompt-6 review hardening | Accepted (amends ADR-0018) |
+| [0031](./0031-llm-projection-boundary-ahead-of-first-caller.md) | The evidence-to-LLM projection boundary lands ahead of its first caller — a reviewed charter #5 exception | Accepted |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

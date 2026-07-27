@@ -22,7 +22,7 @@ import { makeExecutionStore } from "@infra/store/execution-store";
 import { resumeFlow, type FlowDefinition } from "@domain/workflow/engine";
 import { auditedWrite } from "@infra/audit/audited-write";
 import {
-  listOrgChain,
+  verifyAndListOrgChain,
   verifyOrgChain,
 } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
@@ -179,8 +179,8 @@ describe("tenant isolation (integration)", () => {
   });
 
   it("audit chains are per-tenant through the repository API", async () => {
-    const chainA = await listOrgChain(db, auditGrantA);
-    const chainB = await listOrgChain(db, auditGrantB);
+    const chainA = (await verifyAndListOrgChain(db, auditGrantA)).rows;
+    const chainB = (await verifyAndListOrgChain(db, auditGrantB)).rows;
     expect(chainA.length).toBeGreaterThan(0);
     expect(chainA.every((r) => r.orgId === ORG_A)).toBe(true);
     expect(chainB.every((r) => r.orgId === ORG_B)).toBe(true);

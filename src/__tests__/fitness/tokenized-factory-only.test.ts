@@ -59,8 +59,7 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/principal.ts",
     allowed: [
       { file: "src/infrastructure/identity/identity-store.ts", owner: "createSession" },
-      { file: "src/infrastructure/identity/session.ts", owner: "resolveSessionRow" },
-      { file: "src/infrastructure/identity/session.ts", owner: "resolveAndRenewSession" },
+      { file: "src/infrastructure/identity/session.ts", owner: "principalFromRow" },
     ],
   },
   {
