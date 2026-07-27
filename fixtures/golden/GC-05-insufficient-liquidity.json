@@ -1,0 +1,123 @@
+{
+  "caseId": "GC-05-insufficient-liquidity",
+  "title": "Insufficient liquidity - the movement would breach Firm B's twelve-month cash reserve",
+  "specName": "insufficient liquidity",
+  "scenarioRef": null,
+  "scenarioRefNote": "No scenarios.yaml branch covers SINGLE-request reserve insufficiency (the matrix's `competing-liquidity` is the two-request variant, GC-10/GC-11). This case is required by the prompt-2 spec list; it is specified under firm-b because the identical facts PROCEED under firm-a's six-month reserve - the divergence itself is a config-only demo beat.",
+  "firm": "firm-b",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "signed",
+    "authority": "captain",
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor enters the $75,000 request; after pending approved activity, liquid assets cannot fund it and preserve twelve months of planned withdrawals.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-05",
+    "maskedRequestSummary": "distribute 75000 USD for home-renovation under firm-b reserve policy (tokenized)",
+    "asOf": "2026-07-26T09:30:00-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-b",
+    "cashReserveMonths": 12,
+    "dualApprovalThresholdUsd": 100000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": null,
+    "requesterConstraint": null,
+    "bankInstructionChangeHandling": "block-until-independently-verified"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Joint taxable brokerage available balance 160000 USD - the only source that avoids a taxable event."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Pending approved distribution of 20000 USD (already authorized, not yet settled) reduces effective liquidity to 140000 USD."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T06:00:00-04:00",
+      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Planned withdrawals 8000 USD/month; Firm B requires twelve months = 96000 USD in reserve. 140000 - 75000 = 65000 < 96000: the movement would breach the reserve."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-b-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Distributions may only be sent to household-titled bank instructions (satisfied here; liquidity is the failing constraint)."
+    },
+    {
+      "instructionKind": "liquidity-preference",
+      "versionId": "smiths-liquidity-preference@v1",
+      "summary": "Prefer taxable sources over retirement accounts - which is why the IRA is not offered as an automatic fallback."
+    }
+  ],
+  "expectedDisposition": "blocked",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A blocked decision carries no authority and no execution plan (v3 invariant 8). No approver can waive a reserve breach; only changed facts can resolve it."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "Funding 75000 USD from effective liquidity of 140000 USD leaves 65000 USD, below the 96000 USD twelve-month reserve Firm B requires.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "blockers": [
+    {
+      "code": "cash-reserve-breach",
+      "explanation": "The movement would leave less than twelve months of planned withdrawals in cash.",
+      "resolvingEvidence": [
+        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] },
+        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] }
+      ]
+    }
+  ],
+  "expectedExplanationNodes": [
+    { "code": "effective-liquidity-computed", "summary": "Available 160000 USD minus the pending approved 20000 USD distribution = 140000 USD effective liquidity; pending activity counts against the household (demo-contract household shape)." },
+    { "code": "cash-reserve-breach", "summary": "After the 75000 USD movement only 65000 USD would remain, below Firm B's 96000 USD (twelve-month) reserve - the request blocks with the arithmetic shown." },
+    { "code": "firm-divergence-noted", "summary": "Under Firm A's six-month reserve (48000 USD) the identical facts proceed - the block exists because Firm B's policy version differs, not because the code differs." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Balance, pending-action, and planned-withdrawal snapshots pinned into the bundle - the pending 20000 USD activity is part of the recorded basis." },
+    { "type": "DecisionRecorded", "note": "Blocked decision recording the cash-reserve-breach blocker and its resolving evidence; no authority, no execution plan." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs. The block resolves when fresh evidence shows the reserve satisfied (new funds, settled pending activity, or a smaller request re-entered as a new intent)."
+  }
+}

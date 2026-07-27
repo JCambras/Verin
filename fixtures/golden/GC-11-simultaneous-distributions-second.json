@@ -1,0 +1,122 @@
+{
+  "caseId": "GC-11-simultaneous-distributions-second",
+  "title": "Two simultaneous distributions (2 of 2) - the second request is blocked by the first's reservation",
+  "specName": "two simultaneous distributions",
+  "scenarioRef": "competing-liquidity",
+  "scenarioRefNote": "Maps to scenarios.yaml `competing-liquidity` (one proceeds, one blocked by reservation). This fixture is the losing request; GC-10-simultaneous-distributions-first holds the reservation. Individually valid, jointly overcommitted - the reservation makes the joint constraint enforceable.",
+  "firm": "firm-a",
+  "provenance": "synthetic-fixture",
+  "deferred": null,
+  "signoff": {
+    "status": "signed",
+    "authority": "captain",
+    "signedBy": "captain",
+    "signedAt": "2026-07-26",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules the loser BLOCKS at decision time (the sibling reservation is visible pending activity) rather than failing later at execution - the joint violation is prevented before any authority is requested."
+  },
+  "trigger": {
+    "kind": "human_request",
+    "description": "Advisor B enters: 'The Smiths need $75,000 for the beach-house closing on August 20.' Advisor A's identical-amount request (GC-10) committed its reservation moments earlier.",
+    "requesterRole": "advisor",
+    "requestRef": "req:GC-11",
+    "maskedRequestSummary": "distribute 75000 USD for property-closing; sibling reservation already held (tokenized)",
+    "asOf": "2026-07-26T15:00:30-04:00"
+  },
+  "firmConfiguration": {
+    "firmId": "firm-a",
+    "cashReserveMonths": 6,
+    "dualApprovalThresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleRole": "operations",
+    "requesterConstraint": "may-not-satisfy-both-approvals",
+    "bankInstructionChangeHandling": "specialist-review"
+  },
+  "householdEvidence": [
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T15:00:15-04:00",
+      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Available balance still shows 160000 USD - the sibling's movement has not settled; raw balance alone would wrongly say this request is fine."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T15:00:15-04:00",
+      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Active reservation res:GC-10:liquidity (75000 USD against conflict:smiths-liquidity) is visible as pending activity - effective liquidity is 85000 USD, not 160000 USD."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T15:00:15-04:00",
+      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Firm A six-month reserve = 48000 USD. 85000 - 75000 = 10000 < 48000: this second movement would jointly violate the reserve."
+    }
+  ],
+  "policyVersions": {
+    "domainConfigVersionId": "money-movement@2026.07.0",
+    "firmPolicyVersionId": "firm-a-policy@2026.07.1",
+    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "regulatoryVersionId": null
+  },
+  "householdInstructions": [
+    {
+      "instructionKind": "destination-restriction",
+      "versionId": "smiths-destination-restriction@v2",
+      "summary": "Destination on-list; not the failing constraint."
+    },
+    {
+      "instructionKind": "liquidity-preference",
+      "versionId": "smiths-liquidity-preference@v1",
+      "summary": "Taxable source preferred; the constraint is the sibling reservation, not the source choice."
+    }
+  ],
+  "expectedDisposition": "blocked",
+  "expectedAuthority": {
+    "mode": "none",
+    "stages": [],
+    "note": "A blocked decision carries no authority and no execution plan (v3 invariant 8). No approver can allocate liquidity the sibling reservation already holds."
+  },
+  "expectedExecutionEligibility": {
+    "eligible": false,
+    "reason": "The household liquidity conflict key is held by res:GC-10:liquidity; funding this request within the reservation would breach the six-month reserve jointly with the sibling.",
+    "idempotencyKey": null,
+    "reservations": [],
+    "preconditions": []
+  },
+  "blockers": [
+    {
+      "code": "liquidity-reserved-by-sibling",
+      "explanation": "An active reservation for 75000 USD against the same household liquidity means this movement would jointly violate the cash-reserve policy.",
+      "resolvingEvidence": [
+        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] },
+        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] }
+      ]
+    }
+  ],
+  "expectedExplanationNodes": [
+    { "code": "individually-valid-jointly-overcommitted", "summary": "Alone this request satisfies the reserve; together with the reserved sibling movement it leaves 10000 USD against a 48000 USD requirement - the arithmetic is shown, citing the sibling reservation." },
+    { "code": "reservation-prevents-joint-violation", "summary": "The block resolves if the sibling reservation is released (rejection, expiry, or cancellation) or new funds arrive - both paths are shown as resolving affordances." }
+  ],
+  "expectedLedgerEvents": [
+    { "type": "EvidenceSnapshotRecorded", "note": "Pending-actions snapshot showing res:GC-10:liquidity is pinned - the sibling reservation is part of this decision's recorded basis." },
+    { "type": "DecisionRecorded", "note": "Blocked decision citing the sibling reservation; no authority, no execution plan, no second reservation created." }
+  ],
+  "expectedVerificationState": {
+    "reached": false,
+    "observedStatus": null,
+    "settledClaim": null,
+    "note": "No execution occurs. If the sibling releases its reservation, re-evaluation runs on a new bundle; two concurrent valid requests can never jointly violate liquidity policy (demo-contract §8 completion test)."
+  }
+}

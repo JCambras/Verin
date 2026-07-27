@@ -23,4 +23,12 @@ regexes = [
   # caught. A `gitleaks:allow` inline comment cannot cover it: the value was
   # introduced in an earlier commit and gitleaks scans the whole PR range.
   '''sk_live_51H8xQ2eZvKYlo2C''',
+  # Demo-skeleton fake idempotency key (src/app/demo/data.ts IDS, D-036). It is a
+  # displayed fixture identifier (the e2e journey asserts it on screen and it prints
+  # on the decision record), not a credential; generic-api-key fires only because the
+  # field name contains "Key" and the value clears the entropy bar. Allowlisted by the
+  # exact literal (not the file) so a genuine secret added to data.ts is still caught.
+  # Same reason as above, an inline `gitleaks:allow` cannot cover it: the value landed
+  # in an earlier commit of the PR range.
+  '''mm-smiths-renovation-aug15-4c7f''',
 ]

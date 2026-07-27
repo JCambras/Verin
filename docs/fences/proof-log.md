@@ -616,3 +616,144 @@ failures (verbatim), each reverted:
 prose-only invariants are on the charter's do-not-port list; extended same day in gate review round 3 to
 full-scope, two-directional id pinning, in round 4 to structural id-family discovery and full
 cross-reference closure, and in round 5 to loud shape-drift reporting in the cross-reference detector).
+
+### PF-026 · golden-cases (prompt-2 truth set: complete, aligned, signoff-gated) · `src/__tests__/fitness/golden-cases.test.ts`, `scripts/golden-cases-validate.ts`
+**Invariant (charter #1/#4; v3 build-sequence prompt 2):** the golden cases in `fixtures/golden/*.json`
+are the truth set the engine is later judged against, so an incomplete or dishonest case is a build
+failure: (a) every case states every required field, populated - trigger, firm configuration, household
+evidence, policy versions, household instructions, expected disposition / authority stages / execution
+eligibility / explanation nodes / ledger events / verification state, signoff; (b) vocabulary aligns
+with the LIVE `config/demo/scenarios.yaml` (firm/scenario/state/provenance/deferral ids) and with the
+v3 core-contracts `LedgerEntry` types; (c) structural consistency: blocked/prohibited cases carry no
+authority, no execution eligibility, no reached verification (v3 invariants 8/9), and the
+partial-Salesforce case carries `deferred-pending-sandbox`; (d) signoff honesty: exactly
+`pending-captain` (null attribution) or `signed` (populated attribution) - expected results are product
+truth subject to captain signoff, never agent invention, and an agent-"signed" case without attribution
+is rejected; (e) doc/fixture sync (every caseId in `docs/golden-cases.md`), filename = caseId, all
+twelve spec-enumerated cases covered, at least twelve cases. Validator core is shared
+(`scripts/golden-cases.lib.ts`) between the fence (in `pnpm test`) and the `golden-cases` CI job
+(`pnpm golden:validate`), so the enforced check and the proven check are the same code. The companion
+feeds violating cases cloned from the REAL fixtures (missing field, blank populated field, agent-signed,
+unknown status, five vocabulary drifts, three blocked-case contradictions plus a proceed-with-none,
+dropped deferral marking, doc drift, dropped spec case, sub-twelve set, duplicate caseId,
+recorded-silence abuse, a gutted scenarios.yaml ref set) and asserts each is caught, plus two positive
+cases (the real set passes; a properly attributed captain signature passes) so it can pass neither
+vacuously nor by always-failing. Registered in `charter-map.json` as `golden-cases-truth-set`
+(enforced, added to charter-drift's ratchet).
+
+**Injection + observed failure (verbatim), each reverted:**
+```
+# required field deleted from a real fixture (GC-01 expectedVerificationState removed):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-01-firm-a-happy-path.json :: expectedVerificationState object missing
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+# agent-signed case (GC-02 signoff.status pending-captain -> signed, attribution still null) - the
+# RUNNER path this time (defense in depth; CI job golden-cases):
+  ✗ GC-02-firm-b-happy-path  disposition=proceed  signoff=signed
+      └ signoff.signedBy must name the signer when status is signed
+      └ signoff.signedAt must be populated when status is signed
+  golden-cases: 2 problem(s) - an incomplete case cannot pass (charter #4)   [exit 1]
+# vocabulary drift (GC-03 firm: firm-a -> firm-alpha):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-03-recent-bank-change-firm-a.json :: firm must be a scenarios.yaml firm id, got "firm-alpha"
+    fixtures/golden/GC-03-recent-bank-change-firm-a.json :: firmConfiguration.firmId "firm-a" does not match case firm "firm-alpha"
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+# doc/fixture drift (docs/golden-cases.md rows for GC-16 renamed to GC-16-review-lapse):
+  × enforces: every golden case is complete, aligned, consistent, and signoff-gated
+    fixtures/golden/GC-16-specialist-review-expiration.json :: caseId "GC-16-specialist-review-expiration" is not referenced anywhere in docs/golden-cases.md (doc/fixture drift)
+    ❯ src/__tests__/fitness/golden-cases.test.ts:46
+```
+**Revert:** restored each injected file; fence file `Tests 15 passed`, `pnpm test:fitness` →
+`Tests 208 passed` (26 files), `pnpm golden:validate` → all 16 cases green, `pnpm typecheck` /
+`pnpm lint` / `pnpm knip` clean. The YAML cross-check reuses the `yaml` devDependency (2.9.0).
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 2 - the golden-case specification and signed fixtures;
+16 cases, all `pending-captain`; the captain signs against the summary table in `docs/golden-cases.md` §2).
+
+## Walking-skeleton honesty fence (2026-07-26) - executed injection proofs
+
+### demo-skeleton-honesty (v3 prompt 3 Gate 0; charter #4/#5, ADR-0027)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`. Two rules: (A) the demo
+skeleton's static branch data (`src/app/demo/data.ts`) must state EXACTLY the scenario ids,
+firm ids, and dispositions (incl. per-firm splits) recorded in `config/demo/scenarios.yaml` -
+the UI cannot show an outcome the ratified contract does not state; (B) surface components
+(`src/app/demo/surfaces/`) may import only react/next, presentation primitives, the view-model
+module, contract types, and surface-local siblings - importing the contract data, the fake
+service, or a builder (the road to components recomputing decisions) fails the build with
+file:line. Injections + observed failures (verbatim), each reverted:
+```
+# RULE A: data.ts permanent-prohibition disposition flipped "prohibited" -> "proceed":
+  × RULE A enforces: skeleton branch data equals the contract's scenarios, firms, and dispositions
+    AssertionError: skeleton/contract drift:
+    scenario "permanent-prohibition": contract disposition "prohibited", skeleton says "proceed" - the UI may not invent decisions
+# RULE B: `import { SCENARIOS } from "../data";` added to a shipped surface:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/recommendation.tsx:13 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** both injections restored; fence file `Tests 11 passed` (incl. 8 companions:
+invented branch, dropped branch, drifted disposition, dropped per-firm split, invented firm,
+data/service/builder imports flagged with file:line, allowlist passes).
+
+## Walking-skeleton honesty fence hardening (2026-07-26, review round) - executed injection proofs
+
+### demo-skeleton-honesty, hardened RULE A + RULE B (review findings fence-rule-a-perfirm-invention-hole, fence-rule-b-ts-file-bypass)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`, strengthened in place (no rule weakened).
+RULE A now flags a skeleton `perFirm` map on a scenario whose contract disposition is plain, and any
+skeleton per-firm key the contract's recorded split does not state - previously `dispositionFor()`
+preferred `perFirm`, so a skeleton-only split could change rendered outcomes while the fence stayed
+green. RULE B's surfaces walk now includes plain `.ts` files alongside `.tsx` - previously a
+`surfaces/*.ts` helper could import `../data` or `../journey` and re-export to surfaces unseen.
+Injections + observed failures (verbatim), each reverted:
+```
+# RULE A: data.ts safe-proceed (contract-plain) given a skeleton-only perFirm: { "firm-b": "blocked" }:
+  × RULE A enforces: skeleton branch data equals the contract's scenarios, firms, and dispositions
+    AssertionError: skeleton/contract drift:
+    scenario "safe-proceed": skeleton records a per-firm split but the contract disposition is plain "proceed" - the UI may not invent decisions
+# RULE B: src/app/demo/surfaces/evil-helper.ts created on disk, importing the contract data:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/evil-helper.ts:1 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** the data.ts injection restored, the evil-helper.ts file deleted; fence file green with
+three new companions (skeleton per-firm split on a contract-plain scenario; skeleton per-firm key
+beyond the contract's recorded split; an on-disk `.ts` violator caught by the real walk via a temp
+directory). Same PR also lands the captain-authorized specialist-review-expiration per-firm split
+(firm-a=proceed / firm-b=blocked) in scenarios.yaml + data.ts, which the hardened RULE A holds equal.
+
+**Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision keys nm-review-askuser-s6 / nm-review-rerun-copy-s6).
+
+## Walking-skeleton honesty fence hardening 2 (2026-07-26, review round) - executed injection proofs
+
+### demo-skeleton-honesty, hardened RULE B collector (review finding rule-b-reexport-and-traversal-bypass)
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts`, strengthened in place (no rule
+weakened). RULE B's specifier collector previously read only static import declarations, so a
+re-export (`export { x } from` / `export * from`), a dynamic `import()`, or a `require()` could
+reach the contract data or the builders unseen, and a traversal specifier like `"./../data"`
+matched the `"./"` sibling allowlist outright. The collector now gathers every module-reaching
+form with file:line, records a non-literal dynamic specifier as unverifiable (so it fails the
+allowlist instead of slipping past), and any `..` segment beyond the one allowed `"../model"`
+is rejected as traversal. Injections + observed failures (verbatim), each reverted:
+```
+# RULE B: `export { SCENARIOS } from "../data";` appended to a shipped surface:
+  × RULE B enforces: no surface component imports data, the fake service, or builders
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/execution.tsx:40 :: import "../data" - surfaces render view models only (no data, service, or builder imports)
+# RULE B: `export const sneak = import("../journey");` appended to a shipped surface:
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/execution.tsx:40 :: import "../journey" - surfaces render view models only (no data, service, or builder imports)
+# RULE B: `import { FIRMS } from "./../data";` added to a shipped surface's imports:
+    AssertionError: surface import-boundary violations:
+    src/app/demo/surfaces/verification.tsx:12 :: import "./../data" - surfaces render view models only (no data, service, or builder imports)
+```
+**Revert:** all three injections restored; fence file `Tests 18 passed` with four new companions
+(a re-export, a dynamic import, a non-literal dynamic specifier, and traversal specifiers incl.
+a nested `"./helpers/../../journey"`). The same review round mirrors the voided-approval
+treatment in the below-threshold single-approver stage (`build-decision.ts`, so gate, safety,
+and record agree under approval-invalidation at Firm B) and extracts the shared
+execution-timeline row mapper into `surfaces/shared.tsx` - neither changes any fence rule.
+
+**Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision key nm-review-invalidation-s6).
