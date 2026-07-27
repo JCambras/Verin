@@ -158,6 +158,9 @@ export function detectPIIReachableFromLlm(project: Project): string[] {
   const violations: string[] = [];
   const llmFiles = [...byPath.keys()].filter((p) => /\/llm\//.test(p));
   for (const origin of llmFiles) {
+    if (marked.has(origin)) {
+      violations.push(`${origin} declares a PII-bearing type inside llm/`);
+    }
     const visited = new Set<string>([origin]);
     const queue = [origin];
     while (queue.length) {
@@ -203,7 +206,10 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
 
   it("enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it (invariant 1)", () => {
     const llmFiles = project.getSourceFiles().filter((sf) => /\/llm\//.test(normalizePath(sf)));
-    expect(llmFiles.length, "the llm/ boundary module is missing — invariant 1 would be vacuous").toBeGreaterThanOrEqual(2);
+    expect(
+      llmFiles.map(normalizePath),
+      "the masked request boundary is missing - invariant 1 would be vacuous",
+    ).toContain("src/infrastructure/llm/request-schema.ts");
     const reached = detectPIIReachableFromLlm(project);
     expect(reached, `PII-bearing types reachable from llm/:\n${reached.join("\n")}`).toEqual([]);
   });
@@ -221,6 +227,25 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       const v = detectPIIReachableFromLlm(project);
       expect(v.length).toBe(1);
       expect(v[0]).toContain("entities");
+    });
+    it("flags a PII-bearing type declared inside llm itself", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/infrastructure/llm/evil.ts": `import type { PIIBearing } from "@contracts/pii"; export interface RawRequest extends PIIBearing { requestText: string }`,
+      });
+      expect(detectPIIReachableFromLlm(project)).toEqual([
+        "src/infrastructure/llm/evil.ts declares a PII-bearing type inside llm/",
+      ]);
+    });
+    it("treats requestText, rawText, and evidence as PII-bearing fields", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts": `export interface Raw { requestText: string; rawText: string; evidence: object }`,
+      });
+      expect(detectUnmarkedPIITypes(project, ESCAPE_SET)).toEqual([
+        "src/infrastructure/evil.ts :: Raw.requestText",
+        "src/infrastructure/evil.ts :: Raw.rawText",
+        "src/infrastructure/evil.ts :: Raw.evidence",
+      ]);
     });
     it("flags a TRANSITIVE leak (llm -> helper -> marked module)", () => {
       const project = inMemoryProject({

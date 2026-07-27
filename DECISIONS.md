@@ -559,3 +559,55 @@ marked set from field names, so a new PII type cannot ship unmarked).
 `WriteActor{orgId}` signatures and plain-orgId repository params; flip v3 invariant 1 back to
 not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0029);
 remove PF-027..PF-031 and this entry.
+
+### D-040 · 2026-07-26 · reversible · Prompt-6 security boundaries hardened after adversarial review
+
+All eleven review findings were legitimate manifestations of four deeper gaps:
+security identities could be minted at untrusted call sites, relational
+ownership was scoped in queries but not in foreign keys, free text and
+credential-bearing configuration remained serializable, and several
+authoritative fences matched syntax rather than semantics.
+
+- `Principal` and authenticated identity results are runtime-sealed and
+  compile-time branded. Only credential verification and signed-session
+  resolution mint principals. Session creation accepts a sealed authenticated
+  user plus its tenant and uses an ownership-qualified `INSERT ... SELECT`;
+  session reads join user and organization as one key. System tenant ids are a
+  closed registry, retained in `TenantContext`, and mint call sites are
+  semantically allowlisted across shipped source and operational scripts. The
+  load smoke now authenticates and creates a real session instead of minting a
+  principal.
+- Migration 3 appends tenant-qualified composite foreign keys for session users,
+  household parents and advisors, contacts, financial accounts, applications,
+  tasks, and assignees. Repository integration tests prove crossed references
+  fail in real PGlite, not only in application predicates.
+- Raw evidence projection contracts moved from `infrastructure/llm` to
+  `infrastructure/pii`. Known sensitive values are deterministically replaced
+  with typed slots before `Tokenized` sealing, and unresolved name/account text
+  fails closed. The llm boundary derivation floor now recognizes raw request
+  and evidence names and rejects a PII-bearing declaration inside `llm/`.
+- Secret bytes moved behind a module-private `WeakMap` plus a semantically
+  fenced `revealSecret` function. Database URLs are sealed alongside HMAC
+  secrets. Exception reasons are static codes; logs and traces scrub ambiguous
+  names, bare account numbers, and PII-named fields instead of forwarding
+  exception text.
+- PF-027 through PF-031 now use semantic type/call resolution where syntax-only
+  matching admitted aliases, shorthand literals, classes, computed access, or
+  another handler's authorization call. Exact escapes and liveness checks stay
+  intact. Executed adversarial proofs are recorded in
+  `docs/fences/proof-log.md`.
+
+**Why:** the prompt-6 contract requires these seams to survive ordinary refactors
+and hostile input. A query predicate or naming convention alone cannot prove
+tenant ownership, authenticated provenance, PII removal, or secret
+non-observability.
+
+**Alternatives:** add one-off ownership lookups in each adapter (rejected because
+new write paths could omit them and checks could race); broaden regex fences
+(rejected because aliases and inferred types remain false green); allow raw
+exception messages after more pattern matching (rejected because names and
+credentials have no complete safe regex).
+
+**Revert path:** revert this review-fix changeset, remove migration 3 only if it
+has not shipped to a persistent store, and restore the prior PF-027 through
+PF-031 implementations. D-039 remains the underlying prompt-6 decision.

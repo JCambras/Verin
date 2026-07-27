@@ -41,6 +41,7 @@ export async function createHousehold(
   const createdAt = nowIso();
   const prov = houseProv();
   const status: HouseholdStatus = input.status ?? "prospect";
+  const advisorUserId = a.tenant.actor.kind === "human" ? a.actorUserId : null;
   return auditedWrite<Household>({
     // detail is PII-minimized (no client name); entityId identifies the record.
     db, tenant: a.tenant, actor: a.actorUserId, action: "household.create", entityType: "Household", entityId: id,
@@ -49,9 +50,9 @@ export async function createHousehold(
     perform: async (tx) => {
       await tx.query(
         "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9)",
-        [id, a.tenant.orgId, input.name, a.actorUserId, status, createdAt, prov.source, prov.asOf, prov.confidence],
+        [id, a.tenant.orgId, input.name, advisorUserId, status, createdAt, prov.source, prov.asOf, prov.confidence],
       );
-      return { id, orgId: a.tenant.orgId, name: input.name, primaryContactId: null, advisorUserId: a.actorUserId, status, createdAt, provenance: prov };
+      return { id, orgId: a.tenant.orgId, name: input.name, primaryContactId: null, advisorUserId, status, createdAt, provenance: prov };
     },
   });
 }

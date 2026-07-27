@@ -274,10 +274,60 @@ const SESSIONS_EXPIRES_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
 `;
 
+const TENANT_QUALIFIED_RELATIONSHIPS_SQL = `
+CREATE UNIQUE INDEX users_id_org_unique ON users(id, org_id);
+CREATE UNIQUE INDEX households_id_org_unique ON households(id, org_id);
+CREATE UNIQUE INDEX contacts_id_household_org_unique ON contacts(id, household_id, org_id);
+
+UPDATE households h
+SET advisor_user_id = NULL
+WHERE advisor_user_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.id = h.advisor_user_id AND u.org_id = h.org_id
+  );
+
+ALTER TABLE sessions
+  ADD CONSTRAINT sessions_user_org_fk
+  FOREIGN KEY (user_id, org_id) REFERENCES users(id, org_id);
+
+ALTER TABLE households
+  ADD CONSTRAINT households_advisor_org_fk
+  FOREIGN KEY (advisor_user_id, org_id) REFERENCES users(id, org_id);
+ALTER TABLE households
+  ADD CONSTRAINT households_primary_contact_org_fk
+  FOREIGN KEY (primary_contact_id, id, org_id)
+  REFERENCES contacts(id, household_id, org_id);
+
+ALTER TABLE contacts
+  ADD CONSTRAINT contacts_household_org_fk
+  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
+
+ALTER TABLE financial_accounts
+  ADD CONSTRAINT financial_accounts_household_org_fk
+  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
+
+ALTER TABLE account_opening_applications
+  ADD CONSTRAINT applications_household_org_fk
+  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
+ALTER TABLE account_opening_applications
+  ADD CONSTRAINT applications_contact_household_org_fk
+  FOREIGN KEY (contact_id, household_id, org_id)
+  REFERENCES contacts(id, household_id, org_id);
+
+ALTER TABLE tasks
+  ADD CONSTRAINT tasks_household_org_fk
+  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
+ALTER TABLE tasks
+  ADD CONSTRAINT tasks_assignee_org_fk
+  FOREIGN KEY (assignee_user_id, org_id) REFERENCES users(id, org_id);
+`;
+
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
   { version: 2, name: "sessions-expires-index", sql: SESSIONS_EXPIRES_INDEX_SQL },
+  { version: 3, name: "tenant-qualified-relationships", sql: TENANT_QUALIFIED_RELATIONSHIPS_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

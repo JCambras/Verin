@@ -5,7 +5,7 @@
  * config (test placeholders, wrong store driver) — fail closed, never degrade.
  * Secrets leave this module ONLY as SecretValue (v3 §15.4): serialization and
  * interpolation see the redaction sentinel; reading the raw value is an
- * explicit reveal() restricted by the secret-containment fence.
+ * explicit revealSecret call restricted by the secret-containment fence.
  */
 import { z } from "zod";
 import { SecretValue } from "@contracts/secret";
@@ -67,7 +67,8 @@ const schema = z
 type RawConfig = z.infer<typeof schema>;
 
 /** The parsed shape with secrets sealed in SecretValue wrappers. */
-export type Config = Omit<RawConfig, "session" | "esign"> & {
+export type Config = Omit<RawConfig, "store" | "session" | "esign"> & {
+  store: Omit<RawConfig["store"], "databaseUrl"> & { databaseUrl?: SecretValue };
   session: Omit<RawConfig["session"], "secret"> & { secret: SecretValue };
   esign: { webhookSecret: SecretValue };
 };
@@ -76,6 +77,12 @@ export type Config = Omit<RawConfig, "session" | "esign"> & {
 function sealSecrets(raw: RawConfig): Config {
   return {
     ...raw,
+    store: {
+      ...raw.store,
+      databaseUrl: raw.store.databaseUrl
+        ? new SecretValue(raw.store.databaseUrl)
+        : undefined,
+    },
     session: { ...raw.session, secret: new SecretValue(raw.session.secret) },
     esign: { webhookSecret: new SecretValue(raw.esign.webhookSecret) },
   };

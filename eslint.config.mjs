@@ -31,7 +31,7 @@ const noProcessEnv = {
 // and ActionGrant are constructible ONLY in their factory modules
 // (infrastructure/pii/tokenize.ts, contracts/tenant.ts, contracts/authz.ts).
 // Edit-time mirror of the AUTHORITATIVE tokenized-factory-only fitness fence.
-const SEALED_TYPE_NAME = "/^(Tokenized|TenantContext|ActionGrant)$/";
+const SEALED_TYPE_NAME = "/^(Tokenized|TenantContext|ActionGrant|Principal)$/";
 const sealedTypeMessage =
   "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction) — a cast or literal bypasses the scrub/seal (v3 invariant 1).";
 const noSealedTypeConstruction = [
@@ -115,7 +115,7 @@ export default tseslint.config(
   },
   // The factory modules themselves — the ONLY sanctioned construction sites.
   {
-    files: ["src/contracts/tenant.ts", "src/contracts/authz.ts"],
+    files: ["src/contracts/tenant.ts", "src/contracts/authz.ts", "src/contracts/principal.ts"],
     rules: {
       "no-restricted-syntax": ["error", noProcessEnv],
     },

@@ -3,11 +3,11 @@ import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken, esignCallback, computeEsignSignature } from "@infra/wire";
 import { verifyOrgChain } from "@infra/audit/audit-store";
 import { recentSpans } from "@infra/observability/tracer";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
 import { tenantOf } from "@contracts/tenant";
 
 const ORG = "org-1";
-const advisor: Principal = { userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" };
+const advisor = principalFromIdentity({ userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" });
 
 async function seedOrg(db: SqlDb) {
   const now = new Date().toISOString();
@@ -266,7 +266,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     });
     expect(started.status).toBe("suspended");
 
-    const intruder: Principal = { userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" };
+    const intruder = principalFromIdentity({ userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" });
     const result = await startAccountOpening(db, intruder, {
       householdName: "Intruder Household", firstName: "E", lastName: "Ve", email: null,
       accountType: "individual", clientRequestId, // the PK conflict is a 23505, but not the caller's own execution

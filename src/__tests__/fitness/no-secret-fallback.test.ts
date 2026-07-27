@@ -1,7 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { REPO_ROOT, walk, stripComments } from "./_fence-utils";
+import {
+  Node,
+  SyntaxKind,
+  type CallExpression,
+  type Project,
+  type Type,
+} from "ts-morph";
+import {
+  REPO_ROOT,
+  inMemoryProject,
+  realSemanticProject,
+  walk,
+  stripComments,
+} from "./_fence-utils";
 
 /**
  * CONFIG-HYGIENE FENCE (ADR-0003/0017, charter #7). Fails the build on:
@@ -66,25 +79,119 @@ const PLACEHOLDER_VALUE =
   /^(|CHANGEME[_A-Za-z0-9]*|development|production|test|info|error|debug|warn|verin|pglite|postgres|America\/New_York|America\/[A-Za-z_]+|http:\/\/localhost(:\d+)?|\.verin-data[\w-]*|\d+|postgres:\/\/USER:CHANGEME_PASSWORD@HOST:5432\/verin)$/;
 
 // --- SecretValue containment (v3 §15.4, prompt 6) ---------------------------
-// Config secrets leave the config module only as SecretValue wrappers whose
-// serialization paths all redact; reading the raw string is an explicit
-// `.reveal()` call, and THIS allowlist is the set of modules with a reviewed
-// reason to hold raw secret bytes. Everywhere else, `.reveal(` fails the build.
 const REVEAL_ALLOWLIST: Array<{ file: string; why: string }> = [
   { file: "src/infrastructure/identity/session.ts", why: "HMAC-signs the session cookie" },
   { file: "src/infrastructure/esign/esign.ts", why: "HMAC-signs/verifies the e-sign webhook callback" },
 ];
 const REVEAL_ALLOWED = new Set(REVEAL_ALLOWLIST.map((e) => e.file));
 
-export function detectUnsanctionedReveal(files: Array<{ rel: string; text: string }>): string[] {
+function normalizedPath(path: string): string {
+  const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
+  return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
+}
+
+function declaredAsSecretValue(type: Type): boolean {
+  return [type.getAliasSymbol(), type.getSymbol()].some((symbol) =>
+    symbol?.getName() === "SecretValue" &&
+    symbol.getDeclarations().some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) ===
+      "src/contracts/secret.ts"
+    )
+  );
+}
+
+function revealSecretCall(call: CallExpression): boolean {
+  return call.getExpression().getType().getCallSignatures().some((signature) => {
+    const declaration = signature.getDeclaration();
+    return declaration.getSymbol()?.getName() === "revealSecret" &&
+      normalizedPath(declaration.getSourceFile().getFilePath()) ===
+      "src/contracts/secret.ts";
+  });
+}
+
+function revealSecretReference(node: Node): boolean {
+  return node.getType().getCallSignatures().some((signature) => {
+    const declaration = signature.getDeclaration();
+    return declaration.getSymbol()?.getName() === "revealSecret" &&
+      normalizedPath(declaration.getSourceFile().getFilePath()) ===
+      "src/contracts/secret.ts";
+  });
+}
+
+function secretAccessLocations(project: Project): Array<{ file: string; line: number }> {
+  const out: Array<{ file: string; line: number }> = [];
+  const seen = new Set<string>();
+  const add = (file: string, line: number): void => {
+    const ref = `${file}:${line}`;
+    if (!seen.has(ref)) {
+      seen.add(ref);
+      out.push({ file, line });
+    }
+  };
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (
+      (!file.startsWith("src/") && !file.startsWith("scripts/")) ||
+      file.includes("/__tests__/") ||
+      file === "src/contracts/secret.ts"
+    ) continue;
+    const references: Node[] = [
+      ...sf.getDescendantsOfKind(SyntaxKind.Identifier),
+      ...sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+    ];
+    for (const reference of references) {
+      if (revealSecretReference(reference)) {
+        add(file, reference.getStartLineNumber());
+      }
+    }
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (revealSecretCall(call)) {
+        add(file, call.getStartLineNumber());
+      }
+    }
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+      if (
+        access.getName() === "reveal" &&
+        declaredAsSecretValue(access.getExpression().getType())
+      ) {
+        add(file, access.getStartLineNumber());
+      }
+    }
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
+      const argument = access.getArgumentExpression();
+      if (
+        Node.isStringLiteral(argument) &&
+        argument.getLiteralValue() === "reveal" &&
+        declaredAsSecretValue(access.getExpression().getType())
+      ) {
+        add(file, access.getStartLineNumber());
+      }
+    }
+    for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+      const name = declaration.getNameNode();
+      const initializer = declaration.getInitializer();
+      if (
+        Node.isObjectBindingPattern(name) &&
+        initializer &&
+        declaredAsSecretValue(initializer.getType()) &&
+        name.getElements().some((element) =>
+          (element.getPropertyNameNode()?.getText() ?? element.getName()) === "reveal"
+        )
+      ) {
+        add(file, declaration.getStartLineNumber());
+      }
+    }
+  }
+  return out;
+}
+
+export function detectUnsanctionedReveal(project: Project): string[] {
   const out: string[] = [];
-  for (const { rel, text } of files) {
-    const r = rel.replace(/\\/g, "/");
-    if (!r.startsWith("src/") || r.includes("__tests__") || !/\.(ts|tsx)$/.test(r)) continue;
-    if (REVEAL_ALLOWED.has(r)) continue;
-    text.split("\n").forEach((line, i) => {
-      if (/\.reveal\s*\(/.test(stripComments(line))) out.push(`${r}:${i + 1}`);
-    });
+  for (const location of secretAccessLocations(project)) {
+    if (!REVEAL_ALLOWED.has(location.file)) {
+      out.push(`${location.file}:${location.line}`);
+    }
   }
   return out;
 }
@@ -121,15 +228,17 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     const o = detectEnvExampleNonPlaceholder();
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
-  it("enforces: .reveal() appears only in the reviewed secret-consumer modules (v3 §15.4)", () => {
-    const o = detectUnsanctionedReveal(files);
+  it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
+    const o = detectUnsanctionedReveal(realSemanticProject());
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
   });
-  it("enforces: every reveal-allowlisted module still reveals (no stale allowlist — charter #4)", () => {
+  it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
+    const calls = secretAccessLocations(realSemanticProject());
     for (const entry of REVEAL_ALLOWLIST) {
-      const f = files.find((x) => x.rel.replace(/\\/g, "/") === entry.file);
-      expect(f, `${entry.file} missing`).toBeTruthy();
-      expect(/\.reveal\s*\(/.test(f!.text), `${entry.file} no longer calls .reveal() — prune the allowlist entry`).toBe(true);
+      expect(
+        calls.some((call) => call.file === entry.file),
+        `${entry.file} no longer reveals a secret - prune the allowlist entry`,
+      ).toBe(true);
     }
   });
 
@@ -154,16 +263,42 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     });
     it("catches a non-placeholder env value shape", () => {
       // simulate the parser directly on a suspicious value
-      const suspicious = "sk_live_51H8xQ2eZvKYlo2C"; // gitleaks:allow — deliberately secret-shaped test fixture, not a real key
+      const suspicious = "sk_live_51H8xQ2eZvKYlo2C"; // gitleaks:allow - deliberately secret-shaped test fixture, not a real key
       expect(PLACEHOLDER_VALUE.test(suspicious)).toBe(false);
     });
-    it("catches an unsanctioned .reveal() call outside the allowlist", () => {
-      const o = detectUnsanctionedReveal([{ rel: "src/infrastructure/crm/evil.ts", text: `const raw = getConfig().session.secret.reveal();` }]);
+    it("catches an aliased revealSecret call outside the allowlist", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/infrastructure/crm/evil.ts": `import { revealSecret as unwrap, SecretValue } from "../../contracts/secret"; declare const secret: SecretValue; unwrap(secret);`,
+      });
+      const o = detectUnsanctionedReveal(project);
       expect(o).toEqual(["src/infrastructure/crm/evil.ts:1"]);
     });
-    it("does not flag a commented-out or allowlisted reveal", () => {
-      expect(detectUnsanctionedReveal([{ rel: "src/infrastructure/crm/evil.ts", text: `// secret.reveal()` }])).toEqual([]);
-      expect(detectUnsanctionedReveal([{ rel: "src/infrastructure/identity/session.ts", text: `sign(getConfig().session.secret.reveal())` }])).toEqual([]);
+    it("catches revealSecret references used through call or bind", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/infrastructure/crm/evil.ts": `
+          import { revealSecret, SecretValue } from "../../contracts/secret";
+          declare const secret: SecretValue;
+          revealSecret.call(undefined, secret);
+          const bound = revealSecret.bind(undefined);
+          bound(secret);
+        `,
+      });
+      expect(detectUnsanctionedReveal(project).length).toBeGreaterThan(0);
+    });
+    it("catches computed and destructured access if a raw accessor is reintroduced", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue { reveal(): string { return ""; } }`,
+        "/src/infrastructure/crm/evil.ts": `
+          import { SecretValue } from "../../contracts/secret";
+          declare const secret: SecretValue;
+          secret["reveal"]();
+          const { reveal } = secret;
+          reveal();
+        `,
+      });
+      expect(detectUnsanctionedReveal(project)).toHaveLength(2);
     });
   });
 });

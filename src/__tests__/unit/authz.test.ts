@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { GOVERNED_ACTIONS, actorRefOf, authorizeGovernedAction, isActionGrant, type ActionGrant, type GovernedAction } from "@contracts/authz";
 import { systemTenant } from "@contracts/tenant";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
 
 /**
@@ -10,7 +10,7 @@ import type { Role } from "@contracts/roles";
  * mint the sealed ActionGrant.
  */
 function humanActor(role: Role) {
-  const p: Principal = { userId: `u-${role}`, orgId: "org-1", role, actor: `${role}@firm.test`, sessionId: "s1" };
+  const p = principalFromIdentity({ userId: `u-${role}`, orgId: "org-1", role, actor: `${role}@firm.test`, sessionId: "s1" });
   return actorRefOf(p);
 }
 const systemActor = { kind: "system" as const, tenant: systemTenant("esign-webhook", "org-1"), actorId: "esign-webhook" };
@@ -65,7 +65,7 @@ describe("authorizeGovernedAction grants the authorized", () => {
 describe("ActionGrant is sealed", () => {
   it("cannot compile from a literal", () => {
     // @ts-expect-error an object literal cannot produce the sealed brand
-    const impostor: ActionGrant = { action: "audit.export", tenant: systemTenant("t", "o"), actorId: "x", role: "admin" };
+    const impostor: ActionGrant = { action: "audit.export", tenant: systemTenant("test", "o"), actorId: "x", role: "admin" };
     expect(isActionGrant(impostor)).toBe(false);
   });
   it("cannot parse from a cast or a spread copy", () => {

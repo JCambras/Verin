@@ -24,6 +24,12 @@
 import { createMemoryDb } from "../src/infrastructure/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken } from "../src/infrastructure/wire";
 import type { Principal } from "../src/contracts/principal";
+import { systemTenant } from "../src/contracts/tenant";
+import {
+  authenticate,
+  createSession,
+  createUser,
+} from "../src/infrastructure/identity/identity-store";
 
 const HOUSEHOLDS = 1000;
 const ACCOUNTS = 2000;
@@ -34,9 +40,7 @@ const STEP_P95_BUDGET_MS = 2000;
 const FLOWS = 50; // sequential account-opening flows (2 interactive steps each)
 const CONCURRENCY = 16; // simultaneous flows/reads contending on the serialize mutex
 const ORG = "org-load";
-// A session-derived principal (never fabricated per-write - D-028); the flow
-// attributes its audited writes to this advisor's opaque userId.
-const ADVISOR: Principal = { userId: "u-load", orgId: ORG, role: "advisor", actor: "load@firm.test", sessionId: "s-load" };
+const ADVISOR_PASSWORD = "load-smoke-credential-only";
 
 function pct(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
@@ -51,9 +55,13 @@ function pct(sorted: number[], p: number): number {
  * (the audited, exactly-once account-open write) on the webhook. Each is one
  * user-perceived step; both go through auditedWrite + outbox drain + hash chain.
  */
-async function runFlow(db: Awaited<ReturnType<typeof createMemoryDb>>, i: number): Promise<{ startMs: number; resumeMs: number }> {
+async function runFlow(
+  db: Awaited<ReturnType<typeof createMemoryDb>>,
+  advisor: Principal,
+  i: number,
+): Promise<{ startMs: number; resumeMs: number }> {
   const s0 = performance.now();
-  const started = await startAccountOpening(db, ADVISOR, {
+  const started = await startAccountOpening(db, advisor, {
     householdName: `Load Household ${i}`,
     firstName: "Load",
     lastName: `Contact ${i}`,
@@ -78,10 +86,19 @@ async function main(): Promise<void> {
   const db = await createMemoryDb();
   const t0 = "2026-01-01T00:00:00.000Z";
   await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Load Firm',$2,'verin-crm',$2,'high')", [ORG, t0]);
-  // The advisor whose session drives the measured flows (users.org_id -> orgs FK).
-  await db.query(
-    "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,'load@firm.test','Load Advisor','advisor','active',$3,'verin-crm',$3,'high')",
-    [ADVISOR.userId, ORG, t0],
+  await createUser(db, systemTenant("load-smoke", ORG), {
+    email: "load@firm.test",
+    displayName: "Load Advisor",
+    role: "advisor",
+    password: ADVISOR_PASSWORD,
+  });
+  const authenticated = await authenticate(db, "load@firm.test", ADVISOR_PASSWORD);
+  if (!authenticated) throw new Error("load advisor authentication failed");
+  const advisor = await createSession(
+    db,
+    authenticated.tenant,
+    authenticated,
+    60,
   );
 
   const seedStart = performance.now();
@@ -117,7 +134,7 @@ async function main(): Promise<void> {
   const stepDurations: number[] = [];
   const flowStart = performance.now();
   for (let i = 0; i < FLOWS; i++) {
-    const { startMs, resumeMs } = await runFlow(db, i);
+    const { startMs, resumeMs } = await runFlow(db, advisor, i);
     stepDurations.push(startMs, resumeMs);
   }
   const flowWallMs = performance.now() - flowStart;
@@ -134,7 +151,7 @@ async function main(): Promise<void> {
   // concurrent-step p95 rather than sitting inert next to the write path.
   const startTasks = Array.from({ length: CONCURRENCY }, async (_, i) => {
     const s = performance.now();
-    const r = await startAccountOpening(db, ADVISOR, {
+    const r = await startAccountOpening(db, advisor, {
       householdName: `Concurrent Household ${i}`,
       firstName: "Concurrent",
       lastName: `Contact ${i}`,

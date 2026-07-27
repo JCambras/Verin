@@ -8,7 +8,10 @@
  * PII-bearing type is reachable from llm/ (v3 invariant 1). Direct construction
  * elsewhere is an invariant violation, not a style issue.
  */
+declare const TokenizedBrand: unique symbol;
+
 export interface Tokenized<T> {
   readonly value: T;
   readonly piiFree: true;
+  readonly [TokenizedBrand]: "Tokenized";
 }

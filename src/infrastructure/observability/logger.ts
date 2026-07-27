@@ -8,7 +8,11 @@
 import pino from "pino";
 import { getConfig } from "@infra/config";
 import { isAppError } from "@contracts/errors";
-import { looksLikePIIValue, REDACTED } from "@contracts/pii";
+import {
+  isPIIField,
+  looksLikeAmbiguousSensitiveText,
+  REDACTED,
+} from "@contracts/pii";
 
 const cfg = getConfig();
 
@@ -31,9 +35,39 @@ export const loggerOptions: pino.LoggerOptions = {
     paths: PII_LOG_FIELDS.flatMap((f) => [f, `*.${f}`, `*.*.${f}`, `*.*.*.${f}`]),
     censor: "[REDACTED]",
   },
+  formatters: {
+    log(object) {
+      return scrubStructuredLog(object) as Record<string, unknown>;
+    },
+  },
 };
 
 export const log = pino(loggerOptions);
+
+function scrubStructuredLog(
+  value: unknown,
+  keyIsPII = false,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (value == null) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return keyIsPII || looksLikeAmbiguousSensitiveText(String(value))
+      ? REDACTED
+      : value;
+  }
+  if (typeof value !== "object") return keyIsPII ? REDACTED : value;
+  if (seen.has(value)) return REDACTED;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubStructuredLog(item, keyIsPII, seen));
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      scrubStructuredLog(item, keyIsPII || isPIIField(key), seen),
+    ]),
+  );
+}
 
 /**
  * PII-safe reason string for error logging: driver/exception text can quote row
@@ -42,6 +76,15 @@ export const log = pino(loggerOptions);
  * it reaches a log line or span.
  */
 export function safeReason(e: unknown): string {
-  const raw = e instanceof Error ? `${e.name}: ${e.message}` : isAppError(e) ? e.message : String(e);
-  return looksLikePIIValue(raw) ? REDACTED : raw;
+  if (isAppError(e)) return `app-error:${e.code}`;
+  if (
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    typeof (e as { code: unknown }).code === "string" &&
+    /^[0-9A-Z]{5}$/.test((e as { code: string }).code)
+  ) {
+    return `driver-error:${(e as { code: string }).code}`;
+  }
+  return "unexpected-error";
 }

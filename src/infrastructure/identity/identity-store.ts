@@ -9,9 +9,18 @@
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
-import type { Role } from "@contracts/roles";
+import { isRole, type Role } from "@contracts/roles";
 import type { PIIBearing } from "@contracts/pii";
-import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import {
+  assertTenantContext,
+  tenantFromIdentity,
+  type TenantContext,
+} from "@contracts/tenant";
+import {
+  principalFromIdentity,
+  type Principal,
+} from "@contracts/principal";
+import { appError } from "@contracts/errors";
 import { hashPassword, verifyPassword } from "./password";
 
 /** PIIBearing: carries the user's raw email and display name. */
@@ -32,6 +41,42 @@ export interface SessionRow {
   created_at: string;
   expires_at: string;
   revoked_at: string | null;
+}
+
+declare const AuthenticatedUserBrand: unique symbol;
+
+export interface AuthenticatedUser extends PIIBearing {
+  readonly id: string;
+  readonly tenant: TenantContext;
+  readonly email: string;
+  readonly role: Role;
+  readonly [AuthenticatedUserBrand]: "AuthenticatedUser";
+}
+
+const AUTHENTICATED_USER_SEAL = Symbol("verin.authenticated-user.seal");
+
+function authenticatedUser(row: UserRow): AuthenticatedUser {
+  const value = Object.defineProperty(
+    {
+      id: row.id,
+      tenant: tenantFromIdentity(row.id, row.org_id),
+      email: row.email,
+      role: row.role,
+    },
+    AUTHENTICATED_USER_SEAL,
+    { value: true, enumerable: false },
+  );
+  return Object.freeze(value) as unknown as AuthenticatedUser;
+}
+
+function assertAuthenticatedUser(value: unknown): asserts value is AuthenticatedUser {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    (value as Record<symbol, unknown>)[AUTHENTICATED_USER_SEAL] !== true
+  ) {
+    throw appError("AUTH_FAILED", "Session creation requires an authenticated identity.");
+  }
 }
 
 // Emails are canonicalized (trimmed, lowercased) at write AND lookup: case-variants
@@ -89,35 +134,55 @@ async function dummyHash(): Promise<string> {
  * Verify credentials in constant work (scrypt runs whether or not the user exists),
  * returning the active user on success or null otherwise. Removes the timing oracle.
  */
-export async function authenticate(db: SqlDb, email: string, password: string): Promise<UserRow | null> {
+export async function authenticate(
+  db: SqlDb,
+  email: string,
+  password: string,
+): Promise<AuthenticatedUser | null> {
   const user = await findUserByEmail(db, email);
   const hash = (user ? await getPasswordHash(db, user.id) : null) ?? (await dummyHash());
   const ok = await verifyPassword(password, hash);
-  if (!user || !ok || user.status !== "active") return null;
-  return user;
+  if (!user || !ok || user.status !== "active" || !isRole(user.role)) return null;
+  return authenticatedUser(user);
 }
 
 export async function createSession(
   db: SqlDb,
-  input: { userId: string; orgId: string; role: Role; ttlMinutes: number },
-): Promise<SessionRow> {
+  tenant: TenantContext,
+  user: AuthenticatedUser,
+  ttlMinutes: number,
+): Promise<Principal> {
+  assertTenantContext(tenant);
+  assertAuthenticatedUser(user);
+  if (
+    tenant.actor.kind !== "human" ||
+    tenant.actor.actorId !== user.id ||
+    tenant.orgId !== user.tenant.orgId
+  ) {
+    throw appError("AUTH_FAILED", "Authenticated identity does not own the requested tenant context.");
+  }
   const id = randomUUID();
   const now = new Date();
-  const expires = new Date(now.getTime() + input.ttlMinutes * 60_000);
-  const row: SessionRow = {
-    id,
-    user_id: input.userId,
-    org_id: input.orgId,
-    role: input.role,
-    created_at: now.toISOString(),
-    expires_at: expires.toISOString(),
-    revoked_at: null,
-  };
-  await db.query(
-    "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,$4,$5,$6,NULL)",
-    [row.id, row.user_id, row.org_id, row.role, row.created_at, row.expires_at],
+  const expires = new Date(now.getTime() + ttlMinutes * 60_000);
+  const inserted = await db.query<SessionRow>(
+    `INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at)
+     SELECT $1, u.id, u.org_id, u.role, $2, $3, NULL
+     FROM users u
+     WHERE u.id = $4 AND u.org_id = $5 AND u.role = $6 AND u.status = 'active'
+     RETURNING id,user_id,org_id,role,created_at,expires_at,revoked_at`,
+    [id, now.toISOString(), expires.toISOString(), user.id, tenant.orgId, user.role],
   );
-  return row;
+  const row = inserted.rows[0];
+  if (!row) {
+    throw appError("AUTH_FAILED", "Authenticated identity does not belong to the requested tenant.");
+  }
+  return principalFromIdentity({
+    userId: row.user_id,
+    orgId: row.org_id,
+    role: row.role,
+    actor: user.email,
+    sessionId: row.id,
+  });
 }
 
 export async function revokeSession(db: SqlDb, sessionId: string): Promise<void> {

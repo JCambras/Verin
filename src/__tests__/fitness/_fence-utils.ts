@@ -143,6 +143,10 @@ export function realProject(): Project {
   return project;
 }
 
+export function realSemanticProject(): Project {
+  return new Project({ tsConfigFilePath: join(REPO_ROOT, "tsconfig.json") });
+}
+
 /** An in-memory Project for companion tests. */
 export function inMemoryProject(files: Record<string, string>): Project {
   const project = new Project({ useInMemoryFileSystem: true });
@@ -191,4 +195,3 @@ export function stripComments(line: string): string {
   }
   return out;
 }
-

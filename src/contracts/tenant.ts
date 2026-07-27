@@ -10,44 +10,70 @@
  * (systemTenant). The simplified Phase 1 identity provider sits BELOW this seam
  * (ADR-0008), so swapping it later never moves the boundary.
  */
-import type { Principal } from "./principal";
+import { assertPrincipal, type Principal } from "./principal";
 import { appError } from "./errors";
 
 declare const TenantContextBrand: unique symbol;
 
 export interface TenantContext {
   readonly orgId: string;
+  readonly actor:
+    | { readonly kind: "human"; readonly actorId: string }
+    | { readonly kind: "system"; readonly actorId: SystemActorId };
   /** Compile-time brand: only this module's factories can produce it. */
   readonly [TenantContextBrand]: "TenantContext";
 }
 
 const SEAL = Symbol("verin.tenant-context.seal");
 
-function mint(orgId: string): TenantContext {
+export const SYSTEM_ACTOR_IDS = [
+  "audit-chain-verify",
+  "backup-restore-drill",
+  "esign-webhook",
+  "login-boundary",
+  "login-constant-work",
+  "load-smoke",
+  "seed",
+  "test",
+] as const;
+
+export type SystemActorId = (typeof SYSTEM_ACTOR_IDS)[number];
+
+function mint(orgId: string, actor: TenantContext["actor"]): TenantContext {
   if (typeof orgId !== "string" || orgId.length === 0) {
     throw appError("INTERNAL", "TenantContext requires a non-empty orgId.");
   }
-  const ctx = Object.defineProperty({ orgId }, SEAL, { value: true, enumerable: false });
+  const ctx = Object.defineProperty({ orgId, actor: Object.freeze(actor) }, SEAL, {
+    value: true,
+    enumerable: false,
+  });
   // The ONE sanctioned TenantContext cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(ctx) as unknown as TenantContext;
 }
 
 /** Tenant scope of an authenticated session principal (resolved server-side, ADR-0008). */
 export function tenantOf(principal: Principal): TenantContext {
-  return mint(principal.orgId);
+  assertPrincipal(principal);
+  return mint(principal.orgId, { kind: "human", actorId: principal.userId });
+}
+
+export function tenantFromIdentity(actorId: string, orgId: string): TenantContext {
+  if (typeof actorId !== "string" || actorId.length === 0) {
+    throw appError("INTERNAL", "An identity tenant mint must name its actor.");
+  }
+  return mint(orgId, { kind: "human", actorId });
 }
 
 /**
  * Tenant scope for a named SYSTEM actor (esign-webhook finalize, seed, chain
  * verification). `systemId` forces every mint site to name the system it acts
- * as — greppable attribution even though the context itself carries only the
- * org (matching the ratified TenantContext shape).
+ * as, with the same attribution retained in the sealed context.
  */
-export function systemTenant(systemId: string, orgId: string): TenantContext {
-  if (typeof systemId !== "string" || systemId.length === 0) {
-    throw appError("INTERNAL", "A system tenant mint must name its system actor.");
+export function systemTenant(systemId: SystemActorId, orgId: string): TenantContext {
+  if (!SYSTEM_ACTOR_IDS.includes(systemId)) {
+    throw appError("INTERNAL", "A system tenant mint must name a registered system actor.");
   }
-  return mint(orgId);
+  return mint(orgId, { kind: "system", actorId: systemId });
 }
 
 export function isTenantContext(value: unknown): value is TenantContext {

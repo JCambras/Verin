@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { getConfig, resetConfigForTests } from "@infra/config";
+import { revealSecret, SecretValue } from "@contracts/secret";
 
 /**
  * Verifies the config module's fail-closed production guards (ADR-0003). Reads
@@ -47,6 +48,15 @@ describe("config fail-closed guards", () => {
   it("rejects a too-short session secret", () => {
     withEnv({ APP_ENV: "development", VERIN_STORE_DRIVER: "pglite", SESSION_SECRET: "short", ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(() => getConfig()).toThrow(/at least 32/);
+  });
+
+  it("seals a credential-bearing database URL in config serialization", () => {
+    const databaseUrl = "postgres://dbuser:dbpassword@database.internal:5432/verin";
+    withEnv({ APP_ENV: "development", VERIN_STORE_DRIVER: "postgres", DATABASE_URL: databaseUrl, SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
+    const cfg = getConfig();
+    expect(cfg.store.databaseUrl).toBeInstanceOf(SecretValue);
+    expect(revealSecret(cfg.store.databaseUrl!)).toBe(databaseUrl);
+    expect(JSON.stringify(cfg)).not.toContain("dbpassword");
   });
 
   it("refuses to boot when NODE_ENV=production and APP_ENV is unset (no silent development default)", () => {

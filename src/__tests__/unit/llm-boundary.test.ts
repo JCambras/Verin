@@ -3,7 +3,7 @@ import { REDACTED } from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { tokenizeText, tokenizeRecord, isSealedTokenized } from "@infra/pii/tokenize";
 import { parseMaskedLlmRequest, type MaskedLlmRequest } from "@infra/llm/request-schema";
-import { projectForLlm } from "@infra/llm/projection";
+import { projectForLlm } from "@infra/pii/llm-projection";
 
 /**
  * The runtime half of v3 invariant 1: the Tokenized factory scrubs by
@@ -45,6 +45,11 @@ describe("the Tokenized factory scrubs by construction", () => {
     const impostor = { value: RAW.name, piiFree: true } as Tokenized<string>;
     expect(isSealedTokenized(impostor)).toBe(false);
   });
+  it("fails closed on unresolved names and bare account-number text", () => {
+    expect(() => tokenizeText("John Smith account 941000517334")).toThrow(/PII_VIOLATION/);
+    expect(() => tokenizeRecord({ note: "John Smith account 941000517334" })).toThrow(/PII_VIOLATION/);
+    expect(() => tokenizeRecord({ "John Smith": "requested a review" })).toThrow(/PII_VIOLATION/);
+  });
 });
 
 describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
@@ -70,7 +75,7 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
     }
   });
   it("refuses a sealed-looking record whose payload smuggles PII (defense in depth)", () => {
-    const smuggled = { ...good(), context: { value: { note: RAW.email }, piiFree: true } as Tokenized<Readonly<Record<string, unknown>>> };
+    const smuggled = { ...good(), context: { value: { note: RAW.email }, piiFree: true } as unknown as Tokenized<Readonly<Record<string, unknown>>> };
     expect(parseMaskedLlmRequest(smuggled).ok).toBe(false);
   });
   it("refuses free-text slot names and unknown purposes/slot types", () => {
@@ -146,5 +151,47 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(r.value.maskedText.value).not.toContain("Okonkwo-Blackwood");
     expect(r.value.maskedText.value).not.toContain("Adaeze");
     expect(r.value.maskedText.value).toContain("{{subject_1}}");
+  });
+  it("refuses unresolved sensitive text when a caller omits the required masks", () => {
+    const r = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "John Smith account 941000517334",
+      slots: [],
+      masks: [],
+      evidence: { note: "John Smith account 941000517334" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe("PII_VIOLATION");
+      expect(r.error.message).not.toContain("John Smith");
+      expect(r.error.message).not.toContain("941000517334");
+    }
+  });
+  it("refuses dummy masks and missing masks for sensitive slots", () => {
+    const base = {
+      purpose: "intent-shaping" as const,
+      requestText: "review the requested account",
+      slots: [{ slotName: "subject_1", slotType: "subject" as const }],
+      evidence: {},
+    };
+    expect(projectForLlm({ ...base, masks: [] }).ok).toBe(false);
+    expect(projectForLlm({
+      ...base,
+      masks: [{ slotName: "subject_1", rawText: "unrelated person" }],
+    }).ok).toBe(false);
+  });
+  it("masks known entities in untyped evidence values before tokenization", () => {
+    const r = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `Review ${RAW.name}`,
+      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      masks: [{ slotName: "subject_1", rawText: RAW.name }],
+      evidence: { note: `${RAW.name} requested a review` },
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(JSON.stringify(r.value.context.value)).not.toContain(RAW.name);
+      expect(JSON.stringify(r.value.context.value)).toContain("{{subject_1}}");
+    }
   });
 });
