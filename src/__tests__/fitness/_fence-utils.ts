@@ -159,16 +159,12 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   return refs;
 }
 
-/** Every statically resolvable module specifier in a source file. */
-export function importSpecifiers(sf: SourceFile): string[] {
-  return moduleReferences(sf).flatMap((ref) => (ref.specifier === null ? [] : [ref.specifier]));
-}
-
 export interface LayerViolation {
   file: string;
+  line: number;
   specifier: string;
   fromLayer: Layer;
-  toLayer: Layer;
+  toLayer: Layer | "unresolved";
 }
 
 /**
@@ -180,14 +176,31 @@ export function detectLayerViolations(project: Project): LayerViolation[] {
   const violations: LayerViolation[] = [];
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
-    if (filePath.includes("/__tests__/")) continue;
     const fromLayer = layerOfPath(filePath);
     if (!fromLayer) continue;
-    for (const spec of importSpecifiers(sf)) {
-      const toLayer = specifierToLayer(filePath, spec);
+    for (const ref of moduleReferences(sf)) {
+      if (ref.specifier === null) {
+        if (fromLayer !== "app") {
+          violations.push({
+            file: relative(REPO_ROOT, filePath),
+            line: ref.line,
+            specifier: `<non-literal ${ref.kind}>`,
+            fromLayer,
+            toLayer: "unresolved",
+          });
+        }
+        continue;
+      }
+      const toLayer = specifierToLayer(filePath, ref.specifier);
       if (!toLayer) continue;
       if (RANK[toLayer] > RANK[fromLayer]) {
-        violations.push({ file: relative(REPO_ROOT, filePath), specifier: spec, fromLayer, toLayer });
+        violations.push({
+          file: relative(REPO_ROOT, filePath),
+          line: ref.line,
+          specifier: ref.specifier,
+          fromLayer,
+          toLayer,
+        });
       }
     }
   }
@@ -205,7 +218,7 @@ export function detectContractsExternalImportViolations(project: Project): Contr
   const violations: ContractsExternalImportViolation[] = [];
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
-    if (filePath.includes("/__tests__/") || layerOfPath(filePath) !== "contracts") continue;
+    if (layerOfPath(filePath) !== "contracts") continue;
     for (const ref of moduleReferences(sf)) {
       const specifier = ref.specifier;
       if (specifier !== null && specifierToLayer(filePath, specifier) !== null) continue;

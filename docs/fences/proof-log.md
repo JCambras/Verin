@@ -80,7 +80,29 @@ src/contracts/_adv_alias_traversal.ts:1
 ```
 **Revert (extension):** deleted the injected file; the focused dependency fence passed all 15 tests.
 
-**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-043).
+**Extension (review findings F17-F18):** the shared detector now fails closed on non-literal dynamic
+`import()` and `require()` references in inner layers, and it no longer exempts nested `__tests__`
+directories that the shipped-source discovery includes. Before the implementation changed, four focused
+companions reproduced the bypasses:
+```
+× non-literal dynamic import() fails closed in an inner layer
+× non-literal require() fails closed in an inner layer
+× nested __tests__ paths remain subject to layer enforcement
+× nested __tests__ paths remain subject to the contracts external allowlist
+```
+Real-tree injections then proved all four forms after the fix:
+```
+dependency-rule violations:
+src/domain/_adv_unresolved_dynamic.ts:4: domain -> unresolved (<non-literal dynamic-import>)
+src/domain/_adv_unresolved_dynamic.ts:5: domain -> unresolved (<non-literal require>)
+src/contracts/__tests__/_adv_nested_test.ts:2: contracts -> infrastructure (@infra/store/db)
+
+contracts external-import violations:
+src/contracts/__tests__/_adv_nested_test.ts:1 (react)
+```
+**Revert (extension):** deleted both injected files; the focused dependency fence passed all 19 tests.
+
+**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-043/D-044).
 
 ## PF-003 · no-process-env · `src/__tests__/fitness/no-process-env.test.ts`
 **Invariant (ADR-0003):** `process.env` only in `infrastructure/config`. **Injection:** `src/domain/_adv_env.ts`
