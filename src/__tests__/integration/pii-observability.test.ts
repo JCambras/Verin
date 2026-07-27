@@ -75,6 +75,14 @@ describe("logs never carry raw names or account numbers", () => {
     expect(out).not.toContain("dbpassword");
     expect(out).toContain(REDACTED);
   });
+  it("the production logger rejects single names under generic keys", () => {
+    const { lines, logger } = makeSink();
+    logger.info({ customer: "Alice" }, "Alice");
+    const out = lines.join("");
+    expect(out).not.toContain("Alice");
+    expect(out).toContain(REDACTED);
+    expect(out).toContain("log event");
+  });
 });
 
 describe("traces never carry raw names or account numbers", () => {
@@ -151,5 +159,16 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.customer).toBe(REDACTED);
     expect(span!.attributes.reference).toBe(REDACTED);
     expect(span!.attributes.apiKey).toBe(REDACTED);
+  });
+
+  it("generic trace keys cannot carry single names", async () => {
+    await withSpan("test.single-name", { customer: "Alice" }, async () => undefined);
+    const span = [...recentSpans()].reverse().find((s) => s.name === "test.single-name");
+    expect(span!.attributes.customer).toBe(REDACTED);
+  });
+
+  it("dynamic trace names are statically mapped", async () => {
+    await withSpan("Alice", {}, async () => undefined);
+    expect(recentSpans().at(-1)?.name).toBe("operation");
   });
 });

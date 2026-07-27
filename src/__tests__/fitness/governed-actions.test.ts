@@ -4,9 +4,10 @@ import {
   Node,
   SyntaxKind,
   type CallExpression,
-  type FunctionDeclaration,
   type Project,
+  type Signature,
   type Statement,
+  type SourceFile,
   type Type,
 } from "ts-morph";
 import {
@@ -45,7 +46,9 @@ interface GovernedSink {
   readonly file: string;
   readonly name: string;
   readonly action: string;
-  readonly declaration: FunctionDeclaration;
+  readonly declaration: Node;
+  readonly signature: Signature;
+  readonly anchors: readonly Node[];
 }
 
 interface GovernedRouteEntry {
@@ -78,8 +81,15 @@ function governedSinkForCall(
   call: CallExpression,
   sinks: readonly GovernedSink[],
 ): GovernedSink | null {
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
   return sinks.find((sink) =>
-    callResolvesTo(call, sink.file, sink.name)
+    target?.getDeclarations().some((declaration) =>
+      sink.anchors.some((anchor) =>
+        declaration.getSourceFile() === anchor.getSourceFile() &&
+        declaration.getStart() === anchor.getStart()
+      )
+    )
   ) ?? null;
 }
 
@@ -193,27 +203,38 @@ function governedOutputAction(type: Type): string | null {
   return null;
 }
 
-function actionGrantAction(fn: FunctionDeclaration): string | null {
-  for (const parameter of fn.getParameters()) {
+function actionGrantAction(signature: Signature): string | null {
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) continue;
     for (const action of V3_15_3_ACTIONS) {
-      if (actionGrantParameter(parameter.getType(), action)) return action;
+      if (
+        actionGrantParameter(parameter.getTypeAtLocation(declaration), action)
+      ) {
+        return action;
+      }
     }
   }
   return null;
 }
 
-function hasTenantBoundaryParameter(fn: FunctionDeclaration): boolean {
-  return fn.getParameters().some((parameter) =>
-    declaredAs(parameter.getType(), "src/contracts/tenant.ts", "TenantContext") ||
-    declaredAs(parameter.getType(), "src/contracts/principal.ts", "WriteActor") ||
-    declaredAs(parameter.getType(), "src/contracts/authz.ts", "ActionGrant")
-  );
+function hasTenantBoundaryParameter(signature: Signature): boolean {
+  return signature.getParameters().some((parameter) => {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) return false;
+    const type = parameter.getTypeAtLocation(declaration);
+    return declaredAs(type, "src/contracts/tenant.ts", "TenantContext") ||
+      declaredAs(type, "src/contracts/principal.ts", "WriteActor") ||
+      declaredAs(type, "src/contracts/authz.ts", "ActionGrant");
+  });
 }
 
-function mutatesPersistence(fn: FunctionDeclaration): boolean {
-  const body = fn.getBodyText() ?? "";
+function mutatesPersistence(declaration: Node): boolean {
+  const body = declaration.getText();
   return /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b/i.test(body) ||
-    fn.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
+    declaration.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
       callResolvesTo(
         call,
         "src/infrastructure/audit/audited-write.ts",
@@ -222,27 +243,111 @@ function mutatesPersistence(fn: FunctionDeclaration): boolean {
     );
 }
 
+interface ExportedCallable {
+  readonly name: string;
+  readonly declaration: Node;
+  readonly signature: Signature;
+  readonly anchors: readonly Node[];
+}
+
+function objectCallables(
+  expression: Node,
+  owner: string,
+): ExportedCallable[] {
+  if (!Node.isObjectLiteralExpression(expression)) return [];
+  const callables: ExportedCallable[] = [];
+  for (const property of expression.getProperties()) {
+    if (Node.isMethodDeclaration(property)) {
+      callables.push({
+        name: `${owner}.${property.getName()}`,
+        declaration: property,
+        signature: property.getSignature(),
+        anchors: [property],
+      });
+      continue;
+    }
+    if (!Node.isPropertyAssignment(property)) continue;
+    const initializer = property.getInitializer();
+    if (!initializer ||
+      (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer))) {
+      continue;
+    }
+    callables.push({
+      name: `${owner}.${property.getName()}`,
+      declaration: initializer,
+      signature: initializer.getSignature(),
+      anchors: [property, initializer],
+    });
+  }
+  return callables;
+}
+
+function exportedCallables(sf: SourceFile): ExportedCallable[] {
+  const callables: ExportedCallable[] = [];
+  for (const fn of sf.getFunctions().filter((candidate) => candidate.isExported())) {
+    const name = fn.getName();
+    if (!name) continue;
+    callables.push({
+      name,
+      declaration: fn,
+      signature: fn.getSignature(),
+      anchors: [fn],
+    });
+  }
+  for (const variable of sf.getVariableDeclarations().filter((candidate) =>
+    candidate.isExported()
+  )) {
+    const initializer = variable.getInitializer();
+    if (!initializer) continue;
+    if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) {
+      callables.push({
+        name: variable.getName(),
+        declaration: initializer,
+        signature: initializer.getSignature(),
+        anchors: [variable, initializer],
+      });
+      continue;
+    }
+    callables.push(...objectCallables(initializer, variable.getName()));
+  }
+  for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
+    for (const method of cls.getMethods()) {
+      if (method.getScope() === "private" || method.getScope() === "protected") continue;
+      callables.push({
+        name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
+        declaration: method,
+        signature: method.getSignature(),
+        anchors: [method],
+      });
+    }
+  }
+  for (const assignment of sf.getExportAssignments()) {
+    callables.push(...objectCallables(assignment.getExpression(), "default"));
+  }
+  return callables;
+}
+
 export function deriveGovernedSinks(project: Project): GovernedSink[] {
   const sinks: GovernedSink[] = [];
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
     if (!file.startsWith("src/infrastructure/")) continue;
-    for (const fn of sf.getFunctions().filter((candidate) => candidate.isExported())) {
-      const name = fn.getName();
-      if (!name) continue;
-      const grantAction = actionGrantAction(fn);
-      const outputAction = governedOutputAction(fn.getReturnType());
+    for (const callable of exportedCallables(sf)) {
+      const grantAction = actionGrantAction(callable.signature);
+      const outputAction = governedOutputAction(callable.signature.getReturnType());
       const returnsPii = containsDeclaredType(
-        fn.getReturnType(),
+        callable.signature.getReturnType(),
         "src/contracts/pii.ts",
         "PIIBearing",
       );
       const inferredAction = outputAction ??
-        (returnsPii && hasTenantBoundaryParameter(fn) && !mutatesPersistence(fn)
+        (returnsPii &&
+          hasTenantBoundaryParameter(callable.signature) &&
+          !mutatesPersistence(callable.declaration)
           ? "pii.view"
           : null);
       const action = inferredAction ?? grantAction;
-      if (action) sinks.push({ file, name, action, declaration: fn });
+      if (action) sinks.push({ file, action, ...callable });
     }
   }
   return sinks;
@@ -251,12 +356,23 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out: string[] = [];
   for (const sink of deriveGovernedSinks(project)) {
-    const fn = sink.declaration;
-    const grant = fn?.getParameters().find((parameter) =>
-      actionGrantParameter(parameter.getType(), sink.action)
-    );
-    const body = fn?.getBody();
-    if (!fn?.isExported() || !Node.isBlock(body) || !grant) {
+    const grant = sink.signature.getParameters().find((parameter) => {
+      const declaration = parameter.getValueDeclaration() ??
+        parameter.getDeclarations()[0];
+      return Boolean(declaration &&
+        actionGrantParameter(
+          parameter.getTypeAtLocation(declaration),
+          sink.action,
+        ));
+    });
+    const declaration = sink.declaration;
+    const body = Node.isFunctionDeclaration(declaration) ||
+        Node.isMethodDeclaration(declaration) ||
+        Node.isArrowFunction(declaration) ||
+        Node.isFunctionExpression(declaration)
+      ? declaration.getBody()
+      : undefined;
+    if (!Node.isBlock(body) || !grant) {
       out.push(
         `${sink.file} :: ${sink.name}: boundary must require ActionGrant<"${sink.action}">`,
       );
@@ -729,6 +845,39 @@ describe("governed-actions fence (v3 §15.3)", () => {
       });
       expect(detectUnguardedGovernedSinks(project)).toEqual([
         `src/infrastructure/new-adapter/repository.ts :: loadClients: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+    it("derives PII read sinks from arrow, object, and class callables", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `
+          export interface PIIBearing { readonly pii?: "bearing" }
+        `,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+        `,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface ClientRecord extends PIIBearing { fullName: string }
+          export const loadClients = async (
+            tenant: TenantContext,
+          ): Promise<ClientRecord[]> => [{ fullName: tenant.orgId }];
+          export const clientRepo = {
+            listClients(tenant: TenantContext): ClientRecord[] {
+              return [{ fullName: tenant.orgId }];
+            },
+          };
+          export class ClientStore {
+            load(tenant: TenantContext): ClientRecord[] {
+              return [{ fullName: tenant.orgId }];
+            }
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/new-adapter/repository.ts :: loadClients: boundary must require ActionGrant<"pii.view">`,
+        `src/infrastructure/new-adapter/repository.ts :: clientRepo.listClients: boundary must require ActionGrant<"pii.view">`,
+        `src/infrastructure/new-adapter/repository.ts :: ClientStore.load: boundary must require ActionGrant<"pii.view">`,
       ]);
     });
     it("derives audit-export sinks from governed output markers", () => {

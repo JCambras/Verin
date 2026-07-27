@@ -1467,3 +1467,87 @@ budget, audit-chain verification, the license audit, and the high-severity
 dependency audit.
 
 **Date:** 2026-07-27 (sixth review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 7 (2026-07-27)
+
+All five findings reproduced against the vulnerable implementation. Seven new
+runtime and companion assertions failed before the fixes. Three fresh source
+injections then proved the hardened tenant, governed-action, and LLM
+reachability fences.
+
+### Complete deterministic sensitive-entity resolution
+
+Projection no longer accepts `resolvedEntities`. The domain resolver derives
+subjects and account references from the complete request and evidence
+payload, matches them exactly to sensitive slots, and the projection scans
+every key and primitive leaf after masking.
+
+```
+# before caller-provided bindings were removed:
+× refuses an account binding that leaves a resolver-ambiguous person name
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:307
+× refuses unclassified numeric evidence leaves
+  AssertionError: expected true to be false
+  src/__tests__/unit/llm-boundary.test.ts:321
+```
+
+### Closed observability strings
+
+Log fields, log messages, trace attributes, and trace names now admit only
+field-specific operational values. Everything else maps to a static sentinel.
+
+```
+# before the closed observability vocabulary:
+× the production logger rejects single names under generic keys
+  expected output not to contain "Alice"
+  src/__tests__/integration/pii-observability.test.ts:82
+× generic trace keys cannot carry single names
+  expected "Alice" to be "[REDACTED]"
+  src/__tests__/integration/pii-observability.test.ts:166
+```
+
+### PF-027 factory-returned repository guards
+
+The direct `assertTenantContext(tenant)` call was removed from the real
+`makeExecutionStore().loadById` implementation. The factory remained reviewed
+and the domain port signature remained scoped.
+
+```
+× enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+  src/infrastructure/store/execution-store.ts :: makeExecutionStore.loadById
+  repository callable does not assert its sealed tenant authority before SQL access
+  src/__tests__/fitness/tenant-context-required.test.ts:563
+```
+
+### PF-030 governed callable forms
+
+An exported arrow returning `Promise<Household[]>` and accepting only
+`TenantContext` was planted in the real house-CRM adapter.
+
+```
+× enforces: governed sinks validate action-scoped grants at their execution boundaries
+  src/infrastructure/crm/house-crm.ts :: unsafeHouseholdRead:
+  boundary must require ActionGrant<"pii.view">
+  src/__tests__/fitness/governed-actions.test.ts:660
+```
+
+### PF-029 unwrapped opaque LLM exports
+
+An exported `unsafeOpaque(): unknown` was planted in the scrub module already
+reachable from `infrastructure/llm`.
+
+```
+× enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it
+  src/infrastructure/llm/request-schema.ts reaches unverifiable opaque export
+  src/infrastructure/pii/scrub.ts :: unsafeOpaque.return
+  src/__tests__/fitness/llm-pii-boundary.test.ts:730
+```
+
+**Revert:** every planted source violation was removed. Final validation passed
+type checking, lint, Knip, all 475 repository tests, all 17 Playwright and axe
+checks, the production build, all active v3 invariants, all 16 golden cases,
+the load budget, audit-chain verification, the license audit, and the
+high-severity dependency audit.
+
+**Date:** 2026-07-27 (seventh review-fix round on v3 build-sequence prompt 6).

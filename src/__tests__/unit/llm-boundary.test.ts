@@ -113,29 +113,28 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
 });
 
 describe("the evidence-to-LLM projection scrubs at the boundary", () => {
-  it("rejects malformed resolved-entity input", () => {
-    for (const resolvedEntities of [null, [null], [{ slotId: SLOT_1, slotType: "subject", rawValues: null }]]) {
-      const result = projectForLlm({
-        purpose: "intent-shaping",
-        requestText: `Open an account for ${RAW.name}`,
-        slots: [{ slotId: SLOT_1, slotType: "subject" }],
-        resolvedEntities: resolvedEntities as never,
-        evidence: {},
-      });
+  it("rejects malformed projection input", () => {
+    const base = {
+      purpose: "intent-shaping" as const,
+      requestText: `Open an account for ${RAW.name}`,
+      slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
+      evidence: {},
+    };
+    for (const input of [
+      { ...base, requestText: null },
+      { ...base, slots: [null] },
+      { ...base, evidence: null },
+    ]) {
+      const result = projectForLlm(input as never);
       expect(result.ok).toBe(false);
     }
   });
 
-  it("masks known entities into slot placeholders and scrubs the rest (v3 §15.1 stage 1)", () => {
+  it("derives sensitive entities into slot placeholders and scrubs the rest (v3 §15.1 stage 1)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }, { slotId: SLOT_2, slotType: "amount" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: [RAW.name],
-      }],
       evidence: { household: { name: RAW.name }, ssn: RAW.ssn, plannedWithdrawals: 12000 },
     });
     expect(r.ok).toBe(true);
@@ -151,12 +150,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name.toLowerCase()}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: [RAW.name],
-      }],
-      evidence: {},
+      evidence: { household: { name: RAW.name } },
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -167,12 +161,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name}`,
-      slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: "$&",
-        slotType: "subject",
-        rawValues: [RAW.name],
-      }],
+      slots: [{ slotId: "$&", slotType: "subject" }],
       evidence: {},
     });
     expect(r.ok).toBe(false);
@@ -189,16 +178,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
         { slotId: SLOT_1, slotType: "subject" },
         { slotId: SLOT_2, slotType: "subject" },
       ],
-      resolvedEntities: [{
-          slotId: SLOT_2,
-          slotType: "subject",
-          rawValues: ["Adaeze"],
-        }, {
-          slotId: SLOT_1,
-          slotType: "subject",
-          rawValues: [RAW.name],
-        }],
-      evidence: {},
+      evidence: { name: RAW.name, firstName: "Adaeze" },
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -211,7 +191,6 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "John Smith account 941000517334",
       slots: [],
-      resolvedEntities: [],
       evidence: { note: "John Smith account 941000517334" },
     });
     expect(r.ok).toBe(false);
@@ -228,10 +207,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
       evidence: {},
     };
-    expect(projectForLlm({
-      ...base,
-      resolvedEntities: [],
-    }).ok).toBe(false);
+    expect(projectForLlm(base).ok).toBe(false);
     expect(projectForLlm({
       ...base,
       resolvedEntities: [{
@@ -239,7 +215,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
         slotType: "subject",
         rawValues: ["unrelated person"],
       }],
-    }).ok).toBe(false);
+    } as never).ok).toBe(false);
   });
   it("refuses incomplete or type-inconsistent resolution and masks single-word names", () => {
     const base = {
@@ -250,29 +226,18 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     };
     expect(projectForLlm({
       ...base,
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["account"],
-      }],
+      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
     }).ok).toBe(false);
     expect(projectForLlm({
       ...base,
-      resolvedEntities: null as never,
+      slots: [],
     }).ok).toBe(false);
     expect(projectForLlm({
       ...base,
       masks: [{ slotId: SLOT_1, rawText: "account" }],
     } as never).ok).toBe(false);
 
-    const result = projectForLlm({
-      ...base,
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["Alice"],
-      }],
-    });
+    const result = projectForLlm(base);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.maskedText.value).toBe("{{slot_0001}} wants account");
@@ -283,12 +248,25 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "Alice sends to Bob account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["Alice"],
-      }],
       evidence: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+  it("refuses an account binding that leaves a resolver-ambiguous person name", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Ira wants 401",
+      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
+      evidence: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+  it("refuses unclassified numeric evidence leaves", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Review Alice",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { reference: 941000517334 },
     });
     expect(result.ok).toBe(false);
   });
@@ -297,11 +275,6 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "alice wants Bob account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["Bob"],
-      }],
       evidence: {},
     });
     expect(result.ok).toBe(false);
@@ -311,45 +284,45 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: "Alice uses account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["account"],
-      }],
       evidence: {},
     });
     expect(result.ok).toBe(false);
   });
-  it("refuses resolved entity values retained in evidence keys", () => {
+  it("masks resolved entity values retained in evidence keys", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
       requestText: "Review Alice",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: ["Alice"],
-      }],
       evidence: { Alice: "requested review" },
     });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.keys(result.value.context.value)).toEqual(["{{slot_0001}}"]);
+    }
   });
   it("masks known entities in untyped evidence values before tokenization", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Review ${RAW.name}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
-      resolvedEntities: [{
-        slotId: SLOT_1,
-        slotType: "subject",
-        rawValues: [RAW.name],
-      }],
       evidence: { note: `${RAW.name} requested a review` },
     });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(JSON.stringify(r.value.context.value)).not.toContain(RAW.name);
       expect(JSON.stringify(r.value.context.value)).toContain("{{slot_0001}}");
+    }
+  });
+  it("derives account references from the complete payload", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Review account 401",
+      slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("Review account {{slot_0001}}");
     }
   });
 });
