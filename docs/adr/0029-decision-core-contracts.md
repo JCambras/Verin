@@ -58,10 +58,13 @@ parse time, not by reviewer discipline. Three constraints meet here:
   and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
   not only in the hash projection. The parsed bundle remains deeply frozen.
 - **Time-zone registry versions are a MAP, and the map is CONSULTED:** `timeZoneDataVersion` is an
-  enum derived from the keys of a supported-registry map (`iana-tzdb/2026b` is the only shipped
+  enum derived from the keys of a supported-release map (`iana-tzdb/2026b` is the only shipped
   entry), and the map's VALUES decide validity: a bundle's `timeZone` is checked against the
   registry that bundle's own recorded version names, while the standalone `TimeZone` admits the
-  union of every supported registry. Both halves are needed. A single-version literal would make
+  union of every supported registry. Each entry carries BOTH halves of its release - the canonical
+  `Zone` names AND that release's own `Link` alias table - because tzdb moves names between them; a
+  single un-versioned alias table could not follow an adoption that adds "its version key +
+  registries" (plural). Both halves are needed. A single-version literal would make
   every persisted bundle unparseable the day a newer release ships; a `TimeZone` closed over only
   the newest registry would do the same to any bundle naming a `Zone` the newer release demoted to
   a `Link` (tzdb does this routinely - `America/Nipigon`, `America/Godthab`, `Europe/Uzhgorod`) -
@@ -74,14 +77,19 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - **Link aliases canonicalize at the CONFIGURATION boundary, never at the replay boundary:** the
   pinned release's 257 `Link` names are SHA-256-locked in their own registry alongside the 341
   `Zone` names, resolved to their canonical `Zone` target. `FIRM_TIMEZONE` therefore accepts any of
-  the 598 identifiers of `iana-tzdb/2026b` - including long-legal spellings such as `UTC`,
-  `US/Eastern`, `Asia/Calcutta`, `Europe/Kiev`, and `Africa/Accra` - and stores only the canonical
-  `Zone` (`Etc/UTC`, `America/New_York`, `Asia/Kolkata`, `Europe/Kyiv`, `Africa/Abidjan`).
-  `TimeZone` itself stays closed over supported-registry `Zone` names (341 today), so one zone still
+  the 598 identifiers of the CURRENT release (`iana-tzdb/2026b` today) - including long-legal
+  spellings such as `UTC`, `US/Eastern`, `Asia/Calcutta`, `Europe/Kiev`, and `Africa/Accra` - and
+  stores only the canonical `Zone` (`Etc/UTC`, `America/New_York`, `Asia/Kolkata`, `Europe/Kyiv`,
+  `Africa/Abidjan`). NEW configuration is held to the CURRENT release, NOT to the cross-release
+  union `TimeZone` admits: a new bundle stamps the CURRENT version, so a configured `Zone` that only
+  an older supported release shipped would boot and then fail at every bundle parse - fail-late,
+  where charter #7's config discipline is fail-closed at boot. Reading an already-persisted record
+  and accepting a new operator value are two boundaries, and only the first spans releases.
+  `TimeZone` itself stays closed over supported-release `Zone` names (341 today), so one zone still
   has exactly one persisted and hashed spelling. **Migration:** no deployment action is required - a
   `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
   its canonical Zone rather than failing closed. `TimeZone` is branded and `timeZoneDataVersion` is
-  typed by the registry map's key union, so neither a bare `string` nor an unshipped version string
+  typed by the release map's key union, so neither a bare `string` nor an unshipped version string
   can reach a replay field without parsing.
 - **Tenant-owned links:** domain configuration, evidence source, policy, instruction version, evidence
   snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target,
@@ -111,6 +119,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   component), so it would admit `PT-1H` as positive the day that profile widens. Every approval or
   specialist-review stage instantiated on a decision expires later than that decision's recorded
   creation timestamp.
+- **Evidence chronology:** an `EvidenceSnapshotRef` cannot claim it was retrieved BEFORE the
+  observation it records (`retrievedAt >= observedAt`; equality is legal - a source whose as-of
+  instant is its fetch instant is ordinary). The pair is a hash-bound immutable decision input and
+  the `fresh`/`stale`/`unknown` label is derived from it, so an inverted pair is an illegal state,
+  not a lenient one.
 - **One comparator, one uniqueness rule for tenant-scoped references:** `contracts/decision-core/ids.ts`
   exports THE canonical `{firmId, id}` order (firm, then opaque id) and THE set-identity helper.
   Role sets, evidence-supplier sets, execution collections, replay collections, and both hash
@@ -136,9 +149,13 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2300** (measured 2226 after the
-  version-pinned shared IANA Zone/Link registries and complete review hardening). The ratchet-down doctrine resumes from 2300; later contract-layer prompts
-  (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2324** after the
+  version-keyed IANA release map, the release-scoped configuration boundary, and complete review
+  hardening - **76 lines of headroom**). The prior 2300 left 15 lines, which is a ceiling that
+  blocks the next edit of any size rather than one that budgets a layer. The ratchet-down doctrine
+  resumes from 2400; later contract-layer prompts
+  (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
+  is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
   their owning prompts: policy AST + PolicyRuleId (9), typed ledger events + LedgerEntryId +
@@ -161,11 +178,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 2300 (a real growth, honestly sized and ratcheted).
+  grew 600 → 2400 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 2300 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 2400 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
   its enclosing tenant.

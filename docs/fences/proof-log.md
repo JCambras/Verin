@@ -1375,3 +1375,41 @@ compensation target) still fails - one layer down, where the rule is stated once
 **Revert:** restored the check; the tenant-scope, external-action, and illegal-state fences pass.
 
 **Date:** 2026-07-27 (review correction F60, D-052).
+
+### PF-027 extension · the configuration boundary is release-scoped, and evidence chronology holds
+**Invariant (charter #1/#4/#7; ADR-0029, D-053):** NEW `FIRM_TIMEZONE` configuration is validated
+against the CURRENT release only; each release's `Link` table travels with its own `Zone` list; an
+evidence snapshot cannot be retrieved before the observation it records.
+
+With one shipped release the config boundary and the cross-release union are the SAME set, so both
+timezone arms were proven on constructed conditions rather than on the shipped map alone.
+
+Widening the config factory back to the union (`TimeZoneSchema`) failed on the constructed pair:
+```
+× holds NEW configuration to the CURRENT release, proven on a constructed two-release pair
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:415  configuredTimeZoneSchema(newer).safeParse("America/Nipigon")
+```
+The SHIPPED half is unreachable today by construction (one release ⇒ union IS the current release), so
+its emptiness is asserted rather than left implied. To prove that arm is not hollow, a synthetic older
+release was ADOPTED - the map's documented growth path - and only `LinkResolvedTimeZoneSchema` widened
+to the union, leaving the factory correct. The same test failed on the now-live arm:
+```
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:429  LinkResolvedTimeZoneSchema.safeParse(zone)
+```
+Resolving aliases through one un-versioned table instead of the release's own failed:
+```
+AssertionError: expected 'America/Toronto' to be 'America/Nipigon' // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:407  configuredTimeZoneSchema(older).parse("Canada/Eastern")
+```
+Removing the chronology guard failed, while its companion holds that equality and ordinary ordering
+still parse - so the rejection is attributable to the inversion, not to a reject-everything schema:
+```
+× rejects an evidence snapshot retrieved BEFORE the observation it records
+AssertionError: expected true to be false // Object.is equality
+```
+**Revert:** restored the release-scoped factories, the shipped current-release boundary, the per-release
+alias table, and the chronology refinement; typecheck, lint, knip, and the full suite pass.
+
+**Date:** 2026-07-27 (review corrections F62-F64, D-053).

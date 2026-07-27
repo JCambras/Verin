@@ -14,10 +14,13 @@ const schema = z
     nodeEnv: z.enum(["development", "production", "test"]).default("development"),
     appEnv: z.enum(["development", "staging", "production"]).default("development"),
     appUrl: z.string().url().default("http://localhost:3000"),
-    // Accepts any identifier from the pinned tzdb registry INCLUDING its Link
-    // aliases (UTC, US/Eastern, Asia/Calcutta, ...), and resolves each alias to its
-    // canonical Zone. Only the canonical Zone is ever stored or hashed, so replay
-    // bytes stay single-valued while an operator keeps the name they already use.
+    // Accepts any identifier of the CURRENT tzdb release INCLUDING its Link aliases
+    // (UTC, US/Eastern, Asia/Calcutta, ...), and resolves each alias to its canonical
+    // Zone. Only the canonical Zone is ever stored or hashed, so replay bytes stay
+    // single-valued while an operator keeps the name they already use. Current
+    // release, not the cross-release union a persisted bundle may be read against:
+    // a new bundle stamps the current version, so a zone only an older release
+    // shipped must fail HERE, at boot, not later at every bundle parse.
     firmTimezone: LinkResolvedTimeZoneSchema.default(DEFAULT_FIRM_TIME_ZONE),
     store: z.object({
       driver: z.enum(["pglite", "postgres"]).default("pglite"),
