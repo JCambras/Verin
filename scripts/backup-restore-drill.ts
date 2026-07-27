@@ -8,6 +8,7 @@ import { createMemoryDb, createDbFromDump } from "../src/infrastructure/store/db
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 import { countOrgChain, verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemWriteActor } from "../src/contracts/principal";
+import { errorMessage } from "./error-message";
 
 async function main(): Promise<void> {
   const t0 = performance.now();
@@ -69,6 +70,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  process.stderr.write(`backup-restore drill error: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`backup-restore drill error: ${errorMessage(e)}\n`);
   process.exit(1);
 });

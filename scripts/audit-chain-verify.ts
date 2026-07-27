@@ -9,6 +9,7 @@
 import { createDb } from "../src/infrastructure/store/db";
 import { verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemTenant } from "../src/contracts/tenant";
+import { errorMessage } from "./error-message";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -43,6 +44,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  process.stderr.write(`audit-chain-verify error: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`audit-chain-verify error: ${errorMessage(e)}\n`);
   process.exit(1);
 });

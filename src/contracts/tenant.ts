@@ -1,14 +1,12 @@
 /**
  * TenantContext (v3 §15.2; ADR-0026: FirmId ≡ org_id at the store layer). Every
  * repository read and port call requires one — the tenant-context-required fence
- * enforces the signatures; this module enforces construction. Sealed two ways:
- * a compile-time unique-symbol brand (an object literal cannot satisfy it, so a
- * missing tenant context does not COMPILE) and a runtime module-private seal
- * (a cast or JSON-deserialized impostor fails assertTenantContext inside the
- * repository, so it does not PARSE either). Minted in exactly two places: from
- * an authenticated Principal (tenantOf) and for named system actors
- * (systemTenant). The simplified Phase 1 identity provider sits BELOW this seam
- * (ADR-0008), so swapping it later never moves the boundary.
+ * enforces the signatures; this module enforces construction. Sealed twice: a
+ * unique-symbol brand (a missing tenant context does not COMPILE) and a runtime
+ * module-private seal (a cast or deserialized impostor fails assertTenantContext
+ * inside the repository, so it does not PARSE either). Minted only from an
+ * authenticated Principal (tenantOf) or for a named system actor (systemTenant).
+ * The Phase 1 identity provider sits BELOW this seam (ADR-0008).
  */
 import { assertPrincipal, type Principal } from "./principal";
 import { appError } from "./errors";
@@ -27,6 +25,12 @@ export interface TenantContext {
 const SEAL = Symbol("verin.tenant-context.seal");
 const TENANT_CONTEXTS = new WeakSet<object>();
 
+/**
+ * The PRODUCTION system-actor allowlist. This is load-bearing authority, not
+ * vocabulary: systemTenant refuses anything unlisted and assertWriteActor
+ * accepts whatever it mints, so a shipped id here can attribute audit entries in
+ * a real tenant's hash chain. Every entry has a real production or script caller.
+ */
 export const SYSTEM_ACTOR_IDS = [
   "audit-chain-verify",
   "backup-restore-drill",
@@ -35,10 +39,24 @@ export const SYSTEM_ACTOR_IDS = [
   "login-constant-work",
   "load-smoke",
   "seed",
-  "test",
 ] as const;
 
 export type SystemActorId = (typeof SYSTEM_ACTOR_IDS)[number];
+
+/**
+ * Test-only injection point, mirroring registerTestSpanName. The reserved
+ * `test` namespace is enforced here, and the tokenized-factory-only fence proves
+ * no shipped module calls this (keyed on symbol resolution, so an aliased import
+ * cannot evade it) — so test fixtures can never widen production authority.
+ */
+const TEST_SYSTEM_ACTOR_IDS = new Set<string>();
+export function registerTestSystemActor(id: string): SystemActorId {
+  if (!/^test(?:[.-][a-z0-9]+)*$/.test(id)) {
+    throw appError("VALIDATION", "A test system actor must live in the reserved 'test' namespace.");
+  }
+  TEST_SYSTEM_ACTOR_IDS.add(id);
+  return id as SystemActorId;
+}
 
 function mint(orgId: string, actor: TenantContext["actor"]): TenantContext {
   if (typeof orgId !== "string" || orgId.length === 0) {
@@ -66,13 +84,9 @@ export function tenantFromIdentity(actorId: string, orgId: string): TenantContex
   return mint(orgId, { kind: "human", actorId });
 }
 
-/**
- * Tenant scope for a named SYSTEM actor (esign-webhook finalize, seed, chain
- * verification). `systemId` forces every mint site to name the system it acts
- * as, with the same attribution retained in the sealed context.
- */
+/** Tenant scope for a named SYSTEM actor: every mint site names the system it acts as. */
 export function systemTenant(systemId: SystemActorId, orgId: string): TenantContext {
-  if (!SYSTEM_ACTOR_IDS.includes(systemId)) {
+  if (!SYSTEM_ACTOR_IDS.includes(systemId) && !TEST_SYSTEM_ACTOR_IDS.has(systemId)) {
     throw appError("INTERNAL", "A system tenant mint must name a registered system actor.");
   }
   return mint(orgId, { kind: "system", actorId: systemId });
@@ -82,11 +96,7 @@ export function isTenantContext(value: unknown): value is TenantContext {
   return typeof value === "object" && value !== null && TENANT_CONTEXTS.has(value);
 }
 
-/**
- * Runtime backstop ("missing tenant context cannot parse"): repositories assert
- * before touching SQL, so an impostor that evaded the compiler via a cast or
- * arrived deserialized is refused with a typed error instead of querying.
- */
+/** Runtime backstop: repositories assert before SQL, so an impostor is refused, not queried. */
 export function assertTenantContext(value: unknown): asserts value is TenantContext {
   if (!isTenantContext(value)) {
     throw appError("INTERNAL", "Not a sealed TenantContext — mint via tenantOf/systemTenant.");

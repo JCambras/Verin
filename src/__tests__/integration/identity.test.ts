@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { systemTenant } from "@contracts/tenant";
+import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser, findUserByEmail, authenticate, createSession } from "@infra/identity/identity-store";
 
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
+
 const ORG = "org-1";
-const TENANT = systemTenant("test", ORG);
+const TENANT = systemTenant(TEST_SYSTEM_ACTOR, ORG);
 
 describe("identity store email canonicalization (integration)", () => {
   let db: SqlDb;
@@ -43,7 +45,7 @@ describe("identity store email canonicalization (integration)", () => {
       createSession(db, other!.tenant, user!, 60),
     ).rejects.toMatchObject({ code: "AUTH_FAILED" });
     await expect(
-      createSession(db, systemTenant("test", "org-2"), user!, 60),
+      createSession(db, systemTenant(TEST_SYSTEM_ACTOR, "org-2"), user!, 60),
     ).rejects.toMatchObject({ code: "AUTH_FAILED" });
     expect(Number((await db.query<{ n: string }>("SELECT count(*) AS n FROM sessions")).rows[0]!.n)).toBe(0);
     const principal = await createSession(db, user!.tenant, user!, 60);

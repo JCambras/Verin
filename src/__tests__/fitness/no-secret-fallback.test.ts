@@ -38,7 +38,12 @@ function committedTextFiles(): Array<{ rel: string; text: string }> {
 
 // Alternation fragment of this fence's own detection regex, not a credential
 // (njsscan's node_secret heuristic flags any *SECRET* variable holding a string).
-const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL)"; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_secret
+// DSN/URL/CONNECTION are in the set because the codebase itself classifies
+// DATABASE_URL as a secret: config/index.ts seals it in a SecretValue and
+// contracts/pii.ts lists `database.?url` / `connection.?string` as PII, so a
+// hardcoded `postgres://user:pw@host/db` fallback is the same defect class.
+const SECRET_NAME = "(SECRET|KEY|TOKEN|PASSWORD|COOKIE|CREDENTIAL|DSN|DATABASE_URL|CONNECTION_STRING)"; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_secret
+const SECRET_NAME_RE = new RegExp(`[A-Z0-9_]*${SECRET_NAME}[A-Z0-9_]*`, "i");
 // Applied to the comment-stripped WHOLE file (\s spans newlines), so wrapping the
 // `??`/`||` fallback across lines is not an evasion.
 const SECRET_FALLBACK_RE = new RegExp(
@@ -61,6 +66,101 @@ export function detectSecretFallback(files: Array<{ rel: string; text: string }>
     if (SECRET_FALLBACK_RE.test(stripped) || SECRET_DESTRUCTURE_RE.test(stripped)) out.push(rel);
   }
   return out;
+}
+
+/**
+ * The SAME invariant, resolved through the AST (charter: AST over regex). The
+ * text regexes above scan every committed file type; this covers the two TS
+ * forms they structurally cannot see — element access
+ * (`process.env["SESSION_SECRET"] ?? "…"`) and destructure-then-default
+ * (`const { SESSION_SECRET } = process.env; SESSION_SECRET ?? "…"`) — inside
+ * src/ and scripts/, where a process.env read can actually occur.
+ */
+const DEFAULTING_OPERATORS = new Set([
+  SyntaxKind.QuestionQuestionToken,
+  SyntaxKind.BarBarToken,
+]);
+
+function isStringishLiteral(node: Node | undefined): boolean {
+  return Boolean(node) && (
+    Node.isStringLiteral(node!) ||
+    Node.isNoSubstitutionTemplateLiteral(node!) ||
+    Node.isTemplateExpression(node!)
+  );
+}
+
+/** Is this node the LEFT operand of a `??`/`||` whose right side is a string literal? */
+function defaultedToLiteral(node: Node): boolean {
+  const parent = node.getParent();
+  if (!parent || !Node.isBinaryExpression(parent)) return false;
+  return DEFAULTING_OPERATORS.has(parent.getOperatorToken().getKind()) &&
+    parent.getLeft() === node &&
+    isStringishLiteral(parent.getRight());
+}
+
+function readsProcessEnv(node: Node): boolean {
+  return Node.isPropertyAccessExpression(node) &&
+    node.getName() === "env" &&
+    node.getExpression().getText() === "process";
+}
+
+export function detectSecretFallbackInCode(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (
+      (!file.startsWith("src/") && !file.startsWith("scripts/")) ||
+      file.includes("/__tests__/")
+    ) continue;
+    const report = (node: Node): void => {
+      out.push(`${file}:${node.getStartLineNumber()}`);
+    };
+    // process.env.X ?? "…"
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+      if (!readsProcessEnv(access.getExpression())) continue;
+      if (SECRET_NAME_RE.test(access.getName()) && defaultedToLiteral(access)) {
+        report(access);
+      }
+    }
+    // process.env["X"] ?? "…"
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
+      if (!readsProcessEnv(access.getExpression())) continue;
+      const argument = access.getArgumentExpression();
+      if (
+        argument &&
+        Node.isStringLiteral(argument) &&
+        SECRET_NAME_RE.test(argument.getLiteralValue()) &&
+        defaultedToLiteral(access)
+      ) {
+        report(access);
+      }
+    }
+    // const { X = "…" } = process.env   /   const { X } = process.env; X ?? "…"
+    for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+      const name = declaration.getNameNode();
+      const initializer = declaration.getInitializer();
+      if (
+        !Node.isObjectBindingPattern(name) ||
+        !initializer ||
+        !readsProcessEnv(initializer)
+      ) continue;
+      for (const element of name.getElements()) {
+        const envName = element.getPropertyNameNode()?.getText() ?? element.getName();
+        if (!SECRET_NAME_RE.test(envName)) continue;
+        if (isStringishLiteral(element.getInitializer())) {
+          report(element);
+          continue;
+        }
+        const bound = element.getNameNode();
+        if (!Node.isIdentifier(bound)) continue;
+        for (const reference of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+          if (reference === bound || reference.getText() !== bound.getText()) continue;
+          if (defaultedToLiteral(reference)) report(reference);
+        }
+      }
+    }
+  }
+  return [...new Set(out)];
 }
 
 export function detectLiveOrgDomain(files: Array<{ rel: string; text: string }>): string[] {
@@ -363,6 +463,26 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
   it("enforces: no secret has a hardcoded fallback", () => {
     const o = detectSecretFallback(files);
     expect(o, `secret fallbacks:\n${o.join("\n")}`).toEqual([]);
+    const ast = detectSecretFallbackInCode(realSemanticProject());
+    expect(ast, `secret fallbacks (AST):\n${ast.join("\n")}`).toEqual([]);
+  });
+
+  it("enforces: SecretValue exposes no raw accessor — revealSecret is the whole API", () => {
+    // The documented containment ("reveal only in the allowlisted HMAC
+    // consumers") is only true while the class has no `reveal` member; the
+    // detector's member/computed/destructured branches are the regression
+    // backstop for the day someone re-adds one (proven by their companion).
+    const secret = realSemanticProject().getSourceFiles().find((sf) =>
+      normalizedPath(sf.getFilePath()) === "src/contracts/secret.ts"
+    );
+    expect(secret, "src/contracts/secret.ts missing").toBeTruthy();
+    const members = secret!.getClassOrThrow("SecretValue").getMembers()
+      .flatMap((member) =>
+        Node.isMethodDeclaration(member) || Node.isPropertyDeclaration(member)
+          ? [member.getName()]
+          : []
+      );
+    expect(members).not.toContain("reveal");
   });
   it("enforces: no live org domain in committed files", () => {
     const o = detectLiveOrgDomain(files);
@@ -401,6 +521,45 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     it("catches a destructuring default (const { X_SECRET = \"…\" } = process.env)", () => {
       const text = `const { SESSION_SECRET = "dev-secret" } = process.env;`;
       expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text }]).length).toBe(1);
+    });
+    it("catches a hardcoded DATABASE_URL fallback (a DSN is a credential)", () => {
+      const text = `const url = process.env.DATABASE_URL ?? "postgres://verin:pw@db.internal:5432/verin";`;
+      expect(detectSecretFallback([{ rel: "src/infrastructure/config/x.ts", text }]).length).toBe(1);
+    });
+    it("catches ELEMENT-ACCESS and destructure-then-default forms through the AST", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/config/element.ts": `
+          const a = process.env["SESSION_SECRET"] ?? "dev-secret-not-for-prod";
+          export const first = a;
+        `,
+        "/src/infrastructure/config/destructured.ts": `
+          const { SESSION_SECRET } = process.env;
+          export const second = SESSION_SECRET ?? "dev-secret-not-for-prod";
+        `,
+        "/src/infrastructure/config/inline.ts": `
+          const { ESIGN_WEBHOOK_SECRET = "dev-secret-not-for-prod" } = process.env;
+          export const third = ESIGN_WEBHOOK_SECRET;
+        `,
+        "/src/infrastructure/config/dsn.ts": `
+          export const fourth = process.env.DATABASE_URL ?? "postgres://verin:pw@db.internal:5432/verin";
+        `,
+      });
+      const hits = detectSecretFallbackInCode(project);
+      for (const file of ["element", "destructured", "inline", "dsn"]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/infrastructure/config/${file}.ts`)),
+          file,
+        ).toBe(true);
+      }
+    });
+    it("does not flag a non-secret env default or an undefaulted secret read", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/config/fine.ts": `
+          export const level = process.env.LOG_LEVEL ?? "info";
+          export const secret = process.env.SESSION_SECRET;
+        `,
+      });
+      expect(detectSecretFallbackInCode(project)).toEqual([]);
     });
     it("does not flag a commented-out fallback", () => {
       const text = `// const s = process.env.SESSION_SECRET ?? "dev-secret";`;

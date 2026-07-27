@@ -13,7 +13,7 @@ import {
   systemWriteActor,
   type WriteActor,
 } from "@contracts/principal";
-import { systemTenant, type TenantContext } from "@contracts/tenant";
+import { registerTestSystemActor, systemTenant, type TenantContext } from "@contracts/tenant";
 import {
   actorRefOf,
   authorizeGovernedAction,
@@ -27,6 +27,8 @@ import {
 } from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
 
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
+
 /**
  * Tenant isolation through the REPOSITORY INTERFACE (v3 §15.2, invariant 2):
  * cross-tenant access fails, and a context that was not factory-minted cannot
@@ -35,8 +37,8 @@ import { unwrap } from "@contracts/result";
  */
 const ORG_A = "org-a";
 const ORG_B = "org-b";
-const tenantA = systemTenant("test", ORG_A);
-const tenantB = systemTenant("test", ORG_B);
+const tenantA = systemTenant(TEST_SYSTEM_ACTOR, ORG_A);
+const tenantB = systemTenant(TEST_SYSTEM_ACTOR, ORG_B);
 const piiGrant = (orgId: string, userId: string) =>
   unwrap(authorizeGovernedAction(actorRefOf(principalFromIdentity({
     userId,
@@ -181,7 +183,11 @@ describe("tenant isolation (integration)", () => {
   it("audit chains are per-tenant through the repository API", async () => {
     const chainA = (await verifyAndListOrgChain(db, auditGrantA)).rows;
     const chainB = (await verifyAndListOrgChain(db, auditGrantB)).rows;
+    // BOTH floors: `every` on an empty array is vacuously true, so without a
+    // floor for chainB a regression that made ORG_B's chain unreachable would
+    // leave this — the integration proof for v3 invariant 2 — green.
     expect(chainA.length).toBeGreaterThan(0);
+    expect(chainB.length).toBeGreaterThan(0);
     expect(chainA.every((r) => r.orgId === ORG_A)).toBe(true);
     expect(chainB.every((r) => r.orgId === ORG_B)).toBe(true);
   });

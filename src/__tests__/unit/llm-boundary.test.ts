@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { REDACTED } from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { tokenizeText, tokenizeRecord, isSealedTokenized } from "@infra/pii/tokenize";
-import { parseMaskedLlmRequest, slotId, type MaskedLlmRequest } from "@infra/llm/request-schema";
+import { parseMaskedLlmRequest, type MaskedLlmRequest } from "@infra/llm/request-schema";
 import { projectForLlm } from "@infra/pii/llm-projection";
 import {
   hasUnresolvedProjectionEvidence,
@@ -20,8 +20,8 @@ const RAW = {
   email: "adaeze@example.test",
   phone: "(212) 555-0142",
 };
-const SLOT_1 = slotId(1);
-const SLOT_2 = slotId(2);
+const SLOT_1 = "slot_0001";
+const SLOT_2 = "slot_0002";
 
 describe("the Tokenized factory scrubs by construction", () => {
   it("tokenizeText redacts PII-shaped values and seals the result", () => {
@@ -107,12 +107,8 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
   it("refuses non-objects and garbage", () => {
     for (const v of [null, undefined, "text", 42, []]) expect(parseMaskedLlmRequest(v).ok).toBe(false);
   });
-  it("generates canonical opaque slot ids and rejects invalid indices", () => {
-    expect(slotId(1)).toBe("slot_0001");
-    expect(slotId(9999)).toBe("slot_9999");
-    for (const index of [0, -1, 1.5, 10_000]) {
-      expect(() => slotId(index)).toThrow();
-    }
+  it("refuses the reserved slot_0000 id", () => {
+    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotId: "slot_0000", slotType: "subject" }] }).ok).toBe(false);
   });
 });
 
@@ -408,6 +404,33 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       expect(bound.value.maskedText.value).toContain("{{slot_0001}}");
       expect(bound.value.maskedText.value).not.toContain("941000517334");
       expect(bound.value.maskedText.value).toContain(REDACTED);
+    }
+  });
+  it("extracts account candidates on the SAME basis the residual check reads", () => {
+    // Masking a name inserts slot digits that break the labeled-SSN pattern's
+    // label-to-digits window, so a run redaction removed BEFORE masking can
+    // survive AFTER it. Extracting from the raw text therefore produced a
+    // refusal with nothing to declare: zero candidates, one refusing digit run.
+    const unsatisfiable = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "ssn Bob 123456789",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: {},
+    });
+    expect(unsatisfiable.ok).toBe(false);
+    const satisfied = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "ssn Bob 123456789",
+      slots: [
+        { slotId: SLOT_1, slotType: "subject" },
+        { slotId: SLOT_2, slotType: "account-ref" },
+      ],
+      evidence: {},
+    });
+    expect(satisfied.ok).toBe(true);
+    if (satisfied.ok) {
+      expect(satisfied.value.maskedText.value).not.toContain("Bob");
+      expect(satisfied.value.maskedText.value).not.toContain("123456789");
     }
   });
   it("masks resolved entity values retained in evidence keys", () => {

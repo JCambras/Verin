@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import {
   Node,
   SyntaxKind,
@@ -14,6 +15,7 @@ import {
   realSemanticProject,
   REPO_ROOT,
 } from "./_fence-utils";
+import { SYSTEM_ACTOR_IDS } from "@contracts/tenant";
 
 const SEALED = [
   {
@@ -126,6 +128,7 @@ const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
   ["src/infrastructure/pii/tokenize.ts", new Set([
     "tokenizeRecord", "tokenizeText",
   ])],
+  ["src/domain/observability/safe-values.ts", new Set(["observabilityId"])],
 ]);
 
 function normalizedPath(path: string): string {
@@ -160,6 +163,12 @@ function sealedType(type: Type): (typeof SEALED)[number] | null {
       ...current.getTypeArguments(),
       ...current.getUnionTypes(),
       ...current.getIntersectionTypes(),
+      // Base types too (the sibling declaredAs() in llm-pii-boundary already
+      // walks them): `interface AnyTenant extends TenantContext {}` is a
+      // different symbol with a different name, so without this a one-line
+      // sub-interface launders every sealed type past the fence AND the ESLint
+      // mirror, leaving only the runtime WeakSet — the layer this fence backs up.
+      ...current.getBaseTypes(),
     );
   }
   return null;
@@ -284,6 +293,58 @@ function detectPrivilegedFactoryModuleAccess(project: Project): string[] {
   return out;
 }
 
+/**
+ * Test-only injection points into PRODUCTION authority allowlists. No shipped
+ * module may reach one: registerTestSystemActor widens the set systemTenant
+ * accepts, so a shipped caller could attribute audit entries in a real tenant's
+ * hash chain to the actor "test". Keyed SEMANTICALLY (never on identifier text)
+ * so an aliased import — `import { registerTestSystemActor as reg }` — is caught.
+ */
+const TEST_ONLY_INJECTION_POINTS = [
+  { file: "src/contracts/tenant.ts", name: "registerTestSystemActor" },
+] as const;
+
+export function detectShippedTestAuthorityUse(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const normalized = normalizedPath(sf.getFilePath());
+    if (
+      (!normalized.startsWith("src/") && !normalized.startsWith("scripts/")) ||
+      normalized.includes("/__tests__/")
+    ) continue;
+    for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      if (identifier.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)) continue;
+      const symbol = identifier.getSymbol();
+      const target = symbol?.getAliasedSymbol() ?? symbol;
+      for (const point of TEST_ONLY_INJECTION_POINTS) {
+        if (
+          normalized === point.file ||
+          target?.getName() !== point.name ||
+          !target.getDeclarations().some((declaration) =>
+            normalizedPath(declaration.getSourceFile().getFilePath()) === point.file
+          )
+        ) continue;
+        out.push(`${normalized}:${identifier.getStartLineNumber()} references ${point.name}`);
+      }
+    }
+  }
+  return out;
+}
+
+/** Does any call beneath these nodes resolve into the sealed type's factory module? */
+function consultsFactory(nodes: readonly Node[], factory: string): boolean {
+  return nodes.some((node) =>
+    [...(Node.isCallExpression(node) ? [node] : []), ...node.getDescendantsOfKind(SyntaxKind.CallExpression)]
+      .some((call) => {
+        const symbol = call.getExpression().getSymbol();
+        const target = symbol?.getAliasedSymbol() ?? symbol;
+        return Boolean(target?.getDeclarations().some((declaration) =>
+          normalizedPath(declaration.getSourceFile().getFilePath()) === factory
+        ));
+      })
+  );
+}
+
 export function detectSealedTypeConstruction(project: Project): string[] {
   const out: string[] = [];
   for (const sf of project.getSourceFiles()) {
@@ -325,6 +386,67 @@ export function detectSealedTypeConstruction(project: Project): string[] {
       if (hasPiiFree && normalized !== "src/infrastructure/pii/tokenize.ts") {
         out.push(
           `${normalized}:${literal.getStartLineNumber()} - object literal with 'piiFree' outside the scrubber factory`,
+        );
+      }
+    }
+
+    // A user-defined type predicate / assertion signature MINTS a sealed type out
+    // of `unknown` with no cast and no literal: `asserts value is TenantContext`
+    // is exactly as powerful as the cast this fence exists to stop, and neither
+    // detectFactoryResultLaundering (return type is boolean/void) nor ESLint
+    // (no TSTypePredicate selector) sees it.
+    for (const predicate of sf.getDescendantsOfKind(SyntaxKind.TypePredicate)) {
+      const typeNode = predicate.getTypeNode();
+      const sealed = typeNode ? sealedType(typeNode.getType()) : null;
+      if (sealed && normalized !== sealed.factory) {
+        out.push(
+          `${normalized}:${predicate.getStartLineNumber()} - type predicate narrows to sealed type '${sealed.typeName}' outside its factory`,
+        );
+      }
+    }
+
+    // A generic coercion helper (`coerce<T>(v: unknown): T`) mints a sealed type
+    // with no named cast anywhere: the sealed name appears only as an explicit
+    // TYPE ARGUMENT at the call site, or as the declared annotation the call
+    // initializes. Both are handled here so the helper has nothing to hide behind.
+    // The one sanctioned shape is a generic that CONSULTS the factory's own
+    // runtime seal (the zod ingress gate's `isSealedTokenized` check) — that
+    // proves the value came from the factory rather than asserting that it did.
+    for (const kind of [SyntaxKind.CallExpression, SyntaxKind.NewExpression] as const) {
+      for (const call of sf.getDescendantsOfKind(kind)) {
+        for (const typeArgument of call.getTypeArguments()) {
+          const sealed = sealedType(typeArgument.getType());
+          if (
+            sealed &&
+            normalized !== sealed.factory &&
+            !consultsFactory(call.getArguments(), sealed.factory)
+          ) {
+            out.push(
+              `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an explicit type argument outside its factory`,
+            );
+          }
+        }
+      }
+    }
+    for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+      const typeNode = declaration.getTypeNode();
+      const initializer = declaration.getInitializer();
+      const sealed = typeNode ? sealedType(typeNode.getType()) : null;
+      if (!sealed || !initializer || normalized === sealed.factory) continue;
+      const call = Node.isAwaitExpression(initializer)
+        ? initializer.getExpression()
+        : initializer;
+      if (!Node.isCallExpression(call) || consultsFactory([call], sealed.factory)) {
+        continue;
+      }
+      const symbol = call.getExpression().getSymbol();
+      const target = symbol?.getAliasedSymbol() ?? symbol;
+      const fromFactory = target?.getDeclarations().some((candidate) =>
+        normalizedPath(candidate.getSourceFile().getFilePath()) === sealed.factory
+      );
+      if (!fromFactory) {
+        out.push(
+          `${normalized}:${declaration.getStartLineNumber()} - sealed type '${sealed.typeName}' annotated onto a value produced outside its factory`,
         );
       }
     }
@@ -456,6 +578,19 @@ function detectFactoryResultLaundering(project: Project): string[] {
   return out;
 }
 
+/**
+ * The ESLint mirror's two lists, read from the config source. Nothing fails when
+ * the mirror and this fence diverge unless something compares them, and a mirror
+ * that seals four of seven types is an editor that stays silent on the three that
+ * carry write attribution, actor identity, and observability ids.
+ */
+function eslintMirrorArray(name: string): string[] {
+  const text = readFileSync(join(REPO_ROOT, "eslint.config.mjs"), "utf8");
+  const block = new RegExp(`const ${name} = \\[([^\\]]*)\\]`).exec(text);
+  if (!block) return [];
+  return [...block[1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!).sort();
+}
+
 function sealedFixture(path: string, source: string): Project {
   return inMemoryProject({
     "/src/contracts/tokenized.ts": `export interface Tokenized<T> { value: T; piiFree: true }`,
@@ -529,7 +664,123 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
     }
   });
 
+  it("enforces: no production authority allowlist ships a test actor id", () => {
+    expect([...SYSTEM_ACTOR_IDS].filter((id) => /^test\b/.test(id))).toEqual([]);
+  });
+
+  it("enforces: the test-only authority injection point has no shipped caller", () => {
+    const leaks = detectShippedTestAuthorityUse(realSemanticProject());
+    expect(leaks, `shipped code widening production authority:\n${leaks.join("\n")}`).toEqual([]);
+  });
+
+  it("enforces: the ESLint edit-time mirror seals exactly the same types and factories", () => {
+    expect(eslintMirrorArray("SEALED_TYPES")).toEqual(
+      [...new Set(SEALED.map((sealed) => sealed.typeName))].sort(),
+    );
+    expect(eslintMirrorArray("SEALED_FACTORY_FILES")).toEqual(
+      [...new Set(SEALED.map((sealed) => sealed.factory))].sort(),
+    );
+  });
+
   describe("detects (companion): structural and semantic bypasses are caught", () => {
+    it("catches shipped code widening production authority, even through an ALIAS", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export function registerTestSystemActor(id: string): string { return id; }
+        `,
+        "/src/infrastructure/crm/direct.ts": `
+          import { registerTestSystemActor } from "../../contracts/tenant";
+          registerTestSystemActor("test");
+        `,
+        "/src/infrastructure/crm/aliased.ts": `
+          import { registerTestSystemActor as reg } from "../../contracts/tenant";
+          reg("test");
+        `,
+      });
+      expect(detectShippedTestAuthorityUse(project).sort()).toEqual([
+        "src/infrastructure/crm/aliased.ts:3 references registerTestSystemActor",
+        "src/infrastructure/crm/direct.ts:3 references registerTestSystemActor",
+      ]);
+    });
+
+    it("catches a cast to a sub-interface that merely EXTENDS a sealed type", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          interface AnyTenant extends TenantContext {}
+          const tenant = JSON.parse("{}") as AnyTenant;
+          void tenant;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts") && hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("catches an assertion signature minting a sealed type outside its factory", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          export function assumeTenant(value: unknown): asserts value is TenantContext {
+            void value;
+          }
+          export function looksTenant(value: unknown): value is TenantContext {
+            return typeof value === "object";
+          }
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.includes("type predicate narrows to sealed type 'TenantContext'")
+      );
+      expect(hits).toHaveLength(2);
+    });
+
+    it("catches a generic coercion helper called with a sealed type argument", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          function coerce<T>(value: unknown): T { return value as T; }
+          const tenant = coerce<TenantContext>(JSON.parse("{}"));
+          void tenant;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.includes("explicit type argument") && hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("catches a sealed annotation filled by a call outside the factory", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          function coerce(value: unknown) { return value as never; }
+          const tenant: TenantContext = coerce(JSON.parse("{}"));
+          void tenant;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.includes("produced outside its factory") && hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("allows a sealed annotation filled by the type's own factory", () => {
+      const project = sealedFixture(
+        "/src/app/fine.ts",
+        `
+          import { systemTenant, type TenantContext } from "../contracts/tenant";
+          const tenant: TenantContext = systemTenant("seed", "org");
+          void tenant;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/fine.ts")
+      )).toEqual([]);
+    });
+
     it("catches a cast through an imported type alias", () => {
       const project = sealedFixture(
         "/src/domain/evil.ts",

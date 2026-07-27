@@ -27,13 +27,29 @@ const noProcessEnv = {
     "process.env may only be read in src/infrastructure/config (charter #7). Inject config instead.",
 };
 
-// Sealed security types (v3 §15.1/§15.2, invariant 1): Tokenized, TenantContext,
-// and ActionGrant are constructible ONLY in their factory modules
-// (infrastructure/pii/tokenize.ts, contracts/tenant.ts, contracts/authz.ts).
-// Edit-time mirror of the AUTHORITATIVE tokenized-factory-only fitness fence.
-const SEALED_TYPE_NAME = "/^(Tokenized|TenantContext|ActionGrant|Principal)$/";
+// Sealed security types (v3 §15.1/§15.2, invariant 1): constructible ONLY in
+// their factory modules. Edit-time mirror of the AUTHORITATIVE
+// tokenized-factory-only fitness fence — the fence asserts these two lists match
+// its own SEALED registry exactly, so the mirror cannot silently drift narrower.
+const SEALED_TYPES = [
+  "ActionGrant",
+  "ActorRef",
+  "ObservabilityId",
+  "Principal",
+  "TenantContext",
+  "Tokenized",
+  "WriteActor",
+];
+const SEALED_FACTORY_FILES = [
+  "src/contracts/authz.ts",
+  "src/contracts/principal.ts",
+  "src/contracts/tenant.ts",
+  "src/domain/observability/safe-values.ts",
+  "src/infrastructure/pii/tokenize.ts",
+];
+const SEALED_TYPE_NAME = `/^(${SEALED_TYPES.join("|")})$/`;
 const sealedTypeMessage =
-  "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction) — a cast or literal bypasses the scrub/seal (v3 invariant 1).";
+  "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction, writeActorOf, observabilityId) — a cast or literal bypasses the scrub/seal (v3 invariant 1).";
 const noSealedTypeConstruction = [
   { selector: `TSAsExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
   { selector: `TSTypeAssertion TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
@@ -113,19 +129,13 @@ export default tseslint.config(
       "no-restricted-syntax": ["error", ...noSealedTypeConstruction],
     },
   },
-  // The factory modules themselves — the ONLY sanctioned construction sites.
+  // The factory modules themselves — the ONLY sanctioned construction sites, and
+  // exactly the files the authoritative fence allowlists. Sibling modules
+  // (scrub.ts, llm-projection.ts) stay under the sealed-type rule.
   {
-    files: ["src/contracts/tenant.ts", "src/contracts/authz.ts", "src/contracts/principal.ts"],
+    files: SEALED_FACTORY_FILES,
     rules: {
       "no-restricted-syntax": ["error", noProcessEnv],
-    },
-  },
-  // Exactly the file the authoritative tokenized-factory-only fence allowlists —
-  // sibling modules (scrub.ts, llm-projection.ts) stay under the sealed-type rule.
-  {
-    files: ["src/infrastructure/pii/tokenize.ts"],
-    rules: {
-      "no-restricted-syntax": "off",
     },
   },
 

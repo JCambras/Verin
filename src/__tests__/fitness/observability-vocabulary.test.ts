@@ -5,9 +5,13 @@ import {
   SyntaxKind,
   type CallExpression,
   type Project,
+  type Type,
 } from "ts-morph";
 import { realSemanticProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
-import { OBSERVABILITY_VOCABULARY } from "@domain/observability/safe-values";
+import {
+  isSafeObservabilityPrimitive,
+  OBSERVABILITY_VOCABULARY,
+} from "@domain/observability/safe-values";
 
 /**
  * OBSERVABILITY-VOCABULARY FENCE (charter #14; v3 §15.4).
@@ -136,6 +140,159 @@ export function collectObservabilityVocabulary(project: Project): ObservabilityV
   };
 }
 
+const AUDIT_INTENT_SITES = [
+  { file: "src/infrastructure/audit/audited-write.ts", name: "auditedWrite" },
+  { file: "src/infrastructure/wire.ts", name: "auditEvent" },
+] as const;
+const OBSERVABILITY_ID_FACTORY = "observabilityId";
+
+/** Every statically-known string value of a type: a literal, or each member of a literal union. */
+function literalUnionValues(type: Type): { values: string[]; numeric: boolean; dynamic: boolean } {
+  const members = type.isUnion() ? type.getUnionTypes() : [type];
+  const values: string[] = [];
+  let numeric = false;
+  let dynamic = false;
+  for (const member of members) {
+    if (member.isStringLiteral()) values.push(String(member.getLiteralValue()));
+    else if (member.isNumber() || member.isNumberLiteral() || member.isBigInt()) numeric = true;
+    else if (member.isString()) dynamic = true;
+  }
+  return { values, numeric, dynamic };
+}
+
+function attributesObject(call: CallExpression): Node | null {
+  const args = isWithSpanCall(call) ? [call.getArguments()[1]] : call.getArguments();
+  return args.find((argument) => argument && Node.isObjectLiteralExpression(argument)) ?? null;
+}
+
+/**
+ * The attribute vocabulary the RUNTIME degrades against. safeSpanName /
+ * safeLogMessage are only half the silent-degradation class: ACTIONS, ENUMS
+ * (code/entityType/flow/status) and NUMERIC_FIELDS are closed sets too, and an
+ * unlisted value becomes "[REDACTED]" in the very log line that would explain
+ * an incident, with every gate green. Both directions are derived here from the
+ * same call sites the span/message scan already walks, plus the audit-intent
+ * sites that FEED the `action`/`entityType` attributes.
+ */
+export function detectAttributeVocabularyDrift(
+  project: Project,
+  vocabulary: {
+    readonly idFields: readonly string[];
+    readonly actions: readonly string[];
+    readonly enums: Readonly<Record<string, readonly string[]>>;
+    readonly numericFields: readonly string[];
+  },
+  accepts: (field: string, value: string | number) => boolean,
+): string[] {
+  const out: string[] = [];
+  const liveIdFields = new Set<string>();
+  const liveNumericFields = new Set<string>();
+  const liveValues = new Map<string, Set<string>>();
+  const record = (field: string, value: string): void => {
+    const values = liveValues.get(field) ?? new Set<string>();
+    values.add(value);
+    liveValues.set(field, values);
+  };
+
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!isShipped(file)) continue;
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const where = `${file}:${call.getStartLineNumber()}`;
+      // The id-field vocabulary is exactly the first argument of every
+      // observabilityId(...) mint.
+      if (resolvesTo(call.getExpression(), SAFE_VALUES, OBSERVABILITY_ID_FACTORY)) {
+        const field = literalText(call.getArguments()[0]);
+        if (field === null) {
+          out.push(`${where}: observabilityId needs a literal field name`);
+        } else {
+          liveIdFields.add(field);
+          if (!vocabulary.idFields.includes(field)) {
+            out.push(`${where}: unregistered observability id field "${field}"`);
+          }
+        }
+      }
+      // The audit intents that become the `action`/`entityType` log attributes.
+      if (AUDIT_INTENT_SITES.some((site) => resolvesTo(call.getExpression(), site.file, site.name))) {
+        for (const argument of call.getArguments()) {
+          if (!Node.isObjectLiteralExpression(argument)) continue;
+          for (const field of ["action", "entityType"] as const) {
+            const property = argument.getProperty(field);
+            if (!property || !Node.isPropertyAssignment(property)) continue;
+            const value = literalText(property.getInitializer());
+            if (value === null) continue;
+            record(field, value);
+            if (!accepts(field, value)) {
+              out.push(`${where}: unregistered ${field} "${value}" — it would be logged as "[REDACTED]"`);
+            }
+          }
+        }
+      }
+      if (!isWithSpanCall(call) && !isLoggerCall(call)) continue;
+      const attributes = attributesObject(call);
+      if (!attributes || !Node.isObjectLiteralExpression(attributes)) continue;
+      for (const property of attributes.getProperties()) {
+        const valueNode = Node.isPropertyAssignment(property)
+          ? property.getInitializer()
+          : Node.isShorthandPropertyAssignment(property)
+          ? property.getNameNode()
+          : undefined;
+        const field = Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)
+          ? property.getName()
+          : null;
+        if (!field || !valueNode) continue;
+        const type = valueNode.getType();
+        // Opaque ids carry their own sealed factory check; `reason` is governed
+        // by a pattern rather than a closed set.
+        if (declaredAsObservabilityId(type) || field === "reason") continue;
+        const { values, numeric } = literalUnionValues(type);
+        if (numeric) {
+          liveNumericFields.add(field);
+          if (!accepts(field, 1)) {
+            out.push(`${where}: unregistered numeric attribute "${field}" — it would be logged as "[REDACTED]"`);
+          }
+        }
+        for (const value of values) {
+          record(field, value);
+          if (!accepts(field, value)) {
+            out.push(`${where}: unregistered ${field} "${value}" — it would be logged as "[REDACTED]"`);
+          }
+        }
+      }
+    }
+  }
+
+  for (const field of vocabulary.idFields) {
+    if (!liveIdFields.has(field)) out.push(`stale observability id field "${field}" — no shipped mint uses it`);
+  }
+  for (const field of vocabulary.numericFields) {
+    if (!liveNumericFields.has(field)) out.push(`stale numeric attribute "${field}" — no shipped call site emits it`);
+  }
+  for (const action of vocabulary.actions) {
+    if (!liveValues.get("action")?.has(action)) out.push(`stale action "${action}" — no shipped call site emits it`);
+  }
+  for (const [field, values] of Object.entries(vocabulary.enums)) {
+    for (const value of values) {
+      if (!liveValues.get(field)?.has(value)) {
+        out.push(`stale ${field} "${value}" — no shipped call site emits it`);
+      }
+    }
+  }
+  return out;
+}
+
+function declaredAsObservabilityId(type: Type): boolean {
+  const members = type.isUnion() ? type.getUnionTypes() : [type];
+  return members.some((member) =>
+    [member.getAliasSymbol(), member.getSymbol()].some((symbol) =>
+      symbol?.getName() === "ObservabilityId" &&
+      symbol.getDeclarations().some((declaration) =>
+        normalizedPath(declaration.getSourceFile().getFilePath()) === SAFE_VALUES
+      )
+    )
+  );
+}
+
 export function detectVocabularyDrift(
   derived: ObservabilityVocabulary,
   allowed: { readonly spanNames: readonly string[]; readonly logMessages: readonly string[] },
@@ -206,6 +363,27 @@ function vocabularyFixture(consumer: string): Project {
   });
 }
 
+/** vocabularyFixture plus the observabilityId factory and the audit-intent chokepoint. */
+function attributeFixture(consumer: string): Project {
+  const project = vocabularyFixture(consumer);
+  project.createSourceFile(
+    "/src/domain/observability/safe-values.ts",
+    `
+      export interface ObservabilityId { readonly field: string; readonly value: string }
+      export function observabilityId(field: string, value: string): ObservabilityId {
+        return { field, value };
+      }
+      export function registerTestSpanName(name: string): void { void name; }
+    `,
+    { overwrite: true },
+  );
+  project.createSourceFile(
+    "/src/infrastructure/audit/audited-write.ts",
+    `export async function auditedWrite(opts: unknown): Promise<void> { void opts; }`,
+  );
+  return project;
+}
+
 describe("observability-vocabulary fence (charter #14)", () => {
   const project = realSemanticProject();
   const derived = collectObservabilityVocabulary(project);
@@ -227,6 +405,15 @@ describe("observability-vocabulary fence (charter #14)", () => {
   it("enforces: the production vocabulary matches the shipped call sites exactly", () => {
     const drift = detectVocabularyDrift(derived, OBSERVABILITY_VOCABULARY);
     expect(drift, `observability vocabulary drift:\n${drift.join("\n")}`).toEqual([]);
+  });
+
+  it("enforces: the attribute vocabularies match the shipped call sites exactly", () => {
+    const drift = detectAttributeVocabularyDrift(
+      project,
+      OBSERVABILITY_VOCABULARY,
+      isSafeObservabilityPrimitive,
+    );
+    expect(drift, `observability attribute drift:\n${drift.join("\n")}`).toEqual([]);
   });
 
   it("enforces: the production vocabulary carries no test-namespace entries", () => {
@@ -329,6 +516,64 @@ describe("observability-vocabulary fence (charter #14)", () => {
         `unregistered span name "crm.household.archive" — it would be emitted as "operation"`,
         `unregistered log message "brand new operator message" — it would be emitted as "log event"`,
       ]);
+    });
+
+    it("flags an unregistered action, entityType, numeric field, and id field", () => {
+      const project = attributeFixture(`
+        import { withSpan } from "@infra/observability/tracer";
+        import { log } from "@infra/observability/logger";
+        import { observabilityId } from "@domain/observability/safe-values";
+        import { auditedWrite } from "@infra/audit/audited-write";
+        export const archive = async () => {
+          await auditedWrite({ action: "household.archive", entityType: "Ledger" });
+          log.warn({ durationMs: 12, orgId: observabilityId("sessionId", "x") }, "archived");
+          return withSpan("crm.household.archive", {}, async () => 1);
+        };
+      `);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        { idFields: ["orgId"], actions: [], enums: {}, numericFields: [] },
+        // Nothing is registered, so every derived value is unregistered.
+        () => false,
+      );
+      expect(drift.some((v) => v.includes(`unregistered action "household.archive"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered entityType "Ledger"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered numeric attribute "durationMs"`))).toBe(true);
+      expect(drift.some((v) => v.includes(`unregistered observability id field "sessionId"`))).toBe(true);
+    });
+
+    it("flags a stale registered value, id field, and numeric field", () => {
+      const project = attributeFixture(`export const nothing = 1;`);
+      const drift = detectAttributeVocabularyDrift(
+        project,
+        {
+          idFields: ["orgId"],
+          actions: ["household.create"],
+          enums: { status: ["completed"] },
+          numericFields: ["attempts"],
+        },
+        () => true,
+      );
+      expect(drift).toEqual([
+        `stale observability id field "orgId" — no shipped mint uses it`,
+        `stale numeric attribute "attempts" — no shipped call site emits it`,
+        `stale action "household.create" — no shipped call site emits it`,
+        `stale status "completed" — no shipped call site emits it`,
+      ]);
+    });
+
+    it("does not charge an opaque ObservabilityId attribute to the enum vocabulary", () => {
+      const project = attributeFixture(`
+        import { log } from "@infra/observability/logger";
+        import { observabilityId } from "@domain/observability/safe-values";
+        export const emit = () =>
+          log.info({ orgId: observabilityId("orgId", "org") }, "emitted");
+      `);
+      expect(detectAttributeVocabularyDrift(
+        project,
+        { idFields: ["orgId"], actions: [], enums: {}, numericFields: [] },
+        () => false,
+      )).toEqual([]);
     });
 
     it("ignores a same-named helper that is not the observability boundary", () => {

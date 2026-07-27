@@ -2,7 +2,10 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { systemWriteActor } from "@contracts/principal";
+import { registerTestSystemActor } from "@contracts/tenant";
 import { log } from "@infra/observability/logger";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * Failure-path contract of the audited-write helper (finding #3; charter #4
@@ -20,7 +23,7 @@ async function seed(): Promise<SqlDb> {
   return db;
 }
 
-const base = { actor: systemWriteActor("test", "o"), action: "task.create", entityType: "Task", entityId: "task-1", detail: "d" } as const;
+const base = { actor: systemWriteActor(TEST_SYSTEM_ACTOR, "o"), action: "task.create", entityType: "Task", entityId: "task-1", detail: "d" } as const;
 
 const insertTask = (id: string) =>
   `INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('${id}','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')`;

@@ -170,6 +170,7 @@ function inlinePIIExposures(
   seen = new Set<string>(),
   location?: Node,
   includeMarked = false,
+  escapes: ReadonlySet<string> = ESCAPE_SET,
 ): string[] {
   if (isTokenized(type) || isSecretValue(type)) return [];
   if (isPIIBearingType(type)) return includeMarked ? [path] : [];
@@ -180,7 +181,7 @@ function inlinePIIExposures(
   const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
   if (composite.length) {
     return composite.flatMap((member) =>
-      inlinePIIExposures(member, path, nextSeen, location, includeMarked)
+      inlinePIIExposures(member, path, nextSeen, location, includeMarked, escapes)
     );
   }
   const typeArguments = [
@@ -188,7 +189,7 @@ function inlinePIIExposures(
     ...type.getTypeArguments(),
   ];
   const nestedArguments = typeArguments.flatMap((argument) =>
-    inlinePIIExposures(argument, path, nextSeen, location, includeMarked)
+    inlinePIIExposures(argument, path, nextSeen, location, includeMarked, escapes)
   );
   const symbol = type.getAliasSymbol() ?? type.getSymbol();
   const inspectNestedProperties = !symbol || symbol.getDeclarations().some((declaration) =>
@@ -211,7 +212,7 @@ function inlinePIIExposures(
         isPIIField(property.getName()) &&
         !isTokenized(propertyType) &&
         !isSecretValue(propertyType) &&
-        !propertyIsEscaped(propertyPath, declaration)
+        !propertyIsEscaped(propertyPath, declaration, escapes)
       ) {
         return [propertyPath];
       }
@@ -222,6 +223,7 @@ function inlinePIIExposures(
         nextSeen,
         declaration,
         includeMarked,
+        escapes,
       );
     })
     : [];
@@ -232,6 +234,8 @@ function inlinePIIExposures(
       `${path}.<call>`,
       nextSeen,
       includeMarked,
+      true,
+      escapes,
     )
   );
   return [...nestedArguments, ...properties, ...nestedCalls];
@@ -243,6 +247,7 @@ function signaturePIIExposures(
   seen = new Set<string>(),
   includeMarked = false,
   checkParameterNames = true,
+  escapes: ReadonlySet<string> = ESCAPE_SET,
 ): string[] {
   const parameters = signature.getParameters().flatMap((parameter) => {
     const declaration = parameter.getValueDeclaration() ??
@@ -264,6 +269,7 @@ function signaturePIIExposures(
       seen,
       declaration,
       includeMarked,
+      escapes,
     );
   });
   return [
@@ -274,6 +280,7 @@ function signaturePIIExposures(
       seen,
       signature.getDeclaration(),
       includeMarked,
+      escapes,
     ),
   ];
 }
@@ -282,6 +289,7 @@ function callablePIIExposures(
   type: Type,
   includeMarked = false,
   checkParameterNames = true,
+  escapes: ReadonlySet<string> = ESCAPE_SET,
 ): string[] {
   const exposures = type.getCallSignatures().flatMap((signature) =>
     signaturePIIExposures(
@@ -290,6 +298,7 @@ function callablePIIExposures(
       new Set(),
       includeMarked,
       checkParameterNames,
+      escapes,
     )
   );
   for (const property of type.getProperties()) {
@@ -305,6 +314,7 @@ function callablePIIExposures(
           new Set(),
           includeMarked,
           checkParameterNames,
+          escapes,
         ),
       );
     }
@@ -321,6 +331,7 @@ function callablePIIExposures(
 function propertyIsEscaped(
   propertyPath: string,
   declaration: Node,
+  escapes: ReadonlySet<string>,
 ): boolean {
   const owner = declaration.getFirstAncestor((ancestor) =>
     Node.isInterfaceDeclaration(ancestor) ||
@@ -334,13 +345,16 @@ function propertyIsEscaped(
     ? owner.getName()
     : undefined;
   if (!name) return false;
-  return ESCAPE_SET.has(
+  return escapes.has(
     `${normalizePath(declaration.getSourceFile())} :: ${name}.${propertyPath}`,
   );
 }
 
 /** Every property-bearing type declaration — interface, type-alias object literal, or class. */
-function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
+function piiTypeDeclarations(
+  sf: SourceFile,
+  escapes: ReadonlySet<string> = ESCAPE_SET,
+): PIITypeDecl[] {
   const out: PIITypeDecl[] = [];
   for (const iface of sf.getInterfaces()) {
     if (iface.getName() === "PIIBearing") continue; // the marker itself
@@ -358,9 +372,11 @@ function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
           property.getName(),
           new Set(),
           property,
+          false,
+          escapes,
         )
       ),
-      callableExposures: callablePIIExposures(iface.getType()),
+      callableExposures: callablePIIExposures(iface.getType(), false, true, escapes),
     });
   }
   for (const alias of sf.getTypeAliases()) {
@@ -376,11 +392,13 @@ function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
           property.name,
           new Set(),
           alias,
+          false,
+          escapes,
         )
       ),
       callableExposures: isLeafComposite(aliasType)
         ? []
-        : callablePIIExposures(aliasType),
+        : callablePIIExposures(aliasType, false, true, escapes),
     });
   }
   for (const cls of sf.getClasses()) {
@@ -401,12 +419,36 @@ function piiTypeDeclarations(sf: SourceFile): PIITypeDecl[] {
           property.getName(),
           new Set(),
           property,
+          false,
+          escapes,
         )
       ),
-      callableExposures: callablePIIExposures(cls.getType()),
+      callableExposures: callablePIIExposures(cls.getType(), false, true, escapes),
     });
   }
   return out;
+}
+
+/**
+ * PII reachable through an exported VALUE, not just a callable. `export const
+ * DEMO_CLIENT = { firstName: "Ada", ssn: "…" }` has an anonymous object type
+ * with no call signature, so a callable-only walk marks nothing and the value is
+ * import-reachable from llm/ with the reachability fence green.
+ */
+function exportedValuePIIExposures(sf: SourceFile): string[] {
+  const exposures: string[] = [];
+  for (const declaration of sf.getVariableDeclarations().filter((candidate) =>
+    candidate.isExported()
+  )) {
+    exposures.push(...inlinePIIExposures(
+      declaration.getType(),
+      declaration.getName(),
+      new Set(),
+      declaration,
+      true,
+    ));
+  }
+  return [...new Set(exposures)];
 }
 
 function exportedCallablePIIExposures(sf: SourceFile): string[] {
@@ -568,7 +610,7 @@ export function detectUnmarkedPIITypes(project: Project, escapes: ReadonlySet<st
   for (const sf of project.getSourceFiles()) {
     const normalized = normalizePath(sf);
     if (!/^src\/(contracts|domain|infrastructure)\//.test(normalized)) continue;
-    for (const decl of piiTypeDeclarations(sf)) {
+    for (const decl of piiTypeDeclarations(sf, escapes)) {
       if (decl.marked) continue;
       for (const prop of decl.props) {
         if (!isPIIField(prop.name) || isTokenized(prop.type)) continue;
@@ -594,6 +636,7 @@ export function markedModules(project: Project): Set<string> {
   for (const sf of project.getSourceFiles()) {
     const normalized = normalizePath(sf);
     if (exportedCallablePIIExposures(sf).length > 0 ||
+      exportedValuePIIExposures(sf).length > 0 ||
       piiTypeDeclarations(sf).some((declaration) => {
         if (declaration.marked) return true;
         if (!declaration.exported) return false;
@@ -894,6 +937,38 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "src/domain/workflow/engine.ts :: FlowDefinition.client.name",
       ]);
     });
+    it("honours the INJECTED escape set for nested paths, not a hardcoded module constant", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/observability/tracer.ts": `export interface RecordedSpan { name: string; attributes: { name: string } }`,
+      });
+      const nested = "src/infrastructure/observability/tracer.ts :: RecordedSpan.attributes.name";
+      // With NO escapes both the top-level and the nested field are reported —
+      // which is what makes the "every escape is load-bearing" companion able to
+      // see a nested escape at all.
+      expect(detectUnmarkedPIITypes(project, new Set())).toContain(nested);
+      // With the nested escape injected, only it is suppressed.
+      expect(detectUnmarkedPIITypes(
+        project,
+        new Set([...ESCAPE_SET, nested]),
+      )).toEqual([]);
+    });
+
+    it("flags an exported PII-shaped VALUE and its reachability from llm/", () => {
+      const project = inMemoryProject({
+        "/src/domain/demo-roster.ts": `
+          export const DEMO_CLIENT = { firstName: "Ada", email: "ada@example.com" };
+        `,
+        "/src/infrastructure/llm/evil.ts": `
+          import { DEMO_CLIENT } from "@domain/demo-roster";
+          export const use = DEMO_CLIENT;
+        `,
+      });
+      expect(markedModules(project)).toContain("src/domain/demo-roster.ts");
+      expect(detectPIIReachableFromLlm(project).some((violation) =>
+        violation.includes("src/domain/demo-roster.ts")
+      )).toBe(true);
+    });
+
     it("flags an UNMARKED type-alias object literal with a raw PII field (alias evasion)", () => {
       const project = inMemoryProject({
         "/src/domain/sneaky-alias.ts": `export type Client = { firstName: string }`,

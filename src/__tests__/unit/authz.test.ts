@@ -9,9 +9,11 @@ import {
   type ActorRef,
   type GovernedAction,
 } from "@contracts/authz";
-import { systemTenant, tenantOf } from "@contracts/tenant";
+import { registerTestSystemActor, systemTenant, tenantOf } from "@contracts/tenant";
 import { principalFromIdentity } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * Per-action authorization hooks (v3 §15.3): unauthorized actors cannot
@@ -102,7 +104,7 @@ describe("authorizeGovernedAction grants the authorized", () => {
 describe("ActionGrant is sealed", () => {
   it("cannot compile from a literal", () => {
     // @ts-expect-error an object literal cannot produce the sealed brand
-    const impostor: ActionGrant = { action: "audit.export", tenant: systemTenant("test", "o"), actorId: "x", role: "admin" };
+    const impostor: ActionGrant = { action: "audit.export", tenant: systemTenant(TEST_SYSTEM_ACTOR, "o"), actorId: "x", role: "admin" };
     expect(isActionGrant(impostor)).toBe(false);
   });
   it("cannot parse from a cast or a spread copy", () => {
@@ -119,7 +121,7 @@ describe("ActorRef is sealed", () => {
     // @ts-expect-error an object literal cannot produce the sealed brand
     const impostor: ActorRef = {
       kind: "human",
-      tenant: systemTenant("test", "o"),
+      tenant: systemTenant(TEST_SYSTEM_ACTOR, "o"),
       actorId: "x",
       role: "principal",
     };

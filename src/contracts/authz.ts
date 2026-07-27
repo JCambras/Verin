@@ -1,15 +1,13 @@
 /**
  * Per-action authorization (v3 §15.3; extends ADR-0008 route-level RBAC without
  * displacing it). Every governed human action passes authorizeGovernedAction
- * BEFORE the act: it takes an ActorRef (the attributed actor + sealed tenant)
- * and mints a sealed ActionGrant, or refuses with a typed FORBIDDEN. System
- * actors are refused categorically — approval, override, policy, execution, and
- * export authority is always attributed to a human role; policy-automatic paths
- * arrive later (v3 §11) with their own typed authority, never through this hook.
+ * BEFORE the act: an ActorRef in, a sealed ActionGrant or typed FORBIDDEN out.
+ * System actors are refused categorically — approval, override, policy,
+ * execution, and export authority is always attributed to a human role;
+ * policy-automatic paths arrive later (v3 §11) with their own typed authority.
  * Role allowlists are Phase 1 defaults (D-036): surfaced actions mirror the
- * existing route allowlists exactly; unsurfaced ones follow v3 §11 semantics
- * with compliance authority (policy/decision/override) kept OFF the IT-admin
- * role — separation of technical privilege from compliance authority.
+ * existing route allowlists exactly, and compliance authority
+ * (policy/decision/override) stays OFF the IT-admin role.
  */
 import { type Role, isAllowedRole } from "./roles";
 import { type Result, ok, err } from "./result";

@@ -143,8 +143,16 @@ export function realProject(): Project {
   return project;
 }
 
+/**
+ * A type-checked Project over the whole repo. MEMOIZED: tsconfig's
+ * include pulls in every repo .ts/.tsx file, and the fitness suite asks for this
+ * ten times, so building it per call type-checked the same program ten times.
+ * Fences only READ this project, so sharing one instance is safe.
+ */
+let semanticProject: Project | null = null;
 export function realSemanticProject(): Project {
-  return new Project({ tsConfigFilePath: join(REPO_ROOT, "tsconfig.json") });
+  semanticProject ??= new Project({ tsConfigFilePath: join(REPO_ROOT, "tsconfig.json") });
+  return semanticProject;
 }
 
 /** An in-memory Project for companion tests. */

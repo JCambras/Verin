@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { systemTenant } from "@contracts/tenant";
+import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { startFlow, resumeFlow, type FlowDefinition, type ExecutionStore, type ExecutionState } from "@domain/workflow/engine";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * FLOWSTEP SUSPEND/RESUME FENCE (ADR-0011, charter #6). Proves the engine actually
@@ -42,7 +44,7 @@ const flow: FlowDefinition<Deps> = {
   ],
 };
 
-const TENANT = systemTenant("test", "o");
+const TENANT = systemTenant(TEST_SYSTEM_ACTOR, "o");
 
 describe("flowstep suspend/resume fence", () => {
   it("enforces: the engine suspends at a suspend step and resumes the rest", async () => {

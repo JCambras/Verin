@@ -56,11 +56,10 @@ export const SENSITIVE_DIGIT_RUN_SOURCE = String.raw`\b\d{9,18}\b`;
 const LONG_UNMASKED_NUMBER_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE);
 
 /**
- * What redaction removes from free text. THE authority, so the audit scrubber and
- * the projection layer agree on which spans redaction handles (and which
- * therefore need no slot binding). Each pattern keeps its own flags and gains /g
- * — `new RegExp(re, "g")` silently DROPS the source flags, so redaction would
- * miss what the fail-closed backstop then throws on.
+ * What redaction removes from free text — THE authority, so the audit scrubber
+ * and the projection layer agree on which spans need no slot binding. Each
+ * pattern keeps its own flags and gains /g: `new RegExp(re, "g")` silently DROPS
+ * source flags, so redaction would miss what the backstop then throws on.
  */
 export function redactPIIValues(text: string): string {
   return PII_VALUE_PATTERNS.reduce(
@@ -71,16 +70,12 @@ export function redactPIIValues(text: string): string {
 
 /**
  * The ONE title-case word shape ambiguous-text detection keys on (a possible
- * person name). Exported as a source fragment so every boundary that has to
- * agree with this detector — notably the evidence→LLM projection, which decides
- * which spans MUST be masked — composes the same pattern instead of re-typing it.
+ * person name), exported as a source fragment so every boundary that must agree
+ * with this detector composes it rather than re-typing it.
  */
 export const TITLE_CASE_WORD_SOURCE = String.raw`\b\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?`;
 
-/**
- * The account/tax-identifier shape: an unbroken 9-18 digit run. One predicate so
- * the masking layer and the residual check cannot disagree about what counts.
- */
+/** The predicate half of SENSITIVE_DIGIT_RUN_SOURCE (one shape, two consumers). */
 export function hasSensitiveDigitRun(value: string | number | bigint): boolean {
   return LONG_UNMASKED_NUMBER_RE.test(String(value).replace(/^-/, ""));
 }
