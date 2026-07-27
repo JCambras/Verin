@@ -53,10 +53,16 @@ const CREDENTIAL_VALUE_RE =
   /(?:\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret)\b\s*[:=]\s*\S+|\bbearer\s+[A-Za-z0-9._~+/-]+=*|\b(?:sk_(?:live|test)|ghp_)[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)/i;
 
 export function looksLikeAmbiguousSensitiveText(value: string): boolean {
+  const titleCaseWords = [...value.matchAll(/\b\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?\b/gu)];
+  const embeddedTitleCaseWord = titleCaseWords.some((match) =>
+    match.index !== undefined &&
+    value.slice(0, match.index).trim().length > 0
+  );
   return value !== REDACTED && (
     looksLikePIIValue(value) ||
     LONG_UNMASKED_NUMBER_RE.test(value) ||
     TITLE_CASE_PERSON_RE.test(value) ||
+    embeddedTitleCaseWord ||
     CREDENTIAL_VALUE_RE.test(value)
   );
 }

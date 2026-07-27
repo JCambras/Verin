@@ -6,7 +6,7 @@
  */
 import { createMemoryDb, createDbFromDump } from "../src/infrastructure/store/db";
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
-import { verifyOrgChain, listOrgChain } from "../src/infrastructure/audit/audit-store";
+import { countOrgChain, verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemWriteActor } from "../src/contracts/principal";
 
 async function main(): Promise<void> {
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
 
   const beforeHouseholds = Number((await src.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
   const beforeChain = await verifyOrgChain(src, tenant);
-  const beforeAudit = (await listOrgChain(src, tenant)).length;
+  const beforeAudit = await countOrgChain(src, tenant);
   if (!beforeChain.ok) throw new Error("pre-backup chain invalid");
 
   // --- BACKUP ---
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
 
   // --- VERIFY ---
   const afterHouseholds = Number((await restored.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
-  const afterAudit = (await listOrgChain(restored, tenant)).length;
+  const afterAudit = await countOrgChain(restored, tenant);
   const afterChain = await verifyOrgChain(restored, tenant);
   await restored.close();
 

@@ -4,8 +4,10 @@ import { join, relative } from "node:path";
 import {
   Node,
   SyntaxKind,
+  ts,
   type CallExpression,
   type Project,
+  type SourceFile,
   type Type,
 } from "ts-morph";
 import {
@@ -125,6 +127,20 @@ interface SecretAccess {
   readonly call: CallExpression | null;
 }
 
+function resolvedModulePath(
+  project: Project,
+  sourceFile: SourceFile,
+  specifier: string,
+): string | null {
+  const resolved = ts.resolveModuleName(
+    specifier,
+    sourceFile.getFilePath(),
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost(),
+  ).resolvedModule?.resolvedFileName;
+  return resolved ? normalizedPath(resolved) : null;
+}
+
 function secretAccesses(project: Project): SecretAccess[] {
   const out: SecretAccess[] = [];
   const seen = new Set<string>();
@@ -146,9 +162,47 @@ function secretAccesses(project: Project): SecretAccess[] {
       file.includes("/__tests__/") ||
       file === "src/contracts/secret.ts"
     ) continue;
+    for (const declaration of sf.getImportDeclarations()) {
+      const target = declaration.getModuleSpecifierSourceFile();
+      const targetPath = target ? normalizedPath(target.getFilePath()) : null;
+      if (
+        targetPath === "src/contracts/secret.ts" &&
+        (declaration.getNamespaceImport() || declaration.getDefaultImport())
+      ) {
+        add(file, declaration.getStartLineNumber(), null);
+      }
+    }
+    for (const declaration of sf.getExportDeclarations()) {
+      const target = declaration.getModuleSpecifierSourceFile();
+      const targetPath = target ? normalizedPath(target.getFilePath()) : null;
+      if (targetPath !== "src/contracts/secret.ts") continue;
+      const exportedNames = declaration.getNamedExports().map((item) =>
+        item.getNameNode().getText()
+      );
+      if (
+        declaration.isNamespaceExport() ||
+        exportedNames.length === 0 ||
+        exportedNames.includes("revealSecret")
+      ) {
+        add(file, declaration.getStartLineNumber(), null);
+      }
+    }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       if (revealSecretCall(call)) {
         add(file, call.getStartLineNumber(), call);
+      }
+      const expression = call.getExpression();
+      const isModuleLoad = expression.getKind() === SyntaxKind.ImportKeyword ||
+        expression.getText() === "require";
+      if (!isModuleLoad) continue;
+      const argument = call.getArguments()[0];
+      if (
+        !argument ||
+        !Node.isStringLiteral(argument) ||
+        resolvedModulePath(project, sf, argument.getLiteralValue()) ===
+          "src/contracts/secret.ts"
+      ) {
+        add(file, call.getStartLineNumber(), null);
       }
     }
     for (const reference of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
@@ -331,6 +385,19 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
         `,
       });
       expect(detectUnsanctionedReveal(project).length).toBeGreaterThan(0);
+    });
+    it("catches revealSecret reached through a reflected module namespace", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/infrastructure/crm/evil.ts": `
+          import * as secretModule from "../../contracts/secret";
+          declare const secret: secretModule.SecretValue;
+          Reflect.get(secretModule, "revealSecret")(secret);
+        `,
+      });
+      expect(detectUnsanctionedReveal(project)).toEqual([
+        "src/infrastructure/crm/evil.ts:2",
+      ]);
     });
     it("catches computed and destructured access if a raw accessor is reintroduced", () => {
       const project = inMemoryProject({

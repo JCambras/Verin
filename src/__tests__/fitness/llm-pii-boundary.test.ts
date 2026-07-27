@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { relative, resolve, dirname } from "node:path";
+import { relative } from "node:path";
 import {
   Node,
   SyntaxKind,
+  ts,
   type Project,
   type Signature,
   type SourceFile,
@@ -13,7 +14,6 @@ import {
   inMemoryProject,
   importSpecifiers,
   REPO_ROOT,
-  SRC_ROOT,
 } from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
 
@@ -487,29 +487,22 @@ function unverifiableModuleLoadLines(sf: SourceFile): number[] {
  */
 export function resolveToProjectPath(project: Project, fromNormalized: string, spec: string): string | null {
   const known = new Set(project.getSourceFiles().map((sf) => normalizePath(sf)));
-  let base: string | null = null;
-  const alias: Array<[RegExp, string]> = [
-    [/^@contracts\//, "src/contracts/"],
-    [/^@domain\//, "src/domain/"],
-    [/^@infra\//, "src/infrastructure/"],
-    [/^@app\//, "src/app/"],
-    [/^@\//, "src/"],
-  ];
-  for (const [re, prefix] of alias) {
-    if (re.test(spec)) {
-      base = spec.replace(re, prefix);
-      break;
-    }
-  }
-  if (!base && spec.startsWith(".")) {
-    base = relative(SRC_ROOT, resolve(SRC_ROOT, dirname(fromNormalized).replace(/^src\//, ""), spec)).replace(/\\/g, "/");
-    base = `src/${base}`;
-  }
-  if (!base) return null; // bare/external module
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`]) {
-    if (known.has(candidate)) return candidate;
-  }
-  return null;
+  const sourceFile = project.getSourceFiles().find((candidate) =>
+    normalizePath(candidate) === fromNormalized
+  );
+  if (!sourceFile) return null;
+  const resolved = ts.resolveModuleName(
+    spec,
+    sourceFile.getFilePath(),
+    project.getCompilerOptions(),
+    project.getModuleResolutionHost(),
+  ).resolvedModule?.resolvedFileName;
+  if (!resolved) return null;
+  const target = project.getSourceFile(resolved);
+  const normalized = target
+    ? normalizePath(target)
+    : relative(REPO_ROOT, resolved).replace(/\\/g, "/");
+  return known.has(normalized) ? normalized : null;
 }
 
 /** Marked modules reachable (transitively) from any file under an llm/ directory. */
@@ -801,6 +794,21 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       expect(detectPIIReachableFromLlm(project)).toEqual([
         "src/infrastructure/llm/evil.ts reaches an unverifiable module load in src/infrastructure/llm/evil.ts:3",
       ]);
+    });
+    it("resolves JavaScript import specifiers through TypeScript extension substitution", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/contact.ts": `import type { PIIBearing } from "@contracts/pii"; export interface Contact extends PIIBearing { firstName: string }`,
+        "/src/infrastructure/llm/evil.ts": `import type { Contact } from "../../domain/contact.js"; export type Leak = Contact;`,
+      });
+      expect(resolveToProjectPath(
+        project,
+        "src/infrastructure/llm/evil.ts",
+        "../../domain/contact.js",
+      )).toBe("src/domain/contact.ts");
+      expect(detectPIIReachableFromLlm(project).some((violation) =>
+        violation.includes("src/domain/contact.ts")
+      )).toBe(true);
     });
   });
 });

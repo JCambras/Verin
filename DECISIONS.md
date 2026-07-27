@@ -1326,3 +1326,38 @@ move).
 selection, slot-name schema, SQL-signature repository classification, manual
 surface table, and file-level reveal allowlist. D-039 through D-042 remain the
 underlying security-boundary decisions.
+
+### D-044 · 2026-07-27 · reversible · Prompt-6 trusted-set, sink-authority, and compiler-resolution boundaries hardened
+
+All six fifth-round findings were legitimate instances of four remaining
+structural gaps: entity masks were sealed individually without a complete-set
+proof, privileged factory modules could be reflected through namespace access,
+governed authorization stopped at the route, and repository and LLM fences
+derived coverage from hand-maintained paths or partial module resolution.
+
+- LLM projection now accepts one sealed `CompleteEntityMaskSet`, verifies exact
+  sensitive-slot coverage, masks every trusted value, proves none remains, and
+  fails closed on unresolved embedded proper names.
+- Privileged identity, tenant, actor, entity-set, tokenization, and secret
+  modules reject namespace imports, re-exports, dynamic access, and
+  unverifiable module loads. Exact named factory and HMAC consumers remain
+  semantically allowlisted.
+- PII reads and audit-row exports require and validate action-specific grants
+  inside their repository functions. Operational audit verification and counts
+  retain tenant-scoped, non-exporting paths.
+- Tenant repository coverage is derived from the transitive SQL module graph
+  across infrastructure and includes exported domain function and variable
+  callables. LLM reachability resolves modules through the TypeScript compiler,
+  including `.js` specifiers that substitute to `.ts`.
+
+**Alternatives:** expand residual PII regexes while retaining caller-assembled
+bindings (rejected because ownership, not pattern count, proves completeness);
+analyze every route-to-helper call graph (rejected because action proof at the
+sink is simpler and survives refactoring); add more adapter directories and
+extension candidates to manual lists (rejected because both recreate false
+green coverage).
+
+**Revert path:** revert this changeset and restore individual entity bindings,
+route-only governed authorization, directory-scoped tenant discovery, manual
+LLM path resolution, and direct-symbol-only privileged access checks. D-039
+through D-043 remain the underlying prompt-6 decisions.

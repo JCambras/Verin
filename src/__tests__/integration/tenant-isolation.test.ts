@@ -8,12 +8,23 @@ import {
   listHouseholds,
 } from "@infra/crm/house-crm";
 import { createApplication } from "@infra/crm/application-store";
-import { systemWriteActor, type WriteActor } from "@contracts/principal";
+import {
+  principalFromIdentity,
+  systemWriteActor,
+  type WriteActor,
+} from "@contracts/principal";
 import { systemTenant, type TenantContext } from "@contracts/tenant";
+import {
+  actorRefOf,
+  authorizeGovernedAction,
+} from "@contracts/authz";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { resumeFlow, type FlowDefinition } from "@domain/workflow/engine";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { listOrgChain } from "@infra/audit/audit-store";
+import {
+  listOrgChain,
+  verifyOrgChain,
+} from "@infra/audit/audit-store";
 import { unwrap } from "@contracts/result";
 
 /**
@@ -26,6 +37,26 @@ const ORG_A = "org-a";
 const ORG_B = "org-b";
 const tenantA = systemTenant("test", ORG_A);
 const tenantB = systemTenant("test", ORG_B);
+const piiGrant = (orgId: string, userId: string) =>
+  unwrap(authorizeGovernedAction(actorRefOf(principalFromIdentity({
+    userId,
+    orgId,
+    role: "advisor",
+    actor: `${userId}@firm.test`,
+    sessionId: `session-${userId}`,
+  })), "pii.view"));
+const grantA = piiGrant(ORG_A, "advisor-a");
+const grantB = piiGrant(ORG_B, "advisor-b");
+const auditGrant = (orgId: string, userId: string) =>
+  unwrap(authorizeGovernedAction(actorRefOf(principalFromIdentity({
+    userId,
+    orgId,
+    role: "ops",
+    actor: `${userId}@firm.test`,
+    sessionId: `session-${userId}`,
+  })), "audit.export"));
+const auditGrantA = auditGrant(ORG_A, "ops-a");
+const auditGrantB = auditGrant(ORG_B, "ops-b");
 
 describe("tenant isolation (integration)", () => {
   let db: SqlDb;
@@ -40,16 +71,22 @@ describe("tenant isolation (integration)", () => {
   });
 
   it("cross-tenant access fails: each tenant reads ONLY its own rows", async () => {
-    const a = await listHouseholds(db, tenantA);
-    const b = await listHouseholds(db, tenantB);
+    const a = await listHouseholds(db, grantA);
+    const b = await listHouseholds(db, grantB);
     expect(a.map((h) => h.orgId)).toEqual([ORG_A]);
     expect(b.map((h) => h.orgId)).toEqual([ORG_B]);
     expect(a[0]!.name).toBe("Alpha Household");
     expect(b[0]!.name).toBe("Beta Household");
   });
 
+  it("a tenant context alone cannot invoke the governed PII read sink", async () => {
+    await expect(listHouseholds(db, tenantA as never)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
   it("tenant-qualified parent relationships reject cross-tenant references", async () => {
-    const householdA = (await listHouseholds(db, tenantA))[0]!;
+    const householdA = (await listHouseholds(db, grantA))[0]!;
     const actorA = systemWriteActor("seed", ORG_A);
     const actorB = systemWriteActor("seed", ORG_B);
     const contactA = unwrap(await createContact(db, actorA, {
@@ -88,12 +125,12 @@ describe("tenant isolation (integration)", () => {
 
   it("an impostor context cannot parse: a cast never reaches SQL", async () => {
     const impostor = { orgId: ORG_A } as unknown as TenantContext;
-    await expect(listHouseholds(db, impostor)).rejects.toMatchObject({ code: "INTERNAL" });
+    await expect(verifyOrgChain(db, impostor)).rejects.toMatchObject({ code: "INTERNAL" });
   });
 
   it("a SPREAD copy of a real context is refused too (the seal does not survive copying)", async () => {
     const spread = { ...tenantA } as TenantContext;
-    await expect(listHouseholds(db, spread)).rejects.toMatchObject({ code: "INTERNAL" });
+    await expect(verifyOrgChain(db, spread)).rejects.toMatchObject({ code: "INTERNAL" });
   });
 
   it("the write chokepoint refuses an impostor BEFORE any business write or audit row", async () => {
@@ -111,7 +148,7 @@ describe("tenant isolation (integration)", () => {
     await expect(
       createHousehold(db, forged, { name: "Forged Attribution" }),
     ).rejects.toMatchObject({ code: "INTERNAL" });
-    const households = await listHouseholds(db, tenantA);
+    const households = await listHouseholds(db, grantA);
     expect(households.map((household) => household.name)).not.toContain("Forged Attribution");
   });
 
@@ -142,8 +179,8 @@ describe("tenant isolation (integration)", () => {
   });
 
   it("audit chains are per-tenant through the repository API", async () => {
-    const chainA = await listOrgChain(db, tenantA);
-    const chainB = await listOrgChain(db, tenantB);
+    const chainA = await listOrgChain(db, auditGrantA);
+    const chainB = await listOrgChain(db, auditGrantB);
     expect(chainA.length).toBeGreaterThan(0);
     expect(chainA.every((r) => r.orgId === ORG_A)).toBe(true);
     expect(chainB.every((r) => r.orgId === ORG_B)).toBe(true);

@@ -11,6 +11,10 @@ import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError } from "@contracts/errors";
 import { assertTenantContext, systemTenant, type TenantContext } from "@contracts/tenant";
+import {
+  assertActionGrant,
+  type ActionGrant,
+} from "@contracts/authz";
 import { log, safeReason } from "@infra/observability/logger";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
@@ -270,10 +274,28 @@ function toChainRow(r: AuditLogRow): ChainRow {
 }
 
 /** Load a tenant's audit chain (examiner export / console). */
-export async function listOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainRow[]> {
-  assertTenantContext(tenant);
-  const res = await db.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [tenant.orgId]);
+export async function listOrgChain(
+  db: SqlDb,
+  grant: ActionGrant<"audit.export">,
+): Promise<ChainRow[]> {
+  assertActionGrant(grant, "audit.export");
+  const res = await db.query<AuditLogRow>(
+    "SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC",
+    [grant.tenant.orgId],
+  );
   return res.rows.map(toChainRow);
+}
+
+export async function countOrgChain(
+  db: SqlDb,
+  tenant: TenantContext,
+): Promise<number> {
+  assertTenantContext(tenant);
+  const result = await db.query<{ count: string | number }>(
+    "SELECT count(*) AS count FROM audit_log WHERE org_id = $1",
+    [tenant.orgId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; entry_count: number | string } | undefined): ChainVerdict {
@@ -305,7 +327,10 @@ function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; e
  * not two: internal hash-chain consistency plus agreement with the out-of-band
  * anchor, so tail-truncation or full deletion is DETECTED (Vale V1 / Sable F4).
  */
-export async function verifyAndListOrgChain(db: SqlDb, tenant: TenantContext): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+async function readAndVerifyOrgChain(
+  db: SqlDb,
+  tenant: TenantContext,
+): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
   assertTenantContext(tenant);
   const orgId = tenant.orgId;
   // Chain rows and the anchor are read in ONE transaction: a drain committing
@@ -322,6 +347,14 @@ export async function verifyAndListOrgChain(db: SqlDb, tenant: TenantContext): P
   return { verdict: verdictFor(rows, anchor), rows };
 }
 
+export async function verifyAndListOrgChain(
+  db: SqlDb,
+  grant: ActionGrant<"audit.export">,
+): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+  assertActionGrant(grant, "audit.export");
+  return readAndVerifyOrgChain(db, grant.tenant);
+}
+
 export async function verifyOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainVerdict> {
-  return (await verifyAndListOrgChain(db, tenant)).verdict;
+  return (await readAndVerifyOrgChain(db, tenant)).verdict;
 }
