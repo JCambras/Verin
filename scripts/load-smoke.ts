@@ -34,6 +34,7 @@ import {
   createSession,
   createUser,
 } from "../src/infrastructure/identity/identity-store";
+import { errorMessage } from "./error-message";
 
 const HOUSEHOLDS = 1000;
 const ACCOUNTS = 2000;
@@ -222,14 +223,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  const message = e instanceof Error
-    ? e.message
-    : typeof e === "object" &&
-        e !== null &&
-        "message" in e &&
-        typeof (e as { message: unknown }).message === "string"
-      ? (e as { message: string }).message
-      : String(e);
-  process.stderr.write(`load-smoke error: ${message}\n`);
+  process.stderr.write(`load-smoke error: ${errorMessage(e)}\n`);
   process.exit(1);
 });

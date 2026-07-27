@@ -23,10 +23,10 @@ import { appError, type AppError } from "@contracts/errors";
 import { isSealedTokenized } from "@infra/pii/tokenize";
 
 /** v3 §16: llm/ is imported only by masked intent-shaping and policy-draft paths. */
-export const LLM_PURPOSES = ["intent-shaping", "policy-drafting"] as const;
+const LLM_PURPOSES = ["intent-shaping", "policy-drafting"] as const;
 export type LlmPurpose = (typeof LLM_PURPOSES)[number];
 
-export const SLOT_TYPES = ["subject", "account-ref", "amount", "date", "free-text"] as const;
+const SLOT_TYPES = ["subject", "account-ref", "amount", "date", "free-text"] as const;
 export type SlotType = (typeof SLOT_TYPES)[number];
 
 /** A typed placeholder the model reasons over; binding to real records happens outside the model. */
@@ -43,13 +43,6 @@ export interface MaskedLlmRequest {
 }
 
 export const SLOT_ID_RE = /^slot_(?!0000)\d{4}$/;
-
-export function slotId(index: number): string {
-  if (!Number.isInteger(index) || index < 1 || index > 9999) {
-    throw appError("VALIDATION", "LLM slot index must be an integer from 1 through 9999.");
-  }
-  return `slot_${String(index).padStart(4, "0")}`;
-}
 
 const sealedTokenizedText = z.custom<Tokenized<string>>(
   (v) =>
@@ -70,7 +63,7 @@ const sealedTokenizedRecord = z.custom<Tokenized<Readonly<Record<string, unknown
   }
 }, "must be a factory-sealed, PII-free Tokenized record");
 
-export const maskedLlmRequestSchema = z.object({
+const maskedLlmRequestSchema = z.object({
   purpose: z.enum(LLM_PURPOSES),
   maskedText: sealedTokenizedText,
   slots: z.array(

@@ -2886,3 +2886,165 @@ failure (each edited file was restored from a copy taken before the injection;
 and the full suite is green again).
 
 **Date:** 2026-07-27 (tenth review-fix round on v3 build-sequence prompt 6).
+
+## Round 11 — sealed-type laundering, governed-sink derivation, observability enums
+
+### PF-044 a sub-interface that merely EXTENDS a sealed type is still a mint
+
+`sealedType()`'s BFS was reverted to walking alias/type arguments and
+union/intersection members but NOT base types (the shape the sibling
+`declaredAs()` in llm-pii-boundary already walked). `interface AnyTenant extends
+TenantContext {}` is a different symbol with a different name, so a cast to it
+resolved to nothing and passed both the fence and the ESLint mirror.
+
+```
+× catches a cast to a sub-interface that merely EXTENDS a sealed type
+  AssertionError: expected false to be true
+  src/__tests__/fitness/tokenized-factory-only.test.ts
+```
+
+### PF-045 the ESLint mirror seals every type the fence seals
+
+`SEALED_TYPES` was narrowed back to the original four
+(`Tokenized|TenantContext|ActionGrant|Principal`). A planted
+`src/app/api/_evil-proof.ts` casting `body as unknown as WriteActor` — the type
+carrying write attribution and tenant scope — then linted CLEAN, while the same
+file is reported by ESLint under the seven-type mirror. The fence's own
+mirror-agreement assertion catches the divergence that made it possible.
+
+```
+$ npx eslint src/app/api/_evil-proof.ts     # 7-type mirror
+  3:29  error  Sealed type: construct via its factory …  no-restricted-syntax
+$ npx eslint src/app/api/_evil-proof.ts     # 4-type mirror
+  (clean)
+
+× enforces: the ESLint edit-time mirror seals exactly the same types and factories
+× enforces: sealed types are built only in their factory modules
+  src/__tests__/fitness/tokenized-factory-only.test.ts
+```
+
+### PF-046 shipped code cannot widen production authority, even through an alias
+
+`src/infrastructure/crm/_evil-proof.ts` was planted with
+`import { registerTestSystemActor as reg } … systemTenant(reg("test"), orgId)`,
+the aliased form that defeated the observability equivalent in round 10.
+
+```
+× enforces: the test-only authority injection point has no shipped caller
+  + "src/infrastructure/crm/_evil-proof.ts:2 references registerTestSystemActor"
+  src/__tests__/fitness/tokenized-factory-only.test.ts
+```
+
+### PF-047 a `FOR UPDATE` row lock does not exempt a PII read
+
+`SQL_MUTATION_RE` was reverted to the unanchored `/\b(?:INSERT\s+INTO|UPDATE|
+DELETE\s+FROM)\b/i` over EVERY string argument of every call, and the
+`auditedWrite` mutation signal was restored. A read whose only SQL is
+`SELECT … FOR UPDATE` — the idiom already live at house-crm.ts:76 — and a read
+that merely records a PII-access audit entry both dropped out of governed-sink
+derivation, so neither owed its `ActionGrant<"pii.view">`.
+
+```
+× does not let a `FOR UPDATE` row lock exempt a PII read sink
+× does not let an audit record buy a PII read out of its grant
+  AssertionError: expected [] to deeply equal [ Array(1) ]
+  src/__tests__/fitness/governed-actions.test.ts
+```
+
+### PF-048 a governed sink on a surface that cannot authorize fails the build
+
+`src/app/_evilproof/actions.ts` was planted calling `verifyAndListOrgChain` from
+a Server Action. The dedicated unsupported-surface rule names what to do instead
+rather than demanding a shape (`requireActionGrant(req, …)`) that a Server Action
+can never produce.
+
+```
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+  src/app/_evilproof/actions.ts:5: governed sink 'verifyAndListOrgChain' on an
+  unsupported surface — governed sinks are reachable only from a route handler …
+  src/__tests__/fitness/governed-actions.test.ts
+```
+
+### PF-049 authorization is tracked by symbol, and the guard must actually return
+
+`referencesAuthorization` was reverted to identifier-TEXT matching, and
+`isFailClosedGuard` to accepting ANY nested return. A route reading
+`body.value.grant` from the request body then satisfied the fence because the
+client-supplied path contains an identifier spelled `grant`; `auth.valueOf()`
+passed the `startsWith("auth.value")` prefix test; and a return buried in a
+never-invoked nested function counted as fail-closed. Separately, reverting
+`resolveCallTargets` to import-alias-only unwrapping made a one-line local alias
+(`const listChain = verifyAndListOrgChain`) hide the route from discovery.
+
+```
+× rejects a client-supplied value whose identifier merely SPELLS the authorized name
+× rejects a `valueOf()` reference standing in for the authorized value
+× rejects a fail-closed return buried in a nested function
+× discovers a governed sink reached through a LOCAL alias
+  src/__tests__/fitness/governed-actions.test.ts
+```
+
+### PF-050 an unregistered audited action degrades to `[REDACTED]`
+
+`house-crm.ts`'s `action: "household.update"` was changed to
+`"household.archive"`. The attribute-vocabulary derivation reports it in BOTH
+directions — the new value is unregistered, and the registered one is now stale —
+so neither half can pass vacuously.
+
+```
+× enforces: the attribute vocabularies match the shipped call sites exactly
+  src/infrastructure/crm/house-crm.ts:75: unregistered action "household.archive"
+    — it would be logged as "[REDACTED]"
+  stale action "household.update" — no shipped call site emits it
+  src/__tests__/fitness/observability-vocabulary.test.ts
+```
+
+### PF-051 a DSN fallback reached through element access
+
+`config/index.ts` was changed to
+`process.env["DATABASE_URL"] ?? "postgres://verin:pw@db.internal:5432/verin"` —
+element access, which the text regex structurally cannot see, on a name the old
+`SECRET_NAME` alternation did not carry even though `sealSecrets` wraps that
+value in a `SecretValue`.
+
+```
+× enforces: no secret has a hardcoded fallback
+  AssertionError: secret fallbacks (AST):
+  src/infrastructure/config/index.ts:102
+  src/__tests__/fitness/no-secret-fallback.test.ts
+```
+
+### PF-052 a frozen repository is still a repository
+
+`src/infrastructure/crm/_evil-repo.ts` was planted exporting
+`Object.freeze({ listAll(db) { … } })` with no tenant parameter. `Readonly<T>`'s
+alias symbol lives in lib.es5.d.ts, so the previous symbol-level bail enumerated
+none of its members.
+
+```
+× enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+  src/infrastructure/crm/_evil-repo.ts :: householdRepo.listAll
+    - repository callable has no sealed tenant context
+  src/__tests__/fitness/tenant-context-required.test.ts
+```
+
+### PF-053 a PII-shaped exported VALUE is import-reachable from llm/
+
+`src/domain/_evil-roster.ts` (`export const DEMO_CLIENT = { firstName, email }`)
+was planted and imported from `src/infrastructure/llm/_evil-consumer.ts`. The
+value has an anonymous object type with no call signature, so the previous
+callable-only walk marked nothing and reachability passed.
+
+```
+× enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it (invariant 1)
+  src/infrastructure/llm/_evil-consumer.ts reaches PII-bearing module src/domain/_evil-roster.ts
+  src/__tests__/fitness/llm-pii-boundary.test.ts
+```
+
+**Revert:** every planted file was deleted and every edited file restored from a
+copy taken before the injection (`git status` shows no `_evil*` artifacts and no
+unintended diff in `eslint.config.mjs`, `src/infrastructure/config/index.ts`,
+`src/infrastructure/crm/house-crm.ts`, or the three fence files). The full suite
+is green again: 48 files, 543 tests.
+
+**Date:** 2026-07-27 (eleventh review-fix round on v3 build-sequence prompt 6).

@@ -144,19 +144,20 @@ function callableMembers(
   ) {
     return entries;
   }
-  const symbol = type.getAliasSymbol() ?? type.getSymbol();
-  if (
-    symbol &&
-    !symbol.getDeclarations().some((declaration) =>
-      normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
-    )
-  ) {
-    return entries;
-  }
+  // Filter per PROPERTY, never on the type's own symbol: `Object.freeze(repo)`
+  // has type `Readonly<T>`, whose ALIAS symbol is declared in lib.es5.d.ts, so a
+  // symbol-level bail hides every method of a frozen repository (and the same
+  // for a Readonly<>/Partial<>/Record<>/Pick<> annotation). A property DECLARED
+  // under src/ is ours regardless of the wrapper; lib members filter themselves out.
   for (const property of type.getProperties()) {
     const declaration = property.getValueDeclaration() ??
       property.getDeclarations()[0];
-    if (!declaration) continue;
+    if (
+      !declaration ||
+      !normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+    ) {
+      continue;
+    }
     const signatures = property.getTypeAtLocation(declaration).getCallSignatures();
     if (signatures.length) {
       entries.push({ name: `${owner}.${property.getName()}`, signatures });
@@ -361,8 +362,12 @@ function returnedRepositoryEntries(
     .map((expression) => resolveObject(expression))
     .filter((expression): expression is Node => expression !== null);
   const entries: RepositoryEntry[] = [];
-  for (const expression of expressions) {
-    if (!Node.isObjectLiteralExpression(expression)) continue;
+  // `return { create, save }` (shorthand) and `return { ...base }` (spread) are
+  // the same returned port as `return { create() {…} }`. Dropping them left the
+  // ONLY check on an escaped factory's methods looking at a form the author can
+  // refactor away in one line.
+  const collect = (expression: Node, visited: Set<string>): void => {
+    if (!Node.isObjectLiteralExpression(expression)) return;
     for (const property of expression.getProperties()) {
       if (Node.isMethodDeclaration(property)) {
         entries.push({
@@ -371,19 +376,56 @@ function returnedRepositoryEntries(
         });
         continue;
       }
-      if (!Node.isPropertyAssignment(property)) continue;
-      const initializer = property.getInitializer();
-      if (!initializer ||
-        (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer))) {
+      if (Node.isSpreadAssignment(property)) {
+        const spread = resolveObject(property.getExpression(), visited);
+        if (spread) collect(spread, visited);
+        continue;
+      }
+      const callable = Node.isPropertyAssignment(property)
+        ? property.getInitializer()
+        : Node.isShorthandPropertyAssignment(property)
+        ? resolveCallable(property.getNameNode())
+        : undefined;
+      if (
+        !callable ||
+        (!Node.isArrowFunction(callable) &&
+          !Node.isFunctionExpression(callable) &&
+          !Node.isFunctionDeclaration(callable))
+      ) {
         continue;
       }
       entries.push({
         name: `${owner}.${property.getName()}`,
-        signatures: [initializer.getSignature()],
+        signatures: [callable.getSignature()],
       });
     }
-  }
+  };
+  for (const expression of expressions) collect(expression, new Set());
   return entries;
+}
+
+/** The function a shorthand property name stands for (a named inner function or a function-valued const). */
+function resolveCallable(identifier: Node): Node | undefined {
+  const symbol = identifier.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  // A shorthand identifier's own symbol is the OBJECT PROPERTY, not the value it
+  // stands for; go-to-definition is what crosses back to the declaration.
+  const candidates = [
+    ...(Node.isIdentifier(identifier) ? identifier.getDefinitionNodes() : []),
+    ...(target?.getDeclarations() ?? []),
+  ];
+  for (const declaration of candidates) {
+    if (Node.isFunctionDeclaration(declaration)) return declaration;
+    if (!Node.isVariableDeclaration(declaration)) continue;
+    const initializer = declaration.getInitializer();
+    if (
+      initializer &&
+      (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+    ) {
+      return initializer;
+    }
+  }
+  return undefined;
 }
 
 function sqlBackedInfrastructureModules(project: Project): Set<string> {
@@ -858,6 +900,82 @@ describe("tenant-context-required fence", () => {
         {
           ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
           detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("flags an unscoped method returned by SHORTHAND property", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export function makeRepo(db: SqlDb) {
+          function listAll() { return db.query("SELECT 1"); }
+          const loadById = (id: string) => db.query("SELECT 1");
+          return { listAll, loadById };
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it("flags an unscoped method returned through a SPREAD", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export function makeRepo(db: SqlDb) {
+          const base = {
+            listAll() { return db.query("SELECT 1"); },
+          };
+          return { ...base };
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it("flags an unscoped repository object wrapped in Object.freeze", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export const householdRepo = Object.freeze({
+          listAll(db: SqlDb) { return db.query("SELECT 1"); },
+        });
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: householdRepo.listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it("flags an unscoped repository behind a Readonly<> annotation", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        interface Repo { listAll(db: SqlDb): unknown }
+        export const householdRepo: Readonly<Repo> = {
+          listAll(db: SqlDb) { return db.query("SELECT 1"); },
+        };
+      `);
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: householdRepo.listAll",
+          detail: "repository callable has no sealed tenant context",
         },
       ]);
     });

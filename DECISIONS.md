@@ -1584,3 +1584,71 @@ word as a name, which refuses ordinary prose).
 **Revert path:** revert this changeset to restore the leading-word shift, the
 3-18 digit account shape, the text-keyed injection-point filter, and the
 uncanonicalized `executionId`. D-048 and ADR-0031 stand independently.
+
+## D-050 — Sealed types, governed sinks, and observability vocabularies are closed structurally
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.3/§15.4, charter #1/#4/#14,
+ADR-0018, ADR-0031, D-036, D-048, D-049
+
+The prompt-6 boundaries held at runtime, but several of the fences that BACK them
+up could be walked around in one line. Closed as one story rather than
+line-by-line:
+
+- **A sealed type is sealed against every way to produce one, not just a named
+  cast.** `sealedType()` now walks base types (so `interface X extends
+  TenantContext {}` cannot launder), and construction detection covers type
+  predicates / assertion signatures, explicit generic type arguments, and a
+  sealed ANNOTATION filled by a call from outside the factory. The one sanctioned
+  generic shape is a call that CONSULTS the factory's runtime seal (the zod
+  ingress gate's `isSealedTokenized`) — proving provenance rather than asserting
+  it. The ESLint mirror now seals all seven types and its two lists are asserted
+  equal to the fence's registry, so it cannot drift narrower unnoticed.
+- **The write exemption keys on a real DML statement reaching a resolved SQL
+  executor.** The old unanchored regex matched the `FOR UPDATE` row lock already
+  live in `house-crm.ts`, and any `auditedWrite` call — meaning the more
+  auditable a PII read was, the less authorization it owed. Both are gone; genuine
+  writers still reach an anchored `INSERT/UPDATE/DELETE` inside `perform`.
+- **Governed-sink wiring is symbol-resolved end to end**: local aliases are
+  followed into discovery, the authorized value is tracked by declaration symbol
+  (a client-supplied `body.value.grant` no longer counts), the fail-closed return
+  must be a direct statement of the guard, and the sink is matched by symbol
+  rather than by a text form that never matches `owner.property` members.
+- **A governed sink on a surface that cannot authorize is its own violation.**
+  Server Actions and server components have no `NextRequest`, so they can never
+  satisfy `requireActionGrant`. Rather than leave them unfenced or invent a
+  request-less entry point in prompt 6, reaching a sink from one now fails the
+  build with a message naming the rule and the remedy.
+- **Test vocabulary and test AUTHORITY both enter through injection seams.**
+  `"test"` left `SYSTEM_ACTOR_IDS` (a production security allowlist whose entries
+  are load-bearing authority) for `registerTestSystemActor`, fenced — like
+  `registerTestSpanName` — to have no shipped caller, keyed on resolved symbol so
+  an alias cannot evade it.
+- **The observability vocabularies are derived BOTH ways.** Span names and log
+  messages already were; actions, enums, numeric fields, and id fields now are
+  too, from the same call sites plus the audit intents that feed them. That
+  surfaced three dead `OBSERVABILITY_ID_FIELDS` entries, a dead `status:
+  "pending"`, and a genuinely missing `entityType: "Org"` (the seed's audited
+  write would have logged `[REDACTED]`).
+- **Account-ref candidates are extracted on the SAME basis the residual check
+  reads.** Masking a name inserts slot digits that break the labeled-SSN
+  proximity window, so a run redaction removed pre-mask survived post-mask:
+  `"ssn Bob 123456789"` produced zero candidates and one refusing digit run — a
+  refusal with nothing to declare. Extraction now runs over the subject-masked
+  text, so the refusal is satisfiable (D-049's claim now holds in both directions).
+
+**Line budgets:** contracts measured 1019 and domain 1201 after these fixes. The
+ceilings were NOT raised (charter #1: platform ceilings only ratchet down);
+duplicated prose and one duplicated doc block were consolidated instead, leaving
+contracts at 980/1000 (20 lines of headroom) and domain at 1187/1200. Behaviour
+is unchanged by every one of those edits.
+
+**Alternatives:** require a `WriteActor` for the mutation exemption (rejected —
+it misclassifies the pre-authentication identity writes `createUser`/
+`createSession`, which legitimately hold only a `TenantContext`); add a
+request-less authorization entry point so Server Actions can host governed sinks
+(rejected — that is later architecture, and inventing it here would be designing
+an authority surface with no consumer); raise the contracts ceiling by ADR
+(rejected — the ratchet only goes down).
+
+**Revert path:** revert this changeset. The narrower fences and the previous
+vocabularies return; ADR-0031 and D-048/D-049 stand independently.

@@ -118,16 +118,32 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
-- **Sealed security types (v3 §15, D-036): `TenantContext`, `ActionGrant`, `WriteActor`, `Tokenized<T>` construct ONLY
-  via their factories** (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction` in
+- **Sealed security types (v3 §15, D-036) construct ONLY via their factories** - all SEVEN of
+  `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
+  (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction`/`actorRefOf` in
   `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
-  `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`). A cast or literal anywhere else
-  fails the `tokenized-factory-only` fence + ESLint. Every repository/port call requires a TenantContext
-  (`tenant-context-required` fence; capability-keyed loads are exact-match escapes IN the fence).
-  Governed route surfaces call `requireActionGrant(req, "<action>")`, not bare role checks. Nothing under
-  `src/infrastructure/llm/` may (transitively) import a PIIBearing-marked type (`llm-pii-boundary` fence -
-  a new interface with a raw PII-named field must extend `PIIBearing` or be reviewed into that fence's
-  escapes). Config secrets are `SecretValue`s: `.reveal()` only in the fence-allowlisted HMAC consumers.
+  `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`; `observabilityId` in
+  `domain/observability/safe-values.ts`). A cast, literal, sub-interface that merely EXTENDS one, type
+  predicate, or generic type argument anywhere else fails the `tokenized-factory-only` fence; the ESLint
+  mirror's `SEALED_TYPES`/`SEALED_FACTORY_FILES` must match that fence's registry, and it asserts so.
+  Every repository/port call requires a TenantContext (`tenant-context-required` fence; capability-keyed
+  loads are exact-match escapes IN the fence). Nothing under `src/infrastructure/llm/` may (transitively)
+  import a PIIBearing-marked type or a PII-shaped exported VALUE (`llm-pii-boundary` fence - a new
+  interface with a raw PII-named field must extend `PIIBearing` or be reviewed into that fence's escapes).
+  Config secrets are `SecretValue`s: the raw string leaves only through the free function `revealSecret()`
+  (there is no `.reveal()` member), and only in the fence-allowlisted HMAC consumers.
+- **Governed sinks are reachable only from a route handler** (`src/app/**/route.ts`), which calls
+  `requireActionGrant(req, "<action>")` rather than a bare role check. That hook needs the framework's
+  `NextRequest` and calls `requirePrincipal` (which writes a rotated cookie), so a Server Action or server
+  component can never satisfy it - reaching a governed sink from `actions.ts`, a `page.tsx`, or any server
+  component is its own fail-closed `governed-actions` violation. Move the sink behind a route handler;
+  a request-less authorization entry point is later architecture, not an escape.
+- **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
+  `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
+  (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an
+  aliased import cannot evade it. The observability vocabularies (span names, log messages, actions,
+  enums, numeric fields, id fields) are derived from real call sites BOTH ways by
+  `observability-vocabulary` - an unregistered value would silently log as `[REDACTED]`.
 
 ## Maintaining this file
 

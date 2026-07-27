@@ -5,6 +5,7 @@ import {
 } from "@contracts/pii";
 import { appError } from "@contracts/errors";
 
+/** Derived-and-checked against the real `observabilityId(...)` call sites by the observability-vocabulary fence. */
 export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
@@ -12,9 +13,6 @@ export const OBSERVABILITY_ID_FIELDS = [
   "executionId",
   "orgId",
   "outboxRowId",
-  "refs",
-  "sessionId",
-  "userId",
 ] as const;
 export type ObservabilityIdField = (typeof OBSERVABILITY_ID_FIELDS)[number];
 const ID_FIELDS = new Set<string>(OBSERVABILITY_ID_FIELDS);
@@ -48,10 +46,10 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   ])],
   ["entityType", new Set([
     "AccountOpeningApplication", "Contact", "FinancialAccount", "Household",
-    "Session", "Task", "User",
+    "Org", "Session", "Task", "User",
   ])],
   ["flow", new Set(["account-opening"])],
-  ["status", new Set(["completed", "failed", "pending", "running", "suspended"])],
+  ["status", new Set(["completed", "failed", "running", "suspended"])],
 ]);
 const NUMERIC_FIELDS = new Set(["attempts", "outboxPending"]);
 const LOG_MESSAGES = new Set([
@@ -67,11 +65,9 @@ const LOG_MESSAGES = new Set([
   "security-event audit could not be recorded",
 ]);
 /**
- * The production span vocabulary. Derived-and-checked by the
- * observability-vocabulary fence: every `withSpan(...)` literal in shipped code
- * must appear here and every entry here must have a live call site, so a new
- * span cannot silently degrade to "operation". Test-only names are injected via
- * registerTestSpanName, never enumerated in production vocabulary.
+ * The production span vocabulary, derived-and-checked BOTH ways by the
+ * observability-vocabulary fence, so a new span cannot silently degrade to
+ * "operation". Test-only names arrive via registerTestSpanName, never here.
  */
 const SPAN_NAMES = new Set([
   "account-opening.finalize", "crm.application.create", "crm.contact.create",
@@ -79,11 +75,7 @@ const SPAN_NAMES = new Set([
   "flow.account-opening.retry", "flow.account-opening.start",
 ]);
 
-/**
- * Test-only injection point for span names. The `test.` namespace is enforced
- * here and the observability-vocabulary fence proves the only callers live
- * under src/__tests__/, so this can never widen the production vocabulary.
- */
+/** Test-only span names: `test.`-namespaced, and fenced to have no shipped caller. */
 const TEST_SPAN_NAMES = new Set<string>();
 export function registerTestSpanName(name: string): void {
   if (!/^test\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(name)) {
@@ -95,19 +87,14 @@ export function registerTestSpanName(name: string): void {
   TEST_SPAN_NAMES.add(name);
 }
 
-// Opaque machine identifiers: hex/uuid/slug segments, CASE-INSENSITIVE. The
-// account-opening route validates its client request id with a case-insensitive
-// UUID regex and that value becomes the executionId, so a case-sensitive
-// predicate here would throw out of a log line AFTER the flow's writes commit —
-// a logging helper must never abort a committed business operation.
+// Opaque machine identifiers: hex/uuid/slug segments, CASE-INSENSITIVE — a
+// case-sensitive predicate would throw out of a log line AFTER the flow's writes
+// commit, and a logging helper must never abort a committed business operation.
 const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
-// The person-name shape: a capital immediately followed by a lowercase letter
+// The person-name SHAPE: a capital immediately followed by a lowercase letter
 // ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex ids run
-// digit/uppercase runs ("3F2504E0-4F89") and slugs are lowercase ("org",
-// "esign-webhook"). Keying on the SHAPE rather than on "contains only letters"
-// is what keeps registered machine tokens (SYSTEM_ACTOR_IDS such as "seed", and
-// short org ids such as "org") from being refused; whitespace is already
-// impossible under OPAQUE_ID_RE, so a multi-word name cannot reach here at all.
+// digit/uppercase runs and slugs are lowercase — so keying on the shape (rather
+// than "contains only letters") keeps "seed" and "org" from being refused.
 const NAME_SHAPED_RE = /\p{Lu}\p{Ll}/u;
 
 export function observabilityId(
@@ -174,8 +161,20 @@ export function safeSpanName(value: string): string {
   return SPAN_NAMES.has(value) || TEST_SPAN_NAMES.has(value) ? value : "operation";
 }
 
-/** The vocabularies the observability-vocabulary fence checks call sites against. */
+/**
+ * Every closed vocabulary the runtime degrades against, exposed so the
+ * observability-vocabulary fence can derive each one from the real call sites
+ * and check it BOTH ways. Span names and log messages degrade to
+ * "operation"/"log event"; an unlisted action, enum member, or numeric field
+ * degrades to "[REDACTED]" — silently, in the exact log line an operator needs.
+ */
 export const OBSERVABILITY_VOCABULARY = Object.freeze({
   spanNames: Object.freeze([...SPAN_NAMES].sort()) as readonly string[],
   logMessages: Object.freeze([...LOG_MESSAGES].sort()) as readonly string[],
+  idFields: OBSERVABILITY_ID_FIELDS as readonly string[],
+  actions: Object.freeze([...ACTIONS].sort()) as readonly string[],
+  enums: Object.freeze(
+    Object.fromEntries([...ENUMS].map(([field, values]) => [field, Object.freeze([...values].sort())])),
+  ) as Readonly<Record<string, readonly string[]>>,
+  numericFields: Object.freeze([...NUMERIC_FIELDS].sort()) as readonly string[],
 });

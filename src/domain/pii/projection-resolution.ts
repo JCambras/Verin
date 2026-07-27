@@ -3,27 +3,24 @@
  *
  * AUTHORITY (D-048): a projected value is RESOLVED when every structurally
  * sensitive span has been replaced by a factory-minted slot placeholder or the
- * redaction sentinel — never "every word appears on an enumerated English
- * list". The sensitivity predicates are contracts/pii.ts's own
- * (looksLikePIIValue / looksLikeAmbiguousSensitiveText / hasSensitiveDigitRun /
- * TITLE_CASE_WORD_SOURCE), the SAME ones that guard the audit, log, and trace
- * boundaries, so the four boundaries cannot disagree and arbitrary non-PII prose
- * passes. Candidate extraction reads the SAME shapes: a title-case run is a
- * subject candidate and a 9-18 digit run that survives redaction is an
- * account-ref candidate, so the set the residual check would refuse is the set
- * the masker was told to bind — neither over-binding ordinary numbers (a year is
- * not an account) nor leaving a refusal the caller cannot satisfy.
+ * redaction sentinel — never "every word appears on an enumerated English list".
+ * The sensitivity predicates are contracts/pii.ts's own (looksLikePIIValue /
+ * looksLikeAmbiguousSensitiveText / hasSensitiveDigitRun /
+ * TITLE_CASE_WORD_SOURCE), the SAME ones guarding the audit, log, and trace
+ * boundaries, so the four cannot disagree and arbitrary non-PII prose passes.
+ * Candidate extraction reads those same shapes ON THE SAME BASIS the residual
+ * check reads (the subject-masked text), so the set that check would refuse is
+ * exactly the set the masker was told to bind — neither over-binding ordinary
+ * numbers (a year is not an account) nor leaving an unsatisfiable refusal.
  *
  * Documented residual risk (not papered over): a SINGLE capitalized word that
- * OPENS a prose string carries no information — English capitalizes sentence
- * openers — so on its own it is not a name signal at any Verin boundary. A
- * MULTI-word title-case run is the person-name shape wherever it sits (it is
- * what TITLE_CASE_PERSON_RE keys on), so a leading run is bound whole. A caller
- * that knows a lone leading token is a person supplies it in evidence under a
- * name key (firstName / fullName / householdName / …), which makes it a
- * candidate regardless of position and masks every case-variant of it in the
- * text. Evidence keys and values are machine data rather than sentences, so they
- * get the strict treatment: ANY title-case word there must be masked.
+ * OPENS a prose string is sentence grammar, so on its own it is not a name
+ * signal at any Verin boundary. A MULTI-word title-case run is the person-name
+ * shape wherever it sits (what TITLE_CASE_PERSON_RE keys on), so a leading run
+ * is bound whole. A caller that knows a lone leading token is a person supplies
+ * it in evidence under a name key, which makes it a candidate regardless of
+ * position. Evidence keys/values are machine data, so they get the strict
+ * treatment: ANY title-case word there must be masked.
  */
 import {
   hasSensitiveDigitRun,
@@ -103,15 +100,43 @@ function strictSubjectCandidates(text: string): string[] {
   return titleRuns(text).map(({ run }) => run);
 }
 
+const SIMULATED_SLOT = "{{slot_0000}}";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The text as the residual guards will see it: every bound subject already
+ * replaced by a slot placeholder. Extraction MUST read this basis, not the raw
+ * string — masking a name changes what redaction can still match around it
+ * (a labeled SSN's `\D{0,10}` label-to-digits window does not survive the
+ * digits inside an inserted `{{slot_0001}}`), so extracting from the raw text
+ * produced a refusal the caller could not satisfy: zero account candidates
+ * pre-mask, one refusing digit run post-mask.
+ */
+function withSubjectsMasked(text: string, subjects: readonly string[]): string {
+  return [...subjects]
+    .sort((a, b) => b.length - a.length)
+    .reduce(
+      (masked, subject) =>
+        masked.replace(new RegExp(escapeRegExp(subject), "gi"), SIMULATED_SLOT),
+      text,
+    );
+}
+
 /**
  * Account references: EXACTLY the runs hasSensitiveDigitRun refuses, read from
- * the text after pattern redaction. A run the scrubber replaces with the
- * sentinel (a labeled SSN, an E.164 phone) never reaches a model, so it needs no
- * slot; a run that survives redaction is precisely what the residual check would
- * refuse, so the caller is told to bind it.
+ * the subject-masked text after pattern redaction. A run the scrubber replaces
+ * with the sentinel (a labeled SSN, an E.164 phone) never reaches a model, so it
+ * needs no slot; a run that survives redaction on the SAME basis the residual
+ * check reads is precisely what that check would refuse, so the caller is told
+ * to bind it — and binding it is enough.
  */
-function accountCandidates(text: string): string[] {
-  return [...redactPIIValues(text).matchAll(ACCOUNT_RUN_RE)].map((match) => match[0]);
+function accountCandidates(text: string, subjects: readonly string[] = []): string[] {
+  return [
+    ...redactPIIValues(withSubjectsMasked(text, subjects)).matchAll(ACCOUNT_RUN_RE),
+  ].map((match) => match[0]);
 }
 
 function collectCandidates(
@@ -124,8 +149,9 @@ function collectCandidates(
     if (key && SUBJECT_KEYS.has(key)) addCandidate(candidates, "subject", value);
     else if (key && ACCOUNT_KEYS.has(key)) addCandidate(candidates, "account-ref", value);
     else {
-      for (const subject of strictSubjectCandidates(value)) addCandidate(candidates, "subject", subject);
-      for (const account of accountCandidates(value)) addCandidate(candidates, "account-ref", account);
+      const subjects = strictSubjectCandidates(value);
+      for (const subject of subjects) addCandidate(candidates, "subject", subject);
+      for (const account of accountCandidates(value, subjects)) addCandidate(candidates, "account-ref", account);
     }
     return;
   }
@@ -158,10 +184,11 @@ export function resolveCompleteSensitiveEntities(
     slot.slotType === "subject" || slot.slotType === "account-ref"
   );
   const candidates: Candidate[] = [];
-  for (const subject of proseSubjectCandidates(input.requestText)) {
+  const subjects = proseSubjectCandidates(input.requestText);
+  for (const subject of subjects) {
     addCandidate(candidates, "subject", subject);
   }
-  for (const account of accountCandidates(input.requestText)) {
+  for (const account of accountCandidates(input.requestText, subjects)) {
     addCandidate(candidates, "account-ref", account);
   }
   collectCandidates(input.evidence, candidates);

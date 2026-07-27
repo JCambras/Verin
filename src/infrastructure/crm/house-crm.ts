@@ -46,7 +46,12 @@ export async function createHousehold(
   const createdAt = nowIso();
   const prov = houseProv();
   const status: HouseholdStatus = input.status ?? "prospect";
-  const advisorUserId = a.tenant.actor.kind === "human" ? a.actorUserId : null;
+  // A DELEGATED write actor carries a real human actorUserId while its tenant
+  // actor is the delegating SYSTEM (that is what delegatedWriteActor exists for),
+  // so keying on the tenant actor's kind alone would drop advisor attribution
+  // for exactly the case the factory was built to serve.
+  const attributedToHuman = a.delegatedBy !== null || a.tenant.actor.kind === "human";
+  const advisorUserId = attributedToHuman ? a.actorUserId : null;
   return auditedWrite<Household>({
     // detail is PII-minimized (no client name); entityId identifies the record.
     db, actor: a, action: "household.create", entityType: "Household", entityId: id,

@@ -13,6 +13,7 @@ import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 import { getConfig } from "../src/infrastructure/config";
 import { systemTenant } from "../src/contracts/tenant";
 import { systemWriteActor } from "../src/contracts/principal";
+import { errorMessage } from "./error-message";
 
 export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
@@ -61,6 +62,6 @@ seed()
     process.stdout.write(`seeded org ${DEMO_ORG_ID} with ${DEMO_USERS.length} demo users\n`);
   })
   .catch((e) => {
-    process.stderr.write(`seed failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(`seed failed: ${errorMessage(e)}\n`);
     process.exit(1);
   });

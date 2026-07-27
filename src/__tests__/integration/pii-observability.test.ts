@@ -178,7 +178,7 @@ describe("traces never carry raw names or account numbers", () => {
         contact: FIXTURES.email,
         phone: FIXTURES.phone,
         orgId: observabilityId("orgId", ORG),
-        refs: [FIXTURES.email, observabilityId("refs", ORG)],
+        entityId: [FIXTURES.email, observabilityId("entityId", ORG)],
       },
       async () => undefined,
     );
@@ -187,7 +187,7 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.contact).toBe(REDACTED);
     expect(span!.attributes.phone).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifiers survive
-    expect(span!.attributes.refs).toEqual([REDACTED, ORG]); // array values are scrubbed element-wise
+    expect(span!.attributes.entityId).toEqual([REDACTED, ORG]); // array values are scrubbed element-wise
   });
 
   it("a PII-NAMED attribute KEY is redacted regardless of value type (numbers included)", async () => {

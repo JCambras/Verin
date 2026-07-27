@@ -54,6 +54,23 @@ holds in the same PR. Convenience code never qualifies.
   end-to-end in both directions (realistic prose accepted once its sensitive
   spans are tokenized; raw names, account numbers, and 9-18 digit runs refused).
 
+## Scope: the projection is deliberately ONE-WAY in prompt 6
+
+`projectForLlm` returns only the `MaskedLlmRequest`. The raw values it bound are
+used for masking and then discarded: there is no un-masking API, and the caller
+cannot learn which entity landed in which slot. That is intentional, not an
+oversight. Prompt 6's contract is "nothing unmasked reaches a model"; the
+inverse direction — binding a model's slot-shaped answer back to real records —
+belongs to the consumer that will act on that answer, which arrives at prompt 13.
+
+Designing the binding API now would mean designing it with no consumer to
+constrain it, and any shape that returns the raw values (sealed or not) widens
+the very surface this boundary narrows. Prompt 13 owns that API and the decision
+of whether bindings travel back through this function, through a separate
+resolver, or through caller-supplied candidate→slot pairs. Until then
+`request-schema.ts`'s "binding to real records happens outside the model" means
+exactly that: outside the model, and outside this layer.
+
 ## Alternatives Rejected
 
 | Alternative | Why rejected |
@@ -61,6 +78,7 @@ holds in the same PR. Convenience code never qualifies.
 | Delete the projection layer, re-land at prompt 13 | v3 invariant 1 would be ACTIVE against a seam no code crosses, and prompt 13 could route around it. |
 | Keep it but mark invariant 1 not-yet-active | The registry stores activation only; faking it not-active to match missing code is exactly the fake-green the charter forbids. |
 | Add a throwaway caller so knip sees a consumer | Mock theater; a fake consumer proves less than an honest ADR. |
+| Return the slot bindings now so prompt 13 finds them ready | Designs an un-masking API with no consumer to constrain it, and widens the surface this boundary exists to narrow. |
 
 ## Trade-offs
 
@@ -73,5 +91,6 @@ the corresponding share of the ADR-0029/0030 line-budget headroom.
 ## Revisit When
 
 Prompt 13 lands the model client. At that point `projectForLlm` gains its
-production caller, this exception expires, and the ratchet in ADR-0018 applies
-to whatever the boundary actually costs.
+production caller, this exception expires, the binding/un-masking API is
+designed against a real consumer, and the ratchet in ADR-0018 applies to
+whatever the boundary actually costs.

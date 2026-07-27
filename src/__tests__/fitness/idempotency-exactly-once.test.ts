@@ -3,6 +3,9 @@ import { createMemoryDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { unwrap } from "@contracts/result";
 import { systemWriteActor } from "@contracts/principal";
+import { registerTestSystemActor } from "@contracts/tenant";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * IDEMPOTENCY EXACTLY-ONCE FENCE (ADR-0009, charter #16). Proves the audited-write
@@ -15,7 +18,7 @@ async function seed() {
   return db;
 }
 
-const ACTOR = systemWriteActor("test", "o");
+const ACTOR = systemWriteActor(TEST_SYSTEM_ACTOR, "o");
 
 async function writeWithKey(db: Awaited<ReturnType<typeof seed>>, key: string): Promise<void> {
   await auditedWrite({
