@@ -118,12 +118,32 @@ function configuredPathTargets(specifier: string, compilerOptions: CompilerOptio
 }
 
 function classifySpecifier(
+  project: Project,
   fromFile: string,
   specifier: string,
-  compilerOptions: CompilerOptions,
 ): SpecifierClassification {
   const sourceRoot = sourceRootOf(fromFile);
   if (sourceRoot === null) return { kind: "external" };
+  const compilerOptions = project.getCompilerOptions();
+  const resolvedModule = ts.resolveModuleName(
+    specifier,
+    fromFile,
+    compilerOptions,
+    project.getModuleResolutionHost(),
+  ).resolvedModule;
+  if (resolvedModule) {
+    const target = resolve(resolvedModule.resolvedFileName);
+    const layer =
+      layerWithinSourceRoot(target, sourceRoot) ??
+      layerWithinSourceRoot(target, SRC_ROOT) ??
+      layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT);
+    if (layer !== null) return { kind: "layer", layer };
+    const segments = target.split(/[/\\]/);
+    if (resolvedModule.isExternalLibraryImport || segments.includes("node_modules")) {
+      return { kind: "external" };
+    }
+    return { kind: "local-unclassified" };
+  }
   const targets = specifier.startsWith(".") || isAbsolute(specifier)
     ? [resolve(dirname(fromFile), specifier)]
     : configuredPathTargets(specifier, compilerOptions);
@@ -161,6 +181,7 @@ export interface ModuleReference {
     | "reference-path"
     | "reference-lib"
     | "require-reference"
+    | "create-require"
     | "implicit-jsx-runtime";
 }
 
@@ -171,8 +192,66 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     node.getSymbol()?.getDeclarations().some(
       (declaration) => declaration.getSourceFile() === sf,
     ) ?? false;
+  const loaderSpecifier = (node: Node | undefined): string | null => {
+    let expression = node;
+    while (Node.isAwaitExpression(expression) || Node.isParenthesizedExpression(expression)) {
+      expression = expression.getExpression();
+    }
+    if (!Node.isCallExpression(expression)) return null;
+    const callee = expression.getExpression();
+    if (
+      callee.getKind() !== SyntaxKind.ImportKeyword &&
+      (callee.getText() !== "require" || isDeclaredLocally(callee))
+    ) {
+      return null;
+    }
+    const argument = expression.getArguments()[0];
+    return argument &&
+      (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+      ? argument.getLiteralText()
+      : null;
+  };
+  const isNodeModuleSpecifier = (specifier: string | null): boolean =>
+    specifier === "module" || specifier === "node:module";
   for (const imp of sf.getImportDeclarations()) {
     refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
+  }
+  const createRequireNamespaces = new Set<string>();
+  for (const imp of sf.getImportDeclarations()) {
+    if (!isNodeModuleSpecifier(imp.getModuleSpecifierValue())) continue;
+    const namespace = imp.getNamespaceImport();
+    const defaultImport = imp.getDefaultImport();
+    if (namespace) createRequireNamespaces.add(namespace.getText());
+    if (defaultImport) createRequireNamespaces.add(defaultImport.getText());
+    for (const named of imp.getNamedImports()) {
+      if (named.getName() !== "createRequire") continue;
+      refs.push({
+        specifier: null,
+        line: named.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
+  }
+  for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const initializer = declaration.getInitializer();
+    const initializedFromNodeModule =
+      isNodeModuleSpecifier(loaderSpecifier(initializer)) ||
+      (Node.isIdentifier(initializer) && createRequireNamespaces.has(initializer.getText()));
+    if (!initializedFromNodeModule) continue;
+    const name = declaration.getNameNode();
+    if (Node.isIdentifier(name)) {
+      createRequireNamespaces.add(name.getText());
+      continue;
+    }
+    if (!Node.isObjectBindingPattern(name)) continue;
+    for (const element of name.getElements()) {
+      if ((element.getPropertyNameNode()?.getText() ?? element.getName()) !== "createRequire") continue;
+      refs.push({
+        specifier: null,
+        line: element.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
   }
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
@@ -258,6 +337,20 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
+  for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+    const expression = access.getExpression();
+    if (
+      access.getName() === "createRequire" &&
+      (createRequireNamespaces.has(expression.getText()) ||
+        isNodeModuleSpecifier(loaderSpecifier(expression)))
+    ) {
+      refs.push({
+        specifier: null,
+        line: access.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
+  }
   for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
     if (
       identifier.getText() === "require" &&
@@ -273,6 +366,22 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   }
   for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
     const argument = access.getArgumentExpression();
+    if (
+      (createRequireNamespaces.has(access.getExpression().getText()) ||
+        isNodeModuleSpecifier(loaderSpecifier(access.getExpression()))) &&
+      (!argument ||
+        !(
+          Node.isStringLiteral(argument) ||
+          Node.isNoSubstitutionTemplateLiteral(argument)
+        ) ||
+        argument.getLiteralText() === "createRequire")
+    ) {
+      refs.push({
+        specifier: null,
+        line: access.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
     if (
       argument &&
       (Node.isStringLiteral(argument) ||
@@ -305,7 +414,6 @@ export interface LayerViolation {
  */
 export function detectLayerViolations(project: Project): LayerViolation[] {
   const violations: LayerViolation[] = [];
-  const compilerOptions = project.getCompilerOptions();
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
     const fromLayer = layerOfPath(filePath);
@@ -323,7 +431,7 @@ export function detectLayerViolations(project: Project): LayerViolation[] {
         }
         continue;
       }
-      const classification = classifySpecifier(filePath, ref.specifier, compilerOptions);
+      const classification = classifySpecifier(project, filePath, ref.specifier);
       if (classification.kind === "external") continue;
       if (classification.kind === "local-unclassified") {
         violations.push({
@@ -356,10 +464,45 @@ export interface ContractsExternalImportViolation {
   specifier: string;
 }
 
+function ambientContractDeclarations(sf: SourceFile): Array<{ line: number; name: string }> {
+  const declarations: Array<{ line: number; name: string }> = [];
+  for (const statement of sf.getStatements()) {
+    const modifiers = ts.canHaveModifiers(statement.compilerNode)
+      ? ts.getModifiers(statement.compilerNode)
+      : undefined;
+    const ambient =
+      sf.isDeclarationFile() ||
+      modifiers?.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword) === true;
+    if (!ambient) continue;
+    if (Node.isVariableStatement(statement)) {
+      for (const declaration of statement.getDeclarations()) {
+        declarations.push({
+          line: declaration.getStartLineNumber(),
+          name: declaration.getName(),
+        });
+      }
+    } else if (
+      Node.isFunctionDeclaration(statement) ||
+      Node.isClassDeclaration(statement) ||
+      Node.isEnumDeclaration(statement)
+    ) {
+      declarations.push({
+        line: statement.getStartLineNumber(),
+        name: statement.getName() ?? "<anonymous>",
+      });
+    } else if (Node.isModuleDeclaration(statement)) {
+      declarations.push({
+        line: statement.getStartLineNumber(),
+        name: statement.getName(),
+      });
+    }
+  }
+  return declarations;
+}
+
 /** ADR-0029 allows contracts to import only Zod among external packages. */
 export function detectContractsExternalImportViolations(project: Project): ContractsExternalImportViolation[] {
   const violations: ContractsExternalImportViolation[] = [];
-  const compilerOptions = project.getCompilerOptions();
   for (const sf of project.getSourceFiles()) {
     const filePath = sf.getFilePath();
     if (layerOfPath(filePath) !== "contracts") continue;
@@ -367,7 +510,7 @@ export function detectContractsExternalImportViolations(project: Project): Contr
       const specifier = ref.specifier;
       if (
         specifier !== null &&
-        classifySpecifier(filePath, specifier, compilerOptions).kind === "layer"
+        classifySpecifier(project, filePath, specifier).kind === "layer"
       ) {
         continue;
       }
@@ -376,6 +519,13 @@ export function detectContractsExternalImportViolations(project: Project): Contr
         file: relative(REPO_ROOT, filePath),
         line: ref.line,
         specifier: specifier ?? `<non-literal ${ref.kind}>`,
+      });
+    }
+    for (const declaration of ambientContractDeclarations(sf)) {
+      violations.push({
+        file: relative(REPO_ROOT, filePath),
+        line: declaration.line,
+        specifier: `<ambient-declaration ${declaration.name}>`,
       });
     }
   }
@@ -396,15 +546,7 @@ export function detectContractsExternalImportViolations(project: Project): Contr
     isolated.createSourceFile(sf.getFilePath(), sf.getFullText(), { overwrite: true });
   }
   for (const diagnostic of isolated.getPreEmitDiagnostics()) {
-    const message = ts.flattenDiagnosticMessageText(
-      diagnostic.compilerObject.messageText,
-      "\n",
-    );
-    if (
-      !message.startsWith("Cannot find name") &&
-      diagnostic.getCode() !== 2339 &&
-      diagnostic.getCode() !== 7017
-    ) continue;
+    if (![2304, 2339, 2503, 2552, 2580, 2591, 7017].includes(diagnostic.getCode())) continue;
     const sf = diagnostic.getSourceFile();
     const start = diagnostic.getStart();
     if (!sf || start === undefined) continue;

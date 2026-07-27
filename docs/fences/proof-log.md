@@ -1205,3 +1205,62 @@ The three collection paths were disabled together. The dependency companion repo
 `require` reference rejection. The focused dependency fence passed.
 
 **Date:** 2026-07-27 (review corrections F38-F40, D-049).
+
+### PF-028 extension · tenant-scoped role references
+**Invariant (charter #7; v3 invariant 2; ADR-0029, D-050):** actor, approval, specialist,
+escalation, and evidence-supplier roles carry structured tenant scope and match the enclosing record.
+
+Actor, authority-stage, and evidence-supplier tenant refinements were disabled together. The real
+tenant-scope fence rejected each weakening:
+```
+× enforces: prompt-5 configuration, source, and subject links are tenant-scoped
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:212
+× enforces: every direct decision reference belongs to the decision tenant
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:231
+× enforces: blocker, revaluation, and prohibition subject or scope references belong to the decision tenant
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:350
+× enforces: approval and external-action references belong to the decision tenant recursively
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:558
+```
+**Revert:** restored all three refinements. The legal canonical fixtures and scoped counterparts pass.
+
+**Date:** 2026-07-27 (review correction F44, D-050).
+
+### PF-027 extension · canonical role sets and authority-stage order
+**Invariant (charter #1/#4; v3 replay §12.1; ADR-0029, D-050):** role collections are
+duplicate-free semantic sets with deterministic firm/id order, and explicit stage `order` controls
+the parsed authority sequence.
+
+Duplicate-role rejection and the role/stage normalization transforms were removed. The focused
+contract suite rejected both regressions independently:
+```
+× rejects duplicate role sets
+  src/__tests__/unit/decision-core.test.ts:614
+× canonicalizes role and stage order
+  src/__tests__/unit/decision-core.test.ts:651
+```
+**Revert:** restored duplicate rejection and both normalization transforms. Version-1.6.0 projection
+fingerprints and canonical fixture digests pass.
+
+**Date:** 2026-07-27 (review corrections F45-F46, D-050).
+
+### PF-002 extension · TypeScript resolution, createRequire, ambient declarations, and diagnostic codes
+**Invariant (charter #1; ADR-0001/0029, D-050):** the authoritative layer fence follows
+TypeScript module resolution, untracked Node loaders fail closed, and contracts cannot restore hidden
+runtime or platform dependencies with ambient declarations.
+
+Three real-tree probes were injected: a domain import reached infrastructure through `baseUrl`, a
+domain module created a CommonJS loader with `createRequire`, and a contracts module declared and used
+an ambient `fetch`. The detector reported:
+```
+src/domain/create-require-probe.ts:1: domain -> unresolved (<non-literal create-require>)
+src/domain/dependency-resolution-probe.ts:1: domain -> infrastructure (src/infrastructure/store/db)
+src/contracts/ambient-probe.ts:1 (<ambient-declaration fetch>)
+```
+The reported TS2503 namespace bypass did not reproduce against the target: its old text-prefix check
+accidentally matched `Cannot find namespace`. The implementation still replaced message matching with
+stable diagnostic codes, and the companion pins TS2503 using `NodeJS.Timeout`.
+**Revert:** removed all probes and the temporary `baseUrl`; the real dependency fence and all companion
+forms pass.
+
+**Date:** 2026-07-27 (review corrections F47-F50, D-050).

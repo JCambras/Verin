@@ -143,6 +143,33 @@ export type SubjectRef = z.infer<typeof SubjectRefSchema>;
 export const ScopeRefSchema = tenantScopedReference(ScopeIdSchema);
 export type ScopeRef = z.infer<typeof ScopeRefSchema>;
 
+export const RoleRefSchema = tenantScopedReference(RoleIdSchema);
+export type RoleRef = z.infer<typeof RoleRefSchema>;
+
+const roleRefSet = (minimum: number) =>
+  z
+    .array(RoleRefSchema)
+    .min(minimum)
+    .refine(
+      (refs) =>
+        refs.every(
+          (ref, index) =>
+            !refs.slice(0, index).some(
+              (candidate) => candidate.firmId === ref.firmId && candidate.id === ref.id,
+            ),
+        ),
+      "duplicate role reference",
+    )
+    .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "role references must belong to one tenant")
+    .overwrite((refs) => [...refs].sort((left, right) => {
+      if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    }))
+    .readonly();
+
+export const RoleRefSetSchema = roleRefSet(0);
+export const NonEmptyRoleRefSetSchema = roleRefSet(1);
+
 export const PrimitiveIdSchema = brandedString<"PrimitiveId">();
 export type PrimitiveId = z.infer<typeof PrimitiveIdSchema>;
 

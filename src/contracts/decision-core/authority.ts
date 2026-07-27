@@ -15,8 +15,8 @@ import {
   ApprovalTemplateIdSchema,
   ApprovalTemplateRefSchema,
   DurationSchema,
+  NonEmptyRoleRefSetSchema,
   ReasonCodeSchema,
-  RoleIdSchema,
   TimestampSchema,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
@@ -24,7 +24,7 @@ import { TenantContextSchema } from "./actor";
 /** After `after` with no quorum, escalate to `roleIds` for `reasonCode`. */
 export const EscalationStepSchema = z.strictObject({
   after: DurationSchema,
-  roleIds: z.array(RoleIdSchema).min(1).readonly(),
+  roleIds: NonEmptyRoleRefSetSchema,
   reasonCode: ReasonCodeSchema,
 }).readonly();
 export type EscalationStep = z.infer<typeof EscalationStepSchema>;
@@ -35,7 +35,7 @@ export type EscalationStep = z.infer<typeof EscalationStepSchema>;
  * executor exclusion, reason-required override).
  */
 export const ApprovalRequirementSchema = z.strictObject({
-  eligibleRoleIds: z.array(RoleIdSchema).min(1).readonly(),
+  eligibleRoleIds: NonEmptyRoleRefSetSchema,
   approvalsRequired: z.int().positive(),
   distinctActorsRequired: z.boolean(),
   requesterMayApprove: z.boolean(),
@@ -68,29 +68,80 @@ const requireDistinctStages = (
 ): void => {
   const stageIds = new Set<string>();
   const orders = new Set<number>();
-  for (const stage of stages) {
-    if (stageIds.has(stage.stageId)) ctx.addIssue({ code: "custom", message: `duplicate stage id "${stage.stageId}"`, path: ["stages"] });
+  for (const [index, stage] of stages.entries()) {
+    if (stageIds.has(stage.stageId)) ctx.addIssue({ code: "custom", message: `duplicate stage id "${stage.stageId}"`, path: [index, "stageId"] });
     stageIds.add(stage.stageId);
-    if (orders.has(stage.order)) ctx.addIssue({ code: "custom", message: `duplicate stage order ${stage.order}`, path: ["stages"] });
+    if (orders.has(stage.order)) ctx.addIssue({ code: "custom", message: `duplicate stage order ${stage.order}`, path: [index, "order"] });
     orders.add(stage.order);
   }
+};
+
+type StageRoleRefs = {
+  requirements: readonly { eligibleRoleIds: readonly { firmId: string }[] }[];
+  escalationPath: readonly { roleIds: readonly { firmId: string }[] }[];
+};
+
+const requireStageRoleTenant = (
+  stage: StageRoleRefs,
+  firmId: string,
+  ctx: z.core.$RefinementCtx,
+  path: (string | number)[] = [],
+): void => {
+  stage.requirements.forEach((requirement, requirementIndex) =>
+    requirement.eligibleRoleIds.forEach((role, roleIndex) => {
+      if (role.firmId !== firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "eligible role must belong to the authority tenant",
+          path: [...path, "requirements", requirementIndex, "eligibleRoleIds", roleIndex, "firmId"],
+        });
+      }
+    }),
+  );
+  stage.escalationPath.forEach((escalation, escalationIndex) =>
+    escalation.roleIds.forEach((role, roleIndex) => {
+      if (role.firmId !== firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "escalation role must belong to the authority tenant",
+          path: [...path, "escalationPath", escalationIndex, "roleIds", roleIndex, "firmId"],
+        });
+      }
+    }),
+  );
 };
 
 /** Template form (firm configuration): relative expiry - it cannot know wall-clock time. */
 export const ApprovalStageTemplateSchema = z.strictObject({
   ...stageCore,
   expiresAfter: PositiveApprovalDurationSchema,
-}).readonly();
+})
+  .superRefine((stage, ctx) => {
+    const firmId = stage.requirements[0]?.eligibleRoleIds[0]?.firmId;
+    if (firmId) requireStageRoleTenant(stage, firmId, ctx);
+  })
+  .readonly();
 export type ApprovalStageTemplate = z.infer<typeof ApprovalStageTemplateSchema>;
+
+const ApprovalStageTemplateListSchema = z
+  .array(ApprovalStageTemplateSchema)
+  .min(1)
+  .superRefine(requireDistinctStages)
+  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .readonly();
 
 /** A reusable, referencable stack of stage templates. */
 export const ApprovalTemplateSchema = z
   .strictObject({
     ...TenantContextSchema.unwrap().shape,
     id: ApprovalTemplateIdSchema,
-    stages: z.array(ApprovalStageTemplateSchema).min(1).readonly(),
+    stages: ApprovalStageTemplateListSchema,
   })
-  .superRefine((template, ctx) => requireDistinctStages(template.stages, ctx))
+  .superRefine((template, ctx) =>
+    template.stages.forEach((stage, index) =>
+      requireStageRoleTenant(stage, template.firmId, ctx, ["stages", index]),
+    ),
+  )
   .readonly();
 export type ApprovalTemplate = z.infer<typeof ApprovalTemplateSchema>;
 
@@ -102,8 +153,19 @@ export const ApprovalStageSchema = z.strictObject({
   ...stageCore,
   templateRef: ApprovalTemplateRefSchema,
   expiresAt: TimestampSchema,
-}).readonly();
+})
+  .superRefine((stage, ctx) =>
+    requireStageRoleTenant(stage, stage.templateRef.firmId, ctx),
+  )
+  .readonly();
 export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
+
+const ApprovalStageListSchema = z
+  .array(ApprovalStageSchema)
+  .min(1)
+  .superRefine(requireDistinctStages)
+  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .readonly();
 
 /**
  * How authority is satisfied for a proceed decision. "approval" or
@@ -113,15 +175,38 @@ export type ApprovalStage = z.infer<typeof ApprovalStageSchema>;
  */
 export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({ mode: z.literal("automatic") }),
-  z
-    .strictObject({ mode: z.literal("approval"), stages: z.array(ApprovalStageSchema).min(1).readonly() })
-    .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
-  z
-    .strictObject({
-      mode: z.literal("specialist_review"),
-      specialistRoleIds: z.array(RoleIdSchema).min(1).readonly(),
-      stages: z.array(ApprovalStageSchema).min(1).readonly(),
-    })
-    .superRefine((requirement, ctx) => requireDistinctStages(requirement.stages, ctx)),
-]).readonly();
+  z.strictObject({ mode: z.literal("approval"), stages: ApprovalStageListSchema }),
+  z.strictObject({
+    mode: z.literal("specialist_review"),
+    specialistRoleIds: NonEmptyRoleRefSetSchema,
+    stages: ApprovalStageListSchema,
+  }),
+])
+  .superRefine((requirement, ctx) => {
+    if (requirement.mode === "automatic") return;
+    const firstStage = requirement.stages[0];
+    if (!firstStage) return;
+    const firmId = firstStage.templateRef.firmId;
+    requirement.stages.forEach((stage, index) => {
+      if (stage.templateRef.firmId !== firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "approval stages must belong to one tenant",
+          path: ["stages", index, "templateRef", "firmId"],
+        });
+      }
+    });
+    if (requirement.mode === "specialist_review") {
+      requirement.specialistRoleIds.forEach((role, index) => {
+        if (role.firmId !== firmId) {
+          ctx.addIssue({
+            code: "custom",
+            message: "specialist role must belong to the authority tenant",
+            path: ["specialistRoleIds", index, "firmId"],
+          });
+        }
+      });
+    }
+  })
+  .readonly();
 export type AuthorityRequirement = z.infer<typeof AuthorityRequirementSchema>;

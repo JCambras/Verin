@@ -14,6 +14,7 @@ const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(join(REPO_ROOT, "fixtures/decision-core", `${name}.json`), "utf8")) as Record<string, unknown>;
 
 type ScopedRef = { firmId: string; id: string };
+type RoleRef = ScopedRef;
 type SourceRef = { sourceRef: ScopedRef; versionRef: ScopedRef };
 type ExplanationNode = {
   evidenceSnapshotRefs: ScopedRef[];
@@ -40,8 +41,21 @@ type DecisionFixture = Record<string, unknown> & {
   result: Record<string, unknown> & {
     kind: string;
     recommendation?: { parameters: Record<string, unknown> };
-    authority?: { mode: string; stages?: Array<{ templateRef: ScopedRef }> };
-    blockers?: Array<{ resolvingEvidence: Array<{ subjectRef: ScopedRef }> }>;
+    authority?: {
+      mode: string;
+      specialistRoleIds?: RoleRef[];
+      stages?: Array<{
+        templateRef: ScopedRef;
+        requirements: Array<{ eligibleRoleIds: RoleRef[] }>;
+        escalationPath: Array<{ roleIds: RoleRef[] }>;
+      }>;
+    };
+    blockers?: Array<{
+      resolvingEvidence: Array<{
+        subjectRef: ScopedRef;
+        suppliableBy: Array<string | RoleRef>;
+      }>;
+    }>;
     prohibition?: { source: SourceRef; scopeRef: ScopedRef };
     executionPlan?: {
       steps: ExternalAction[];
@@ -126,7 +140,7 @@ describe("decision-core tenant-scope fence", () => {
         order: 0,
         executionMode: "sequential",
         requirements: [{
-          eligibleRoleIds: ["ops"],
+          eligibleRoleIds: [{ firmId: "firm-a", id: "ops" }],
           approvalsRequired: 1,
           distinctActorsRequired: true,
           requesterMayApprove: false,
@@ -186,6 +200,27 @@ describe("decision-core tenant-scope fence", () => {
       Object.entries(template).filter(([key]) => key !== "firmId"),
     );
     expect(ApprovalTemplateSchema.safeParse(unscopedTemplate).success).toBe(false);
+    expect(ApprovalTemplateSchema.safeParse({
+      ...template,
+      stages: [{
+        ...template.stages[0]!,
+        requirements: [{
+          ...template.stages[0]!.requirements[0]!,
+          eligibleRoleIds: [{ firmId: "firm-b", id: "ops" }],
+        }],
+      }],
+    }).success).toBe(false);
+    expect(ApprovalTemplateSchema.safeParse({
+      ...template,
+      stages: [{
+        ...template.stages[0]!,
+        escalationPath: [{
+          after: "P1D",
+          roleIds: [{ firmId: "firm-b", id: "operations-manager" }],
+          reasonCode: "approval-stage-idle",
+        }],
+      }],
+    }).success).toBe(false);
   });
 
   it("enforces: every direct decision reference belongs to the decision tenant", () => {
@@ -194,6 +229,14 @@ describe("decision-core tenant-scope fence", () => {
       { ...record, intentRef: { ...record.intentRef, firmId: "firm-b" } },
       { ...record, inputBundleRef: { ...record.inputBundleRef, firmId: "firm-b" } },
       { ...record, createdBy: { ...record.createdBy, firmId: "firm-b" } },
+      {
+        ...record,
+        createdBy: {
+          firmId: "firm-a",
+          actorId: "actor:advisor",
+          roleIds: [{ firmId: "firm-b", id: "advisor" }],
+        },
+      },
       { ...record, derivedFromDecisionRef: { firmId: "firm-b", id: "dec:parent" } },
     ]) {
       expect(DecisionRecordSchema.safeParse(value).success).toBe(false);
@@ -209,7 +252,7 @@ describe("decision-core tenant-scope fence", () => {
         requester: {
           firmId: "firm-a",
           actorId: "actor:advisor",
-          roleIds: ["advisor"],
+          roleIds: [{ firmId: "firm-a", id: "advisor" }],
         },
         requestRef: { firmId: "firm-a", id: "request:1" },
         maskedRequest: { value: "move tokenized amount", piiFree: true },
@@ -301,6 +344,19 @@ describe("decision-core tenant-scope fence", () => {
           }],
         },
       },
+      {
+        ...blocked,
+        result: {
+          ...blocked.result,
+          blockers: [{
+            ...blocker,
+            resolvingEvidence: [{
+              ...request,
+              suppliableBy: [{ firmId: "firm-a", id: "operations" }],
+            }],
+          }],
+        },
+      },
     ]) {
       expect(DecisionRecordSchema.safeParse(value).success).toBe(false);
     }
@@ -363,6 +419,49 @@ describe("decision-core tenant-scope fence", () => {
               ...recommendation.parameters,
               sourceSubject: { ...sourceSubject, firmId: "firm-b" },
             },
+          },
+        },
+      },
+      {
+        ...proceed,
+        result: {
+          ...proceed.result,
+          authority: {
+            ...authority,
+            stages: [{
+              ...stage,
+              requirements: [{
+                ...stage.requirements[0]!,
+                eligibleRoleIds: [{ firmId: "firm-b", id: "operations" }],
+              }],
+            }],
+          },
+        },
+      },
+      {
+        ...proceed,
+        result: {
+          ...proceed.result,
+          authority: {
+            mode: "specialist_review",
+            specialistRoleIds: [{ firmId: "firm-b", id: "cco" }],
+            stages: authority.stages,
+          },
+        },
+      },
+      {
+        ...proceed,
+        result: {
+          ...proceed.result,
+          authority: {
+            ...authority,
+            stages: [{
+              ...stage,
+              escalationPath: [{
+                ...stage.escalationPath[0]!,
+                roleIds: [{ firmId: "firm-b", id: "operations-manager" }],
+              }],
+            }],
           },
         },
       },

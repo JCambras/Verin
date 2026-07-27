@@ -710,3 +710,22 @@ fingerprints and digests.
 and dependency-enforcement gaps without adding evaluator or execution logic.
 **Revert path:** restore the 1.4.0 schemas, registry, fixtures, and dependency collector together,
 remove the focused companions, and restore this correction's proof-log extensions.
+
+### D-050 · 2026-07-27 · captain-decision · Role ownership, authority order, and dependency resolution are structural
+
+Every immutable firm-configured role link now carries `{ firmId, id }`. Actor, eligible, specialist,
+escalation, and evidence-supplier role references must match their enclosing tenant. Role collections
+reject duplicates and normalize by firm then opaque ID, while authority stage arrays normalize by their
+explicit `order`. The schema and both hash-preimage envelopes advance to 1.6.0, and fixtures pin the
+new role shapes, projection fingerprints, and digests.
+
+The dependency fence now performs TypeScript module resolution for aliases, baseUrl modules, package
+imports, and package self-references. It rejects Node `createRequire` in inner layers, source-local
+ambient runtime and namespace declarations in contracts, and platform-global diagnostics by stable
+diagnostic code. The contracts layer measures 2137 lines, so ADR-0029 re-baselines its ceiling from
+2000 to 2200 through ADR-0018's amendment path.
+**Why:** these bounded F44-F50 corrections close tenant, canonical-hash, and dependency-enforcement gaps
+without adding evaluator, policy, or execution behavior.
+**Revert path:** restore scalar role links and caller-ordered authority collections, return the schemas,
+fixtures, fingerprints, and hashes to 1.5.0, remove the dependency companions, and restore the 2000-line
+ceiling.
