@@ -82,9 +82,9 @@ const validBundle = {
   engineVersion: "0.0.0",
   primitiveSetVersion: "0",
   domainConfigVersionId: "dcv:money-movement:1",
-  policyVersionId: "pv:firm-a:1",
-  householdInstructionVersionIds: ["hiv:smiths:1"],
-  evidenceSnapshotIds: ["evs:u:1"],
+  policyVersionRef: { firmId: "firm-a", id: "pv:firm-a:1" },
+  householdInstructionVersionRefs: [{ firmId: "firm-a", id: "hiv:smiths:1" }],
+  evidenceSnapshotRefs: [{ firmId: "firm-a", id: "evs:u:1" }],
   asOf: timestamp,
   timeZone: "America/New_York",
   bundleHash: hash,
@@ -121,6 +121,45 @@ describe("tenant scoping - unscoped persisted records are unrepresentable (v3 in
     fixture.createdBy = { ...fixture.createdBy, firmId: "firm-b" };
     expect(DecisionRecordSchema.safeParse(fixture).success).toBe(false);
   });
+
+  it("requires tenant-scoped bundle references and rejects every cross-tenant link", () => {
+    expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
+    for (const crossTenant of [
+      { ...validBundle, policyVersionRef: { ...validBundle.policyVersionRef, firmId: "firm-b" } },
+      {
+        ...validBundle,
+        householdInstructionVersionRefs: [
+          { ...validBundle.householdInstructionVersionRefs[0]!, firmId: "firm-b" },
+        ],
+      },
+      {
+        ...validBundle,
+        evidenceSnapshotRefs: [{ ...validBundle.evidenceSnapshotRefs[0]!, firmId: "firm-b" }],
+      },
+    ]) {
+      expect(DecisionInputBundleSchema.safeParse(crossTenant).success).toBe(false);
+    }
+  });
+
+  it("requires tenant-scoped intent and bundle references on DecisionRecord", () => {
+    const fixture = JSON.parse(readFixture("decision-record-proceed")) as {
+      intentRef: { firmId: string };
+      inputBundleRef: { firmId: string };
+    };
+    expect(DecisionRecordSchema.safeParse(fixture).success).toBe(true);
+    expect(
+      DecisionRecordSchema.safeParse({
+        ...fixture,
+        intentRef: { ...fixture.intentRef, firmId: "firm-b" },
+      }).success,
+    ).toBe(false);
+    expect(
+      DecisionRecordSchema.safeParse({
+        ...fixture,
+        inputBundleRef: { ...fixture.inputBundleRef, firmId: "firm-b" },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 function readFixture(name: string): string {
@@ -145,16 +184,17 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     ).toBe(false);
   });
 
-  it("rejects unsupported time zones before replay depends on firm-local time", () => {
+  it("rejects unsupported and non-canonical time zones before replay depends on firm-local time", () => {
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Not/AZone" }).success).toBe(false);
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "US/Eastern" }).success).toBe(false);
   });
 
-  it.each(["householdInstructionVersionIds", "evidenceSnapshotIds"] as const)(
+  it.each(["householdInstructionVersionRefs", "evidenceSnapshotRefs"] as const)(
     "rejects duplicate replay IDs in %s",
     (key) => {
-      const id = validBundle[key][0]!;
-      const parsed = DecisionInputBundleSchema.safeParse({ ...validBundle, [key]: [id, id] });
+      const ref = validBundle[key][0]!;
+      const parsed = DecisionInputBundleSchema.safeParse({ ...validBundle, [key]: [ref, ref] });
       expect(parsed.success).toBe(false);
       if (!parsed.success) expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
     },
@@ -163,10 +203,11 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
   it("freezes parsed replay inputs and their nested collections", () => {
     const bundle = DecisionInputBundleSchema.parse(validBundle);
     expect(Object.isFrozen(bundle)).toBe(true);
-    expect(Object.isFrozen(bundle.householdInstructionVersionIds)).toBe(true);
-    expect(Object.isFrozen(bundle.evidenceSnapshotIds)).toBe(true);
-    expect(Reflect.set(bundle, "policyVersionId", "pv:mutated")).toBe(false);
-    expect(Reflect.set(bundle.evidenceSnapshotIds, 0, "evs:mutated")).toBe(false);
+    expect(Object.isFrozen(bundle.policyVersionRef)).toBe(true);
+    expect(Object.isFrozen(bundle.householdInstructionVersionRefs)).toBe(true);
+    expect(Object.isFrozen(bundle.evidenceSnapshotRefs)).toBe(true);
+    expect(Reflect.set(bundle.policyVersionRef, "id", "pv:mutated")).toBe(false);
+    expect(Reflect.set(bundle.evidenceSnapshotRefs, 0, { firmId: "firm-a", id: "evs:mutated" })).toBe(false);
   });
 
   it.each(["decision-record-proceed", "decision-record-blocked", "decision-record-prohibited"])(
@@ -228,8 +269,8 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       hashPreimage(
         bundleHashPreimage({
           ...bundle,
-          householdInstructionVersionIds: [...bundle.householdInstructionVersionIds].reverse(),
-          evidenceSnapshotIds: [...bundle.evidenceSnapshotIds].reverse(),
+          householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].reverse(),
+          evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].reverse(),
         }),
       ),
     ).toBe(bundle.bundleHash);

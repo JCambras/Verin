@@ -9,14 +9,14 @@ import { validationError, type AppError } from "../errors";
 import type { DecisionInputBundle } from "./evidence";
 import type { DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
-export const DECISION_CORE_SCHEMA_VERSION = "1.0.0";
-export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.0.0";
-export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.0.0";
+export const DECISION_CORE_SCHEMA_VERSION = "1.1.0";
+export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.1.0";
+export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.1.0";
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
   Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
 > = {
-  [BUNDLE_HASH_PREIMAGE_VERSION]: "4fca8a3051f2a7da483840210f27525976b3d5a239db511e47fbd74981309e2f",
-  [DECISION_HASH_PREIMAGE_VERSION]: "5116bea473ea037d0b8e2be46e087ca658165a084f9672b9b5f1f4a56b100450",
+  [BUNDLE_HASH_PREIMAGE_VERSION]: "8de02bcdc3e9b2ff2086ae867ded0ca484f6b19b89502c30f4472d794123e707",
+  [DECISION_HASH_PREIMAGE_VERSION]: "269d2132f36f010c1bc98cc6067b7a2882db7af1b40340c646ee55b4ebf1b31f",
 };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
@@ -34,17 +34,17 @@ export const BUNDLE_HASH_PAYLOAD_KEYS = exactProjectionKeys<BundleHashPayload>()
   "engineVersion",
   "primitiveSetVersion",
   "domainConfigVersionId",
-  "policyVersionId",
-  "householdInstructionVersionIds",
-  "evidenceSnapshotIds",
+  "policyVersionRef",
+  "householdInstructionVersionRefs",
+  "evidenceSnapshotRefs",
   "asOf",
   "timeZone",
 ] as const);
 export const DECISION_HASH_PAYLOAD_KEYS = exactProjectionKeys<DecisionHashPayload>()([
   "firmId",
   "id",
-  "intentId",
-  "inputBundleId",
+  "intentRef",
+  "inputBundleRef",
   "result",
   "precedenceTrace",
   "explanationTrace",
@@ -71,8 +71,8 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
     payload: {
       ...projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
-      householdInstructionVersionIds: [...bundle.householdInstructionVersionIds].sort(),
-      evidenceSnapshotIds: [...bundle.evidenceSnapshotIds].sort(),
+      householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedRefs),
+      evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedRefs),
     },
   };
 }
@@ -98,6 +98,9 @@ function normalizeOptionalProperties<T>(value: T): T {
     ) as T;
   }
   return value;
+}
+function compareScopedRefs(left: { id: string }, right: { id: string }): number {
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.

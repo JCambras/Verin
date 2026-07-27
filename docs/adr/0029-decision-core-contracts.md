@@ -32,27 +32,31 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.0.0
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.1.0
   envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
-  stored hash, and sorts its set-like instruction/snapshot ID lists; the decision projection excludes
+  stored hash, and sorts its set-like instruction/snapshot reference lists; the decision projection excludes
   only its stored hash. Exhaustive key lists are checked against the inferred schema keys so optional
   schema growth cannot evade a preimage-version bump. Version-keyed recursive schema fingerprints cover
   every nested projected object, array, union arm, and optional property. Explicit undefined optional
   properties normalize to omission, while sparse arrays are rejected. Fixture digests are SHA-256 over
   canonical UTF-8 bytes and must equal the stored hash. A projection change requires its own version bump
   and migration story.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.0.0 schema and
-  canonical serializer versions, validates the time zone against the runtime's supported IANA data,
-  rejects duplicate instruction-version and evidence-snapshot IDs, and freezes the parsed bundle.
+- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.1.0 schema and
+  1.0.0 canonical serializer, rejects unsupported or non-canonical IANA time-zone identifiers,
+  rejects duplicate instruction-version and evidence-snapshot references, and freezes the parsed bundle.
+  Policy, instruction-version, evidence-snapshot, intent, and input-bundle links are strict structured
+  references carrying `firmId` plus the opaque branded ID; enclosing-record refinements reject every
+  cross-tenant link.
   Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
   The dependency fence enforces the external allowlist across static imports, re-exports, dynamic
-  imports, `require`, TypeScript import types, and import-equals declarations.
+  imports, `require`, TypeScript import types, import-equals declarations, and triple-slash type/path
+  references.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1480 after replay-boundary
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **1550** (measured 1525 after replay-boundary
   review hardening + modest headroom). The ratchet-down doctrine resumes from 1550; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
@@ -82,6 +86,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
 ## Consequences
 
 - `line-budget` fence: contracts ceiling 1550 (this ADR is the amendment ADR-0018 requires).
+- `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
+  `decision-core-tenant-scope`, which proves every immutable cross-record link named above matches
+  its enclosing tenant.
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended
   to [2, 5, 7, 8, 9].
 - Consumers (prompts 7, 9–19, 25–26) import from `@contracts/decision-core/*`; the store boundary

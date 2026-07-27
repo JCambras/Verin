@@ -604,3 +604,21 @@ nested `__tests__` directory - rejected because those paths are included by the 
 source and TypeScript discovery.
 **Revert path:** restore statically-resolvable-only iteration and detector-local test exclusions, remove
 the four companions and PF-002 extension, and restore manual test totals only if they become generated.
+
+### D-045 · 2026-07-27 · captain-decision · Immutable cross-record links are structurally tenant-scoped
+
+Prompt-5 policy-version, household-instruction-version, evidence-snapshot, intent, and input-bundle
+links now use strict `{ firmId, id }` references. `DecisionInputBundleSchema` and
+`DecisionRecordSchema` reject every referenced tenant that differs from the enclosing record, so
+opaque branded ID strings no longer carry an unenforceable tenant convention. The schema and both
+hash-preimage envelopes advance from 1.0.0 to 1.1.0; the canonical serializer remains 1.0.0 because
+its byte algorithm is unchanged. Canonical fixtures pin the new bytes and digests, and no persisted
+consumer exists yet. Replay time zones reject aliases such as `US/Eastern` unless the caller supplies
+the runtime's canonical IANA identifier. The shared dependency collector also covers triple-slash
+type and path directives, with the contracts external allowlist and layer rule applied to each.
+**Why:** these are the bounded F20-F22 contract and governance corrections authorized by the captain;
+leaving tenant ownership or dependency form coverage to naming conventions would violate active
+invariant 2 and the same-PR fencing rule.
+**Revert path:** restore scalar links and the 1.0.0 fixtures/preimages together, remove the tenant-scope
+fence from charter #7 and invariant 2, accept non-canonical time-zone aliases, and remove the two
+triple-slash companions plus PF-002/PF-028 evidence.

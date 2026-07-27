@@ -121,6 +121,10 @@
         },
         {
           "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
+        },
+        {
+          "type": "fitness",
           "ref": "src/__tests__/fitness/no-client-role-header.test.ts"
         }
       ]

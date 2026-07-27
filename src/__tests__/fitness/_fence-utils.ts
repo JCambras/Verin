@@ -99,7 +99,15 @@ export function specifierToLayer(fromFile: string, spec: string): Layer | null {
 export interface ModuleReference {
   specifier: string | null;
   line: number;
-  kind: "import" | "export" | "dynamic-import" | "require" | "import-type" | "import-equals";
+  kind:
+    | "import"
+    | "export"
+    | "dynamic-import"
+    | "require"
+    | "import-type"
+    | "import-equals"
+    | "reference-types"
+    | "reference-path";
 }
 
 /** Every module reference, including non-literal dynamic import/require calls. */
@@ -111,6 +119,20 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
     if (v) refs.push({ specifier: v, line: exp.getStartLineNumber(), kind: "export" });
+  }
+  for (const ref of sf.getTypeReferenceDirectives()) {
+    refs.push({
+      specifier: ref.getFileName(),
+      line: sf.getLineAndColumnAtPos(ref.getPos()).line,
+      kind: "reference-types",
+    });
+  }
+  for (const ref of sf.getPathReferenceDirectives()) {
+    refs.push({
+      specifier: ref.getFileName(),
+      line: sf.getLineAndColumnAtPos(ref.getPos()).line,
+      kind: "reference-path",
+    });
   }
   for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportEqualsDeclaration)) {
     const moduleRef = imp.getModuleReference();

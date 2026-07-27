@@ -126,6 +126,24 @@ describe("dependency-rule fence", () => {
       expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
     });
 
+    it("triple-slash type references cannot evade the contracts allowlist", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": `/// <reference types="react" />\nexport type View = string;` }),
+      );
+      expect(v).toHaveLength(1);
+      expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
+    });
+
+    it("triple-slash path references cannot cross project layers", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts": `/// <reference path="../infrastructure/store.ts" />\nexport type View = string;`,
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("contracts->infrastructure");
+      expect(v[0]).toMatchObject({ line: 1, specifier: "../infrastructure/store.ts" });
+    });
+
     it("relative traversal outside a project layer cannot reach an external package", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": `import React from "../../../node_modules/react/index.js";\nexport { React };` }),
