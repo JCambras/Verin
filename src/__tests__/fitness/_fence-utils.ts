@@ -107,7 +107,8 @@ export interface ModuleReference {
     | "import-type"
     | "import-equals"
     | "reference-types"
-    | "reference-path";
+    | "reference-path"
+    | "implicit-jsx-runtime";
 }
 
 /** Every module reference, including non-literal dynamic import/require calls. */
@@ -132,6 +133,18 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       specifier: ref.getFileName(),
       line: sf.getLineAndColumnAtPos(ref.getPos()).line,
       kind: "reference-path",
+    });
+  }
+  const jsx = sf.getDescendants().find((node) =>
+    node.isKind(SyntaxKind.JsxElement) ||
+    node.isKind(SyntaxKind.JsxSelfClosingElement) ||
+    node.isKind(SyntaxKind.JsxFragment),
+  );
+  if (jsx) {
+    refs.push({
+      specifier: "react/jsx-runtime",
+      line: jsx.getStartLineNumber(),
+      kind: "implicit-jsx-runtime",
     });
   }
   for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportEqualsDeclaration)) {

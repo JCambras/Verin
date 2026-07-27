@@ -6,9 +6,9 @@
  */
 import { z } from "zod";
 import {
-  DomainConfigVersionIdSchema,
+  DomainConfigVersionRefSchema,
   EvidenceKindSchema,
-  EvidenceSourceIdSchema,
+  EvidenceSourceRefSchema,
   FirmIdSchema,
   IntentIdSchema,
   PrimitiveIdSchema,
@@ -31,17 +31,34 @@ export const HumanRequestTriggerSchema = z.strictObject({
 }).readonly();
 
 /** A system event from an evidence source: payload tokenized, raw body behind SecureEventRef. */
-export const SystemEventTriggerSchema = z.strictObject({
+const SystemEventTriggerObjectSchema = z.strictObject({
   kind: z.literal("system_event"),
   firmId: FirmIdSchema,
-  sourceId: EvidenceSourceIdSchema,
+  sourceRef: EvidenceSourceRefSchema,
   eventType: z.string().min(1),
   eventRef: SecureEventRefSchema,
   tokenizedPayload: TokenizedPayloadSchema,
-}).readonly();
+});
+
+export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.refine(
+  (trigger) => trigger.sourceRef.firmId === trigger.firmId,
+  {
+    message: "sourceRef.firmId must match the system event tenant",
+    path: ["sourceRef", "firmId"],
+  },
+).readonly();
 
 export const TriggerSchema = z
-  .discriminatedUnion("kind", [HumanRequestTriggerSchema.unwrap(), SystemEventTriggerSchema.unwrap()])
+  .discriminatedUnion("kind", [HumanRequestTriggerSchema.unwrap(), SystemEventTriggerObjectSchema])
+  .superRefine((trigger, ctx) => {
+    if (trigger.kind === "system_event" && trigger.sourceRef.firmId !== trigger.firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "sourceRef.firmId must match the system event tenant",
+        path: ["sourceRef", "firmId"],
+      });
+    }
+  })
   .readonly();
 export type Trigger = z.infer<typeof TriggerSchema>;
 
@@ -59,14 +76,28 @@ export function triggerFirmId(trigger: Trigger): z.infer<typeof FirmIdSchema> {
 export const IntentSchema = TenantContextSchema.unwrap().extend({
   id: IntentIdSchema,
   trigger: TriggerSchema,
-  domainConfigVersionId: DomainConfigVersionIdSchema,
+  domainConfigVersionRef: DomainConfigVersionRefSchema,
   action: PrimitiveIdSchema,
   slots: z.record(z.string().min(1), SlotRefSchema).readonly(),
   createdAt: TimestampSchema,
-}).refine((intent) => triggerFirmId(intent.trigger) === intent.firmId, {
-  message: "intent.firmId must match the trigger's tenant (cross-tenant intents are unrepresentable)",
-  path: ["firmId"],
-}).readonly();
+})
+  .superRefine((intent, ctx) => {
+    if (triggerFirmId(intent.trigger) !== intent.firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "intent.firmId must match the trigger's tenant (cross-tenant intents are unrepresentable)",
+        path: ["firmId"],
+      });
+    }
+    if (intent.domainConfigVersionRef.firmId !== intent.firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "domainConfigVersionRef.firmId must match the intent tenant",
+        path: ["domainConfigVersionRef", "firmId"],
+      });
+    }
+  })
+  .readonly();
 export type Intent = z.infer<typeof IntentSchema>;
 
 /** An unresolved slot: candidate subjects plus the coded question a human must answer. */

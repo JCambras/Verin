@@ -58,7 +58,7 @@
           "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and recursively reject any referenced policy, instruction, evidence snapshot, intent, input bundle, or derived decision whose FirmId differs from the enclosing record."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and recursively reject any referenced configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, subject, scope, execution target, reservation, or verification rule whose FirmId differs from the enclosing record."
     },
     {
       "id": 3,
@@ -252,9 +252,14 @@
       "gate": "F",
       "name": "Every external execution step has an idempotency key and verification rule",
       "status": "not-yet-active",
-      "activatesWhen": "execution plans with verification rules land (Wave F prompt 25)",
-      "mechanisms": [],
-      "notes": "Substrate today: every house-CRM write already carries an idempotency key with a replay-tested exactly-once effect (charter #16, src/__tests__/fitness/idempotency-exactly-once.test.ts). The ExecutionStep/verification-rule vocabulary does not exist yet, so claiming this invariant active would overstate it."
+      "activatesWhen": "the execution planner and adapter conformance suite land (Wave F prompts 24-25), proving the required keys and rules are honored at execution",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-external-action-safety.test.ts"
+        }
+      ],
+      "notes": "Schema substrate today: ExecutionStep and CompensatingAction both require stable idempotency, conflict keys, reservation references, preconditions, and a verification-rule reference; the fence rejects incomplete compensation and aliased parent/compensation keys. Every house-CRM write also carries an idempotency key with a replay-tested exactly-once effect (charter #16). The invariant remains not-yet-active until the planner and adapter conformance suite prove those contracts are honored by external execution."
     },
     {
       "id": 21,

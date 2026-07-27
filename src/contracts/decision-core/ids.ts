@@ -92,8 +92,17 @@ export type RegulatoryVersionId = z.infer<typeof RegulatoryVersionIdSchema>;
 export const DomainConfigVersionIdSchema = brandedString<"DomainConfigVersionId">();
 export type DomainConfigVersionId = z.infer<typeof DomainConfigVersionIdSchema>;
 
+export const SubjectIdSchema = brandedString<"SubjectId">();
+export type SubjectId = z.infer<typeof SubjectIdSchema>;
+
+export const ScopeIdSchema = brandedString<"ScopeId">();
+export type ScopeId = z.infer<typeof ScopeIdSchema>;
+
 const tenantScopedReference = <T>(id: z.ZodType<T>) =>
   z.strictObject({ firmId: FirmIdSchema, id }).readonly();
+
+export const DomainConfigVersionRefSchema = tenantScopedReference(DomainConfigVersionIdSchema);
+export type DomainConfigVersionRef = z.infer<typeof DomainConfigVersionRefSchema>;
 
 export const IntentRefSchema = tenantScopedReference(IntentIdSchema);
 export type IntentRef = z.infer<typeof IntentRefSchema>;
@@ -106,6 +115,9 @@ export type DecisionInputBundleRef = z.infer<typeof DecisionInputBundleRefSchema
 
 export const EvidenceSnapshotIdRefSchema = tenantScopedReference(EvidenceSnapshotIdSchema);
 export type EvidenceSnapshotIdRef = z.infer<typeof EvidenceSnapshotIdRefSchema>;
+
+export const EvidenceSourceRefSchema = tenantScopedReference(EvidenceSourceIdSchema);
+export type EvidenceSourceRef = z.infer<typeof EvidenceSourceRefSchema>;
 
 export const PolicyRefSchema = tenantScopedReference(PolicyIdSchema);
 export type PolicyRef = z.infer<typeof PolicyRefSchema>;
@@ -125,11 +137,20 @@ export type RegulatorySourceRef = z.infer<typeof RegulatorySourceRefSchema>;
 export const RegulatoryVersionRefSchema = tenantScopedReference(RegulatoryVersionIdSchema);
 export type RegulatoryVersionRef = z.infer<typeof RegulatoryVersionRefSchema>;
 
+export const SubjectRefSchema = tenantScopedReference(SubjectIdSchema);
+export type SubjectRef = z.infer<typeof SubjectRefSchema>;
+
+export const ScopeRefSchema = tenantScopedReference(ScopeIdSchema);
+export type ScopeRef = z.infer<typeof ScopeRefSchema>;
+
 export const PrimitiveIdSchema = brandedString<"PrimitiveId">();
 export type PrimitiveId = z.infer<typeof PrimitiveIdSchema>;
 
 export const ApprovalTemplateIdSchema = brandedString<"ApprovalTemplateId">();
 export type ApprovalTemplateId = z.infer<typeof ApprovalTemplateIdSchema>;
+
+export const ApprovalTemplateRefSchema = tenantScopedReference(ApprovalTemplateIdSchema);
+export type ApprovalTemplateRef = z.infer<typeof ApprovalTemplateRefSchema>;
 
 export const ExecutionPlanIdSchema = brandedString<"ExecutionPlanId">();
 export type ExecutionPlanId = z.infer<typeof ExecutionPlanIdSchema>;
@@ -140,11 +161,20 @@ export type ExecutionStepId = z.infer<typeof ExecutionStepIdSchema>;
 export const ExecutionTargetIdSchema = brandedString<"ExecutionTargetId">();
 export type ExecutionTargetId = z.infer<typeof ExecutionTargetIdSchema>;
 
+export const ExecutionTargetRefSchema = tenantScopedReference(ExecutionTargetIdSchema);
+export type ExecutionTargetRef = z.infer<typeof ExecutionTargetRefSchema>;
+
 export const VerificationRuleIdSchema = brandedString<"VerificationRuleId">();
 export type VerificationRuleId = z.infer<typeof VerificationRuleIdSchema>;
 
+export const VerificationRuleRefSchema = tenantScopedReference(VerificationRuleIdSchema);
+export type VerificationRuleRef = z.infer<typeof VerificationRuleRefSchema>;
+
 export const ReservationIdSchema = brandedString<"ReservationId">();
 export type ReservationId = z.infer<typeof ReservationIdSchema>;
+
+export const ReservationRefSchema = tenantScopedReference(ReservationIdSchema);
+export type ReservationRef = z.infer<typeof ReservationRefSchema>;
 
 // ── Opaque references (PII stays behind these - the value is a pointer, never content) ──
 
@@ -157,14 +187,8 @@ export type SecureEventRef = z.infer<typeof SecureEventRefSchema>;
 export const SecureBlobRefSchema = brandedString<"SecureBlobRef">();
 export type SecureBlobRef = z.infer<typeof SecureBlobRefSchema>;
 
-export const SubjectRefSchema = brandedString<"SubjectRef">();
-export type SubjectRef = z.infer<typeof SubjectRefSchema>;
-
 export const SlotRefSchema = brandedString<"SlotRef">();
 export type SlotRef = z.infer<typeof SlotRefSchema>;
-
-export const ScopeRefSchema = brandedString<"ScopeRef">();
-export type ScopeRef = z.infer<typeof ScopeRefSchema>;
 
 // ── Coordination + explanation vocabulary ───────────────────────────────────────
 

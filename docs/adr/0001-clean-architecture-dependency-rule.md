@@ -27,8 +27,9 @@ Four layers under `src/`, dependencies point inward only:
 
 Enforced three ways (defense in depth): ESLint `no-restricted-imports` at edit time
 (`eslint.config.mjs`); the authoritative `dependency-rule` fitness fence (ts-morph, Phase B) that resolves
-**static, relative, AND dynamic `import()`**, classifies each by resolved layer, and enforces the Zod-only
-external allowlist for `contracts/`; and TS path aliases.
+static imports, re-exports, relative references, dynamic `import()`, `require`, TypeScript import types,
+import-equals declarations, triple-slash references, and the implicit JSX runtime; classifies each by
+resolved layer; and enforces the Zod-only external allowlist for `contracts/`; and TS path aliases.
 
 ## Alternatives Rejected
 

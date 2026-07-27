@@ -38,7 +38,7 @@ import {
 import { AnyActorRefSchema, TenantContextSchema } from "./actor";
 import { ResolvableBlockerSchema } from "./trigger";
 import { AuthorityRequirementSchema } from "./authority";
-import { ExecutionPlanSchema } from "./execution";
+import { ExecutionPlanSchema, type RetrySafeExternalAction } from "./execution";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
 export const VersionedSourceRefSchema = z
@@ -97,6 +97,9 @@ type ExplanationTenantReferences = {
 export const ScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 export type Scalar = z.infer<typeof ScalarSchema>;
 
+export const RecommendationParameterSchema = z.union([ScalarSchema, SubjectRefSchema]);
+export type RecommendationParameter = z.infer<typeof RecommendationParameterSchema>;
+
 /** An alternative that was considered and why it lost. */
 export const RecommendationAlternativeSchema = z.strictObject({
   code: z.string().min(1),
@@ -109,7 +112,7 @@ export type RecommendationAlternative = z.infer<typeof RecommendationAlternative
 export const RecommendationSchema = z.strictObject({
   code: z.string().min(1),
   summary: z.string().min(1),
-  parameters: z.record(z.string().min(1), ScalarSchema).readonly(),
+  parameters: z.record(z.string().min(1), RecommendationParameterSchema).readonly(),
   alternatives: z.array(RecommendationAlternativeSchema).readonly(),
 }).readonly();
 export type Recommendation = z.infer<typeof RecommendationSchema>;
@@ -121,7 +124,7 @@ export type Recommendation = z.infer<typeof RecommendationSchema>;
  */
 export const ProhibitionSchema = z.strictObject({
   source: VersionedSourceRefSchema,
-  scope: ScopeRefSchema,
+  scopeRef: ScopeRefSchema,
   reasonCode: ReasonCodeSchema,
   explanation: z.string().min(1),
 }).readonly();
@@ -259,6 +262,28 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
         requireExplanation(child, [...path, "childNodes", index]),
       );
     };
+    const requireExternalAction = (
+      action: RetrySafeExternalAction,
+      path: (string | number)[],
+    ) => {
+      requireSameFirm(action.targetRef, [...path, "targetRef", "firmId"]);
+      action.reservationRefs.forEach((ref, index) =>
+        requireSameFirm(ref, [...path, "reservationRefs", index, "firmId"]),
+      );
+      action.preconditions.forEach((precondition, preconditionIndex) =>
+        precondition.requiredEvidenceSnapshotRefs.forEach((ref, refIndex) =>
+          requireSameFirm(ref, [
+            ...path,
+            "preconditions",
+            preconditionIndex,
+            "requiredEvidenceSnapshotRefs",
+            refIndex,
+            "firmId",
+          ]),
+        ),
+      );
+      requireSameFirm(action.verificationRuleRef, [...path, "verificationRuleRef", "firmId"]);
+    };
     record.precedenceTrace.forEach((step, index) => {
       requireSource(step.left, ["precedenceTrace", index, "left"]);
       requireSource(step.right, ["precedenceTrace", index, "right"]);
@@ -266,27 +291,48 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
     (record.explanationTrace as readonly ExplanationTenantReferences[]).forEach((node, index) =>
       requireExplanation(node, ["explanationTrace", index]),
     );
-    if (record.result.kind === "prohibited") {
-      requireSource(record.result.prohibition.source, ["result", "prohibition", "source"]);
-    }
-    if (record.result.kind === "proceed") {
-      record.result.executionPlan.steps.forEach((step, stepIndex) =>
-        step.preconditions.forEach((precondition, preconditionIndex) =>
-          precondition.requiredEvidenceSnapshotRefs.forEach((ref, refIndex) =>
-            requireSameFirm(ref, [
-              "result",
-              "executionPlan",
-              "steps",
-              stepIndex,
-              "preconditions",
-              preconditionIndex,
-              "requiredEvidenceSnapshotRefs",
-              refIndex,
-              "firmId",
-            ]),
-          ),
+    record.reevaluateWhen.forEach((condition, index) => {
+      if (condition.subjectRef) {
+        requireSameFirm(condition.subjectRef, ["reevaluateWhen", index, "subjectRef", "firmId"]);
+      }
+    });
+    if (record.result.kind === "blocked") {
+      record.result.blockers.forEach((blocker, blockerIndex) =>
+        blocker.resolvingEvidence.forEach((request, requestIndex) =>
+          requireSameFirm(request.subjectRef, [
+            "result",
+            "blockers",
+            blockerIndex,
+            "resolvingEvidence",
+            requestIndex,
+            "subjectRef",
+            "firmId",
+          ]),
         ),
       );
+    }
+    if (record.result.kind === "prohibited") {
+      requireSource(record.result.prohibition.source, ["result", "prohibition", "source"]);
+      requireSameFirm(record.result.prohibition.scopeRef, ["result", "prohibition", "scopeRef", "firmId"]);
+    }
+    if (record.result.kind === "proceed") {
+      for (const [key, parameter] of Object.entries(record.result.recommendation.parameters)) {
+        if (parameter !== null && typeof parameter === "object") {
+          requireSameFirm(parameter, ["result", "recommendation", "parameters", key, "firmId"]);
+        }
+      }
+      if (record.result.authority.mode !== "automatic") {
+        record.result.authority.stages.forEach((stage, stageIndex) =>
+          requireSameFirm(stage.templateRef, ["result", "authority", "stages", stageIndex, "templateRef", "firmId"]),
+        );
+      }
+      record.result.executionPlan.steps.forEach((step, stepIndex) => {
+        const stepPath = ["result", "executionPlan", "steps", stepIndex] as const;
+        requireExternalAction(step, [...stepPath]);
+        if (step.compensatingAction) {
+          requireExternalAction(step.compensatingAction, [...stepPath, "compensatingAction"]);
+        }
+      });
     }
     if (record.derivedFromDecisionRef) {
       requireSameFirm(record.derivedFromDecisionRef, ["derivedFromDecisionRef", "firmId"]);

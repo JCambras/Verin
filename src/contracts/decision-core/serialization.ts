@@ -9,14 +9,14 @@ import { validationError, type AppError } from "../errors";
 import type { DecisionInputBundle } from "./evidence";
 import type { DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
-export const DECISION_CORE_SCHEMA_VERSION = "1.2.0";
-export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.2.0";
-export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.2.0";
+export const DECISION_CORE_SCHEMA_VERSION = "1.3.0";
+export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.3.0";
+export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.3.0";
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
   Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
 > = {
-  [BUNDLE_HASH_PREIMAGE_VERSION]: "6634f18954adfb96e408bf541b8b15b10694487955b0d307da52c5e09a5db192",
-  [DECISION_HASH_PREIMAGE_VERSION]: "16d386cc800d24322105d688fadd8ccc97ba1aae6160f799d3a6a203fb40c9af",
+  [BUNDLE_HASH_PREIMAGE_VERSION]: "b77ca3761bb195c6579b31488c0917ecc38dc5a809cee44cf8e839ac4a0d87a3",
+  [DECISION_HASH_PREIMAGE_VERSION]: "df7161154bba1eaff4fac81d2f6655dea7ed92d268c14ad94f5f010a45670048",
 };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
@@ -33,12 +33,13 @@ export const BUNDLE_HASH_PAYLOAD_KEYS = exactProjectionKeys<BundleHashPayload>()
   "canonicalSerializerVersion",
   "engineVersion",
   "primitiveSetVersion",
-  "domainConfigVersionId",
+  "domainConfigVersionRef",
   "policyVersionRef",
   "householdInstructionVersionRefs",
   "evidenceSnapshotRefs",
   "asOf",
   "timeZone",
+  "timeZoneDataVersion",
 ] as const);
 export const DECISION_HASH_PAYLOAD_KEYS = exactProjectionKeys<DecisionHashPayload>()([
   "firmId",
