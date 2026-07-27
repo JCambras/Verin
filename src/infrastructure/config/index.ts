@@ -16,8 +16,11 @@ const schema = z
     appUrl: z.string().url().default("http://localhost:3000"),
     // Accepts any identifier of the CURRENT tzdb release INCLUDING its Link aliases
     // (UTC, US/Eastern, Asia/Calcutta, ...), and resolves each alias to its canonical
-    // Zone. Only the canonical Zone is ever stored or hashed, so replay bytes stay
-    // single-valued while an operator keeps the name they already use. Current
+    // Zone, EXCEPT that release's declared placeholder Zones (today tzdb's `Factory`):
+    // no formatter resolves one, so booting on it would only throw at the first
+    // local-time render. 597 of the release's 598 identifiers, and an alias of a
+    // placeholder is refused too. Only the canonical Zone is ever stored or hashed,
+    // so replay bytes stay single-valued while an operator keeps the name they use. Current
     // release, not the cross-release union a persisted bundle may be read against:
     // a new bundle stamps the current version, so a zone only an older release
     // shipped must fail HERE, at boot, not later at every bundle parse.

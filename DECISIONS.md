@@ -841,9 +841,9 @@ at the first local-time render: fail-late, the exact shape D-053's release-scope
 refuse. Placeholders are now a THIRD per-release half beside `Zone`s and `Link`s, subtracted at the
 configuration boundary AFTER alias resolution, so an alias of a placeholder is refused too. A bundle
 that already recorded `Factory` still parses and hash-verifies - reading a persisted record and
-accepting a new operator value remain two boundaries. The companion is non-vacuous: it asserts the
-exclusion list is COMPLETE (every identifier the config boundary still admits is one the host runtime
-can format), so a placeholder in a future release cannot slip through unlisted.
+accepting a new operator value remain two boundaries. The completeness companion recorded here swept
+the registry through host ICU; **D-055 replaces it** with a proof that is deterministic from the
+pinned registry, for the reason recorded there.
 
 The canonical serializer's "only plain objects can be canonicalized" refusal was unreachable on the
 only paths that reach it in shipped code. Optional-property normalization rebuilt every nested object
@@ -875,3 +875,34 @@ orphaned by a dead alias, and a comment that overstated what the contract checks
 **Revert path:** drop `placeholderZones` from the release shape and the config filter, restore the
 prototype-blind normalization and the post-projection re-sort spread, reinstate the
 `TIME_ZONE_DATA_VERSION` alias and the `TimeZoneSchema` re-export, and revert the two comments.
+
+### D-055 · 2026-07-27 · captain-decision · Timezone fences are deterministic from the pinned registry, never from host ICU
+
+D-054's completeness companion swept all 341 `Zone`s and 257 `Link`s of the pinned release through
+`Intl.DateTimeFormat` and asserted the unformattable set equalled the declared placeholder list
+exactly. That made a BLOCKING test require the running runtime's bundled tzdata to be at least as new
+as `iana-tzdb/2026b` - the precise host coupling the version-pinned registry exists to remove
+(`.env.example`: "validation never consults host ICU data, so it cannot drift with the OS"). The
+registry already carries `America/Coyhaique`, added in tzdata 2025a; `engines.node` is `>=20`, and
+Node 20 ships ICU 74/75 (≈ tzdata 2024a-2024b), where real `Zone`s would land in the unformattable set
+and turn the build red with no code change - diagnosing as "the placeholder list is wrong" rather than
+"the runtime is older than the pin". The exact-array arm was order-sensitive on top of that.
+
+Placeholder membership is therefore a DECLARATION carried by each release entry, reviewed when that
+release is adopted (ADR-0029's Revisit-When now says so), and the blocking proofs are deterministic
+from the pinned data: the declared set is pinned, the config boundary's admitted set is EXACTLY the
+release minus that set (an unlisted placeholder still boots, an over-broad subtraction refuses a real
+`Zone` - both fail), no `Link` targets a placeholder, `Factory` stays refused at the configuration
+boundary while a bundle that already recorded it still parses and hash-verifies, and the CONSTRUCTED
+two-release companion still proves the subtraction is release-scoped rather than hardcoded. No
+host-ICU observation remains that can fail the build. The `firmTimezone` comment at the boundary now
+states the placeholder exclusion that `.env.example` and ADR-0029 already carried.
+
+No contract, schema, projection, or byte changes: schema and preimage versions stay 1.7.0, every
+recorded hash still reproduces, and the contracts layer still measures **2364** lines against the 2400
+ceiling - **36 lines of headroom**, unchanged, since only a test, an infrastructure comment, and docs
+moved. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched.
+**Why:** a fence that fails on a supported runtime is not a fence; the property worth proving is that
+the boundary subtracts exactly what the release declares, which the pinned registry can decide alone.
+**Revert path:** restore the `Intl` sweep and the exact-equality arm in the placeholder test, and
+revert the `firmTimezone` comment, ADR-0029, and this entry's pointer in D-054.

@@ -83,6 +83,13 @@ describe("config fail-closed guards", () => {
     expect(() => bootWithTimezone("America/New_York_2")).toThrow(/firmTimezone/);
   });
 
+  it("refuses a declared placeholder Zone even though it IS a pinned Zone name", () => {
+    // `Factory` is in the pinned release - a bundle that recorded it still parses and
+    // hash-verifies - but no formatter resolves it, so booting on it would only throw
+    // at the first local-time render. Charter #7 is fail-closed at boot, never late.
+    expect(() => bootWithTimezone("Factory")).toThrow(/firmTimezone/);
+  });
+
   it("refuses to boot in production without the postgres driver", () => {
     withEnv({ APP_ENV: "production", VERIN_STORE_DRIVER: "pglite", DATABASE_URL: "postgres://u:p@h:5432/d", SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(() => getConfig()).toThrow(/PROD_REQUIRES_POSTGRES/);
