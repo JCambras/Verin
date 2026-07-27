@@ -54,6 +54,11 @@ const PositiveApprovalDurationSchema = DurationSchema.refine(
  * After `after` with no quorum, escalate to `roleIds` for `reasonCode`. `after` is a
  * positive delay for the same reason `expiresAfter` is: "PT0S" would escalate
  * instantly and "-P1D" would escalate into the past.
+ *
+ * Positivity is ALL this layer constrains. Whether `after` must fall inside the
+ * stage's own expiry, and whether two steps in one path may share a delay, are
+ * approval-BINDING semantics owned by prompts 18/24; deferring them is deliberate and
+ * recorded (D-054), not an oversight, and un-defers when those prompts land.
  */
 export const EscalationStepSchema = z.strictObject({
   after: PositiveApprovalDurationSchema,

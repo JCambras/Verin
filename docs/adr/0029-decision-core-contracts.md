@@ -76,8 +76,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
   engine itself remains prompt 19.)
 - **Link aliases canonicalize at the CONFIGURATION boundary, never at the replay boundary:** the
   pinned release's 257 `Link` names are SHA-256-locked in their own registry alongside the 341
-  `Zone` names, resolved to their canonical `Zone` target. `FIRM_TIMEZONE` therefore accepts any of
-  the 598 identifiers of the CURRENT release (`iana-tzdb/2026b` today) - including long-legal
+  `Zone` names, resolved to their canonical `Zone` target. `FIRM_TIMEZONE` therefore accepts 597 of
+  the CURRENT release's 598 identifiers (`iana-tzdb/2026b` today) - including long-legal
   spellings such as `UTC`, `US/Eastern`, `Asia/Calcutta`, `Europe/Kiev`, and `Africa/Accra` - and
   stores only the canonical `Zone` (`Etc/UTC`, `America/New_York`, `Asia/Kolkata`, `Europe/Kyiv`,
   `Africa/Abidjan`). NEW configuration is held to the CURRENT release, NOT to the cross-release
@@ -85,6 +85,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   an older supported release shipped would boot and then fail at every bundle parse - fail-late,
   where charter #7's config discipline is fail-closed at boot. Reading an already-persisted record
   and accepting a new operator value are two boundaries, and only the first spans releases.
+- **Placeholder `Zone`s are readable but not configurable:** the 598th identifier is tzdb's
+  `Factory`, the placeholder for a system whose zone was never set. CLDR/ICU deliberately omits it,
+  so `Intl.DateTimeFormat` throws `RangeError` on it - it is the ONE name in the shipped release the
+  runtime cannot use (verified by sweeping all 341 `Zone`s + 257 `Link`s against host ICU). It stays
+  in the `Zone` list so a record that already persisted it parses and hash-verifies, and is
+  subtracted at the CONFIGURATION boundary, where admitting it would boot a firm whose first
+  local-time render throws - the same fail-late shape the release scoping above refuses. Each
+  release carries its OWN placeholder list beside its `Zone`s and `Link`s, subtracted AFTER alias
+  resolution so an alias of a placeholder is refused too. The companion is non-vacuous: it asserts
+  the exclusion list is COMPLETE - every identifier the config boundary still admits is one the host
+  runtime can actually format - so a placeholder in a future release cannot slip through unlisted.
   `TimeZone` itself stays closed over supported-release `Zone` names (341 today), so one zone still
   has exactly one persisted and hashed spelling. **Migration:** no deployment action is required - a
   `FIRM_TIMEZONE` that booted before this ADR still boots, and an alias-valued one now resolves to
@@ -118,12 +129,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   silently inherits whichever ISO-8601 profile the validator ships (8601-2 permits a sign per
   component), so it would admit `PT-1H` as positive the day that profile widens. Every approval or
   specialist-review stage instantiated on a decision expires later than that decision's recorded
-  creation timestamp.
+  creation timestamp. Positivity is ALL this layer constrains on `EscalationStep.after`: whether a
+  delay must fall inside its stage's own expiry, and whether two steps in one path may share a
+  delay, are approval-BINDING semantics owned by prompts 18/24 and are deliberately deferred
+  (D-054), not overlooked.
 - **Evidence chronology:** an `EvidenceSnapshotRef` cannot claim it was retrieved BEFORE the
   observation it records (`retrievedAt >= observedAt`; equality is legal - a source whose as-of
-  instant is its fetch instant is ordinary). The pair is a hash-bound immutable decision input and
-  the `fresh`/`stale`/`unknown` label is derived from it, so an inverted pair is an illegal state,
-  not a lenient one.
+  instant is its fetch instant is ordinary). The pair is a hash-bound immutable decision input every
+  downstream evaluator reads as an interval, so an inverted pair is an illegal state, not a lenient
+  one. `freshness` is the evaluator's RECORDED verdict, NOT re-derived here: the staleness threshold
+  is per-evidence-kind policy this layer does not have, so the contract stores the label without
+  claiming to check it.
 - **One comparator, one uniqueness rule for tenant-scoped references:** `contracts/decision-core/ids.ts`
   exports THE canonical `{firmId, id}` order (firm, then opaque id) and THE set-identity helper.
   Role sets, evidence-supplier sets, execution collections, replay collections, and both hash
@@ -135,7 +151,14 @@ parse time, not by reviewer discipline. Three constraints meet here:
   the set of ancestors on the current path and named by their location, rather than surfacing as a
   host-dependent `RangeError`; the diagnostic path is a parent link built into a readable string
   only when a refusal is actually raised. This serializer will run over explanation trees whose
-  depth is data-driven, not schema-bounded.
+  depth is data-driven, not schema-bounded. Its "only plain objects" refusal stays REACHABLE on the
+  paths that actually reach it: optional-property normalization passes non-plain objects through
+  untouched (one shared prototype rule), because rebuilding them from their own entries would
+  flatten a `Date`/`Map`/class instance to `{}` and hash it as `{}` - different decision inputs
+  collapsing onto one `bundleHash`. Both hash preimages have exactly ONE normalization path: the
+  bundle's canonical re-sort of its two reference collections runs BEFORE projection rather than
+  being spread over it, so no payload field bypasses that walk. Proven through the preimage
+  builders, not by calling the serializer directly - the direct call cannot see this gap.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
   a pure validation library and is what makes the contracts self-enforcing at every boundary.
@@ -149,9 +172,10 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2324** after the
-  version-keyed IANA release map, the release-scoped configuration boundary, and complete review
-  hardening - **76 lines of headroom**). The prior 2300 left 15 lines, which is a ceiling that
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2364** after the
+  version-keyed IANA release map, the release-scoped configuration boundary, the placeholder-Zone
+  subtraction, and complete review hardening - **36 lines of headroom**; this is the FINAL post-review
+  figure, and the only current-state measurement to plan against). The prior 2300 left 15 lines, a ceiling that
   blocks the next edit of any size rather than one that budgets a layer. The ratchet-down doctrine
   resumes from 2400; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom

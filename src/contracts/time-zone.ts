@@ -19,10 +19,21 @@ export const CANONICAL_IANA_TIME_ZONES = Object.freeze(
 export const CANONICAL_IANA_TIME_ZONE_LINKS: Readonly<Record<string, string>> =
   Object.freeze({ ...timeZoneLinkRecords });
 
-/** ONE tz release: its canonical `Zone` names plus its OWN `Link` alias table. */
+/**
+ * tzdb's placeholder `Zone` for a system whose zone was never set. CLDR/ICU omits it,
+ * so `Intl.DateTimeFormat` throws `RangeError` on it. It stays in the `Zone` list
+ * because a record that already persisted it must remain parseable and hash-verifiable;
+ * it is refused at the CONFIGURATION boundary, where a name no formatter can resolve
+ * would boot a firm whose first local-time render throws - fail-late, where charter #7
+ * is fail-closed at boot.
+ */
+export const IANA_TIME_ZONE_PLACEHOLDER_ZONES: readonly string[] = Object.freeze(["Factory"]);
+
+/** ONE tz release: its `Zone` names, its OWN `Link` aliases, its OWN placeholders. */
 export type IanaTimeZoneRelease = {
   readonly zones: readonly string[];
   readonly links: Readonly<Record<string, string>>;
+  readonly placeholderZones: readonly string[];
 };
 
 /**
@@ -38,6 +49,7 @@ export const SUPPORTED_IANA_TIME_ZONE_RELEASES = Object.freeze({
   [IANA_TIME_ZONE_DATA_VERSION]: Object.freeze({
     zones: CANONICAL_IANA_TIME_ZONES,
     links: CANONICAL_IANA_TIME_ZONE_LINKS,
+    placeholderZones: IANA_TIME_ZONE_PLACEHOLDER_ZONES,
   }),
 });
 
@@ -110,24 +122,28 @@ export const isTimeZoneInRecordedRegistry = timeZoneRegistryMembership(
  * Configuration-boundary form: resolves a `Link` alias of THAT SAME release (`UTC`,
  * `US/Eastern`, `Asia/Calcutta`, ...) to its canonical `Zone` BEFORE validation, so an
  * operator value that has always been a legal IANA identifier still boots while
- * everything downstream - persistence, hashing, replay - only ever sees the Zone.
+ * everything downstream - persistence, hashing, replay - only ever sees the Zone. That
+ * release's placeholders are subtracted AFTER resolution, so neither one nor an alias
+ * of one can be configured.
  */
 export const configuredTimeZoneSchema = (release: IanaTimeZoneRelease) => {
   const zoneByCaseFoldedAlias = new Map(
     Object.entries(release.links).map(([alias, zone]) => [alias.toLowerCase(), zone]),
   );
+  const placeholders = new Set(release.placeholderZones);
   return z.preprocess(
     (value) =>
       typeof value === "string" ? (zoneByCaseFoldedAlias.get(value.toLowerCase()) ?? value) : value,
-    timeZoneNameSchema(release.zones),
+    timeZoneNameSchema(release.zones.filter((zone) => !placeholders.has(zone))),
   );
 };
 
 /**
- * `FIRM_TIMEZONE` is held to the CURRENT release, never to the cross-release union
- * `TimeZoneSchema` admits: a NEW bundle stamps the CURRENT version, so a configured
- * Zone that only an older release shipped would boot and then fail at every bundle
- * parse. Configuration fails closed at boot (charter #7), never late.
+ * `FIRM_TIMEZONE` is held to the CURRENT release MINUS its placeholders, never to the
+ * cross-release union `TimeZoneSchema` admits: a NEW bundle stamps the CURRENT
+ * version, so a configured Zone that only an older release shipped would boot and then
+ * fail at every bundle parse, and a placeholder Zone would boot and then throw at the
+ * first render. Configuration fails closed at boot (charter #7), never late.
  */
 export const LinkResolvedTimeZoneSchema = configuredTimeZoneSchema(
   SUPPORTED_IANA_TIME_ZONE_RELEASES[IANA_TIME_ZONE_DATA_VERSION],

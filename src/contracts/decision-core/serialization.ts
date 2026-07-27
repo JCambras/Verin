@@ -87,11 +87,17 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
   return {
     hashKind: "decision-input-bundle",
     preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
-    payload: {
-      ...projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
-      householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedReferences),
-      evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedReferences),
-    },
+    // Re-sorted BEFORE projection, not spread over it afterwards: every payload field
+    // then reaches the preimage through the ONE projectDefined walk, instead of two
+    // fields taking a second normalization path kept in sync by hand.
+    payload: projectDefined(
+      {
+        ...bundle,
+        householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].sort(compareScopedReferences),
+        evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].sort(compareScopedReferences),
+      },
+      BUNDLE_HASH_PAYLOAD_KEYS,
+    ),
   };
 }
 export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
@@ -106,9 +112,21 @@ function projectDefined<T extends object, const K extends readonly (keyof T)[]>(
     keys.flatMap((key) => (value[key] === undefined ? [] : [[key, normalizeOptionalProperties(value[key])]])),
   ) as Pick<T, K[number]>;
 }
+/** THE plain-object rule, shared so normalization and serialization cannot disagree. */
+function isPlainObject(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+/**
+ * Drops explicitly-undefined optional keys so an absent field spelled `undefined`
+ * hashes identically to one omitted. A NON-plain object passes through untouched:
+ * rebuilding one from its own entries would flatten a Date/Map/class instance to `{}`
+ * and hash it as `{}` - different decision inputs collapsing onto one bundleHash - and
+ * would make canonicalJson's refusal unreachable on the only path that reaches it.
+ */
 function normalizeOptionalProperties<T>(value: T): T {
   if (Array.isArray(value)) return value.map(normalizeOptionalProperties) as T;
-  if (value !== null && typeof value === "object") {
+  if (value !== null && typeof value === "object" && isPlainObject(value)) {
     return Object.fromEntries(
       Object.entries(value).flatMap(([key, nested]) =>
         nested === undefined ? [] : [[key, normalizeOptionalProperties(nested)]],
@@ -186,7 +204,7 @@ function serializeObject(value: object, trail: Trail, ancestors: Set<object>): s
     }
     return `[${items.join(",")}]`;
   }
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+  if (!isPlainObject(value)) {
     throw new CanonicalizationRefusal(`${describeTrail(trail)}: only plain objects can be canonicalized`);
   }
   const entries = Object.keys(value)
