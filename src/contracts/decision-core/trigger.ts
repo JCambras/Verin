@@ -42,6 +42,7 @@ const HumanRequestTriggerObjectSchema = z
     maskedRequest: TokenizedStringSchema,
   })
   .superRefine((trigger, ctx) => {
+    // nosemgrep: ajinabraham.njsscan.generic.logic_bypass.node_logic_bypass -- tenant-scope ENFORCEMENT, not a bypass: this REJECTS cross-tenant assembly at the Zod parse boundary (ADR-0029, D-051); both firmIds are already-validated branded IDs, not raw user input.
     if (trigger.requestRef.firmId !== trigger.requester.firmId) {
       ctx.addIssue({
         code: "custom",
