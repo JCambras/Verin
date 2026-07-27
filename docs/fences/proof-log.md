@@ -1171,3 +1171,105 @@ work, and derives tenant and write actor from that grant.
 paths.
 
 **Date:** 2026-07-27 (third review-fix round on v3 build-sequence prompt 6).
+
+## Prompt-6 security-boundary review hardening, round 4 (2026-07-27)
+
+The fourth review exposed five remaining false-green classes and two runtime
+failures. The runtime tests were added first and failed against the vulnerable
+implementation. Each fence was then proven with a real-source injection and
+every injection was reverted.
+
+### Account-opening failed-finalize recovery
+
+A real PGlite flow suspended at e-sign, failed while
+`financial_accounts` was unavailable, restored the table, and resubmitted the
+identical client request with its original human grant.
+
+```
+× a human resubmit recovers a failed webhook finalization after the dependency returns
+  AssertionError: expected 'failed' to be 'completed'
+  ❯ src/__tests__/integration/account-opening.test.ts:183
+```
+
+The matching direct human actor now resumes the saved cursor. The webhook path
+still delegates from `esign-webhook`, and the recovered flow proves one account
+plus a valid audit chain.
+
+### Canonical opaque LLM slot ids
+
+The adapter previously accepted `Alice` as a slot label. The companion failed
+before the schema moved to generated `slot_0001` style ids.
+
+```
+× refuses free-text slot names and unknown purposes/slot types
+  AssertionError: expected true to be false
+  ❯ src/__tests__/unit/llm-boundary.test.ts:101
+```
+
+### PF-027 closed repository callable classification
+
+An exported `unsafeListHouseholds()` was planted in `house-crm.ts`. It obtained
+`getDb()` internally and exposed no SQL type or tenant parameter.
+
+```
+× enforces: every exported SQL repository entry requires a sealed tenant context or exact escape
+  src/infrastructure/crm/house-crm.ts :: unsafeListHouseholds
+  repository callable has no sealed tenant context
+  ❯ src/__tests__/fitness/tenant-context-required.test.ts:312
+```
+
+### PF-029 recursive PII and unverifiable LLM loads
+
+`contracts/result.ts` received an exported nested email envelope and an
+exported callable with an inline first name. The live LLM schema also received
+a computed dynamic import.
+
+```
+× enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked
+  src/contracts/result.ts :: UnsafeEnvelope.payload.email
+  ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:556
+× enforces: the llm/ surface exists and NO PII-bearing module is import-reachable from it
+  src/infrastructure/llm/request-schema.ts reaches an unverifiable module load
+  in src/infrastructure/llm/request-schema.ts:100
+  src/infrastructure/llm/request-schema.ts reaches PII-bearing module
+  src/contracts/result.ts
+  ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:594
+```
+
+### PF-030 derived governed surfaces and semantic helpers
+
+A new audit route called `verifyAndListOrgChain` without registration or action
+authorization. A second injection replaced the real helper import in the live
+audit route with a same-named local function.
+
+```
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+  src/app/api/unsafe-audit/route.ts :: GET: first statement must bind
+  requireActionGrant(req, "audit.export")
+  ❯ src/__tests__/fitness/governed-actions.test.ts:319
+× enforces: every surfaced governed action is wired through requireActionGrant in its route
+  src/app/api/audit/route.ts :: GET: first statement must bind
+  requireActionGrant(req, "audit.export")
+  ❯ src/__tests__/fitness/governed-actions.test.ts:319
+```
+
+### PF-031 exact HMAC secret consumption
+
+The reviewed session-signing function was changed to assign revealed bytes to a
+local variable before forwarding them. File and function names still matched,
+but the exact-sink fence rejected the laundering step.
+
+```
+× enforces: raw secret access appears only in reviewed secret-consumer modules
+  src/infrastructure/identity/session.ts:37
+  ❯ src/__tests__/fitness/no-secret-fallback.test.ts:272
+```
+
+**Revert:** every planted source violation was removed. The seven affected
+files passed 121 focused tests after the revert, followed by type checking and
+lint. Full validation also passed 447 repository tests, 17 Playwright tests,
+the production build with explicit CI-only secrets, Knip, all active v3
+invariants, all 16 golden cases, the load budget, audit-chain verification,
+the license audit, and the high-severity dependency audit.
+
+**Date:** 2026-07-27 (fourth review-fix round on v3 build-sequence prompt 6).

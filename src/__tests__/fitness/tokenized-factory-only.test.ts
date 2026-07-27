@@ -284,7 +284,7 @@ function sealedFixture(path: string, source: string): Project {
       export function delegatedWriteActor(actor: WriteActor, actorUserId: string): WriteActor { return { ...actor, actorUserId } }
     `,
     "/src/infrastructure/pii/llm-projection.ts": `
-      export interface EntityMaskBinding { slotName: string }
+      export interface EntityMaskBinding { slotId: string }
       export function bindEntityMask(input: object): EntityMaskBinding { return input as EntityMaskBinding }
     `,
     [path]: source,
@@ -429,7 +429,7 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         `
           import { bindEntityMask } from "../infrastructure/pii/llm-projection";
           bindEntityMask({
-            slotName: "subject_1",
+            slotId: "slot_0001",
             slotType: "subject",
             rawValues: ["account"],
           });

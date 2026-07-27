@@ -31,7 +31,7 @@ export type SlotType = (typeof SLOT_TYPES)[number];
 
 /** A typed placeholder the model reasons over; binding to real records happens outside the model. */
 export interface SlotPlaceholder {
-  readonly slotName: string;
+  readonly slotId: string;
   readonly slotType: SlotType;
 }
 
@@ -42,8 +42,14 @@ export interface MaskedLlmRequest {
   readonly context: Tokenized<Readonly<Record<string, unknown>>>;
 }
 
-// Machine names only — a slot name can never smuggle free text.
-export const SLOT_NAME_RE = /^[a-z][a-z0-9_-]{0,63}$/i;
+export const SLOT_ID_RE = /^slot_(?!0000)\d{4}$/;
+
+export function slotId(index: number): string {
+  if (!Number.isInteger(index) || index < 1 || index > 9999) {
+    throw appError("VALIDATION", "LLM slot index must be an integer from 1 through 9999.");
+  }
+  return `slot_${String(index).padStart(4, "0")}`;
+}
 
 const sealedTokenizedText = z.custom<Tokenized<string>>(
   (v) =>
@@ -69,7 +75,7 @@ export const maskedLlmRequestSchema = z.object({
   maskedText: sealedTokenizedText,
   slots: z.array(
     z.object({
-      slotName: z.string().regex(SLOT_NAME_RE, "slot names are machine names"),
+      slotId: z.string().regex(SLOT_ID_RE, "slot ids must use the canonical opaque format"),
       slotType: z.enum(SLOT_TYPES),
     }),
   ),

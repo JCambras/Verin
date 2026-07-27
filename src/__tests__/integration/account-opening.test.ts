@@ -159,6 +159,32 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
+  it("a human resubmit recovers a failed webhook finalization after the dependency returns", async () => {
+    const clientRequestId = "5d4c3b2a-1908-47f6-85e4-d3c2b1a09876";
+    const input = {
+      householdName: "Finalize Retry Household",
+      firstName: "Final",
+      lastName: "Retry",
+      email: null,
+      accountType: "individual",
+      clientRequestId,
+    };
+    const started = await startAccountOpening(db, advisor, input);
+    expect(started.status).toBe("suspended");
+
+    await db.query("ALTER TABLE financial_accounts RENAME TO accounts_offline");
+    const failed = await resumeAccountOpeningByToken(db, started.token!, {
+      signedAt: "2026-07-27T10:00:00.000Z",
+    });
+    expect("status" in failed && failed.status).toBe("failed");
+    await db.query("ALTER TABLE accounts_offline RENAME TO financial_accounts");
+
+    const retried = await startAccountOpening(db, advisor, input);
+    expect(retried.status).toBe("completed");
+    expect(await accountCount(db)).toBe(1);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
+  });
+
   it("an EDITED resubmit under the same client request id is rejected with a typed CONFLICT — never a silent replay of stale input (D-027)", async () => {
     const clientRequestId = "6c5d4e3f-2a1b-4c0d-9e8f-7a6b5c4d3e2f";
     const input = {

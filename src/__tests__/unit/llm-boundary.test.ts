@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { REDACTED } from "@contracts/pii";
 import type { Tokenized } from "@contracts/tokenized";
 import { tokenizeText, tokenizeRecord, isSealedTokenized } from "@infra/pii/tokenize";
-import { parseMaskedLlmRequest, type MaskedLlmRequest } from "@infra/llm/request-schema";
+import { parseMaskedLlmRequest, slotId, type MaskedLlmRequest } from "@infra/llm/request-schema";
 import {
   bindEntityMask,
   projectForLlm,
@@ -20,6 +20,8 @@ const RAW = {
   email: "adaeze@example.test",
   phone: "(212) 555-0142",
 };
+const SLOT_1 = slotId(1);
+const SLOT_2 = slotId(2);
 
 describe("the Tokenized factory scrubs by construction", () => {
   it("tokenizeText redacts PII-shaped values and seals the result", () => {
@@ -73,8 +75,8 @@ describe("the Tokenized factory scrubs by construction", () => {
 describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
   const good = (): MaskedLlmRequest => ({
     purpose: "intent-shaping",
-    maskedText: tokenizeText("Open an account for SUBJECT_1"),
-    slots: [{ slotName: "subject_1", slotType: "subject" }],
+    maskedText: tokenizeText("Open an account for {{slot_0001}}"),
+    slots: [{ slotId: SLOT_1, slotType: "subject" }],
     context: tokenizeRecord({ requestKind: "account-opening" }),
   });
 
@@ -96,27 +98,35 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
     const smuggled = { ...good(), context: { value: { note: RAW.email }, piiFree: true } as unknown as Tokenized<Readonly<Record<string, unknown>>> };
     expect(parseMaskedLlmRequest(smuggled).ok).toBe(false);
   });
-  it("refuses free-text slot names and unknown purposes/slot types", () => {
-    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotName: `call ${RAW.name}`, slotType: "subject" }] }).ok).toBe(false);
+  it("refuses noncanonical slot ids and unknown purposes or slot types", () => {
+    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotId: `call ${RAW.name}`, slotType: "subject" }] }).ok).toBe(false);
+    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotId: "Alice", slotType: "subject" }] }).ok).toBe(false);
     expect(parseMaskedLlmRequest({ ...good(), purpose: "chat" }).ok).toBe(false);
-    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotName: "s1", slotType: "raw-record" }] }).ok).toBe(false);
+    expect(parseMaskedLlmRequest({ ...good(), slots: [{ slotId: "s1", slotType: "raw-record" }] }).ok).toBe(false);
   });
   it("refuses non-objects and garbage", () => {
     for (const v of [null, undefined, "text", 42, []]) expect(parseMaskedLlmRequest(v).ok).toBe(false);
+  });
+  it("generates canonical opaque slot ids and rejects invalid indices", () => {
+    expect(slotId(1)).toBe("slot_0001");
+    expect(slotId(9999)).toBe("slot_9999");
+    for (const index of [0, -1, 1.5, 10_000]) {
+      expect(() => slotId(index)).toThrow();
+    }
   });
 });
 
 describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("rejects a prototype clone of a trusted entity binding", () => {
     const binding = bindEntityMask({
-      slotName: "subject_1",
+      slotId: SLOT_1,
       slotType: "subject",
       rawValues: [RAW.name],
     });
     const result = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Open an account for ${RAW.name}`,
-      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
       bindings: [Object.create(binding) as EntityMaskBinding],
       evidence: {},
     });
@@ -127,9 +137,9 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
-      slots: [{ slotName: "subject_1", slotType: "subject" }, { slotName: "amount_1", slotType: "amount" }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" }, { slotId: SLOT_2, slotType: "amount" }],
       bindings: [bindEntityMask({
-        slotName: "subject_1",
+        slotId: SLOT_1,
         slotType: "subject",
         rawValues: [RAW.name],
       })],
@@ -139,7 +149,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     if (!r.ok) return;
     const flat = JSON.stringify({ text: r.value.maskedText.value, ctx: r.value.context.value });
     for (const raw of Object.values(RAW)) expect(flat).not.toContain(raw);
-    expect(r.value.maskedText.value).toContain("{{subject_1}}"); // the name became its typed placeholder
+    expect(r.value.maskedText.value).toContain("{{slot_0001}}"); // the name became its typed placeholder
     expect(flat).toContain(REDACTED); // pattern PII (ssn/email/phone) redacted
     expect(flat).toContain("12000"); // non-PII business data survives
   });
@@ -147,9 +157,9 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name.toLowerCase()}`,
-      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
       bindings: [bindEntityMask({
-        slotName: "subject_1",
+        slotId: SLOT_1,
         slotType: "subject",
         rawValues: [RAW.name],
       })],
@@ -158,15 +168,15 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.maskedText.value).not.toContain(RAW.name.toLowerCase());
-    expect(r.value.maskedText.value).toContain("{{subject_1}}");
+    expect(r.value.maskedText.value).toContain("{{slot_0001}}");
   });
-  it("refuses a non-machine-name mask slotName fail-closed (a '$&' slotName cannot re-insert the entity)", () => {
+  it("refuses a non-machine-name mask slotId fail-closed (a '$&' slotId cannot re-insert the entity)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `follow up with ${RAW.name}`,
-      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
       bindings: [{
-        slotName: "$&",
+        slotId: "$&",
         slotType: "subject",
         rawValues: [RAW.name],
       } as unknown as EntityMaskBinding],
@@ -183,17 +193,17 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping",
       requestText: `schedule a call with ${RAW.name}`,
       slots: [
-        { slotName: "subject_1", slotType: "subject" },
-        { slotName: "subject_2", slotType: "subject" },
+        { slotId: SLOT_1, slotType: "subject" },
+        { slotId: SLOT_2, slotType: "subject" },
       ],
       bindings: [
         bindEntityMask({
-          slotName: "subject_2",
+          slotId: SLOT_2,
           slotType: "subject",
           rawValues: ["Adaeze"],
         }),
         bindEntityMask({
-          slotName: "subject_1",
+          slotId: SLOT_1,
           slotType: "subject",
           rawValues: [RAW.name],
         }),
@@ -204,7 +214,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     if (!r.ok) return;
     expect(r.value.maskedText.value).not.toContain("Okonkwo-Blackwood");
     expect(r.value.maskedText.value).not.toContain("Adaeze");
-    expect(r.value.maskedText.value).toContain("{{subject_1}}");
+    expect(r.value.maskedText.value).toContain("{{slot_0001}}");
   });
   it("refuses unresolved sensitive text when a caller omits the required masks", () => {
     const r = projectForLlm({
@@ -225,14 +235,14 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     const base = {
       purpose: "intent-shaping" as const,
       requestText: "review the requested account",
-      slots: [{ slotName: "subject_1", slotType: "subject" as const }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
       evidence: {},
     };
     expect(projectForLlm({ ...base, bindings: [] }).ok).toBe(false);
     expect(projectForLlm({
       ...base,
       bindings: [bindEntityMask({
-        slotName: "subject_1",
+        slotId: SLOT_1,
         slotType: "subject",
         rawValues: ["unrelated person"],
       })],
@@ -242,11 +252,11 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     const base = {
       purpose: "intent-shaping" as const,
       requestText: "Alice wants account",
-      slots: [{ slotName: "subject_1", slotType: "subject" as const }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
       evidence: {},
     };
     const callerDeclared = {
-      slotName: "subject_1",
+      slotId: SLOT_1,
       slotType: "subject",
       rawValues: ["account"],
     } as unknown as EntityMaskBinding;
@@ -257,29 +267,29 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     }).ok).toBe(false);
     expect(projectForLlm({
       ...base,
-      masks: [{ slotName: "subject_1", rawText: "account" }],
+      masks: [{ slotId: SLOT_1, rawText: "account" }],
     } as never).ok).toBe(false);
 
     const result = projectForLlm({
       ...base,
       bindings: [bindEntityMask({
-        slotName: "subject_1",
+        slotId: SLOT_1,
         slotType: "subject",
         rawValues: ["Alice"],
       })],
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.maskedText.value).toBe("{{subject_1}} wants account");
+      expect(result.value.maskedText.value).toBe("{{slot_0001}} wants account");
     }
   });
   it("masks known entities in untyped evidence values before tokenization", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
       requestText: `Review ${RAW.name}`,
-      slots: [{ slotName: "subject_1", slotType: "subject" }],
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
       bindings: [bindEntityMask({
-        slotName: "subject_1",
+        slotId: SLOT_1,
         slotType: "subject",
         rawValues: [RAW.name],
       })],
@@ -288,7 +298,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(JSON.stringify(r.value.context.value)).not.toContain(RAW.name);
-      expect(JSON.stringify(r.value.context.value)).toContain("{{subject_1}}");
+      expect(JSON.stringify(r.value.context.value)).toContain("{{slot_0001}}");
     }
   });
 });
