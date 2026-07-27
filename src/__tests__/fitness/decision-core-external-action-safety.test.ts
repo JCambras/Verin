@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CompensatingActionSchema,
   ExecutionPlanSchema,
+  ExecutionStepSchema,
   RetrySafeExternalActionSchema,
 } from "@contracts/decision-core/execution";
 
@@ -48,6 +49,33 @@ describe("decision-core external-action safety fence", () => {
       Object.entries(compensation).filter(([candidate]) => candidate !== key),
     );
     const parsed = CompensatingActionSchema.safeParse(incomplete);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
+    }
+  });
+
+  // ExecutionStepSchema re-declares its OWN strictObject around the shared action shape,
+  // so a key overridden AFTER that spread is invisible to the compensation matrix above
+  // and to the shared-shape matrices below. v3-invariants.json registers this fence as
+  // the live mechanism for "every external execution STEP has an idempotency key and
+  // verification rule", so the STEP itself has to be parsed here (D-057).
+  it.each([
+    "id",
+    "targetRef",
+    "command",
+    "idempotencyKey",
+    "conflictKeys",
+    "reservationRefs",
+    "preconditions",
+    "verificationRuleRef",
+    "dependsOn",
+  ] as const)("enforces: execution step requires %s", (key) => {
+    const step = { id: "step:1", ...action, dependsOn: [] };
+    const incomplete = Object.fromEntries(
+      Object.entries(step).filter(([candidate]) => candidate !== key),
+    );
+    const parsed = ExecutionStepSchema.safeParse(incomplete);
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
@@ -217,6 +245,7 @@ describe("decision-core external-action safety fence", () => {
     it("accepts the shared action, compensation, and execution-step shapes", () => {
       expect(RetrySafeExternalActionSchema.safeParse(action).success).toBe(true);
       expect(CompensatingActionSchema.safeParse(compensation).success).toBe(true);
+      expect(ExecutionStepSchema.safeParse({ id: "step:1", ...action, dependsOn: [] }).success).toBe(true);
       expect(
         ExecutionPlanSchema.safeParse({
           id: "plan:1",

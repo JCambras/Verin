@@ -4,7 +4,9 @@
  * Every step is idempotent and retry-safe by construction (charter #16): it carries
  * its idempotency key, conflict keys, reservations, preconditions that must still
  * hold at execution, its verification rule, and dependency edges for
- * dependency-aware ordering (prompt 25's planner consumes them).
+ * dependency-aware ordering (prompt 25's planner consumes them). Every one of those
+ * collections is a SET: duplicate-free AND canonically ordered at parse through
+ * ids.ts's comparator, because they bind into `decisionHash` (D-057).
  */
 import { z } from "zod";
 import {
@@ -18,6 +20,8 @@ import {
   ReservationRefSchema,
   SecureBlobRefSchema,
   VerificationRuleRefSchema,
+  compareOpaqueValues,
+  compareScopedReferences,
   hasUniqueScopedReferences,
 } from "./ids";
 
@@ -39,6 +43,7 @@ export const ExecutionPreconditionSchema = z.strictObject({
     .array(EvidenceSnapshotIdRefSchema)
     .min(1)
     .refine(hasUniqueScopedReferences, "duplicate required evidence snapshot reference")
+    .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   mustStillHoldAtExecution: z.literal(true),
 }).readonly();
@@ -52,10 +57,12 @@ const retrySafeExternalActionShape = {
     .array(ConflictKeySchema)
     .min(1)
     .refine(uniqueStrings, "duplicate conflict key")
+    .overwrite((keys) => [...keys].sort(compareOpaqueValues))
     .readonly(),
   reservationRefs: z
     .array(ReservationRefSchema)
     .refine(hasUniqueScopedReferences, "duplicate reservation reference")
+    .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
   verificationRuleRef: VerificationRuleRefSchema,
@@ -123,6 +130,7 @@ export const ExecutionStepSchema = z
     dependsOn: z
       .array(ExecutionStepIdSchema)
       .refine(uniqueStrings, "duplicate execution dependency")
+      .overwrite((ids) => [...ids].sort(compareOpaqueValues))
       .readonly(),
     compensatingAction: CompensatingActionSchema.optional(),
   })

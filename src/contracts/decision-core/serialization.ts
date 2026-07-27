@@ -100,6 +100,12 @@ export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreim
     ),
   };
 }
+/**
+ * A PURE projection, deliberately: a DecisionRecord's set-like collections are each
+ * canonicalized by the schema declaring them, at depths a preimage-side mirror could only
+ * restate as a hand-synced second field list. Fenced rather than assumed - reordering any
+ * of them leaves decisionHash byte-identical (D-057).
+ */
 export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
   return {
     hashKind: "decision-record",

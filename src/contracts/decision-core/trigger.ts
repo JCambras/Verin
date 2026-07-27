@@ -119,10 +119,18 @@ export const IntentSchema = TenantContextSchema.unwrap().extend({
   .readonly();
 export type Intent = z.infer<typeof IntentSchema>;
 
-/** An unresolved slot: candidate subjects plus the coded question a human must answer. */
+/**
+ * An unresolved slot: candidate subjects plus the coded question a human must answer.
+ * ONE slot's alternatives are a canonically-ordered tenant-scoped set like every other
+ * reference collection here, checked cross-field the way EvidenceRequest below is
+ * because this record carries no enclosing firmId of its own (D-057).
+ */
 export const AmbiguityRefSchema = z.strictObject({
   slotName: z.string().min(1),
-  candidateRefs: z.array(SubjectRefSchema).min(1).readonly(),
+  candidateRefs: z.array(SubjectRefSchema).min(1)
+    .refine(hasUniqueScopedReferences, "duplicate candidate subject reference")
+    .refine((refs) => refs.every((ref) => ref.firmId === refs[0]?.firmId), "candidate subjects must belong to one tenant")
+    .overwrite((refs) => [...refs].sort(compareScopedReferences)).readonly(),
   humanQuestionCode: z.string().min(1),
 }).readonly();
 export type AmbiguityRef = z.infer<typeof AmbiguityRefSchema>;

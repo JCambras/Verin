@@ -964,3 +964,71 @@ meant to protect.
 **Revert path:** re-export the four helpers, restore the file-local `require` symbol test and the
 whole-AST JSX probe, restore the `no Link targets a placeholder` and module-constant assertions, and
 revert the `.env.example` / ADR-0029 migration wording.
+
+### D-057 · 2026-07-27 · captain-decision · Execution sets are ordered, ambiguity candidates are one tenant's, and a refused zone names itself
+
+`ids.ts` stated that "every set-like collection and every hash preimage sorts through this one
+comparator", and four collections did not: `requiredEvidenceSnapshotRefs`, `conflictKeys`,
+`reservationRefs` and `dependsOn` were guarded for duplicates but never ordered. Reproduced on the
+shipped fixture: reversing a step's two precondition evidence references and re-parsing produced a
+DIFFERENT `decisionHash`, while the same reversal of a role set (which carries `.overwrite`) produced
+the same one. A planner emitting the same preconditions, conflicts, reservations or dependency edges
+in a different order therefore hashed the same decision two ways - on the value approvals and replay
+bind to, and while the fixtures are locking canonical bytes for the evaluator (prompt 19) to build on.
+All four now sort at the parse boundary through THE comparator, which is itself now composed from an
+explicit opaque-value order so the collections of BARE ids sort by the same authority rather than a
+second one. The claim is true rather than narrowed. Every recorded digest is byte-identical: the
+fixtures were already in canonical order, which is why this is a latent defect and not a live one.
+
+`AmbiguityRefSchema.candidateRefs` was the only scoped-reference collection in decision-core with
+neither a duplicate-free refine nor any tenant constraint, so one slot's candidates could repeat a
+subject or span two firms - a human disambiguating ONE slot would have been offered the same answer
+twice, or a second firm's. It is now a duplicate-free, single-tenant, canonically-ordered set,
+checked cross-field the way `EvidenceRequest` already is because the record carries no enclosing
+`firmId`, and `AmbiguityRefSchema` is in the tenant-scope fence's subject list so the class cannot
+recur silently.
+
+The external-action fence ran its required-key omission matrix only against `CompensatingActionSchema`,
+and `ExecutionStepSchema` was never parsed directly anywhere in the repo - yet `v3-invariants.json` #20
+registers that fence as the live mechanism for "every external execution step has an idempotency key
+and verification rule". Because the step re-declares its own `strictObject` around the shared shape, a
+key overridden AFTER the spread was invisible to the sibling matrix: appending
+`verificationRuleRef: …optional()` left all 24 other assertions passing. The matrix now runs against
+the step itself, and the registry note says what the fence actually covers.
+
+The 341-member `z.enum` behind the configuration boundary turned a one-line boot FATAL into a
+6,180-character wall listing every admitted zone, never echoing the rejected value, and rendering
+`FIRM_TIMEZONE=Factory` identically to a typo - losing the one signal an operator can act on. The enum
+now carries an explicit refusal that names the rejected value and the pinned release, and distinguishes
+a declared placeholder from an unknown name. It fixes both surfaces at once, since `TimeZoneSchema` and
+the config boundary share the factory. `.env.example` also stops filing `Etc/GMT+12` under the Link
+table; it is a canonical Zone, and ADR-0029 already said so correctly.
+
+**Not done, and why:** the reviewer's preimage asymmetry (`bundleHashPreimage` re-sorts defensively,
+`decisionHashPreimage` does not) is resolved as DOCUMENTED-AND-FENCED rather than mirrored. A mirror is
+not a small edit: a `DecisionRecord` canonicalizes set-like collections at three nesting depths, so the
+preimage-side copy would be ~65 lines of hand-synced second field list - the exact duplication the
+bundle's own comment says it avoids - and the contracts layer has 6 lines under its 2400 ceiling, which
+a ceiling amendment (its own authority) would be required to change. Routing the preimage through
+`DecisionRecordSchema.safeParse` instead was tried and rejected: it silently coerces a shaped class
+instance into a plain object and so defeats the deliberate "only plain objects" refusal the audit-chain
+serializer keeps reachable (`decision-core.test.ts` caught it). The asymmetry is instead explained in
+code, in `fixtures/decision-core/README.md`, and in ADR-0029: the bundle re-sorts for the ONE case its
+own `superRefine` refuses and no parse can reach; the record has no such case. What the mirror was
+meant to buy is fenced directly - reversing each set-like collection in turn leaves `decisionHash`
+byte-identical, with `steps` (an ordered list, not a set) as the control that must change it.
+
+Schema and preimage versions stay 1.7.0, both registry pins are untouched, all four fixture digests
+reproduce, and no projection changed. The contracts layer measures **2394** lines against the 2400
+ceiling - **6 lines of headroom**, down from 40. The ceiling is now the binding constraint on this
+layer and the next change of any size needs the prompt-8/9 re-baseline ADR first.
+`EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched, placeholder membership
+stays review-enforced at release adoption (ADR-0029 Revisit-When), and the three ratified guards stay
+exported and unchanged.
+**Why:** an invariant a comment states and the code does not hold is worse than no invariant, and it
+was stated on the digest approvals bind to; a fence a registry names as live must cover what the
+registry claims; and a boot refusal that cannot be acted on has not failed closed usefully.
+**Revert path:** drop the four `.overwrite` calls and `compareOpaqueValues`, restore
+`AmbiguityRefSchema.candidateRefs` to a bare array, remove the `ExecutionStepSchema` omission matrix
+and the registry note, restore zod's default enum message, and revert the `.env.example`, README,
+ADR-0029, and proof-log F75-F79 entries.

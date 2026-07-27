@@ -157,10 +157,15 @@ parse time, not by reviewer discipline. Three constraints meet here:
   is per-evidence-kind policy this layer does not have, so the contract stores the label without
   claiming to check it.
 - **One comparator, one uniqueness rule for tenant-scoped references:** `contracts/decision-core/ids.ts`
-  exports THE canonical `{firmId, id}` order (firm, then opaque id) and THE set-identity helper.
-  Role sets, evidence-supplier sets, execution collections, replay collections, and both hash
-  preimages consume them, so a parsed record and its hash preimage cannot order the same list two
-  ways once references stop being single-tenant. Trigger arms carry their own tenant refinements
+  exports THE canonical `{firmId, id}` order (firm, then opaque id), THE opaque order it is composed
+  from - which the collections of BARE ids (conflict keys, step dependencies) sort by, so one
+  authority covers whichever halves a collection has - and THE set-identity helper.
+  Role sets, evidence-supplier sets, ambiguity candidates, execution collections, replay collections,
+  and both hash preimages consume them, so a parsed record and its hash preimage cannot order the same
+  list two ways once references stop being single-tenant. Every set-like collection is ORDERED as well
+  as duplicate-free: a planner emitting the same preconditions, conflicts, reservations or dependency
+  edges in a different order describes the same decision and must hash to the same `decisionHash`,
+  which is fenced by reversing each collection in turn (D-057). Trigger arms carry their own tenant refinements
   and the discriminated union is composed FROM the refined arms, so no check exists in two places
   where only one copy runs.
 - **Canonical serialization refuses precisely and in bounded space:** cycles are detected against
@@ -173,7 +178,10 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flatten a `Date`/`Map`/class instance to `{}` and hash it as `{}` - different decision inputs
   collapsing onto one `bundleHash`. Both hash preimages have exactly ONE normalization path: the
   bundle's canonical re-sort of its two reference collections runs BEFORE projection rather than
-  being spread over it, so no payload field bypasses that walk. Proven through the preimage
+  being spread over it, so no payload field bypasses that walk, and the decision preimage is a PURE
+  projection because every set-like collection a record carries is canonicalized by the schema that
+  declares it - the bundle re-sorts only for the cross-tenant list its own `superRefine` refuses,
+  which no parse can canonicalize (D-057). Proven through the preimage
   builders, not by calling the serializer directly - the direct call cannot see this gap.
 - **`contracts/` may import Zod** - and only Zod. The layer's discipline is restated as: no
   project-local imports from outer layers (unchanged, fenced), no I/O, no platform coupling; Zod is
@@ -188,11 +196,14 @@ parse time, not by reviewer discipline. Three constraints meet here:
   JSX in `contracts/` is rejected because `jsx: react-jsx`
   would add an implicit `react/jsx-runtime` dependency.
   Any further external import into `contracts/` requires its own ADR.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2360** after the
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2400** (measured **2394** after the
   version-keyed IANA release map, the release-scoped configuration boundary, the placeholder-Zone
-  subtraction, and complete review hardening including the removal of the non-ratified dead exports -
-  **40 lines of headroom**; this is the FINAL post-review
-  figure, and the only current-state measurement to plan against). The prior 2300 left 15 lines, a ceiling that
+  subtraction, and complete review hardening including the canonical ordering of every set-like
+  execution collection, the single-tenant ambiguity-candidate set, and the self-naming time-zone
+  refusal - **6 lines of headroom**; this is the FINAL post-review
+  figure, and the only current-state measurement to plan against. The ceiling is now the binding
+  constraint on this layer: D-057 records one accepted resolution that was chosen to fit it, and the
+  next contracts change of any size needs the prompt-8/9 re-baseline ADR first). The prior 2300 left 15 lines, a ceiling that
   blocks the next edit of any size rather than one that budgets a layer. The ratchet-down doctrine
   resumes from 2400; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom

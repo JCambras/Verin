@@ -7,7 +7,7 @@ import {
   EvidenceSnapshotRefSchema,
 } from "@contracts/decision-core/evidence";
 import { ApprovalTemplateSchema } from "@contracts/decision-core/authority";
-import { IntentSchema } from "@contracts/decision-core/trigger";
+import { AmbiguityRefSchema, IntentSchema } from "@contracts/decision-core/trigger";
 import { REPO_ROOT } from "./_fence-utils";
 
 const fixture = (name: string): Record<string, unknown> =>
@@ -234,6 +234,44 @@ describe("decision-core tenant-scope fence", () => {
         }],
       }],
     }).success).toBe(false);
+  });
+
+  it("enforces: one slot's candidate subjects are a single-tenant set, not a mixed-firm list", () => {
+    // The candidates of ONE unresolved slot. A human picking between them is answering
+    // one question, so two firms' subjects cannot both be on the ballot, and the same
+    // subject cannot appear twice. This record has no enclosing firmId, so the check is
+    // cross-field - the pattern EvidenceRequest already uses (D-057).
+    const ambiguity = {
+      slotName: "sourceAccount",
+      candidateRefs: [
+        { firmId: "firm-a", id: "subject:joint-taxable" },
+        { firmId: "firm-a", id: "subject:ira" },
+      ],
+      humanQuestionCode: "which-account",
+    };
+    expect(AmbiguityRefSchema.safeParse(ambiguity).success).toBe(true);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        ...ambiguity,
+        candidateRefs: [ambiguity.candidateRefs[0]!, ambiguity.candidateRefs[0]!],
+      }).success,
+    ).toBe(false);
+    expect(
+      AmbiguityRefSchema.safeParse({
+        ...ambiguity,
+        candidateRefs: [
+          ambiguity.candidateRefs[0]!,
+          { ...ambiguity.candidateRefs[1]!, firmId: "firm-b" },
+        ],
+      }).success,
+    ).toBe(false);
+    // The set is canonically ordered, like every other scoped-reference collection:
+    // either spelling of the same candidate set parses to the same value.
+    const canonical = [ambiguity.candidateRefs[1]!, ambiguity.candidateRefs[0]!];
+    expect(AmbiguityRefSchema.parse(ambiguity).candidateRefs).toEqual(canonical);
+    expect(
+      AmbiguityRefSchema.parse({ ...ambiguity, candidateRefs: canonical }).candidateRefs,
+    ).toEqual(canonical);
   });
 
   it("enforces: every direct decision reference belongs to the decision tenant", () => {

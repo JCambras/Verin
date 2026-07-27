@@ -90,6 +90,31 @@ describe("config fail-closed guards", () => {
     expect(() => bootWithTimezone("Factory")).toThrow(/firmTimezone/);
   });
 
+  it("says WHICH value it refused and why, without dumping the admitted zone list", () => {
+    // The FATAL an operator actually reads. Zod's default enum message enumerates all
+    // 341 admitted zones (~6 KB), never echoes the rejected value, and renders a
+    // declared placeholder identically to a typo - so the one actionable signal is
+    // exactly the one lost. Non-vacuous in both directions: the typo case must NOT
+    // claim a placeholder, and neither may carry the option dump (D-057).
+    const refusal = (zone: string): string => {
+      try {
+        bootWithTimezone(zone);
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      throw new Error(`expected ${zone} to be refused`);
+    };
+    const typo = refusal("America/New_York_2");
+    const placeholder = refusal("Factory");
+    expect(typo).toContain('"America/New_York_2" is not a Zone or Link alias of iana-tzdb/2026b');
+    expect(placeholder).toContain('"Factory" is a placeholder Zone iana-tzdb/2026b declares unconfigurable');
+    expect(typo).not.toContain("placeholder");
+    for (const message of [typo, placeholder]) {
+      expect(message).not.toContain("Africa/Abidjan");
+      expect(message.length).toBeLessThan(300);
+    }
+  });
+
   it("refuses to boot in production without the postgres driver", () => {
     withEnv({ APP_ENV: "production", VERIN_STORE_DRIVER: "pglite", DATABASE_URL: "postgres://u:p@h:5432/d", SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(() => getConfig()).toThrow(/PROD_REQUIRES_POSTGRES/);

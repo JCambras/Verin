@@ -259,7 +259,7 @@
           "ref": "src/__tests__/fitness/decision-core-external-action-safety.test.ts"
         }
       ],
-      "notes": "Schema substrate today: ExecutionStep and CompensatingAction both require stable idempotency, conflict keys, reservation references, preconditions, and a verification-rule reference; the fence rejects incomplete compensation and aliased parent/compensation keys. Every house-CRM write also carries an idempotency key with a replay-tested exactly-once effect (charter #16). The invariant remains not-yet-active until the planner and adapter conformance suite prove those contracts are honored by external execution."
+      "notes": "Schema substrate today: ExecutionStep and CompensatingAction both require stable idempotency, conflict keys, reservation references, preconditions, and a verification-rule reference; the fence runs its required-key omission matrix against the STEP itself as well as against its compensation sibling (ExecutionStep re-declares its own strictObject around the shared shape, so a key overridden after that spread is invisible to the sibling's matrix - D-057), and rejects incomplete compensation and aliased parent/compensation keys. Every house-CRM write also carries an idempotency key with a replay-tested exactly-once effect (charter #16). The invariant remains not-yet-active until the planner and adapter conformance suite prove those contracts are honored by external execution."
     },
     {
       "id": 21,

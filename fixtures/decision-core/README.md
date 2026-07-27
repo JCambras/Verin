@@ -17,7 +17,19 @@ evidence-snapshot reference collections by firm then opaque id - the SAME compar
 canonicalizes with, so the preimage cannot order a list differently from the record it hashes.
 Decision preimage version `decision-record/1.7.0`
 excludes only `decisionHash`; the decision ID and all order-significant traces, stages, and plan
-steps remain bound. The 1.7.0 shapes tenant-scope every named configuration, evidence, subject, scope,
+steps remain bound.
+
+The two halves are asymmetric ON PURPOSE (D-057). The bundle re-sorts because its one case where a
+preimage could diverge from its record - a cross-tenant reference list, where firm-then-id order and
+id-only order differ - is exactly the case `DecisionInputBundleSchema` refuses, so no parse can
+canonicalize it and only the preimage can. `decisionHashPreimage` is a PURE projection because a
+`DecisionRecord` has no such case: every set-like collection it carries (role sets at three nesting
+depths, approval stages by explicit order, and each execution action's conflict keys, reservations,
+dependency edges and precondition evidence) is canonicalized by the schema that declares it, at
+depths a preimage-side mirror could only restate as a second field list kept in sync by hand. What
+that buys is fenced rather than assumed: `decision-core.test.ts` reverses each set-like collection in
+turn and requires `decisionHash` to come out byte-identical, with `steps` - an ordered list, not a
+set - reversed as the control that must change it. The 1.7.0 shapes tenant-scope every named configuration, evidence, subject, scope,
 approval, execution, reservation, verification, and secure-storage reference, require retry-safe
 compensation, canonicalize set-like evaluator inputs, validate each bundle's `timeZone` against the
 registry its own recorded `timeZoneDataVersion` names while a standalone `TimeZone` spans every supported

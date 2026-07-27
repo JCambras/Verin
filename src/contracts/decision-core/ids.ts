@@ -149,16 +149,20 @@ export type RoleRef = z.infer<typeof RoleRefSchema>;
 /** The shape every tenant-scoped reference shares: firm plus opaque branded id. */
 export type ScopedReference = { readonly firmId: string; readonly id: string };
 
+/** THE order over one opaque value; sets of BARE ids (conflict keys, dependencies) sort by it. */
+export const compareOpaqueValues = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
 /**
  * THE canonical order for tenant-scoped references - firm first, then opaque id.
- * Every set-like collection and every hash preimage sorts through this one
- * comparator: a second ordering would let a parsed record and its hash preimage
- * disagree the day references stop being single-tenant (ADR-0029, D-051).
+ * Every set-like collection and every hash preimage sorts through this one comparator,
+ * composed from the opaque order above so ONE ordering authority covers both halves: a
+ * second ordering would let a parsed record and its hash preimage disagree the day
+ * references stop being single-tenant (ADR-0029, D-051, D-057).
  */
-export const compareScopedReferences = (left: ScopedReference, right: ScopedReference): number => {
-  if (left.firmId !== right.firmId) return left.firmId < right.firmId ? -1 : 1;
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-};
+export const compareScopedReferences = (left: ScopedReference, right: ScopedReference): number =>
+  left.firmId === right.firmId
+    ? compareOpaqueValues(left.id, right.id)
+    : compareOpaqueValues(left.firmId, right.firmId);
 
 const scopedReferenceKey = (reference: ScopedReference): string =>
   `${reference.firmId}\u0000${reference.id}`;

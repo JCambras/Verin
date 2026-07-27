@@ -1563,3 +1563,62 @@ golden:validate, and the full suite pass, with all four fixture digests unchange
 untouched, and contracts at 2360/2400.
 
 **Date:** 2026-07-27 (review corrections F71-F74, D-056).
+
+## F75-F79 · decision-core review corrections (D-057)
+
+**Invariants:** every set-like execution collection is canonically ordered at the parse boundary, so
+array order cannot reach `decisionHash`; one slot's ambiguity candidates are a single-tenant set;
+`ExecutionStep`'s own required keys are fenced on the STEP, not only on its compensation sibling; a
+refused time zone names itself.
+
+The ordering invariant is proven on the digest approvals and replay actually bind to. The shipped
+fixture cannot show it alone (its sets hold one element each), so the companion builds a three-step
+plan whose four set-like collections each hold two members, then reverses ONE collection at a time.
+Removing each `.overwrite` in turn failed it, naming the collection:
+```
+× cannot change decisionHash by reordering ANY set-like collection a record carries
+AssertionError: requiredEvidenceSnapshotRefs: expected 'b7668c92…' to be '216a5c0e…'
+AssertionError: conflictKeys:                 expected 'b7668c92…' to be '270adfa4…'
+AssertionError: reservationRefs:              expected 'b7668c92…' to be '829692d4…'
+AssertionError: dependsOn:                    expected '56f69e91…' to be 'b7668c92…'
+  src/__tests__/unit/decision-core.test.ts:819
+```
+Four independent failures, one per collection, so no sort is carried by a neighbour. The test is
+non-vacuous in the other direction too: `steps` is an ORDERED list, not a set, and reversing it MUST
+change the digest - a preimage that simply ignored ordering would fail that arm. The pre-existing
+role-set control still passes untouched.
+
+The `ExecutionStep` gap is proven with the exact override the finding named. Appending
+`verificationRuleRef: VerificationRuleRefSchema.optional()` AFTER the `...retrySafeExternalActionShape`
+spread failed only the new step matrix:
+```
+× enforces: execution step requires verificationRuleRef
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:78
+Tests  1 failed | 24 passed
+```
+The other 24 - including the compensation omission matrix, the duplicate-free matrix, the cross-tenant
+matrix, and the complete-shapes companion - all still PASSED under that injection, which is precisely
+why `v3-invariants.json` #20 was over-claiming before: no existing assertion parsed a step directly.
+
+Ambiguity candidates were injected separately, each check removed on its own:
+```
+1) uniqueness refine removed   AssertionError: expected true to be false  (tenant-scope.test.ts:258)
+2) tenant refine removed       AssertionError: expected true to be false  (tenant-scope.test.ts:267)
+```
+Restoring zod's default enum message failed the refusal companion:
+```
+× says WHICH value it refused and why, without dumping the admitted zone list
+AssertionError: expected 'FATAL: invalid configuration: firmTim…' to contain
+                '"America/New_York_2" is not a Zone or…'
+  src/__tests__/unit/config.test.ts:109
+```
+That companion is non-vacuous in three directions at once: the typo message must name the rejected
+value, must NOT claim a placeholder, and neither message may carry the 341-name option dump (asserted
+as an absent zone name plus a length bound).
+
+**Revert:** restored `execution.ts`, `trigger.ts`, and `time-zone.ts` after each injection (`git diff`
+clean against the fixed tree); typecheck, lint, knip, build, v3:invariants, golden:validate, and the
+full suite pass, with all four fixture digests unchanged, both registry pins untouched, and contracts
+at 2394/2400.
+
+**Date:** 2026-07-27 (review corrections F75-F79, D-057).

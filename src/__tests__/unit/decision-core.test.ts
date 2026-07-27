@@ -738,6 +738,94 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     ]);
   });
 
+  it("cannot change decisionHash by reordering ANY set-like collection a record carries", () => {
+    // decisionHash is what approvals and replay bind to. A planner emitting the same
+    // preconditions, conflicts, reservations or dependency edges in a different order
+    // describes the SAME decision and must produce the SAME digest - the drift the
+    // sorting discipline exists to prevent. The shipped fixture cannot show this on its
+    // own (its sets hold one element each), so build the plan that can (D-057).
+    type Ref = { firmId: string; id: string };
+    type FixtureStep = Record<string, unknown> & {
+      conflictKeys: string[];
+      dependsOn: string[];
+      reservationRefs: Ref[];
+      preconditions: Array<Record<string, unknown> & { requiredEvidenceSnapshotRefs: Ref[] }>;
+    };
+    const base = JSON.parse(readFixture("decision-record-proceed")) as Record<string, unknown> & {
+      result: Record<string, unknown> & {
+        authority: Record<string, unknown> & {
+          stages: Array<Record<string, unknown> & { requirements: Array<Record<string, unknown>> }>;
+        };
+        executionPlan: Record<string, unknown> & { steps: FixtureStep[] };
+      };
+    };
+    const fixtureStep = base.result.executionPlan.steps[0]!;
+    const ref = (id: string) => ({ firmId: "firm-a", id });
+    const leaf = (name: string) => ({
+      ...fixtureStep,
+      id: `step:${name}`,
+      idempotencyKey: `idem:${name}`,
+      dependsOn: [] as string[],
+    });
+    const join = {
+      ...fixtureStep,
+      id: "step:join",
+      idempotencyKey: "idem:join",
+      dependsOn: ["step:a", "step:b"],
+      conflictKeys: ["conflict:z", "conflict:a"],
+      reservationRefs: [ref("res:z"), ref("res:a")],
+      preconditions: [
+        {
+          ...fixtureStep.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [ref("evs:z"), ref("evs:a")],
+        },
+      ],
+    };
+    const roleIds = [ref("operations"), ref("compliance")];
+    const record = (steps: unknown[], roles: unknown[]) => ({
+      ...base,
+      result: {
+        ...base.result,
+        authority: {
+          ...base.result.authority,
+          stages: base.result.authority.stages.map((stage) => ({
+            ...stage,
+            requirements: stage.requirements.map((requirement) => ({
+              ...requirement,
+              eligibleRoleIds: roles,
+            })),
+          })),
+        },
+        executionPlan: { ...base.result.executionPlan, steps },
+      },
+    });
+    const digest = (value: unknown) =>
+      hashPreimage(decisionHashPreimage(DecisionRecordSchema.parse(value)));
+    const canonical = digest(record([leaf("a"), leaf("b"), join], roleIds));
+
+    const reversed = (key: "dependsOn" | "conflictKeys" | "reservationRefs" | "requiredEvidenceSnapshotRefs") =>
+      key === "requiredEvidenceSnapshotRefs"
+        ? {
+            ...join,
+            preconditions: [
+              {
+                ...join.preconditions[0]!,
+                requiredEvidenceSnapshotRefs: [...join.preconditions[0]!.requiredEvidenceSnapshotRefs].reverse(),
+              },
+            ],
+          }
+        : { ...join, [key]: [...join[key]].reverse() };
+    for (const key of ["dependsOn", "conflictKeys", "reservationRefs", "requiredEvidenceSnapshotRefs"] as const) {
+      expect(digest(record([leaf("a"), leaf("b"), reversed(key)], roleIds)), key).toBe(canonical);
+    }
+    // The role-set control, which held before these four sorts landed.
+    expect(digest(record([leaf("a"), leaf("b"), join], [...roleIds].reverse()))).toBe(canonical);
+    // NON-VACUOUS: the digest is not order-blind in general. `steps` is an ORDERED
+    // list, not a set, so reversing it MUST change the hash - otherwise every
+    // assertion above would pass on a preimage that ignores ordering entirely.
+    expect(digest(record([join, leaf("b"), leaf("a")], roleIds))).not.toBe(canonical);
+  });
+
   it("refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON", () => {
     expect(canonicalJson(Array(1) as JsonValue).ok).toBe(false);
     expect(canonicalJson(Array(2) as JsonValue).ok).toBe(false);
