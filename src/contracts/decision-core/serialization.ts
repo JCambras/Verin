@@ -1,42 +1,83 @@
 /**
  * Canonical serialization for replay (v3 §5 replay metadata; ADR-0029, D-036).
- * ONE byte form per value: object keys sorted lexicographically at every depth,
- * arrays in order, no insignificant whitespace. bundleHash/decisionHash are hashes
- * OF this form - byte-identical replay (prompt 19) depends on it, which is why
- * the serializer is versioned and the version is pinned inside every
- * DecisionInputBundle. Committed fixtures under fixtures/decision-core/ lock the
- * byte form; changing it is a serializer version bump, never a silent drift.
+ * Versioned, domain-separated projections define the bundle and decision hash
+ * preimages; fixtures lock their canonical byte form and SHA-256 digest.
  */
 import type { Result } from "../result";
 import { err, ok } from "../result";
 import { validationError, type AppError } from "../errors";
-
-/** Bump ONLY with a migration story: recorded hashes bind to the old form. */
+import type { DecisionInputBundle } from "./evidence";
+import type { DecisionRecord } from "./decision";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
-
-/** The decision-core contract-shape version pinned into DecisionInputBundle.schemaVersion. */
 export const DECISION_CORE_SCHEMA_VERSION = "1.0.0";
-
+export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.0.0";
+export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.0.0";
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-
+type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
+type DecisionHashPayload = Omit<DecisionRecord, "decisionHash">;
+export type BundleHashPreimage = Readonly<{
+  readonly hashKind: "decision-input-bundle";
+  readonly preimageVersion: typeof BUNDLE_HASH_PREIMAGE_VERSION;
+  readonly payload: BundleHashPayload;
+}>;
+export type DecisionHashPreimage = Readonly<{
+  readonly hashKind: "decision-record";
+  readonly preimageVersion: typeof DECISION_HASH_PREIMAGE_VERSION;
+  readonly payload: DecisionHashPayload;
+}>;
+export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreimage {
+  return {
+    hashKind: "decision-input-bundle",
+    preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
+    payload: {
+      firmId: bundle.firmId,
+      schemaVersion: bundle.schemaVersion,
+      canonicalSerializerVersion: bundle.canonicalSerializerVersion,
+      engineVersion: bundle.engineVersion,
+      primitiveSetVersion: bundle.primitiveSetVersion,
+      domainConfigVersionId: bundle.domainConfigVersionId,
+      policyVersionId: bundle.policyVersionId,
+      householdInstructionVersionIds: [...bundle.householdInstructionVersionIds].sort(),
+      evidenceSnapshotIds: [...bundle.evidenceSnapshotIds].sort(),
+      asOf: bundle.asOf,
+      timeZone: bundle.timeZone,
+    },
+  };
+}
+export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
+  return {
+    hashKind: "decision-record",
+    preimageVersion: DECISION_HASH_PREIMAGE_VERSION,
+    payload: {
+      firmId: record.firmId,
+      id: record.id,
+      intentId: record.intentId,
+      inputBundleId: record.inputBundleId,
+      result: record.result,
+      precedenceTrace: record.precedenceTrace,
+      explanationTrace: record.explanationTrace,
+      riskClass: record.riskClass,
+      reversibility: record.reversibility,
+      reevaluateWhen: record.reevaluateWhen,
+      ...(record.derivedFromDecisionId === undefined ? {} : { derivedFromDecisionId: record.derivedFromDecisionId }),
+      createdBy: record.createdBy,
+      createdAt: record.createdAt,
+    },
+  };
+}
 /**
- * Serialize to the canonical byte form. Fails (never silently coerces) on values
- * JSON cannot round-trip: non-finite numbers, undefined, functions, or class
- * instances hiding behind the JsonValue type.
+ * Fails on values JSON cannot round-trip instead of silently coercing them.
  */
-export function canonicalJson(value: JsonValue): Result<string, AppError> {
+export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHashPreimage): Result<string, AppError> {
   try {
-    return ok(serialize(value, []));
+    return ok(serialize(value as JsonValue, []));
   } catch (e) {
     return err(validationError(e instanceof CanonicalizationRefusal ? e.reason : "value is not canonically serializable"));
   }
 }
-
-/** Internal control-flow signal - never escapes canonicalJson. */
 class CanonicalizationRefusal {
   constructor(readonly reason: string) {}
 }
-
 function serialize(value: JsonValue, path: readonly string[]): string {
   const at = path.length === 0 ? "value" : `value.${path.join(".")}`;
   if (value === null) return "null";

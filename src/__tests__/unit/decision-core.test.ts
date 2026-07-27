@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +17,9 @@ import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
   CANONICAL_SERIALIZER_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
+  bundleHashPreimage,
   canonicalJson,
+  decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { unwrap } from "@contracts/result";
@@ -118,13 +121,38 @@ function readFixture(name: string): string {
 }
 
 describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwork)", () => {
+  it("locks the versioned, non-self-referential bundle hash preimage and digest", () => {
+    const text = readFixture("decision-input-bundle");
+    const bundle = DecisionInputBundleSchema.parse(JSON.parse(text));
+    expect(unwrap(canonicalJson(JSON.parse(text) as JsonValue))).toBe(text);
+    expect(hashPreimage(bundleHashPreimage(bundle))).toBe(bundle.bundleHash);
+    const reidentified = DecisionInputBundleSchema.parse({
+      ...bundle,
+      id: "bundle:reidentified",
+      bundleHash: "f".repeat(64),
+    });
+    expect(hashPreimage(bundleHashPreimage(reidentified))).toBe(bundle.bundleHash);
+    expect(
+      hashPreimage(
+        bundleHashPreimage({
+          ...bundle,
+          householdInstructionVersionIds: [...bundle.householdInstructionVersionIds].reverse(),
+          evidenceSnapshotIds: [...bundle.evidenceSnapshotIds].reverse(),
+        }),
+      ),
+    ).toBe(bundle.bundleHash);
+  });
+
   it.each(["decision-record-proceed", "decision-record-blocked", "decision-record-prohibited"])(
-    "fixture %s parses through DecisionRecordSchema and round-trips byte-identically",
+    "fixture %s round-trips byte-identically and locks its non-self-referential decision digest",
     (name) => {
       const text = readFixture(name);
       const value = JSON.parse(text) as JsonValue;
-      expect(DecisionRecordSchema.safeParse(value).success).toBe(true);
+      const record = DecisionRecordSchema.parse(value);
       expect(unwrap(canonicalJson(value))).toBe(text);
+      expect(hashPreimage(decisionHashPreimage(record))).toBe(record.decisionHash);
+      const changedStoredHash = DecisionRecordSchema.parse({ ...record, decisionHash: "f".repeat(64) });
+      expect(hashPreimage(decisionHashPreimage(changedStoredHash))).toBe(record.decisionHash);
     },
   );
 
@@ -145,6 +173,10 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(canonicalJson(circular as JsonValue).ok).toBe(false);
   });
 });
+
+function hashPreimage(value: Parameters<typeof canonicalJson>[0]): string {
+  return createHash("sha256").update(unwrap(canonicalJson(value)), "utf8").digest("hex");
+}
 
 describe("vocabulary locks - aligned with what is on main", () => {
   it("DecisionResult kinds are EXACTLY the scenarios.yaml disposition vocabulary", () => {
@@ -203,15 +235,36 @@ describe("structural-integrity refinements", () => {
     ...over,
   });
 
-  it("accepts a dependency-ordered plan; rejects duplicate ids, duplicate idempotency keys, unknown and self dependencies", () => {
+  it("accepts dependency graphs; rejects duplicate ids, duplicate idempotency keys, unknown, self, and cyclic dependencies", () => {
     const good = { id: "plan:u:1", steps: [step("s1"), step("s2", { dependsOn: ["s1"] })] };
+    const diamond = {
+      id: "plan:u:diamond",
+      steps: [step("s1"), step("s2", { dependsOn: ["s1"] }), step("s3", { dependsOn: ["s1"] }), step("s4", { dependsOn: ["s2", "s3"] })],
+    };
     expect(ExecutionPlanSchema.safeParse(good).success).toBe(true);
+    expect(ExecutionPlanSchema.safeParse(diamond).success).toBe(true);
     expect(ExecutionPlanSchema.safeParse({ id: "plan:u:2", steps: [step("s1"), step("s1")] }).success).toBe(false);
     expect(
       ExecutionPlanSchema.safeParse({ id: "plan:u:3", steps: [step("s1"), step("s2", { idempotencyKey: "idem:s1" })] }).success,
     ).toBe(false);
     expect(ExecutionPlanSchema.safeParse({ id: "plan:u:4", steps: [step("s1", { dependsOn: ["ghost"] })] }).success).toBe(false);
     expect(ExecutionPlanSchema.safeParse({ id: "plan:u:5", steps: [step("s1", { dependsOn: ["s1"] })] }).success).toBe(false);
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:u:6",
+        steps: [step("s1", { dependsOn: ["s2"] }), step("s2", { dependsOn: ["s1"] })],
+      }).success,
+    ).toBe(false);
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:u:7",
+        steps: [
+          step("s1", { dependsOn: ["s3"] }),
+          step("s2", { dependsOn: ["s1"] }),
+          step("s3", { dependsOn: ["s2"] }),
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   const stageBase = (stageId: string, order: number) => ({

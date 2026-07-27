@@ -791,3 +791,17 @@ error name the offending path/key, so a schema that fails for an unrelated reaso
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 5 - the canonical core type system; invariants 7-9
 flipped ACTIVE in `v3-invariants.json`, ratchet extended to [2, 5, 7, 8, 9]).
+
+**Extension (selected review correction F6):** invariant 7 now rejects a non-empty execution plan
+whose dependency graph contains a cycle. Such a graph has steps but no executable ordering.
+Injection + observed failure (verbatim), reverted:
+```
+# cycle issue emission removed from ExecutionPlanSchema; two-step s1 -> s2 -> s1 supplied:
+  × rejects a dependency cycle (an unusable graph is still no executable plan)
+    AssertionError: expected rejection naming "steps": expected true to be false
+    ❯ expectRejected src/__tests__/fitness/decision-core-illegal-states.test.ts:84:73
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:117:7
+```
+**Revert (extension):** restored cycle rejection; the fitness and decision-core unit files pass
+together (`Tests 37 passed`). The unit suite also accepts an acyclic diamond and rejects two- and
+three-step cycles, so the boundary does not enforce only the injected shape.

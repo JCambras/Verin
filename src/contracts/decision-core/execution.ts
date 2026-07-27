@@ -59,11 +59,8 @@ export const ExecutionStepSchema = z.strictObject({
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
 /**
- * A non-empty, internally-consistent plan. Empty would be "proceed without a plan"
- * (v3 invariant 7) wearing a wrapper. Structural integrity is parse-time: step ids
- * unique, idempotency keys unique (two steps sharing one would alias retries),
- * dependsOn edges resolve inside the plan, and no step depends on itself. Full
- * cycle/ordering semantics belong to the planner (prompt 25), not the schema.
+ * A non-empty plan with unique identities, resolvable dependency edges, and an
+ * acyclic dependency graph.
  */
 export const ExecutionPlanSchema = z
   .strictObject({
@@ -73,6 +70,7 @@ export const ExecutionPlanSchema = z
   .superRefine((plan, ctx) => {
     const ids = new Set<string>();
     const idemKeys = new Set<string>();
+    let dependenciesValid = true;
     for (const step of plan.steps) {
       if (ids.has(step.id)) ctx.addIssue({ code: "custom", message: `duplicate step id "${step.id}"`, path: ["steps"] });
       ids.add(step.id);
@@ -83,9 +81,32 @@ export const ExecutionPlanSchema = z
     }
     plan.steps.forEach((step, i) => {
       for (const dep of step.dependsOn) {
-        if (dep === step.id) ctx.addIssue({ code: "custom", message: `step "${step.id}" depends on itself`, path: ["steps", i, "dependsOn"] });
-        else if (!ids.has(dep)) ctx.addIssue({ code: "custom", message: `step "${step.id}" depends on unknown step "${dep}"`, path: ["steps", i, "dependsOn"] });
+        if (dep === step.id) {
+          dependenciesValid = false;
+          ctx.addIssue({ code: "custom", message: `step "${step.id}" depends on itself`, path: ["steps", i, "dependsOn"] });
+        } else if (!ids.has(dep)) {
+          dependenciesValid = false;
+          ctx.addIssue({ code: "custom", message: `step "${step.id}" depends on unknown step "${dep}"`, path: ["steps", i, "dependsOn"] });
+        }
       }
     });
+    if (dependenciesValid && ids.size === plan.steps.length) {
+      const incoming = new Map<string, number>(plan.steps.map((step) => [step.id, step.dependsOn.length]));
+      const dependents = new Map<string, string[]>(plan.steps.map((step) => [step.id, []]));
+      for (const step of plan.steps) {
+        for (const dep of step.dependsOn) dependents.get(dep)?.push(step.id);
+      }
+      const ready: string[] = plan.steps.filter((step) => incoming.get(step.id) === 0).map((step) => step.id);
+      for (let i = 0; i < ready.length; i += 1) {
+        for (const dependent of dependents.get(ready[i]!) ?? []) {
+          const remaining = (incoming.get(dependent) ?? 0) - 1;
+          incoming.set(dependent, remaining);
+          if (remaining === 0) ready.push(dependent);
+        }
+      }
+      if (ready.length !== plan.steps.length) {
+        ctx.addIssue({ code: "custom", message: "execution plan dependency graph contains a cycle", path: ["steps"] });
+      }
+    }
   });
 export type ExecutionPlan = z.infer<typeof ExecutionPlanSchema>;

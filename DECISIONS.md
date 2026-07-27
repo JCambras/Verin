@@ -536,3 +536,16 @@ ceiling - all rejected in ADR-0029's table.
 unit suite, flip invariants 7-9 back (a charter-ADR matter - the v3-invariants ratchet makes the
 regression loud), restore the 600 ceiling with ADR-0029 marked superseded, and delete this entry.
 Nothing else imports the module yet (consumers are prompts 7, 9-19, 25-26).
+
+### D-039 · 2026-07-26 · captain-decision · Decision hashes use explicit preimages; execution plans reject cycles
+
+Captain-authorized review corrections define versioned, domain-separated SHA-256 preimages before
+approval and replay consumers land. `bundleHash` covers every material bundle input but excludes
+`id` and `bundleHash`; its set-like instruction-version and evidence-snapshot ID lists are sorted.
+`decisionHash` covers the complete decision record except `decisionHash` itself. Both projections
+enumerate their fields so contract growth cannot silently alter a versioned digest, and canonical
+fixtures lock the resulting digest. `ExecutionPlanSchema` now rejects every dependency cycle at the
+boundary, because a non-empty but unschedulable graph is not an executable plan under invariant 7.
+**Revert path:** remove the two projection contracts and digest assertions, restore the prior fixture
+hashes, and remove cycle detection and its fence case; no production approval or replay consumer
+depends on these prompt-5 contracts yet.

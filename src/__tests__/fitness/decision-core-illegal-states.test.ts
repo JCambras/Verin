@@ -10,6 +10,7 @@ import {
 } from "@contracts/decision-core/decision";
 import { AuthorityRequirementSchema } from "@contracts/decision-core/authority";
 import { ResolvableBlockerSchema } from "@contracts/decision-core/trigger";
+import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 
 /**
  * DECISION-CORE ILLEGAL-STATES FENCE (v3 §5 / invariants 7–9; ADR-0029, D-036;
@@ -97,6 +98,23 @@ describe("decision-core illegal-states fence", () => {
     });
     it("rejects proceed with an EMPTY execution plan (a plan-shaped void is still no plan)", () => {
       expectRejected(ProceedDecisionSchema, { ...proceed, executionPlan: { ...plan, steps: [] } }, "steps");
+    });
+    it("rejects a dependency cycle (an unusable graph is still no executable plan)", () => {
+      const base = plan.steps[0]!;
+      const cyclic = {
+        id: "plan:fence:cycle",
+        steps: [
+          { ...base, id: "s1", idempotencyKey: "idem:s1", dependsOn: ["s2"] },
+          {
+            ...base,
+            id: "s2",
+            command: { ...base.command, payloadRef: "blob:fence:2" },
+            idempotencyKey: "idem:s2",
+            dependsOn: ["s1"],
+          },
+        ],
+      };
+      expectRejected(ExecutionPlanSchema, cyclic, "steps");
     });
     it("rejects an approval authority with zero stages (automatic wearing a costume)", () => {
       expectRejected(AuthorityRequirementSchema, { mode: "approval", stages: [] }, "stages");
