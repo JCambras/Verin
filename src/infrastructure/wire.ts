@@ -31,6 +31,7 @@ import { withSpan } from "@infra/observability/tracer";
 import { log } from "@infra/observability/logger";
 import {
   observabilityId,
+  observabilityIdOrRedacted,
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
@@ -335,7 +336,9 @@ export async function auditEvent(
         orgId: observabilityId("orgId", opts.actor.tenant.orgId),
         action: opts.action,
         entityType: opts.entityType,
-        entityId: observabilityId("entityId", opts.entityId),
+        // Same rule as audited-write's catch: the report of a lost audit entry must
+        // never itself throw over a caller-shaped entity id.
+        entityId: observabilityIdOrRedacted("entityId", opts.entityId),
         code: recorded.error.code,
       },
       "security-event audit could not be recorded",

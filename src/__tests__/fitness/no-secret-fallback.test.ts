@@ -14,6 +14,7 @@ import {
   REPO_ROOT,
   inMemoryProject,
   realSemanticProject,
+  normalizedPath,
   walk,
   stripComments,
 } from "./_fence-utils";
@@ -235,11 +236,6 @@ const REVEAL_ALLOWLIST: Array<{ file: string; functionName: string; why: string 
   { file: "src/infrastructure/esign/esign.ts", functionName: "signCallback", why: "HMAC-signs/verifies the e-sign webhook callback" },
 ];
 const SECRET_MODULE_EXPORTS = new Set(["SecretValue", "revealSecret"]);
-
-function normalizedPath(path: string): string {
-  const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
-  return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
-}
 
 function declaredAsSecretValue(type: Type): boolean {
   return [type.getAliasSymbol(), type.getSymbol()].some((symbol) =>

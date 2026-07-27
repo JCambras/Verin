@@ -128,7 +128,9 @@ const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
   ["src/infrastructure/pii/tokenize.ts", new Set([
     "tokenizeRecord", "tokenizeText",
   ])],
-  ["src/domain/observability/safe-values.ts", new Set(["observabilityId"])],
+  ["src/domain/observability/safe-values.ts", new Set([
+    "observabilityId", "observabilityIdOrRedacted",
+  ])],
 ]);
 
 function normalizedPath(path: string): string {
@@ -358,43 +360,80 @@ function isFunctionLike(node: Node): boolean {
     Node.isGetAccessorDeclaration(node) || Node.isConstructorDeclaration(node);
 }
 
+/** The value an `async`/thenable position actually yields. */
+function awaited(type: Type): Type {
+  const target = type.getAliasSymbol() ?? type.getSymbol();
+  if (target?.getName() !== "Promise") return type;
+  const [inner] = type.getTypeArguments();
+  return inner ? awaited(inner) : type;
+}
+
 /**
- * A sealed ANNOTATION filled from a value that is not already that sealed type.
+ * A value the checker has stopped reasoning about. `any`/`unknown` (and the `never`
+ * of an exhaustive-cast helper) are the ONLY things assignable to a `unique symbol`
+ * brand without a cast, so they are the whole compile-legal mint surface for the
+ * annotation rule below.
+ */
+function isUncheckedSource(type: Type): boolean {
+  return type.isAny() || type.isUnknown() || type.isNever();
+}
+
+/**
+ * A sealed ANNOTATION filled from a value the checker never verified.
  *
- * Every sealed interface carries a `unique symbol` brand, so the only
- * compile-legal way to fill one WITHOUT an `as` cast is to hand it something the
- * checker will not argue with — an `any` from `JSON.parse`/`await req.json()`, or
- * a `never`. Deciding from the initializer's CALLEE (is it the factory?) both
- * missed that whole class — a bare `body.grant` is not a call at all — and
- * inverted into a false positive on ordinary propagation, where the assignment
- * only compiles because the right-hand side is ALREADY sealed. Deciding from the
- * initializer's TYPE gets both directions right, and extends for free to the two
- * positions the old rule never looked at: return-type annotations and class
- * property declarations.
+ * Every sealed interface carries a `unique symbol` brand, so the only compile-legal
+ * way to fill one WITHOUT an `as` cast is to hand it an `any`/`unknown` — from
+ * `JSON.parse`, `await req.json()`, an untyped cache read. Keying on THAT (rather
+ * than on "the source is not already sealed") is what makes the rule two-sided:
+ * ordinary propagation (`const t: TenantContext = deps.tenantFor(id)`) and the
+ * nullable shapes the design note promised to leave alone (`const p: Principal |
+ * null = null`) both type-check against a real declaration, so neither is a mint.
+ *
+ * The annotation is read with the FULL walk, so it reaches a sealed type through a
+ * container: `Promise<TenantContext>` is the normal shape of an async laundering
+ * function, and `const ts: TenantContext[] = JSON.parse("[]")` hands out sealed
+ * elements just as surely as the scalar form. That differs from `new Map<string,
+ * TenantContext>()`, which the type-argument rule below still leaves alone, because
+ * an empty container mints nothing — here an `any` becomes every member. The SOURCE
+ * is read through `await`, because an async function returning `Promise<any>` is
+ * handing the annotation an unchecked value one layer down.
  */
 function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string[] {
   const out: string[] = [];
-  const check = (typeNode: Node | undefined, source: Node | undefined, line: number): void => {
-    if (!typeNode || !source) return;
-    const sealed = sealedValueType(typeNode.getType());
+  const check = (annotation: Type | undefined, source: Node | undefined, line: number): void => {
+    if (!annotation || !source) return;
+    const sealed = sealedType(annotation);
     if (!sealed || normalized === sealed.factory) return;
-    if (sealedValueType(source.getType())?.typeName === sealed.typeName) return;
+    if (!isUncheckedSource(awaited(source.getType()))) return;
     out.push(
-      `${normalized}:${line} - sealed type '${sealed.typeName}' annotated onto a value produced outside its factory`,
+      `${normalized}:${line} - sealed type '${sealed.typeName}' annotated onto an unchecked value produced outside its factory`,
     );
   };
 
   for (const kind of [
     SyntaxKind.VariableDeclaration,
     SyntaxKind.PropertyDeclaration,
+    // A parameter DEFAULT is an initializer against a declared annotation too.
+    SyntaxKind.Parameter,
   ] as const) {
     for (const declaration of sf.getDescendantsOfKind(kind)) {
       check(
-        declaration.getTypeNode(),
+        declaration.getTypeNode()?.getType(),
         declaration.getInitializer(),
         declaration.getStartLineNumber(),
       );
     }
+  }
+
+  // DECLARE-then-ASSIGN (`let t: TenantContext; t = JSON.parse(x)`) never passes
+  // through an initializer, so the assignment itself is the mint site.
+  for (const assignment of sf.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) continue;
+    check(
+      assignment.getLeft().getType(),
+      assignment.getRight(),
+      assignment.getStartLineNumber(),
+    );
   }
 
   for (const kind of [
@@ -402,23 +441,81 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
     SyntaxKind.ArrowFunction,
     SyntaxKind.FunctionExpression,
     SyntaxKind.MethodDeclaration,
+    SyntaxKind.GetAccessor,
   ] as const) {
     for (const fn of sf.getDescendantsOfKind(kind)) {
       const typeNode = fn.getReturnTypeNode();
       const body = fn.getBody();
       if (!typeNode || !body) continue;
       if (!Node.isBlock(body)) {
-        check(typeNode, body, body.getStartLineNumber());
+        check(typeNode.getType(), body, body.getStartLineNumber());
         continue;
       }
       for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
         // Only THIS function's returns — a nested closure has its own contract.
         if (statement.getFirstAncestor(isFunctionLike) !== fn) continue;
-        check(typeNode, statement.getExpression(), statement.getStartLineNumber());
+        check(typeNode.getType(), statement.getExpression(), statement.getStartLineNumber());
       }
     }
   }
   return out;
+}
+
+/**
+ * Type parameters a signature INVENTS: named in the return type, named by no
+ * parameter. `coerce<T>(v: unknown): T` invents T — whatever the call site asks
+ * for, it gets — which is the cast this fence exists to stop, wearing a generic.
+ * `unwrap<T>(r: Result<T>): T` invents nothing: T was already sealed on the way in.
+ */
+function inventedTypeParameters(declaration: Node): Set<string> {
+  if (!Node.isFunctionLikeDeclaration(declaration) && !Node.isMethodSignature(declaration) &&
+    !Node.isFunctionTypeNode(declaration)) {
+    return new Set();
+  }
+  const declared = new Set(declaration.getTypeParameters().map((p) => p.getName()));
+  if (!declared.size) return new Set();
+  const namesIn = (node: Node | undefined): string[] =>
+    node
+      ? [node, ...node.getDescendants()]
+        .filter((child): child is Node => Node.isIdentifier(child))
+        .map((child) => child.getText())
+        .filter((name) => declared.has(name))
+      : [];
+  const inParameters = new Set(
+    declaration.getParameters().flatMap((parameter) => namesIn(parameter.getTypeNode())),
+  );
+  return new Set(
+    namesIn(declaration.getReturnTypeNode()).filter((name) => !inParameters.has(name)),
+  );
+}
+
+/**
+ * A call whose sealed result came from INFERENCE rather than from the callee's
+ * declaration. Explicit (`coerce<TenantContext>(raw)`) and inferred
+ * (`const t: TenantContext = coerce(raw)`) are the same mint — the type argument is
+ * merely written down in one of them — so gating on an explicit type-argument list
+ * left the inferred half invisible to every layer except the runtime WeakSet.
+ */
+function mintsThroughInventedTypeParameter(
+  call: Node & { getExpression(): Node },
+): (typeof SEALED)[number] | null {
+  const sealed = sealedValueType(awaited(call.getType()));
+  if (!sealed) return null;
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  const declarations = target?.getDeclarations() ?? [];
+  // The factory's OWN generic entry points may of course be parameterized:
+  // `tokenizeRecord<Shape>(…)` is the sanctioned mint, not an evasion of it.
+  if (
+    declarations.some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) === sealed.factory
+    )
+  ) {
+    return null;
+  }
+  return declarations.some((declaration) => inventedTypeParameters(declaration).size > 0)
+    ? sealed
+    : null;
 }
 
 export function detectSealedTypeConstruction(project: Project): string[] {
@@ -482,25 +579,18 @@ export function detectSealedTypeConstruction(project: Project): string[] {
     }
 
     // A generic coercion helper (`coerce<T>(v: unknown): T`) mints a sealed type
-    // with no named cast anywhere: the sealed name appears only as an explicit
-    // TYPE ARGUMENT whose value the call RETURNS. Scoped to what the call yields,
-    // so `new Map<string, TenantContext>()` — which mints nothing — is not a
-    // build failure.
+    // with no named cast anywhere. Scoped to what the call YIELDS through a type
+    // parameter the signature invents, so `new Map<string, TenantContext>()` and
+    // `z.custom<Tokenized<string>>(…)` — which hand out no sealed value — are not
+    // build failures, while both the explicit and the INFERRED form of the helper
+    // are.
     for (const kind of [SyntaxKind.CallExpression, SyntaxKind.NewExpression] as const) {
       for (const call of sf.getDescendantsOfKind(kind)) {
-        if (call.getTypeArguments().length === 0) continue;
-        const sealed = sealedValueType(call.getType());
-        if (!sealed || normalized === sealed.factory) continue;
-        // The factory's OWN generic entry points may of course be parameterized:
-        // `tokenizeRecord<Shape>(…)` is the sanctioned mint, not an evasion of it.
-        const symbol = call.getExpression().getSymbol();
-        const target = symbol?.getAliasedSymbol() ?? symbol;
-        const fromFactory = target?.getDeclarations().some((declaration) =>
-          normalizedPath(declaration.getSourceFile().getFilePath()) === sealed.factory
-        );
-        if (!fromFactory) {
+        if (normalized === "src/infrastructure/pii/tokenize.ts") continue;
+        const sealed = mintsThroughInventedTypeParameter(call);
+        if (sealed && normalized !== sealed.factory) {
           out.push(
-            `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an explicit type argument outside its factory`,
+            `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an inferred or explicit type argument outside its factory`,
           );
         }
       }
@@ -538,9 +628,14 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       (!normalized.startsWith("src/") && !normalized.startsWith("scripts/")) ||
       normalized.includes("/__tests__/")
     ) continue;
+    // Identifier covers a member access too — `ns.principalFromIdentity`'s NAME node
+    // is itself an Identifier that resolves to the factory — so a separate
+    // PropertyAccessExpression source could never fire alone, and unprovable
+    // detection surface is worse than none. ElementAccess is different and stays:
+    // `ns["principalFromIdentity"]` names the factory in a STRING, so the whole
+    // expression is the only node that resolves (companion below plants exactly it).
     const references: Node[] = [
       ...sf.getDescendantsOfKind(SyntaxKind.Identifier),
-      ...sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
       ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
     ];
     for (const reference of references) {
@@ -946,6 +1041,89 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(hits.some((hit) => hit.includes("ActionGrant"))).toBe(true);
     });
 
+    it("catches a coercion helper whose sealed type argument is INFERRED, not written", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          function coerce<T>(value: unknown): T { return value as T; }
+          const tenant: TenantContext = coerce(JSON.parse("{}"));
+          void tenant;
+        `,
+      );
+      // Deleting the type argument is not a different mint — it is the same one
+      // with the evidence removed, so it has to fail on the type-argument rule.
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") && hit.includes("type argument") &&
+        hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("catches a PROMISE-wrapped laundering function (the normal async shape)", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          export async function tenantFromCache(raw: string): Promise<TenantContext> {
+            return JSON.parse(raw);
+          }
+          declare function fetchJson(url: string): Promise<any>;
+          export async function tenantFromApi(url: string): Promise<TenantContext> {
+            return fetchJson(url);
+          }
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("unchecked value") && hit.includes("TenantContext"));
+      // The annotation is unchecked one layer down in both: a raw `any` return, and
+      // an awaited `Promise<any>` — the shape a real async cache/HTTP read has.
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:4"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:8"))).toBe(true);
+    });
+
+    it("catches the four declaration positions the annotation scan used to skip", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          let mutable: TenantContext;
+          mutable = JSON.parse("{}");
+          void mutable;
+          export class Holder {
+            get tenant(): TenantContext { return JSON.parse("{}"); }
+          }
+          export function withDefault(t: TenantContext = JSON.parse("{}")): string { return t.orgId; }
+          const many: TenantContext[] = JSON.parse("[]");
+          void many;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("unchecked value"));
+      // Anchored per position: declare-then-assign, get accessor, parameter
+      // default, container annotation. A total alone would survive losing three.
+      for (const line of [4, 7, 9, 10]) {
+        expect(hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line}`)), `line ${line}`).toBe(true);
+      }
+    });
+
+    it("allows the NULLABLE sealed shapes the rule promises to leave alone", () => {
+      const project = sealedFixture(
+        "/src/app/fine.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          import type { Principal } from "../contracts/principal";
+          export const current: Principal | null = null;
+          export function tenantFor(id: string): TenantContext | null { void id; return null; }
+          export class Holder {
+            readonly tenant: TenantContext | undefined = undefined;
+          }
+        `,
+      );
+      // null/undefined are checked values, not laundered ones: an annotation is a
+      // mint only when the checker has stopped reasoning about what fills it.
+      expect(detectSealedTypeConstruction(project)).toEqual([]);
+    });
+
     it("allows ordinary propagation of an already-sealed value", () => {
       const project = sealedFixture(
         "/src/app/fine.ts",
@@ -1059,7 +1237,26 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
           mint({});
         `,
       );
-      expect(detectUntrustedFactoryCalls(project).length).toBeGreaterThan(0);
+      // Line-anchored: a bare count would stay green if either reference stopped
+      // resolving, because the other one alone already makes the list non-empty.
+      const hits = detectUntrustedFactoryCalls(project);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:3"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:4"))).toBe(true);
+    });
+
+    it("catches a factory named only in a STRING, through element access", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as principal from "../contracts/principal";
+          principal["principalFromIdentity"]({});
+        `,
+      );
+      // No identifier anywhere on this line names the factory, so the ElementAccess
+      // reference source is the ONLY thing that can catch it.
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:3") && hit.includes("principalFromIdentity")
+      )).toBe(true);
     });
 
     it("catches trusted factories reached through a reflected module namespace", () => {

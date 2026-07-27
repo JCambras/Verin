@@ -124,4 +124,40 @@ describe("auditedWrite failure paths (finding #3)", () => {
     expect((call![0] as { reason?: unknown }).reason).toBe("unexpected-error");
     expect(JSON.stringify(call![0])).not.toContain("ada@example.test");
   });
+
+  it("a CLIENT-SHAPED entityId still yields the typed error AND the failure-audit entry", async () => {
+    const db = await seed();
+    // The chokepoint logs at the code's own level (logLevelFor); NOT_FOUND is info.
+    const spies = [vi.spyOn(log, "error"), vi.spyOn(log, "warn"), vi.spyOn(log, "info")];
+    // PATCH /api/crm/households validates `id` only as a non-empty string ≤100
+    // chars, so a name-shaped id reaches the helper. Minting the log's opaque id
+    // used to THROW here — out of the catch block, before the failure entry was
+    // enqueued — turning a typed 404 into an unenveloped 500 and losing the very
+    // chain entry that records the attempt (charter #13).
+    const result = await auditedWrite<{ id: string }>({
+      db,
+      ...base,
+      entityId: "Smith",
+      perform: async () => {
+        throw { code: "NOT_FOUND", message: "Household not found." };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("NOT_FOUND");
+
+    const entries = await db.query<{ action: string; entity_id: string }>(
+      "SELECT action, entity_id FROM audit_log WHERE org_id = 'o' ORDER BY sequence",
+    );
+    expect(entries.rows.map((row) => row.action)).toContain("task.create.failed");
+
+    // The id is refused from OBSERVABILITY, not from the operation: it degrades in
+    // the log line while the audit chain keeps the real value for the examiner.
+    const call = spies
+      .flatMap((spy) => spy.mock.calls)
+      .find((c) => c[1] === "audited write failed");
+    expect(call, "expected the chokepoint failure log").toBeTruthy();
+    expect(JSON.stringify(call![0])).not.toContain("Smith");
+    expect(entries.rows.some((row) => row.entity_id === "Smith")).toBe(true);
+  });
 });

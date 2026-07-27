@@ -16,6 +16,7 @@ import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
 import {
   observabilityId,
+  observabilityIdOrRedacted,
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
@@ -117,13 +118,16 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // this helper is the single write chokepoint, the worst place to fly blind
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
     const known: AppError | null = isAppError(e) ? e : null;
+    // entityId is CLIENT-SUPPLIED on some writes (updateHouseholdName takes the id
+    // straight from the request body), so the mint here degrades rather than throws
+    // — a throw would escape before the failure-audit entry below is enqueued.
     log[known ? logLevelFor(known.code) : "error"](
       {
         orgId: observabilityId("orgId", orgId),
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId
-          ? observabilityId("entityId", opts.entityId)
+          ? observabilityIdOrRedacted("entityId", opts.entityId)
           : null,
         code: known?.code ?? null,
         reason: safeReason(e),
@@ -151,7 +155,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
             action: opts.action,
             entityType: opts.entityType,
             entityId: opts.entityId
-              ? observabilityId("entityId", opts.entityId)
+              ? observabilityIdOrRedacted("entityId", opts.entityId)
               : null,
             reason: safeReason(auditErr),
           },
