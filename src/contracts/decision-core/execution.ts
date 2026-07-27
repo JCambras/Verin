@@ -41,6 +41,7 @@ export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
   requiredEvidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
+    .min(1)
     .refine(uniqueScopedReferences, "duplicate required evidence snapshot reference")
     .readonly(),
   mustStillHoldAtExecution: z.literal(true),
@@ -64,25 +65,49 @@ const retrySafeExternalActionShape = {
   verificationRuleRef: VerificationRuleRefSchema,
 };
 
-const requirePayloadTenant = (
+const requireActionTenant = (
   action: {
     targetRef: { firmId: string };
     command: { payloadRef: { firmId: string } };
+    reservationRefs: readonly { firmId: string }[];
+    preconditions: readonly {
+      requiredEvidenceSnapshotRefs: readonly { firmId: string }[];
+    }[];
+    verificationRuleRef: { firmId: string };
   },
   ctx: z.RefinementCtx,
 ): void => {
-  if (action.command.payloadRef.firmId !== action.targetRef.firmId) {
-    ctx.addIssue({
-      code: "custom",
-      message: "payloadRef.firmId must match the execution target tenant",
-      path: ["command", "payloadRef", "firmId"],
-    });
-  }
+  const firmId = action.targetRef.firmId;
+  const requireSameFirm = (ref: { firmId: string }, path: (string | number)[]) => {
+    if (ref.firmId !== firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "external-action references must belong to one tenant",
+        path,
+      });
+    }
+  };
+  requireSameFirm(action.command.payloadRef, ["command", "payloadRef", "firmId"]);
+  action.reservationRefs.forEach((ref, index) =>
+    requireSameFirm(ref, ["reservationRefs", index, "firmId"]),
+  );
+  action.preconditions.forEach((precondition, preconditionIndex) =>
+    precondition.requiredEvidenceSnapshotRefs.forEach((ref, refIndex) =>
+      requireSameFirm(ref, [
+        "preconditions",
+        preconditionIndex,
+        "requiredEvidenceSnapshotRefs",
+        refIndex,
+        "firmId",
+      ]),
+    ),
+  );
+  requireSameFirm(action.verificationRuleRef, ["verificationRuleRef", "firmId"]);
 };
 
 export const RetrySafeExternalActionSchema = z
   .strictObject(retrySafeExternalActionShape)
-  .superRefine(requirePayloadTenant)
+  .superRefine(requireActionTenant)
   .readonly();
 export type RetrySafeExternalAction = z.infer<typeof RetrySafeExternalActionSchema>;
 
@@ -91,7 +116,7 @@ export const CompensatingActionSchema = z
     ...retrySafeExternalActionShape,
     reasonCode: ReasonCodeSchema,
   })
-  .superRefine(requirePayloadTenant)
+  .superRefine(requireActionTenant)
   .readonly();
 export type CompensatingAction = z.infer<typeof CompensatingActionSchema>;
 
@@ -105,7 +130,7 @@ export const ExecutionStepSchema = z
       .readonly(),
     compensatingAction: CompensatingActionSchema.optional(),
   })
-  .superRefine(requirePayloadTenant)
+  .superRefine(requireActionTenant)
   .readonly();
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
@@ -121,6 +146,7 @@ export const ExecutionPlanSchema = z
   .superRefine((plan, ctx) => {
     const ids = new Set<string>();
     const idemKeys = new Set<string>();
+    const firmId = plan.steps[0]?.targetRef.firmId;
     let dependenciesValid = true;
     const registerIdempotencyKey = (key: string, path: (string | number)[]) => {
       if (idemKeys.has(key)) {
@@ -129,6 +155,30 @@ export const ExecutionPlanSchema = z
       idemKeys.add(key);
     };
     for (const [index, step] of plan.steps.entries()) {
+      if (firmId !== undefined && step.targetRef.firmId !== firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "all execution-plan steps must belong to one tenant",
+          path: ["steps", index, "targetRef", "firmId"],
+        });
+      }
+      if (
+        step.compensatingAction &&
+        firmId !== undefined &&
+        step.compensatingAction.targetRef.firmId !== firmId
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: "all execution-plan actions must belong to one tenant",
+          path: [
+            "steps",
+            index,
+            "compensatingAction",
+            "targetRef",
+            "firmId",
+          ],
+        });
+      }
       if (ids.has(step.id)) ctx.addIssue({ code: "custom", message: `duplicate step id "${step.id}"`, path: ["steps"] });
       ids.add(step.id);
       registerIdempotencyKey(step.idempotencyKey, ["steps", index, "idempotencyKey"]);

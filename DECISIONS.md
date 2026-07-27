@@ -689,3 +689,24 @@ replay validation, and silent dependency-fence bypasses without adding evaluator
 **Revert path:** restore the 1.3.0 schemas, fixtures, time-zone boundary, and hashes together;
 remove the new duplicate and lineage refinements plus dependency companions; restore host-ICU
 configuration validation; and return the contracts ceiling and indexes to 1800.
+
+### D-049 · 2026-07-27 · captain-decision · Execution, approval, time-zone, and dependency boundaries fail closed
+
+Every retry-safe external action now proves that its payload, reservations, evidence preconditions,
+and verification rule belong to the target tenant. Every execution plan proves that all steps and
+compensations share one tenant, and each precondition names at least one evidence snapshot to refresh.
+Approval-template expiration is strictly positive, and every instantiated approval or specialist stage
+expires later than its decision's `createdAt`.
+
+The `iana-tzdb/2026b` registry is derived from all 341 `Zone` records in the release's primary data
+files, including `Etc/UTC` and `Factory`. `Link` names remain aliases rather than distinct canonical
+replay values. The dependency fence now inspects triple-slash lib directives and source-local `.d.ts`
+files, and fails closed on indirect CommonJS loader references such as aliased `require`,
+`module.require`, and comma-expression invocation.
+
+The decision schema and both hash-preimage envelopes advance to 1.5.0; fixtures pin the new schema
+fingerprints and digests.
+**Why:** these bounded F37-F43 corrections close standalone tenant, revalidation, chronology, replay,
+and dependency-enforcement gaps without adding evaluator or execution logic.
+**Revert path:** restore the 1.4.0 schemas, registry, fixtures, and dependency collector together,
+remove the focused companions, and restore this correction's proof-log extensions.

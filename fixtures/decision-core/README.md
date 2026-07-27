@@ -3,7 +3,7 @@
 Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
 displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle` and
 three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
-`src/contracts/decision-core/serialization.ts`, schema version 1.4.0 and serializer version
+`src/contracts/decision-core/serialization.ts`, schema version 1.5.0 and serializer version
 1.0.0): keys sorted at every depth, no insignificant whitespace, one trailing newline.
 
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
@@ -11,13 +11,14 @@ its schema and re-serializes byte-identically. It also hashes the canonical, dom
 preimage bytes with SHA-256 and requires the digest to equal the fixture's stored `bundleHash` or
 `decisionHash`.
 
-Bundle preimage version `decision-input-bundle/1.4.0` excludes `id` and `bundleHash`, because
+Bundle preimage version `decision-input-bundle/1.5.0` excludes `id` and `bundleHash`, because
 identity is not a material evaluation input, and sorts the instruction-version and
-evidence-snapshot reference collections. Decision preimage version `decision-record/1.4.0`
+evidence-snapshot reference collections. Decision preimage version `decision-record/1.5.0`
 excludes only `decisionHash`; the decision ID and all order-significant traces, stages, and plan
-steps remain bound. The 1.4.0 shapes tenant-scope every named configuration, evidence, subject, scope,
+steps remain bound. The 1.5.0 shapes tenant-scope every named configuration, evidence, subject, scope,
 approval, execution, reservation, verification, and secure-storage reference, require retry-safe
-compensation, canonicalize set-like evaluator inputs, and pin the IANA time-zone-data registry version.
+compensation, canonicalize set-like evaluator inputs, pin the IANA time-zone-data registry version,
+require one tenant throughout every external action and plan, and reject stale initial approval stages.
 Both projections enumerate fields explicitly. Any
 projection change requires its preimage version to change and a migration story for recorded hashes.
 

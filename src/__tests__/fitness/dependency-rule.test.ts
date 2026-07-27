@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { Project } from "ts-morph";
+import { join } from "node:path";
 import {
   detectContractsExternalImportViolations,
   detectLayerViolations,
+  isShippedSourceFilePath,
   realProject,
   inMemoryProject,
+  SRC_ROOT,
 } from "./_fence-utils";
 
 /**
@@ -113,6 +116,20 @@ describe("dependency-rule fence", () => {
       expect(v[0]?.specifier).toBe("<non-literal require>");
     });
 
+    it.each([
+      `const load = require;\nexport const value = load("@infra/store");`,
+      `export const value = (0, require)("@infra/store");`,
+      `export const value = module.require("@infra/store");`,
+      `export const value = module["require"]("@infra/store");`,
+    ])("indirect CommonJS loaders fail closed", (source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({ "src/domain/evil.ts": source }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
     it("clean inner->inner imports do NOT trip the fence", () => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/ok.ts": `import { Result } from "@contracts/result";\nexport const r: Result<number> | null = null;` }),
@@ -168,6 +185,16 @@ describe("dependency-rule fence", () => {
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("contracts->infrastructure");
       expect(v[0]).toMatchObject({ line: 1, specifier: "../infrastructure/store.ts" });
+    });
+
+    it("triple-slash lib references cannot restore contracts platform globals", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts": `/// <reference lib="dom" />\nexport const value = fetch("https://example.test");`,
+        }),
+      );
+      expect(v.some((violation) => violation.specifier === "dom")).toBe(true);
+      expect(v.some((violation) => violation.line === 1)).toBe(true);
     });
 
     it("JSX cannot create an implicit runtime dependency in contracts", () => {
@@ -255,9 +282,38 @@ describe("dependency-rule fence", () => {
       expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
     });
 
+    it("source-local declaration files remain shipped and dependency-enforced", () => {
+      expect(
+        isShippedSourceFilePath(join(SRC_ROOT, "contracts", "evil.d.ts")),
+      ).toBe(true);
+      expect(
+        isShippedSourceFilePath(join(SRC_ROOT, "__tests__", "evil.d.ts")),
+      ).toBe(false);
+      const project = inMemoryProject({
+        "src/contracts/evil.d.ts": `import type { ReactNode } from "react";\nexport type View = ReactNode;`,
+      });
+      expect(detectContractsExternalImportViolations(project)).toEqual([
+        expect.objectContaining({ line: 1, specifier: "react" }),
+      ]);
+    });
+
     it("zod is the only permitted contracts external dependency", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/ok.ts": `import { z } from "zod";\nexport const schema = z.string();` }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it("locally declared require-shaped values do not trip the fence", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/ok.ts": [
+            `const require = (value: string) => value;`,
+            `const local = { require: (value: string) => value };`,
+            `export const values = [require("x"), local.require("x"), local["require"]("x")];`,
+            `export type Contract = { require: string };`,
+          ].join("\n"),
+        }),
       );
       expect(v).toEqual([]);
     });

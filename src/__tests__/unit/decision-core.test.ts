@@ -223,6 +223,10 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     for (const timeZone of CANONICAL_IANA_TIME_ZONES) {
       expect(TimeZoneSchema.safeParse(timeZone).success).toBe(true);
     }
+    expect(CANONICAL_IANA_TIME_ZONES).toHaveLength(341);
+    expect(TimeZoneSchema.safeParse("Etc/UTC").success).toBe(true);
+    expect(TimeZoneSchema.safeParse("Factory").success).toBe(true);
+    expect(TimeZoneSchema.safeParse("Africa/Accra").success).toBe(false);
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Not/AZone" }).success).toBe(false);
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "US/Eastern" }).success).toBe(false);
@@ -474,7 +478,9 @@ describe("structural-integrity refinements", () => {
     reservationRefs: [],
     preconditions: [{
       code: "evidence-still-fresh",
-      requiredEvidenceSnapshotRefs: [],
+      requiredEvidenceSnapshotRefs: [
+        { firmId: "firm-a", id: `evidence:${id}` },
+      ],
       mustStillHoldAtExecution: true,
     }],
     verificationRuleRef: { firmId: "firm-a", id: "vr:u:1" },

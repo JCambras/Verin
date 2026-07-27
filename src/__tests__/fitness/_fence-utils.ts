@@ -37,11 +37,19 @@ export function walk(dir: string, filter: (f: string) => boolean): string[] {
   return out;
 }
 
-/** Source files that ship (excludes tests, the setup file, and type decls). */
-export function shippedSourceFiles(): string[] {
-  return walk(SRC_ROOT, (f) => /\.(ts|tsx)$/.test(f)).filter(
-    (f) => !f.includes(`${join(SRC_ROOT, "__tests__")}`) && !f.endsWith(".d.ts"),
+export function isShippedSourceFilePath(filePath: string): boolean {
+  if (!/\.(ts|tsx)$/.test(filePath)) return false;
+  const pathFromRootTests = relative(join(SRC_ROOT, "__tests__"), resolve(filePath));
+  return (
+    pathFromRootTests === ".." ||
+    pathFromRootTests.startsWith(`..${sep}`) ||
+    isAbsolute(pathFromRootTests)
   );
+}
+
+/** Source files that ship (excludes only the root test tooling tree). */
+export function shippedSourceFiles(): string[] {
+  return walk(SRC_ROOT, isShippedSourceFilePath);
 }
 
 function layerWithinSourceRoot(absPath: string, sourceRoot: string): Layer | null {
@@ -151,12 +159,18 @@ export interface ModuleReference {
     | "import-equals"
     | "reference-types"
     | "reference-path"
+    | "reference-lib"
+    | "require-reference"
     | "implicit-jsx-runtime";
 }
 
 /** Every module reference, including non-literal dynamic import/require calls. */
 export function moduleReferences(sf: SourceFile): ModuleReference[] {
   const refs: ModuleReference[] = [];
+  const isDeclaredLocally = (node: Node): boolean =>
+    node.getSymbol()?.getDeclarations().some(
+      (declaration) => declaration.getSourceFile() === sf,
+    ) ?? false;
   for (const imp of sf.getImportDeclarations()) {
     refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
   }
@@ -176,6 +190,13 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       specifier: ref.getFileName(),
       line: sf.getLineAndColumnAtPos(ref.getPos()).line,
       kind: "reference-path",
+    });
+  }
+  for (const ref of sf.getLibReferenceDirectives()) {
+    refs.push({
+      specifier: ref.getFileName(),
+      line: sf.getLineAndColumnAtPos(ref.getPos()).line,
+      kind: "reference-lib",
     });
   }
   const jsx = sf.getDescendants().find((node) =>
@@ -215,6 +236,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       kind: "import-type",
     });
   }
+  const directRequireStarts = new Set<number>();
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expr = call.getExpression();
     if (expr.getKind() === SyntaxKind.ImportKeyword) {
@@ -226,11 +248,42 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
     if (expr.getText() === "require") {
+      directRequireStarts.add(expr.getStart());
+      if (isDeclaredLocally(expr)) continue;
       const arg = call.getArguments()[0];
       refs.push({
         specifier: arg && (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg)) ? arg.getLiteralText() : null,
         line: call.getStartLineNumber(),
         kind: "require",
+      });
+    }
+  }
+  for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+    if (
+      identifier.getText() === "require" &&
+      !directRequireStarts.has(identifier.getStart()) &&
+      !isDeclaredLocally(identifier)
+    ) {
+      refs.push({
+        specifier: null,
+        line: identifier.getStartLineNumber(),
+        kind: "require-reference",
+      });
+    }
+  }
+  for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
+    const argument = access.getArgumentExpression();
+    if (
+      argument &&
+      (Node.isStringLiteral(argument) ||
+        Node.isNoSubstitutionTemplateLiteral(argument)) &&
+      argument.getLiteralText() === "require" &&
+      !isDeclaredLocally(access.getExpression())
+    ) {
+      refs.push({
+        specifier: null,
+        line: access.getStartLineNumber(),
+        kind: "require-reference",
       });
     }
   }

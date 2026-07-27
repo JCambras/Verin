@@ -41,7 +41,7 @@ describe("config fail-closed guards", () => {
     expect(getConfig().store.driver).toBe("pglite");
   });
 
-  it.each(["America/Chicago", "Europe/London"])(
+  it.each(["America/Chicago", "Europe/London", "Etc/UTC"])(
     "accepts canonical IANA firm time zone %s",
     (firmTimezone) => {
       withEnv({
