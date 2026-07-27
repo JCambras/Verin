@@ -28,10 +28,21 @@ export const ExecutionCommandSchema = z.strictObject({
 }).readonly();
 export type ExecutionCommand = z.infer<typeof ExecutionCommandSchema>;
 
+const uniqueStrings = (values: readonly string[]): boolean =>
+  new Set(values).size === values.length;
+
+const uniqueScopedReferences = (
+  values: readonly { firmId: string; id: string }[],
+): boolean =>
+  new Set(values.map((value) => `${value.firmId}\u0000${value.id}`)).size === values.length;
+
 /** A condition proven before the decision that must still hold when the step runs. */
 export const ExecutionPreconditionSchema = z.strictObject({
   code: z.string().min(1),
-  requiredEvidenceSnapshotRefs: z.array(EvidenceSnapshotIdRefSchema).readonly(),
+  requiredEvidenceSnapshotRefs: z
+    .array(EvidenceSnapshotIdRefSchema)
+    .refine(uniqueScopedReferences, "duplicate required evidence snapshot reference")
+    .readonly(),
   mustStillHoldAtExecution: z.literal(true),
 }).readonly();
 export type ExecutionPrecondition = z.infer<typeof ExecutionPreconditionSchema>;
@@ -40,27 +51,62 @@ const retrySafeExternalActionShape = {
   targetRef: ExecutionTargetRefSchema,
   command: ExecutionCommandSchema,
   idempotencyKey: z.string().min(1),
-  conflictKeys: z.array(ConflictKeySchema).min(1).readonly(),
-  reservationRefs: z.array(ReservationRefSchema).readonly(),
+  conflictKeys: z
+    .array(ConflictKeySchema)
+    .min(1)
+    .refine(uniqueStrings, "duplicate conflict key")
+    .readonly(),
+  reservationRefs: z
+    .array(ReservationRefSchema)
+    .refine(uniqueScopedReferences, "duplicate reservation reference")
+    .readonly(),
   preconditions: z.array(ExecutionPreconditionSchema).min(1).readonly(),
   verificationRuleRef: VerificationRuleRefSchema,
 };
 
-export const RetrySafeExternalActionSchema = z.strictObject(retrySafeExternalActionShape).readonly();
+const requirePayloadTenant = (
+  action: {
+    targetRef: { firmId: string };
+    command: { payloadRef: { firmId: string } };
+  },
+  ctx: z.RefinementCtx,
+): void => {
+  if (action.command.payloadRef.firmId !== action.targetRef.firmId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "payloadRef.firmId must match the execution target tenant",
+      path: ["command", "payloadRef", "firmId"],
+    });
+  }
+};
+
+export const RetrySafeExternalActionSchema = z
+  .strictObject(retrySafeExternalActionShape)
+  .superRefine(requirePayloadTenant)
+  .readonly();
 export type RetrySafeExternalAction = z.infer<typeof RetrySafeExternalActionSchema>;
 
-export const CompensatingActionSchema = z.strictObject({
-  ...retrySafeExternalActionShape,
-  reasonCode: ReasonCodeSchema,
-}).readonly();
+export const CompensatingActionSchema = z
+  .strictObject({
+    ...retrySafeExternalActionShape,
+    reasonCode: ReasonCodeSchema,
+  })
+  .superRefine(requirePayloadTenant)
+  .readonly();
 export type CompensatingAction = z.infer<typeof CompensatingActionSchema>;
 
-export const ExecutionStepSchema = z.strictObject({
-  id: ExecutionStepIdSchema,
-  ...retrySafeExternalActionShape,
-  dependsOn: z.array(ExecutionStepIdSchema).readonly(),
-  compensatingAction: CompensatingActionSchema.optional(),
-}).readonly();
+export const ExecutionStepSchema = z
+  .strictObject({
+    id: ExecutionStepIdSchema,
+    ...retrySafeExternalActionShape,
+    dependsOn: z
+      .array(ExecutionStepIdSchema)
+      .refine(uniqueStrings, "duplicate execution dependency")
+      .readonly(),
+    compensatingAction: CompensatingActionSchema.optional(),
+  })
+  .superRefine(requirePayloadTenant)
+  .readonly();
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
 /**

@@ -16,6 +16,7 @@ import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
   TIME_ZONE_DATA_VERSION,
+  TimeZoneSchema,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
 import { ApprovalTemplateSchema, AuthorityRequirementSchema } from "@contracts/decision-core/authority";
@@ -34,6 +35,11 @@ import {
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { unwrap } from "@contracts/result";
+import {
+  CANONICAL_IANA_TIME_ZONES,
+  IANA_TIME_ZONE_DATA_VERSION,
+  IANA_TIME_ZONE_REGISTRY_SHA256,
+} from "@contracts/time-zone";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -54,7 +60,7 @@ const validIntent = {
   trigger: {
     kind: "human_request",
     requester: { firmId: "firm-a", actorId: "actor:u:1", roleIds: ["advisor"] },
-    requestRef: "req:u:1",
+    requestRef: { firmId: "firm-a", id: "req:u:1" },
     maskedRequest: { value: "distribute 75000 USD (tokenized)", piiFree: true },
   },
   domainConfigVersionRef: { firmId: "firm-a", id: "dcv:money-movement:1" },
@@ -73,7 +79,7 @@ const validSnapshot = {
   retrievedAt: timestamp,
   attribution: "house-crm nightly sync",
   schemaVersion: "1",
-  encryptedStorageRef: "blob:u:1",
+  encryptedStorageRef: { firmId: "firm-a", id: "blob:u:1" },
   contentHash: hash,
   freshness: "fresh",
 };
@@ -210,10 +216,21 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
   });
 
   it("uses a version-pinned time-zone registry independent of host ICU data", () => {
+    expect(TIME_ZONE_DATA_VERSION).toBe(IANA_TIME_ZONE_DATA_VERSION);
+    expect(
+      createHash("sha256").update(CANONICAL_IANA_TIME_ZONES.join("\n")).digest("hex"),
+    ).toBe(IANA_TIME_ZONE_REGISTRY_SHA256);
+    for (const timeZone of CANONICAL_IANA_TIME_ZONES) {
+      expect(TimeZoneSchema.safeParse(timeZone).success).toBe(true);
+    }
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Not/AZone" }).success).toBe(false);
     expect(DecisionInputBundleSchema.safeParse(validBundle).success).toBe(true);
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "US/Eastern" }).success).toBe(false);
-    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Europe/London" }).success).toBe(false);
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "Europe/London" }).success).toBe(true);
+    expect(DecisionInputBundleSchema.safeParse({ ...validBundle, timeZone: "America/Chicago" }).success).toBe(true);
+    expect(
+      DecisionInputBundleSchema.parse({ ...validBundle, timeZone: "america/new_york" }).timeZone,
+    ).toBe("America/New_York");
     expect(
       DecisionInputBundleSchema.safeParse({
         ...validBundle,
@@ -240,6 +257,18 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       if (!parsed.success) expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
     },
   );
+
+  it("canonicalizes set-like replay collections in parsed evaluator input", () => {
+    const fixture = JSON.parse(readFixture("decision-input-bundle")) as typeof validBundle;
+    const canonical = DecisionInputBundleSchema.parse(fixture);
+    const reversed = DecisionInputBundleSchema.parse({
+      ...fixture,
+      householdInstructionVersionRefs: [...fixture.householdInstructionVersionRefs].reverse(),
+      evidenceSnapshotRefs: [...fixture.evidenceSnapshotRefs].reverse(),
+    });
+    expect(reversed.householdInstructionVersionRefs).toEqual(canonical.householdInstructionVersionRefs);
+    expect(reversed.evidenceSnapshotRefs).toEqual(canonical.evidenceSnapshotRefs);
+  });
 
   it("freezes parsed replay inputs and their nested collections", () => {
     const bundle = DecisionInputBundleSchema.parse(validBundle);
@@ -435,7 +464,11 @@ describe("structural-integrity refinements", () => {
   const step = (id: string, over: Record<string, unknown> = {}) => ({
     id,
     targetRef: { firmId: "firm-a", id: "target:house-crm" },
-    command: { commandType: "submit", payloadRef: `blob:${id}`, payloadHash: hash },
+    command: {
+      commandType: "submit",
+      payloadRef: { firmId: "firm-a", id: `blob:${id}` },
+      payloadHash: hash,
+    },
     idempotencyKey: `idem:${id}`,
     conflictKeys: [`conflict:${id}`],
     reservationRefs: [],
@@ -479,6 +512,42 @@ describe("structural-integrity refinements", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+
+  it.each([
+    ["dependsOn", { dependsOn: ["s0", "s0"] }],
+    ["conflictKeys", { conflictKeys: ["conflict:s1", "conflict:s1"] }],
+    [
+      "reservationRefs",
+      {
+        reservationRefs: [
+          { firmId: "firm-a", id: "reservation:s1" },
+          { firmId: "firm-a", id: "reservation:s1" },
+        ],
+      },
+    ],
+    [
+      "requiredEvidenceSnapshotRefs",
+      {
+        preconditions: [{
+          code: "evidence-still-fresh",
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:s1" },
+            { firmId: "firm-a", id: "evidence:s1" },
+          ],
+          mustStillHoldAtExecution: true,
+        }],
+      },
+    ],
+  ] as const)("rejects duplicate set-like execution collection %s", (_name, over) => {
+    const plan = {
+      id: "plan:u:duplicates",
+      steps: [
+        step("s0"),
+        step("s1", over),
+      ],
+    };
+    expect(ExecutionPlanSchema.safeParse(plan).success).toBe(false);
   });
 
   const stageBase = (stageId: string, order: number) => ({

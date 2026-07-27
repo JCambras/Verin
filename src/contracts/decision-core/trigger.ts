@@ -23,12 +23,20 @@ import {
 import { ActorRefSchema, TenantContextSchema, TokenizedPayloadSchema, TokenizedStringSchema } from "./actor";
 
 /** A human request: the raw text stays behind SecureRequestRef; only the tokenized form travels. */
-export const HumanRequestTriggerSchema = z.strictObject({
+const HumanRequestTriggerObjectSchema = z.strictObject({
   kind: z.literal("human_request"),
   requester: ActorRefSchema,
   requestRef: SecureRequestRefSchema,
   maskedRequest: TokenizedStringSchema,
-}).readonly();
+});
+
+export const HumanRequestTriggerSchema = HumanRequestTriggerObjectSchema.refine(
+  (trigger) => trigger.requestRef.firmId === trigger.requester.firmId,
+  {
+    message: "requestRef.firmId must match the human request tenant",
+    path: ["requestRef", "firmId"],
+  },
+).readonly();
 
 /** A system event from an evidence source: payload tokenized, raw body behind SecureEventRef. */
 const SystemEventTriggerObjectSchema = z.strictObject({
@@ -40,23 +48,51 @@ const SystemEventTriggerObjectSchema = z.strictObject({
   tokenizedPayload: TokenizedPayloadSchema,
 });
 
-export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.refine(
-  (trigger) => trigger.sourceRef.firmId === trigger.firmId,
-  {
-    message: "sourceRef.firmId must match the system event tenant",
-    path: ["sourceRef", "firmId"],
-  },
-).readonly();
-
-export const TriggerSchema = z
-  .discriminatedUnion("kind", [HumanRequestTriggerSchema.unwrap(), SystemEventTriggerObjectSchema])
-  .superRefine((trigger, ctx) => {
-    if (trigger.kind === "system_event" && trigger.sourceRef.firmId !== trigger.firmId) {
+export const SystemEventTriggerSchema = SystemEventTriggerObjectSchema.superRefine(
+  (trigger, ctx) => {
+    if (trigger.sourceRef.firmId !== trigger.firmId) {
       ctx.addIssue({
         code: "custom",
         message: "sourceRef.firmId must match the system event tenant",
         path: ["sourceRef", "firmId"],
       });
+    }
+    if (trigger.eventRef.firmId !== trigger.firmId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "eventRef.firmId must match the system event tenant",
+        path: ["eventRef", "firmId"],
+      });
+    }
+  },
+).readonly();
+
+export const TriggerSchema = z
+  .discriminatedUnion("kind", [HumanRequestTriggerObjectSchema, SystemEventTriggerObjectSchema])
+  .superRefine((trigger, ctx) => {
+    if (trigger.kind === "human_request") {
+      if (trigger.requestRef.firmId !== trigger.requester.firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "requestRef.firmId must match the human request tenant",
+          path: ["requestRef", "firmId"],
+        });
+      }
+    } else {
+      if (trigger.sourceRef.firmId !== trigger.firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "sourceRef.firmId must match the system event tenant",
+          path: ["sourceRef", "firmId"],
+        });
+      }
+      if (trigger.eventRef.firmId !== trigger.firmId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "eventRef.firmId must match the system event tenant",
+          path: ["eventRef", "firmId"],
+        });
+      }
     }
   })
   .readonly();

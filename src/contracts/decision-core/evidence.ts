@@ -24,6 +24,11 @@ import {
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 import { CANONICAL_SERIALIZER_VERSION, DECISION_CORE_SCHEMA_VERSION } from "./serialization";
+import {
+  IANA_TIME_ZONE_DATA_VERSION,
+  TimeZoneSchema,
+} from "../time-zone";
+export { TimeZoneSchema };
 
 /** Freshness at retrieval - the golden truth set's vocabulary ("fresh"/"stale"/"unknown"). */
 export const EvidenceFreshnessSchema = z.enum(["fresh", "stale", "unknown"]);
@@ -52,6 +57,7 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
     for (const [ref, path] of [
       [snapshot.sourceRef, ["sourceRef", "firmId"]],
       [snapshot.subjectRef, ["subjectRef", "firmId"]],
+      [snapshot.encryptedStorageRef, ["encryptedStorageRef", "firmId"]],
     ] as const) {
       if (ref.firmId !== snapshot.firmId) {
         ctx.addIssue({
@@ -72,8 +78,16 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-export const TIME_ZONE_DATA_VERSION = "decision-core-time-zones/1.0.0";
-export const TimeZoneSchema = z.enum(["America/New_York"]);
+export const TIME_ZONE_DATA_VERSION = IANA_TIME_ZONE_DATA_VERSION;
+
+const compareScopedReferences = (
+  left: { firmId: string; id: string },
+  right: { firmId: string; id: string },
+): number => {
+  const firmOrder = left.firmId < right.firmId ? -1 : left.firmId > right.firmId ? 1 : 0;
+  if (firmOrder !== 0) return firmOrder;
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+};
 
 export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
   id: DecisionInputBundleIdSchema,
@@ -88,12 +102,14 @@ export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
     .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
       message: "duplicate household instruction version id",
     })
+    .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   evidenceSnapshotRefs: z
     .array(EvidenceSnapshotIdRefSchema)
     .refine((refs) => new Set(refs.map((ref) => ref.id)).size === refs.length, {
       message: "duplicate evidence snapshot id",
     })
+    .overwrite((refs) => [...refs].sort(compareScopedReferences))
     .readonly(),
   asOf: TimestampSchema,
   timeZone: TimeZoneSchema,

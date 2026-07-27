@@ -77,7 +77,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
 | `charter-drift` | the constitution enforces its own enforcement | PF-001 |
-| `dependency-rule` (ts-morph: static+relative+dynamic+require+import-type+import-equals+triple-slash+implicit JSX runtime; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + extensions + companions |
+| `dependency-rule` (ts-morph: compiler-resolved aliases, static+relative+dynamic+require+import-type+import-equals+triple-slash+implicit JSX runtime; fail-closed local paths and ES-only platform surface; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + extensions + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
@@ -103,8 +103,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 | `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
 | `decision-core-illegal-states` | proceed requires authority + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
-| `decision-core-tenant-scope` | every immutable prompt-5 record and named cross-record reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045-D-047) | PF-028 + companions |
-| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata; idempotency keys cannot alias (#16, ADR-0029, D-047) | PF-029 + companions |
+| `decision-core-tenant-scope` | every immutable prompt-5 record and named cross-record or secure-storage reference recursively matches its enclosing tenant (v3 invariant 2, ADR-0029, D-045-D-048) | PF-028 + companions |
+| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata; idempotency keys cannot alias; set-like execution references are duplicate-free (#16, ADR-0029, D-047-D-048) | PF-029 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

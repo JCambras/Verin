@@ -8,7 +8,11 @@ import {
 const hash = "a".repeat(64);
 const action = {
   targetRef: { firmId: "firm-a", id: "target:house-crm" },
-  command: { commandType: "submit", payloadRef: "blob:submit", payloadHash: hash },
+  command: {
+    commandType: "submit",
+    payloadRef: { firmId: "firm-a", id: "blob:submit" },
+    payloadHash: hash,
+  },
   idempotencyKey: "idem:submit",
   conflictKeys: ["conflict:liquidity"],
   reservationRefs: [{ firmId: "firm-a", id: "reservation:liquidity" }],
@@ -23,7 +27,11 @@ const action = {
 };
 const compensation = {
   ...action,
-  command: { ...action.command, commandType: "cancel", payloadRef: "blob:cancel" },
+  command: {
+    ...action.command,
+    commandType: "cancel",
+    payloadRef: { firmId: "firm-a", id: "blob:cancel" },
+  },
   idempotencyKey: "idem:cancel",
   reasonCode: "later-step-failed",
 };
@@ -73,6 +81,33 @@ describe("decision-core external-action safety fence", () => {
     if (!parsed.success) {
       expect(parsed.error.issues.some((issue) => issue.path.includes("compensatingAction"))).toBe(true);
     }
+  });
+
+  it.each([
+    ["conflictKeys", { conflictKeys: ["conflict:liquidity", "conflict:liquidity"] }],
+    [
+      "reservationRefs",
+      {
+        reservationRefs: [
+          { firmId: "firm-a", id: "reservation:liquidity" },
+          { firmId: "firm-a", id: "reservation:liquidity" },
+        ],
+      },
+    ],
+    [
+      "precondition evidence refs",
+      {
+        preconditions: [{
+          ...action.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:balance" },
+            { firmId: "firm-a", id: "evidence:balance" },
+          ],
+        }],
+      },
+    ],
+  ])("enforces: %s are duplicate-free", (_name, override) => {
+    expect(RetrySafeExternalActionSchema.safeParse({ ...action, ...override }).success).toBe(false);
   });
 
   describe("detects (companion): complete retry-safe actions parse", () => {

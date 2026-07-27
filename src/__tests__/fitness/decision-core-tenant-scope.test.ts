@@ -22,7 +22,7 @@ type ExplanationNode = {
 };
 type ExternalAction = {
   targetRef: ScopedRef;
-  command: unknown;
+  command: { payloadRef: ScopedRef };
   idempotencyKey: string;
   conflictKeys: string[];
   reservationRefs: ScopedRef[];
@@ -96,7 +96,7 @@ describe("decision-core tenant-scope fence", () => {
         firmId: "firm-a",
         sourceRef: { firmId: "firm-a", id: "source:crm" },
         eventType: "changed",
-        eventRef: "event:1",
+        eventRef: { firmId: "firm-a", id: "event:1" },
         tokenizedPayload: { value: {}, piiFree: true },
       },
       domainConfigVersionRef: { firmId: "firm-a", id: "config:1" },
@@ -114,7 +114,7 @@ describe("decision-core tenant-scope fence", () => {
       retrievedAt: "2026-07-26T13:30:00.000Z",
       attribution: "crm",
       schemaVersion: "1",
-      encryptedStorageRef: "blob:1",
+      encryptedStorageRef: { firmId: "firm-a", id: "blob:1" },
       contentHash: "a".repeat(64),
       freshness: "fresh",
     };
@@ -152,6 +152,15 @@ describe("decision-core tenant-scope fence", () => {
     expect(
       IntentSchema.safeParse({
         ...intent,
+        trigger: {
+          ...intent.trigger,
+          eventRef: { ...intent.trigger.eventRef, firmId: "firm-b" },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      IntentSchema.safeParse({
+        ...intent,
         domainConfigVersionRef: { ...intent.domainConfigVersionRef, firmId: "firm-b" },
       }).success,
     ).toBe(false);
@@ -159,6 +168,12 @@ describe("decision-core tenant-scope fence", () => {
       EvidenceSnapshotRefSchema.safeParse({
         ...snapshot,
         sourceRef: { ...snapshot.sourceRef, firmId: "firm-b" },
+      }).success,
+    ).toBe(false);
+    expect(
+      EvidenceSnapshotRefSchema.safeParse({
+        ...snapshot,
+        encryptedStorageRef: { ...snapshot.encryptedStorageRef, firmId: "firm-b" },
       }).success,
     ).toBe(false);
     expect(
@@ -183,6 +198,37 @@ describe("decision-core tenant-scope fence", () => {
     ]) {
       expect(DecisionRecordSchema.safeParse(value).success).toBe(false);
     }
+  });
+
+  it("enforces: human request storage references belong to the request tenant", () => {
+    const intent = {
+      firmId: "firm-a",
+      id: "intent:human:1",
+      trigger: {
+        kind: "human_request",
+        requester: {
+          firmId: "firm-a",
+          actorId: "actor:advisor",
+          roleIds: ["advisor"],
+        },
+        requestRef: { firmId: "firm-a", id: "request:1" },
+        maskedRequest: { value: "move tokenized amount", piiFree: true },
+      },
+      domainConfigVersionRef: { firmId: "firm-a", id: "config:1" },
+      action: "primitive:move",
+      slots: {},
+      createdAt: "2026-07-26T13:30:00.000Z",
+    };
+    expect(IntentSchema.safeParse(intent).success).toBe(true);
+    expect(
+      IntentSchema.safeParse({
+        ...intent,
+        trigger: {
+          ...intent.trigger,
+          requestRef: { ...intent.trigger.requestRef, firmId: "firm-b" },
+        },
+      }).success,
+    ).toBe(false);
   });
 
   it("enforces: precedence and explanation references belong to the decision tenant recursively", () => {
@@ -340,6 +386,22 @@ describe("decision-core tenant-scope fence", () => {
           executionPlan: {
             ...executionPlan,
             steps: [{ ...step, targetRef: { ...step.targetRef, firmId: "firm-b" } }],
+          },
+        },
+      },
+      {
+        ...proceed,
+        result: {
+          ...proceed.result,
+          executionPlan: {
+            ...executionPlan,
+            steps: [{
+              ...step,
+              command: {
+                ...step.command,
+                payloadRef: { ...step.command.payloadRef, firmId: "firm-b" },
+              },
+            }],
           },
         },
       },

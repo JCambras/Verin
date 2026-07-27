@@ -178,13 +178,22 @@ export type ReservationRef = z.infer<typeof ReservationRefSchema>;
 
 // ── Opaque references (PII stays behind these - the value is a pointer, never content) ──
 
-export const SecureRequestRefSchema = brandedString<"SecureRequestRef">();
+export const SecureRequestIdSchema = brandedString<"SecureRequestId">();
+export type SecureRequestId = z.infer<typeof SecureRequestIdSchema>;
+
+export const SecureRequestRefSchema = tenantScopedReference(SecureRequestIdSchema);
 export type SecureRequestRef = z.infer<typeof SecureRequestRefSchema>;
 
-export const SecureEventRefSchema = brandedString<"SecureEventRef">();
+export const SecureEventIdSchema = brandedString<"SecureEventId">();
+export type SecureEventId = z.infer<typeof SecureEventIdSchema>;
+
+export const SecureEventRefSchema = tenantScopedReference(SecureEventIdSchema);
 export type SecureEventRef = z.infer<typeof SecureEventRefSchema>;
 
-export const SecureBlobRefSchema = brandedString<"SecureBlobRef">();
+export const SecureBlobIdSchema = brandedString<"SecureBlobId">();
+export type SecureBlobId = z.infer<typeof SecureBlobIdSchema>;
+
+export const SecureBlobRefSchema = tenantScopedReference(SecureBlobIdSchema);
 export type SecureBlobRef = z.infer<typeof SecureBlobRefSchema>;
 
 export const SlotRefSchema = brandedString<"SlotRef">();

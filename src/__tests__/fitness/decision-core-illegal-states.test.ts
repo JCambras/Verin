@@ -32,7 +32,11 @@ const plan = {
     {
       id: "step:fence:1",
       targetRef: { firmId: "firm-a", id: "target:house-crm" },
-      command: { commandType: "submit", payloadRef: "blob:fence:1", payloadHash: "a".repeat(64) },
+      command: {
+        commandType: "submit",
+        payloadRef: { firmId: "firm-a", id: "blob:fence:1" },
+        payloadHash: "a".repeat(64),
+      },
       idempotencyKey: "idem:fence:1",
       conflictKeys: ["conflict:fence:1"],
       reservationRefs: [],
@@ -120,7 +124,10 @@ describe("decision-core illegal-states fence", () => {
           {
             ...base,
             id: "s2",
-            command: { ...base.command, payloadRef: "blob:fence:2" },
+            command: {
+              ...base.command,
+              payloadRef: { firmId: "firm-a", id: "blob:fence:2" },
+            },
             idempotencyKey: "idem:s2",
             dependsOn: ["s1"],
           },
@@ -176,6 +183,13 @@ describe("decision-core illegal-states fence", () => {
     });
     it("rejects an authority-like disposition kind", () => {
       expectRejected(DecisionResultSchema, { kind: "approved", recommendation, authority, executionPlan: plan }, "kind");
+    });
+    it("rejects direct self-reference in derived-decision lineage", () => {
+      expectRejected(
+        DecisionRecordSchema,
+        record(proceed, { derivedFromDecisionRef: { firmId: "firm-a", id: "dec:fence:1" } }),
+        "derivedFromDecisionRef",
+      );
     });
   });
 

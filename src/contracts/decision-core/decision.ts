@@ -267,6 +267,7 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
       path: (string | number)[],
     ) => {
       requireSameFirm(action.targetRef, [...path, "targetRef", "firmId"]);
+      requireSameFirm(action.command.payloadRef, [...path, "command", "payloadRef", "firmId"]);
       action.reservationRefs.forEach((ref, index) =>
         requireSameFirm(ref, [...path, "reservationRefs", index, "firmId"]),
       );
@@ -342,5 +343,14 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
     message: "a prohibited decision cannot carry revaluation conditions (a prohibition has no resolving condition)",
     path: ["reevaluateWhen"],
   })
+  .refine(
+    (record) =>
+      record.derivedFromDecisionRef === undefined ||
+      record.derivedFromDecisionRef.id !== record.id,
+    {
+      message: "a decision cannot derive from itself",
+      path: ["derivedFromDecisionRef"],
+    },
+  )
   .readonly();
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;
