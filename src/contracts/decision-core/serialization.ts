@@ -9,6 +9,8 @@ import { validationError, type AppError } from "../errors";
 import { normalizeScopedReferences } from "./ids";
 import type { DecisionInputBundle } from "./evidence";
 import { normalizeDecisionRecord, type DecisionRecord } from "./decision";
+import { isPlainRecord } from "./normalization";
+import { canonicalizeTimeZoneForRecordedRelease } from "../time-zone";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
@@ -92,6 +94,8 @@ type NormalizableDecisionInputBundle = {
     readonly firmId: string;
     readonly id: string;
   }[];
+  readonly timeZone: string;
+  readonly timeZoneDataVersion: string;
 };
 export const normalizeDecisionInputBundle = <
   T extends NormalizableDecisionInputBundle,
@@ -105,6 +109,10 @@ export const normalizeDecisionInputBundle = <
     ),
     evidenceSnapshotRefs: normalizeScopedReferences(
       bundle.evidenceSnapshotRefs,
+    ),
+    timeZone: canonicalizeTimeZoneForRecordedRelease(
+      bundle.timeZoneDataVersion,
+      bundle.timeZone,
     ),
   }) as T;
 export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreimage {
@@ -132,11 +140,6 @@ function projectDefined<T extends object, const K extends readonly (keyof T)[]>(
     keys.flatMap((key) => (value[key] === undefined ? [] : [[key, value[key]]])),
   ) as Pick<T, K[number]>;
 }
-/** THE plain-object rule, shared so normalization and serialization cannot disagree. */
-function isPlainObject(value: object): boolean {
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
 class CanonicalizationRefusal {
   constructor(readonly reason: string) {}
 }
@@ -161,7 +164,7 @@ function normalizeOptionalProperties<T>(
   if (
     value !== null &&
     typeof value === "object" &&
-    (Array.isArray(value) || isPlainObject(value))
+    (Array.isArray(value) || isPlainRecord(value))
   ) {
     if (ancestors.has(value)) return value;
     ancestors.add(value);
@@ -255,7 +258,7 @@ function serializeObject(value: object, trail: Trail, ancestors: Set<object>): s
     }
     return `[${items.join(",")}]`;
   }
-  if (!isPlainObject(value)) {
+  if (!isPlainRecord(value)) {
     throw new CanonicalizationRefusal(`${describeTrail(trail)}: only plain objects can be canonicalized`);
   }
   const entries = Object.keys(value)

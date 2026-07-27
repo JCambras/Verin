@@ -328,6 +328,21 @@ describe("dependency-rule fence", () => {
       ]);
     });
 
+    it("DOM globals are rejected by diagnostic code", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts":
+            "export const title = document.title;",
+        }),
+      );
+      expect(v).toEqual([
+        expect.objectContaining({
+          line: 1,
+          specifier: "<platform-global document>",
+        }),
+      ]);
+    });
+
     it.each([
       {
         "src/contracts/evil.ts":
@@ -508,6 +523,29 @@ describe("dependency-rule fence", () => {
             "const moduleAlias: any = module;",
             `export const value = moduleAlias.require("@infra/store");`,
           ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+      expect(v[0]?.specifier).toBe("<non-literal require-reference>");
+    });
+
+    it.each([
+      [
+        "direct",
+        `const { require: load } = module;\nexport const value = load("@infra/store");`,
+      ],
+      [
+        "type-erased",
+        `const ambient: any = module;\nconst { require: load } = ambient;\nexport const value = load("@infra/store");`,
+      ],
+    ])("destructured ambient require provenance remains enforced: %s", (_name, source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/types/node-shim.d.ts":
+            "declare const module: { require(id: string): unknown };",
+          "src/domain/evil.ts": source,
         }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(

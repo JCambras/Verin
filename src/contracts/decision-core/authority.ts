@@ -18,8 +18,10 @@ import {
   NonEmptyRoleRefSetSchema,
   ReasonCodeSchema,
   TimestampSchema,
+  normalizeScopedReferences,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
+import { isPlainRecord } from "./normalization";
 
 const DURATION_COMPONENT = /(\d+(?:[.,]\d+)?)[YMWDHS]/g;
 
@@ -114,6 +116,51 @@ type StageRoleRefs = {
   escalationPath: readonly { roleIds: readonly { firmId: string }[] }[];
 };
 
+type NormalizableStage = {
+  readonly order: number;
+  readonly requirements: readonly {
+    readonly eligibleRoleIds: readonly {
+      readonly firmId: string;
+      readonly id: string;
+    }[];
+  }[];
+  readonly escalationPath: readonly {
+    readonly roleIds: readonly {
+      readonly firmId: string;
+      readonly id: string;
+    }[];
+  }[];
+};
+
+const normalizeStage = <T extends NormalizableStage>(stage: T): T => {
+  if (!isPlainRecord(stage)) return stage;
+  return {
+    ...stage,
+    requirements: stage.requirements.map((requirement) =>
+      isPlainRecord(requirement)
+        ? {
+            ...requirement,
+            eligibleRoleIds: normalizeScopedReferences(
+              requirement.eligibleRoleIds,
+            ),
+          }
+        : requirement,
+    ),
+    escalationPath: stage.escalationPath.map((escalation) =>
+      isPlainRecord(escalation)
+        ? {
+            ...escalation,
+            roleIds: normalizeScopedReferences(escalation.roleIds),
+          }
+        : escalation,
+    ),
+  } as T;
+};
+
+export const normalizeApprovalStages = <T extends NormalizableStage>(
+  stages: readonly T[],
+): T[] => [...stages].sort((left, right) => left.order - right.order);
+
 const requireStageRoleTenant = (
   stage: StageRoleRefs,
   firmId: string,
@@ -160,7 +207,7 @@ const ApprovalStageTemplateListSchema = z
   .array(ApprovalStageTemplateSchema)
   .min(1)
   .superRefine(requireDistinctStages)
-  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .overwrite(normalizeApprovalStages)
   .readonly();
 
 /** A reusable, referencable stack of stage templates. */
@@ -197,7 +244,7 @@ const ApprovalStageListSchema = z
   .array(ApprovalStageSchema)
   .min(1)
   .superRefine(requireDistinctStages)
-  .overwrite((stages) => [...stages].sort((left, right) => left.order - right.order))
+  .overwrite(normalizeApprovalStages)
   .readonly();
 
 /**
@@ -243,3 +290,39 @@ export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
   })
   .readonly();
 export type AuthorityRequirement = z.infer<typeof AuthorityRequirementSchema>;
+
+type NormalizableAuthorityRequirement = {
+  readonly mode: string;
+  readonly specialistRoleIds?: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+  readonly stages?: readonly NormalizableStage[];
+};
+
+export const normalizeAuthorityRequirement = <
+  T extends NormalizableAuthorityRequirement,
+>(
+  requirement: T,
+): T => {
+  if (!isPlainRecord(requirement) || requirement.mode === "automatic") {
+    return requirement;
+  }
+  return {
+    ...requirement,
+    ...(requirement.specialistRoleIds === undefined
+      ? {}
+      : {
+          specialistRoleIds: normalizeScopedReferences(
+            requirement.specialistRoleIds,
+          ),
+        }),
+    ...(requirement.stages === undefined
+      ? {}
+      : {
+          stages: normalizeApprovalStages(requirement.stages).map(
+            normalizeStage,
+          ),
+        }),
+  } as T;
+};

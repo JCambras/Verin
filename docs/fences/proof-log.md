@@ -1629,3 +1629,50 @@ registry pins remain unchanged. Fitness (331), the full suite (488), Playwright 
 lint, knip, production build, v3:invariants, and golden:validate all pass.
 
 **Date:** 2026-07-27 (review corrections F75-F83, D-057).
+
+## F84-F91 · complete canonical boundary and fence indirection corrections (D-058)
+
+**Invariants:** every parse-time canonical collection has the same preimage normalization; nested
+non-plain objects still reach the canonical serializer refusal; timezone casing and refusal releases
+are replay-correct; scoped-reference and dependency discovery follows ordinary syntax indirection;
+standalone execution steps enforce compensation tenancy; contracts cannot access DOM globals.
+
+Before the implementation changes, 13 focused companions failed. Permuting actor roles, specialist
+roles, approval stages, eligible roles, escalation roles, and blocked evidence suppliers produced
+different decision preimages. A lower-case accepted Zone produced a different bundle preimage from its
+schema-canonical spelling. Nested class instances in an explanation and an execution step both parsed
+through normalization into serializable plain objects instead of returning the expected refusal.
+Parsing `ExecutionStepSchema` directly accepted a compensation target from another tenant.
+
+The remaining three failures were dependency-fence bypasses. A destructured ambient loader and its
+type-erased form produced no module reference:
+```
+const { require: load } = module;
+load("@infra/store");
+
+const erased: any = module;
+const { require: erasedLoad } = erased;
+erasedLoad("@infra/store");
+```
+A contract reference to `document.title` also produced no ES-only diagnostic because diagnostic 2584
+was not selected. The focused suite passed only after the shared provenance and diagnostic authorities
+covered all three cases.
+
+The tenant inventory companions construct one added schema through each previously invisible form:
+an alias of the scoped-reference factory, a `.readonly().array()` wrapper chain, and a composite strict
+object. Each is discovered exactly as `probe.ts:AddedSchema`; replacing recursive provenance with direct-call-only discovery made all three
+expectations empty and fail. The production inventory also contains `trigger.ts:candidateRefs`, so the ambiguity
+collection that prompted the fence cannot disappear from the registry unnoticed.
+
+A constructed two-release bundle schema accepts a Zone under the release that records it and refuses
+the same Zone under the release that does not. Replacing the recorded version passed to the shared
+formatter with the current release fails the companion because the diagnostic names the wrong release.
+
+The final line-budget measurement is 3016/3100, with 84 lines of measured headroom. D-058 and ADR-0029
+record the merit-based shared-normalization rationale separately from that measurement.
+
+**Revert:** restored every incomplete form after its focused failure. All recorded hash fixtures and
+registry pins remain unchanged. Fitness (338), the full suite (504), Playwright (17), typecheck, lint,
+knip, production build, v3:invariants, golden:validate, and the 3016/3100 line-budget fence pass.
+
+**Date:** 2026-07-27 (review corrections F84-F91, D-058).

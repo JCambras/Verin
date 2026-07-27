@@ -332,6 +332,27 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
+  for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    const name = declaration.getNameNode();
+    if (
+      !Node.isObjectBindingPattern(name) ||
+      !isAmbientGlobalReference(declaration.getInitializer())
+    ) {
+      continue;
+    }
+    for (const element of name.getElements()) {
+      if (
+        (element.getPropertyNameNode()?.getText() ?? element.getName()) ===
+        "require"
+      ) {
+        refs.push({
+          specifier: null,
+          line: element.getStartLineNumber(),
+          kind: "require-reference",
+        });
+      }
+    }
+  }
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
     if (v) refs.push({ specifier: v, line: exp.getStartLineNumber(), kind: "export" });
@@ -631,7 +652,7 @@ export function detectContractsExternalImportViolations(project: Project): Contr
     isolated.createSourceFile(sf.getFilePath(), sf.getFullText(), { overwrite: true });
   }
   for (const diagnostic of isolated.getPreEmitDiagnostics()) {
-    if (![2304, 2339, 2503, 2552, 2580, 2591, 7017].includes(diagnostic.getCode())) continue;
+    if (![2304, 2339, 2503, 2552, 2580, 2584, 2591, 7017].includes(diagnostic.getCode())) continue;
     const sf = diagnostic.getSourceFile();
     const start = diagnostic.getStart();
     if (!sf || start === undefined) continue;

@@ -103,8 +103,8 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 | `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
 | `decision-core-illegal-states` | proceed requires usable authority with future expiration + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
-| `decision-core-tenant-scope` | registered prompt-5 reference boundaries reject cross-tenant values; an exact schema-derived inventory fails on any unregistered direct scoped-reference collection (v3 invariant 2, ADR-0029, D-045-D-057) | PF-028 + companions |
-| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation; plans remain single-tenant; idempotency keys cannot alias; set-like execution references are duplicate-free and canonical (#16, ADR-0029, D-047-D-057) | PF-029 + companions |
+| `decision-core-tenant-scope` | registered prompt-5 reference boundaries reject cross-tenant values; an exact schema-derived inventory follows aliases, wrappers, and composites and fails on any unregistered scoped-reference collection (v3 invariant 2, ADR-0029, D-045-D-058) | PF-028 + companions |
+| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation at standalone and plan boundaries; idempotency keys cannot alias; set-like execution references are duplicate-free and canonical (#16, ADR-0029, D-047-D-058) | PF-029 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

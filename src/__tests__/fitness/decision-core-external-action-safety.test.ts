@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CompensatingActionSchema,
   ExecutionPlanSchema,
+  ExecutionStepSchema,
   RetrySafeExternalActionSchema,
 } from "@contracts/decision-core/execution";
 
@@ -218,6 +219,38 @@ describe("decision-core external-action safety fence", () => {
             reasonCode: "later-step-failed",
           },
         }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("enforces: a standalone step and its compensation share a tenant", () => {
+    const firmBCompensation = {
+      ...compensation,
+      targetRef: { firmId: "firm-b", id: "target:house-crm" },
+      command: {
+        ...compensation.command,
+        payloadRef: { firmId: "firm-b", id: "blob:cancel" },
+      },
+      reservationRefs: [
+        { firmId: "firm-b", id: "reservation:liquidity" },
+      ],
+      preconditions: [{
+        ...compensation.preconditions[0]!,
+        requiredEvidenceSnapshotRefs: [
+          { firmId: "firm-b", id: "evidence:balance" },
+        ],
+      }],
+      verificationRuleRef: {
+        firmId: "firm-b",
+        id: "verification:submitted",
+      },
+    };
+    expect(
+      ExecutionStepSchema.safeParse({
+        id: "step:1",
+        ...action,
+        dependsOn: [],
+        compensatingAction: firmBCompensation,
       }).success,
     ).toBe(false);
   });

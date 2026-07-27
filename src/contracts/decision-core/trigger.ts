@@ -19,11 +19,12 @@ import {
   SlotRefSchema,
   SubjectRefSchema,
   TimestampSchema,
-  compareStringOrScopedReferences,
   hasUniqueScopedReferences,
   normalizeScopedReferences,
+  normalizeStringOrScopedReferences,
 } from "./ids";
 import { ActorRefSchema, TenantContextSchema, TokenizedPayloadSchema, TokenizedStringSchema } from "./actor";
+import { isPlainRecord } from "./normalization";
 
 /**
  * Each trigger arm carries its OWN tenant checks and the union is composed from the
@@ -154,9 +155,7 @@ const EvidenceSupplierSetSchema = z
     const wellKnown = suppliers.filter((supplier) => typeof supplier === "string");
     return hasUniqueScopedReferences(roleRefs) && new Set(wellKnown).size === wellKnown.length;
   }, "duplicate evidence supplier")
-  .overwrite((suppliers) =>
-    [...suppliers].sort(compareStringOrScopedReferences),
-  )
+  .overwrite(normalizeStringOrScopedReferences)
   .readonly();
 
 export const EvidenceRequestSchema = z
@@ -178,6 +177,23 @@ export const EvidenceRequestSchema = z
   .readonly();
 export type EvidenceRequest = z.infer<typeof EvidenceRequestSchema>;
 
+type NormalizableEvidenceRequest = {
+  readonly suppliableBy: readonly (
+    | string
+    | { readonly firmId: string; readonly id: string }
+  )[];
+};
+
+export const normalizeEvidenceRequest = <T extends NormalizableEvidenceRequest>(
+  request: T,
+): T => {
+  if (!isPlainRecord(request)) return request;
+  return {
+    ...request,
+    suppliableBy: normalizeStringOrScopedReferences(request.suppliableBy),
+  } as T;
+};
+
 /**
  * A blocker that fresh evidence CAN resolve. resolvingEvidence is non-empty by
  * construction - "resolvable with no resolving path" would collapse blocked into
@@ -189,6 +205,22 @@ export const ResolvableBlockerSchema = z.strictObject({
   resolvingEvidence: z.array(EvidenceRequestSchema).min(1).readonly(),
 }).readonly();
 export type ResolvableBlocker = z.infer<typeof ResolvableBlockerSchema>;
+
+type NormalizableResolvableBlocker = {
+  readonly resolvingEvidence: readonly NormalizableEvidenceRequest[];
+};
+
+export const normalizeResolvableBlocker = <
+  T extends NormalizableResolvableBlocker,
+>(
+  blocker: T,
+): T => {
+  if (!isPlainRecord(blocker)) return blocker;
+  return {
+    ...blocker,
+    resolvingEvidence: blocker.resolvingEvidence.map(normalizeEvidenceRequest),
+  } as T;
+};
 
 /** Where slot binding stands: bound, ambiguous (awaiting a human), or missing evidence. */
 export const ResolutionStateSchema = z.strictObject({

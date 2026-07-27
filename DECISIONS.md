@@ -1007,3 +1007,32 @@ reject mixed ownership, structured refusals must survive malformed runtime objec
 fences must prove the bypasses they claim to close.
 **Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant/configuration
 boundaries remain supported.
+
+### D-058 · 2026-07-27 · captain-decision · Parse and preimage normalization share complete authorities
+
+Decision-record parse boundaries and decision-hash preimages now share pure normalization authorities
+for every canonical collection they bind: actor roles, specialist roles, approval stages, eligible
+roles, escalation roles, blocked evidence suppliers, explanations, and execution plans. Each recursive
+normalizer preserves non-plain objects instead of spreading them, so `canonicalJson` still rejects
+class instances at nested production preimage paths. Bundle preimages use the same release registry
+authority as `TimeZoneSchema` to canonicalize accepted Zone casing.
+
+The tenant inventory follows schema provenance through aliases, wrappers, and composite schemas before
+comparing the discovered collections with the explicit constraint registry. Its three synthetic
+companions prove each indirection form is visible. Standalone execution steps now bind a compensation
+target to the parent target's tenant, independently of the plan-level check. Recorded-release timezone
+membership refusals use the one bounded formatter and name the bundle's actual release. The dependency
+fence follows destructured `require` provenance from ambient `module` receivers, including type-erased
+aliases, and the ES-only contracts diagnostic gate includes TypeScript diagnostic 2584 for DOM globals.
+
+The shared-normalization rationale in D-057 remains independent of the line budget. After these
+completion corrections, the line-budget fence measures `contracts/` at **3016** lines. ADR-0029
+re-baselines the ceiling from 2800 to **3100** through ADR-0018's amendment path, leaving **84 lines
+of measured headroom**. The ratchet resumes from 3100 and does not authorize unrelated growth.
+Recorded bundle and decision fixture digests remain byte-identical, so schema and preimage versions
+stay 1.7.0.
+**Why:** hash equivalence must match every parse-time canonicalization, serializer refusals must survive
+every nested normalizer, tenant and dependency fences must fail under ordinary syntax indirection, and
+diagnostics must describe the actual replay release.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, execution,
+timezone, and dependency boundaries remain supported.

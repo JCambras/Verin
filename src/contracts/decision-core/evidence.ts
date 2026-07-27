@@ -30,9 +30,10 @@ import {
   DECISION_CORE_SCHEMA_VERSION,
 } from "./serialization";
 import {
-  SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS,
-  TimeZoneSchema,
-  isTimeZoneInRecordedRegistry,
+  SUPPORTED_IANA_TIME_ZONE_RELEASES,
+  formatTimeZoneRefusal,
+  timeZoneNameSchema,
+  timeZoneRegistryMembership,
 } from "../time-zone";
 
 /**
@@ -100,61 +101,96 @@ export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
  * references identify the exact inputs; asOf + timeZone pin time itself; bundleHash is
  * the canonical-serialization hash the approval and replay paths bind to.
  */
-export const DecisionInputBundleSchema = TenantContextSchema.unwrap().extend({
-  id: DecisionInputBundleIdSchema,
-  schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
-  canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
-  engineVersion: z.string().min(1),
-  primitiveSetVersion: z.string().min(1),
-  domainConfigVersionRef: DomainConfigVersionRefSchema,
-  policyVersionRef: PolicyVersionRefSchema,
-  householdInstructionVersionRefs: z
-    .array(HouseholdInstructionVersionRefSchema)
-    .refine(hasUniqueScopedReferences, {
-      message: "duplicate household instruction version reference",
-    })
-    .overwrite(normalizeScopedReferences)
-    .readonly(),
-  evidenceSnapshotRefs: z
-    .array(EvidenceSnapshotIdRefSchema)
-    .refine(hasUniqueScopedReferences, {
-      message: "duplicate evidence snapshot reference",
-    })
-    .overwrite(normalizeScopedReferences)
-    .readonly(),
-  asOf: TimestampSchema,
-  timeZone: TimeZoneSchema,
-  // A supported-version ENUM, not the single shipped literal: a bundle records the
-  // registry it was evaluated against so it can be replayed against that registry,
-  // which is impossible if adopting a newer release makes every stored bundle
-  // unparseable. Versions are only ever ADDED (ADR-0029, D-051).
-  timeZoneDataVersion: z.enum(SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS),
-  bundleHash: HashSchema,
-})
-  .superRefine((bundle, ctx) => {
-    const requireSameFirm = (ref: { firmId: string }, path: (string | number)[]) => {
-      if (ref.firmId !== bundle.firmId) {
-        ctx.addIssue({ code: "custom", message: "referenced record must belong to the bundle tenant", path });
-      }
-    };
-    requireSameFirm(bundle.domainConfigVersionRef, ["domainConfigVersionRef", "firmId"]);
-    requireSameFirm(bundle.policyVersionRef, ["policyVersionRef", "firmId"]);
-    bundle.householdInstructionVersionRefs.forEach((ref, index) =>
-      requireSameFirm(ref, ["householdInstructionVersionRefs", index, "firmId"]),
-    );
-    bundle.evidenceSnapshotRefs.forEach((ref, index) =>
-      requireSameFirm(ref, ["evidenceSnapshotRefs", index, "firmId"]),
-    );
-    // TimeZoneSchema spans every supported registry so an older bundle stays
-    // parseable; the registry THIS bundle is held to is the one it recorded, which
-    // is what makes the recorded version a replay input rather than a label.
-    if (!isTimeZoneInRecordedRegistry(bundle.timeZoneDataVersion, bundle.timeZone)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "timeZone must belong to the registry named by timeZoneDataVersion",
-        path: ["timeZone"],
-      });
-    }
+type TimeZoneReleaseRegistry = Readonly<
+  Record<string, { readonly zones: readonly string[] }>
+>;
+
+export const decisionInputBundleSchemaForReleases = <
+  const R extends TimeZoneReleaseRegistry,
+>(
+  releases: R,
+) => {
+  type Version = Extract<keyof R, string>;
+  const versions = Object.keys(releases) as [Version, ...Version[]];
+  const zones = [
+    ...new Set(versions.flatMap((version) => releases[version]!.zones)),
+  ].sort() as [string, ...string[]];
+  const membership = timeZoneRegistryMembership(releases);
+  return TenantContextSchema.unwrap().extend({
+    id: DecisionInputBundleIdSchema,
+    schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
+    canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
+    engineVersion: z.string().min(1),
+    primitiveSetVersion: z.string().min(1),
+    domainConfigVersionRef: DomainConfigVersionRefSchema,
+    policyVersionRef: PolicyVersionRefSchema,
+    householdInstructionVersionRefs: z
+      .array(HouseholdInstructionVersionRefSchema)
+      .refine(hasUniqueScopedReferences, {
+        message: "duplicate household instruction version reference",
+      })
+      .overwrite(normalizeScopedReferences)
+      .readonly(),
+    evidenceSnapshotRefs: z
+      .array(EvidenceSnapshotIdRefSchema)
+      .refine(hasUniqueScopedReferences, {
+        message: "duplicate evidence snapshot reference",
+      })
+      .overwrite(normalizeScopedReferences)
+      .readonly(),
+    asOf: TimestampSchema,
+    timeZone: timeZoneNameSchema(
+      zones,
+      `supported releases ${versions.join(", ")}`,
+    ),
+    timeZoneDataVersion: z.enum(versions),
+    bundleHash: HashSchema,
   })
-  .readonly();
+    .superRefine((bundle, ctx) => {
+      const requireSameFirm = (
+        ref: { firmId: string },
+        path: (string | number)[],
+      ) => {
+        if (ref.firmId !== bundle.firmId) {
+          ctx.addIssue({
+            code: "custom",
+            message: "referenced record must belong to the bundle tenant",
+            path,
+          });
+        }
+      };
+      requireSameFirm(bundle.domainConfigVersionRef, [
+        "domainConfigVersionRef",
+        "firmId",
+      ]);
+      requireSameFirm(bundle.policyVersionRef, [
+        "policyVersionRef",
+        "firmId",
+      ]);
+      bundle.householdInstructionVersionRefs.forEach((ref, index) =>
+        requireSameFirm(ref, [
+          "householdInstructionVersionRefs",
+          index,
+          "firmId",
+        ]),
+      );
+      bundle.evidenceSnapshotRefs.forEach((ref, index) =>
+        requireSameFirm(ref, ["evidenceSnapshotRefs", index, "firmId"]),
+      );
+      if (!membership(bundle.timeZoneDataVersion, bundle.timeZone)) {
+        ctx.addIssue({
+          code: "custom",
+          message: formatTimeZoneRefusal(
+            bundle.timeZone,
+            bundle.timeZoneDataVersion,
+          ),
+          path: ["timeZone"],
+        });
+      }
+    })
+    .readonly();
+};
+
+export const DecisionInputBundleSchema =
+  decisionInputBundleSchemaForReleases(SUPPORTED_IANA_TIME_ZONE_RELEASES);
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

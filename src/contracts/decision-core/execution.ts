@@ -26,6 +26,7 @@ import {
   normalizeExecutionPreconditions,
   normalizeScopedReferences,
 } from "./ids";
+import { isPlainRecord } from "./normalization";
 
 /** The externally-executable command: payload behind a blob ref, pinned by hash. */
 export const ExecutionCommandSchema = z.strictObject({
@@ -46,13 +47,15 @@ type NormalizableExecutionPrecondition = {
 
 const normalizeExecutionPrecondition = <T extends NormalizableExecutionPrecondition>(
   precondition: T,
-): T =>
-  ({
+): T => {
+  if (!isPlainRecord(precondition)) return precondition;
+  return {
     ...precondition,
     requiredEvidenceSnapshotRefs: normalizeScopedReferences(
       precondition.requiredEvidenceSnapshotRefs,
     ),
-  }) as T;
+  } as T;
+};
 
 /** A condition proven before the decision that must still hold when the step runs. */
 export const ExecutionPreconditionSchema = z
@@ -109,15 +112,19 @@ type NormalizableExternalAction = {
   readonly preconditions: readonly NormalizableExecutionPrecondition[];
 };
 
-const normalizeExternalAction = <T extends NormalizableExternalAction>(action: T): T =>
-  ({
+const normalizeExternalAction = <T extends NormalizableExternalAction>(
+  action: T,
+): T => {
+  if (!isPlainRecord(action)) return action;
+  return {
     ...action,
     conflictKeys: normalizeCanonicalStrings(action.conflictKeys),
     reservationRefs: normalizeScopedReferences(action.reservationRefs),
     preconditions: normalizeExecutionPreconditions(
       action.preconditions.map(normalizeExecutionPrecondition),
     ),
-  }) as T;
+  } as T;
+};
 
 const requireActionTenant = (
   action: {
@@ -190,6 +197,18 @@ export const ExecutionStepSchema = z
     compensatingAction: CompensatingActionSchema.optional(),
   })
   .superRefine(requireActionTenant)
+  .superRefine((step, ctx) => {
+    if (
+      step.compensatingAction !== undefined &&
+      step.compensatingAction.targetRef.firmId !== step.targetRef.firmId
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "compensating action must belong to the step tenant",
+        path: ["compensatingAction", "targetRef", "firmId"],
+      });
+    }
+  })
   .readonly();
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
@@ -202,17 +221,26 @@ type NormalizableExecutionPlan = {
 
 export const normalizeExecutionPlan = <T extends NormalizableExecutionPlan>(
   plan: T,
-): T =>
-  ({
+): T => {
+  if (!isPlainRecord(plan)) return plan;
+  return {
     ...plan,
-    steps: plan.steps.map((step) => ({
-      ...normalizeExternalAction(step),
-      dependsOn: normalizeCanonicalStrings(step.dependsOn),
-      ...(step.compensatingAction === undefined
-        ? {}
-        : { compensatingAction: normalizeExternalAction(step.compensatingAction) }),
-    })),
-  }) as T;
+    steps: plan.steps.map((step) => {
+      if (!isPlainRecord(step)) return step;
+      return {
+        ...normalizeExternalAction(step),
+        dependsOn: normalizeCanonicalStrings(step.dependsOn),
+        ...(step.compensatingAction === undefined
+          ? {}
+          : {
+              compensatingAction: normalizeExternalAction(
+                step.compensatingAction,
+              ),
+            }),
+      };
+    }),
+  } as T;
+};
 
 /**
  * A non-empty plan with unique identities, resolvable dependency edges, and an

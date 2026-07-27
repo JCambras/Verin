@@ -132,8 +132,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
   structured references carrying `firmId` plus the opaque branded ID. Approval templates are
   tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
   collections reject duplicates and normalize by firm then opaque ID. Ambiguity candidates are a
-  duplicate-free canonical set constrained to one tenant. The tenant-scope fence discovers every
-  direct scoped-reference and composite-reference collection in decision-core and requires an exact
+  duplicate-free canonical set constrained to one tenant. The tenant-scope fence follows schema
+  provenance through aliases, wrappers, and composite schemas to discover every scoped-reference
+  collection in decision-core, and requires an exact
   match with its explicit constraint registry; a newly exported collection fails until its tenant
   rule and companion are registered. Decision-record refinements recursively
   check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
@@ -211,11 +212,11 @@ parse time, not by reviewer discipline. Three constraints meet here:
   explanation structure, then drift whenever either schema grows. Parsing inside a hash builder
   would instead change the accepted runtime object boundary and hide non-plain object refusals.
   Shared pure authorities avoid both defects while preserving explicit versioned projections.
-- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **2800**. The final implementation
-  measures **2726** lines by the line-budget fence's own metric, leaving **74 lines of headroom**.
+- **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3100**. The final implementation
+  measures **3016** lines by the line-budget fence's own metric, leaving **84 lines of headroom**.
   This is the final post-review figure and the only current-state measurement to plan against. The
-  former 2400 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
-  resumes from 2800; later contract-layer prompts
+  former 2800 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
+  resumes from 3100; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
@@ -240,15 +241,15 @@ parse time, not by reviewer discipline. Three constraints meet here:
   flip active with a runnable mechanism; replay gets a versioned canonical serializer and
   non-self-referential hash projections with committed byte-form and digest fixtures.
 - **Sacrificed:** `contracts/` is no longer import-free (Zod, by exception); the contracts ceiling
-  grew 600 → 2800 (a real growth, honestly sized and ratcheted).
+  grew 600 → 3100 (a real growth, honestly sized and ratcheted).
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 2800 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts ceiling 3100 (this ADR is the amendment ADR-0018 requires).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
-  cross-tenant values and the direct scoped-reference collection registry exactly matches the
-  collections discovered from the decision-core schemas.
+  cross-tenant values and the scoped-reference collection registry exactly matches the collections
+  discovered transitively from the decision-core schemas.
 - `charter-map.json` #16 executes `decision-core-external-action-safety`, which rejects incomplete
   compensating actions and idempotency-key aliasing.
 - `v3-invariants.json`: 7, 8, 9 active → `decision-core-illegal-states` fence; ratchet extended

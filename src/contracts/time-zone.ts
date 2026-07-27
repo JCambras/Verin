@@ -89,7 +89,10 @@ export const SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS = Object.freeze(
  * therefore provable, before a second release is ever adopted.
  */
 const TIME_ZONE_VALUE_LIMIT = 80;
-const formatTimeZoneRefusal = (value: unknown, release: string): string => {
+export const formatTimeZoneRefusal = (
+  value: unknown,
+  release: string,
+): string => {
   if (typeof value !== "string") {
     const kind =
       value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
@@ -106,16 +109,25 @@ const formatTimeZoneRefusal = (value: unknown, release: string): string => {
   return `"${bounded}" is not a Zone in ${release}`;
 };
 
+export const timeZoneNameCanonicalizer = (
+  zones: readonly string[],
+): ((value: string) => string) => {
+  const byCaseFoldedName = new Map(
+    zones.map((zone) => [zone.toLowerCase(), zone]),
+  );
+  return (value) => byCaseFoldedName.get(value.toLowerCase()) ?? value;
+};
+
 export const timeZoneNameSchema = (
   zones: readonly string[],
   release: string,
 ) => {
-  const byCaseFoldedName = new Map(zones.map((zone) => [zone.toLowerCase(), zone]));
+  const canonicalize = timeZoneNameCanonicalizer(zones);
   const admitted = new Set(zones);
   return z.preprocess(
     (value) =>
       typeof value === "string"
-        ? (byCaseFoldedName.get(value.toLowerCase()) ?? value)
+        ? canonicalize(value)
         : value,
     z
       .enum([...admitted] as [string, ...string[]], {
@@ -167,6 +179,23 @@ export const timeZoneRegistryMembership = <V extends string>(
 export const isTimeZoneInRecordedRegistry = timeZoneRegistryMembership(
   SUPPORTED_IANA_TIME_ZONE_RELEASES,
 );
+
+const canonicalizeTimeZoneByVersion = new Map(
+  SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS.map((version) => [
+    version,
+    timeZoneNameCanonicalizer(
+      SUPPORTED_IANA_TIME_ZONE_RELEASES[version].zones,
+    ),
+  ]),
+);
+
+export const canonicalizeTimeZoneForRecordedRelease = (
+  dataVersion: string,
+  timeZone: string,
+): string =>
+  canonicalizeTimeZoneByVersion.get(
+    dataVersion as IanaTimeZoneDataVersion,
+  )?.(timeZone) ?? timeZone;
 
 /**
  * Configuration-boundary form: resolves a `Link` alias of THAT SAME release (`UTC`,

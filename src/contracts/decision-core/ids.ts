@@ -227,6 +227,12 @@ export const compareStringOrScopedReferences = (
     : compareScopedReferences(left, right);
 };
 
+export const normalizeStringOrScopedReferences = <
+  T extends string | ScopedReference,
+>(
+  references: readonly T[],
+): T[] => [...references].sort(compareStringOrScopedReferences);
+
 export type ExecutionPreconditionReferenceSet = {
   readonly code: string;
   readonly requiredEvidenceSnapshotRefs: readonly ScopedReference[];

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { Node, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind, type Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
@@ -12,58 +12,125 @@ import {
   AmbiguityRefSchema,
   IntentSchema,
 } from "@contracts/decision-core/trigger";
-import { REPO_ROOT, realProject } from "./_fence-utils";
+import {
+  REPO_ROOT,
+  inMemoryProject,
+  realProject,
+} from "./_fence-utils";
 
 const SCOPED_REFERENCE_COLLECTION_CONSTRAINTS = {
+  "authority.ts:ApprovalStageListSchema": "authority-stage-tenant",
+  "authority.ts:ApprovalStageTemplateListSchema": "authority-stage-tenant",
+  "authority.ts:escalationPath": "authority-stage-tenant",
+  "authority.ts:requirements": "authority-stage-tenant",
+  "decision.ts:ExplanationNodeSchema": "decision-record-recursive",
+  "decision.ts:blockers": "decision-record-recursive",
   "decision.ts:evidenceSnapshotRefs": "decision-record-recursive",
+  "decision.ts:explanationTrace": "decision-record-recursive",
+  "decision.ts:precedenceTrace": "decision-record-recursive",
+  "decision.ts:reevaluateWhen": "decision-record-recursive",
   "decision.ts:sourceRefs": "decision-record-recursive",
   "evidence.ts:evidenceSnapshotRefs": "bundle-enclosing-firm",
   "evidence.ts:householdInstructionVersionRefs": "bundle-enclosing-firm",
+  "execution.ts:preconditions": "action-target-firm",
   "execution.ts:requiredEvidenceSnapshotRefs": "action-target-firm",
   "execution.ts:reservationRefs": "action-target-firm",
+  "execution.ts:steps": "execution-plan-single-tenant",
   "ids.ts:roleRefSet": "single-tenant-role-set",
   "trigger.ts:EvidenceSupplierSetSchema": "evidence-subject-firm",
+  "trigger.ts:ambiguous": "element-tenant-constraint",
   "trigger.ts:candidateRefs": "single-tenant-ambiguity",
+  "trigger.ts:gaps": "element-tenant-constraint",
+  "trigger.ts:resolvingEvidence": "element-tenant-constraint",
 } as const;
 
-const discoveredScopedReferenceCollections = (): string[] => {
-  const project = realProject();
+const unwrapSchemaExpression = (node: Node): Node => {
+  let expression = node;
+  while (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isNonNullExpression(expression) ||
+    Node.isTypeAssertion(expression)
+  ) {
+    expression = expression.getExpression();
+  }
+  return expression;
+};
+
+const schemaContainsScopedReference = (
+  candidate: Node,
+  seen: Set<Node> = new Set(),
+): boolean => {
+  const node = unwrapSchemaExpression(candidate);
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (Node.isCallExpression(node)) {
+    const expression = unwrapSchemaExpression(node.getExpression());
+    if (
+      Node.isIdentifier(expression) &&
+      expression.getText() === "tenantScopedReference"
+    ) {
+      return true;
+    }
+    return (
+      node.getArguments().some((argument) =>
+        schemaContainsScopedReference(argument, seen),
+      ) ||
+      schemaContainsScopedReference(expression, seen)
+    );
+  }
+  if (Node.isIdentifier(node)) {
+    if (node.getText() === "tenantScopedReference") return true;
+    const symbol = node.getSymbol();
+    const resolved =
+      symbol?.isAlias() === true ? symbol.getAliasedSymbol() : symbol;
+    return (
+      resolved?.getDeclarations().some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            schemaContainsScopedReference(initializer, seen)
+          );
+        }
+        if (Node.isFunctionDeclaration(declaration)) {
+          const body = declaration.getBody();
+          return (
+            body !== undefined &&
+            schemaContainsScopedReference(body, seen)
+          );
+        }
+        return false;
+      }) ?? false
+    );
+  }
+  return node.getChildren().some((child) =>
+    schemaContainsScopedReference(child, seen),
+  );
+};
+
+const discoveredScopedReferenceCollections = (project: Project): string[] => {
   const decisionCoreFiles = project
     .getSourceFiles()
     .filter((sourceFile) =>
-      sourceFile.getFilePath().includes("/src/contracts/decision-core/"),
+      sourceFile.getFilePath().includes("/decision-core/"),
     );
-  const ids = decisionCoreFiles.find(
-    (sourceFile) => basename(sourceFile.getFilePath()) === "ids.ts",
-  )!;
-  const scopedSchemas = new Set(
-    ids
-      .getVariableDeclarations()
-      .filter((declaration) =>
-        declaration.getInitializer()?.getText().startsWith(
-          "tenantScopedReference(",
-        ),
-      )
-      .map((declaration) => declaration.getName()),
-  );
-  scopedSchemas.add("VersionedSourceRefSchema");
-  scopedSchemas.add("EvidenceSupplierSchema");
-
   return decisionCoreFiles
     .flatMap((sourceFile) =>
       sourceFile
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .flatMap((call) => {
           const expression = call.getExpression();
-          const argument = call.getArguments()[0];
           if (
             !Node.isPropertyAccessExpression(expression) ||
-            expression.getName() !== "array" ||
-            !Node.isIdentifier(argument) ||
-            !scopedSchemas.has(argument.getText())
+            expression.getName() !== "array"
           ) {
             return [];
           }
+          const elementSchema =
+            call.getArguments()[0] ?? expression.getExpression();
+          if (!schemaContainsScopedReference(elementSchema)) return [];
           const property = call.getFirstAncestorByKind(
             SyntaxKind.PropertyAssignment,
           );
@@ -156,11 +223,38 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
 
 describe("decision-core tenant-scope fence", () => {
   it("keeps the scoped-reference collection registry exhaustive", () => {
-    const discovered = discoveredScopedReferenceCollections();
+    const discovered = discoveredScopedReferenceCollections(realProject());
     expect(discovered).toContain("trigger.ts:candidateRefs");
     expect(discovered).toEqual(
       Object.keys(SCOPED_REFERENCE_COLLECTION_CONSTRAINTS).sort(),
     );
+  });
+
+  it.each([
+    [
+      "alias",
+      "const scoped = tenantScopedReference;\nconst Alias = scoped(z.string());\nexport const AddedSchema = z.array(Alias);",
+    ],
+    [
+      "wrapper",
+      "export const AddedSchema = RefSchema.readonly().array();",
+    ],
+    [
+      "composite",
+      "const Composite = z.strictObject({ ref: RefSchema });\nexport const AddedSchema = z.array(Composite);",
+    ],
+  ])("discovers a scoped-reference collection through a %s", (_name, addition) => {
+    const project = inMemoryProject({
+      "src/contracts/decision-core/probe.ts": [
+        `import { z } from "zod";`,
+        "const tenantScopedReference = (schema: unknown) => schema;",
+        "const RefSchema = tenantScopedReference(z.string());",
+        addition,
+      ].join("\n"),
+    });
+    expect(discoveredScopedReferenceCollections(project)).toEqual([
+      "probe.ts:AddedSchema",
+    ]);
   });
 
   it("enforces: ambiguity candidates are duplicate-free and belong to one tenant", () => {

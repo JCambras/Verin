@@ -40,10 +40,21 @@ import {
   normalizeScopedReferences,
   normalizeVersionedScopedReferences,
 } from "./ids";
-import { AnyActorRefSchema, TenantContextSchema } from "./actor";
-import { ResolvableBlockerSchema } from "./trigger";
-import { AuthorityRequirementSchema } from "./authority";
+import {
+  AnyActorRefSchema,
+  TenantContextSchema,
+  normalizeActorRef,
+} from "./actor";
+import {
+  ResolvableBlockerSchema,
+  normalizeResolvableBlocker,
+} from "./trigger";
+import {
+  AuthorityRequirementSchema,
+  normalizeAuthorityRequirement,
+} from "./authority";
 import { ExecutionPlanSchema, normalizeExecutionPlan } from "./execution";
+import { isPlainRecord } from "./normalization";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
 export const VersionedSourceRefSchema = z
@@ -94,6 +105,7 @@ const normalizeExplanationNode = <T extends NormalizableExplanationNode>(
   node: T,
   ancestors: Set<object> = new Set(),
 ): T => {
+  if (!isPlainRecord(node)) return node;
   if (ancestors.has(node)) return node;
   ancestors.add(node);
   try {
@@ -147,30 +159,57 @@ type ExplanationTenantReferences = {
 };
 
 type NormalizableDecisionRecord = {
+  readonly createdBy: Parameters<typeof normalizeActorRef>[0];
   readonly explanationTrace: readonly unknown[];
   readonly result: {
     readonly kind: string;
+    readonly authority?: Parameters<typeof normalizeAuthorityRequirement>[0];
     readonly executionPlan?: Parameters<typeof normalizeExecutionPlan>[0];
+    readonly blockers?: readonly Parameters<
+      typeof normalizeResolvableBlocker
+    >[0][];
   };
+};
+
+const normalizeDecisionResult = <
+  T extends NormalizableDecisionRecord["result"],
+>(
+  result: T,
+): T => {
+  if (!isPlainRecord(result)) return result;
+  if (
+    result.kind === "proceed" &&
+    result.authority !== undefined &&
+    result.executionPlan !== undefined
+  ) {
+    return {
+      ...result,
+      authority: normalizeAuthorityRequirement(result.authority),
+      executionPlan: normalizeExecutionPlan(result.executionPlan),
+    } as T;
+  }
+  if (result.kind === "blocked" && result.blockers !== undefined) {
+    return {
+      ...result,
+      blockers: result.blockers.map(normalizeResolvableBlocker),
+    } as T;
+  }
+  return result;
 };
 
 export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
   record: T,
-): T =>
-  ({
+): T => {
+  if (!isPlainRecord(record)) return record;
+  return {
     ...record,
+    createdBy: normalizeActorRef(record.createdBy),
     explanationTrace: record.explanationTrace.map((node) =>
       normalizeExplanationNode(node as NormalizableExplanationNode),
     ),
-    result:
-      record.result.kind === "proceed" &&
-      record.result.executionPlan !== undefined
-        ? {
-            ...record.result,
-            executionPlan: normalizeExecutionPlan(record.result.executionPlan),
-          }
-        : record.result,
-  }) as T;
+    result: normalizeDecisionResult(record.result),
+  } as T;
+};
 
 /** JSON-scalar parameter values (canonically serializable; never objects-in-disguise). */
 export const ScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);

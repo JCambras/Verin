@@ -9,7 +9,13 @@
  * rather than merely unread.
  */
 import { z } from "zod";
-import { ActorIdSchema, FirmIdSchema, RoleRefSetSchema } from "./ids";
+import {
+  ActorIdSchema,
+  FirmIdSchema,
+  RoleRefSetSchema,
+  normalizeScopedReferences,
+} from "./ids";
+import { isPlainRecord } from "./normalization";
 
 type DeepReadonly<T> = T extends readonly (infer U)[]
   ? readonly DeepReadonly<U>[]
@@ -57,6 +63,24 @@ export type SystemActorRef = z.infer<typeof SystemActorRefSchema>;
  */
 export const AnyActorRefSchema = z.union([ActorRefSchema, SystemActorRefSchema]).readonly();
 export type AnyActorRef = z.infer<typeof AnyActorRefSchema>;
+
+type NormalizableActorRef = {
+  readonly firmId?: string;
+  readonly roleIds?: readonly {
+    readonly firmId: string;
+    readonly id: string;
+  }[];
+};
+
+export const normalizeActorRef = <T extends NormalizableActorRef>(
+  actor: T,
+): T => {
+  if (!isPlainRecord(actor) || actor.roleIds === undefined) return actor;
+  return {
+    ...actor,
+    roleIds: normalizeScopedReferences(actor.roleIds),
+  } as T;
+};
 
 /**
  * NORMATIVE (v3 §5): a Tokenized value is constructible ONLY through the scrubbing

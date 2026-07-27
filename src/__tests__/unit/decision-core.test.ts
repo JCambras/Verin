@@ -20,6 +20,7 @@ import {
 import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
+  decisionInputBundleSchemaForReleases,
   type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, DecisionResultSchema, RevaluationConditionSchema } from "@contracts/decision-core/decision";
@@ -293,6 +294,34 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(membership(older, "America/Toronto")).toBe(true);
     expect(membership(newer, "America/Toronto")).toBe(true);
     expect(membership("iana-tzdb/never-shipped", "America/Toronto")).toBe(false);
+    const constructedSchema = decisionInputBundleSchemaForReleases({
+      [older]: {
+        zones: ["America/Nipigon", "America/Toronto"],
+      },
+      [newer]: {
+        zones: ["America/Toronto"],
+      },
+    });
+    expect(
+      constructedSchema.safeParse({
+        ...validBundle,
+        timeZone: "America/Nipigon",
+        timeZoneDataVersion: older,
+      }).success,
+    ).toBe(true);
+    const wrongRelease = constructedSchema.safeParse({
+      ...validBundle,
+      timeZone: "America/Nipigon",
+      timeZoneDataVersion: newer,
+    });
+    expect(wrongRelease.success).toBe(false);
+    if (!wrongRelease.success) {
+      const issue = wrongRelease.error.issues.find(
+        (candidate) => candidate.path[0] === "timeZone",
+      );
+      expect(issue?.message).toContain(newer);
+      expect(issue?.message).not.toContain(older);
+    }
 
     // The boundary consumes exactly that selection over the SHIPPED map - not a
     // free-standing enum that closes over whichever release ships today.
@@ -835,6 +864,46 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     expect(hashPreimage(bundleHashPreimage(bundle))).toBe(bundle.bundleHash);
   });
 
+  it.each(["explanation", "execution"] as const)(
+    "preserves nested %s class instances for canonical refusal",
+    (location) => {
+      const parsed = structuredClone(
+        DecisionRecordSchema.parse(
+          JSON.parse(readFixture("decision-record-proceed")),
+        ),
+      );
+      if (parsed.result.kind !== "proceed") throw new Error("fixture must proceed");
+      const record = parsed as unknown as {
+        explanationTrace: unknown[];
+        result: {
+          executionPlan: { steps: unknown[] };
+        };
+      };
+      if (location === "explanation") {
+        class ExplanationValue {}
+        record.explanationTrace[0] = Object.assign(
+          new ExplanationValue(),
+          record.explanationTrace[0],
+        );
+      } else {
+        class ExecutionValue {}
+        record.result.executionPlan.steps[0] = Object.assign(
+          new ExecutionValue(),
+          record.result.executionPlan.steps[0],
+        );
+      }
+      const refusal = canonicalJson(
+        decisionHashPreimage(
+          parsed as Parameters<typeof decisionHashPreimage>[0],
+        ),
+      );
+      expect(refusal.ok).toBe(false);
+      if (!refusal.ok) {
+        expect(refusal.error.message).toContain("only plain objects");
+      }
+    },
+  );
+
   it("names a cycle precisely instead of relying on the stack running out", () => {
     // Detection must not depend on RangeError: whether unbounded recursion is even
     // caught is a host stack-depth accident, and the refusal it produces cannot say
@@ -1067,6 +1136,154 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     "normalizes hash-bound collection %s defensively",
     assertHashBoundCollectionNormalization,
   );
+
+  it.each([
+    "actorRoleIds",
+    "specialistRoleIds",
+    "approvalStages",
+    "eligibleRoleIds",
+    "escalationRoleIds",
+  ] as const)(
+    "normalizes decision collection %s defensively",
+    (collection) => {
+      const makeRecord = (reverse: boolean) => {
+        const parsed = structuredClone(
+          DecisionRecordSchema.parse(
+            JSON.parse(readFixture("decision-record-proceed")),
+          ),
+        );
+        if (parsed.result.kind !== "proceed") {
+          throw new Error("fixture must proceed");
+        }
+        type MutableRole = { firmId: string; id: string };
+        type MutableStage = {
+          stageId: string;
+          order: number;
+          requirements: Array<{ eligibleRoleIds: MutableRole[] }>;
+          escalationPath: Array<{ roleIds: MutableRole[] }>;
+        };
+        const record = parsed as unknown as {
+          createdBy: {
+            firmId: string;
+            actorId: string;
+            roleIds: MutableRole[];
+          };
+          result: {
+            authority: {
+              mode: string;
+              stages: MutableStage[];
+            };
+          };
+        };
+        if (record.result.authority.mode === "automatic") {
+          throw new Error("fixture authority must have stages");
+        }
+        const authority = {
+          mode: "specialist_review" as const,
+          specialistRoleIds: [role("specialist-a"), role("specialist-b")],
+          stages: [
+            structuredClone(record.result.authority.stages[0]!),
+          ],
+        };
+        const stage = authority.stages[0]!;
+        stage.requirements[0]!.eligibleRoleIds = [
+          role("eligible-a"),
+          role("eligible-b"),
+        ];
+        stage.escalationPath[0]!.roleIds = [
+          role("escalation-a"),
+          role("escalation-b"),
+        ];
+        authority.stages.push({
+          ...structuredClone(stage),
+          stageId: "second-stage",
+          order: stage.order + 1,
+        });
+        record.createdBy = {
+          firmId: "firm-a",
+          actorId: "actor:u:hash",
+          roleIds: [role("actor-a"), role("actor-b")],
+        };
+        record.result.authority = authority;
+        if (reverse) {
+          switch (collection) {
+            case "actorRoleIds":
+              record.createdBy.roleIds.reverse();
+              break;
+            case "specialistRoleIds":
+              authority.specialistRoleIds.reverse();
+              break;
+            case "approvalStages":
+              authority.stages.reverse();
+              break;
+            case "eligibleRoleIds":
+              stage.requirements[0]!.eligibleRoleIds.reverse();
+              break;
+            case "escalationRoleIds":
+              stage.escalationPath[0]!.roleIds.reverse();
+              break;
+          }
+        }
+        return parsed as Parameters<typeof decisionHashPreimage>[0];
+      };
+      expect(
+        unwrap(canonicalJson(decisionHashPreimage(makeRecord(true)))),
+      ).toBe(
+        unwrap(canonicalJson(decisionHashPreimage(makeRecord(false)))),
+      );
+    },
+  );
+
+  it("normalizes blocked evidence suppliers defensively", () => {
+    const makeRecord = (reverse: boolean) => {
+      const parsed = structuredClone(
+        DecisionRecordSchema.parse(
+          JSON.parse(readFixture("decision-record-blocked")),
+        ),
+      );
+      if (parsed.result.kind !== "blocked") {
+        throw new Error("fixture must be blocked");
+      }
+      const record = parsed as unknown as {
+        result: {
+          blockers: Array<{
+            resolvingEvidence: Array<{
+              suppliableBy: Array<
+                "external" | { firmId: string; id: string }
+              >;
+            }>;
+          }>;
+        };
+      };
+      const suppliers = [
+        "external" as const,
+        role("operations-a", "firm-b"),
+        role("operations-b", "firm-b"),
+      ];
+      record.result.blockers[0]!.resolvingEvidence[0]!.suppliableBy =
+        reverse ? suppliers.reverse() : suppliers;
+      return parsed as Parameters<typeof decisionHashPreimage>[0];
+    };
+    expect(
+      unwrap(canonicalJson(decisionHashPreimage(makeRecord(true)))),
+    ).toBe(
+      unwrap(canonicalJson(decisionHashPreimage(makeRecord(false)))),
+    );
+  });
+
+  it("normalizes bundle time-zone casing defensively", () => {
+    const bundle = DecisionInputBundleSchema.parse(
+      JSON.parse(readFixture("decision-input-bundle")),
+    );
+    expect(
+      unwrap(canonicalJson(bundleHashPreimage({
+        ...bundle,
+        timeZone: "america/new_york",
+      } as typeof bundle))),
+    ).toBe(
+      unwrap(canonicalJson(bundleHashPreimage(bundle))),
+    );
+  });
 
   it("orders the hash preimage by THE canonical comparator, not by id alone", () => {
     // The preimage and the parsed record must sort identically. Today the bundle's
