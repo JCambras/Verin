@@ -13,6 +13,22 @@ export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
 export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.7.0";
+/**
+ * SHA-256 over each projection's emitted JSON Schema, so optional nested growth
+ * cannot slip into a preimage without a version bump.
+ *
+ * MAINTENANCE: the digest is taken over Zod's JSON Schema EMITTER output, which is a
+ * representation detail, not a property of these contracts. A Zod upgrade that only
+ * changes how an unchanged schema is emitted ($defs naming, `additionalProperties`,
+ * `required` ordering) legitimately RE-PINS these two digests - WITHOUT a preimage
+ * version bump and WITHOUT regenerating any recorded bundleHash/decisionHash, which
+ * are hashes of canonical payload bytes and are untouched by an emitter change. The
+ * re-pin is allowed only after evidence that the schemas' own semantics AND the
+ * canonical projection bytes are unchanged (the fixture digest tests below must pass
+ * unmodified). Anything else is a real projection change: bump the version and carry
+ * a migration story. The fingerprint stays blocking precisely so a dependency bump
+ * cannot alter the contract silently.
+ */
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
   Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
 > = {

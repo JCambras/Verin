@@ -1330,3 +1330,48 @@ AssertionError: expected 'value is not canonically serializable' to contain 'cir
 **Revert:** restored the shared comparator, the refined union arms, and the ancestor set; all suites pass.
 
 **Date:** 2026-07-27 (review corrections F55-F57, D-051).
+
+### PF-027 extension · the recorded registry SELECTS the registry, and the version type holds
+**Invariant (charter #1/#4; ADR-0029, D-052):** a bundle's `timeZone` is validated against the registry
+its own `timeZoneDataVersion` names; `timeZoneDataVersion` is the map's key union, never `string`.
+
+The prior companion could only assert that the shipped map's keys were its keys - with one registry,
+"the recorded version selects the registry" and "there is one registry" are the same statement. It was
+replaced by a probe over a CONSTRUCTED two-registry map. Making the selection version-blind (union
+membership) failed:
+```
+× selects the registry a bundle RECORDS, proven on a constructed multi-registry map
+AssertionError: expected true to be false // Object.is equality
+```
+The bundle-boundary half is unreachable today by construction (one registry ⇒ the union IS that
+registry), so its emptiness is asserted rather than left implied. To prove that arm is not hollow, a
+synthetic second registry was ADOPTED (adding `America/Nipigon`) - which is the map's documented growth
+path - and the bundle's registry check removed. The same test failed on the now-live arm, then passed
+again with the check restored. The version type is a COMPILE-TIME fence: reverting the key-union cast to
+`[string, ...string[]]` makes the suppression an unused directive, so `pnpm typecheck` fails rather than
+a runtime assertion passing vacuously:
+```
+src/__tests__/unit/decision-core.test.ts(346,5): error TS2578: Unused '@ts-expect-error' directive.
+```
+**Revert:** restored the union registry, the bundle check, and the key-union cast; typecheck and the full
+suite pass (445 tests).
+
+**Date:** 2026-07-27 (review corrections F58-F59, D-052).
+
+### PF-027 extension · one tenant edge per execution step, checked once
+**Invariant (charter #1/#4; ADR-0029, D-052):** a decision's execution plan belongs to the decision's
+tenant - enforced by ONE record-level edge per step, not by re-walking references `execution.ts` has
+already bound.
+
+Collapsing the traversal must not weaken the fence, so the case only the record can see was added first:
+an execution plan that is INTERNALLY coherent in `firm-b` inside a `firm-a` decision, which satisfies
+every action and plan refinement. Removing the retained step-target check failed:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+AssertionError: expected true to be false // Object.is equality
+```
+Every pre-existing cross-tenant case (payload, reservation, precondition evidence, verification rule,
+compensation target) still fails - one layer down, where the rule is stated once.
+**Revert:** restored the check; the tenant-scope, external-action, and illegal-state fences pass.
+
+**Date:** 2026-07-27 (review correction F60, D-052).

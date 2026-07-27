@@ -38,7 +38,7 @@ import {
 import { AnyActorRefSchema, TenantContextSchema } from "./actor";
 import { ResolvableBlockerSchema } from "./trigger";
 import { AuthorityRequirementSchema } from "./authority";
-import { ExecutionPlanSchema, type RetrySafeExternalAction } from "./execution";
+import { ExecutionPlanSchema } from "./execution";
 
 /** A versioned governing source: the precedence and explanation planes cite these. */
 export const VersionedSourceRefSchema = z
@@ -262,29 +262,6 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
         requireExplanation(child, [...path, "childNodes", index]),
       );
     };
-    const requireExternalAction = (
-      action: RetrySafeExternalAction,
-      path: (string | number)[],
-    ) => {
-      requireSameFirm(action.targetRef, [...path, "targetRef", "firmId"]);
-      requireSameFirm(action.command.payloadRef, [...path, "command", "payloadRef", "firmId"]);
-      action.reservationRefs.forEach((ref, index) =>
-        requireSameFirm(ref, [...path, "reservationRefs", index, "firmId"]),
-      );
-      action.preconditions.forEach((precondition, preconditionIndex) =>
-        precondition.requiredEvidenceSnapshotRefs.forEach((ref, refIndex) =>
-          requireSameFirm(ref, [
-            ...path,
-            "preconditions",
-            preconditionIndex,
-            "requiredEvidenceSnapshotRefs",
-            refIndex,
-            "firmId",
-          ]),
-        ),
-      );
-      requireSameFirm(action.verificationRuleRef, [...path, "verificationRuleRef", "firmId"]);
-    };
     record.precedenceTrace.forEach((step, index) => {
       requireSource(step.left, ["precedenceTrace", index, "left"]);
       requireSource(step.right, ["precedenceTrace", index, "right"]);
@@ -334,13 +311,20 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
           }
         });
       }
-      record.result.executionPlan.steps.forEach((step, stepIndex) => {
-        const stepPath = ["result", "executionPlan", "steps", stepIndex] as const;
-        requireExternalAction(step, [...stepPath]);
-        if (step.compensatingAction) {
-          requireExternalAction(step.compensatingAction, [...stepPath, "compensatingAction"]);
-        }
-      });
+      // execution.ts already binds every reference inside an action to that action's
+      // own targetRef, and every step's and compensation's targetRef to steps[0]'s -
+      // so ONE step-target edge per step carries the whole plan into this tenant.
+      // Re-walking those references here would be a second copy to keep in sync.
+      record.result.executionPlan.steps.forEach((step, stepIndex) =>
+        requireSameFirm(step.targetRef, [
+          "result",
+          "executionPlan",
+          "steps",
+          stepIndex,
+          "targetRef",
+          "firmId",
+        ]),
+      );
     }
     if (record.derivedFromDecisionRef) {
       requireSameFirm(record.derivedFromDecisionRef, ["derivedFromDecisionRef", "firmId"]);

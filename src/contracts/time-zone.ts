@@ -24,15 +24,41 @@ export const CANONICAL_IANA_TIME_ZONE_LINKS: Readonly<Record<string, string>> =
  * version it records. Entries are ADDITIVE and never removed: a bundle stamped with
  * an older release must stay parseable against the registry it was evaluated with.
  */
-export const SUPPORTED_IANA_TIME_ZONE_REGISTRIES: Readonly<Record<string, readonly string[]>> =
-  Object.freeze({ [IANA_TIME_ZONE_DATA_VERSION]: CANONICAL_IANA_TIME_ZONES });
+export const SUPPORTED_IANA_TIME_ZONE_REGISTRIES = Object.freeze({
+  [IANA_TIME_ZONE_DATA_VERSION]: CANONICAL_IANA_TIME_ZONES,
+});
+
+/** The map's key union - a replay-metadata version is never a bare `string`. */
+export type IanaTimeZoneDataVersion = keyof typeof SUPPORTED_IANA_TIME_ZONE_REGISTRIES;
 
 export const SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS = Object.freeze(
-  Object.keys(SUPPORTED_IANA_TIME_ZONE_REGISTRIES) as [string, ...string[]],
+  Object.keys(SUPPORTED_IANA_TIME_ZONE_REGISTRIES) as [
+    IanaTimeZoneDataVersion,
+    ...IanaTimeZoneDataVersion[],
+  ],
+);
+
+/**
+ * The union of every SUPPORTED registry's `Zone` names. A standalone `TimeZone`
+ * spans releases on purpose: tzdb routinely reclassifies a Zone as a Link
+ * (America/Nipigon, America/Godthab, Europe/Uzhgorod), and a bundle recorded under
+ * the older release still names it - closing this enum over only the newest
+ * registry would make that bundle unparseable and unverifiable. WHICH registry a
+ * given bundle is held to is decided by the version the bundle itself records
+ * (isTimeZoneInRecordedRegistry, consumed by DecisionInputBundleSchema).
+ */
+const SUPPORTED_IANA_TIME_ZONE_NAMES = Object.freeze(
+  [
+    ...new Set(
+      SUPPORTED_IANA_TIME_ZONE_DATA_VERSIONS.flatMap((version) => [
+        ...SUPPORTED_IANA_TIME_ZONE_REGISTRIES[version],
+      ]),
+    ),
+  ].sort() as [string, ...string[]],
 );
 
 const timeZoneByCaseFoldedName = new Map<string, string>(
-  CANONICAL_IANA_TIME_ZONES.map((timeZone) => [timeZone.toLowerCase(), timeZone]),
+  SUPPORTED_IANA_TIME_ZONE_NAMES.map((timeZone) => [timeZone.toLowerCase(), timeZone]),
 );
 
 const zoneByCaseFoldedLinkName = new Map<string, string>(
@@ -44,9 +70,27 @@ export const TimeZoneSchema = z.preprocess(
     typeof value === "string"
       ? (timeZoneByCaseFoldedName.get(value.toLowerCase()) ?? value)
       : value,
-  z.enum(CANONICAL_IANA_TIME_ZONES).brand<"TimeZone">(),
+  z.enum(SUPPORTED_IANA_TIME_ZONE_NAMES).brand<"TimeZone">(),
 );
 export type TimeZone = z.infer<typeof TimeZoneSchema>;
+
+/**
+ * Membership in the registry a record RECORDS - not in whichever release happens to
+ * ship today. Built as a factory over the registry map so the multi-registry case is
+ * constructible, and therefore provable, before a second release is ever adopted.
+ */
+export const timeZoneRegistryMembership = <V extends string>(
+  registries: Readonly<Record<V, readonly string[]>>,
+): ((dataVersion: string, timeZone: string) => boolean) => {
+  const namesByVersion = new Map<string, ReadonlySet<string>>(
+    (Object.keys(registries) as V[]).map((version) => [version, new Set(registries[version])]),
+  );
+  return (dataVersion, timeZone) => namesByVersion.get(dataVersion)?.has(timeZone) ?? false;
+};
+
+export const isTimeZoneInRecordedRegistry = timeZoneRegistryMembership(
+  SUPPORTED_IANA_TIME_ZONE_REGISTRIES,
+);
 
 /**
  * Configuration-boundary form: resolves a pinned `Link` alias (`UTC`, `US/Eastern`,
