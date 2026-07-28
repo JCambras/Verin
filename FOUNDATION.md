@@ -55,8 +55,8 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Four Playwright spec files** covering smoke, happy walkthrough, failure/access-control, and console
-  CRUD plus axe, green on a non-UTC clock.
+- **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey)
+  plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
 **Governance:** 32 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
