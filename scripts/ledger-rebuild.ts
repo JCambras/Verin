@@ -2,50 +2,105 @@
  * Decision-projection repair (ADR-0033). Derived decision state is a cache of facts
  * the immutable ledger already states, so the repair for corrupted derived state is a
  * replay, never an edit. This is the operator surface for that: it discards derived
- * rows and folds every stored event again, in sequence order, per tenant.
+ * rows and folds every stored event again, in sequence order, for ONE named tenant.
  *
  * A replay that rebuilt nothing FAILS (charter #4): an empty result means the script
  * was pointed at the wrong store, not that the store is healthy.
  */
-import { createDb } from "../src/infrastructure/store/db";
+import { createDb, type SqlDb } from "../src/infrastructure/store/db";
+import { isAppError } from "../src/contracts/errors";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
-import { verifyDecisionLedger } from "../src/infrastructure/ledger/ledger-verification";
+import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
+import {
+  countDecisionProjections,
+  listDecisionProjections,
+} from "../src/infrastructure/ledger/ledger-projection-store";
+import {
+  LEDGER_REBUILD_USAGE,
+  REBUILD_PLAN_SAMPLE,
+  parseRebuildArgs,
+  rebuildPlanLines,
+} from "./ledger-rebuild.lib";
 
-async function main(): Promise<void> {
-  const db = await createDb();
-  const orgs = await db.query<{ id: string }>("SELECT id FROM orgs ORDER BY id");
-  let decisions = 0;
-  let broken = 0;
-  for (const { id } of orgs.rows) {
-    // Replaying a chain that does not verify would launder a corrupted source into
-    // derived state, so integrity is checked BEFORE the fold, not after.
-    const verdict = await verifyDecisionLedger(db, id);
-    if (!verdict.ok) {
-      broken += 1;
-      process.stderr.write(
-        `ledger-rebuild: org ${id} SKIPPED - ledger does not verify (${verdict.levels.at(-1)?.reason ?? "unknown"})\n`,
-      );
-      continue;
-    }
-    const rebuilt = await rebuildDecisionProjections(db, id);
-    decisions += rebuilt.length;
-    process.stdout.write(
-      `org ${id}: replayed ${verdict.entriesChecked} entries into ${rebuilt.length} decision projection(s)\n`,
+function fail(message: string): never {
+  process.stderr.write(`ledger-rebuild: ${message}\n`);
+  process.exit(1);
+}
+
+async function printPlan(db: SqlDb, tenant: string): Promise<number> {
+  // Replaying a chain that does not verify would launder a corrupted source into
+  // derived state, so integrity is checked BEFORE the plan is printed or applied.
+  // The preview runs the SAME chain-plus-replay-source check the apply path runs, so
+  // a plan can never promise a replay that would then fail halfway.
+  const integrity = await verifyDecisionLedgerIntegrity(db, tenant);
+  const verdict = integrity.ledger;
+  if (!integrity.ok) {
+    await db.close();
+    fail(
+      `org ${tenant} ledger does not verify (${verdict.levels.find((level) => !level.ok)?.reason ?? integrity.replaySourceReason ?? "unknown"}) - refusing to replay`,
     );
   }
+  if (verdict.entriesChecked === 0) {
+    await db.close();
+    fail(
+      `org ${tenant} has 0 decision-ledger entries - replaying nothing is vacuous (did db:seed run against this store?)`,
+    );
+  }
+  const sample = await listDecisionProjections(db, tenant, REBUILD_PLAN_SAMPLE);
+  const lines = rebuildPlanLines({
+    tenant,
+    entries: verdict.entriesChecked,
+    derived: await countDecisionProjections(db, tenant),
+    sample: sample.map((item) => ({
+      decisionId: item.projection.decisionId,
+      lastSequence: item.projection.lastSequence,
+    })),
+  });
+  process.stdout.write(`${lines.join("\n")}\n`);
+  return verdict.entriesChecked;
+}
+
+async function main(): Promise<void> {
+  const options = parseRebuildArgs(process.argv.slice(2));
+  if (typeof options === "string") {
+    process.stderr.write(`ledger-rebuild: ${options}\n${LEDGER_REBUILD_USAGE}\n`);
+    process.exit(1);
+  }
+  const db = await createDb();
+  const known = await db.query<{ id: string }>(
+    "SELECT id FROM orgs WHERE id = $1",
+    [options.tenant],
+  );
+  if (known.rows.length !== 1) {
+    await db.close();
+    fail(`org ${options.tenant} does not exist in this store`);
+  }
+  const entries = await printPlan(db, options.tenant);
+  if (!options.apply) {
+    await db.close();
+    process.stdout.write(
+      "PREVIEW - nothing was changed. Re-run with --apply to replay this tenant.\n",
+    );
+    return;
+  }
+  const rebuilt = await rebuildDecisionProjections(db, options.tenant);
   await db.close();
-  if (broken > 0) {
-    process.stderr.write(`ledger-rebuild: ${broken} org ledger(s) failed verification and were not replayed\n`);
-    process.exit(1);
+  if (rebuilt.length === 0) {
+    fail(
+      `org ${options.tenant}: 0 decision projections rebuilt from ${entries} entries - a replay that rebuilt nothing is vacuous`,
+    );
   }
-  if (decisions === 0) {
-    process.stderr.write("ledger-rebuild: 0 decision projections rebuilt - a replay that rebuilt nothing is vacuous (did db:seed run against this store?)\n");
-    process.exit(1);
-  }
-  process.stdout.write(`ledger-rebuild: ${decisions} decision projection(s) rebuilt across ${orgs.rows.length} org(s)\n`);
+  process.stdout.write(
+    `ledger-rebuild: org ${options.tenant} replayed ${entries} entries into ${rebuilt.length} decision projection(s)\n`,
+  );
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`ledger-rebuild error: ${e instanceof Error ? e.message : String(e)}\n`);
+  // A typed AppError is a plain object, so the usual Error narrowing would print
+  // "[object Object]" and hide exactly the reason the operator needs.
+  const reason = isAppError(e)
+    ? `${e.code}: ${e.message}`
+    : e instanceof Error ? e.message : String(e);
+  process.stderr.write(`ledger-rebuild error: ${reason}\n`);
   process.exit(1);
 });

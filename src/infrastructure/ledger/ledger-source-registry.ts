@@ -54,22 +54,42 @@ function currentCodec<T>(
   };
 }
 
-const CURRENT_ENCODING = key(
+/**
+ * Recorded-encoding registries, keyed by EXPLICIT version literals rather than by
+ * the current-version constants. Writes pick the newest encoding; a stored row is
+ * always read back through the encoding it recorded, so bumping
+ * `DECISION_CORE_SCHEMA_VERSION` adds a key here instead of orphaning bytes that
+ * the immutable source tables can never be rewritten to match.
+ */
+const REGISTERED_SOURCE_ENCODINGS = ["1.7.0|1.0.0"] as const;
+
+const REGISTRIES = {
+  evidence: new Map<string, ReplaySourceCodec<EvidenceSnapshotRef>>([
+    ["1.7.0|1.0.0", currentCodec(EvidenceSnapshotRefSchema)],
+  ]),
+  bundle: new Map<string, ReplaySourceCodec<DecisionInputBundle>>([
+    ["1.7.0|1.0.0", currentCodec(DecisionInputBundleSchema)],
+  ]),
+  decision: new Map<string, ReplaySourceCodec<DecisionRecord>>([
+    ["1.7.0|1.0.0", currentCodec(DecisionRecordSchema)],
+  ]),
+};
+
+/**
+ * The encoding writes currently emit. It MUST stay registered above; the
+ * ledger-schema-registry fence fails the build when it is not.
+ */
+export const CURRENT_SOURCE_ENCODING = key(
   DECISION_CORE_SCHEMA_VERSION,
   CANONICAL_SERIALIZER_VERSION,
 );
 
-const REGISTRIES = {
-  evidence: new Map<string, ReplaySourceCodec<EvidenceSnapshotRef>>([
-    [CURRENT_ENCODING, currentCodec(EvidenceSnapshotRefSchema)],
-  ]),
-  bundle: new Map<string, ReplaySourceCodec<DecisionInputBundle>>([
-    [CURRENT_ENCODING, currentCodec(DecisionInputBundleSchema)],
-  ]),
-  decision: new Map<string, ReplaySourceCodec<DecisionRecord>>([
-    [CURRENT_ENCODING, currentCodec(DecisionRecordSchema)],
-  ]),
-};
+export function registeredSourceEncodings(
+  kind: keyof ReplaySourceTypes,
+): readonly string[] {
+  return REGISTERED_SOURCE_ENCODINGS.filter((encoding) =>
+    REGISTRIES[kind].has(encoding));
+}
 
 export function parseRecordedReplaySource<
   K extends keyof ReplaySourceTypes,

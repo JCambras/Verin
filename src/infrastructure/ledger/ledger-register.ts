@@ -6,6 +6,7 @@ import {
   type DerivedProvenance,
 } from "@contracts/provenance";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
 import {
   foldDecisionProjection,
   type DecisionProjection,
@@ -51,12 +52,6 @@ function parseEvent(row: DecisionLedgerRow): LedgerEntry {
   return parsed.event;
 }
 
-function eventDecisionId(event: LedgerEntry): string | undefined {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return undefined;
-}
-
 async function replayRegisterWindow(
   tx: SqlTx,
   rows: readonly DecisionLedgerRow[],
@@ -100,7 +95,7 @@ async function replayRegisterWindow(
         verifiedEvidence,
       );
     }
-    const id = eventDecisionId(event);
+    const id = promotedDecisionId(event);
     if (!id) continue;
     const current = decisions.get(id);
     const projection = foldDecisionProjection({

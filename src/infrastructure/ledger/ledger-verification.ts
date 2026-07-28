@@ -4,8 +4,14 @@
  * promoted columns, and L4 checks the independently maintained anchor.
  */
 import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
-import { appError } from "@contracts/errors";
+import { appError, isAppError } from "@contracts/errors";
 import { type LedgerEntry } from "@contracts/decision-core/ledger";
+import {
+  promotedDecisionId,
+  promotedEvidenceSnapshotId,
+  promotedReservationCreationId,
+  promotedTriggeringEntryId,
+} from "@contracts/decision-core/ledger-references";
 import {
   canonicalJson,
   type JsonValue,
@@ -151,34 +157,6 @@ function level(
   };
 }
 
-function promotedDecisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
-}
-
-function promotedEvidenceId(event: LedgerEntry): string | null {
-  if (event.type === "EvidenceSnapshotRecorded") {
-    return event.evidenceSnapshotRef.id;
-  }
-  if (event.type === "StatusObserved") {
-    return event.evidenceSnapshotRef?.id ?? null;
-  }
-  return null;
-}
-
-function promotedTriggeringEntryId(event: LedgerEntry): string | null {
-  return event.type === "ExceptionDecisionRequested"
-    ? event.triggeringEntryRef.id
-    : null;
-}
-
-function promotedReservationCreationId(event: LedgerEntry): string | null {
-  return event.type === "ReservationReleased"
-    ? event.reservationCreationRef.id
-    : null;
-}
-
 function verifyL2(
   rows: readonly DecisionLedgerRow[],
 ): { verdict: LedgerVerificationLevel; events: LedgerEntry[] } {
@@ -238,7 +216,7 @@ function verifyL3(
       event.correlationId === row.correlationId &&
       (event.causationRef?.id ?? null) === row.causationId &&
       promotedDecisionId(event) === row.decisionId &&
-      promotedEvidenceId(event) === row.evidenceSnapshotId &&
+      promotedEvidenceSnapshotId(event) === row.evidenceSnapshotId &&
       promotedTriggeringEntryId(event) === row.triggeringEntryId &&
       promotedReservationCreationId(event) === row.reservationCreationId;
     if (!matches) {
@@ -365,7 +343,7 @@ export async function verifyDecisionLedgerTransaction(
   orgId: string,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  await lockDecisionLedgerTenant(tx, orgId);
+  await lockDecisionLedgerTenant(tx, orgId, "verify");
   const totals = await tx.query<{ n: number | string; head: number | string | null }>(
     "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
     [orgId],
@@ -452,12 +430,18 @@ export async function verifyDecisionLedgerIntegrity(
         replaySourcesChecked: sources.sourcesChecked,
         replaySourceReason: null,
       };
-    } catch {
+    } catch (error) {
+      // `verifyReplaySources` raises a specific, PII-safe reason for every distinct
+      // failure; collapsing them into one constant would leave the examiner-grade
+      // gate undiagnosable. Anything that is not a typed AppError (a driver fault)
+      // is reported generically so raw source or driver text never escapes.
       return {
         ok: false,
         ledger: checked.verification,
         replaySourcesChecked: 0,
-        replaySourceReason: "immutable replay source verification failed",
+        replaySourceReason: isAppError(error)
+          ? error.message
+          : "immutable replay source verification failed",
       };
     }
   });

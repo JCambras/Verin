@@ -1,6 +1,7 @@
 import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { promotedDecisionRef } from "@contracts/decision-core/ledger-references";
 
 interface DecisionHashes {
   decision_hash: string;
@@ -43,11 +44,7 @@ export async function assertLedgerSourceBindings(
       throw appError("STORE_CONSTRAINT", "cited evidence snapshot is not stored");
     }
   }
-  const ref = "decisionRef" in event
-    ? event.decisionRef
-    : "priorDecisionRef" in event
-      ? event.priorDecisionRef
-      : undefined;
+  const ref = promotedDecisionRef(event);
   if (!ref) return;
   const hashes = await tx.query<DecisionHashes>(
     `SELECT r.decision_hash, b.bundle_hash

@@ -38,5 +38,9 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
     testTimeout: 20000,
+    // Same budget for hooks: most suites instantiate a PGlite (WASM Postgres) store
+    // in `beforeEach`, so a hook left on the 10s default is the first thing that
+    // times out when several DB-backed files run in parallel — a flake, not a defect.
+    hookTimeout: 20000,
   },
 });

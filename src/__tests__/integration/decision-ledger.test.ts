@@ -27,6 +27,7 @@ import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
 import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
+import { isVersionIdentifier } from "@infra/ledger/ledger-pii";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
@@ -72,6 +73,32 @@ const append = (
   db: SqlDb,
   events: Parameters<typeof appendDecisionEvents>[2],
 ) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_ORG, events, LEDGER_PROVENANCE));
+
+/** Every statement a path issues, in order, so lock mode is observed not assumed. */
+async function measureStatements(
+  db: SqlDb,
+  run: (measured: SqlDb) => Promise<void>,
+): Promise<string[]> {
+  const statements: string[] = [];
+  const measured: SqlDb = {
+    ...db,
+    async query<U>(sql: string, params?: unknown[]) {
+      statements.push(sql);
+      return db.query<U>(sql, params);
+    },
+    transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+      return db.transaction((tx) => fn({
+        ...tx,
+        async query<U>(sql: string, params?: unknown[]) {
+          statements.push(sql);
+          return tx.query<U>(sql, params);
+        },
+      }));
+    },
+  };
+  await run(measured);
+  return statements;
+}
 
 async function sourceCounts(db: SqlDb): Promise<Record<string, number>> {
   const result: Record<string, number> = {};
@@ -291,24 +318,29 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L1");
   });
 
-  it("holds the tenant lock before reading any verification snapshot", async () => {
-    await recordFixture(db);
-    const statements: string[] = [];
-    const measured: SqlDb = {
-      ...db,
-      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
-        return db.transaction((tx) => fn({
-          ...tx,
-          async query<U>(sql: string, params?: unknown[]) {
-            statements.push(sql);
-            return tx.query<U>(sql, params);
-          },
-        }));
-      },
-    };
-    expect((await verifyDecisionLedger(measured, LEDGER_ORG)).ok).toBe(true);
-    expect(statements[0]).toMatch(
-      /SELECT id FROM orgs WHERE id = \$1 FOR UPDATE/,
+  it("locks one tenant owner: compatible to verify, exclusive to append", async () => {
+    const appendStatements = await measureStatements(db, recordFixture);
+    expect(appendStatements[0]).toBe(
+      "SELECT id FROM orgs WHERE id = $1 FOR UPDATE",
+    );
+
+    const verifyStatements = await measureStatements(db, async (target) => {
+      expect((await verifyDecisionLedger(target, LEDGER_ORG)).ok).toBe(true);
+    });
+    expect(verifyStatements[0]).toBe(
+      "SELECT id FROM orgs WHERE id = $1 FOR SHARE",
+    );
+    // A compatible read still excludes appends, so the exclusive mode is the ONLY
+    // one that can compute a next sequence: no verify path may take it back.
+    expect(
+      verifyStatements.filter((sql) => sql.includes("FOR UPDATE")),
+    ).toEqual([]);
+
+    const rebuildStatements = await measureStatements(db, async (target) => {
+      await rebuildDecisionProjections(target, LEDGER_ORG);
+    });
+    expect(rebuildStatements[0]).toBe(
+      "SELECT id FROM orgs WHERE id = $1 FOR UPDATE",
     );
   });
 
@@ -515,6 +547,59 @@ describe("decision ledger storage and L1-L4 verification", () => {
       code: "PII_VIOLATION",
     });
     expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
+  it("classifies bundle versions by lexical form, so a real release still records", async () => {
+    const rebuild = async (engineVersion: string, primitiveSetVersion: string) => {
+      const input = decisionRecordingInput();
+      const candidate = DecisionInputBundleSchema.parse({
+        ...input.inputBundle,
+        engineVersion,
+        primitiveSetVersion,
+        bundleHash: "0".repeat(64),
+      });
+      const inputBundle = DecisionInputBundleSchema.parse({
+        ...candidate,
+        bundleHash: hashPreimage(bundleHashPreimage(candidate)),
+      });
+      return recordDecision(db, {
+        ...input,
+        inputBundle,
+        events: [
+          ...input.events.slice(0, -1),
+          LedgerEntrySchema.parse({
+            ...input.events.at(-1)!,
+            bundleHash: inputBundle.bundleHash,
+          }),
+        ],
+      });
+    };
+    // The engine will be versioned past its fixture value; an allowlist of today's
+    // values would turn the first real release into a PII_VIOLATION on every append.
+    for (const accepted of ["0", "0.0.0", "1.2.3", "2.0.0-rc.1", "10.4.0.1"]) {
+      expect(isVersionIdentifier(accepted), accepted).toBe(true);
+    }
+    for (const rejected of [
+      "Zephyrine Okonkwo-Blackwood",
+      "engine built by analyst@firm.test",
+      "212-555-0142",
+      "v1.2.3",
+      "1.2.3 (nightly)",
+      `1.${"0".repeat(64)}`,
+    ]) {
+      expect(isVersionIdentifier(rejected), rejected).toBe(false);
+    }
+
+    const released = await rebuild("1.2.3", "4");
+    expect(released.ok, released.ok ? "" : released.error.message).toBe(true);
+    const stored = await db.query<{ engine_version: string }>(
+      "SELECT engine_version FROM decision_input_bundles WHERE org_id = $1",
+      [LEDGER_ORG],
+    );
+    expect(stored.rows[0]?.engine_version).toBe("1.2.3");
+
+    const refused = await rebuild("engine built by analyst@firm.test", "0");
+    expect(refused.ok ? null : refused.error.code).toBe("PII_VIOLATION");
   });
 
   it("refuses PII in every immutable replay source", async () => {
@@ -822,8 +907,10 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
     const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
     expect(broken.ok).toBe(false);
+    // The specific, PII-safe reason survives into the examiner-grade result: a gate
+    // that reports only BROKEN leaves an unverifiable ledger undiagnosable.
     expect(broken.replaySourceReason).toBe(
-      "immutable replay source verification failed",
+      "unsupported evidence encoding 9.0.0/1.0.0 during replay",
     );
   });
 

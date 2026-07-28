@@ -34,7 +34,16 @@ const REGISTERED_RETAINED_CODES = new Set([
   "verification-stuck",
 ]);
 const RETAINED_TEXT_REFERENCE = /^retained-text:v1:[a-f0-9]{64}$/;
-const BUNDLE_VERSION_CODES = new Set(["0", "0.0.0"]);
+/**
+ * Engine and primitive-set versions are structured identifiers, not free text: a
+ * bounded dotted-numeric release with an optional lower-case pre-release suffix.
+ * Classifying them by LEXICAL FORM rather than by an allowlist of today's values
+ * keeps the boundary fail-closed (a name, sentence, address, or contact detail
+ * cannot take this shape) without turning the next engine release into a
+ * PII_VIOLATION on every append.
+ */
+const VERSION_IDENTIFIER = /^\d{1,6}(\.\d{1,6}){0,3}(-[0-9a-z]+(\.[0-9a-z]+)*)?$/;
+const VERSION_IDENTIFIER_MAX_LENGTH = 32;
 
 function refuse(): never {
   throw appError(
@@ -51,6 +60,17 @@ export function retainedTextReference(opaqueId: string): string {
 
 function requireRegisteredCode(value: string): void {
   if (!REGISTERED_RETAINED_CODES.has(value)) refuse();
+}
+
+export function isVersionIdentifier(value: string): boolean {
+  return (
+    value.length <= VERSION_IDENTIFIER_MAX_LENGTH &&
+    VERSION_IDENTIFIER.test(value)
+  );
+}
+
+function requireVersionIdentifier(value: string): void {
+  if (!isVersionIdentifier(value)) refuse();
 }
 
 function requireRetainedToken(value: string): void {
@@ -115,12 +135,8 @@ export function assertReplaySourcePiiBoundary(
     if (!RETAINED_TEXT_REFERENCE.test(snapshot.attribution)) refuse();
   } else if (kind === "bundle") {
     const bundle = value as DecisionInputBundle;
-    if (
-      !BUNDLE_VERSION_CODES.has(bundle.engineVersion) ||
-      !BUNDLE_VERSION_CODES.has(bundle.primitiveSetVersion)
-    ) {
-      refuse();
-    }
+    requireVersionIdentifier(bundle.engineVersion);
+    requireVersionIdentifier(bundle.primitiveSetVersion);
   } else if (kind === "decision") {
     requireDecisionTextProjection(value as DecisionRecord);
   }

@@ -38,9 +38,12 @@ fail this drill (SEC 17a-4 / SOC 2 CC7.4).
 3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row
    counts match expectations. Confirm `/ready` returns ready.
 4. **Repair derived state (only if needed):** if the restore predates a decision-projection write, run
-   `pnpm ledger:rebuild` to discard derived decision state and replay the immutable ledger into it. It
-   refuses any org whose chain does not verify, so it can never launder a corrupted source into
-   derived state; immutable rows are never touched.
+   `pnpm ledger:rebuild --tenant <org-id>` to see the bounded plan (how many verified entries would be
+   replayed and which decision projections would be discarded), then re-run it with `--apply` to
+   perform the replay. The tenant is mandatory and there is no all-tenant form: the default run is a
+   non-mutating preview, and only `--apply` deletes derived rows. It refuses any org whose chain or
+   replay sources do not verify, so it can never launder a corrupted source into derived state;
+   immutable rows are never touched.
 5. **Cut over:** point the stateless app tier at the restored store (a deployment config change — the app
    tier holds no state).
 

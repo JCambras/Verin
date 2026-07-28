@@ -12,6 +12,7 @@ import {
 } from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import {
   foldDecisionProjection,
@@ -36,20 +37,6 @@ export interface PreparedProjection {
   readonly provenanceJson: string;
 }
 
-function decisionIdOf(event: LedgerEntry): string | undefined {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return undefined;
-}
-
-async function resolveDecisionId(
-  _tx: SqlTx,
-  _orgId: string,
-  event: LedgerEntry,
-): Promise<string | undefined> {
-  return decisionIdOf(event);
-}
-
 async function loadProjection(
   tx: SqlTx,
   orgId: string,
@@ -59,7 +46,7 @@ async function loadProjection(
   readonly state?: DecisionProjection;
   readonly provenance?: DerivedProvenance;
 } | undefined> {
-  const id = await resolveDecisionId(tx, orgId, event);
+  const id = promotedDecisionId(event);
   if (!id) return undefined;
   const row = await tx.query<{ state_json: string; provenance_json: string }>(
     `SELECT state_json, provenance_json
@@ -156,7 +143,7 @@ export async function prepareProjection(
   const loaded = await loadProjection(tx, event.firmId, event);
   if (
     event.type !== "DecisionRecorded" &&
-    decisionIdOf(event) !== undefined &&
+    promotedDecisionId(event) !== null &&
     !loaded?.state
   ) {
     throw appError("STORE_CONSTRAINT", "decision projection is missing");

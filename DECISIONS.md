@@ -3226,3 +3226,71 @@ the 500-line file cap.
 and retained text cannot become safe merely by duplicating an untrusted value.
 **Revert path:** none while Prompt 7 promises cryptographically bound replay inputs,
 causal event order, fail-closed retention, and an honestly verified register.
+
+### D-105 · 2026-07-28 · captain-decision · Recorded versions dispatch reads; the rebuild operator is single-tenant and preview-first
+
+The ledger schema and replay-source registries are genuinely additive. Every shipped
+encoder and chain-preimage implementation is retained under an EXPLICIT version
+literal, and `LEDGER_SCHEMA_VERSIONS` lists what this build can read while
+`LEDGER_SCHEMA_VERSION` selects writes alone. Ledger schema 1.0.0 is retained
+alongside 1.1.0, which differs only by the input-bundle hash that 1.1.0 binds. Reads
+and verification dispatch on each row's recorded versions and fail closed only for a
+version that was never shipped. Since `decision_ledger` and every immutable source
+table refuse DELETE, a registry keyed off the current constants would have made the
+next version bump orphan every committed row with no repair path.
+
+Engine and primitive-set versions are classified as structured version identifiers -
+a bounded dotted-numeric release with an optional lower-case pre-release suffix -
+instead of an allowlist of today's fixture values, which would have turned the first
+real engine release into a `PII_VIOLATION` on every append. The boundary stays
+fail-closed: names, sentences, addresses, and contact details cannot take that shape,
+and source statuses remain a closed reason-code or opaque retained reference.
+
+Tenant locking has two modes over ONE owner. Verification takes the compatible lock,
+so concurrent verified reads of a tenant coexist while appends stay excluded; appends
+and rebuild take the exclusive lock, so two appends can never compute the same next
+sequence and no append lands between a verified snapshot and the fold written from
+it. The specific, PII-safe replay-source reason now survives into
+`verifyDecisionLedgerIntegrity` and is printed by the chain gate and the restore
+drill, and a typed `AppError` thrown out of an operator script prints its code and
+message rather than `[object Object]`.
+
+`pnpm ledger:rebuild` requires an explicit `--tenant`, refuses any all-tenant form,
+defaults to a non-mutating preview, prints a bounded plan naming what would be
+discarded, and mutates only under `--apply`. Preview runs the same chain-plus-replay-
+source check the apply path runs, so a plan can never promise a replay that then
+fails halfway.
+
+Promoted-reference extraction, canonical hashing, decision-id resolution, and the
+retained-text fixture projection each have one authority:
+`contracts/decision-core/ledger-references.ts`, `canonicalDigest` in
+`ledger-sources.ts`, and the exported projection in `scripts/seed-decision-ledger.ts`.
+L3 stays meaningful - it still compares the STORED column against the canonical
+payload, and now the writer and verifier cannot transcribe that projection
+differently.
+
+`appendDecisionEvents` remains the typed internal write seam with no product caller;
+the first approval, reservation, execution, status, verification, and exception
+producers are an explicit later-prompt deferral recorded in ADR-0033.
+
+The completed implementation measures contracts at 4001 lines and infrastructure at
+5009. ADR-0033 amends ADR-0018's contracts ceiling to 4100 while preserving the
+500-line file cap, which the promoted-reference split keeps.
+
+**Why:** an append-only store that cannot be deleted must be able to read every byte
+it ever wrote, and an operator command that deletes derived state must say what it
+will do before it does it.
+**Revert path:** none while Prompt 7 promises readable recorded history, a
+fail-closed retention boundary, and a safe repair surface.
+
+### D-106 · 2026-07-28 · reversible · Vitest hook timeout matches the test timeout
+
+`hookTimeout` is raised from Vitest's 10s default to the 20s this suite already
+allows a test. Most suites instantiate a PGlite (WASM Postgres) store in
+`beforeEach`, so under parallel load the store construction - not any assertion -
+was the first thing to exceed its budget, failing whole files with
+`Hook timed out in 10000ms`.
+
+**Why:** a suite that fails on machine load teaches everyone to re-run instead of
+read the failure (retro-r7 don't-again #39 applied to flakiness rather than TZ).
+**Revert path:** delete the `hookTimeout` line; the default returns.

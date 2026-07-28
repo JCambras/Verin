@@ -5,6 +5,7 @@
  */
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
 
 export interface ApprovalActivity {
   readonly entryId: string;
@@ -64,12 +65,6 @@ export interface ProjectionFoldInput {
   readonly event: LedgerEntry;
   readonly sequence: number;
   readonly decisionRecord?: DecisionRecord;
-}
-
-function decisionIdFor(event: LedgerEntry): string | undefined {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return undefined;
 }
 
 function initialize(
@@ -148,7 +143,7 @@ export function foldDecisionProjection(
   }
   if (
     !input.current ||
-    decisionIdFor(event) !== input.current.decisionId
+    promotedDecisionId(event) !== input.current.decisionId
   ) {
     return input.current;
   }

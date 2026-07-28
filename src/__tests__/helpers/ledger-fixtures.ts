@@ -21,6 +21,7 @@ import type { RecordProvenance } from "@contracts/provenance";
 import { unwrap } from "@contracts/result";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 import { retainedTextReference } from "@infra/ledger/ledger-pii";
+import { retainedTextProjection } from "../../../scripts/seed-decision-ledger";
 
 export const LEDGER_ORG = "firm-a";
 export const LEDGER_OTHER_ORG = "firm-b";
@@ -39,30 +40,6 @@ const fixture = (name: string): unknown =>
     join(ROOT, "fixtures", "decision-core", `${name}.json`),
     "utf8",
   ));
-
-function retainedTextProjection(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(retainedTextProjection);
-  if (value === null || typeof value !== "object") return value;
-  const projected = Object.fromEntries(
-    Object.entries(value).map(([key, nested]) => [
-      key,
-      retainedTextProjection(nested),
-    ]),
-  );
-  if (typeof projected.code === "string") {
-    if ("summary" in projected) projected.summary = projected.code;
-    if ("messageTemplate" in projected) {
-      projected.messageTemplate = projected.code;
-    }
-  }
-  if (
-    typeof projected.reasonCode === "string" &&
-    "explanation" in projected
-  ) {
-    projected.explanation = projected.reasonCode;
-  }
-  return projected;
-}
 
 const actor = { firmId: LEDGER_ORG, systemId: "ledger-test" };
 const decisionRef = { firmId: LEDGER_ORG, id: "dec:GC-01:0001" };

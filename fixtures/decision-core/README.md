@@ -12,6 +12,14 @@ three `DecisionRecord` values committed in canonical byte form (`canonicalJson` 
 shape at ledger schema 1.1.0. The record and bundle keys are sorted at every depth with no insignificant
 whitespace and one trailing newline.
 
+`recorded-ledger-rows.json` holds the exact stored `payload_json` bytes and chain
+`entry_hash` of one ledger row per SHIPPED ledger schema version (1.0.0 and 1.1.0).
+It is the evidence behind the `ledger-schema-registry` fence: because `decision_ledger`
+refuses DELETE, every version's encoder and chain preimage must stay registered
+forever, and these committed bytes fail the build the moment one is dropped or
+altered. Add a block here whenever `LEDGER_SCHEMA_VERSIONS` gains a version; never
+edit an existing one.
+
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
 its schema and re-serializes byte-identically. It also hashes the canonical, domain-separated
 preimage bytes with SHA-256 and requires the digest to equal the fixture's stored `bundleHash` or

@@ -33,7 +33,14 @@ async function main(): Promise<void> {
     if (!v.ok) broken += 1;
     entriesTotal += v.entriesChecked;
     const decision = await verifyDecisionLedgerIntegrity(db, id);
-    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources)`;
+    // The chain verdict and the replay-source verdict fail for different reasons and
+    // both are PII-safe codes: printing only OK/BROKEN would leave a failing gate
+    // undiagnosable, which is exactly what the ledger write path refuses to do.
+    const decisionReason = [
+      decision.ledger.levels.find((level) => !level.ok)?.reason,
+      decision.replaySourceReason,
+    ].filter((reason) => reason !== null && reason !== undefined).join("; ");
+    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources${decisionReason ? `, ${decisionReason}` : ""})`;
     process.stdout.write(`${decisionLine}\n`);
     if (!decision.ok) broken += 1;
     decisionEntriesTotal += decision.ledger.entriesChecked;

@@ -239,6 +239,10 @@
           "ref": "src/__tests__/fitness/ledger-append-only.test.ts"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-schema-registry.test.ts"
+        },
+        {
           "type": "ci-gate",
           "ref": "audit-chain-verify"
         },

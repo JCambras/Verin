@@ -1,0 +1,33 @@
+{
+  "firmId": "firm-a",
+  "serializerVersion": "1.0.0",
+  "prevHash": "GENESIS",
+  "provenance": {
+    "source": "fixture",
+    "asOf": "2026-07-26T13:30:00.000Z",
+    "confidence": "high"
+  },
+  "evidenceSnapshotId": "evs:recorded:1",
+  "versions": {
+    "1.0.0": {
+      "EvidenceSnapshotRecorded": {
+        "payloadJson": "{\"actor\":{\"firmId\":\"firm-a\",\"systemId\":\"recorded-row-fixture\"},\"contentHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"correlationId\":\"corr:recorded-row-fixture\",\"evidenceSnapshotRef\":{\"firmId\":\"firm-a\",\"id\":\"evs:recorded:1\"},\"firmId\":\"firm-a\",\"id\":\"recorded:evidence\",\"occurredAt\":\"2026-07-26T13:30:00.000Z\",\"recordedAt\":\"2026-07-26T13:30:00.000Z\",\"schemaVersion\":\"1.0.0\",\"serializerVersion\":\"1.0.0\",\"snapshotHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"type\":\"EvidenceSnapshotRecorded\"}",
+        "entryHash": "c30193d544996f6dc469f4b24a888e4261e92c904a1330a6c466fed71cbd24ed"
+      },
+      "DecisionRecorded": {
+        "payloadJson": "{\"actor\":{\"firmId\":\"firm-a\",\"systemId\":\"recorded-row-fixture\"},\"correlationId\":\"corr:recorded-row-fixture\",\"decisionHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"decisionRef\":{\"firmId\":\"firm-a\",\"id\":\"dec:recorded:0001\"},\"firmId\":\"firm-a\",\"id\":\"recorded:decision\",\"occurredAt\":\"2026-07-26T13:30:00.000Z\",\"recordedAt\":\"2026-07-26T13:30:00.000Z\",\"schemaVersion\":\"1.0.0\",\"serializerVersion\":\"1.0.0\",\"type\":\"DecisionRecorded\"}",
+        "entryHash": "0bd00775737d8e68765585d63552efb7cd6c76ca1c13a6f76170d9032f3ad858"
+      }
+    },
+    "1.1.0": {
+      "EvidenceSnapshotRecorded": {
+        "payloadJson": "{\"actor\":{\"firmId\":\"firm-a\",\"systemId\":\"recorded-row-fixture\"},\"contentHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"correlationId\":\"corr:recorded-row-fixture\",\"evidenceSnapshotRef\":{\"firmId\":\"firm-a\",\"id\":\"evs:recorded:1\"},\"firmId\":\"firm-a\",\"id\":\"recorded:evidence\",\"occurredAt\":\"2026-07-26T13:30:00.000Z\",\"recordedAt\":\"2026-07-26T13:30:00.000Z\",\"schemaVersion\":\"1.1.0\",\"serializerVersion\":\"1.0.0\",\"snapshotHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"type\":\"EvidenceSnapshotRecorded\"}",
+        "entryHash": "8bc927d368a72bf2dae95c263043743126d87f411c91df6368e9ab607ea01c57"
+      },
+      "DecisionRecorded": {
+        "payloadJson": "{\"actor\":{\"firmId\":\"firm-a\",\"systemId\":\"recorded-row-fixture\"},\"bundleHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"correlationId\":\"corr:recorded-row-fixture\",\"decisionHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"decisionRef\":{\"firmId\":\"firm-a\",\"id\":\"dec:recorded:0001\"},\"firmId\":\"firm-a\",\"id\":\"recorded:decision\",\"occurredAt\":\"2026-07-26T13:30:00.000Z\",\"recordedAt\":\"2026-07-26T13:30:00.000Z\",\"schemaVersion\":\"1.1.0\",\"serializerVersion\":\"1.0.0\",\"type\":\"DecisionRecorded\"}",
+        "entryHash": "774b3b7cf62f42593d67aec7dbf9dbb81bfe714bcd8005bcd7ad77d974d1cb38"
+      }
+    }
+  }
+}

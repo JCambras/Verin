@@ -386,7 +386,7 @@ export async function loadVerifiedReplayDecision(
     event.decisionHash !== record.decisionHash ||
     !bundleHash.ok ||
     bundleHash.value !== bundle.bundleHash ||
-    event.bundleHash !== bundle.bundleHash ||
+    (event.bundleHash !== undefined && event.bundleHash !== bundle.bundleHash) ||
     memberIds.length !== expectedIds.length ||
     memberIds.some((id, index) => id !== expectedIds[index]) ||
     expectedIds.some((id) => !verifiedEvidence.has(id))

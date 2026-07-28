@@ -5520,3 +5520,48 @@ src/infrastructure/ledger/ledger-store.ts:56
 **Revert:** removed the planted raw insert. The focused correction suite passes.
 
 **Date:** 2026-07-28 (review corrections F1-F7, ADR-0033, D-104).
+
+## Retained recorded encodings, lock modes, and diagnosable replay failures (D-105)
+
+**Invariants:** every shipped ledger schema version keeps a registered encoder and
+chain preimage keyed by an explicit version literal; bundle versions are classified
+by lexical form, not by an allowlist of today's values; tenant locking is compatible
+for verification and exclusive for appends and rebuild; the specific replay-source
+reason survives into the examiner gate; `pnpm ledger:rebuild` needs an explicit
+tenant and an explicit `--apply`.
+
+The "1.0.0" keys were deleted from both recorded-byte registries in
+`src/infrastructure/ledger/ledger-schema-registry.ts`, and the new fence reported:
+
+```text
+× enforces: the write version is registered and no shipped version was dropped
+  expected [ '1.1.0|1.0.0' ] to deeply equal [ '1.0.0|1.0.0', '1.1.0|1.0.0' ]
+× enforces: a stored fixture recorded at ledger schema 1.0.0 still decodes and re-serializes
+  expected 'unsupported ledger encoding 1.0.0/1.0.0' to be ''
+× enforces: a ledger row stored at schema 1.0.0 verifies L1-L4 through the real verifier
+  expected 'ledger chain preimage or provenance is unsupported' to be ''
+```
+
+The verification lock mode was reverted to `FOR UPDATE`, the replay-source reason was
+collapsed back to a constant, `parseRebuildArgs` was made to default to
+`{ apply: true }` with no tenant, and the version-identifier predicate was replaced
+by the old two-value allowlist. Each planted violation failed:
+
+```text
+× locks one tenant owner: compatible to verify, exclusive to append
+  Expected: "SELECT id FROM orgs WHERE id = $1 FOR SHARE"
+  Received: "SELECT id FROM orgs WHERE id = $1 FOR UPDATE"
+× integrity verification dispatches immutable sources by recorded version
+  Expected: "unsupported evidence encoding 9.0.0/1.0.0 during replay"
+  Received: "immutable replay source verification failed"
+× requires an explicit tenant - a bare invocation rebuilds nothing
+  expected { tenant: '', apply: true } to be "…requires --tenant"
+× defaults to preview and mutates only under an explicit --apply
+  expected { tenant: 'firm-a', apply: true } to deeply equal { tenant: 'firm-a', apply: false }
+× classifies bundle versions by lexical form, so a real release still records
+  engine version 1.2.3 was refused as unclassified retained text
+```
+
+**Revert:** every planted change was restored and the focused suites pass.
+
+**Date:** 2026-07-28 (review corrections G1-G6, ADR-0033, D-105).

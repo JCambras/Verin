@@ -4,6 +4,7 @@ import { parseRecordProvenance, type RecordProvenance } from "@contracts/provena
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { verifyDecisionLedgerTransaction } from "./ledger-verification";
+import { lockDecisionLedgerTenant } from "./ledger-lock";
 import { verifyReplaySources } from "./ledger-sources";
 import {
   applyProjection,
@@ -18,6 +19,10 @@ export async function rebuildDecisionProjections(
   orgId: string,
 ): Promise<ProjectedDecision[]> {
   await db.transaction(async (tx) => {
+    // A rebuild REPLACES derived state, so it takes the exclusive tenant lock before
+    // the compatible verification lock: no append may land between the snapshot it
+    // verifies and the fold it writes.
+    await lockDecisionLedgerTenant(tx, orgId, "append");
     const checked = await verifyDecisionLedgerTransaction(tx, orgId);
     if (!checked.verification.ok) {
       throw appError(

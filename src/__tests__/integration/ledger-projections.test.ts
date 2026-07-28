@@ -460,7 +460,7 @@ describe("deterministic decision-ledger projections", () => {
     expect(snapshot.decisionsTotal).toBe(2);
     expect(directQueries).toBe(0);
     expect(statements[0]).toMatch(
-      /SELECT id FROM orgs WHERE id = \$1 FOR UPDATE/,
+      /SELECT id FROM orgs WHERE id = \$1 FOR SHARE/,
     );
     expect(
       statements.some((sql) => sql.includes("decision_state_projection")),

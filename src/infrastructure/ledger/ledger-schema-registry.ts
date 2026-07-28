@@ -1,40 +1,57 @@
 import {
-  LEDGER_EVENT_TYPES,
-  LEDGER_SCHEMA_VERSION,
-  LedgerEntrySchema,
+  LEDGER_ENTRY_SCHEMAS,
   type LedgerEntry,
+  type LedgerSchemaVersion,
 } from "@contracts/decision-core/ledger";
-import {
-  CANONICAL_SERIALIZER_VERSION,
-} from "@contracts/decision-core/serialization";
 import type { RecordProvenance } from "@contracts/provenance";
 
 type ParseResult =
   | { readonly ok: true; readonly event: LedgerEntry }
   | { readonly ok: false; readonly reason: string };
 
-const schemaKey = (
-  eventType: string,
+type ChainPreimage = (
+  payloadJson: string,
+  provenance: RecordProvenance,
+) => string;
+
+const encodingKey = (
   schemaVersion: string,
   serializerVersion: string,
-) => `${eventType}|${schemaVersion}|${serializerVersion}`;
+): string => `${schemaVersion}|${serializerVersion}`;
+
+const schemaFor = (version: LedgerSchemaVersion) =>
+  LEDGER_ENTRY_SCHEMAS.get(version)!;
 
 /**
- * Additive recorded-byte registry. Future versions add keys and optional pure
- * upcasts. Existing keys are never removed or made to use a newer serializer.
+ * Recorded-byte registries. Both are keyed by EXPLICIT version literals, never by
+ * the current-version constants: a write-side bump adds a key here and leaves every
+ * older key answering for the bytes it wrote. `decision_ledger` refuses DELETE, so a
+ * dropped key would make already-committed rows permanently unverifiable.
  */
-const LEDGER_SCHEMA_REGISTRY = new Map(
-  LEDGER_EVENT_TYPES.map((eventType) => [
-    schemaKey(
-      eventType,
-      LEDGER_SCHEMA_VERSION,
-      CANONICAL_SERIALIZER_VERSION,
-    ),
-    LedgerEntrySchema,
-  ]),
-);
+const LEDGER_SCHEMA_REGISTRY = new Map([
+  [encodingKey("1.0.0", "1.0.0"), schemaFor("1.0.0")],
+  [encodingKey("1.1.0", "1.0.0"), schemaFor("1.1.0")],
+]);
 
-const DECISION_LEDGER_CHAIN_PREIMAGE_VERSION = "1.0.0";
+const chainPreimageV1_0_0: ChainPreimage = (payloadJson, provenance) =>
+  JSON.stringify([
+    "1.0.0",
+    payloadJson,
+    provenance.source,
+    provenance.asOf,
+    provenance.confidence,
+  ]);
+
+const CHAIN_PREIMAGE_REGISTRY = new Map<string, ChainPreimage>([
+  [encodingKey("1.0.0", "1.0.0"), chainPreimageV1_0_0],
+  [encodingKey("1.1.0", "1.0.0"), chainPreimageV1_0_0],
+]);
+
+/** Registered recorded encodings, for the fence that proves none was dropped. */
+export function registeredLedgerEncodings(): readonly string[] {
+  return [...LEDGER_SCHEMA_REGISTRY.keys()].filter((key) =>
+    CHAIN_PREIMAGE_REGISTRY.has(key));
+}
 
 export function decisionLedgerChainPreimage(
   schemaVersion: string,
@@ -42,19 +59,10 @@ export function decisionLedgerChainPreimage(
   payloadJson: string,
   provenance: RecordProvenance,
 ): string | null {
-  if (
-    schemaVersion !== LEDGER_SCHEMA_VERSION ||
-    serializerVersion !== CANONICAL_SERIALIZER_VERSION
-  ) {
-    return null;
-  }
-  return JSON.stringify([
-    DECISION_LEDGER_CHAIN_PREIMAGE_VERSION,
-    payloadJson,
-    provenance.source,
-    provenance.asOf,
-    provenance.confidence,
-  ]);
+  const preimage = CHAIN_PREIMAGE_REGISTRY.get(
+    encodingKey(schemaVersion, serializerVersion),
+  );
+  return preimage ? preimage(payloadJson, provenance) : null;
 }
 
 export function parseRecordedLedgerEvent(
@@ -64,7 +72,7 @@ export function parseRecordedLedgerEvent(
   value: unknown,
 ): ParseResult {
   const schema = LEDGER_SCHEMA_REGISTRY.get(
-    schemaKey(eventType, schemaVersion, serializerVersion),
+    encodingKey(schemaVersion, serializerVersion),
   );
   if (!schema) {
     return {
@@ -73,7 +81,11 @@ export function parseRecordedLedgerEvent(
     };
   }
   const parsed = schema.safeParse(value);
-  if (!parsed.success || parsed.data.type !== eventType) {
+  if (
+    !parsed.success ||
+    parsed.data.type !== eventType ||
+    parsed.data.schemaVersion !== schemaVersion
+  ) {
     return {
       ok: false,
       reason: "payload does not match its recorded event schema",

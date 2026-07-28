@@ -10,6 +10,7 @@ import * as executionSchemas from "@contracts/decision-core/execution";
 import * as explanationSchemas from "@contracts/decision-core/explanation";
 import * as idSchemas from "@contracts/decision-core/ids";
 import * as ledgerSchemas from "@contracts/decision-core/ledger";
+import * as ledgerReferenceHelpers from "@contracts/decision-core/ledger-references";
 import * as normalizationSchemas from "@contracts/decision-core/normalization";
 import * as serializationSchemas from "@contracts/decision-core/serialization";
 import * as triggerSchemas from "@contracts/decision-core/trigger";
@@ -45,6 +46,7 @@ const DECISION_CORE_SCHEMA_MODULES: readonly SchemaModule[] = [
   ["explanation.ts", explanationSchemas],
   ["ids.ts", idSchemas],
   ["ledger.ts", ledgerSchemas],
+  ["ledger-references.ts", ledgerReferenceHelpers],
   ["normalization.ts", normalizationSchemas],
   ["serialization.ts", serializationSchemas],
   ["trigger.ts", triggerSchemas],
@@ -447,6 +449,14 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "ledger.ts:LedgerEntrySchema": allLedgerEventSamples().find(
     (event) => event.type === "ApprovalStageEscalated",
   )!,
+  // A retained historical encoder is held to the SAME tenant boundary as the
+  // current one: reading older bytes must never be a way around firm scoping.
+  "ledger.ts:LedgerEntryV1_0_0Schema": {
+    ...allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageEscalated",
+    )!,
+    schemaVersion: "1.0.0",
+  },
   "trigger.ts:AmbiguityRefSchema": ambiguityRef,
   "trigger.ts:EvidenceRequestSchema": evidenceRequest,
   "trigger.ts:IntentSchema": intent,

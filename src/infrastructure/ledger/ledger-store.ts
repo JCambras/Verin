@@ -1,5 +1,4 @@
 /** Sole synchronous decision-ledger write path. There is no outbox. */
-import { createHash } from "node:crypto";
 import {
   isSqlTransaction,
   type SqlDb,
@@ -29,6 +28,12 @@ import {
   LedgerEntrySchema,
   type LedgerEntry,
 } from "@contracts/decision-core/ledger";
+import {
+  promotedDecisionId,
+  promotedEvidenceSnapshotId,
+  promotedReservationCreationId,
+  promotedTriggeringEntryId,
+} from "@contracts/decision-core/ledger-references";
 import {
   bundleHashPreimage,
   decisionHashPreimage,
@@ -74,13 +79,6 @@ interface PreparedEvent {
   readonly actorJson: string;
 }
 
-function hashCanonical(value: unknown, label: string): Result<string, AppError> {
-  const bytes = canonical(value, label);
-  return bytes.ok
-    ? ok(createHash("sha256").update(bytes.value, "utf8").digest("hex"))
-    : bytes;
-}
-
 function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   const parsed = LedgerEntrySchema.safeParse(input);
   if (!parsed.success) return err(appError("VALIDATION", "ledger event is invalid"));
@@ -96,34 +94,6 @@ function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   return actorJson.ok
     ? ok({ event: parsed.data, payloadJson: payloadJson.value, actorJson: actorJson.value })
     : actorJson;
-}
-
-function decisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
-}
-
-function evidenceId(event: LedgerEntry): string | null {
-  if (event.type === "EvidenceSnapshotRecorded") {
-    return event.evidenceSnapshotRef.id;
-  }
-  if (event.type === "StatusObserved") {
-    return event.evidenceSnapshotRef?.id ?? null;
-  }
-  return null;
-}
-
-function triggeringEntryId(event: LedgerEntry): string | null {
-  return event.type === "ExceptionDecisionRequested"
-    ? event.triggeringEntryRef.id
-    : null;
-}
-
-function reservationCreationId(event: LedgerEntry): string | null {
-  return event.type === "ReservationReleased"
-    ? event.reservationCreationRef.id
-    : null;
 }
 
 /**
@@ -210,10 +180,11 @@ async function appendPrepared(
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
-        event.correlationId, event.causationRef?.id ?? null, decisionId(event),
-        evidenceId(event), triggeringEntryId(event), payloadJson,
-        reservationCreationId(event), prevHash, entryHash, provenance.source,
-        provenance.asOf, provenance.confidence,
+        event.correlationId, event.causationRef?.id ?? null,
+        promotedDecisionId(event), promotedEvidenceSnapshotId(event),
+        promotedTriggeringEntryId(event), payloadJson,
+        promotedReservationCreationId(event), prevHash, entryHash,
+        provenance.source, provenance.asOf, provenance.confidence,
       ],
     );
     await persistProjection(tx, projection, sequence);
@@ -332,8 +303,8 @@ function validateDecisionInput(
   ) {
     return err(appError("VALIDATION", "decision record and input bundle do not match"));
   }
-  const bundleHash = hashCanonical(bundleHashPreimage(bundle.data), "bundle hash preimage");
-  const recordHash = hashCanonical(decisionHashPreimage(record.data), "decision hash preimage");
+  const bundleHash = canonicalDigest(bundleHashPreimage(bundle.data), "bundle hash preimage");
+  const recordHash = canonicalDigest(decisionHashPreimage(record.data), "decision hash preimage");
   if (
     !bundleHash.ok ||
     !recordHash.ok ||
@@ -380,7 +351,7 @@ export async function recordDecision(
   if (!prepared.ok) return prepared;
   try {
     const appended = await db.transaction(async (tx) => {
-      await lockDecisionLedgerTenant(tx, prepared.value.record.firmId);
+      await lockDecisionLedgerTenant(tx, prepared.value.record.firmId, "append");
       await insertDecisionSources(
         tx,
         prepared.value.snapshots,
@@ -451,7 +422,7 @@ export async function appendDecisionEvents(
   if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
     throw appError("VALIDATION", "decision source rows and recording events do not correspond");
   }
-  await lockDecisionLedgerTenant(tx, orgId);
+  await lockDecisionLedgerTenant(tx, orgId, "append");
   await preflightEvidenceSnapshots(tx, snapshots);
   await tx.exec("SAVEPOINT decision_ledger_append");
   try {

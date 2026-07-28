@@ -39,7 +39,12 @@ function fixture(name: string, firmId: string): Record<string, unknown> {
   return retenant(parsed, firmId) as Record<string, unknown>;
 }
 
-function retainedTextProjection(value: unknown): unknown {
+/**
+ * Project fixture free text onto its own reason code so the fail-closed retained-text
+ * boundary accepts it. Shared with the test fixtures: two copies would drift the
+ * moment the boundary's rules change, and only one of them would fail.
+ */
+export function retainedTextProjection(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(retainedTextProjection);
   if (value === null || typeof value !== "object") return value;
   const projected = Object.fromEntries(

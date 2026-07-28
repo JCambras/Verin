@@ -92,13 +92,39 @@ settle now.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
-- Amend ADR-0018 ceilings from contracts 3500 to 4000 and infrastructure 2500 to
-  5100. Measured final state is contracts 3927 and infrastructure 5003. Domain
+- Amend ADR-0018 ceilings from contracts 3500 to 4100 and infrastructure 2500 to
+  5100. Measured final state is contracts 4001 and infrastructure 5009. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
   reservation state (`ledger-projection-store.ts`), with rebuild orchestration in
-  `ledger-rebuild.ts` and verified request replay in `ledger-register.ts`.
+  `ledger-rebuild.ts` and verified request replay in `ledger-register.ts`. Contracts
+  carry the retained per-version encoders plus the promoted-reference authority
+  (`ledger-references.ts`) that storage, verification, and projection share.
+
+## Recorded-version dispatch
+
+Recorded bytes are read with the encoder that wrote them. `LEDGER_SCHEMA_VERSIONS`
+lists every ledger schema version this build can decode and grows only by appending;
+`LEDGER_SCHEMA_VERSION` selects WRITES alone. The infrastructure registries -
+`ledger-schema-registry.ts` (event encoder plus chain preimage) and
+`ledger-source-registry.ts` (evidence, bundle, decision codecs) - key on explicit
+version literals, never on the current-version constants, and fail closed only for a
+version that was never shipped. `decision_ledger` and every immutable source table
+refuse DELETE, so dropping a key would leave committed rows permanently
+unverifiable with no repair path; the `ledger-schema-registry` fence proves a stored
+fixture at each shipped version still decodes, re-serializes to its recorded bytes,
+and verifies L1-L4.
+
+## Later-prompt producers (explicit deferral)
+
+`appendDecisionEvents` is the typed internal write seam this prompt promises, and
+Prompt 7 lands exactly two producers: `recordDecision` (the seeded, provenance-
+labeled decision history) and the read-only register at `/app/ledger`. The first real
+approval, reservation, execution, status, verification, and exception producers
+belong to later prompts and are deliberately NOT scaffolded here (charter #5's no-
+dead-abstraction rule, read as it is for a foundation prompt). No product path may
+claim those capabilities are shipped until their prompt lands them.
 
 ## Alternatives Rejected
 
