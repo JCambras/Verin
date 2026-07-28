@@ -1,6 +1,6 @@
 # ADR-0018: Line budgets — ratchet-down platform ceilings, a separate growable presentation budget, a load gate
 
-**Status:** Accepted (amended by ADR-0029: contracts ceiling re-baselined 600 → 3500 via this ADR's own amendment path)
+**Status:** Accepted (amended by ADR-0029: contracts ceiling re-baselined 600 → 3500 via this ADR's own amendment path; D-062 adds a separate runtime data-artifact budget without changing that source ceiling)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #1, #10, #11
@@ -15,7 +15,7 @@ only by an ADR bump.
 
 ## Decision
 
-Two independent budgets, both fitness-enforced (Phase B/D):
+Three independent budgets, all fitness-enforced (Phase B/D):
 
 - **Platform ceiling** — `contracts/` + `domain/` + `infrastructure/` production lines. **Ratchet-down
   only**: lowering a ceiling is a code change; raising it is an ADR amendment. Plus a per-file ceiling
@@ -23,6 +23,11 @@ Two independent budgets, both fitness-enforced (Phase B/D):
 - **Presentation budget** — `app/presentation/` (+ presentation flows). Its own separate envelope, **grown
   only by an explicit ADR bump** (never a silent edit) so richness is planned. Platform ceilings are
   unaffected by presentation growth.
+- **Runtime data-artifact budget** - local JSON registries imported by maintained `contracts/` source
+  are discovered from the runtime module graph and measured separately from executable TS/TSX. The
+  2026b IANA Zone and Link registries measure 602 physical lines against a 620-line ceiling, leaving
+  18 lines of headroom. Adding a registry or exceeding that envelope requires an explicit review of
+  generated-data growth. It does not consume or raise the 3500-line contracts-source ceiling.
 
 Separately, the **load gate** (charter #11): a deterministic pilot-scale seed (1,000 households × ~2,000
 accounts, D-010) with a **p95 step-latency assertion** as a regression gate. The identical pilot-scale run
@@ -35,6 +40,7 @@ A regression fails CI — the latency budget is owned (ADR-0014).
 | Alternative | Why Rejected |
 |-------------|--------------|
 | One shrink-only global budget (Iris ADR-0031) | Punishes richness where users want it; fights every "make it feel better" PR. |
+| Charge generated registries to executable source | Generated release data grows by upstream vocabulary and additive replay support, not by implementation complexity; combining them makes the source ratchet misleading. |
 | No line budgets | Today's cleanliness drifts; god components regrow (retro don't-again #11). |
 | Raise a ceiling in code to green the build | The anti-pattern; raising a ceiling must be an ADR decision. |
 
@@ -42,14 +48,16 @@ A regression fails CI — the latency budget is owned (ADR-0014).
 
 - **Gained:** platform stays lean (ratchet-down); presentation richness is planned with an owned budget;
   latency regressions fail CI.
-- **Sacrificed:** two budgets to maintain; a genuine presentation-growth PR needs an ADR bump.
+- **Sacrificed:** three budgets to maintain; genuine presentation or runtime-data growth needs an
+  explicit budget review.
 
 ## Consequences
 
-Fences: `line-budget` (platform ratchet + presentation envelope), `max-file-size` (per-file ratchet), the
-load-smoke gate. Charter-map ids 10, 11.
+Fences: `line-budget` (platform ratchet + presentation envelope + runtime data-artifact envelope),
+`max-file-size` (per-file ratchet), the load-smoke gate. Charter-map ids 10, 11.
 
 ## Revisit When
 
-A budget is legitimately exhausted (an ADR bump for presentation; a refactor to shrink platform), or the
-per-file ceiling blocks a justified file (architecture-review note + pinned entry).
+A budget is legitimately exhausted (an ADR bump for presentation, an explicit generated-data review
+for runtime registries, or a refactor to shrink platform source), or the per-file ceiling blocks a
+justified file (architecture-review note + pinned entry).

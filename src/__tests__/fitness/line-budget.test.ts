@@ -1,7 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { shippedSourceFiles, REPO_ROOT } from "./_fence-utils";
-import { relative } from "node:path";
+import {
+  moduleReferences,
+  realProject,
+  shippedSourceFiles,
+  REPO_ROOT,
+  type ModuleReference,
+} from "./_fence-utils";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 
 /**
  * LINE-BUDGET FENCE (ADR-0018, charter #1/#10). PER-LAYER ratchet-down ceilings on
@@ -37,6 +49,20 @@ const CEILINGS = {
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 
+const CONTRACTS_RUNTIME_DATA_ROOT = join(REPO_ROOT, "src/contracts");
+const RUNTIME_DATA_ARTIFACT_CEILING = 620;
+const RUNTIME_DATA_ARTIFACT_BASELINE = [
+  "src/contracts/iana-time-zone-links-2026b.json",
+  "src/contracts/iana-time-zones-2026b.json",
+] as const;
+const RUNTIME_JSON_REFERENCE_KINDS = new Set<ModuleReference["kind"]>([
+  "import",
+  "export",
+  "dynamic-import",
+  "require",
+  "import-equals",
+]);
+
 type Bucket = keyof typeof CEILINGS | "other";
 
 function bucket(file: string): Bucket {
@@ -69,6 +95,70 @@ export function budgetViolations(totals: Record<keyof typeof CEILINGS, number>):
   return out;
 }
 
+function runtimeDataArtifactPath(
+  importer: string,
+  reference: Pick<ModuleReference, "kind" | "specifier">,
+): string | null {
+  if (
+    reference.specifier === null ||
+    !reference.specifier.startsWith(".") ||
+    !reference.specifier.endsWith(".json") ||
+    !RUNTIME_JSON_REFERENCE_KINDS.has(reference.kind)
+  ) {
+    return null;
+  }
+  const artifact = resolve(dirname(importer), reference.specifier);
+  const withinContracts = relative(CONTRACTS_RUNTIME_DATA_ROOT, artifact);
+  return (
+      withinContracts === "" ||
+      withinContracts.startsWith("..") ||
+      isAbsolute(withinContracts)
+    )
+    ? null
+    : artifact;
+}
+
+function runtimeDataArtifactPaths(): string[] {
+  const paths = new Set<string>();
+  for (const sourceFile of realProject().getSourceFiles()) {
+    for (const reference of moduleReferences(sourceFile)) {
+      const artifact = runtimeDataArtifactPath(
+        sourceFile.getFilePath(),
+        reference,
+      );
+      if (artifact !== null) paths.add(artifact);
+    }
+  }
+  return [...paths].sort();
+}
+
+function physicalLineCount(text: string): number {
+  if (text.length === 0) return 0;
+  const newlineCount = text.split("\n").length - 1;
+  return newlineCount + (text.endsWith("\n") ? 0 : 1);
+}
+
+function measureRuntimeDataArtifacts(paths: readonly string[]): number {
+  return paths.reduce(
+    (total, path) =>
+      total + physicalLineCount(readFileSync(path, "utf8")),
+    0,
+  );
+}
+
+function runtimeDataArtifactBudgetViolations(total: number): string[] {
+  if (total === 0) {
+    return [
+      "runtime-data-artifacts: 0 lines measured - import discovery went stale",
+    ];
+  }
+  return total > RUNTIME_DATA_ARTIFACT_CEILING
+    ? [
+        `runtime-data-artifacts: ${total} lines exceed ceiling ${RUNTIME_DATA_ARTIFACT_CEILING} - review generated registry growth and amend its separate budget`,
+      ]
+    : [];
+}
+
 describe("line-budget fence (per-layer)", () => {
   const totals = measureBudgets();
 
@@ -92,6 +182,58 @@ describe("line-budget fence (per-layer)", () => {
     it("presentation growth is charged only to presentation, never the platform layers", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");
       expect(bucket(`${REPO_ROOT}src/domain/x.ts`)).toBe("domain");
+    });
+  });
+});
+
+describe("runtime JSON data-artifact budget", () => {
+  const paths = runtimeDataArtifactPaths();
+  const total = measureRuntimeDataArtifacts(paths);
+
+  it(`enforces: imported contracts registries are explicit and within ${RUNTIME_DATA_ARTIFACT_CEILING} lines [now ${total}]`, () => {
+    expect(
+      paths.map((path) => relative(REPO_ROOT, path)),
+    ).toEqual(RUNTIME_DATA_ARTIFACT_BASELINE);
+    expect(
+      runtimeDataArtifactBudgetViolations(total),
+    ).toEqual([]);
+  });
+
+  describe("detects (companion): the data budget cannot pass incompletely", () => {
+    it("fails a planted artifact total above the separate ceiling", () => {
+      expect(runtimeDataArtifactBudgetViolations(
+        RUNTIME_DATA_ARTIFACT_CEILING + 1,
+      )).toEqual([
+        expect.stringContaining("exceed ceiling"),
+      ]);
+    });
+
+    it("fails an empty discovery result instead of passing vacuously", () => {
+      expect(runtimeDataArtifactBudgetViolations(0)).toEqual([
+        expect.stringContaining("discovery went stale"),
+      ]);
+    });
+
+    it("discovers a local runtime JSON import but not close lookalikes", () => {
+      const importer = join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.ts");
+      expect(runtimeDataArtifactPath(importer, {
+        kind: "import",
+        specifier: "./probe.json",
+      })).toBe(join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.json"));
+      for (const reference of [
+        { kind: "import-type", specifier: "./probe.json" },
+        { kind: "import", specifier: "package/probe.json" },
+        { kind: "import", specifier: "./probe.ts" },
+        { kind: "import", specifier: "../probe.json" },
+      ] as const) {
+        expect(runtimeDataArtifactPath(importer, reference)).toBeNull();
+      }
+    });
+
+    it("counts a trailing newline as termination, not an empty line", () => {
+      expect(physicalLineCount("one\ntwo\n")).toBe(2);
+      expect(physicalLineCount("one\ntwo")).toBe(2);
+      expect(physicalLineCount("")).toBe(0);
     });
   });
 });

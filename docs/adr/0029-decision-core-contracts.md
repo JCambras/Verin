@@ -221,12 +221,16 @@ parse time, not by reviewer discipline. Three constraints meet here:
   would instead change the accepted runtime object boundary and hide non-plain object refusals.
   Shared pure authorities avoid both defects while preserving explicit versioned projections.
 - **Ceiling re-baseline (amends ADR-0018):** contracts 600 → **3500**. The final implementation
-  measures **3412** lines by the line-budget fence's own metric, leaving **88 lines of headroom**.
+  measures **3413** lines by the line-budget fence's own metric, leaving **87 lines of headroom**.
   This is the final post-review figure and the only current-state measurement to plan against. The
   former 3200 ceiling could not contain the required prompt-5 correctness fixes. The ratchet-down doctrine
   resumes from 3500; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
+- **Runtime registry data budget (D-062):** the two runtime-imported 2026b IANA JSON registries are
+  generated release data, not executable contract source. Their 602 physical lines have a separate
+  620-line ceiling with 18 lines of headroom. Import discovery and the ceiling are blocking in the
+  `line-budget` fence. The contracts-source ceiling remains 3500.
 - **Scope (charter #2 - declared need only):** exactly the prompt-5 list plus transitive
   dependencies and the template/instance approval split the marriage map calls out. Deferred to
   their owning prompts: policy AST + PolicyRuleId (9), typed ledger events + LedgerEntryId +
@@ -253,7 +257,8 @@ parse time, not by reviewer discipline. Three constraints meet here:
 
 ## Consequences
 
-- `line-budget` fence: contracts ceiling 3500 (this ADR is the amendment ADR-0018 requires).
+- `line-budget` fence: contracts-source ceiling 3500 plus a separate 620-line runtime JSON
+  data-artifact ceiling (D-062).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
   their executable mixed-tenant probes and the registry exactly matches every exported Zod value
@@ -274,5 +279,6 @@ parse time, not by reviewer discipline. Three constraints meet here:
   migration story for recorded hashes), or
 - a newer IANA release is adopted (ADD its version key + registries, DECLARING that release's own
   placeholder `Zone`s in the same entry; never remove a supported one, or already-persisted bundles
-  stop being replayable against the release they recorded), or
+  stop being replayable against the release they recorded, and explicitly review the separate
+  runtime data-artifact ceiling), or
 - a second external import is proposed for `contracts/` (needs its own ADR).
