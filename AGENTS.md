@@ -117,10 +117,11 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   old bytes; raw inserts into an immutable
   source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
   evidence/bundle/record rows, reusable when the bytes match). Derived state lives in
-  `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts` - a released reservation finds its decision
-  through `decision_reservation_index`, never a projection scan. L1-L4 verification and the
-  `ledger-append-only` fence enforce these assumptions; the register verifies a bounded window
-  while `audit-chain-verify` verifies both chains whole.
+  `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts`. Reservation reuse is
+  generation-bound: a release cites its reservation ref, owning decision, and creation ledger entry,
+  so an old release cannot affect a later reuse. L1-L4 plus immutable replay-source verification and
+  the `ledger-append-only` fence enforce these assumptions; the register verifies a bounded window
+  while `audit-chain-verify` verifies both chains and retained replay sources whole.
 - **Prod guards key on `APP_ENV`, never `NODE_ENV`:** `next build`/`next start` force `NODE_ENV=production`
   even in dev/CI, so the config fail-closed guards and the secure-cookie flag use `APP_ENV` (real
   deployment env). Same for the e2e webserver.

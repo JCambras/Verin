@@ -3,11 +3,8 @@ import { appError } from "@contracts/errors";
 import { parseRecordProvenance, type RecordProvenance } from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
-import { listDecisionLedger } from "./ledger-verification";
-import {
-  loadVerifiedReplayDecision,
-  verifyReplayEvidence,
-} from "./ledger-sources";
+import { verifyDecisionLedgerTransaction } from "./ledger-verification";
+import { verifyReplaySources } from "./ledger-sources";
 import {
   applyProjection,
   clearDerivedState,
@@ -21,15 +18,14 @@ export async function rebuildDecisionProjections(
   orgId: string,
 ): Promise<ProjectedDecision[]> {
   await db.transaction(async (tx) => {
-    const tenant = await tx.query<{ id: string }>(
-      "SELECT id FROM orgs WHERE id = $1 FOR UPDATE",
-      [orgId],
-    );
-    if (tenant.rows.length !== 1) {
-      throw appError("NOT_FOUND", "decision ledger tenant does not exist");
+    const checked = await verifyDecisionLedgerTransaction(tx, orgId);
+    if (!checked.verification.ok) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        `decision ledger integrity failed at ${checked.verification.levels.at(-1)?.level ?? "unknown"}`,
+      );
     }
-    const rows = await listDecisionLedger(tx, orgId);
-    const verifiedEvidence = new Set<string>();
+    const rows = checked.rows;
     const replay: Array<{
       row: (typeof rows)[number];
       event: LedgerEntry;
@@ -58,31 +54,28 @@ export async function rebuildDecisionProjections(
       if (!provenance) {
         throw appError("STORE_CONSTRAINT", "ledger replay provenance is invalid");
       }
-      let record: DecisionRecord | undefined;
-      if (parsed.event.type === "EvidenceSnapshotRecorded") {
-        verifiedEvidence.add(await verifyReplayEvidence(tx, parsed.event));
-      } else if (parsed.event.type === "DecisionRecorded") {
-        record = await loadVerifiedReplayDecision(
-          tx,
-          parsed.event,
-          verifiedEvidence,
-        );
-      }
       replay.push({
         row,
         event: parsed.event,
         provenance,
-        ...(record ? { record } : {}),
       });
     }
+    const sources = await verifyReplaySources(
+      tx,
+      orgId,
+      replay.map((item) => item.event),
+    );
     await clearDerivedState(tx, orgId);
     for (const item of replay) {
+      const record = item.event.type === "DecisionRecorded"
+        ? sources.decisions.get(item.event.decisionRef.id)
+        : undefined;
       await applyProjection(
         tx,
         item.event,
         item.row.sequence,
         item.provenance,
-        item.record,
+        record,
       );
     }
     const head = rows.at(-1);

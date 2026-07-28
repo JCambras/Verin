@@ -38,7 +38,7 @@ function blockedRecordingInput() {
       kind: "blocked",
       blockers: [{
         code: "additional-evidence-required",
-        explanation: "The recorded evidence is incomplete.",
+        explanation: "additional-evidence-required",
         resolvingEvidence: [{
           evidenceKind: "account-balance",
           subjectRef: { firmId: LEDGER_ORG, id: "subject:test:0" },
@@ -136,7 +136,7 @@ describe("deterministic decision-ledger projections", () => {
     });
   });
 
-  it("repairs corrupted derived state while a truncated replay produces different state", async () => {
+  it("repairs corrupted derived state but refuses a truncated ledger", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
     const sample = allLedgerEventSamples().find(
@@ -162,9 +162,9 @@ describe("deterministic decision-ledger projections", () => {
       [LEDGER_ORG],
     );
     await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_delete");
-    const truncated = await rebuildDecisionProjections(db, LEDGER_ORG);
-    expect(truncated).not.toEqual(expected);
-    expect(truncated[0]?.projection.lastEventType).toBe("DecisionRecorded");
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
   });
 
   it("releases a reservation against its owning decision and refuses a competing live claim", async () => {
@@ -205,7 +205,11 @@ describe("deterministic decision-ledger projections", () => {
     await expect(append(db, [released])).resolves.toHaveLength(1);
     const state = (await listDecisionProjections(db, LEDGER_ORG))[0]!.projection;
     expect(state.reservations).toEqual([
-      { reservationId: "reservation:1", status: "released" },
+      {
+        reservationId: "reservation:1",
+        creationEntryId: created.id,
+        status: "released",
+      },
     ]);
     expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual(
       await listDecisionProjections(db, LEDGER_ORG),
@@ -246,7 +250,7 @@ describe("deterministic decision-ledger projections", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
   });
 
-  it("keeps reservation ownership permanent after release", async () => {
+  it("does not let a delayed release affect a reused reservation identifier", async () => {
     const first = decisionRecordingInput();
     expect((await recordDecision(db, first)).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");
@@ -255,12 +259,30 @@ describe("deterministic decision-ledger projections", () => {
     const created = samples.find((event) => event.type === "ReservationCreated")!;
     const released = samples.find((event) => event.type === "ReservationReleased")!;
     await expect(append(db, [created, released])).resolves.toHaveLength(2);
-    const reassigned = LedgerEntrySchema.parse({
+    const reused = LedgerEntrySchema.parse({
       ...created,
-      id: "projection:reservation-reassigned",
+      id: "projection:reservation-reused",
       decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
     });
-    await expect(append(db, [reassigned])).rejects.toMatchObject({
+    await expect(append(db, [reused])).resolves.toHaveLength(1);
+    const crossOwner = LedgerEntrySchema.parse({
+      ...released,
+      id: "projection:cross-owner-release",
+      reservationCreationRef: { firmId: LEDGER_ORG, id: reused.id },
+    });
+    await expect(append(db, [crossOwner])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const wrongGeneration = LedgerEntrySchema.parse({
+      ...released,
+      id: "projection:wrong-generation-release",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+      reservationCreationRef: {
+        firmId: LEDGER_ORG,
+        id: "projection:missing-generation",
+      },
+    });
+    await expect(append(db, [wrongGeneration])).rejects.toMatchObject({
       code: "STORE_CONSTRAINT",
     });
     const delayedRelease = LedgerEntrySchema.parse({
@@ -269,9 +291,44 @@ describe("deterministic decision-ledger projections", () => {
     });
     await expect(append(db, [delayedRelease])).resolves.toHaveLength(1);
     const projections = await listDecisionProjections(db, LEDGER_ORG);
-    expect(projections.find(({ projection }) =>
+    const newOwner = projections.find(({ projection }) =>
       projection.decisionId === second.decisionRecord.id
-    )?.projection.reservations).toEqual([]);
+    )!.projection;
+    expect(newOwner.reservations).toContainEqual({
+      reservationId: "reservation:1",
+      creationEntryId: reused.id,
+      status: "active",
+    });
+    expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual(
+      await listDecisionProjections(db, LEDGER_ORG),
+    );
+  });
+
+  it("replaces an observed execution placeholder when the real step arrives", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const observedSample = samples.find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    if (observedSample.type !== "StatusObserved") {
+      throw new Error("expected status observation fixture");
+    }
+    const observedWithoutEvidence = { ...observedSample };
+    delete observedWithoutEvidence.evidenceSnapshotRef;
+    const observed = LedgerEntrySchema.parse(observedWithoutEvidence);
+    const succeeded = samples.find(
+      (event) => event.type === "ExecutionSucceeded",
+    )!;
+    await expect(append(db, [observed, succeeded])).resolves.toHaveLength(2);
+    const projection = (await listDecisionProjections(db, LEDGER_ORG))[0]!
+      .projection;
+    expect(projection.executionSteps).toEqual([{
+      stepId: succeeded.type === "ExecutionSucceeded" ? succeeded.stepId : "",
+      status: "succeeded",
+      sourceStatus: "submitted",
+      executionHandleId: "handle:1",
+    }]);
   });
 
   it("represents blocked decisions with no authority mode", async () => {

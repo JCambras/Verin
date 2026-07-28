@@ -192,3 +192,77 @@ DROP TRIGGER IF EXISTS decision_ledger_no_truncate ON decision_ledger;
 CREATE TRIGGER decision_ledger_no_truncate BEFORE TRUNCATE ON decision_ledger
   FOR EACH STATEMENT EXECUTE FUNCTION decision_source_append_only();
 `;
+
+export const DECISION_LEDGER_GENERATIONS_SQL = `
+ALTER TABLE evidence_snapshots
+  ADD COLUMN contract_schema_version text NOT NULL DEFAULT '1.7.0';
+ALTER TABLE evidence_snapshots
+  ALTER COLUMN contract_schema_version DROP DEFAULT;
+
+ALTER TABLE decision_ledger
+  ADD COLUMN reservation_creation_id text;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM decision_ledger
+     WHERE event_type = 'ReservationReleased'
+  ) THEN
+    RAISE EXCEPTION
+      'legacy reservation releases lack an immutable creation identity';
+  END IF;
+END;
+$$;
+ALTER TABLE decision_ledger
+  ADD CONSTRAINT decision_ledger_reservation_creation_shape
+  CHECK (
+    (event_type = 'ReservationReleased') =
+    (reservation_creation_id IS NOT NULL)
+  );
+ALTER TABLE decision_ledger
+  ADD CONSTRAINT decision_ledger_reservation_creation_fkey
+  FOREIGN KEY (org_id, reservation_creation_id)
+  REFERENCES decision_ledger(org_id, id);
+
+ALTER TABLE decision_reservation_index
+  ADD COLUMN creation_entry_id text;
+ALTER TABLE decision_reservation_index
+  ADD COLUMN created_sequence bigint;
+UPDATE decision_reservation_index reservation
+   SET creation_entry_id = (
+         SELECT created.id
+           FROM decision_ledger created
+          WHERE created.org_id = reservation.org_id
+            AND created.event_type = 'ReservationCreated'
+            AND created.decision_id = reservation.decision_id
+            AND created.payload_json::jsonb #>> '{reservationRef,id}' =
+                reservation.reservation_id
+          ORDER BY created.sequence DESC
+          LIMIT 1
+       ),
+       created_sequence = (
+         SELECT created.sequence
+           FROM decision_ledger created
+          WHERE created.org_id = reservation.org_id
+            AND created.event_type = 'ReservationCreated'
+            AND created.decision_id = reservation.decision_id
+            AND created.payload_json::jsonb #>> '{reservationRef,id}' =
+                reservation.reservation_id
+          ORDER BY created.sequence DESC
+          LIMIT 1
+       );
+ALTER TABLE decision_reservation_index
+  ALTER COLUMN creation_entry_id SET NOT NULL;
+ALTER TABLE decision_reservation_index
+  ALTER COLUMN created_sequence SET NOT NULL;
+ALTER TABLE decision_reservation_index
+  DROP CONSTRAINT decision_reservation_index_pkey;
+ALTER TABLE decision_reservation_index
+  ADD PRIMARY KEY (org_id, reservation_id, creation_entry_id);
+ALTER TABLE decision_reservation_index
+  ADD CONSTRAINT decision_reservation_creation_entry_fkey
+  FOREIGN KEY (org_id, creation_entry_id)
+  REFERENCES decision_ledger(org_id, id);
+CREATE UNIQUE INDEX decision_reservation_one_active
+  ON decision_reservation_index(org_id, reservation_id)
+  WHERE status = 'active';
+`;

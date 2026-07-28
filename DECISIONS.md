@@ -3513,7 +3513,9 @@ immutable DDL is the wrong place to discover a field can never be written.
 **Revert path:** the shared error helpers, the optional snapshot argument, and the optional
 limit are all additive; the per-entry anchor upsert changes write frequency, not schema.
 
-### D-064 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
+### D-108 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
+
+**Reservation-ownership portion superseded by D-066.**
 
 Projection preconditions are evaluated before immutable insertion, and reservation identifiers
 remain permanently owned by their first decision because release events carry no owner reference.
@@ -3534,7 +3536,7 @@ changing the 500-line file cap.
 identifiers, or replay inputs that are only schema-shaped rather than hash-verified.
 **Revert path:** none while Prompt 7 claims replayable immutable sources and deterministic projections.
 
-### D-065 · 2026-07-28 · reversible · Dynamic store paths stay outside the build trace
+### D-109 · 2026-07-28 · reversible · Dynamic store paths stay outside the build trace
 
 The runtime-only relative PGlite data-directory resolution carries Turbopack's trace-boundary
 annotation. This preserves relative paths in development and CI while preventing the production
@@ -3543,3 +3545,35 @@ build from tracing the whole repository through `process.cwd()`.
 **Why:** the build otherwise succeeds with an NFT warning and packages unrelated project files.
 **Revert path:** remove the annotation if the store path becomes statically rooted or Turbopack
 stops tracing this runtime-only resolution.
+
+### D-110 · 2026-07-28 · captain-decision · Ledger appends, replay sources, and reservation reuse fail closed
+
+Later ledger appends require the nominal transaction capability issued by the SQL
+driver and run under a savepoint, so a caller cannot catch an error and commit a
+source or event prefix. Chain verification locks the tenant before reading its
+snapshot, and rebuild verifies L1-L4 plus every retained replay source before
+clearing derived state. The scheduled chain gate and restore drill run the same
+non-mutating source verification. Evidence, bundle, and decision rows dispatch
+through versioned recorded-source codecs with identity upcasts for the current
+version.
+
+Immutable retained text is a code/reference projection. The boundary rejects
+unclassified attribution, summaries, explanations, structured reasons, and source
+statuses without rewriting the submitted bytes.
+
+Reservation identifiers are reusable after release. Each generation is the tuple
+of reservation reference, owning decision reference, and immutable creation entry.
+Every release cites the exact tuple. Cross-owner and unknown-generation releases
+fail, while a duplicate old-generation release is harmless and cannot release a
+later generation. Status observations that precede step mapping are reconciled by
+execution handle when the real step arrives.
+
+The complete implementation measures contracts at 3884 lines and infrastructure at
+4736 lines. ADR-0033 amends ADR-0018's infrastructure ceiling to 4800 while keeping
+the 500-line file cap.
+
+**Why:** append-only truth cannot tolerate structural transaction ambiguity,
+mutable-snapshot verification, host-current replay parsing, retained free text, or
+ownerless reservation reuse.
+**Revert path:** none while Prompt 7 promises atomic append, deterministic rebuild,
+fail-closed retention, and reusable reservation identifiers.

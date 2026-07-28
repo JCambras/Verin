@@ -45,6 +45,7 @@ export interface DecisionProjection {
   readonly approvalStages: readonly ProjectedApprovalStage[];
   readonly reservations: readonly {
     reservationId: string;
+    creationEntryId: string;
     status: "active" | "released";
   }[];
   readonly executionSteps: readonly ProjectedExecutionStep[];
@@ -122,7 +123,13 @@ function upsertExecution(
   state: DecisionProjection,
   next: ProjectedExecutionStep,
 ): DecisionProjection {
-  const without = state.executionSteps.filter((step) => step.stepId !== next.stepId);
+  const without = state.executionSteps.filter((step) =>
+    step.stepId !== next.stepId &&
+    !(
+      next.executionHandleId !== null &&
+      step.executionHandleId === next.executionHandleId &&
+      step.stepId.startsWith("observed:")
+    ));
   return { ...state, executionSteps: [...without, next] };
 }
 
@@ -139,14 +146,9 @@ export function foldDecisionProjection(
     if (!input.decisionRecord) return undefined;
     return initialize(event, input.decisionRecord, sequence);
   }
-  const appliesByReservation =
-    event.type === "ReservationReleased" &&
-    input.current?.reservations.some(
-      (reservation) => reservation.reservationId === event.reservationRef.id,
-    );
   if (
     !input.current ||
-    (decisionIdFor(event) !== input.current.decisionId && !appliesByReservation)
+    decisionIdFor(event) !== input.current.decisionId
   ) {
     return input.current;
   }
@@ -189,8 +191,12 @@ export function foldDecisionProjection(
       state = {
         ...state,
         reservations: [
-          ...state.reservations.filter((row) => row.reservationId !== event.reservationRef.id),
-          { reservationId: event.reservationRef.id, status: "active" },
+          ...state.reservations,
+          {
+            reservationId: event.reservationRef.id,
+            creationEntryId: event.id,
+            status: "active",
+          },
         ],
       };
       break;
@@ -198,7 +204,8 @@ export function foldDecisionProjection(
       state = {
         ...state,
         reservations: state.reservations.map((row) =>
-          row.reservationId === event.reservationRef.id
+          row.reservationId === event.reservationRef.id &&
+          row.creationEntryId === event.reservationCreationRef.id
             ? { ...row, status: "released" }
             : row),
       };

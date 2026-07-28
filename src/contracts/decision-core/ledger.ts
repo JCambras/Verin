@@ -249,10 +249,19 @@ const ReservationReleasedSchema = z.strictObject({
   ...ledgerBaseShape,
   type: z.literal("ReservationReleased"),
   reservationRef: ReservationRefSchema,
+  decisionRef: DecisionRefSchema,
+  reservationCreationRef: LedgerEntryRefSchema,
   reasonCode: ReasonCodeSchema,
 }).superRefine((event, ctx) => {
   requireBaseTenant(event, ctx);
   requireRefTenant(event, event.reservationRef, ["reservationRef", "firmId"], ctx);
+  requireRefTenant(event, event.decisionRef, ["decisionRef", "firmId"], ctx);
+  requireRefTenant(
+    event,
+    event.reservationCreationRef,
+    ["reservationCreationRef", "firmId"],
+    ctx,
+  );
 });
 
 const ExecutionStartedSchema = z.strictObject({

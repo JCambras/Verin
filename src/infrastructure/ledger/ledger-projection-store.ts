@@ -3,7 +3,7 @@
  * already states and is rebuilt by replaying it, so nothing in this module may be
  * the source of an answer the ledger does not contain.
  */
-import type { SqlDb, SqlQueryable } from "@infra/store/db";
+import type { SqlDb, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
@@ -42,30 +42,16 @@ function decisionIdOf(event: LedgerEntry): string | undefined {
   return undefined;
 }
 
-/**
- * A reservation names its decision only when it is created, so a release resolves
- * its owner through the indexed mapping - never by scanning projections in physical
- * row order, which is not stable across rewrites and would make the online fold and
- * a later rebuild disagree.
- */
 async function resolveDecisionId(
-  tx: SqlQueryable,
-  orgId: string,
+  _tx: SqlTx,
+  _orgId: string,
   event: LedgerEntry,
 ): Promise<string | undefined> {
-  const direct = decisionIdOf(event);
-  if (direct) return direct;
-  if (event.type !== "ReservationReleased") return undefined;
-  const row = await tx.query<{ decision_id: string }>(
-    `SELECT decision_id FROM decision_reservation_index
-      WHERE org_id = $1 AND reservation_id = $2 FOR UPDATE`,
-    [orgId, event.reservationRef.id],
-  );
-  return row.rows[0]?.decision_id;
+  return decisionIdOf(event);
 }
 
 async function loadProjection(
-  tx: SqlQueryable,
+  tx: SqlTx,
   orgId: string,
   event: LedgerEntry,
 ): Promise<{
@@ -90,51 +76,78 @@ async function loadProjection(
     : { decisionId: id };
 }
 
-async function assertReservationOwnership(
-  tx: SqlQueryable,
+async function assertReservationGeneration(
+  tx: SqlTx,
   event: LedgerEntry,
   ownerDecisionId: string,
 ): Promise<void> {
   if (event.type === "ReservationCreated") {
-    const owner = await tx.query<{ decision_id: string }>(
+    const active = await tx.query<{ decision_id: string }>(
       `SELECT decision_id FROM decision_reservation_index
-        WHERE org_id = $1 AND reservation_id = $2 FOR UPDATE`,
+        WHERE org_id = $1 AND reservation_id = $2 AND status = 'active'
+        FOR UPDATE`,
       [event.firmId, event.reservationRef.id],
     );
-    if (owner.rows[0] && owner.rows[0].decision_id !== ownerDecisionId) {
+    if (active.rows[0]) {
       throw appError(
         "STORE_CONSTRAINT",
-        "reservation is permanently owned by another decision",
+        "reservation already has an active generation",
+      );
+    }
+  } else if (event.type === "ReservationReleased") {
+    const generation = await tx.query<{ decision_id: string }>(
+      `SELECT decision_id FROM decision_reservation_index
+        WHERE org_id = $1 AND reservation_id = $2 AND creation_entry_id = $3
+        FOR UPDATE`,
+      [
+        event.firmId,
+        event.reservationRef.id,
+        event.reservationCreationRef.id,
+      ],
+    );
+    if (!generation.rows[0]) {
+      throw appError("STORE_CONSTRAINT", "reservation generation does not exist");
+    }
+    if (generation.rows[0].decision_id !== ownerDecisionId) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "reservation generation belongs to another decision",
       );
     }
   }
 }
 
 async function writeReservationIndex(
-  tx: SqlQueryable,
+  tx: SqlTx,
   projection: PreparedProjection,
+  sequence: number,
 ): Promise<void> {
   const { event, decisionId } = projection;
   if (event.type === "ReservationCreated") {
     await tx.query(
       `INSERT INTO decision_reservation_index
-        (org_id, reservation_id, decision_id, status)
-       VALUES ($1,$2,$3,'active')
-       ON CONFLICT (org_id, reservation_id) DO UPDATE SET status = 'active'
-         WHERE decision_reservation_index.decision_id = EXCLUDED.decision_id`,
-      [event.firmId, event.reservationRef.id, decisionId],
+        (org_id, reservation_id, decision_id, creation_entry_id,
+         created_sequence, status)
+       VALUES ($1,$2,$3,$4,$5,'active')`,
+      [event.firmId, event.reservationRef.id, decisionId, event.id, sequence],
     );
   } else if (event.type === "ReservationReleased") {
     await tx.query(
       `UPDATE decision_reservation_index SET status = 'released'
-        WHERE org_id = $1 AND reservation_id = $2 AND decision_id = $3`,
-      [event.firmId, event.reservationRef.id, decisionId],
+        WHERE org_id = $1 AND reservation_id = $2 AND decision_id = $3
+          AND creation_entry_id = $4`,
+      [
+        event.firmId,
+        event.reservationRef.id,
+        decisionId,
+        event.reservationCreationRef.id,
+      ],
     );
   }
 }
 
 export async function prepareProjection(
-  tx: SqlQueryable,
+  tx: SqlTx,
   event: LedgerEntry,
   sequence: number,
   provenance: RecordProvenance,
@@ -158,7 +171,7 @@ export async function prepareProjection(
     ...(record ? { decisionRecord: record } : {}),
   });
   if (!next) return undefined;
-  await assertReservationOwnership(tx, event, next.decisionId);
+  await assertReservationGeneration(tx, event, next.decisionId);
   const stateJson = canonicalJson(next as unknown as JsonValue);
   const nextProvenance = deriveArtifactProvenance(
     loaded?.provenance ? [loaded.provenance, provenance] : [provenance],
@@ -179,12 +192,12 @@ export async function prepareProjection(
 }
 
 export async function persistProjection(
-  tx: SqlQueryable,
+  tx: SqlTx,
   projection: PreparedProjection | undefined,
   sequence: number,
 ): Promise<void> {
   if (!projection) return;
-  await writeReservationIndex(tx, projection);
+  await writeReservationIndex(tx, projection, sequence);
   await tx.query(
     `INSERT INTO decision_state_projection
       (org_id, decision_id, state_json, provenance_json, last_sequence, updated_at)
@@ -206,7 +219,7 @@ export async function persistProjection(
 }
 
 export async function applyProjection(
-  tx: SqlQueryable,
+  tx: SqlTx,
   event: LedgerEntry,
   sequence: number,
   provenance: RecordProvenance,
@@ -224,7 +237,7 @@ export async function applyProjection(
 
 /** Discard derived state so a replay can rebuild it from immutable rows alone. */
 export async function clearDerivedState(
-  tx: SqlQueryable,
+  tx: SqlTx,
   orgId: string,
 ): Promise<void> {
   await tx.query(

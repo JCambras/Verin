@@ -5,31 +5,32 @@
  * ones - it never rewrites, and it refuses a same-id/different-bytes collision.
  */
 import { createHash } from "node:crypto";
-import type { SqlQueryable } from "@infra/store/db";
+import type { SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError, type AppError } from "@contracts/errors";
 import { err, type Result } from "@contracts/result";
 import { assertNoPIIValues } from "@contracts/pii";
 import {
-  EvidenceSnapshotRefSchema,
-  DecisionInputBundleSchema,
   type EvidenceSnapshotRef,
   type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
 import {
-  DecisionRecordSchema,
   type DecisionRecord,
 } from "@contracts/decision-core/decision";
 import type {
   DecisionRecorded,
   EvidenceSnapshotRecorded,
+  LedgerEntry,
 } from "@contracts/decision-core/ledger";
 import {
   CANONICAL_SERIALIZER_VERSION,
+  DECISION_CORE_SCHEMA_VERSION,
   bundleHashPreimage,
   canonicalJson,
   decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
+import { parseRecordedReplaySource } from "./ledger-source-registry";
+import { assertReplaySourcePiiBoundary } from "./ledger-pii";
 
 export function canonical(value: unknown, label: string): Result<string, AppError> {
   const serialized = canonicalJson(value as JsonValue);
@@ -80,9 +81,31 @@ async function reuseStoredBytes(
   return true;
 }
 
+export async function preflightEvidenceSnapshots(
+  tx: SqlTx,
+  snapshots: readonly EvidenceSnapshotRef[],
+): Promise<void> {
+  const ids = new Set<string>();
+  for (const snapshot of snapshots) {
+    if (ids.has(snapshot.id)) {
+      throw appError("STORE_CONSTRAINT", "evidence batch repeats an immutable snapshot id");
+    }
+    ids.add(snapshot.id);
+    const bytes = canonical(snapshot, "evidence snapshot");
+    if (!bytes.ok) throw bytes.error;
+    await reuseStoredBytes(
+      tx,
+      "evidence_snapshots",
+      snapshot.firmId,
+      snapshot.id,
+      bytes.value,
+    );
+  }
+}
+
 /** Evidence recorded with a decision, or gathered later and cited by a status event. */
 export async function insertEvidenceSnapshots(
-  tx: SqlQueryable,
+  tx: SqlTx,
   snapshots: readonly EvidenceSnapshotRef[],
   recordedAt: string,
 ): Promise<void> {
@@ -94,12 +117,14 @@ export async function insertEvidenceSnapshots(
     )) continue;
     await tx.query(
       `INSERT INTO evidence_snapshots
-        (org_id,id,canonical_json,schema_version,serializer_version,
+        (org_id,id,canonical_json,schema_version,contract_schema_version,
+         serializer_version,
          content_hash,snapshot_hash,recorded_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         snapshot.firmId, snapshot.id, bytes.value, snapshot.schemaVersion,
-        CANONICAL_SERIALIZER_VERSION, snapshot.contentHash,
+        DECISION_CORE_SCHEMA_VERSION, CANONICAL_SERIALIZER_VERSION,
+        snapshot.contentHash,
         createHash("sha256").update(bytes.value, "utf8").digest("hex"), recordedAt,
       ],
     );
@@ -108,7 +133,7 @@ export async function insertEvidenceSnapshots(
 
 /** A later decision over the same inputs reuses the stored bundle instead of colliding. */
 async function insertBundle(
-  tx: SqlQueryable,
+  tx: SqlTx,
   bundle: DecisionInputBundle,
   recordedAt: string,
 ): Promise<void> {
@@ -149,7 +174,7 @@ async function insertBundle(
 }
 
 export async function insertDecisionSources(
-  tx: SqlQueryable,
+  tx: SqlTx,
   snapshots: readonly EvidenceSnapshotRef[],
   bundle: DecisionInputBundle,
   record: DecisionRecord,
@@ -176,24 +201,41 @@ function replaySourceError(reason: string): never {
   throw appError("STORE_CONSTRAINT", reason);
 }
 
-function requireCanonicalSource<T>(
+function requireCanonicalSource<
+  K extends "evidence" | "bundle" | "decision",
+>(
+  kind: K,
   value: unknown,
   bytes: string,
-  parser: { safeParse(input: unknown): { success: boolean; data?: T } },
+  schemaVersion: string,
+  serializerVersion: string,
   label: string,
-): T {
-  const parsed = parser.safeParse(value);
-  if (!parsed.success || parsed.data === undefined) {
-    return replaySourceError(`${label} is invalid during replay`);
+): K extends "evidence"
+  ? EvidenceSnapshotRef
+  : K extends "bundle"
+    ? DecisionInputBundle
+    : DecisionRecord {
+  const parsed = parseRecordedReplaySource(
+    kind,
+    schemaVersion,
+    serializerVersion,
+    value,
+  );
+  if (!parsed.ok) {
+    return replaySourceError(`${parsed.reason} during replay`);
   }
-  const canonicalBytes = canonical(parsed.data, label);
-  if (!canonicalBytes.ok || canonicalBytes.value !== bytes) {
+  if (parsed.canonicalBytes !== bytes) {
     return replaySourceError(`${label} bytes are not canonical during replay`);
   }
-  if (replaySourcesContainPII([parsed.data])) {
+  if (replaySourcesContainPII([parsed.value])) {
     return replaySourceError(`${label} contains prohibited PII during replay`);
   }
-  return parsed.data;
+  try {
+    assertReplaySourcePiiBoundary(kind, parsed.value);
+  } catch {
+    return replaySourceError(`${label} contains unclassified text during replay`);
+  }
+  return parsed.value as never;
 }
 
 export async function verifyReplayEvidence(
@@ -203,12 +245,13 @@ export async function verifyReplayEvidence(
   const result = await tx.query<{
     canonical_json: string;
     schema_version: string;
+    contract_schema_version: string;
     serializer_version: string;
     content_hash: string;
     snapshot_hash: string;
   }>(
-    `SELECT canonical_json, schema_version, serializer_version, content_hash,
-            snapshot_hash
+    `SELECT canonical_json, schema_version, contract_schema_version,
+            serializer_version, content_hash, snapshot_hash
        FROM evidence_snapshots
       WHERE org_id = $1 AND id = $2`,
     [event.firmId, event.evidenceSnapshotRef.id],
@@ -222,9 +265,11 @@ export async function verifyReplayEvidence(
     return replaySourceError("evidence snapshot is not JSON during replay");
   }
   const snapshot = requireCanonicalSource(
+    "evidence",
     value,
     row.canonical_json,
-    EvidenceSnapshotRefSchema,
+    row.contract_schema_version,
+    row.serializer_version,
     "evidence snapshot",
   );
   const snapshotHash = createHash("sha256")
@@ -292,15 +337,19 @@ export async function loadVerifiedReplayDecision(
     return replaySourceError("decision replay source is not JSON");
   }
   const record = requireCanonicalSource(
+    "decision",
     decisionValue,
     decisionRow.canonical_json,
-    DecisionRecordSchema,
+    decisionRow.schema_version,
+    decisionRow.serializer_version,
     "decision record",
   );
   const bundle = requireCanonicalSource(
+    "bundle",
     bundleValue,
     bundleRow.canonical_json,
-    DecisionInputBundleSchema,
+    bundleRow.schema_version,
+    bundleRow.serializer_version,
     "decision input bundle",
   );
   const decisionHash = canonicalDigest(
@@ -351,4 +400,73 @@ export async function loadVerifiedReplayDecision(
     return replaySourceError("decision replay source binding differs during replay");
   }
   return record;
+}
+
+export interface VerifiedReplaySources {
+  readonly decisions: ReadonlyMap<string, DecisionRecord>;
+  readonly sourcesChecked: number;
+}
+
+export async function verifyReplaySources(
+  tx: SqlQueryable,
+  orgId: string,
+  events: readonly LedgerEntry[],
+): Promise<VerifiedReplaySources> {
+  const evidence = new Set<string>();
+  const decisions = new Map<string, DecisionRecord>();
+  for (const event of events) {
+    if (event.type === "EvidenceSnapshotRecorded") {
+      evidence.add(await verifyReplayEvidence(tx, event));
+    } else if (event.type === "DecisionRecorded") {
+      decisions.set(
+        event.decisionRef.id,
+        await loadVerifiedReplayDecision(tx, event, evidence),
+      );
+    }
+  }
+  const coverage = await tx.query<{
+    orphan_evidence: number | string;
+    orphan_bundles: number | string;
+    orphan_decisions: number | string;
+    source_count: number | string;
+  }>(
+    `SELECT
+       (SELECT count(*) FROM evidence_snapshots s
+         WHERE s.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_ledger l
+            WHERE l.org_id = s.org_id
+              AND l.evidence_snapshot_id = s.id
+              AND l.event_type = 'EvidenceSnapshotRecorded'
+         )) AS orphan_evidence,
+       (SELECT count(*) FROM decision_input_bundles b
+         WHERE b.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_records r
+            WHERE r.org_id = b.org_id AND r.input_bundle_id = b.id
+         )) AS orphan_bundles,
+       (SELECT count(*) FROM decision_records r
+         WHERE r.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_ledger l
+            WHERE l.org_id = r.org_id
+              AND l.decision_id = r.id
+              AND l.event_type = 'DecisionRecorded'
+         )) AS orphan_decisions,
+       (SELECT count(*) FROM evidence_snapshots WHERE org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundles WHERE org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundle_evidence WHERE org_id = $1) +
+       (SELECT count(*) FROM decision_records WHERE org_id = $1) AS source_count`,
+    [orgId],
+  );
+  const row = coverage.rows[0];
+  if (
+    !row ||
+    Number(row.orphan_evidence) !== 0 ||
+    Number(row.orphan_bundles) !== 0 ||
+    Number(row.orphan_decisions) !== 0
+  ) {
+    replaySourceError("immutable replay source has no recording ledger fact");
+  }
+  return {
+    decisions,
+    sourcesChecked: Number(row.source_count),
+  };
 }
