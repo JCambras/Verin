@@ -3459,3 +3459,56 @@ producers land; it is exercised by integration tests, not by a fake producer.
 derived from a magic actor string is not provenance.
 **Revert path:** the added columns and derived table are additive; the window argument is
 optional and defaults to the full chain.
+
+## D-107 - Ledger failure diagnosis, post-decision evidence, and derived-state labeling
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0041, charter #4/#5
+
+Review of D-062 surfaced four gaps in the ledger's failure and labeling behavior. All are
+fixed in place; none needs a new migration.
+
+**A failed append is diagnosable.** `recordDecision` used to map every non-`AppError`
+thrown inside its transaction to one generic `STORE_CONSTRAINT` and logged nothing, so an
+outage, a programming bug, and a genuine unique/FK violation were indistinguishable 409s
+with no trail - the exact failure `auditedWrite` already learned ("a swallowed TypeError
+here once surfaced as a generic 409"). The classification and PII-safe reason builder that
+lesson produced now live in `infrastructure/store/driver-errors.ts` and are shared by both
+write chokepoints, so only a real SQLSTATE class-23 violation is the non-retryable conflict
+and anything else is `INTERNAL` - logged, with the driver's own message.
+
+**Post-decision evidence has a write path.** `StatusObserved.evidenceSnapshotRef` promotes
+a foreign-keyed `evidence_snapshot_id`, but the only writer of `evidence_snapshots` was
+`recordDecision`, and `appendDecisionEvents` refused `EvidenceSnapshotRecorded` outright -
+so evidence gathered AFTER a decision, which is precisely what a verification-time status
+observation cites, could never be stored and the field was structurally unusable.
+`appendDecisionEvents` now takes the snapshots recorded by its own batch, and a cited
+snapshot that is not stored is refused by name instead of surfacing as a raw FK violation.
+Both write paths share one correspondence rule: evidence and the event recording it are
+appended together, same tenant, one event per snapshot.
+
+**Derived state is labeled by its least trustworthy input.** The register joined a
+projection's provenance from its single `DecisionRecorded` row, so a decision recorded by a
+real producer that later folded in synthetic approval, execution, or status events rendered
+with no badge. `listDecisionProjections` now derives each projection's provenance from every
+contributing row through `deriveArtifactProvenance` (ADR-0022), and one synthetic event
+makes the whole displayed fold a demonstration that `canFeedComplianceDecision` refuses.
+A `ReservationReleased` names no decision in a promoted column, so it is attributed through
+the reservation index for the fold but not yet for the label - the narrow remainder, closed
+when Wave D/F producers land and reservations become promoted facts.
+
+**The projection window is bounded like the entry window.** `listDecisionProjections` takes
+a limit; the register reads the 50 most recently active decisions, reports how many exist,
+and says so on screen, instead of a full-table read and an unbounded grid per page load.
+
+`rebuildDecisionProjections` is reachable as `pnpm ledger:rebuild`, the operator repair
+surface for corrupted derived state: it refuses to replay a chain that does not verify, and
+a run that rebuilds nothing exits non-zero. The anchor and projection checkpoint are now
+upserted per entry rather than once per batch, so if a future producer swallows a mid-batch
+refusal inside its own transaction, the rows that committed still have an anchor covering
+them - a partial append stays verifiable and repairable instead of breaking L4 forever with
+no repair path (`decision_ledger` rejects DELETE).
+
+**Why:** an opaque error code and an unlabeled synthetic fold are both silent failures, and
+immutable DDL is the wrong place to discover a field can never be written.
+**Revert path:** the shared error helpers, the optional snapshot argument, and the optional
+limit are all additive; the per-entry anchor upsert changes write frequency, not schema.

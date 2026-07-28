@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   DecisionInputBundleSchema,
   EvidenceSnapshotRefSchema,
+  type EvidenceSnapshotRef,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
@@ -128,6 +129,39 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
       decisionHash: decisionRecord.decisionHash,
     })],
     provenance: LEDGER_PROVENANCE,
+  };
+}
+
+/**
+ * Evidence gathered AFTER the decision, with the event that records it - the pair a
+ * verification-time `StatusObserved` cites.
+ */
+export function laterEvidenceRecording(id: string): {
+  snapshot: EvidenceSnapshotRef;
+  event: LedgerEntry;
+} {
+  const snapshot = EvidenceSnapshotRefSchema.parse({
+    firmId: LEDGER_ORG,
+    id,
+    kind: "external-status",
+    sourceRef: { firmId: LEDGER_ORG, id: "source:test" },
+    subjectRef: { firmId: LEDGER_ORG, id: "subject:test:status" },
+    observedAt: LEDGER_LATER,
+    retrievedAt: LEDGER_LATER,
+    attribution: "synthetic decision-ledger fixture",
+    schemaVersion: "evidence/1.0.0",
+    encryptedStorageRef: { firmId: LEDGER_ORG, id: "blob:test:status" },
+    contentHash: "9".repeat(64),
+    freshness: "fresh",
+  });
+  return {
+    snapshot,
+    event: LedgerEntrySchema.parse({
+      ...base(`ledger:later-evidence:${id}`, LEDGER_LATER),
+      type: "EvidenceSnapshotRecorded",
+      evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
+      contentHash: snapshot.contentHash,
+    }),
   };
 }
 

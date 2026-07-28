@@ -5,11 +5,16 @@ import {
   rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
-import { listDecisionProjections } from "@infra/ledger/ledger-projection-store";
+import {
+  countDecisionProjections,
+  listDecisionProjections,
+} from "@infra/ledger/ledger-projection-store";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
+import { canFeedComplianceDecision } from "@contracts/provenance";
 import {
   LEDGER_ORG,
   LEDGER_PROVENANCE,
+  LEDGER_TIME,
   allLedgerEventSamples,
   decisionRecordingInput,
   reusedBundleRecordingInput,
@@ -156,6 +161,44 @@ describe("deterministic decision-ledger projections", () => {
     expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual(
       await listDecisionProjections(db, LEDGER_ORG),
     );
+  });
+
+  it("labels replayed state by its least trustworthy event, not by the recording one", async () => {
+    const recorded = decisionRecordingInput();
+    const real = await recordDecision(db, {
+      ...recorded,
+      provenance: { source: "verin-crm", asOf: LEDGER_TIME, confidence: "high" },
+    });
+    expect(real.ok, real.ok ? "" : real.error.message).toBe(true);
+    const clean = (await listDecisionProjections(db, LEDGER_ORG))[0]!;
+    expect(clean.provenance.demonstration).toBe(false);
+    expect(canFeedComplianceDecision(clean.provenance)).toBe(true);
+
+    const escalation = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "ApprovalStageEscalated",
+      )!,
+      priorDecisionHash: recorded.decisionRecord.decisionHash,
+    });
+    await expect(append(db, [escalation])).resolves.toHaveLength(1);
+    const mixed = (await listDecisionProjections(db, LEDGER_ORG))[0]!;
+    // One synthetic event makes the whole displayed fold a demonstration (ADR-0022).
+    expect(mixed.provenance.demonstration).toBe(true);
+    expect(mixed.provenance.derivedFrom).toContain("fixture");
+    expect(canFeedComplianceDecision(mixed.provenance)).toBe(false);
+    expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual([mixed]);
+  });
+
+  it("bounds a request-path read while reporting how many decisions exist", async () => {
+    expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    expect(await countDecisionProjections(db, LEDGER_ORG)).toBe(2);
+    const windowed = await listDecisionProjections(db, LEDGER_ORG, 1);
+    expect(windowed.map(({ projection }) => projection.decisionId)).toEqual([
+      "dec:GC-01:0002",
+    ]);
+    expect(await listDecisionProjections(db, LEDGER_ORG)).toHaveLength(2);
   });
 
   it("records expiry then escalation in ledger order, not timestamp order", async () => {

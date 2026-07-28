@@ -98,8 +98,11 @@ export default function DecisionLedgerPage() {
                 Replayed decision state
               </h2>
               <p className="mt-1 text-xs text-slate-600">
-                Folded from the events above in recorded order. Nothing here is
-                evaluated or inferred.
+                Folded from the recorded events below, in ledger order. Nothing
+                here is evaluated or inferred.
+                {model.decisionsTotal > model.decisions.length
+                  ? ` Showing the ${model.decisions.length} most recently active of ${model.decisionsTotal} decisions.`
+                  : null}
               </p>
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                 {model.decisions.map((decision) => (

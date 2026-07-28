@@ -23,6 +23,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:seed": "tsx scripts/db-seed.ts",
     "audit:chain": "tsx scripts/audit-chain-verify.ts",
+    "ledger:rebuild": "tsx scripts/ledger-rebuild.ts",
     "license:audit": "tsx scripts/license-audit.ts",
     "load:smoke": "LOG_LEVEL=warn tsx scripts/load-smoke.ts",
     "v3:invariants": "tsx scripts/v3-invariants.ts",
