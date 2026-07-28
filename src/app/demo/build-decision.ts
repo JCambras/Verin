@@ -8,6 +8,7 @@
  * design language specifies (§5 disposition treatments, §7 authority surfaces).
  */
 import { metric } from "@contracts/metric";
+import { reserveFloorMinor as calculateReserveFloorMinor } from "@contracts/money-movement";
 import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
@@ -32,7 +33,7 @@ import {
  * demonstrations. The inputs list is the provenance trace, not a calculation cache. */
 const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synthetic-fixture", OBSERVED_RECENT)];
 export function reserveFloorMinor(firm: FirmData): number {
-  return firm.reserveMonths * PLANNED_WITHDRAWAL_MONTHLY_MINOR;
+  return calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, firm.reserveMonths);
 }
 export function headroomMinor(firm: FirmData): number {
   return AVAILABLE_CASH_MINOR - reserveFloorMinor(firm) - PENDING_DISTRIBUTION_MINOR;
@@ -53,7 +54,6 @@ export const DISPOSITION_BADGES = {
   blocked: { status: "blocked", label: DISPOSITION_LABELS.blocked },
   prohibited: { status: "prohibited", label: DISPOSITION_LABELS.prohibited },
 } as const;
-
 function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   const spec = scenario.spec;
   const out: BlockerVM[] = [];

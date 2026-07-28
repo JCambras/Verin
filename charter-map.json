@@ -448,7 +448,7 @@
     },
     {
       "id": "golden-cases-truth-set",
-      "title": "Golden-case truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (v3 prompt 2)",
+      "title": "Golden-case truth stays evidence-complete, UTC-canonical, semantically aligned with the demo, structurally consistent, and captain-signoff-gated (v3 prompt 2)",
       "status": "enforced",
       "phase": "v3-p2",
       "mechanisms": [

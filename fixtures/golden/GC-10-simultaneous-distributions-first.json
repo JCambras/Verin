@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by decision commit order, deterministically - never by racing external submissions."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by decision commit order, deterministically - never by racing external submissions. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-10",
     "maskedRequestSummary": "distribute 75000 USD for home-renovation; concurrent sibling request exists (tokenized)",
-    "asOf": "2026-07-26T15:00:00-04:00"
+    "asOf": "2026-07-26T19:00:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T14:55:00-04:00",
-      "retrievedAt": "2026-07-26T15:00:02-04:00",
+      "observedAt": "2026-07-26T18:55:00.000Z",
+      "retrievedAt": "2026-07-26T19:00:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T14:55:00-04:00",
-      "retrievedAt": "2026-07-26T15:00:02-04:00",
+      "observedAt": "2026-07-26T18:55:00.000Z",
+      "retrievedAt": "2026-07-26T19:00:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,12 +56,33 @@
     {
       "evidenceKind": "pending-actions",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T14:55:00-04:00",
-      "retrievedAt": "2026-07-26T15:00:02-04:00",
+      "observedAt": "2026-07-26T18:55:00.000Z",
+      "retrievedAt": "2026-07-26T19:00:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "At this request's evaluation instant no sibling reservation exists yet - this request commits first."
+      "summary": "At this request's evaluation instant no sibling reservation exists yet - this request commits first.",
+      "observedAbsent": true
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-26T18:55:00.000Z",
+      "retrievedAt": "2026-07-26T19:00:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction is household-titled, independently verified, and has no unresolved recent change."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T18:55:00.000Z",
+      "retrievedAt": "2026-07-26T19:00:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -96,7 +117,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
@@ -107,31 +128,39 @@
     "reason": "This request's reservation on conflict:smiths-liquidity commits FIRST; approvals recorded; revalidation confirms the reservation still holds and the sibling request cannot jointly violate the reserve.",
     "idempotencyKey": "idem:GC-10:smiths-75000-renovation",
     "reservations": [
-      { "reservationId": "res:GC-10:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {"reservationId": "res:GC-10:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M"}
     ],
     "preconditions": [
-      { "code": "reservation-still-held", "requiredEvidence": [], "mustStillHoldAtExecution": true },
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {"code": "reservation-still-held", "requiredEvidence": [], "mustStillHoldAtExecution": true},
+      {"code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true}
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "individually-valid", "summary": "Alone, this 75000 USD movement preserves the 48000 USD reserve (160000 - 75000 = 85000)." },
-    { "code": "reservation-acquired", "summary": "The liquidity conflict key for the household was free at commit time; this decision holds the reservation, making the joint constraint visible to every later evaluation." }
+    {"code": "individually-valid", "summary": "Alone, this 75000 USD movement preserves the 48000 USD reserve (160000 - 75000 = 85000)."},
+    {"code": "reservation-acquired", "summary": "The liquidity conflict key for the household was free at commit time; this decision holds the reservation, making the joint constraint visible to every later evaluation."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity." },
-    { "type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity - the ordering fact that decides the pair." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionSucceeded", "note": "External capability accepts the instruction." },
-    { "type": "StatusObserved", "note": "Returned status observed as submitted." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet."},
+    {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity."},
+    {"type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity - the ordering fact that decides the pair."},
+    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
+    {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction."},
+    {"type": "StatusObserved", "note": "Returned status observed as submitted."}
   ],
   "expectedVerificationState": {
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
     "note": "The winner reaches a governed submission; the reservation is released on VerificationClosed or expiry. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "pending-liquidity-activity", "status": "observed-absent", "sources": ["pending-actions"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

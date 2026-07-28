@@ -4,10 +4,10 @@
  *
  * Validates the golden-case truth set (fixtures/golden/*.json + docs/golden-cases.md)
  * with the shared core in scripts/golden-cases.lib.ts: every required field
- * present and populated, vocabulary aligned with config/demo/scenarios.yaml,
- * structural consistency (blocked/prohibited cases carry no authority or
- * execution), doc/fixture ids in sync, all twelve spec-required cases covered,
- * and every signoff in a legal state (pending-captain until the captain signs).
+ * present and populated, evidence complete, timestamps canonical, signed money
+ * semantics and status planes aligned with the live demo and scenarios.yaml,
+ * structural consistency enforced, doc/fixture ids in sync, all twelve
+ * spec-required cases covered, and every signoff in a legal state.
  *
  * The same validator runs inside `pnpm test` via the golden-cases fitness fence,
  * which also ships the adversarial companion (charter #4). This runner is the
@@ -16,6 +16,8 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { GOLDEN_DOC, SIGNOFF_PENDING, loadGoldenCases, loadScenarioRefs, validateGoldenCases } from "./golden-cases.lib";
+import { loadDemoSemanticSnapshot } from "./golden-demo-snapshot";
+import { validateGoldenDemoSemantics } from "./golden-demo-semantics.lib";
 
 const useColor = process.env.NO_COLOR === undefined;
 const paint = (code: string, s: string) => (useColor ? `\u001b[${code}m${s}\u001b[0m` : s);
@@ -32,7 +34,10 @@ if (docText === "") {
   process.exit(1);
 }
 
-const problems = validateGoldenCases(cases, refs, docText);
+const problems = [
+  ...validateGoldenCases(cases, refs, docText),
+  ...validateGoldenDemoSemantics(cases, refs, loadDemoSemanticSnapshot()),
+];
 
 console.log(bold(`\nGOLDEN CASES - the prompt-2 truth set (${cases.length} case(s))`));
 console.log(dim("expected results are product truth subject to captain signoff, not agent invention\n"));
@@ -56,4 +61,4 @@ if (problems.length > 0) {
   console.error(red(`\ngolden-cases: ${problems.length} problem(s) - an incomplete case cannot pass (charter #4)`));
   process.exit(1);
 }
-console.log(green(`\nall ${cases.length} cases complete, aligned, and signoff-gated\n`));
+console.log(green(`\nall ${cases.length} cases complete, signed-truth aligned, and signoff-gated\n`));

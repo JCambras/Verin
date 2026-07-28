@@ -48,6 +48,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // 1 - Household workspace (canonical journey: recent bank change under Firm A).
   await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
   await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
+  await expect(page.getByText("$8,000.00", { exact: true })).toBeVisible();
   await expectDevBadge(page);
   await checkAxe(page, "workspace");
   await snap(page, 1, "workspace");
@@ -119,6 +120,8 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expect(page.getByText("FB-2.1").first()).toBeVisible();
+  await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
   await checkAxe(page, "comparison");
   await snap(page, 10, "comparison");

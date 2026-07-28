@@ -1,9 +1,9 @@
 {
   "caseId": "GC-16-specialist-review-expiration",
-  "title": "Specialist-review expiration - the stage lapses without action and escalates along the configured path",
+  "title": "Specialist-review lapse - configured escalation fires, then unresolved escalated authority expires",
   "specName": "specialist-review expiration and escalation",
   "scenarioRef": "specialist-review-expiration",
-  "scenarioRefNote": "Maps to scenarios.yaml `specialist-review-expiration` (a specialist-review stage expires without action and escalates along the configured escalation path; exercises [proceed, awaiting-approval] - the branch ends at the escalated, still-awaiting state, not at execution). Beyond the prompt-2 twelve (demo-contract §5 branch).",
+  "scenarioRefNote": "Maps to scenarios.yaml `specialist-review-expiration` (the configured escalation fires at P1D, then unresolved escalated authority reaches its projected expiry; exercises [proceed, awaiting-approval] and never reaches execution). Beyond the prompt-2 twelve (demo-contract §5 branch).",
   "firm": "firm-a",
   "provenance": "synthetic-fixture",
   "deferred": null,
@@ -11,16 +11,16 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that expiration escalates (it does not auto-approve and does not silently cancel): the stage re-arms for the escalation roles with a fresh expiry, and every lapse is a recorded, attributed fact."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Captain approved the explicit evidence-completeness matrix, canonical UTC timestamps, and the ordered ApprovalStageEscalated then ApprovalStageExpired correction on 2026-07-28. The original stage remains immutable; no approval is invalidated and no decision is derived solely from lapse."
   },
   "trigger": {
     "kind": "human_request",
-    "description": "Advisor enters the $75,000 request with a recently changed bank instruction (as in GC-03). The bank-change specialist takes no action for two days; the review stage expires and escalates to the operations manager.",
+    "description": "Advisor enters the $75,000 request with a recently changed bank instruction (as in GC-03). The bank-change specialist takes no action; the P1D escalation fires first, then the unresolved escalated authority reaches its projected deadline.",
     "requesterRole": "advisor",
     "requestRef": "req:GC-16",
     "maskedRequestSummary": "distribute 75000 USD; specialist review lapses unactioned and escalates (tokenized)",
-    "asOf": "2026-07-26T18:20:00-04:00"
+    "asOf": "2026-07-26T22:20:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "bank-instruction",
       "subjectRef": "bank-instruction:smiths-primary",
-      "observedAt": "2026-07-22T14:12:00-04:00",
-      "retrievedAt": "2026-07-26T18:20:02-04:00",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T22:20:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,12 +46,43 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T18:15:00-04:00",
-      "retrievedAt": "2026-07-26T18:20:02-04:00",
+      "observedAt": "2026-07-26T22:15:00.000Z",
+      "retrievedAt": "2026-07-26T22:20:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
       "summary": "Liquidity and reserve satisfied; authority progress is the only open question."
+    },
+    {
+      "evidenceKind": "planned-withdrawals",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T22:20:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Recurring planned withdrawals 8000 USD/month; 6 months of reserve = 48000 USD (firm-a requirement)."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T22:20:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "observedAbsent": true,
+      "summary": "No active pending or reserved liquidity activity was observed at evaluation time."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T22:20:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -81,7 +112,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P2D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle"}
         ]
       },
       {
@@ -94,33 +125,41 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
-    "note": "Same required stages as GC-03. This case's subject is the TIME dimension: the specialist stage's P2D expiry lapses unactioned, the P1D escalation step widens eligibility to the operations manager, and the case ends still awaiting - stage 2 never arms."
+    "note": "Same required stages as GC-03. This case's subject is the time dimension: the P1D escalation step first projects operations-manager eligibility and a new expiry. When that authority remains unsatisfied through the projected deadline, expiration is recorded. The original stage is immutable and stage 2 never arms."
   },
   "expectedExecutionEligibility": {
     "eligible": false,
-    "reason": "Authority is unresolved: the specialist stage expired without action and now awaits the escalation roles. A proceed decision without completed authority is not executable - expiration never auto-approves.",
+    "reason": "Authority is unresolved: the escalation fired and its projected authority then expired unsatisfied. A proceed decision without completed authority is not executable; lapse never auto-approves.",
     "idempotencyKey": null,
     "reservations": [],
     "preconditions": []
   },
   "expectedExplanationNodes": [
-    { "code": "specialist-review-required", "summary": "Firm A routes the recent bank-instruction change to a bank-change specialist (stage 1 of 2)." },
-    { "code": "stage-expired-escalated", "summary": "No specialist acted within the configured window; the stage escalated along its configured path to the operations manager - visibly, with the expiration and escalation shown as recorded facts, and nothing auto-approved." }
+    {"code": "specialist-review-required", "summary": "Firm A routes the recent bank-instruction change to a bank-change specialist (stage 1 of 2)."},
+    {"code": "stage-escalated-then-expired", "summary": "At P1D the configured escalation projected operations-manager eligibility and a new expiry; the unresolved authority later reached that deadline. Both facts are visible, the original stage is immutable, and nothing auto-approved."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction change and evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision requiring specialist review (stage 1) then dual approval (stage 2); the stage instance's expiresAt is computed and recorded at instantiation." },
-    { "type": "ApprovalInvalidated", "note": "The lapsed specialist stage is closed with reason approval-expired: the unactioned window is a recorded authority fact (the reevaluateWhen condition approval_expired fires), and the stage re-arms for the escalation roles with a fresh expiry." },
-    { "type": "ExceptionDecisionRequested", "note": "The idle-past-escalation condition derives an attention decision for the operations manager referencing the prior decision and the lapse - the stall never disappears into a queue." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Bank-instruction change and evaluation snapshots pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Proceed decision requiring specialist review (stage 1) then dual approval (stage 2); the stage instance's expiresAt is computed and recorded at instantiation."},
+    {"type": "ApprovalStageEscalated", "note": "At P1D the configured escalation step fires, adding the operations-manager role and recording its projected expiry; the original stage remains immutable."},
+    {"type": "ApprovalStageExpired", "note": "The projected escalated authority remains unsatisfied through its deadline, so the unresolved stage expiration is recorded without invalidating an approval or deriving a new decision."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs while authority is unresolved. The demo shows expiration and escalation as first-class, honest states (demo-contract §3, 2:30-3:20: expiration and escalation are visible proof)."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "pending-liquidity-activity", "status": "observed-absent", "sources": ["pending-actions"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

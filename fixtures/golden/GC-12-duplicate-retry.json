@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a suppressed duplicate returns the ORIGINAL handle and status (duplicate_suppressed receipt), and the timeline shows one instruction with the retry annotated - never a second external row."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a suppressed duplicate returns the ORIGINAL handle and status (duplicate_suppressed receipt), and the timeline shows one instruction with the retry annotated - never a second external row. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-12",
     "maskedRequestSummary": "distribute 75000 USD; execution attempted three times client/transport-side (tokenized)",
-    "asOf": "2026-07-26T16:10:00-04:00"
+    "asOf": "2026-07-26T20:10:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T16:00:00-04:00",
-      "retrievedAt": "2026-07-26T16:10:02-04:00",
+      "observedAt": "2026-07-26T20:00:00.000Z",
+      "retrievedAt": "2026-07-26T20:10:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,12 +46,43 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T16:00:00-04:00",
-      "retrievedAt": "2026-07-26T16:10:02-04:00",
+      "observedAt": "2026-07-26T20:00:00.000Z",
+      "retrievedAt": "2026-07-26T20:10:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
       "summary": "Six-month reserve (48000 USD) preserved after the movement."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T20:00:00.000Z",
+      "retrievedAt": "2026-07-26T20:10:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "observedAbsent": true,
+      "summary": "No active pending or reserved liquidity activity was observed at evaluation time."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-26T20:00:00.000Z",
+      "retrievedAt": "2026-07-26T20:10:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction is household-titled, independently verified, and has no unresolved recent change."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T20:00:00.000Z",
+      "retrievedAt": "2026-07-26T20:10:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -81,7 +112,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
@@ -92,30 +123,38 @@
     "reason": "Approvals recorded; revalidation passes. The idempotency key is derived from the decision, NOT the click, so every duplicate attempt carries the same key.",
     "idempotencyKey": "idem:GC-12:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-12:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {"reservationId": "res:GC-12:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M"}
     ],
     "preconditions": [
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {"code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true}
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "stable-idempotency-key", "summary": "The execution step's idempotency key is a pure function of the approved decision, so a double-click or transport retry cannot mint a new instruction." },
-    { "code": "duplicate-suppressed", "summary": "The second and third attempts return the original handle with a duplicate_suppressed receipt; the timeline shows ONE external instruction with the retries annotated against it." }
+    {"code": "stable-idempotency-key", "summary": "The execution step's idempotency key is a pure function of the approved decision, so a double-click or transport retry cannot mint a new instruction."},
+    {"code": "duplicate-suppressed", "summary": "The second and third attempts return the original handle with a duplicate_suppressed receipt; the timeline shows ONE external instruction with the retries annotated against it."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying the stable idempotency key." },
-    { "type": "ReservationCreated", "note": "Liquidity reservation created before the first attempt." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
-    { "type": "ExecutionStarted", "note": "Exactly ONE ExecutionStarted is recorded for the step: the duplicate attempts are absorbed by the idempotency key and return duplicate_suppressed receipts referencing the same entry - no second start is ever recorded." },
-    { "type": "ExecutionSucceeded", "note": "The single external instruction is accepted; the same handle answers all three attempts." },
-    { "type": "StatusObserved", "note": "Returned status observed as submitted - once, for the one real instruction." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying the stable idempotency key."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created before the first attempt."},
+    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "ExecutionStarted", "note": "Exactly ONE ExecutionStarted is recorded for the step: the duplicate attempts are absorbed by the idempotency key and return duplicate_suppressed receipts referencing the same entry - no second start is ever recorded."},
+    {"type": "ExecutionSucceeded", "note": "The single external instruction is accepted; the same handle answers all three attempts."},
+    {"type": "StatusObserved", "note": "Returned status observed as submitted - once, for the one real instruction."}
   ],
   "expectedVerificationState": {
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
     "note": "Retries do not create duplicate instructions - provable against the fake adapter now, re-proven against the real sandbox when the trigger fires (demo-contract §8). Execution/status carry fake-adapter-response provenance until then."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "pending-liquidity-activity", "status": "observed-absent", "sources": ["pending-actions"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

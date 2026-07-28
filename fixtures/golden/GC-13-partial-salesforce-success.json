@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-13",
     "maskedRequestSummary": "distribute 75000 USD; external capability reports partial acceptance (tokenized)",
-    "asOf": "2026-07-26T16:45:00-04:00"
+    "asOf": "2026-07-26T20:45:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T16:40:00-04:00",
-      "retrievedAt": "2026-07-26T16:45:02-04:00",
+      "observedAt": "2026-07-26T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T20:45:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,12 +46,43 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T16:40:00-04:00",
-      "retrievedAt": "2026-07-26T16:45:02-04:00",
+      "observedAt": "2026-07-26T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T20:45:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
       "summary": "Six-month reserve preserved after the movement."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T20:45:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "observedAbsent": true,
+      "summary": "No active pending or reserved liquidity activity was observed at evaluation time."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-26T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T20:45:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "Destination bank instruction is household-titled, independently verified, and has no unresolved recent change."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T20:45:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -81,7 +112,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
@@ -92,31 +123,39 @@
     "reason": "Approvals recorded and revalidation passed - execution legitimately started; the partial outcome is discovered from the external receipt, not predicted.",
     "idempotencyKey": "idem:GC-13:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-13:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {"reservationId": "res:GC-13:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M"}
     ],
     "preconditions": [
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {"code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true}
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "partial-outcome-recorded", "summary": "The external receipt reports completed part 'instruction-created' and incomplete part 'disbursement-scheduled' - both lists are displayed verbatim with the exact source status; nothing is rounded up to success." },
-    { "code": "exception-requires-judgment", "summary": "A partial movement is neither done nor safely retryable as a whole, so policy requires a derived exception decision (complete the remainder, compensate, or hold) instead of an automatic retry - the failure never disappears into logs (v3 invariant 24)." }
+    {"code": "partial-outcome-recorded", "summary": "The external receipt reports completed part 'instruction-created' and incomplete part 'disbursement-scheduled' - both lists are displayed verbatim with the exact source status; nothing is rounded up to success."},
+    {"code": "exception-requires-judgment", "summary": "A partial movement is neither done nor safely retryable as a whole, so policy requires a derived exception decision (complete the remainder, compensate, or hold) instead of an automatic retry - the failure never disappears into logs (v3 invariant 24)."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan." },
-    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionPartiallySucceeded", "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string." },
-    { "type": "StatusObserved", "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside." },
-    { "type": "ExceptionDecisionRequested", "note": "The partial outcome derives a new decision request referencing the prior decision and the triggering ledger entry (reason: partial-execution)." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete."},
+    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves."},
+    {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
+    {"type": "ExecutionPartiallySucceeded", "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string."},
+    {"type": "StatusObserved", "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside."},
+    {"type": "ExceptionDecisionRequested", "note": "The partial outcome derives a new decision request referencing the prior decision and the triggering ledger entry (reason: partial-execution)."}
   ],
   "expectedVerificationState": {
     "reached": true,
     "observedStatus": "unknown",
     "settledClaim": "partial-is-not-settled",
     "note": "Verification cannot close: the completed part is proven, the incomplete part is not, and the surface says exactly that. All external responses here are fake-adapter-response until the sandbox trigger fires; this case is re-proven against the real managed package then (deferred-pending-sandbox)."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "pending-liquidity-activity", "status": "observed-absent", "sources": ["pending-actions"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

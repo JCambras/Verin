@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. DECISION DRAFTED HERE (flagged for the captain): after ApprovalInvalidated, the request re-evaluates on the refreshed bundle; a still-proceed result re-runs the SAME approval stages bound to the NEW decision hash (prior approvals never carry over); a no-longer-proceed result becomes the blocked/prohibited decision the new facts dictate."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. DECISION DRAFTED HERE (flagged for the captain): after ApprovalInvalidated, the request re-evaluates on the refreshed bundle; a still-proceed result re-runs the SAME approval stages bound to the NEW decision hash (prior approvals never carry over); a no-longer-proceed result becomes the blocked/prohibited decision the new facts dictate. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-15",
     "maskedRequestSummary": "distribute 75000 USD; material evidence changes between approval and execution (tokenized)",
-    "asOf": "2026-07-26T17:45:00-04:00"
+    "asOf": "2026-07-26T21:45:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T17:40:00-04:00",
-      "retrievedAt": "2026-07-26T17:45:02-04:00",
+      "observedAt": "2026-07-26T21:40:00.000Z",
+      "retrievedAt": "2026-07-26T21:45:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "pending-actions",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T17:40:00-04:00",
-      "retrievedAt": "2026-07-26T17:45:02-04:00",
+      "observedAt": "2026-07-26T21:40:00.000Z",
+      "retrievedAt": "2026-07-26T21:45:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,12 +56,32 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T17:40:00-04:00",
-      "retrievedAt": "2026-07-26T17:45:02-04:00",
+      "observedAt": "2026-07-26T21:40:00.000Z",
+      "retrievedAt": "2026-07-26T21:45:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
       "summary": "Six-month reserve = 48000 USD; satisfied on BOTH the original and the refreshed basis - the invalidation fires on material change, not on breach."
+    },
+    {
+      "evidenceKind": "bank-instruction",
+      "subjectRef": "bank-instruction:smiths-primary",
+      "observedAt": "2026-07-26T21:40:00.000Z",
+      "retrievedAt": "2026-07-26T21:45:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The initially verified household-titled bank instruction changed after approval; the refreshed snapshot records the material change before execution."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T21:40:00.000Z",
+      "retrievedAt": "2026-07-26T21:45:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -96,7 +116,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
@@ -107,36 +127,44 @@
     "reason": "Eligibility is reached only AFTER the second, re-approved pass: revalidation detected the changed bundle, invalidated the first approvals, and the re-run stages cleared against the new hash.",
     "idempotencyKey": "idem:GC-15:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-15:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {"reservationId": "res:GC-15:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M"}
     ],
     "preconditions": [
-      { "code": "input-bundle-hash-unchanged-since-approval", "requiredEvidence": ["subject:smiths-household"], "mustStillHoldAtExecution": true }
+      {"code": "input-bundle-hash-unchanged-since-approval", "requiredEvidence": ["subject:smiths-household"], "mustStillHoldAtExecution": true}
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "material-change-detected", "summary": "Pre-execution revalidation rebuilt the evidence basis and found a new 15000 USD pending distribution - the input-bundle hash changed, so the approvals no longer describe what would execute." },
-    { "code": "approval-bound-to-hash", "summary": "Approvals are bound to the exact decision hash (v3 invariant 19); a changed bundle invalidates them automatically - facts changed, so consent must be given again, visibly." },
-    { "code": "re-approval-on-new-bundle", "summary": "Re-evaluation on the refreshed bundle still proceeds (reserve satisfied at 210000 vs 48000), so the same dual-approval stage re-runs against the derived decision - prior approvals never carry over." }
+    {"code": "material-change-detected", "summary": "Pre-execution revalidation rebuilt the evidence basis and found a new 15000 USD pending distribution - the input-bundle hash changed, so the approvals no longer describe what would execute."},
+    {"code": "approval-bound-to-hash", "summary": "Approvals are bound to the exact decision hash (v3 invariant 19); a changed bundle invalidates them automatically - facts changed, so consent must be given again, visibly."},
+    {"code": "re-approval-on-new-bundle", "summary": "Re-evaluation on the refreshed bundle still proceeds (reserve satisfied at 210000 vs 48000), so the same dual-approval stage re-runs against the derived decision - prior approvals never carry over."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Original evaluation snapshots pinned (no pending activity)." },
-    { "type": "DecisionRecorded", "note": "Original proceed decision with dual-approval authority." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves against the original hash." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
-    { "type": "EvidenceSnapshotRecorded", "note": "Revalidation snapshot records the NEW 15000 USD pending distribution." },
-    { "type": "ApprovalInvalidated", "note": "Both approvals invalidated: reason material-evidence-changed, carrying the prior decision hash and the new bundle hash." },
-    { "type": "DecisionRecorded", "note": "Derived proceed decision (derivedFromDecisionId = the original) on the new bundle, requiring the same stage afresh." },
-    { "type": "ApprovalRecorded", "note": "Re-approval one against the NEW hash." },
-    { "type": "ApprovalRecorded", "note": "Re-approval two, distinct actor; quorum satisfied on the new hash." },
-    { "type": "ReservationCreated", "note": "Reservation created for the re-approved decision." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the derived decision's idempotency key." },
-    { "type": "ExecutionSucceeded", "note": "Instruction accepted." },
-    { "type": "StatusObserved", "note": "Returned status observed as submitted." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Original evaluation snapshots pinned (no pending activity)."},
+    {"type": "DecisionRecorded", "note": "Original proceed decision with dual-approval authority."},
+    {"type": "ApprovalRecorded", "note": "First operations approver approves against the original hash."},
+    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Revalidation snapshot records the NEW 15000 USD pending distribution."},
+    {"type": "ApprovalInvalidated", "note": "Both approvals invalidated: reason material-evidence-changed, carrying the prior decision hash and the new bundle hash."},
+    {"type": "DecisionRecorded", "note": "Derived proceed decision (derivedFromDecisionId = the original) on the new bundle, requiring the same stage afresh."},
+    {"type": "ApprovalRecorded", "note": "Re-approval one against the NEW hash."},
+    {"type": "ApprovalRecorded", "note": "Re-approval two, distinct actor; quorum satisfied on the new hash."},
+    {"type": "ReservationCreated", "note": "Reservation created for the re-approved decision."},
+    {"type": "ExecutionStarted", "note": "Single external instruction started under the derived decision's idempotency key."},
+    {"type": "ExecutionSucceeded", "note": "Instruction accepted."},
+    {"type": "StatusObserved", "note": "Returned status observed as submitted."}
   ],
   "expectedVerificationState": {
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
     "note": "The demo's approval-invalidation moment (demo-contract §3, 3:20-4:05): the timeline shows approval, the detected change, the invalidation, and the re-approval as distinct recorded facts. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "pending-liquidity-activity", "status": "present", "sources": ["pending-actions"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

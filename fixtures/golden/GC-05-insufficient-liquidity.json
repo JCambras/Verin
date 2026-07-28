@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-05",
     "maskedRequestSummary": "distribute 75000 USD for home-renovation under firm-b reserve policy (tokenized)",
-    "asOf": "2026-07-26T09:30:00-04:00"
+    "asOf": "2026-07-26T13:30:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-b",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "pending-actions",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,8 +56,8 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -100,24 +100,38 @@
       "code": "cash-reserve-breach",
       "explanation": "The movement would leave less than twelve months of planned withdrawals in cash.",
       "resolvingEvidence": [
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] },
-        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] }
+        {
+          "evidenceKind": "account-balance",
+          "subjectRef": "subject:smiths-joint-taxable",
+          "suppliableBy": ["external"]
+        },
+        {
+          "evidenceKind": "pending-actions",
+          "subjectRef": "subject:smiths-household",
+          "suppliableBy": ["operations"]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "effective-liquidity-computed", "summary": "Available 160000 USD minus the pending approved 20000 USD distribution = 140000 USD effective liquidity; pending activity counts against the household (demo-contract household shape)." },
-    { "code": "cash-reserve-breach", "summary": "After the 75000 USD movement only 65000 USD would remain, below Firm B's 96000 USD (twelve-month) reserve - the request blocks with the arithmetic shown." },
-    { "code": "firm-divergence-noted", "summary": "Under Firm A's six-month reserve (48000 USD) the identical facts proceed - the block exists because Firm B's policy version differs, not because the code differs." }
+    {"code": "effective-liquidity-computed", "summary": "Available 160000 USD minus the pending approved 20000 USD distribution = 140000 USD effective liquidity; pending activity counts against the household (demo-contract household shape)."},
+    {"code": "cash-reserve-breach", "summary": "After the 75000 USD movement only 65000 USD would remain, below Firm B's 96000 USD (twelve-month) reserve - the request blocks with the arithmetic shown."},
+    {"code": "firm-divergence-noted", "summary": "Under Firm A's six-month reserve (48000 USD) the identical facts proceed - the block exists because Firm B's policy version differs, not because the code differs."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Balance, pending-action, and planned-withdrawal snapshots pinned into the bundle - the pending 20000 USD activity is part of the recorded basis." },
-    { "type": "DecisionRecorded", "note": "Blocked decision recording the cash-reserve-breach blocker and its resolving evidence; no authority, no execution plan." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Balance, pending-action, and planned-withdrawal snapshots pinned into the bundle - the pending 20000 USD activity is part of the recorded basis."},
+    {"type": "DecisionRecorded", "note": "Blocked decision recording the cash-reserve-breach blocker and its resolving evidence; no authority, no execution plan."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs. The block resolves when fresh evidence shows the reserve satisfied (new funds, settled pending activity, or a smaller request re-entered as a new intent)."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "pending-liquidity-activity", "status": "present", "sources": ["pending-actions"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]}
+  ]
 }

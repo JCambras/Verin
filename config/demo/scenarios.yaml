@@ -14,8 +14,8 @@
 # contract is silent (for example Firm B's requester rule), the field is null with a
 # comment - silence is recorded, never filled in.
 #
-# Source of truth: docs/demo-contract.md (v1, with the two integrated 2026-07-26
-# captain annotations: Salesforce deferral and the design-language pointer).
+# Source of truth: docs/demo-contract.md (v1, with captain annotations for
+# Salesforce deferral, the design-language pointer, and canonical status planes).
 
 contract:
   id: verin-demo-contract
@@ -103,15 +103,15 @@ household:
 # State vocabulary (v3 build-sequence prompt 1 deliverable; the committed
 # demo-contract.md does not enumerate these states - its §5 names only the twelve
 # scenario branches).
-# Exactly these ten states; `label` is the display string. The `class` groups each
+# Exactly these eleven states; `label` is the display string. The `class` groups each
 # state by the plane it describes:
 #   disposition   -> DecisionResult.kind in the v3 core contracts
 #   authority     -> approval-stage progress
 #   execution     -> ObservedStatus in the v3 core contracts
-# (ObservedStatus also defines 'Rejected'; it is not part of this demo vocabulary
-# and is deliberately not added here. Committed referent for these type names:
-# docs/v3/verin-core-contracts.ts, landing in the parallel ratification branch
-# fm/verin-ratify-x2 under its arch-version pin, architecture v3.)
+# `rejected` remains an external observed outcome even though no current scenario
+# exercises it. `stuck` is a verification projection and duplicate suppression is
+# an execution receipt, so neither is an execution status in this register.
+# Committed referent for these type names: docs/v3/verin-core-contracts.ts.
 # --------------------------------------------------------------------------
 state_vocabulary:
   - id: proceed
@@ -137,6 +137,9 @@ state_vocabulary:
     class: execution
   - id: completed
     label: completed
+    class: execution
+  - id: rejected
+    label: rejected
     class: execution
   - id: nigo
     label: NIGO

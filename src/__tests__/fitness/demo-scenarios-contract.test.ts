@@ -77,6 +77,7 @@ export const PINNED_IDS: Record<string, readonly string[]> = {
     "submitted",
     "in-flight",
     "completed",
+    "rejected",
     "nigo",
     "unknown",
   ],
@@ -383,9 +384,9 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     expect(baselineViolations(numeric).some((i) => i.includes(`scenarios: id "13" is not in PINNED_IDS`))).toBe(true);
   });
 
-  it("flags a scenario exercising a state outside the vocabulary (e.g. ObservedStatus's excluded 'rejected')", () => {
-    const drifted = parseData(realText.replace("exercises: [proceed, approved, submitted, nigo]", "exercises: [proceed, approved, submitted, rejected]"));
-    expect(crossRefViolations(drifted).some((i) => i.includes(`"rejected" is not a state_vocabulary id`))).toBe(true);
+  it("flags a scenario exercising a state outside the vocabulary (for example presentation-only 'settled')", () => {
+    const drifted = parseData(realText.replace("exercises: [proceed, approved, submitted, nigo]", "exercises: [proceed, approved, submitted, settled]"));
+    expect(crossRefViolations(drifted).some((i) => i.includes(`"settled" is not a state_vocabulary id`))).toBe(true);
   });
 
   it("flags an element with an unknown provenance label", () => {

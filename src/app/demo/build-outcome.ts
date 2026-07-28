@@ -74,7 +74,7 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
       {
         step: "Raise cash (money-market redemption)",
         target: "Salesforce managed capability",
-        status: "settled",
+        status: "completed",
         statusLabel: "Settled · verified",
         timestamp: "Jul 26, 14:02",
         honestyLine: "Verified against returned custodian status, Jul 26, 15:40.",

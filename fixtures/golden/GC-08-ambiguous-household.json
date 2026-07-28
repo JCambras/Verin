@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that the model NEVER guesses between candidate households - the ambiguity becomes a structured human question, never a probabilistic pick."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that the model NEVER guesses between candidate households - the ambiguity becomes a structured human question, never a probabilistic pick. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-08",
     "maskedRequestSummary": "distribute 75000 USD for home-renovation; household slot has two candidates (tokenized)",
-    "asOf": "2026-07-26T13:20:00-04:00"
+    "asOf": "2026-07-26T17:20:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "household-directory",
       "subjectRef": "subject:advisor-book",
-      "observedAt": "2026-07-26T13:20:00-04:00",
-      "retrievedAt": "2026-07-26T13:20:02-04:00",
+      "observedAt": "2026-07-26T17:20:00.000Z",
+      "retrievedAt": "2026-07-26T17:20:02.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -70,22 +70,30 @@
       "code": "household-slot-ambiguous",
       "explanation": "'The Smiths' matches two households in the requesting advisor's book; Verin does not guess between candidates.",
       "resolvingEvidence": [
-        { "evidenceKind": "household-disambiguation", "subjectRef": "subject:advisor-book", "suppliableBy": ["advisor"] }
+        {
+          "evidenceKind": "household-disambiguation",
+          "subjectRef": "subject:advisor-book",
+          "suppliableBy": ["advisor"]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "household-candidates-found", "summary": "Two candidate households match 'the Smiths': Robert & Ana Smith and the Smith Family Trust. Both candidates are shown with distinguishing context." },
-    { "code": "human-disambiguation-required", "summary": "Verin asks the advisor a structured question (which household?) instead of guessing - the resolving affordance IS the question, and the answer is recorded evidence attributed to the advisor." }
+    {"code": "household-candidates-found", "summary": "Two candidate households match 'the Smiths': Robert & Ana Smith and the Smith Family Trust. Both candidates are shown with distinguishing context."},
+    {"code": "human-disambiguation-required", "summary": "Verin asks the advisor a structured question (which household?) instead of guessing - the resolving affordance IS the question, and the answer is recorded evidence attributed to the advisor."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "The household-directory snapshot with both candidate refs is pinned - the ambiguity itself is recorded evidence." },
-    { "type": "DecisionRecorded", "note": "Blocked decision carrying the ambiguity's structured human question as its resolving evidence; no authority, no execution plan." }
+    {"type": "EvidenceSnapshotRecorded", "note": "The household-directory snapshot with both candidate refs is pinned - the ambiguity itself is recorded evidence."},
+    {"type": "DecisionRecorded", "note": "Blocked decision carrying the ambiguity's structured human question as its resolving evidence; no authority, no execution plan."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs. The advisor's recorded answer resolves the block and evaluation re-runs with the household bound - the disambiguation is attributed, timestamped evidence, not a silent retry."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "household-identity", "status": "present", "sources": ["household-directory"]}
+  ]
 }

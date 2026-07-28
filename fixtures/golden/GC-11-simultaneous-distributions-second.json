@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules the loser BLOCKS at decision time (the sibling reservation is visible pending activity) rather than failing later at execution - the joint violation is prevented before any authority is requested."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules the loser BLOCKS at decision time (the sibling reservation is visible pending activity) rather than failing later at execution - the joint violation is prevented before any authority is requested. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-11",
     "maskedRequestSummary": "distribute 75000 USD for property-closing; sibling reservation already held (tokenized)",
-    "asOf": "2026-07-26T15:00:30-04:00"
+    "asOf": "2026-07-26T19:00:30.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T15:00:15-04:00",
-      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "observedAt": "2026-07-26T19:00:15.000Z",
+      "retrievedAt": "2026-07-26T19:00:32.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "pending-actions",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T15:00:15-04:00",
-      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "observedAt": "2026-07-26T19:00:15.000Z",
+      "retrievedAt": "2026-07-26T19:00:32.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,8 +56,8 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T15:00:15-04:00",
-      "retrievedAt": "2026-07-26T15:00:32-04:00",
+      "observedAt": "2026-07-26T19:00:15.000Z",
+      "retrievedAt": "2026-07-26T19:00:32.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -100,23 +100,37 @@
       "code": "liquidity-reserved-by-sibling",
       "explanation": "An active reservation for 75000 USD against the same household liquidity means this movement would jointly violate the cash-reserve policy.",
       "resolvingEvidence": [
-        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] },
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] }
+        {
+          "evidenceKind": "pending-actions",
+          "subjectRef": "subject:smiths-household",
+          "suppliableBy": ["operations"]
+        },
+        {
+          "evidenceKind": "account-balance",
+          "subjectRef": "subject:smiths-joint-taxable",
+          "suppliableBy": ["external"]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "individually-valid-jointly-overcommitted", "summary": "Alone this request satisfies the reserve; together with the reserved sibling movement it leaves 10000 USD against a 48000 USD requirement - the arithmetic is shown, citing the sibling reservation." },
-    { "code": "reservation-prevents-joint-violation", "summary": "The block resolves if the sibling reservation is released (rejection, expiry, or cancellation) or new funds arrive - both paths are shown as resolving affordances." }
+    {"code": "individually-valid-jointly-overcommitted", "summary": "Alone this request satisfies the reserve; together with the reserved sibling movement it leaves 10000 USD against a 48000 USD requirement - the arithmetic is shown, citing the sibling reservation."},
+    {"code": "reservation-prevents-joint-violation", "summary": "The block resolves if the sibling reservation is released (rejection, expiry, or cancellation) or new funds arrive - both paths are shown as resolving affordances."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Pending-actions snapshot showing res:GC-10:liquidity is pinned - the sibling reservation is part of this decision's recorded basis." },
-    { "type": "DecisionRecorded", "note": "Blocked decision citing the sibling reservation; no authority, no execution plan, no second reservation created." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Pending-actions snapshot showing res:GC-10:liquidity is pinned - the sibling reservation is part of this decision's recorded basis."},
+    {"type": "DecisionRecorded", "note": "Blocked decision citing the sibling reservation; no authority, no execution plan, no second reservation created."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs. If the sibling releases its reservation, re-evaluation runs on a new bundle; two concurrent valid requests can never jointly violate liquidity policy (demo-contract §8 completion test)."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "pending-liquidity-activity", "status": "present", "sources": ["pending-actions"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]}
+  ]
 }

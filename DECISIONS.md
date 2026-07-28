@@ -3229,3 +3229,32 @@ below high.
 
 **Revert path:** each selector deletes independently once its consumer bumps past
 the advisory range, at which point the range matches nothing.
+
+### D-102 · 2026-07-28 · captain-decision · Signed money truth, complete evidence, and canonical status planes stay aligned
+
+The signed Smiths request remains $75,000 with planned withdrawals of $8,000 per month. Firm A's
+six-month reserve floor is $48,000 and Firm B's twelve-month floor is $96,000. The demo derives both
+floors through the shared money-movement arithmetic instead of carrying a second floor constant.
+
+Every signed golden case now includes an evidence-completeness matrix. Each fact required to compute
+or validate the expected outcome identifies present evidence or an explicit observed absence. A
+proceed result cannot infer missing evidence is benign. All trigger and evidence instants use the
+canonical UTC form required by `TimestampSchema`.
+
+`completed` is the only canonical external status for proven downstream success; presentation may
+label that sourced result "Settled · verified." `rejected` remains an external observed outcome,
+`stuck` is a verification projection, and duplicate suppression is an execution receipt. GC-16
+records `ApprovalStageEscalated` at P1D followed by `ApprovalStageExpired` at the projected deadline.
+It does not invalidate a nonexistent approval or derive a new decision solely from lapse.
+
+The browser reproduction showed the default workspace at $6,000 per month and the comparison at
+$36,000/$72,000 reserve floors, while `pnpm golden:validate` passed the signed
+$8,000/$48,000/$96,000 fixtures. History identified a later walking-skeleton placeholder as the
+trigger and a structure-only validator as the masking condition. The counterfactual that changed
+only the monthly input to $8,000 restored both floors.
+
+**Why:** displayed arithmetic, signed fixtures, demo configuration, event vocabulary, evidence
+completeness, and execution status must express one product truth before additional decision
+machinery is built.
+**Revert path:** none without a new captain decision re-signing the golden truth and its semantic
+contract.

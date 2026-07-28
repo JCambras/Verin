@@ -394,7 +394,7 @@ alone, that the approval no longer stands and why.
 ## 8. Execution timeline and verification
 
 Surfaces #7, #8, #9. The doctrine is **honest status**: the UI never claims a stronger state than
-the underlying source proves. Submitted is not settled. Signed is not submitted. Green is earned.
+the underlying source proves. Submitted is not completed. Signed is not submitted. Green is earned.
 
 ### 8.1 `ExecutionTimeline` (built, D-036)
 
@@ -413,19 +413,19 @@ neutral**:
 |---|---|---|---|
 | `submitted` | blue (`running`) | "Submitted" | NEVER green, never "complete". Wherever it headlines, an adjacent `text-xs text-slate-600` line states what remains unproven: "Accepted for processing - settlement not yet confirmed." |
 | `in-flight` | blue (`running`) | "In flight" | Same honesty line pattern. |
-| `settled` / `completed` | green (`done`) | "Settled · verified" | Green ONLY when the status source proves completion. The label names the proof, e.g. "verified against custodian status Jul 27". |
-| `rejected` | red (`failed`) | "Rejected" | With the returned reason in plain language. |
+| `completed` | green (`done`) | "Settled · verified" | The canonical external status is completed. Green is allowed ONLY when the status source proves completion; the presentation label names that proof, e.g. "verified against custodian status Jul 27". There is no separate canonical `settled` state. |
+| `rejected` | red (`failed`) | "Rejected" | External observed outcome, with the returned reason in plain language. |
 | `nigo` | red (`failed`) | "Returned NIGO" | First-class, never buried: the row states the deficiency in plain words ("returned - the beneficiary form is not in good order: signature missing") and carries its resolving affordance (NIGO is blocked-class: fixable). |
 | `unknown` | amber (`suspended`) | "Unconfirmed" | With elapsed time: "no status for 2 days". |
-| `stuck` (prolonged unknown) | amber (`suspended`) | "Stuck" | First-class row, states the stuck-state rule that fired and the escalation affordance (blocked-class: has affordances). |
-| `duplicate-suppressed` | slate (`pending`) | "Duplicate suppressed" | See §8.3. |
+| `stuck` (prolonged unknown) | amber (`suspended`) | "Stuck" | Verification projection, not an external status. The row states the stuck-state rule that fired and the escalation affordance (blocked-class: has affordances). |
+| `duplicate-suppressed` | slate (`pending`) | "Duplicate suppressed" | Execution receipt, not stronger external proof. See §8.3. |
 
-Every status above is its own `STATUS_STYLES` key, never a label override on an existing one -
-honest-status doctrine forbids merging semantic identities that operators and fences must
-distinguish. `rejected` (an outcome returned by the external system) is not `failed` (an internal
-step that errored); `stuck` (verification cannot progress and needs attention) is not `suspended`
-(a healthy wait at a human gate). Each key only borrows the visual recipe of the family named in
-its row.
+Every row above is its own `STATUS_STYLES` key, never a label override on an existing one.
+Presentation style does not collapse semantic planes. `rejected` (an outcome returned by the
+external system) is not `failed` (an internal step that errored); `stuck` (a verification projection
+that needs attention) is not `suspended` (a healthy wait at a human gate); duplicate suppression is
+an execution receipt, not an external outcome. Each key only borrows the visual recipe of the family
+named in its row.
 
 ### 8.3 Idempotency, visible without jargon
 
@@ -437,8 +437,9 @@ non-engineer trusts:
 - The mechanism stays inspectable for the technical viewer: the idempotency key in `font-mono
   text-xs` inside the row's `TapToVerify` detail (§6.6), matching byte-for-byte across the original and
   suppressed rows - the visible proof they are the same instruction.
-- A duplicate-suppressed row is styled neutrally (slate), not as success and not as failure: it
-  is a non-event, and calm styling says so.
+- A duplicate-suppressed row is styled neutrally (slate), not as success and not as failure. It is
+  an execution receipt proving Verin did not issue a second instruction, not proof of a stronger
+  external status.
 
 ### 8.4 Verification state (surface #9)
 
@@ -658,7 +659,7 @@ first needs it (§11.3).
 | Primitive | Derives from | First used by | Spec |
 |---|---|---|---|
 | `DecisionSpine` | `ProgressSteps` states + a11y recipe; StepInfoCard kicker (collapsed form) | Surfaces 2-9, 11 | §4 |
-| `StatusBadge` map additions (`proceed`, `blocked`, `prohibited`, `submitted`, `in-flight`, `settled`, `rejected`, `nigo`, `unknown`, `stuck`, `duplicate-suppressed`) | Existing `STATUS_STYLES` families in `ui.tsx` | Surfaces 4, 6-9 | §5.1, §8.2 |
+| `StatusBadge` map additions (`proceed`, `blocked`, `prohibited`, `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`, `stuck`, `duplicate-suppressed`) | Existing `STATUS_STYLES` families in `ui.tsx` | Surfaces 4, 6-9 | §5.1, §8.2 |
 | `DispositionNotice` | Card recipe; audit-page amber panel; `Button` primary recipe as badge | Surface 4 | §5.2 |
 | `EvidenceRow` (+ conflict, missing variants) | `FreshValue`, `Metric`, EmptyState dashed idiom | Surface 3 | §6.1-6.3 |
 | `TapToVerify` | `WhyBubble` disclosure recipe (`why-bubble.tsx`): text trigger + `animate-slide-down` `bg-slate-50` panel; distinct from `WhyBubble` per PRODUCT-DIRECTION §7 | Surfaces 3, 7-9 (and the §11.3 collapse mode) | §6.6 |

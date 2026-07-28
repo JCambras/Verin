@@ -23,18 +23,24 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
+import { TimestampSchema } from "@contracts/decision-core/ids";
+import { OBSERVED_STATUS_IDS } from "@contracts/execution-status";
+import { validateEvidenceCompleteness } from "./golden-evidence.lib";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
-/** The 14 LedgerEntry.type values (docs/v3/verin-core-contracts.ts). */
+/** The ledger types used by signed golden truth, including the captain-ratified
+ * authority-lapse events that prompt 7 must add to its canonical event union. */
 export const LEDGER_EVENT_TYPES = [
   "DecisionRecorded",
   "EvidenceSnapshotRecorded",
   "ApprovalRecorded",
   "ApprovalInvalidated",
+  "ApprovalStageEscalated",
+  "ApprovalStageExpired",
   "ReservationCreated",
   "ReservationReleased",
   "ExecutionStarted",
@@ -55,12 +61,8 @@ export const AUTHORITY_MODES = ["automatic", "approval", "specialist_review", "n
 /** DecisionResult.kind (the disposition plane). */
 export const DISPOSITIONS = ["proceed", "blocked", "prohibited"] as const;
 
-/** The execution-plane state ids a verification state may report: the v3
- * ObservedStatus vocabulary minus the deliberately-excluded 'Rejected'. An
- * observedStatus is dual-checked against BOTH this pin and the live
- * scenarios.yaml execution class (mirroring expectedDisposition), so a state
- * appended to the matrix later cannot silently widen the golden vocabulary. */
-export const EXECUTION_STATES = ["submitted", "in-flight", "completed", "nigo", "unknown"] as const;
+/** Canonical observed external outcomes. Presentation labels cannot widen it. */
+export const EXECUTION_STATES = OBSERVED_STATUS_IDS;
 
 /** EvidenceSnapshotRef.freshness. */
 export const FRESHNESS = ["fresh", "stale", "unknown"] as const;
@@ -91,6 +93,8 @@ export const REQUIRED_SPEC_NAMES = [
 export interface ScenarioRefs {
   scenarioIds: Set<string>;
   firmIds: Set<string>;
+  canonicalRequestAmountUsd: number | null;
+  firmReserveMonths: Map<string, number>;
   dispositionStates: Set<string>;
   executionStates: Set<string>;
   provenanceLabels: Set<string>;
@@ -100,8 +104,10 @@ export interface ScenarioRefs {
 interface YamlIdRow {
   id?: unknown;
   class?: unknown;
+  cash_reserve?: { months_of_planned_withdrawals?: unknown };
 }
 interface YamlData {
+  canonical_request?: { amount_usd?: unknown };
   firms?: YamlIdRow[];
   state_vocabulary?: YamlIdRow[];
   scenarios?: YamlIdRow[];
@@ -121,6 +127,15 @@ export function loadScenarioRefs(text = readFileSync(SCENARIOS_YAML, "utf8")): S
   return {
     scenarioIds: new Set(idsOf(data.scenarios)),
     firmIds: new Set(idsOf(data.firms)),
+    canonicalRequestAmountUsd:
+      typeof data.canonical_request?.amount_usd === "number" ? data.canonical_request.amount_usd : null,
+    firmReserveMonths: new Map(
+      (data.firms ?? []).flatMap((firm) =>
+        typeof firm.id === "string" && typeof firm.cash_reserve?.months_of_planned_withdrawals === "number"
+          ? [[firm.id, firm.cash_reserve.months_of_planned_withdrawals]]
+          : [],
+      ),
+    ),
     dispositionStates: pick("disposition"),
     executionStates: pick("execution"),
     provenanceLabels: new Set(idsOf(data.provenance_labels)),
@@ -235,6 +250,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
     else {
       if (t.kind !== "human_request" && t.kind !== "system_event") P(`trigger.kind must be human_request|system_event, got ${JSON.stringify(t.kind)}`);
       if (!isNonEmptyString(t.description)) P("trigger.description missing or empty");
+      if (!TimestampSchema.safeParse(t.asOf).success) P("trigger.asOf must be canonical UTC ISO (YYYY-MM-DDTHH:MM:SS.mmmZ)");
     }
 
     // firm configuration (must agree with the case's firm)
@@ -260,10 +276,15 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
         for (const k of ["evidenceKind", "subjectRef", "observedAt", "retrievedAt", "source", "summary"] as const) {
           if (!isNonEmptyString(e[k])) P(`${at}.${k} missing or empty`);
         }
+        for (const k of ["observedAt", "retrievedAt"] as const) {
+          if (!TimestampSchema.safeParse(e[k]).success) P(`${at}.${k} must be canonical UTC ISO (YYYY-MM-DDTHH:MM:SS.mmmZ)`);
+        }
+        if ("observedAbsent" in e && !isBool(e.observedAbsent)) P(`${at}.observedAbsent must be a boolean when present`);
         if (!(isNonEmptyString(e.freshness) && (FRESHNESS as readonly string[]).includes(e.freshness))) P(`${at}.freshness must be one of ${FRESHNESS.join("|")}`);
         if (!(isNonEmptyString(e.provenance) && refs.provenanceLabels.has(e.provenance))) P(`${at}.provenance must be a scenarios.yaml provenance label`);
       });
     }
+    for (const problem of validateEvidenceCompleteness(c)) P(problem);
 
     // policy versions. Household-instruction versions may be EMPTY only when the
     // case records why (householdInstructionsNote) - e.g. the ambiguous-household

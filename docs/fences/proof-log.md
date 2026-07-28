@@ -5337,3 +5337,43 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+## F101 · signed money truth and cross-artifact semantics (D-098)
+
+**Invariant:** the signed $75,000 request, $8,000 monthly planned-withdrawal schedule, six-month and
+twelve-month reserve horizons, USD minor units, $48,000/$96,000 derived floors, evidence
+completeness, canonical UTC instants, GC-16 event order, and canonical status planes cannot drift
+between golden fixtures, scenarios.yaml, and the demo.
+
+The end-user browser reproduction showed `$6,000.00` in the default workspace and
+`$36,000.00`/`$72,000.00` reserve floors in the firm comparison while `pnpm golden:validate`
+remained green. Changing only `PLANNED_WITHDRAWAL_MONTHLY_MINOR` to 800,000 restored the signed
+floors, identifying the later walking-skeleton placeholder as the trigger and structural-only
+validation as the masking condition.
+
+History traced the signed fixtures to `050a0e9` and the independent 600,000-minor-unit demo literal
+to the later walking-skeleton commit `2ef71b3`. The leading explanation would have been falsified if
+current main had rendered $8,000/$48,000/$96,000 before any edit, if the 600,000 literal had not
+existed on the displayed path, or if the stock golden validator had rejected the mismatch. The
+browser reproduction, source history, and green pre-fix validator each disconfirmed those
+falsifiers.
+
+For the adversarial production proof, the corrected demo constant was temporarily changed back to
+600,000 and the focused fitness test was run. It failed at
+`src/__tests__/fitness/golden-cases.test.ts:56` with:
+
+```text
+GC-01-firm-a-happy-path: planned-withdrawal drift, fixture=800000, demo=600000
+GC-01-firm-a-happy-path: derived reserve floor drift, fixture=4800000, demo=3600000
+GC-02-firm-b-happy-path: planned-withdrawal drift, fixture=800000, demo=600000
+GC-02-firm-b-happy-path: derived reserve floor drift, fixture=9600000, demo=7200000
+```
+
+The companion additionally injects request amount, reserve horizon, minor-unit conversion, derived
+floor, scenario status-register, execution/verification plane, non-UTC timestamp, missing evidence
+matrix, inferred benign absence, and reversed GC-16 event-order violations. Each must produce its
+named diagnostic before the companion can pass.
+
+**Revert:** the $6,000 production injection was removed. The focused golden and scenario fitness
+suites pass on the corrected state.
+
+**Date:** 2026-07-28 (D-098).

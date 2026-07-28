@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft assumes both Firm A stages apply at $75,000: specialist review for the recent bank change AND dual operations approval above $25,000."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft assumes both Firm A stages apply at $75,000: specialist review for the recent bank change AND dual operations approval above $25,000. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-03",
     "maskedRequestSummary": "distribute 75000 USD for home-renovation to a recently changed destination (tokenized)",
-    "asOf": "2026-07-26T09:30:00-04:00"
+    "asOf": "2026-07-26T13:30:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "bank-instruction",
       "subjectRef": "bank-instruction:smiths-primary",
-      "observedAt": "2026-07-22T14:12:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,12 +56,33 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
       "summary": "Six-month reserve (48000 USD) remains satisfied after the movement."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "observedAbsent": true,
+      "summary": "No active pending or reserved liquidity activity was observed at evaluation time."
+    },
+    {
+      "evidenceKind": "household-instruction",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "summary": "The destination restriction permits this request's household-titled destination."
     }
   ],
   "policyVersions": {
@@ -91,7 +112,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P2D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle"}
         ]
       },
       {
@@ -104,7 +125,7 @@
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {"after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle"}
         ]
       }
     ],
@@ -115,32 +136,40 @@
     "reason": "Specialist review clears the bank-instruction change and two distinct operations approvals are recorded against the decision hash; revalidation confirms the change was verified.",
     "idempotencyKey": "idem:GC-03:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-03:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {"reservationId": "res:GC-03:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M"}
     ],
     "preconditions": [
-      { "code": "bank-instruction-independently-verified", "requiredEvidence": ["bank-instruction:smiths-primary"], "mustStillHoldAtExecution": true }
+      {"code": "bank-instruction-independently-verified", "requiredEvidence": ["bank-instruction:smiths-primary"], "mustStillHoldAtExecution": true}
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22), triggering firm-specific handling." },
-    { "code": "specialist-review-required", "summary": "Firm A handling for a recent bank-instruction change is specialist review, not an execution block." },
-    { "code": "dual-approval-required", "summary": "The 75000 USD amount independently requires two distinct operations approvers above 25000 USD." }
+    {"code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22), triggering firm-specific handling."},
+    {"code": "specialist-review-required", "summary": "Firm A handling for a recent bank-instruction change is specialist review, not an execution block."},
+    {"code": "dual-approval-required", "summary": "The 75000 USD amount independently requires two distinct operations approvers above 25000 USD."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent change is pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision requiring specialist review then dual operations approval." },
-    { "type": "ApprovalRecorded", "note": "Bank-change specialist approves the recent change (stage 1)." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves (stage 2)." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves (stage 2); quorum satisfied." },
-    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle." },
-    { "type": "StatusObserved", "note": "Returned status observed as submitted." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent change is pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Proceed decision requiring specialist review then dual operations approval."},
+    {"type": "ApprovalRecorded", "note": "Bank-change specialist approves the recent change (stage 1)."},
+    {"type": "ApprovalRecorded", "note": "First operations approver approves (stage 2)."},
+    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves (stage 2); quorum satisfied."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created before execution."},
+    {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
+    {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle."},
+    {"type": "StatusObserved", "note": "Returned status observed as submitted."}
   ],
   "expectedVerificationState": {
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
     "note": "Firm A reaches a governed submission after specialist review. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]},
+    {"fact": "pending-liquidity-activity", "status": "observed-absent", "sources": ["pending-actions"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

@@ -39,10 +39,9 @@ export const ACCOUNTS: readonly AccountData[] = [
   { id: "acct-trad", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
 ];
 
-// Liquidity inputs. Chosen so the canonical request clears both firms' reserves:
-// Firm A headroom = 200k - 6*6k - 40k = $124,000; Firm B = 200k - 72k - 40k = $88,000.
+// Signed inputs clear both reserves: Firm A headroom $112k; Firm B headroom $64k.
 export const AVAILABLE_CASH_MINOR = 20_000_000; // $200,000 available cash
-export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 600_000; // $6,000 / month
+export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 800_000; // $8,000 / month, signed golden truth
 export const PENDING_DISTRIBUTION_MINOR = 4_000_000; // $40,000 approved, not yet settled
 
 // Bank instructions (required shape: a recently changed bank instruction).

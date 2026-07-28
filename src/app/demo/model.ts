@@ -14,6 +14,7 @@
  */
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
+import type { ExecutionReceiptId, ObservedStatusId, VerificationProjectionId } from "@contracts/execution-status";
 
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
@@ -250,7 +251,7 @@ export interface IdentifierVM {
 export interface ExecutionRowVM {
   readonly step: string;
   readonly target: string;
-  readonly status: string; // StatusBadge key
+  readonly status: ObservedStatusId | VerificationProjectionId | ExecutionReceiptId; // labels cannot mint states
   readonly statusLabel: string;
   readonly timestamp: string;
   readonly honestyLine?: string; // "Accepted for processing - settlement not yet confirmed"

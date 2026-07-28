@@ -103,7 +103,6 @@ const STATUS_STYLES: Record<string, string> = {
   prohibited: "bg-slate-900 text-white border-slate-900",
   submitted: "bg-blue-50 text-blue-800 border-blue-200",
   "in-flight": "bg-blue-50 text-blue-800 border-blue-200",
-  settled: "bg-green-50 text-green-800 border-green-200",
   rejected: "bg-red-50 text-red-800 border-red-200",
   nigo: "bg-red-50 text-red-800 border-red-200",
   unknown: "bg-amber-50 text-amber-900 border-amber-200",

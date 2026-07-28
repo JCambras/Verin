@@ -11,6 +11,11 @@ import {
   type LoadedCase,
   type ScenarioRefs,
 } from "../../../scripts/golden-cases.lib";
+import { loadDemoSemanticSnapshot } from "../../../scripts/golden-demo-snapshot";
+import {
+  validateGoldenDemoSemantics,
+  type DemoSemanticSnapshot,
+} from "../../../scripts/golden-demo-semantics.lib";
 
 /**
  * GOLDEN-CASES FENCE (v3 build-sequence prompt 2; charter #1/#4). The golden
@@ -20,16 +25,19 @@ import {
  *      household evidence, policy versions, household instructions, expected
  *      disposition / authority stages / execution eligibility / explanation
  *      nodes / ledger events / verification state, signoff);
- *  (b) vocabulary aligns with the LIVE config/demo/scenarios.yaml (firm ids,
+ *  (b) evidence completeness and canonical UTC instants are explicit; signed
+ *      request amount, units, monthly schedule, reserve horizons/floors, and
+ *      status planes align with the live demo and scenarios.yaml;
+ *  (c) vocabulary aligns with the LIVE config/demo/scenarios.yaml (firm ids,
  *      scenario ids, state vocabulary, provenance labels, deferral status) and
  *      ledger events with the v3 core-contracts LedgerEntry types;
- *  (c) structural consistency: blocked/prohibited cases carry no authority,
+ *  (d) structural consistency: blocked/prohibited cases carry no authority,
  *      no execution eligibility, no reached verification (v3 invariants 8/9);
  *      the partial-Salesforce case carries the deferred-pending-sandbox marking;
- *  (d) signoff honesty: pending-captain (unsigned) or signed-with-attribution;
+ *  (e) signoff honesty: pending-captain (unsigned) or signed-with-attribution;
  *      an agent-invented in-between state cannot pass; expected results remain
  *      product truth subject to captain signoff, never agent invention;
- *  (e) doc/fixture sync in BOTH directions: every fixture caseId appears in
+ *  (f) doc/fixture sync in BOTH directions: every fixture caseId appears in
  *      docs/golden-cases.md AND every full case id the doc names exists as a
  *      fixture; all twelve spec-enumerated cases are covered; at least twelve.
  * The validator core is shared with scripts/golden-cases-validate.ts (the
@@ -40,10 +48,14 @@ import {
 const realCases = loadGoldenCases();
 const realRefs = loadScenarioRefs();
 const realDoc = readFileSync(GOLDEN_DOC, "utf8");
+const realDemo = loadDemoSemanticSnapshot();
 
 describe("golden-cases fence", () => {
   it("enforces: every golden case is complete, aligned, consistent, and signoff-gated", () => {
-    const problems = validateGoldenCases(realCases, realRefs, realDoc);
+    const problems = [
+      ...validateGoldenCases(realCases, realRefs, realDoc),
+      ...validateGoldenDemoSemantics(realCases, realRefs, realDemo),
+    ];
     expect(problems, `golden-case problems:\n${problems.join("\n")}`).toEqual([]);
   });
 
@@ -62,6 +74,8 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     return found.data as Record<string, unknown>;
   };
   const run = (cases: LoadedCase[], doc = realDoc) => validateGoldenCases(cases, realRefs, doc);
+  const demoClone = (): DemoSemanticSnapshot =>
+    JSON.parse(JSON.stringify(realDemo)) as DemoSemanticSnapshot;
 
   it("flags a missing required field (expectedDisposition removed)", () => {
     const cases = clone();
@@ -108,20 +122,98 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(problems.some((p) => p.includes("must be a v3 LedgerEntry type"))).toBe(true);
   });
 
-  it("flags an execution state outside the pinned vocabulary even when scenarios.yaml appends it", () => {
-    // The matrix's stability contract is append-only, so a later-appended state
-    // (e.g. the deliberately-excluded 'rejected') must still be refused by the
-    // EXECUTION_STATES pin - the yaml alone cannot widen the golden vocabulary.
-    const widened: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates, "rejected"]) };
+  it("flags an execution state outside the canonical observed vocabulary", () => {
+    const widened: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates, "settled"]) };
     const cases = clone();
-    (caseById(cases, "GC-01-firm-a-happy-path").expectedVerificationState as Record<string, unknown>).observedStatus = "rejected";
+    (caseById(cases, "GC-01-firm-a-happy-path").expectedVerificationState as Record<string, unknown>).observedStatus = "settled";
     const problems = validateGoldenCases(cases, widened, realDoc);
-    expect(problems.some((p) => p.includes("observedStatus must be one of submitted|in-flight|completed|nigo|unknown"))).toBe(true);
+    expect(problems.some((p) => p.includes("observedStatus must be one of submitted|in-flight|completed|rejected|nigo|unknown"))).toBe(true);
 
     // And the reverse: a pinned state the live matrix no longer defines fails too.
     const narrowed: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates].filter((s) => s !== "submitted")) };
     const drifted = validateGoldenCases(clone(), narrowed, realDoc);
     expect(drifted.some((p) => p.includes('observedStatus "submitted" is not a scenarios.yaml execution-class state'))).toBe(true);
+  });
+
+  it("flags non-canonical timestamps and evidence silence presented as completeness", () => {
+    const cases = clone();
+    const c = caseById(cases, "GC-01-firm-a-happy-path");
+    (c.trigger as Record<string, unknown>).asOf = "2026-07-26T09:30:00-04:00";
+    delete c.evidenceCompleteness;
+    const problems = run(cases);
+    expect(problems.some((p) => p.includes("trigger.asOf must be canonical UTC ISO"))).toBe(true);
+    expect(problems.some((p) => p.includes("evidenceCompleteness must be a non-empty explicit fact matrix"))).toBe(true);
+  });
+
+  it("flags a proceed case that infers missing evidence is benign", () => {
+    const cases = clone();
+    const c = caseById(cases, "GC-02-firm-b-happy-path");
+    c.evidenceCompleteness = (c.evidenceCompleteness as unknown[]).filter(
+      (entry) => (entry as Record<string, unknown>).fact !== "pending-liquidity-activity",
+    );
+    expect(
+      run(cases).some((p) => p.includes('proceed requires evidenceCompleteness fact "pending-liquidity-activity"')),
+    ).toBe(true);
+  });
+
+  it("flags signed request amount and monthly-withdrawal drift in the demo", () => {
+    const amountDrift = demoClone();
+    amountDrift.requestAmountMinor = 7_400_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, amountDrift).some((p) => p.includes("request amount drift")),
+    ).toBe(true);
+
+    const scheduleDrift = demoClone();
+    scheduleDrift.plannedWithdrawalMonthlyMinor = 600_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, scheduleDrift).some((p) => p.includes("planned-withdrawal drift")),
+    ).toBe(true);
+  });
+
+  it("flags reserve-horizon, unit, and derived-floor drift", () => {
+    const horizonDrift = demoClone();
+    horizonDrift.firms[0]!.reserveMonths = 5;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, horizonDrift).some((p) => p.includes("reserve horizon drift")),
+    ).toBe(true);
+
+    const unitDrift = demoClone();
+    unitDrift.minorUnitsPerMajor = 1_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, unitDrift).some((p) => p.includes("100 minor units per major")),
+    ).toBe(true);
+
+    const floorDrift = demoClone();
+    floorDrift.firms[1]!.reserveFloorMinor = 9_500_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, floorDrift).some((p) => p.includes("derived reserve floor drift")),
+    ).toBe(true);
+  });
+
+  it("flags status-register and status-plane drift", () => {
+    const refs: ScenarioRefs = {
+      ...realRefs,
+      executionStates: new Set([...realRefs.executionStates, "settled"]),
+    };
+    expect(
+      validateGoldenDemoSemantics(clone(), refs, realDemo).some((p) => p.includes("execution statuses must equal")),
+    ).toBe(true);
+
+    const demo = demoClone();
+    demo.executionTimelineStatuses = [...demo.executionTimelineStatuses, "stuck"];
+    demo.verificationTimelineStatuses = [...demo.verificationTimelineStatuses, "duplicate-suppressed"];
+    const problems = validateGoldenDemoSemantics(clone(), realRefs, demo);
+    expect(problems.some((p) => p.includes('"stuck" is neither an observed outcome nor an execution receipt'))).toBe(true);
+    expect(problems.some((p) => p.includes('"duplicate-suppressed" is neither an observed outcome nor a verification projection'))).toBe(true);
+  });
+
+  it("flags an incomplete or misordered GC-16 authority-lapse event sequence", () => {
+    const cases = clone();
+    const events = caseById(cases, "GC-16-specialist-review-expiration").expectedLedgerEvents as unknown[];
+    events.reverse();
+    expect(
+      validateGoldenDemoSemantics(cases, realRefs, realDemo).some((p) => p.includes("GC-16 event sequence must be")),
+    ).toBe(true);
   });
 
   it("flags structural contradictions: a blocked case carrying authority/execution, a proceed case with none", () => {

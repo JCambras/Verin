@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. The block is resolvable: independent verification of the bank instruction clears it and the request re-enters evaluation."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. The block is resolvable: independent verification of the bank instruction clears it and the request re-enters evaluation. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-04",
     "maskedRequestSummary": "distribute 75000 USD to a recently changed destination under Firm B (tokenized)",
-    "asOf": "2026-07-26T09:30:00-04:00"
+    "asOf": "2026-07-26T13:30:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-b",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "bank-instruction",
       "subjectRef": "bank-instruction:smiths-primary",
-      "observedAt": "2026-07-22T14:12:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-22T18:12:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T09:30:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T13:30:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -85,22 +85,31 @@
       "code": "bank-instruction-change-unverified",
       "explanation": "The destination bank instruction changed recently and Firm B requires independent verification before any execution.",
       "resolvingEvidence": [
-        { "evidenceKind": "bank-instruction-independent-verification", "subjectRef": "bank-instruction:smiths-primary", "suppliableBy": ["operations", "external"] }
+        {
+          "evidenceKind": "bank-instruction-independent-verification",
+          "subjectRef": "bank-instruction:smiths-primary",
+          "suppliableBy": ["operations", "external"]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22)." },
-    { "code": "firm-b-blocks-until-verified", "summary": "Firm B handling for a recent bank-instruction change is to block execution until the instruction is independently verified - the resolving affordance is the verification, shown to the user." }
+    {"code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22)."},
+    {"code": "firm-b-blocks-until-verified", "summary": "Firm B handling for a recent bank-instruction change is to block execution until the instruction is independently verified - the resolving affordance is the verification, shown to the user."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent, unverified change is pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Blocked decision recording the resolvable blocker and its resolving evidence; no authority, no execution plan." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent, unverified change is pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Blocked decision recording the resolvable blocker and its resolving evidence; no authority, no execution plan."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs, so there is no external status to verify. The block is resolvable, not terminal."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]}
+  ]
 }

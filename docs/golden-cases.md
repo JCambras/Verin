@@ -1,9 +1,9 @@
 # Verin - Golden-Case Specification (v3 build-sequence prompt 2)
 
-**Status:** Signed truth set - **all 16 cases signed as drafted by the captain on 2026-07-26**
-(approval relayed via firstmate). Expected results are product truth subject to human signoff, not
-agent invention (build-sequence prompt 2; re-baseline note: the signoff authority for every case is
-the captain).
+**Status:** Signed truth set - **all 16 cases signed by the captain and reapproved on 2026-07-28**
+for explicit evidence completeness and canonical UTC instants (approval relayed via firstmate).
+Expected results are product truth subject to human signoff, not agent invention (build-sequence
+prompt 2; the signoff authority for every case is the captain).
 **Machine mirror:** [`fixtures/golden/*.json`](../fixtures/golden/) - one file per case, validated
 by `pnpm golden:validate` (CI job `golden-cases`) and the `golden-cases` fitness fence.
 **Vocabulary sources:** [`config/demo/scenarios.yaml`](../config/demo/scenarios.yaml) (scenario ids,
@@ -26,7 +26,8 @@ Every case carries a `signoff` block initialized to:
 - Only the captain may flip a case to signed; the agent that drafted a case must never sign it.
 - The validation gate accepts exactly two signoff shapes: `pending-captain` (signedBy/signedAt
   null) and `signed` (signer and timestamp populated). A signed status without attribution, or any
-  other status, fails the build. The captain signed all 16 cases as drafted on 2026-07-26.
+  other status, fails the build. The captain signed all 16 cases on 2026-07-26 and reapproved the
+  evidence-completeness amendment on 2026-07-28.
 - Signing happens per case. A signed case's expected outcomes become binding product truth; changing
   them afterwards requires a new captain decision recorded in the PR.
 - Where a draft had to FIX an answer the demo contract deliberately left open, the case's signoff
@@ -37,22 +38,22 @@ Every case carries a `signoff` block initialized to:
 
 | Case | Spec case | Scenario branch | Firm | Disposition | Authority | Execution | Verification | Signoff |
 |---|---|---|---|---|---|---|---|---|
-| GC-01-firm-a-happy-path | Firm A happy path | safe-proceed | firm-a | proceed | dual ops approval (2 distinct, requester excluded) | eligible; 1 instruction | submitted | signed (captain, 2026-07-26) |
-| GC-02-firm-b-happy-path | Firm B happy path | safe-proceed | firm-b | proceed | automatic (below $100k threshold) | eligible; 1 instruction | submitted | signed (captain, 2026-07-26) |
-| GC-03-recent-bank-change-firm-a | recent bank change | recent-bank-change-block | firm-a | proceed | specialist review, then dual ops approval | eligible after both stages | submitted | signed (captain, 2026-07-26) |
-| GC-04-recent-bank-change-firm-b | recent bank change | recent-bank-change-block | firm-b | blocked | none (blocked carries no authority) | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-05-insufficient-liquidity | insufficient liquidity | - (single-request variant; see note) | firm-b | blocked | none | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-06-household-restriction | household restriction | permanent-prohibition | firm-a | prohibited | none | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-07-regulatory-prohibition | regulatory or firm prohibition | permanent-prohibition | firm-a | prohibited | none | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-08-ambiguous-household | ambiguous household | ambiguous-instruction | firm-a | blocked | none | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-09-stale-evidence | stale evidence | stale-evidence | firm-a | blocked | none | not eligible | not reached | signed (captain, 2026-07-26) |
-| GC-10-simultaneous-distributions-first | two simultaneous distributions | competing-liquidity | firm-a | proceed | dual ops approval | eligible; holds the reservation | submitted | signed (captain, 2026-07-26) |
-| GC-11-simultaneous-distributions-second | two simultaneous distributions | competing-liquidity | firm-a | blocked | none | not eligible (sibling reservation) | not reached | signed (captain, 2026-07-26) |
-| GC-12-duplicate-retry | duplicate retry | duplicate-retry | firm-a | proceed | dual ops approval | eligible; retries suppressed, exactly 1 instruction | submitted | signed (captain, 2026-07-26) |
-| GC-13-partial-salesforce-success | partial Salesforce success | partial-salesforce-success | firm-a | proceed | dual ops approval | eligible; partial receipt → exception | unknown (cannot close) | signed (captain, 2026-07-26) |
-| GC-14-delayed-nigo | delayed NIGO | delayed-nigo | firm-b | proceed | automatic | eligible; 1 instruction | nigo (late return → exception) | signed (captain, 2026-07-26) |
-| GC-15-approval-invalidation | approval invalidation after evidence change | approval-invalidation | firm-a | proceed | dual ops approval, invalidated, re-run on new hash | eligible after re-approval | submitted | signed (captain, 2026-07-26) |
-| GC-16-specialist-review-expiration | specialist-review expiration and escalation | specialist-review-expiration | firm-a | proceed | specialist review expired → escalated; still awaiting | not eligible (authority unresolved) | not reached | signed (captain, 2026-07-26) |
+| GC-01-firm-a-happy-path | Firm A happy path | safe-proceed | firm-a | proceed | dual ops approval (2 distinct, requester excluded) | eligible; 1 instruction | submitted | signed (captain, 2026-07-28) |
+| GC-02-firm-b-happy-path | Firm B happy path | safe-proceed | firm-b | proceed | automatic (below $100k threshold) | eligible; 1 instruction | submitted | signed (captain, 2026-07-28) |
+| GC-03-recent-bank-change-firm-a | recent bank change | recent-bank-change-block | firm-a | proceed | specialist review, then dual ops approval | eligible after both stages | submitted | signed (captain, 2026-07-28) |
+| GC-04-recent-bank-change-firm-b | recent bank change | recent-bank-change-block | firm-b | blocked | none (blocked carries no authority) | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-05-insufficient-liquidity | insufficient liquidity | - (single-request variant; see note) | firm-b | blocked | none | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-06-household-restriction | household restriction | permanent-prohibition | firm-a | prohibited | none | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-07-regulatory-prohibition | regulatory or firm prohibition | permanent-prohibition | firm-a | prohibited | none | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-08-ambiguous-household | ambiguous household | ambiguous-instruction | firm-a | blocked | none | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-09-stale-evidence | stale evidence | stale-evidence | firm-a | blocked | none | not eligible | not reached | signed (captain, 2026-07-28) |
+| GC-10-simultaneous-distributions-first | two simultaneous distributions | competing-liquidity | firm-a | proceed | dual ops approval | eligible; holds the reservation | submitted | signed (captain, 2026-07-28) |
+| GC-11-simultaneous-distributions-second | two simultaneous distributions | competing-liquidity | firm-a | blocked | none | not eligible (sibling reservation) | not reached | signed (captain, 2026-07-28) |
+| GC-12-duplicate-retry | duplicate retry | duplicate-retry | firm-a | proceed | dual ops approval | eligible; retries suppressed, exactly 1 instruction | submitted | signed (captain, 2026-07-28) |
+| GC-13-partial-salesforce-success | partial Salesforce success | partial-salesforce-success | firm-a | proceed | dual ops approval | eligible; partial receipt → exception | unknown (cannot close) | signed (captain, 2026-07-28) |
+| GC-14-delayed-nigo | delayed NIGO | delayed-nigo | firm-b | proceed | automatic | eligible; 1 instruction | nigo (late return → exception) | signed (captain, 2026-07-28) |
+| GC-15-approval-invalidation | approval invalidation after evidence change | approval-invalidation | firm-a | proceed | dual ops approval, invalidated, re-run on new hash | eligible after re-approval | submitted | signed (captain, 2026-07-28) |
+| GC-16-specialist-review-expiration | specialist-review expiration and escalation | specialist-review-expiration | firm-a | proceed | specialist review escalated → expired unresolved | not eligible (authority unresolved) | not reached | signed (captain, 2026-07-28) |
 
 Notes on the two structural choices in the matrix mapping:
 
@@ -104,22 +105,28 @@ Every case - in this document and in its fixture - states all of:
 1. **trigger** - kind (`human_request`/`system_event`), description, requester role, masked-request
    summary, `asOf`;
 2. **firm configuration** - the full §4 parameter set for the case's firm;
-3. **household evidence** - each item: evidenceKind, subjectRef, observedAt, retrievedAt, freshness
-   (`fresh`/`stale`/`unknown`), source, provenance label, summary;
-4. **policy versions** - domain config, firm policy, household-instruction version ids (empty only
+3. **household evidence** - each item: evidenceKind, subjectRef, canonical UTC observedAt and
+   retrievedAt, freshness (`fresh`/`stale`/`unknown`), source, provenance label, summary, and
+   `observedAbsent: true` when an explicit absence is the fact;
+4. **evidence completeness** - one explicit matrix row per fact required to compute or validate the
+   expected result, naming the evidence source and whether it is present or observed absent. Every
+   proceed case records request amount, source balance, planned-withdrawal schedule, pending
+   liquidity activity, destination bank instruction, and destination restriction. Silence is never
+   inferred as benign;
+5. **policy versions** - domain config, firm policy, household-instruction version ids (empty only
    with a recorded `householdInstructionsNote`, e.g. GC-08), regulatory version (or null);
-5. **household instructions** - kind, version id, summary (same recorded-silence escape);
-6. **expected disposition** - `proceed`/`blocked`/`prohibited`;
-7. **expected authority stages** - mode (`automatic`/`approval`/`specialist_review`, or `none` for
+6. **household instructions** - kind, version id, summary (same recorded-silence escape);
+7. **expected disposition** - `proceed`/`blocked`/`prohibited`;
+8. **expected authority stages** - mode (`automatic`/`approval`/`specialist_review`, or `none` for
    non-proceed dispositions), full stage definitions (roles, quorum, distinctness, requester rule,
    expiry, escalation);
-8. **expected execution eligibility** - eligible flag, reason, idempotency key, reservations,
+9. **expected execution eligibility** - eligible flag, reason, idempotency key, reservations,
    preconditions;
-9. **expected explanation nodes** - code + summary each;
-10. **expected ledger events** - ordered `LedgerEntry` types (v3 core contracts) with notes;
-11. **expected verification state** - reached flag, observed status (execution-plane state
+10. **expected explanation nodes** - code + summary each;
+11. **expected ledger events** - ordered `LedgerEntry` types (v3 core contracts) with notes;
+12. **expected verification state** - reached flag, observed status (execution-plane state
     vocabulary), the settled-claim rule, note;
-12. **signoff** - §1.
+13. **signoff** - §1.
 
 Structural consistency is validated, not assumed: a blocked or prohibited case cannot carry
 authority stages, execution eligibility, or a reached verification state (v3 invariants 8/9); a
@@ -129,9 +136,10 @@ marking; every case id here must exist as a fixture and vice versa.
 ## 6. The cases
 
 Amounts, balances, and dates below are synthetic fixture values (provenance `synthetic-fixture`,
-charter #3); the household is the Smiths shape required by the demo contract §2. All timestamps are
-demo-world values in America/New_York. Shared numbers: planned withdrawals $8,000/month, so the
-Firm A reserve is $48,000 and the Firm B reserve is $96,000.
+charter #3); the household is the Smiths shape required by the demo contract §2. Fixture instants use
+the canonical `YYYY-MM-DDTHH:MM:SS.mmmZ` UTC form; descriptive dates below render in the demo world's
+America/New_York zone. Shared numbers: planned withdrawals $8,000/month, so the Firm A reserve is
+$48,000 and the Firm B reserve is $96,000.
 
 ### GC-01-firm-a-happy-path - Firm A happy path
 
@@ -139,7 +147,8 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Firm configuration:** firm-a (§4).
 - **Household evidence:** taxable balance $420,000 (fresh); IRA $610,000 (fresh; taxable-event
   source, rejected); planned withdrawals $8,000/mo (fresh); bank instruction unchanged since
-  2025-11-01, verified (fresh); destination restriction satisfied (fresh).
+  2025-11-01, verified (fresh); destination restriction satisfied (fresh); no pending liquidity
+  activity observed.
 - **Policy versions:** money-movement@2026.07.0; firm-a-policy@2026.07.1;
   smiths-destination-restriction@v2 + smiths-liquidity-preference@v1; no regulatory version.
 - **Household instructions:** destination restriction (household-titled only); liquidity preference
@@ -154,7 +163,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
   ApprovalRecorded ×2 → ExecutionStarted → ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted` - and submitted is not presented as settled.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-02-firm-b-happy-path - Firm B happy path
 
@@ -162,7 +171,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Firm configuration:** firm-b (§4).
 - **Household evidence:** taxable balance $420,000 (fresh) - covers the movement plus the $96,000
   twelve-month reserve; planned withdrawals, verified bank instruction, satisfied destination
-  restriction (all fresh).
+  restriction, and explicit absence of pending liquidity activity (all fresh).
 - **Policy versions:** money-movement@2026.07.0; firm-b-policy@2026.07.1; same household versions.
 - **Household instructions:** as GC-01.
 - **Expected disposition:** proceed.
@@ -175,7 +184,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
   ExecutionStarted → ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-03-recent-bank-change-firm-a - recent bank change (Firm A arm)
 
@@ -183,7 +192,8 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   before asOf), unverified.
 - **Firm configuration:** firm-a (§4) - recent bank change routes to specialist review.
 - **Household evidence:** changed bank instruction (fresh snapshot OF the change); balance $420,000;
-  reserve satisfied.
+  $8,000 monthly schedule and $48,000 reserve; destination restriction satisfied; no pending
+  liquidity activity observed.
 - **Policy versions / household instructions:** as GC-01 (destination restriction still satisfied -
   the changed instruction remains household-titled).
 - **Expected disposition:** proceed.
@@ -198,7 +208,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   (specialist) → ApprovalRecorded ×2 (ops) → ReservationCreated → ExecutionStarted →
   ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-04-recent-bank-change-firm-b - recent bank change (Firm B arm)
 
@@ -214,7 +224,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   resolving affordance is shown).
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded (blocked).
 - **Expected verification state:** not reached.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-05-insufficient-liquidity - insufficient liquidity
 
@@ -236,7 +246,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   Firm A's $48,000 reserve - config-only divergence).
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded (blocked).
 - **Expected verification state:** not reached.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-06-household-restriction - household restriction
 
@@ -256,7 +266,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   destination-off-list (exact instruction + version cited).
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded (prohibited).
 - **Expected verification state:** not reached; an on-list request later is a NEW intent.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-07-regulatory-prohibition - regulatory or firm prohibition
 
@@ -275,7 +285,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded (prohibited).
 - **Expected verification state:** not reached; a released hold arrives as new evidence for a new
   intent.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-08-ambiguous-household - ambiguous household
 
@@ -297,7 +307,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   DecisionRecorded (blocked, carrying the structured human question).
 - **Expected verification state:** not reached; the recorded answer re-runs evaluation with the
   household bound.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-09-stale-evidence - stale evidence
 
@@ -319,7 +329,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   provenance) → DecisionRecorded (blocked).
 - **Expected verification state:** not reached; a fresh snapshot re-runs evaluation on a NEW bundle,
   never patching the stale one.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-10-simultaneous-distributions-first - two simultaneous distributions (winner)
 
@@ -327,8 +337,9 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   simultaneously. Balance $160,000: either alone preserves the $48,000 reserve, both together
   cannot (the v3 prompt-23 reference failure).
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** balance $160,000; planned withdrawals; no sibling reservation visible at
-  THIS request's commit instant - it commits first.
+- **Household evidence:** balance $160,000; planned withdrawals; verified bank instruction;
+  destination restriction satisfied; explicit absence of a sibling reservation at this request's
+  commit instant - it commits first.
 - **Policy versions / household instructions:** as GC-01.
 - **Expected disposition:** proceed.
 - **Expected authority stages:** `ops-dual-approval` as GC-01.
@@ -339,7 +350,7 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   ApprovalRecorded ×2 → ExecutionStarted → ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`; the reservation is released on
   VerificationClosed or expiry.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-11-simultaneous-distributions-second - two simultaneous distributions (loser)
 
@@ -360,14 +371,15 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   → DecisionRecorded (blocked; no second reservation).
 - **Expected verification state:** not reached; two concurrent valid requests can never jointly
   violate liquidity policy (demo-contract §8).
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-12-duplicate-retry - duplicate retry
 
 - **Trigger:** the $75,000 request; after approval, a double-click on Execute plus one automatic
   transport-timeout retry - three attempts total.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** balance $420,000; reserve satisfied - execution integrity is the subject.
+- **Household evidence:** balance $420,000; $8,000 monthly schedule and $48,000 reserve; verified
+  bank instruction; destination restriction satisfied; no pending liquidity activity observed.
 - **Policy versions / household instructions:** as GC-01 (destination restriction only).
 - **Expected disposition:** proceed.
 - **Expected authority stages:** `ops-dual-approval` as GC-01.
@@ -380,15 +392,16 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   ExecutionSucceeded → StatusObserved (once).
 - **Expected verification state:** reached; `submitted`; provable against the fake adapter now,
   re-proven against the real sandbox when the trigger fires.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-13-partial-salesforce-success - partial Salesforce success `[deferred-pending-sandbox]`
 
 - **Trigger:** the $75,000 request; the external capability accepts the instruction record but
   fails to schedule the disbursement leg.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** clean evaluation (balance/reserve fine) - the partial outcome is an
-  execution-plane event.
+- **Household evidence:** clean evaluation with balance, $8,000 monthly schedule, $48,000 reserve,
+  verified bank instruction, satisfied destination restriction, and explicit absence of pending
+  liquidity activity. The partial outcome is an execution-plane event.
 - **Policy versions / household instructions:** as GC-12.
 - **Expected disposition:** proceed.
 - **Expected authority stages:** `ops-dual-approval` as GC-01.
@@ -407,14 +420,16 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   and marked `deferred-pending-sandbox` (captain's standing Salesforce directive); it is re-proven
   against the real managed package when sandbox access is granted, including the real part taxonomy
   (prompt-27 archaeology may refine the part names, under a new captain signoff).
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-14-delayed-nigo - delayed NIGO
 
 - **Trigger:** the $75,000 request under Firm B submits cleanly; two business days later the
   custodian returns it NIGO (signature date predates the form version).
 - **Firm configuration:** firm-b (§4).
-- **Household evidence:** clean evaluation; verified destination - the NIGO is about paperwork.
+- **Household evidence:** clean evaluation with balance, $8,000 monthly schedule, $96,000 reserve,
+  verified destination, satisfied destination restriction, and no pending liquidity activity
+  observed. The NIGO is about paperwork.
 - **Policy versions / household instructions:** firm-b-policy@2026.07.1; destination restriction.
 - **Expected disposition:** proceed (authority automatic, as GC-02).
 - **Expected authority stages:** none required - mode `automatic`.
@@ -427,16 +442,17 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   ingested late) → ExceptionDecisionRequested (resubmit-with-corrected-paperwork vs cancel).
 - **Expected verification state:** reached; `nigo` - the original decision is never retroactively
   reopened; the NIGO is a new observed fact.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-15-approval-invalidation - approval invalidation after evidence change
 
 - **Trigger:** the $75,000 request; both approvals land; before execution a NEW $15,000 pending
   distribution posts, changing the liquidity basis the approvals were bound to.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** balance $300,000; no pending activity at first evaluation; the $15,000
-  pending distribution appears at revalidation (reserve still satisfied on both bases - the
-  invalidation fires on material CHANGE, not on breach).
+- **Household evidence:** balance $300,000; $8,000 monthly schedule and $48,000 reserve; verified
+  bank instruction and satisfied destination restriction; no pending activity at first evaluation;
+  the $15,000 pending distribution appears at revalidation (reserve still satisfied on both bases -
+  the invalidation fires on material CHANGE, not on breach).
 - **Policy versions / household instructions:** as GC-01.
 - **Expected disposition:** proceed (through invalidation and re-approval).
 - **Expected authority stages:** `ops-dual-approval`, run TWICE end to end: once against the
@@ -455,28 +471,32 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
   captain signoff:** after invalidation, re-evaluate on the new bundle; still-proceed re-runs the
   SAME stages against the NEW hash; no-longer-proceed becomes whatever decision the new facts
   dictate.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ### GC-16-specialist-review-expiration - specialist-review expiration and escalation
 
 - **Trigger:** the GC-03 situation (recent bank change, Firm A), but the bank-change specialist
-  takes no action for two days; the review stage expires and escalates.
+  takes no action. The P1D escalation fires first; unresolved escalated authority later reaches its
+  projected deadline.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** the changed, unverified bank instruction; liquidity satisfied.
+- **Household evidence:** the changed, unverified bank instruction; balance, $8,000 monthly schedule,
+  and $48,000 reserve; destination restriction satisfied; no pending liquidity activity observed.
 - **Policy versions / household instructions:** as GC-03.
 - **Expected disposition:** proceed (authority remains unresolved - the branch ends still awaiting).
-- **Expected authority stages:** as GC-03; the subject is the time dimension - the P2D expiry
-  lapses, the P1D escalation widens eligibility to operations-manager, stage 2 never arms.
+- **Expected authority stages:** as GC-03; the subject is the time dimension. At P1D the configured
+  escalation projects operations-manager eligibility and a new expiry. If that authority remains
+  unsatisfied through the projected deadline, expiration is recorded. The original stage remains
+  immutable and stage 2 never arms.
 - **Expected execution eligibility:** **not eligible** - expiration never auto-approves and never
   silently cancels.
-- **Expected explanation nodes:** specialist-review-required; stage-expired-escalated (lapse and
-  escalation shown as recorded facts).
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalInvalidated
-  (the lapsed stage closes with reason approval-expired and re-arms for the escalation roles) →
-  ExceptionDecisionRequested (attention decision for the operations manager - the stall never
-  disappears into a queue).
+- **Expected explanation nodes:** specialist-review-required; stage-escalated-then-expired, with
+  both authority facts shown and nothing auto-approved.
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded →
+  **ApprovalStageEscalated** at P1D → **ApprovalStageExpired** at the projected deadline. No
+  `ApprovalInvalidated` occurs because no approval was recorded, and lapse alone does not derive a
+  new decision.
 - **Expected verification state:** not reached while authority is unresolved.
-- **Signoff:** signed (captain, 2026-07-26).
+- **Signoff:** signed (captain, 2026-07-28).
 
 ## 7. Salesforce deferral posture
 
@@ -492,9 +512,11 @@ labels flip only when prompt 27 lands against the real sandbox.
 
 - `pnpm golden:validate` - runs [`scripts/golden-cases-validate.ts`](../scripts/golden-cases-validate.ts)
   (CI job `golden-cases`, blocking): every required §5 field present and populated in every fixture,
-  vocabulary aligned with scenarios.yaml, structural consistency (§5) enforced, doc/fixture ids in
-  sync, all twelve spec-required case names covered, at least twelve cases, every signoff in one of
-  the two legal §1 shapes (all signed by the captain, 2026-07-26).
+  evidence completeness and canonical UTC instants enforced, amount/unit/schedule/reserve/status
+  semantics aligned with the live demo and scenarios.yaml, GC-16 event order enforced, structural
+  consistency (§5) enforced, doc/fixture ids in sync, all twelve spec-required case names covered,
+  at least twelve cases, and every signoff in one of the two legal §1 shapes (all reapproved by the
+  captain, 2026-07-28).
 - The `golden-cases` fitness fence (`src/__tests__/fitness/golden-cases.test.ts`) runs the same
   validator inside `pnpm test` and ships the adversarial companion proving a broken or prematurely
   signed case CANNOT pass (charter #4: detection is not verification).

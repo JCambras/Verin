@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats a destination outside the household instruction's allow-list as PROHIBITED (the stamp, zero affordances), not blocked: the instruction is a standing client mandate, and honoring it admits no operational resolution path within this request."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats a destination outside the household instruction's allow-list as PROHIBITED (the stamp, zero affordances), not blocked: the instruction is a standing client mandate, and honoring it admits no operational resolution path within this request. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-06",
     "maskedRequestSummary": "distribute 30000 USD to a third-party (non-household-titled) destination (tokenized)",
-    "asOf": "2026-07-26T10:15:00-04:00"
+    "asOf": "2026-07-26T14:15:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T14:15:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "bank-instruction",
       "subjectRef": "bank-instruction:contractor-business",
-      "observedAt": "2026-07-25T16:40:00-04:00",
-      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "observedAt": "2026-07-25T20:40:00.000Z",
+      "retrievedAt": "2026-07-26T14:15:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -56,8 +56,8 @@
     {
       "evidenceKind": "household-instruction",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-05-10T10:00:00-04:00",
-      "retrievedAt": "2026-07-26T10:15:05-04:00",
+      "observedAt": "2026-05-10T14:00:00.000Z",
+      "retrievedAt": "2026-07-26T14:15:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -91,23 +91,33 @@
     "preconditions": []
   },
   "prohibition": {
-    "source": { "sourceType": "household_instruction", "sourceId": "smiths-destination-restriction", "versionId": "smiths-destination-restriction@v2" },
+    "source": {
+      "sourceType": "household_instruction",
+      "sourceId": "smiths-destination-restriction",
+      "versionId": "smiths-destination-restriction@v2"
+    },
     "scope": "scope:destination:bank-instruction:contractor-business",
     "reasonCode": "destination-not-household-titled",
     "explanation": "The household's standing instruction restricts distributions to household-titled bank instructions. The requested destination is a third-party business account."
   },
   "expectedExplanationNodes": [
-    { "code": "destination-restriction-applies", "summary": "The household's destination restriction (smiths-destination-restriction@v2) governs every outbound movement, with precedence over any firm-level default." },
-    { "code": "destination-off-list", "summary": "The requested destination is not titled to the household, so the movement is prohibited - the exact violated instruction and version are cited, and no approval affordance is offered." }
+    {"code": "destination-restriction-applies", "summary": "The household's destination restriction (smiths-destination-restriction@v2) governs every outbound movement, with precedence over any firm-level default."},
+    {"code": "destination-off-list", "summary": "The requested destination is not titled to the household, so the movement is prohibited - the exact violated instruction and version are cited, and no approval affordance is offered."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Destination bank instruction and household-instruction snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Prohibited decision citing the household instruction version as the prohibition source; no authority, no execution plan." }
+    {"type": "EvidenceSnapshotRecorded", "note": "Destination bank instruction and household-instruction snapshots pinned into the bundle."},
+    {"type": "DecisionRecorded", "note": "Prohibited decision citing the household instruction version as the prohibition source; no authority, no execution plan."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs and no resolving affordance is shown. A future request to an on-list destination would be a NEW intent, not a resolution of this one."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "destination-bank-instruction", "status": "present", "sources": ["bank-instruction"]},
+    {"fact": "destination-restriction", "status": "present", "sources": ["household-instruction"]}
+  ]
 }

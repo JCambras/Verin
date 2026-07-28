@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft sets the staleness rule at the policy level (planned-withdrawal evidence must be under 30 days old for a reserve computation); the captain confirms the freshness window archetype."
+    "signedAt": "2026-07-28",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft sets the staleness rule at the policy level (planned-withdrawal evidence must be under 30 days old for a reserve computation); the captain confirms the freshness window archetype. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -20,7 +20,7 @@
     "requesterRole": "advisor",
     "requestRef": "req:GC-09",
     "maskedRequestSummary": "distribute 75000 USD; reserve-material evidence exceeds its freshness window (tokenized)",
-    "asOf": "2026-07-26T14:00:00-04:00"
+    "asOf": "2026-07-26T18:00:00.000Z"
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -36,8 +36,8 @@
     {
       "evidenceKind": "account-balance",
       "subjectRef": "subject:smiths-joint-taxable",
-      "observedAt": "2026-07-26T06:00:00-04:00",
-      "retrievedAt": "2026-07-26T14:00:05-04:00",
+      "observedAt": "2026-07-26T10:00:00.000Z",
+      "retrievedAt": "2026-07-26T18:00:05.000Z",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -46,8 +46,8 @@
     {
       "evidenceKind": "planned-withdrawals",
       "subjectRef": "subject:smiths-household",
-      "observedAt": "2026-06-09T08:00:00-04:00",
-      "retrievedAt": "2026-07-26T14:00:05-04:00",
+      "observedAt": "2026-06-09T12:00:00.000Z",
+      "retrievedAt": "2026-07-26T18:00:05.000Z",
       "freshness": "stale",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
@@ -90,22 +90,31 @@
       "code": "reserve-evidence-stale",
       "explanation": "Planned-withdrawal evidence is 47 days old; policy requires under 30 days for reserve-material computations.",
       "resolvingEvidence": [
-        { "evidenceKind": "planned-withdrawals", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations", "client"] }
+        {
+          "evidenceKind": "planned-withdrawals",
+          "subjectRef": "subject:smiths-household",
+          "suppliableBy": ["operations", "client"]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "freshness-window-exceeded", "summary": "The planned-withdrawal snapshot (observed 2026-06-09) exceeds the 30-day window; the evidence view shows observed vs retrieved time and the stale badge - no unexplained confidence score anywhere." },
-    { "code": "stale-cannot-silently-proceed", "summary": "The evidence EXISTS but is not fresh enough to compute the reserve - validation fails before evaluation, and the resolving affordance is a refresh request, not an override." }
+    {"code": "freshness-window-exceeded", "summary": "The planned-withdrawal snapshot (observed 2026-06-09) exceeds the 30-day window; the evidence view shows observed vs retrieved time and the stale badge - no unexplained confidence score anywhere."},
+    {"code": "stale-cannot-silently-proceed", "summary": "The evidence EXISTS but is not fresh enough to compute the reserve - validation fails before evaluation, and the resolving affordance is a refresh request, not an override."}
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "The stale planned-withdrawal snapshot is recorded with freshness 'stale' - staleness is provenance, not an omission." },
-    { "type": "DecisionRecorded", "note": "Blocked decision recording the stale-evidence blocker and the refresh path; no authority, no execution plan." }
+    {"type": "EvidenceSnapshotRecorded", "note": "The stale planned-withdrawal snapshot is recorded with freshness 'stale' - staleness is provenance, not an omission."},
+    {"type": "DecisionRecorded", "note": "Blocked decision recording the stale-evidence blocker and the refresh path; no authority, no execution plan."}
   ],
   "expectedVerificationState": {
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
     "note": "No execution occurs. A fresh planned-withdrawal snapshot resolves the block and evaluation re-runs on a NEW input bundle - the stale bundle is never patched in place."
-  }
+  },
+  "evidenceCompleteness": [
+    {"fact": "request-amount", "status": "present", "sources": ["trigger"]},
+    {"fact": "source-account-balance", "status": "present", "sources": ["account-balance"]},
+    {"fact": "planned-withdrawal-schedule", "status": "present", "sources": ["planned-withdrawals"]}
+  ]
 }
