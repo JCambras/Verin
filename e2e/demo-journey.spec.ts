@@ -3,8 +3,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { login, PRINCIPAL } from "./helpers";
 
 /**
- * Walking-skeleton E2E (v3 prompt 3, Gate 0): the seven-minute journey is clickable
- * end to end on labeled fakes, every required screen exists, and the UI does not
+ * Setup-first and walking-skeleton E2E: governance setup is clickable end to end
+ * on labeled fakes, every required screen exists, and the UI does not
  * invent decisions (the same request under a different firm lands on the RECORDED
  * different outcome). Every surface passes axe (charter #9) and carries at least
  * one visible development-only provenance badge (design §11.2), and a screenshot of
@@ -16,7 +16,7 @@ const SHOTS = "demo-screens";
 async function checkAxe(page: Page, name: string) {
   // Settle the surface-entry fade (design §12.2) first: scanning mid-animation
   // reads blended colors and reports false contrast failures.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  await page.evaluate(() => Promise.allSettled(document.getAnimations().map((a) => a.finished)));
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
@@ -27,7 +27,7 @@ async function checkAxe(page: Page, name: string) {
 async function snap(page: Page, index: number, name: string) {
   // Settle the surface-entry fade (design §12.2) before capturing: a mid-fade
   // screenshot is washed out and non-deterministic across runs.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  await page.evaluate(() => Promise.allSettled(document.getAnimations().map((a) => a.finished)));
   await page.screenshot({ path: `${SHOTS}/${String(index).padStart(2, "0")}-${name}.png`, fullPage: true });
 }
 
@@ -36,109 +36,99 @@ async function expectDevBadge(page: Page) {
   expect(await page.getByTestId("dev-provenance-badge").count()).toBeGreaterThan(0);
 }
 
-test("the seven-minute journey is clickable end-to-end on labeled fakes", async ({ page }) => {
+test("the setup-first journey is clickable end-to-end on labeled fakes", async ({ page }) => {
   await login(page, PRINCIPAL);
 
-  // Launcher.
   await page.getByRole("link", { name: "Demo", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Money-movement demo" })).toBeVisible();
   await checkAxe(page, "launcher");
   await snap(page, 0, "launcher");
 
-  // 1 - Household workspace (canonical journey: recent bank change under Firm A).
-  await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
-  await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
+  // 1 - Profiles precede the Smiths request.
+  await page.getByRole("link", { name: "Start with governance setup" }).click();
+  await expect(page.getByRole("heading", { name: "Start with the policy, not the request" })).toBeVisible();
+  await expect(page.getByTestId("setup-journey")).toContainText("Firm A");
+  await expect(page.getByTestId("setup-journey")).toContainText("Firm B");
   await expectDevBadge(page);
-  await checkAxe(page, "workspace");
-  await snap(page, 1, "workspace");
+  await checkAxe(page, "setup-profiles");
+  await snap(page, 1, "setup-profiles");
 
-  // 2 - Contextual intent panel: request + typed slots, LLM draft set apart.
-  await page.getByRole("link", { name: "Ask Verin about this household" }).click();
-  await expect(page.getByText("Drafted - not yet reviewed")).toBeVisible();
+  // 2 - Universal safety is visible and has no off switch.
+  await page.getByRole("button", { name: "Continue with both firms" }).click();
+  await expect(page.getByRole("heading", { name: "Confirm the controls no firm can weaken" })).toBeVisible();
+  await expect(page.getByTestId("setup-journey")).toContainText("Required");
+  await expect(page.getByTestId("setup-journey").getByRole("checkbox")).toHaveCount(0);
+  await checkAxe(page, "setup-controls");
+  await snap(page, 2, "setup-controls");
+
+  // 3 - The conservative posture exposes exact values.
+  await page.getByRole("button", { name: "Confirm required controls" }).click();
+  await expect(page.getByRole("heading", { name: "Begin conservatively, then make differences explicit" })).toBeVisible();
+  await expect(page.getByText("12 months", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 distinct operations approvers above $25,000")).toBeVisible();
+  await checkAxe(page, "setup-posture");
+  await snap(page, 3, "setup-posture");
+
+  // 4 - Five closed-choice groups, signed reserve floors, unresolved requester rule.
+  await page.getByRole("button", { name: "Use this starting posture" }).click();
+  await expect(page.getByRole("heading", { name: "Tune only the decisions that can legitimately differ" })).toBeVisible();
+  await expect(page.getByTestId("policy-group-reserve")).toBeVisible();
+  await expect(page.getByTestId("policy-group-freshness")).toBeVisible();
+  await expect(page.getByTestId("policy-group-bank-change")).toBeVisible();
+  await expect(page.getByTestId("policy-group-threshold")).toBeVisible();
+  await expect(page.getByTestId("policy-group-expiry")).toBeVisible();
+  await expect(page.getByText("$48,000.00").first()).toBeVisible();
+  await expect(page.getByText("$96,000.00").first()).toBeVisible();
+  await expect(page.getByTestId("requester-awaiting-decision")).toBeVisible();
+  await checkAxe(page, "setup-choices");
+  await snap(page, 4, "setup-choices");
+
+  // 5 - Signed cases show different correct effects without ranking the firms.
+  await page.getByRole("button", { name: "Review signed impact" }).click();
+  await expect(page.getByRole("heading", { name: "See the impact on signed examples" })).toBeVisible();
+  await expect(page.getByTestId("signed-impact-recent-bank")).toContainText("GC-03 / GC-04");
+  await expect(page.getByTestId("signed-impact-low-headroom")).toContainText("GC-05");
+  await checkAxe(page, "setup-impact");
+  await snap(page, 5, "setup-impact");
+
+  // 6 - Local activation requires a distinct-human acknowledgment.
+  await page.getByRole("button", { name: "Send for approval" }).click();
+  await expect(page.getByRole("heading", { name: "A different human acknowledges immutable versions" })).toBeVisible();
+  await expect(page.getByText("FA-MM-DEMO-1.0").first()).toBeVisible();
+  await expect(page.getByText("FB-MM-DEMO-1.0").first()).toBeVisible();
+  await page.getByRole("button", { name: "Acknowledge and activate demonstration" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Confirm the distinct-human" })).toBeVisible();
+  await page.getByRole("checkbox").check();
+  await checkAxe(page, "setup-activation");
+  await snap(page, 6, "setup-activation");
+
+  // 7 - The same Smiths request names each policy version and derived reserve.
+  await page.getByRole("button", { name: "Acknowledge and activate demonstration" }).click();
+  await expect(page.getByRole("heading", { name: "Run the Smiths request under both profiles" })).toBeVisible();
   await expect(page.getByText("$75,000.00").first()).toBeVisible();
-  await expectDevBadge(page);
-  await checkAxe(page, "intent");
-  await snap(page, 2, "intent");
+  await expect(page.getByText("$8,000.00").first()).toBeVisible();
+  await expect(page.getByText("$48,000.00").first()).toBeVisible();
+  await expect(page.getByText("$96,000.00").first()).toBeVisible();
+  await checkAxe(page, "setup-request");
+  await snap(page, 7, "setup-request");
 
-  // 3 - Evidence: sources, observed vs retrieved, an explicit gap row.
-  await page.getByRole("link", { name: "Gather evidence" }).click();
-  await expect(page.getByTestId("evidence-missing")).toBeVisible();
-  await expect(page.getByText("retrieved Jul 26, 09:14").first()).toBeVisible();
-  await expectDevBadge(page);
-  await checkAxe(page, "evidence");
-  await snap(page, 3, "evidence");
+  // 8 - Phone-safe comparison keeps question, Firm A, then Firm B in DOM order.
+  await page.getByRole("button", { name: "Run under both profiles" }).click();
+  await expect(page.getByRole("heading", { name: "Identical facts, different correct outcomes" })).toBeVisible();
+  await expect(page.getByTestId("outcome-firm-a")).toContainText("Submitted · not verified");
+  await expect(page.getByTestId("outcome-firm-b")).toContainText("Blocked decision recorded");
+  await expect(page.getByTestId("outcome-firm-b")).toContainText("No authority");
+  await checkAxe(page, "setup-outcomes");
+  await snap(page, 8, "setup-outcomes");
 
-  // 4 - Recommendation: proceed, with the specialist-review authority summary.
-  await page.getByRole("link", { name: "View the recommendation" }).click();
-  await expect(page.getByTestId("disposition-proceed")).toBeVisible();
-  await expect(page.getByText("specialist-review stage")).toBeVisible();
-  await checkAxe(page, "decision");
-  await snap(page, 4, "decision");
-
-  // 5 - Policy trace: versions in mono, precedence rows.
-  await page.getByRole("link", { name: "View the policy trace" }).click();
-  await expect(page.getByText("FA-4.2").first()).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Household destination restriction" })).toBeVisible();
-  await checkAxe(page, "policy-trace");
-  await snap(page, 5, "policy-trace");
-
-  // 6 - Authority: dual approval + specialist review; requester cannot approve.
-  await page.getByRole("link", { name: "Continue to authority" }).click();
-  await expect(page.getByText("Dual operations approval").first()).toBeVisible();
-  await expect(page.getByText("Bank-instruction specialist review").first()).toBeVisible();
-  await expect(page.getByText("the requester cannot approve")).toBeVisible();
-  await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
-  await checkAxe(page, "authority");
-  await snap(page, 6, "authority");
-
-  // 7 - Safety: revalidation, reservation + idempotency inspectable.
-  await page.getByRole("link", { name: "Approve this movement" }).click();
-  await expect(page.getByText("Material evidence re-checked")).toBeVisible();
-  await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("mm-smiths-renovation-aug15-4c7f").first()).toBeVisible();
-  await checkAxe(page, "safety");
-  await snap(page, 7, "safety");
-
-  // 8 - Execution: submitted is NOT settled; deferral stated; fake adapter labeled.
-  await page.getByRole("link", { name: "Execute the movement" }).click();
-  await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
-  await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
-  await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
-  await expectDevBadge(page);
-  await checkAxe(page, "execution");
-  await snap(page, 8, "execution");
-
-  // 9 - Verification: proves vs not-yet, next poll.
-  await page.getByRole("link", { name: "View verification" }).click();
-  await expect(page.getByText("What this status proves")).toBeVisible();
-  await expect(page.getByText("What it does not prove yet")).toBeVisible();
-  await expect(page.getByText("Next status poll")).toBeVisible();
-  await checkAxe(page, "verification");
-  await snap(page, 9, "verification");
-
-  // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
-  await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
-  await expect(page.getByText("FB-2.1").first()).toBeVisible();
-  expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
-  await checkAxe(page, "comparison");
-  await snap(page, 10, "comparison");
-
-  // 11 - Policy authoring: draft set apart; activation appears only after approval.
-  await page.getByRole("link", { name: "Author a policy change" }).click();
-  await expect(page.getByText("Always preserve twelve months of planned withdrawals in cash.")).toBeVisible();
-  await expect(page.getByTestId("policy-activated")).toHaveCount(0);
-  await snap(page, 11, "policy-authoring");
-  await page.getByRole("link", { name: "Approve and activate FA-4.3" }).click();
-  await expect(page.getByTestId("policy-activated")).toBeVisible();
-  await expect(page.getByText("FA-4.2 → FA-4.3")).toBeVisible();
-  await checkAxe(page, "policy-authoring-approved");
-
-  // 12 - Printable record: watermark, full hashes, expanded reasoning.
-  await page.getByRole("link", { name: "View the printable decision record" }).click();
-  await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
-  await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
-  await checkAxe(page, "record");
-  await snap(page, 12, "record");
+  // 9 - Both complete trails lead to the watermarked export entry.
+  await page.getByRole("button", { name: "View complete proof trail" }).click();
+  await expect(page.getByRole("heading", { name: "Every outcome has a proof trail" })).toBeVisible();
+  await expect(page.getByTestId("proof-firm-a")).toBeVisible();
+  await expect(page.getByTestId("proof-firm-b")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export decision record" })).toBeVisible();
+  await checkAxe(page, "setup-proof");
+  await snap(page, 9, "setup-proof");
 });
 
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {
@@ -228,9 +218,21 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
 });
 
+test("legacy comparison and query activation aliases redirect to setup without activating", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/policy-authoring?scenario=recent-bank-change-block&firm=firm-a&approved=1");
+  await expect(page).toHaveURL(/\/app\/demo\/setup$/);
+  await expect(page.getByRole("heading", { name: "Start with the policy, not the request" })).toBeVisible();
+  await expect(page.getByText("Demonstration versions activated locally")).toHaveCount(0);
+
+  await page.goto("/app/demo/comparison?scenario=recent-bank-change-block&firm=firm-a");
+  await expect(page).toHaveURL(/\/app\/demo\/setup$/);
+});
+
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {
   await login(page, PRINCIPAL);
   const surfaces = [
+    "setup",
     "workspace",
     "intent",
     "evidence",
@@ -240,8 +242,6 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     "safety",
     "execution",
     "verification",
-    "comparison",
-    "policy-authoring",
     "record",
   ];
   for (const s of surfaces) {

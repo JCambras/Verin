@@ -8,6 +8,7 @@
  * design language specifies (§5 disposition treatments, §7 authority surfaces).
  */
 import { metric } from "@contracts/metric";
+import { projectReserve } from "@domain/money-movement/reserve-projection";
 import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
@@ -31,14 +32,14 @@ import {
  * (ADR-0022): computed from synthetic inputs, so they render as watermarked
  * demonstrations. The inputs list is the provenance trace, not a calculation cache. */
 const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synthetic-fixture", OBSERVED_RECENT)];
-export function reserveFloorMinor(firm: FirmData): number {
-  return firm.reserveMonths * PLANNED_WITHDRAWAL_MONTHLY_MINOR;
-}
 export function headroomMinor(firm: FirmData): number {
-  return AVAILABLE_CASH_MINOR - reserveFloorMinor(firm) - PENDING_DISTRIBUTION_MINOR;
-}
-export function reserveFloorMetric(firm: FirmData) {
-  return derivedMetric(reserveFloorMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
+  return projectReserve({
+    availableMinor: AVAILABLE_CASH_MINOR,
+    pendingMinor: PENDING_DISTRIBUTION_MINOR,
+    requestMinor: 0,
+    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+    reserveMonths: firm.reserveMonths,
+  }).headroomMinor;
 }
 export function headroomMetric(firm: FirmData) {
   return derivedMetric(headroomMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);

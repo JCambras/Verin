@@ -5337,3 +5337,50 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+---
+
+## PF-setup-01 · demo semantic truth derives from signed cases
+
+**Date:** 2026-07-28.
+
+**Invariant:** The setup-first money-movement demo has one monthly-withdrawal
+source, derives reserve floors through the domain projection, and preserves the
+captain-signed recent-bank-change dispositions and execution reachability.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts`, registered under
+`demo-skeleton-honesty` in `charter-map.json`.
+
+**Adversarial proof:** The shipped monthly schedule in
+`src/app/demo/data.ts` was temporarily changed from the signed amount to a
+different value. The production check failed before any screenshot could present
+the drift:
+
+```text
+src/app/demo/data.ts:46 :: monthly schedule 700000 differs from captain-signed 800000
+src/app/demo/build-setup.ts:51 :: firm-a displayed reserve 4200000 differs from derived signed floor 4800000
+src/app/demo/build-setup.ts:51 :: firm-b displayed reserve 8400000 differs from derived signed floor 9600000
+```
+
+The injection was reverted. The focused fence and its companions then passed.
+
+## PF-setup-02 · presentation budget includes demo surfaces and routes
+
+**Date:** 2026-07-28.
+
+**Invariant:** Presentation growth is charged to the presentation envelope whether
+the UI lives under shared presentation primitives, demo surfaces, or App Router
+demo entries.
+
+**Fence:** `src/__tests__/fitness/line-budget.test.ts`, extended without raising
+the 6,000-line presentation ceiling.
+
+**Adversarial proof:** The demo-route classification was temporarily removed from
+the production bucket. The focused fence failed:
+
+```text
+src/__tests__/fitness/line-budget.test.ts:83
+expected 'other' to be 'presentation'
+```
+
+The injection was reverted. The corrected fence measurement is 3,273 of 6,000
+lines, including setup surfaces and demo route entries.

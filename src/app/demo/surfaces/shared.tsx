@@ -1,5 +1,5 @@
 /**
- * Shared shell for the twelve demo surfaces: the fade-in container with the
+ * Shared shell for the branch-proof demo surfaces: the fade-in container with the
  * DecisionSpine above the page h1 (design §4 placement), journey navigation links,
  * and the honest not-reached state for stations a journey never reached.
  *
@@ -14,7 +14,8 @@ import type { ExecutionTimelineRow } from "@app/presentation/execution-timeline"
 import { EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type DecisionSpineVM, type ExecutionRowVM } from "../model";
 
-/** Route per journey station, in click order (the demo route runs this sequence). */
+/** Real branch-proof stations. The two removed surfaces survive only as redirect
+ * aliases so old rehearsal links cannot reach stale behavior. */
 export const DEMO_SEQUENCE = [
   "workspace",
   "intent",
@@ -25,11 +26,12 @@ export const DEMO_SEQUENCE = [
   "safety",
   "execution",
   "verification",
-  "comparison",
-  "policy-authoring",
   "record",
 ] as const;
-export type DemoStation = (typeof DEMO_SEQUENCE)[number];
+export const LEGACY_SETUP_ALIASES = ["comparison", "policy-authoring"] as const;
+export type DemoStation =
+  | (typeof DEMO_SEQUENCE)[number]
+  | (typeof LEGACY_SETUP_ALIASES)[number];
 
 export function demoHref(station: DemoStation, scenarioId: string, firmId: string, extra?: string): string {
   return `/app/demo/${station}?scenario=${scenarioId}&firm=${firmId}${extra ?? ""}`;
@@ -57,7 +59,7 @@ export function PrimaryLink({ href, children }: { href: string; children: ReactN
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 self-start rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+      className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
     >
       {children}
     </Link>
@@ -69,7 +71,7 @@ export function SecondaryLink({ href, children }: { href: string; children: Reac
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 self-start rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
+      className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
     >
       {children}
     </Link>

@@ -7,8 +7,8 @@ import { relative } from "node:path";
  * LINE-BUDGET FENCE (ADR-0018, charter #1/#10). PER-LAYER ratchet-down ceilings on
  * the platform layers (Vale V17: charter #1 says per-layer, not one combined
  * number) so one layer can't balloon under an aggregate. The presentation tier has
- * its OWN envelope, grown only by an ADR bump — NOT the shrink-only global budget
- * that punished richness in Iris.
+ * its OWN envelope, including demo surfaces and demo route entries regardless of
+ * directory, grown only by an ADR bump - not a shrink-only global budget.
  *
  * Ceilings carry interim build headroom and RATCHET DOWN to actual+buffer at
  * foundation close. Raising any ceiling is an ADR amendment, not a code change.
@@ -41,7 +41,13 @@ type Bucket = keyof typeof CEILINGS | "other";
 
 function bucket(file: string): Bucket {
   const r = relative(REPO_ROOT, file).replace(/\\/g, "/");
-  if (r.startsWith("src/app/presentation/")) return "presentation";
+  if (
+    r.startsWith("src/app/presentation/") ||
+    r.startsWith("src/app/demo/surfaces/") ||
+    r.startsWith("src/app/app/demo/")
+  ) {
+    return "presentation";
+  }
   if (r.startsWith("src/contracts/")) return "contracts";
   if (r.startsWith("src/domain/")) return "domain";
   if (r.startsWith("src/infrastructure/")) return "infrastructure";
@@ -91,6 +97,8 @@ describe("line-budget fence (per-layer)", () => {
     });
     it("presentation growth is charged only to presentation, never the platform layers", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");
+      expect(bucket(`${REPO_ROOT}src/app/demo/surfaces/setup.tsx`)).toBe("presentation");
+      expect(bucket(`${REPO_ROOT}src/app/app/demo/setup/page.tsx`)).toBe("presentation");
       expect(bucket(`${REPO_ROOT}src/domain/x.ts`)).toBe("domain");
     });
   });

@@ -18,7 +18,7 @@ import { FreshValue } from "./fresh-value";
 export function Metric({ metric }: { metric: DisplayMetric }) {
   const watermark = metricWatermark(metric);
   return (
-    <span className="inline-flex items-baseline gap-1.5">
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-1.5">
       <FreshValue provenance={metric.provenance}>
         <span className="font-semibold tabular-nums text-slate-900">{formatMetricValue(metric)}</span>
       </FreshValue>

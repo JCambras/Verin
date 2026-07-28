@@ -468,13 +468,17 @@
     },
     {
       "id": "demo-skeleton-honesty",
-      "title": "Walking-skeleton UI cannot invent decisions: demo branch data pinned equal to scenarios.yaml; surface components render view models only (D-036)",
+      "title": "Demo UI cannot invent decisions: branch data matches scenarios.yaml; setup semantics match signed cases; surfaces render view models only (D-036/D-061)",
       "status": "enforced",
       "phase": "v3-p3",
       "mechanisms": [
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-semantic-truth.test.ts"
         }
       ]
     },

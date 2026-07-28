@@ -27,9 +27,13 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
     { href: "/app/audit", label: "Audit trail" },
   ];
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3 print-hide">
-      <nav className="flex items-center gap-5 text-sm" aria-label="Primary">
-        <Link href="/app" className="text-lg" aria-current={pathname === "/app" ? "page" : undefined}>
+    <header className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 print-hide sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+      <nav className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm" aria-label="Primary">
+        <Link
+          href="/app"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center text-lg"
+          aria-current={pathname === "/app" ? "page" : undefined}
+        >
           <Wordmark />
         </Link>
         {links.map((l) => (
@@ -37,19 +41,19 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
             key={l.href}
             href={l.href}
             aria-current={pathname === l.href ? "page" : undefined}
-            className="text-slate-700 hover:text-slate-900 aria-[current=page]:font-semibold aria-[current=page]:text-slate-900"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center text-slate-700 hover:text-slate-900 aria-[current=page]:font-semibold aria-[current=page]:text-slate-900"
           >
             {l.label}
           </Link>
         ))}
       </nav>
-      <div className="flex items-center gap-3 text-sm">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 text-sm lg:justify-end">
         {error ? (
           <span role="alert" className="text-destructive">
             {error}
           </span>
         ) : null}
-        <span className="text-slate-600">
+        <span className="min-w-0 break-all text-slate-600">
           {actor} · <span className="font-medium text-slate-800">{role}</span>
         </span>
         <Button variant="secondary" onClick={signOut}>

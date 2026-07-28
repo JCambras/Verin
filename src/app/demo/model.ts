@@ -274,53 +274,6 @@ export interface VerificationVM {
   readonly fakeClass: FakeClass;
 }
 
-// ── Surface 10: Firm A / Firm B comparison ──────────────────────────────────────────
-export interface ComparisonCellVM {
-  readonly display?: string;
-  readonly metric?: DisplayMetric;
-  /** Dispositions inside the comparison use the standard §5 badges. */
-  readonly badge?: { readonly status: string; readonly label: string };
-}
-export interface ComparisonRowVM {
-  readonly dimension: string;
-  readonly a: ComparisonCellVM;
-  readonly b: ComparisonCellVM;
-  readonly differs: boolean;
-  readonly why?: WhyVM;
-}
-export interface ComparisonColumnVM {
-  readonly firm: string;
-  readonly policyVersion: string;
-  readonly activeSince: string;
-}
-export interface ComparisonVM {
-  readonly columns: readonly [ComparisonColumnVM, ComparisonColumnVM];
-  readonly rows: readonly ComparisonRowVM[];
-  readonly fakeClass: FakeClass;
-}
-
-// ── Surface 11: Policy draft and simulation impact ──────────────────────────────────
-export interface DraftRowVM {
-  readonly field: string;
-  readonly value: string;
-}
-export interface SimulationDeltaRowVM {
-  readonly label: string;
-  readonly before: ComparisonCellVM;
-  readonly after: ComparisonCellVM;
-}
-export interface PolicyAuthoringVM {
-  readonly spine: DecisionSpineVM;
-  readonly sentence: string;
-  readonly draft: { readonly rows: readonly DraftRowVM[]; readonly label: string; readonly fakeClass: FakeClass };
-  readonly interpretation: string;
-  readonly simulationDelta: readonly SimulationDeltaRowVM[];
-  readonly gateLabel: string;
-  readonly activation: { readonly fromVersion: string; readonly toVersion: string };
-  readonly changedRerunResult: string;
-  readonly fakeClass: FakeClass;
-}
-
 // ── Surface 12: Printable examiner-grade decision artifact (§9) ──────────────────────
 export interface RecordVM {
   readonly header: {
@@ -371,7 +324,5 @@ export interface DecisionJourneyVM {
   readonly verification: VerificationVM | null;
   /** Copy for the not-reached state of any null surface above. */
   readonly stopNote: string | null;
-  readonly comparison: ComparisonVM;
-  readonly policyAuthoring: PolicyAuthoringVM;
   readonly record: RecordVM;
 }

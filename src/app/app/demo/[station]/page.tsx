@@ -1,14 +1,18 @@
 /**
- * The demo route: one dynamic segment per journey station (the twelve contract
- * surfaces). The page resolves the recorded branch (scenario + firm from the URL),
+ * The demo route: one dynamic segment per branch-proof station plus two legacy
+ * aliases that redirect to setup. The page resolves the recorded branch,
  * asks the fake service for the typed journey view model, and hands the right slice
  * to the surface component. Surfaces never see the contract data or the service -
  * only view models (Gate 0: the UI does not invent decisions).
  */
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
-import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/surfaces/shared";
+import {
+  DEMO_SEQUENCE,
+  LEGACY_SETUP_ALIASES,
+  type DemoStation,
+} from "@app/demo/surfaces/shared";
 import { WorkspaceSurface } from "@app/demo/surfaces/workspace";
 import { IntentSurface } from "@app/demo/surfaces/intent";
 import { EvidenceSurface } from "@app/demo/surfaces/evidence";
@@ -18,8 +22,6 @@ import { AuthoritySurface } from "@app/demo/surfaces/authority";
 import { SafetySurface } from "@app/demo/surfaces/safety";
 import { ExecutionSurface } from "@app/demo/surfaces/execution";
 import { VerificationSurface } from "@app/demo/surfaces/verification";
-import { ComparisonSurface } from "@app/demo/surfaces/comparison";
-import { PolicyAuthoringSurface } from "@app/demo/surfaces/policy-authoring";
 import { RecordSurface } from "@app/demo/surfaces/record";
 
 export const runtime = "nodejs";
@@ -36,12 +38,17 @@ export default async function DemoStationPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { station } = await params;
-  if (!(DEMO_SEQUENCE as readonly string[]).includes(station)) notFound();
+  if (
+    !([...DEMO_SEQUENCE, ...LEGACY_SETUP_ALIASES] as readonly string[]).includes(
+      station,
+    )
+  ) {
+    notFound();
+  }
   const sp = await searchParams;
   const scenarioId = resolveScenarioId(first(sp.scenario));
   const firmId = resolveFirmId(first(sp.firm));
   if (!scenarioId || !firmId) notFound();
-  const approved = first(sp.approved) === "1";
   const journey = getJourney(scenarioId, firmId);
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
 
@@ -65,10 +72,10 @@ export default async function DemoStationPage({
     case "verification":
       return <VerificationSurface vm={journey.verification} {...ids} stopNote={journey.stopNote} />;
     case "comparison":
-      return <ComparisonSurface vm={journey.comparison} {...ids} />;
+      return redirect("/app/demo/setup");
     case "policy-authoring":
-      return <PolicyAuthoringSurface vm={journey.policyAuthoring} {...ids} approved={approved} />;
+      return redirect("/app/demo/setup");
     case "record":
-      return <RecordSurface vm={journey.record} {...ids} />;
+      return <RecordSurface vm={journey.record} />;
   }
 }

@@ -3028,3 +3028,34 @@ hardcoded load credential finding; or disable the blocking njsscan rules.
 
 **Revert path:** restore parallel v3 fence execution, the literal load
 credential, and the prior AST handle names.
+
+### D-098 · 2026-07-28 · captain-decision · Setup-first money movement replaces demo policy authoring
+
+The money-movement demonstration begins with governance profiles for Firm A and
+Firm B before the Smiths request. It exposes locked universal safety, one exact
+conservative posture, five closed firm-policy groups, signed-case impact, a
+distinct-human demonstration acknowledgment, the same request under both
+profiles, firm-labeled outcomes, and complete proof trails.
+
+This is the single bounded fake-scope exception authorized by the setup addendum.
+It replaces the old free-form policy-authoring surface, comparison surface,
+query-string activation, matching fake builders and view models, and redundant
+reserve arithmetic. The $8,000 monthly schedule is the one demo source, while the
+$48,000 and $96,000 floors come from the domain reserve projection. Legacy
+comparison and policy-authoring URLs redirect to `/app/demo/setup`; query values
+cannot activate it.
+
+Activation is explicitly local demonstration behavior and does not persist or
+govern production work. Requester participation remains awaiting the existing
+captain decision because the signed fixtures and ratified prose differ. The
+setup leaves that value unbound instead of silently choosing one interpretation.
+`docs/demo-setup-replacement.md` records the exact before-and-after fake lines,
+badge counts, deletion map, and browser proof.
+
+**Why:** firms need to see what is universally safe, what may legitimately vary,
+and how different active policy can produce different correct outcomes before a
+request is evaluated. A replacement avoids a second administrator product and
+removes the dishonest URL activation path.
+**Revert path:** when the real policy lifecycle, evaluator, authority runtime,
+ports, and ledger projections become reachable, delete each matching setup fake
+and badge in the same vertical slice using the recorded deletion map.

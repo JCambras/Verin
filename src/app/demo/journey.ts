@@ -13,7 +13,7 @@ import type { DecisionJourneyVM } from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
-import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
+import { buildRecord } from "./build-summary";
 import { dispositionFor, firmById, scenarioById } from "./data";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
@@ -58,8 +58,6 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     execution: reached.execution ? buildExecution(scenario) : null,
     verification: reached.execution ? buildVerification(scenario) : null,
     stopNote,
-    comparison: buildComparison(scenario),
-    policyAuthoring: buildPolicyAuthoring(scenario, firm),
     record: buildRecord(scenario, firm, reached, stopNote),
   };
 }

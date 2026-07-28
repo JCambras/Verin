@@ -69,7 +69,7 @@ export function VerificationSurface({
 
       <JourneyNav
         back={{ href: demoHref("execution", scenarioId, firmId), label: "Back to execution" }}
-        forward={{ href: demoHref("comparison", scenarioId, firmId), label: "Compare Firm A and Firm B" }}
+        forward={{ href: "/app/demo/setup", label: "Open the setup-first comparison" }}
       />
     </SurfaceShell>
   );

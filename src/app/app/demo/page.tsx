@@ -1,7 +1,7 @@
 /**
- * The demo launcher: runs the full seven-minute journey (demo contract §3) and
- * exposes all twelve scenario branches (contract §5) without code changes - each
- * card starts the same clickable sequence under a different recorded branch.
+ * The demo launcher starts with governed setup and preserves all twelve scenario
+ * branches (contract §5) for focused proof without code changes. Each branch card
+ * starts the established clickable sequence under a recorded outcome.
  * Everything the journey renders is a labeled fake (charter #5 / ADR-0027).
  */
 import Link from "next/link";
@@ -17,8 +17,7 @@ export default function DemoLauncherPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Money-movement demo</h1>
         <p className="mt-1 text-sm text-slate-600">
-          One governed journey: intent, evidence, decision, authority, safety, execution, verification - then the Firm A / Firm B
-          comparison and a policy change, all on the same data.
+          Begin with governed setup, then run the same Smiths request under two independently pinned demonstration profiles.
         </p>
         <p className="mt-2 flex items-center gap-2 text-xs text-slate-600">
           Every value in this demo is a labeled fake until its real path lands.
@@ -26,11 +25,13 @@ export default function DemoLauncherPage() {
         </p>
       </div>
 
-      <PrimaryLink href={demoHref("workspace", "recent-bank-change-block", DEFAULT_FIRM)}>Run the seven-minute journey</PrimaryLink>
+      <PrimaryLink href="/app/demo/setup">Start with governance setup</PrimaryLink>
 
       <section aria-label="Scenario branches" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Scenario branches</h2>
-        <p className="text-sm text-slate-600">The twelve contract branches (demo contract §5), each clickable end to end.</p>
+        <p className="text-sm text-slate-600">
+          The twelve contract branches remain available for focused proof after the setup-first primary journey.
+        </p>
         <ul className="grid gap-3 sm:grid-cols-2">
           {SCENARIOS.map((s) => (
             <li key={s.id}>

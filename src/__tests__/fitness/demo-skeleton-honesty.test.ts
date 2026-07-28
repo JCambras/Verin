@@ -105,7 +105,15 @@ const SURFACES_DIR = "src/app/demo/surfaces";
 /** What a surface may import: react/next, presentation primitives, the view-model
  * vocabulary, contract TYPES, and surface-local siblings. Nothing that carries data
  * or builds view models. */
-const ALLOWED = [/^react$/, /^next\//, /^@app\/presentation\//, /^\.\.\/model$/, /^@contracts\//, /^\.\//];
+const ALLOWED = [
+  /^react$/,
+  /^next\//,
+  /^@app\/presentation\//,
+  /^\.\.\/model$/,
+  /^\.\.\/setup-model$/,
+  /^@contracts\//,
+  /^\.\//,
+];
 
 export function importBoundaryViolations(files: { path: string; specifiers: { spec: string; line: number }[] }[]): string[] {
   const out: string[] = [];
@@ -113,7 +121,9 @@ export function importBoundaryViolations(files: { path: string; specifiers: { sp
     for (const { spec, line } of f.specifiers) {
       // A ".." segment anywhere (beyond the one allowed "../model") escapes the
       // sibling allowlist by traversal - "./../data" must not read as a sibling.
-      const traversal = spec !== "../model" && spec.split("/").includes("..");
+      const traversal =
+        !["../model", "../setup-model"].includes(spec) &&
+        spec.split("/").includes("..");
       if (traversal || !ALLOWED.some((re) => re.test(spec))) {
         out.push(`${f.path}:${line} :: import "${spec}" - surfaces render view models only (no data, service, or builder imports)`);
       }
