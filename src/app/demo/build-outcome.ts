@@ -11,7 +11,15 @@
 import type { ExecutionRowVM, ExecutionVM, SafetyCheckVM, SafetyVM, VerificationVM } from "./model";
 import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
-import { CAST, IDS, RETRIEVED_AT, liquidityAuthorityFor, type FirmData, type ScenarioData } from "./data";
+import {
+  CAST,
+  IDS,
+  RETRIEVED_AT,
+  liquidityAuthorityFor,
+  type FirmData,
+  type JourneyPass,
+  type ScenarioData,
+} from "./data";
 import { formatDemoInstant, relatedDecisionAt, timelineFor } from "./timeline";
 
 const IDENTIFIERS = [
@@ -20,12 +28,19 @@ const IDENTIFIERS = [
   { label: "Reservation", value: IDS.reservationId },
 ];
 
-export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
+export function buildSafety(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): SafetyVM {
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const initial = authority.kind === "signed" ? authority.initialDecision : null;
   const refreshed = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
+  const invalidatedPass = spec.invalidation === true && pass === "initial";
+  const executionEligible =
+    authority.kind === "signed" && (!spec.invalidation || pass === "revalidated");
   const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
         {
@@ -35,7 +50,7 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
           detail: `${authority.reason}. No unrelated case was substituted.`,
         },
       ]
-    : refreshed
+    : invalidatedPass && refreshed
       ? [
           {
             label: "Liquidity snapshot changed after approval",
@@ -50,6 +65,21 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
             detail: "The initial decision observed no pending activity. Pre-execution revalidation found the new distribution.",
           },
         ]
+      : spec.invalidation && pass === "revalidated" && refreshed
+        ? [
+            {
+              label: "Liquidity matches the refreshed derived decision",
+              status: "done",
+              statusLabel: "Verified",
+              detail: "Effective liquidity remains $285,000 on the refreshed bundle.",
+            },
+            {
+              label: "Pending distribution re-checked and counted",
+              status: "done",
+              statusLabel: "Verified",
+              detail: refreshed.pendingNote,
+            },
+          ]
       : [
           { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
           initial && initial.pendingActivityMinor > 0
@@ -61,7 +91,7 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
               }
             : { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
         ];
-  if (spec.invalidation) {
+  if (invalidatedPass) {
     checks.push({
       label: "Input bundle refreshed after the liquidity change",
       status: "voided",
@@ -69,6 +99,14 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
     } as (typeof checks)[number]);
   } else {
     checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
+  }
+  if (spec.invalidation && pass === "revalidated") {
+    checks.push({
+      label: "Two fresh approvals bind to the derived decision",
+      status: "done",
+      statusLabel: "Verified",
+      detail: "Both distinct operations approvers approved the derived decision and refreshed input-bundle hashes.",
+    });
   }
   if (spec.competing) {
     const related = authority.kind === "signed" ? authority.relatedDecisions?.[0] : undefined;
@@ -97,7 +135,7 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
     );
   }
   return {
-    spine: buildSpine("Safety", spec.invalidation ? { status: "voided", label: "Approval voided" } : undefined),
+    spine: buildSpine("Safety", invalidatedPass ? { status: "voided", label: "Approval voided" } : undefined),
     revalidatedAt: fact(
       `Material evidence re-checked ${formatDemoInstant(timeline.revalidatedAt)}`,
       "deterministic-engine-output",
@@ -106,17 +144,25 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
     ),
     revalidatedAtIso: timeline.revalidatedAt,
     checks,
-    reservationId: IDS.reservationId,
-    conflictKeys: IDS.conflictKeys,
-    idempotencyKey: IDS.idempotencyKey,
-    invalidation: spec.invalidation && initial && refreshed
+    reservationId: executionEligible ? IDS.reservationId : null,
+    conflictKeys: executionEligible ? IDS.conflictKeys : [],
+    idempotencyKey: executionEligible ? IDS.idempotencyKey : null,
+    invalidation: invalidatedPass && initial && refreshed
       ? {
-          voidedActor: {
-            name: CAST.opsApprover1,
-            role: "Operations",
-            when: formatDemoInstant(timeline.approvalOneAt),
-            timestampIso: timeline.approvalOneAt,
-          },
+          voidedActors: [
+            {
+              name: CAST.opsApprover1,
+              role: "Operations",
+              when: formatDemoInstant(timeline.approvalOneAt),
+              timestampIso: timeline.approvalOneAt,
+            },
+            {
+              name: CAST.opsApprover2,
+              role: "Operations",
+              when: formatDemoInstant(timeline.approvalTwoAt),
+              timestampIso: timeline.approvalTwoAt,
+            },
+          ],
           deltaSentence: "A new $15,000 pending distribution appeared after this approval was given.",
           before: {
             label: "Initial decision · pending activity",
@@ -139,31 +185,42 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
   };
 }
 
-export function buildExecution(scenario: ScenarioData, firm: FirmData): ExecutionVM {
+export function buildExecution(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): ExecutionVM | null {
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  if (
+    authority.kind === "missing" ||
+    (spec.invalidation && pass !== "revalidated")
+  ) {
+    return null;
+  }
   const rows: ExecutionRowVM[] = [];
   if (spec.partial) {
     rows.push(
       {
-        step: "Raise cash (money-market redemption)",
+        step: "instruction-created",
         target: "Salesforce managed capability",
         status: "completed",
-        statusLabel: "Settled · verified",
+        statusLabel: "Completed part",
         timestamp: formatDemoInstant(timeline.executionAt),
         timestampIso: timeline.executionAt,
-        honestyLine: `Verified against returned custodian status, ${formatDemoInstant(timeline.completionVerifiedAt)}.`,
+        honestyLine: "The external receipt confirms only that the instruction record was created.",
         identifiers: IDENTIFIERS,
         fakeClass: "fake-adapter-response",
       },
       {
-        step: "Wire transfer to the household bank",
+        step: "disbursement-scheduled",
         target: "Salesforce managed capability",
         status: "unknown",
         statusLabel: "Unconfirmed",
         timestamp: formatDemoInstant(timeline.executionAt),
         timestampIso: timeline.executionAt,
-        honestyLine: "No returned status for this part - an exception decision has been requested.",
+        honestyLine: "The external receipt does not confirm this part; the movement remains unknown and unconfirmed.",
         affordanceLabel: "Review the exception",
         identifiers: IDENTIFIERS,
         fakeClass: "fake-adapter-response",
@@ -204,9 +261,20 @@ export function buildExecution(scenario: ScenarioData, firm: FirmData): Executio
   };
 }
 
-export function buildVerification(scenario: ScenarioData, firm: FirmData): VerificationVM {
+export function buildVerification(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): VerificationVM | null {
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  if (
+    authority.kind === "missing" ||
+    (spec.invalidation && pass !== "revalidated")
+  ) {
+    return null;
+  }
   const proves = [
     fact(
       "Submission accepted by the capability",
@@ -218,7 +286,7 @@ export function buildVerification(scenario: ScenarioData, firm: FirmData): Verif
   if (spec.partial) {
     proves.push(
       fact(
-        "Money-market redemption settled",
+        "Completed part: instruction-created",
         "fake-adapter-response",
         timeline.completionVerifiedAt,
         formatDemoInstant(timeline.completionVerifiedAt),
@@ -257,11 +325,16 @@ export function buildVerification(scenario: ScenarioData, firm: FirmData): Verif
   return {
     spine: buildSpine("Verification"),
     proves,
-    notProvenYet: [
-      "Settlement at the custodian",
-      "Funds availability at the destination bank",
-      "That the instruction will not be returned not-in-good-order",
-    ],
+    notProvenYet: spec.partial
+      ? [
+          "Incomplete part: disbursement-scheduled",
+          "Movement completion remains unknown and unconfirmed",
+        ]
+      : [
+          "Settlement at the custodian",
+          "Funds availability at the destination bank",
+          "That the instruction will not be returned not-in-good-order",
+        ],
     nextPoll: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
     appended,
     fakeClass: "fake-adapter-response",

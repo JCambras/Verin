@@ -24,15 +24,17 @@ export function isMoneyQuantity(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
-export function reserveFloorMinor(monthlyWithdrawalMinor: number, reserveMonths: number): number {
-  if (!isMoneyQuantity(monthlyWithdrawalMinor)) {
-    throw new RangeError("monthlyWithdrawalMinor must be a non-negative safe integer");
-  }
-  if (!isMoneyQuantity(reserveMonths)) {
-    throw new RangeError("reserveMonths must be a non-negative safe integer");
-  }
+export function tryReserveFloorMinor(monthlyWithdrawalMinor: unknown, reserveMonths: unknown): number | null {
+  if (!isMoneyQuantity(monthlyWithdrawalMinor) || !isMoneyQuantity(reserveMonths)) return null;
   const floor = monthlyWithdrawalMinor * reserveMonths;
-  if (!Number.isSafeInteger(floor)) throw new RangeError("reserve floor exceeds safe integer range");
+  return Number.isSafeInteger(floor) ? floor : null;
+}
+
+export function reserveFloorMinor(monthlyWithdrawalMinor: number, reserveMonths: number): number {
+  if (!isMoneyQuantity(monthlyWithdrawalMinor)) throw new RangeError("monthlyWithdrawalMinor must be a non-negative safe integer");
+  if (!isMoneyQuantity(reserveMonths)) throw new RangeError("reserveMonths must be a non-negative safe integer");
+  const floor = tryReserveFloorMinor(monthlyWithdrawalMinor, reserveMonths);
+  if (floor === null) throw new RangeError("reserve floor exceeds safe integer range");
   return floor;
 }
 
@@ -44,9 +46,15 @@ export function headroomMinor(availableMinor: number, pendingMinor: number, floo
   for (const quantity of [availableMinor, pendingMinor, floorMinor]) {
     if (!isMoneyQuantity(quantity)) throw new RangeError("headroom inputs must be non-negative safe integers");
   }
-  const headroom = availableMinor - pendingMinor - floorMinor;
-  if (!Number.isSafeInteger(headroom)) throw new RangeError("headroom exceeds safe integer range");
+  const headroom = tryHeadroomMinor(availableMinor, pendingMinor, floorMinor);
+  if (headroom === null) throw new RangeError("headroom exceeds safe integer range");
   return headroom;
+}
+
+export function tryHeadroomMinor(availableMinor: unknown, pendingMinor: unknown, floorMinor: unknown): number | null {
+  if (![availableMinor, pendingMinor, floorMinor].every(isMoneyQuantity)) return null;
+  const headroom = (availableMinor as number) - (pendingMinor as number) - (floorMinor as number);
+  return Number.isSafeInteger(headroom) ? headroom : null;
 }
 
 /** Convert a whole major-unit amount (dollars) to minor units, or null when the

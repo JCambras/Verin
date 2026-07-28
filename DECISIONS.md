@@ -3418,3 +3418,23 @@ pass while all individual artifacts remained internally valid.
 **Revert path:** the fixture-backed trigger map, timeline projector, exact-source index,
 case-specific evidence requirements, and ordered-prefix check are independent pure boundaries and
 can be reverted together with their companion mutations.
+
+### D-067 · 2026-07-28 · reversible · Execution reach requires signed liquidity and satisfied ordered authority
+
+Demo reachability now fails closed from structured evidence and authority state. A proceed
+disposition reaches Safety only after every ordered authority stage satisfies its eligible-role,
+quorum, distinct-actor, and requester constraints. Execution and Verification additionally require
+exact signed liquidity authority for the rendered scenario and firm. Missing authority displays the
+gap without reservation or idempotency identifiers.
+
+Approval invalidation is represented as two explicit passes. GC-15 records both original approvals,
+invalidates both after the revalidation snapshot, derives a new decision and bundle, records two
+fresh approvals, then reaches reservation, execution, and submitted verification. The printable
+record projects the signed ledger sequence. GC-13 projects the exact partial receipt without
+promoting either the incomplete part or the overall unknown movement to settled. Policy simulation
+uses the latest applicable liquidity snapshot.
+
+**Why:** disposition, authority, and execution eligibility are separate planes. Inferring all three
+from `proceed` allowed unsupported branches and incomplete authority stages to look executable.
+**Revert path:** journey pass selection, structured approval stages, and downstream reach guards are
+confined to the demo fake-service and semantic snapshot.

@@ -83,17 +83,22 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await checkAxe(page, "policy-trace");
   await snap(page, 5, "policy-trace");
 
-  // 6 - Authority: dual approval + specialist review; requester cannot approve.
+  // 6 - Authority: every ordered stage and quorum is visibly satisfied before Safety.
   await page.getByRole("link", { name: "Continue to authority" }).click();
   await expect(page.getByText("Dual operations approval").first()).toBeVisible();
   await expect(page.getByText("Bank-instruction specialist review").first()).toBeVisible();
   await expect(page.getByText("the requester cannot approve")).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
+  await expect(page.getByText("Awaiting review")).toHaveCount(0);
+  await expect(page.getByText("Awaiting prior stage")).toHaveCount(0);
+  await expect(page.getByText("Awaiting approval")).toHaveCount(0);
+  await expect(page.getByText(/Reviewed ·/)).toBeVisible();
+  await expect(page.getByText(/Approved ·/)).toHaveCount(2);
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
   // 7 - Safety: revalidation, reservation + idempotency inspectable.
-  await page.getByRole("link", { name: "Approve this movement" }).click();
+  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
   await expect(page.getByText("Material evidence re-checked")).toBeVisible();
   await page.getByRole("button", { name: "Verify source" }).click();
   await expect(page.getByText("mm-smiths-renovation-aug15-4c7f").first()).toBeVisible();
@@ -227,8 +232,8 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   expect(Date.parse(invalidationRevalidatedAt!)).toBeGreaterThan(
     Date.parse(invalidationRequestAt!),
   );
-  await expect(page.getByTestId("voided-approval")).toBeVisible();
-  await expect(page.getByText("Approval voided - evidence changed").first()).toBeVisible();
+  await expect(page.getByTestId("voided-approval")).toHaveCount(2);
+  await expect(page.getByText("Approval voided - evidence changed")).toHaveCount(2);
   await expect(page.getByTestId("what-changed")).toBeVisible();
   await expect(page.getByText("$0.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
@@ -310,6 +315,82 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(authorityEvents.nth(1)).toBeVisible();
   await checkAxe(page, "specialist-expiration-mobile");
   await snap(page, 21, "specialist-expiration-mobile");
+});
+
+test("signed authority, invalidation, and partial receipts fail closed and remain exact", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  await page.goto("/app/demo/safety?scenario=partial-salesforce-success&firm=firm-b");
+  await expect(page.getByText("Signed liquidity authority unavailable for this branch and firm")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verify source" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Execute the movement" })).toHaveCount(0);
+  await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-b");
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(page.getByText(/signed liquidity authority/i)).toBeVisible();
+  await page.goto("/app/demo/verification?scenario=partial-salesforce-success&firm=firm-b");
+  await expect(page.getByText("Verification not reached")).toBeVisible();
+
+  await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a");
+  await expect(page.getByText(/Approved ·/)).toHaveCount(2);
+  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
+  await expect(page.getByTestId("voided-approval")).toHaveCount(2);
+  await page.getByRole("link", { name: "Re-evaluate with current evidence" }).click();
+  await expect(page.getByTestId("derived-decision")).toBeVisible();
+  await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "View the policy trace" }).click();
+  await page.getByRole("link", { name: "Continue to authority" }).click();
+  await expect(page.getByText("Fresh approval on derived decision")).toHaveCount(2);
+  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
+  await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
+  await page.getByRole("button", { name: "Verify source" }).click();
+  await expect(page.getByText("rsv-8f21-smiths-liquidity")).toBeVisible();
+  await checkAxe(page, "approval-invalidation-revalidated");
+  await snap(page, 22, "approval-invalidation-revalidated");
+  await page.getByRole("link", { name: "Execute the movement" }).click();
+  await page.getByRole("link", { name: "View verification" }).click();
+  await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
+
+  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
+  const lifecycle = page.getByTestId("signed-lifecycle-event");
+  await expect(lifecycle).toHaveCount(13);
+  await expect(lifecycle.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-event-type")))).resolves.toEqual([
+    "EvidenceSnapshotRecorded",
+    "DecisionRecorded",
+    "ApprovalRecorded",
+    "ApprovalRecorded",
+    "EvidenceSnapshotRecorded",
+    "ApprovalInvalidated",
+    "DecisionRecorded",
+    "ApprovalRecorded",
+    "ApprovalRecorded",
+    "ReservationCreated",
+    "ExecutionStarted",
+    "ExecutionSucceeded",
+    "StatusObserved",
+  ]);
+
+  await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-a");
+  const completedPart = page.getByTestId("timeline-event").filter({ hasText: "instruction-created" });
+  const incompletePart = page.getByTestId("timeline-event").filter({ hasText: "disbursement-scheduled" });
+  await expect(completedPart).toContainText("Completed part");
+  await expect(incompletePart).toContainText("Unconfirmed");
+  await expect(page.getByText("Settled · verified")).toHaveCount(0);
+  await page.getByRole("link", { name: "View verification" }).click();
+  await expect(page.getByText("Completed part: instruction-created")).toBeVisible();
+  await expect(page.getByText("Incomplete part: disbursement-scheduled")).toBeVisible();
+  await expect(page.getByText(/settled/i)).toHaveCount(0);
+
+  await page.goto("/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a");
+  await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$189,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$252,000.00", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("$204,000.00", { exact: true })).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&pass=revalidated");
+  await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
+  await checkAxe(page, "approval-invalidation-revalidated-mobile");
+  await snap(page, 23, "approval-invalidation-revalidated-mobile");
 });
 
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {

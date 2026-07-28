@@ -20,6 +20,7 @@ import { buildSpine } from "./spine";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
   amountMetric,
+  buildApprovals,
   buildDisposition,
   buildPolicyTrace,
   buildStages,
@@ -125,11 +126,20 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
   const twelveMonthFloor = calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, DRAFT_RESERVE_MONTHS);
   const liquidityInputs = [prov("synthetic-fixture", OBSERVED_RECENT)];
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  const initial = authority.kind === "signed" ? authority.initialDecision : null;
-  const newHeadroom = initial
-    ? calculateHeadroomMinor(initial.availableCashMinor, initial.pendingActivityMinor, twelveMonthFloor)
+  const latest =
+    authority.kind === "signed"
+      ? (authority.preExecutionRevalidation ?? authority.initialDecision)
+      : null;
+  const newHeadroom = latest
+    ? calculateHeadroomMinor(latest.availableCashMinor, latest.pendingActivityMinor, twelveMonthFloor)
     : null;
-  const currentHeadroom = headroomMetric(scenario, firm);
+  const currentHeadroom = headroomMetric(
+    scenario,
+    firm,
+    authority.kind === "signed" && authority.preExecutionRevalidation
+      ? "revalidated"
+      : "initial",
+  );
   const disp = dispositionFor(scenario, firm.id);
   // The simulation's own arithmetic decides whether the request survives the drafted
   // floor. Asserting "still proceeds" as fixed copy is how surface 11 would come to
@@ -226,12 +236,63 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
   };
 }
 
-export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { authority: boolean; safety: boolean; execution: boolean }, stopNote: string | null): RecordVM {
+function invalidationLifecycle(
+  scenario: ScenarioData,
+  firm: FirmData,
+): RecordVM["lifecycle"] {
+  if (!scenario.spec.invalidation) return [];
+  const timeline = timelineFor(scenario, firm);
+  const events = [
+    ["EvidenceSnapshotRecorded", timeline.requestAt, "Original evaluation snapshots pinned with no pending activity."],
+    ["DecisionRecorded", timeline.decisionAt, "Original proceed decision recorded against the original bundle."],
+    ["ApprovalRecorded", timeline.approvalOneAt, "First operations approval recorded against the original decision."],
+    ["ApprovalRecorded", timeline.approvalTwoAt, "Second distinct operations approval completed the original quorum."],
+    ["EvidenceSnapshotRecorded", timeline.revalidatedAt, "Revalidation recorded the new $15,000 pending distribution."],
+    ["ApprovalInvalidated", timeline.approvalInvalidatedAt, "Both original approvals were invalidated because material evidence changed."],
+    ["DecisionRecorded", timeline.derivedDecisionAt, "Derived proceed decision recorded against the refreshed bundle."],
+    ["ApprovalRecorded", timeline.freshApprovalOneAt, "First fresh approval recorded against the derived decision."],
+    ["ApprovalRecorded", timeline.freshApprovalTwoAt, "Second distinct fresh approval completed the derived quorum."],
+    ["ReservationCreated", timeline.reservationAt, "Liquidity reservation created for the re-approved decision."],
+    ["ExecutionStarted", timeline.executionAt, "One external instruction started under the stable idempotency key."],
+    ["ExecutionSucceeded", timeline.executionSucceededAt, "The external capability accepted the instruction."],
+    ["StatusObserved", timeline.statusObservedAt, "Returned status observed as submitted."],
+  ] as const;
+  return events.map(([type, timestampIso, note]) => ({
+    type,
+    timestampIso,
+    display: formatDemoInstant(timestampIso, undefined, true),
+    note,
+  }));
+}
+
+export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
   const provenance = recordProvenance(
     [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
     DEMO_NOW,
   );
   const timeline = timelineFor(scenario, firm);
+  const proceed = dispositionFor(scenario, firm.id) === "proceed";
+  const pass = scenario.spec.invalidation ? "revalidated" : "initial";
+  const approvals = proceed ? buildApprovals(scenario, firm, pass) : null;
+  const safetyReached = approvals?.satisfied === true;
+  const execution = safetyReached ? buildExecution(scenario, firm, pass) : null;
+  const verification = execution ? buildVerification(scenario, firm, pass) : null;
+  const safety = safetyReached ? buildSafety(scenario, firm, pass) : null;
+  const finalSafety =
+    safety && scenario.spec.invalidation
+      ? {
+          ...safety,
+          invalidation: buildSafety(scenario, firm, "initial").invalidation,
+        }
+      : safety;
+  const stopNote =
+    !proceed
+      ? "This journey stopped at Decision."
+      : !safetyReached
+        ? "This journey stopped at Authority because the ordered authority plan was not satisfied."
+        : execution === null
+          ? "This journey stopped at Safety because exact signed liquidity authority is unavailable."
+          : null;
   return {
     header: {
       decisionId: "dec-smiths-renovation-2026-0726",
@@ -251,10 +312,11 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { a
     evidence: buildEvidence(scenario, firm).rows,
     disposition: buildDisposition(scenario, firm),
     precedence: buildPolicyTrace(scenario, firm).rows,
-    approvalStages: reached.authority ? buildStages(scenario, firm, "final") : null,
-    safety: reached.safety ? buildSafety(scenario, firm) : null,
-    execution: reached.execution ? buildExecution(scenario, firm).rows : null,
-    verification: reached.execution ? buildVerification(scenario, firm) : null,
+    approvalStages: approvals ? buildStages(scenario, firm, "final", pass) : null,
+    safety: finalSafety,
+    execution: execution?.rows ?? null,
+    verification,
+    lifecycle: invalidationLifecycle(scenario, firm),
     stopNote,
     provenanceAppendix: provenance.derivedFrom,
   };

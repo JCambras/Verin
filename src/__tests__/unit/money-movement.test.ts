@@ -5,6 +5,8 @@ import {
   isMoneyQuantity,
   minorFromMajor,
   reserveFloorMinor,
+  tryHeadroomMinor,
+  tryReserveFloorMinor,
 } from "@contracts/money-movement";
 import { formatMetricValue, metric } from "@contracts/metric";
 
@@ -18,6 +20,15 @@ describe("money-movement arithmetic", () => {
     expect(() => reserveFloorMinor(-1, 6)).toThrow(/non-negative safe integer/);
     expect(() => reserveFloorMinor(800_000, 6.5)).toThrow(/non-negative safe integer/);
     expect(() => reserveFloorMinor(Number.MAX_SAFE_INTEGER, 12)).toThrow(/safe integer range/);
+  });
+
+  it("reports invalid and overflowing derived arithmetic without throwing", () => {
+    expect(tryReserveFloorMinor(800_000, 12)).toBe(9_600_000);
+    expect(tryReserveFloorMinor(Number.MAX_SAFE_INTEGER, 12)).toBeNull();
+    expect(tryReserveFloorMinor(800_000, 6.5)).toBeNull();
+    expect(tryHeadroomMinor(42_000_000, 0, 4_800_000)).toBe(37_200_000);
+    expect(tryHeadroomMinor(0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBeNull();
+    expect(tryHeadroomMinor(42_000_000, -1, 4_800_000)).toBeNull();
   });
 
   it("exposes the SAME predicate it throws on, so guards cannot drift from it", () => {

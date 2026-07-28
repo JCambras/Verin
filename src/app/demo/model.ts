@@ -173,6 +173,7 @@ export interface AlternativeVM {
 export interface RecommendationVM {
   readonly spine: DecisionSpineVM;
   readonly disposition: DispositionVM;
+  readonly derivedDecision: boolean;
   readonly recommendation?: { readonly amount: DisplayMetric; readonly source: FactVM };
   readonly alternatives: readonly AlternativeVM[];
 }
@@ -195,7 +196,9 @@ export interface PolicyTraceVM {
 
 // ── Surface 6: Approval stages and actor status ─────────────────────────────────────
 export interface ActorSlotVM {
+  readonly actorId: string;
   readonly name: string;
+  readonly roleId: string;
   readonly role: string;
   readonly status: string; // StatusBadge key
   readonly statusLabel: string;
@@ -204,8 +207,15 @@ export interface ActorSlotVM {
   readonly requesterExcluded?: boolean;
 }
 export interface ApprovalStageVM {
+  readonly stageId: string;
+  readonly order: number;
   readonly title: string;
   readonly requirement: string;
+  readonly eligibleRoleIds: readonly string[];
+  readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
+  readonly requesterMayApprove: boolean;
+  readonly satisfied: boolean;
   readonly stepState: StationState;
   readonly actors: readonly ActorSlotVM[];
   readonly expiry?: string;
@@ -220,6 +230,8 @@ export interface ApprovalStageVM {
 export interface ApprovalVM {
   readonly spine: DecisionSpineVM;
   readonly stages: readonly ApprovalStageVM[];
+  readonly satisfied: boolean;
+  readonly pass: "initial" | "revalidated";
   readonly binding: { readonly decisionHash: string; readonly bundleHash: string };
   readonly gate: { readonly restatement: string; readonly figures: readonly DispositionFigureVM[]; readonly primaryLabel: string };
   readonly fakeClass: FakeClass;
@@ -241,12 +253,12 @@ export interface SafetyCheckVM {
   };
 }
 export interface InvalidationVM {
-  readonly voidedActor: {
+  readonly voidedActors: readonly {
     readonly name: string;
     readonly role: string;
     readonly when: string;
     readonly timestampIso: string;
-  };
+  }[];
   readonly deltaSentence: string;
   readonly before: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
   readonly after: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
@@ -258,9 +270,9 @@ export interface SafetyVM {
   readonly revalidatedAt: FactVM;
   readonly revalidatedAtIso: string;
   readonly checks: readonly SafetyCheckVM[];
-  readonly reservationId: string;
+  readonly reservationId: string | null;
   readonly conflictKeys: readonly string[];
-  readonly idempotencyKey: string;
+  readonly idempotencyKey: string | null;
   readonly invalidation: InvalidationVM | null;
   readonly fakeClass: FakeClass;
 }
@@ -371,6 +383,12 @@ export interface RecordVM {
   readonly safety: SafetyVM | null;
   readonly execution: readonly ExecutionRowVM[] | null;
   readonly verification: VerificationVM | null;
+  readonly lifecycle: readonly {
+    readonly type: string;
+    readonly timestampIso: string;
+    readonly display: string;
+    readonly note: string;
+  }[];
   readonly stopNote: string | null;
   readonly provenanceAppendix: readonly SourceSystem[];
 }

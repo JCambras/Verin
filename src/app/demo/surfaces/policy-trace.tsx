@@ -9,7 +9,19 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type PolicyTraceVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
-export function PolicyTraceSurface({ vm, scenarioId, firmId, journeyContinues }: { vm: PolicyTraceVM; scenarioId: string; firmId: string; journeyContinues: boolean }) {
+export function PolicyTraceSurface({
+  vm,
+  scenarioId,
+  firmId,
+  journeyContinues,
+  querySuffix,
+}: {
+  vm: PolicyTraceVM;
+  scenarioId: string;
+  firmId: string;
+  journeyContinues: boolean;
+  querySuffix?: string;
+}) {
   return (
     <SurfaceShell spine={vm.spine} title="Policy and precedence" description="The rules that governed this decision, in the order they were applied.">
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-700">
@@ -57,8 +69,8 @@ export function PolicyTraceSurface({ vm, scenarioId, firmId, journeyContinues }:
       </div>
 
       <JourneyNav
-        back={{ href: demoHref("decision", scenarioId, firmId), label: "Back to the decision" }}
-        {...(journeyContinues ? { forward: { href: demoHref("authority", scenarioId, firmId), label: "Continue to authority" } } : {})}
+        back={{ href: demoHref("decision", scenarioId, firmId, querySuffix), label: "Back to the decision" }}
+        {...(journeyContinues ? { forward: { href: demoHref("authority", scenarioId, firmId, querySuffix), label: "Continue to authority" } } : {})}
       />
     </SurfaceShell>
   );

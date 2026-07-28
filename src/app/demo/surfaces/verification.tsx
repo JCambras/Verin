@@ -15,11 +15,13 @@ export function VerificationSurface({
   scenarioId,
   firmId,
   stopNote,
+  querySuffix,
 }: {
   vm: VerificationVM | null;
   scenarioId: string;
   firmId: string;
   stopNote: string | null;
+  querySuffix?: string;
 }) {
   if (!vm) {
     return (
@@ -68,7 +70,7 @@ export function VerificationSurface({
       ) : null}
 
       <JourneyNav
-        back={{ href: demoHref("execution", scenarioId, firmId), label: "Back to execution" }}
+        back={{ href: demoHref("execution", scenarioId, firmId, querySuffix), label: "Back to execution" }}
         forward={{ href: demoHref("comparison", scenarioId, firmId), label: "Compare Firm A and Firm B" }}
       />
     </SurfaceShell>

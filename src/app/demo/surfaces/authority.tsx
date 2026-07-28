@@ -22,12 +22,14 @@ export function AuthoritySurface({
   firmId,
   stopNote,
   journeyContinues,
+  querySuffix,
 }: {
   vm: ApprovalVM | null;
   scenarioId: string;
   firmId: string;
   stopNote: string | null;
   journeyContinues: boolean;
+  querySuffix?: string;
 }) {
   if (!vm) {
     return (
@@ -76,13 +78,13 @@ export function AuthoritySurface({
               </div>
             ))}
           </dl>
-          <PrimaryLink href={demoHref("safety", scenarioId, firmId)}>{vm.gate.primaryLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("safety", scenarioId, firmId, querySuffix)}>{vm.gate.primaryLabel}</PrimaryLink>
         </section>
       ) : (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{stopNote}</p>
       )}
 
-      <JourneyNav back={{ href: demoHref("policy-trace", scenarioId, firmId), label: "Back to the policy trace" }} />
+      <JourneyNav back={{ href: demoHref("policy-trace", scenarioId, firmId, querySuffix), label: "Back to the policy trace" }} />
     </SurfaceShell>
   );
 }

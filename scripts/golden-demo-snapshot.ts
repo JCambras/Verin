@@ -137,7 +137,26 @@ function sourceTimelines(): SourceTimeline[] {
       const authority = liquidityAuthorityFor(scenario, firm.id);
       if (authority.kind === "missing") return [];
       const journey = getJourney(scenario.id, firm.id);
-      const primaryEvents: SourceTimelineEvent[] = [
+      const lifecycleEvents = journey.record.lifecycle.map((lifecycleEvent, index) =>
+        event(
+          lifecycleEvent.type === "EvidenceSnapshotRecorded" && index > 0
+            ? "revalidation"
+            : lifecycleEvent.type,
+          lifecycleEvent.timestampIso,
+          `${lifecycleEvent.display} · ${lifecycleEvent.note}`,
+          true,
+        ),
+      );
+      const primaryEvents: SourceTimelineEvent[] = lifecycleEvents.length > 0
+        ? [
+            event(
+              "request",
+              journey.intent.requestAt.provenance.asOf,
+              journey.intent.requestAt.display,
+            ),
+            ...lifecycleEvents,
+          ]
+        : [
         event(
           "request",
           journey.intent.requestAt.provenance.asOf,
@@ -255,6 +274,49 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     ...(invalidationJourney.approvals?.gate.figures ?? []).map((figure) => figure.metric.value),
   ].flatMap((value) => typeof value === "number" ? [value] : []);
   const invalidation = invalidationJourney.safety?.invalidation;
+  const revalidatedInvalidationJourney = getJourney(
+    "approval-invalidation",
+    "firm-a",
+    "revalidated",
+  );
+  const authorityPlan = (
+    scenarioId: string,
+    firmId: string,
+    pass: "initial" | "revalidated",
+  ): DemoSemanticSnapshot["authorityPlans"][number] => {
+    const journey = getJourney(scenarioId, firmId, pass);
+    return {
+      scenarioId,
+      firmId,
+      pass,
+      satisfied: journey.approvals?.satisfied ?? false,
+      stages: (journey.approvals?.stages ?? []).map((stage) => {
+        const completed = stage.actors.filter((actor) => actor.status === "done");
+        return {
+          stageId: stage.stageId,
+          order: stage.order,
+          eligibleRoleIds: [...stage.eligibleRoleIds],
+          approvalsRequired: stage.approvalsRequired,
+          distinctActorsRequired: stage.distinctActorsRequired,
+          requesterMayApprove: stage.requesterMayApprove,
+          satisfied: stage.satisfied,
+          completedActorIds: completed.map((actor) => actor.actorId),
+          completedRoleIds: completed.map((actor) => actor.roleId),
+        };
+      }),
+    };
+  };
+  const partialJourney = getJourney(
+    "partial-salesforce-success",
+    "firm-a",
+  );
+  const policyRows = buildPolicyAuthoring(
+    SCENARIOS.find((scenario) => scenario.id === "approval-invalidation")!,
+    FIRMS["firm-a"]!,
+  ).simulationDelta;
+  const policyHeadroom = policyRows.find(
+    (row) => row.label === DRAFT_HEADROOM_LABEL,
+  );
   return {
     requestAmountMinor: CANONICAL_REQUEST.amountMinor,
     plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
@@ -273,12 +335,12 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     draftedReserveFloorMinor: draftSimulation(SCENARIOS[0]!.id, "firm-a").floorMinor,
     executionTimelineStatuses: SCENARIOS.flatMap((scenario) =>
       firms.flatMap((firm) =>
-        buildExecution(scenario, firm).rows.map((row) => row.status),
+        buildExecution(scenario, firm)?.rows.map((row) => row.status) ?? [],
       ),
     ),
     verificationTimelineStatuses: SCENARIOS.flatMap((scenario) =>
       firms.flatMap((firm) =>
-        buildVerification(scenario, firm).appended.map((row) => row.status),
+        buildVerification(scenario, firm)?.appended.map((row) => row.status) ?? [],
       ),
     ),
     authorityLapseEvents,
@@ -288,6 +350,97 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         typeof invalidation?.before.metric.value === "number" ? invalidation.before.metric.value : null,
       safetyAfterPendingMinor:
         typeof invalidation?.after.metric.value === "number" ? invalidation.after.metric.value : null,
+    },
+    executionGuards: SCENARIOS.flatMap((scenario) =>
+      firms.map((firm) => {
+        const journey = getJourney(scenario.id, firm.id);
+        const authority = liquidityAuthorityFor(scenario, firm.id);
+        return {
+          scenarioId: scenario.id,
+          firmId: firm.id,
+          signedLiquidityAuthority: authority.kind === "signed",
+          reservationVisible: Boolean(journey.safety?.reservationId),
+          executionReached: journey.execution !== null,
+          verificationReached: journey.verification !== null,
+        };
+      }),
+    ),
+    authorityPlans: [
+      ...SCENARIOS.flatMap((scenario) =>
+        firms.map((firm) => authorityPlan(scenario.id, firm.id, "initial")),
+      ),
+      authorityPlan("approval-invalidation", "firm-a", "revalidated"),
+    ],
+    approvalInvalidationLifecycle: {
+      eventTypes: invalidationJourney.record.lifecycle.map((event) => event.type),
+      eventInstants: invalidationJourney.record.lifecycle.map(
+        (event) => event.timestampIso,
+      ),
+      originalApprovals:
+        invalidationJourney.approvals?.stages.flatMap((stage) =>
+          stage.actors.filter((actor) => actor.status === "done"),
+        ).length ?? 0,
+      freshApprovals:
+        revalidatedInvalidationJourney.approvals?.stages.flatMap((stage) =>
+          stage.actors.filter((actor) => actor.status === "done"),
+        ).length ?? 0,
+      freshPlanSatisfied:
+        revalidatedInvalidationJourney.approvals?.satisfied ?? false,
+      freshActorIds:
+        revalidatedInvalidationJourney.approvals?.stages.flatMap((stage) =>
+          stage.actors
+            .filter((actor) => actor.status === "done")
+            .map((actor) => actor.actorId),
+        ) ?? [],
+      freshRoleIds:
+        revalidatedInvalidationJourney.approvals?.stages.flatMap((stage) =>
+          stage.actors
+            .filter((actor) => actor.status === "done")
+            .map((actor) => actor.roleId),
+        ) ?? [],
+      initialReservationVisible:
+        Boolean(invalidationJourney.safety?.reservationId),
+      revalidatedReservationVisible:
+        Boolean(revalidatedInvalidationJourney.safety?.reservationId),
+      revalidatedExecutionReached:
+        revalidatedInvalidationJourney.execution !== null,
+      revalidatedVerificationReached:
+        revalidatedInvalidationJourney.verification !== null,
+      revalidatedExecutionStatuses:
+        revalidatedInvalidationJourney.execution?.rows.map(
+          (row) => row.status,
+        ) ?? [],
+      revalidatedVerificationProves:
+        revalidatedInvalidationJourney.verification?.proves.map(
+          (proof) => proof.display,
+        ) ?? [],
+    },
+    partialReceipt: {
+      completedParts:
+        partialJourney.execution?.rows
+          .filter((row) => row.status === "completed")
+          .map((row) => row.step) ?? [],
+      incompleteParts:
+        partialJourney.execution?.rows
+          .filter((row) => row.status === "unknown")
+          .map((row) => row.step) ?? [],
+      observedStatuses:
+        partialJourney.execution?.rows.map((row) => row.status) ?? [],
+      statusLabels:
+        partialJourney.execution?.rows.map((row) => row.statusLabel) ?? [],
+      proves:
+        partialJourney.verification?.proves.map((proof) => proof.display) ?? [],
+      notProvenYet: [...(partialJourney.verification?.notProvenYet ?? [])],
+    },
+    invalidationPolicySimulation: {
+      currentHeadroomMinor:
+        typeof policyHeadroom?.before.metric?.value === "number"
+          ? policyHeadroom.before.metric.value
+          : null,
+      draftedHeadroomMinor:
+        typeof policyHeadroom?.after.metric?.value === "number"
+          ? policyHeadroom.after.metric.value
+          : null,
     },
   };
 }

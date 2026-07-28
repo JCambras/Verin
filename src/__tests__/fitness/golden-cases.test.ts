@@ -660,6 +660,105 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("fails closed when signed authority, quorum, or downstream reachability drifts", () => {
+    const missingAuthority = demoClone();
+    const unsupported = missingAuthority.executionGuards.find(
+      (guard) =>
+        guard.scenarioId === "partial-salesforce-success" &&
+        guard.firmId === "firm-b",
+    )!;
+    unsupported.reservationVisible = true;
+    unsupported.executionReached = true;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, missingAuthority).some(
+        (problem) =>
+          problem.includes("missing signed liquidity authority must expose no reservation"),
+      ),
+    ).toBe(true);
+
+    const authorityDrift = demoClone();
+    const gc03 = authorityDrift.authorityPlans.find(
+      (plan) =>
+        plan.scenarioId === "recent-bank-change-block" &&
+        plan.firmId === "firm-a" &&
+        plan.pass === "initial",
+    )!;
+    gc03.stages.reverse();
+    gc03.stages[0]!.eligibleRoleIds = ["advisor"];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, authorityDrift).some(
+        (problem) =>
+          problem.includes("rendered authority stage") ||
+          problem.includes("ordered plan"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags incomplete invalidation, partial-receipt, and latest-snapshot projections", () => {
+    const incompleteLifecycle = demoClone();
+    incompleteLifecycle.approvalInvalidationLifecycle.eventTypes.splice(5, 1);
+    incompleteLifecycle.approvalInvalidationLifecycle.freshApprovals = 1;
+    incompleteLifecycle.approvalInvalidationLifecycle.initialReservationVisible = true;
+    incompleteLifecycle.approvalInvalidationLifecycle.revalidatedExecutionStatuses =
+      ["completed"];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, incompleteLifecycle).some(
+        (problem) => problem.includes("GC-15 visible lifecycle"),
+      ),
+    ).toBe(true);
+
+    const roundedUpPartial = demoClone();
+    roundedUpPartial.partialReceipt.incompleteParts = [];
+    roundedUpPartial.partialReceipt.observedStatuses = ["completed", "completed"];
+    roundedUpPartial.partialReceipt.statusLabels = ["Settled · verified"];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, roundedUpPartial).some(
+        (problem) => problem.includes("GC-13 must render the exact"),
+      ),
+    ).toBe(true);
+
+    const staleSimulation = demoClone();
+    staleSimulation.invalidationPolicySimulation.currentHeadroomMinor =
+      25_200_000;
+    staleSimulation.invalidationPolicySimulation.draftedHeadroomMinor =
+      20_400_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, staleSimulation).some(
+        (problem) => problem.includes("latest pre-execution liquidity snapshot"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reports derived arithmetic overflow as diagnostics rather than throwing", () => {
+    const floorOverflow = clone();
+    const floorCase = caseById(floorOverflow, "GC-01-firm-a-happy-path");
+    const safeMajor = Math.floor(Number.MAX_SAFE_INTEGER / 100);
+    (floorCase.signedMoney as Record<string, unknown>).plannedWithdrawalMonthlyUsd =
+      safeMajor;
+    expect(() => run(floorOverflow)).not.toThrow();
+    expect(
+      run(floorOverflow).some((problem) =>
+        problem.includes("reserve derivation exceeds the safe integer range"),
+      ),
+    ).toBe(true);
+
+    const headroomOverflow = clone();
+    const headroomCase = caseById(
+      headroomOverflow,
+      "GC-01-firm-a-happy-path",
+    );
+    (headroomCase.signedMoney as Record<string, unknown>).availableLiquidityUsd =
+      0;
+    (headroomCase.signedMoney as Record<string, unknown>).pendingLiquidityUsd =
+      safeMajor;
+    expect(() => run(headroomOverflow)).not.toThrow();
+    expect(
+      run(headroomOverflow).some((problem) =>
+        problem.includes("liquidity headroom derivation exceeds the safe integer range"),
+      ),
+    ).toBe(true);
+  });
+
   it("flags a policy-draft simulation whose displayed reserve floor drifts off the signed horizon", () => {
     const draftDrift = demoClone();
     draftDrift.draftedReserveFloorMinor = 9_500_000;

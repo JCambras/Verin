@@ -25,7 +25,12 @@ import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { TimestampSchema } from "@contracts/decision-core/ids";
 import { OBSERVED_STATUS_IDS } from "@contracts/execution-status";
-import { headroomMinor, isMoneyQuantity, minorFromMajor, reserveFloorMinor } from "@contracts/money-movement";
+import {
+  isMoneyQuantity,
+  minorFromMajor,
+  tryHeadroomMinor,
+  tryReserveFloorMinor,
+} from "@contracts/money-movement";
 import { validateEvidenceCompleteness } from "./golden-evidence.lib";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
@@ -366,8 +371,13 @@ function validateSignedMoney(
       P("signedMoney states a reserve floor but no signed monthly-withdrawal authority exists to derive it from (state plannedWithdrawalMonthlyUsd here or in the canonical cases)");
     } else if (!isMoneyQuantity(months)) {
       P("signedMoney states a reserve floor but firmConfiguration.cashReserveMonths is not a whole reserve horizon");
-    } else if (reserveFloorMinor(monthlyMinor, months) !== floorMinor) {
-      P(`signedMoney.reserveFloorUsd ${signed.reserveFloorUsd} is not ${derivedFromUsd} x ${months} months`);
+    } else {
+      const derivedFloor = tryReserveFloorMinor(monthlyMinor, months);
+      if (derivedFloor === null) {
+        P(`signedMoney reserve derivation exceeds the safe integer range for ${derivedFromUsd} x ${months} months`);
+      } else if (derivedFloor !== floorMinor) {
+        P(`signedMoney.reserveFloorUsd ${signed.reserveFloorUsd} is not ${derivedFromUsd} x ${months} months`);
+      }
     }
   }
   const trigger = c.trigger;
@@ -433,7 +443,11 @@ function validateSignedLiquidity(
     P(`proceed case is missing structured liquidity authority: ${missingAuthority.join(", ")}`);
     return;
   }
-  const headroom = headroomMinor(availableMinor!, pendingMinor!, floorMinor!);
+  const headroom = tryHeadroomMinor(availableMinor!, pendingMinor!, floorMinor!);
+  if (headroom === null) {
+    P("signedMoney liquidity headroom derivation exceeds the safe integer range");
+    return;
+  }
   if (headroom < requestMinor!) {
     P(`a proceed case must leave the request covered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
   }
@@ -450,11 +464,15 @@ function validateSignedLiquidity(
   if (revalidationAvailableRows.length === 0 || revalidationPendingRows.length === 0) {
     P("signedMoney.preExecutionRevalidation requires account-balance and pending-actions evidence in the pre-execution-revalidation phase");
   }
-  const refreshedHeadroom = headroomMinor(
+  const refreshedHeadroom = tryHeadroomMinor(
     minorFromMajor(revalidation.availableLiquidityUsd)!,
     minorFromMajor(revalidation.pendingLiquidityUsd)!,
     floorMinor!,
   );
+  if (refreshedHeadroom === null) {
+    P("signedMoney pre-execution liquidity headroom derivation exceeds the safe integer range");
+    return;
+  }
   if (refreshedHeadroom < requestMinor!) {
     P(`a proceed revalidation must leave the request covered: available ${revalidation.availableLiquidityUsd} - pending ${revalidation.pendingLiquidityUsd} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
   }

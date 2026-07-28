@@ -250,14 +250,18 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                         </li>
                       ))}
                     </ul>
-                    <p className="font-mono text-xs text-slate-600">
-                      Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
-                    </p>
+                    {vm.safety.reservationId && vm.safety.idempotencyKey ? (
+                      <p className="font-mono text-xs text-slate-600">
+                        Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
+                      </p>
+                    ) : null}
                     {vm.safety.invalidation ? (
                       <div className="flex flex-col gap-1">
-                        <p className="text-sm text-slate-800">
-                          Approval by {vm.safety.invalidation.voidedActor.name} ({vm.safety.invalidation.voidedActor.when}) was voided: {vm.safety.invalidation.deltaSentence}
-                        </p>
+                        {vm.safety.invalidation.voidedActors.map((actor) => (
+                          <p key={actor.name} className="text-sm text-slate-800">
+                            Approval by {actor.name} ({actor.when}) was voided: {vm.safety!.invalidation!.deltaSentence}
+                          </p>
+                        ))}
                         <EvidenceMetricRow
                           label={vm.safety.invalidation.before.label}
                           metric={vm.safety.invalidation.before.metric}
@@ -322,7 +326,29 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                 )}
               </DocSection>
 
-              <DocSection n={9} title="Provenance appendix">
+              {vm.lifecycle.length > 0 ? (
+                <DocSection n={9} title="Signed lifecycle">
+                  <ol className="flex flex-col gap-2">
+                    {vm.lifecycle.map((event, index) => (
+                      <li
+                        key={`${event.type}-${event.timestampIso}`}
+                        className="grid gap-1 text-sm sm:grid-cols-[2rem_13rem_1fr]"
+                        data-testid="signed-lifecycle-event"
+                        data-event-type={event.type}
+                        data-event-instant={event.timestampIso}
+                      >
+                        <span className="text-slate-500">{index + 1}.</span>
+                        <span className="font-mono text-xs text-slate-800">{event.type}</span>
+                        <span className="text-slate-700">
+                          <time dateTime={event.timestampIso}>{event.display}</time> · {event.note}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </DocSection>
+              ) : null}
+
+              <DocSection n={vm.lifecycle.length > 0 ? 10 : 9} title="Provenance appendix">
                 <p className="text-sm text-slate-700">
                   This artifact derives from the following leaf sources (ADR-0022 flattened trace):{" "}
                   <span className="font-mono text-xs text-slate-800">{vm.provenanceAppendix.join(", ")}</span>

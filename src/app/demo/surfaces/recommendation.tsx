@@ -14,10 +14,28 @@ import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
 const SOURCE_KIND_LABELS = { "firm-policy": "firm policy", "household-instruction": "household instruction", regulatory: "regulatory" } as const;
 
-export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: RecommendationVM; scenarioId: string; firmId: string }) {
+export function RecommendationSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: RecommendationVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   const d = vm.disposition;
   return (
     <SurfaceShell spine={vm.spine} title="Decision" description="The governed action, the alternatives considered, and why they were rejected.">
+      {vm.derivedDecision ? (
+        <p
+          className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-950"
+          data-testid="derived-decision"
+        >
+          Derived decision on the refreshed evidence bundle
+        </p>
+      ) : null}
       <DispositionNotice
         kind={d.kind}
         headline={d.headline}
@@ -35,7 +53,7 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
               inspective: (
                 <InspectiveLinks
                   links={[
-                    { label: "View the policy trace", href: demoHref("policy-trace", scenarioId, firmId) },
+                    { label: "View the policy trace", href: demoHref("policy-trace", scenarioId, firmId, querySuffix) },
                     { label: "View the printable record", href: demoHref("record", scenarioId, firmId) },
                   ]}
                 />
@@ -75,9 +93,9 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
       <JourneyNav
         back={{ href: demoHref("evidence", scenarioId, firmId), label: "Back to the evidence" }}
         {...(d.kind === "proceed"
-          ? { forward: { href: demoHref("policy-trace", scenarioId, firmId), label: "View the policy trace" } }
+          ? { forward: { href: demoHref("policy-trace", scenarioId, firmId, querySuffix), label: "View the policy trace" } }
           : d.kind === "blocked"
-            ? { forward: { href: demoHref("policy-trace", scenarioId, firmId), label: "View the policy trace" } }
+            ? { forward: { href: demoHref("policy-trace", scenarioId, firmId, querySuffix), label: "View the policy trace" } }
             : {})}
       />
     </SurfaceShell>

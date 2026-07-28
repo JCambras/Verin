@@ -14,11 +14,13 @@ export function ExecutionSurface({
   scenarioId,
   firmId,
   stopNote,
+  querySuffix,
 }: {
   vm: ExecutionVM | null;
   scenarioId: string;
   firmId: string;
   stopNote: string | null;
+  querySuffix?: string;
 }) {
   if (!vm) {
     return (
@@ -31,8 +33,8 @@ export function ExecutionSurface({
     <SurfaceShell spine={vm.spine} title="Execution" description={vm.deferredNote}>
       <ExecutionTimeline caption="Execution timeline" rows={vm.rows.map((r) => toTimelineRow(r))} />
       <JourneyNav
-        back={{ href: demoHref("safety", scenarioId, firmId), label: "Back to the safety check" }}
-        forward={{ href: demoHref("verification", scenarioId, firmId), label: "View verification" }}
+        back={{ href: demoHref("safety", scenarioId, firmId, querySuffix), label: "Back to the safety check" }}
+        forward={{ href: demoHref("verification", scenarioId, firmId, querySuffix), label: "View verification" }}
       />
     </SurfaceShell>
   );

@@ -23,12 +23,14 @@ export function SafetySurface({
   firmId,
   stopNote,
   journeyContinues,
+  querySuffix,
 }: {
   vm: SafetyVM | null;
   scenarioId: string;
   firmId: string;
   stopNote: string | null;
   journeyContinues: boolean;
+  querySuffix?: string;
 }) {
   if (!vm) {
     return (
@@ -71,13 +73,15 @@ export function SafetySurface({
         ))}
       </section>
 
-      <TapToVerify
-        details={[
-          { label: "Reservation", value: vm.reservationId, mono: true },
-          { label: "Conflict keys", value: vm.conflictKeys.join("  ·  "), mono: true },
-          { label: "Idempotency key", value: vm.idempotencyKey, mono: true },
-        ]}
-      />
+      {vm.reservationId && vm.idempotencyKey ? (
+        <TapToVerify
+          details={[
+            { label: "Reservation", value: vm.reservationId, mono: true },
+            { label: "Conflict keys", value: vm.conflictKeys.join("  ·  "), mono: true },
+            { label: "Idempotency key", value: vm.idempotencyKey, mono: true },
+          ]}
+        />
+      ) : null}
 
       {vm.invalidation ? (
         <section aria-label="Approval invalidated" className="flex flex-col gap-3">
@@ -85,12 +89,18 @@ export function SafetySurface({
           {/* The row's CONTENT recedes to 0.7 (slate-800+ inside, so the AA floor
               holds - design §12.1); the voided badge itself stays at full strength:
               it announces the new state and must not fade with the stale content. */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-surface p-4" data-testid="voided-approval">
-            <span className="text-sm text-slate-900" style={{ opacity: 0.7 }}>
-              {vm.invalidation.voidedActor.name} <span className="text-slate-800">· {vm.invalidation.voidedActor.role} · approved {vm.invalidation.voidedActor.when}</span>
-            </span>
-            <StatusBadge status="voided" label="Approval voided - evidence changed" />
-          </div>
+          {vm.invalidation.voidedActors.map((actor) => (
+            <div
+              key={actor.name}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-surface p-4"
+              data-testid="voided-approval"
+            >
+              <span className="text-sm text-slate-900" style={{ opacity: 0.7 }}>
+                {actor.name} <span className="text-slate-800">· {actor.role} · approved {actor.when}</span>
+              </span>
+              <StatusBadge status="voided" label="Approval voided - evidence changed" />
+            </div>
+          ))}
           {/* 2. What changed, at full weight; announced politely; one entry fade. */}
           <div role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="what-changed">
             <p className="text-base font-semibold text-slate-900">{vm.invalidation.deltaSentence}</p>
@@ -109,13 +119,13 @@ export function SafetySurface({
             <WhyBubble reason={vm.invalidation.why.reason} {...(vm.invalidation.why.regulation ? { regulation: vm.invalidation.why.regulation } : {})} />
           </div>
           {/* 4. One clear next action. */}
-          <PrimaryLink href={demoHref("decision", scenarioId, firmId)}>{vm.invalidation.primaryLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("decision", scenarioId, firmId, "&pass=revalidated")}>{vm.invalidation.primaryLabel}</PrimaryLink>
         </section>
       ) : journeyContinues ? (
-        <PrimaryLink href={demoHref("execution", scenarioId, firmId)}>Execute the movement</PrimaryLink>
+        <PrimaryLink href={demoHref("execution", scenarioId, firmId, querySuffix)}>Execute the movement</PrimaryLink>
       ) : null}
 
-      <JourneyNav back={{ href: demoHref("authority", scenarioId, firmId), label: "Back to authority" }} />
+      <JourneyNav back={{ href: demoHref("authority", scenarioId, firmId, querySuffix), label: "Back to authority" }} />
     </SurfaceShell>
   );
 }

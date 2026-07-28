@@ -5614,3 +5614,29 @@ Vitest cases, all 17 Playwright cases with axe, `pnpm golden:validate`, typechec
 v3 invariant report, and the production build pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-066).
+
+## F106 · authority-gated reach, complete invalidation, and exact partial receipts
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts`,
+`src/__tests__/unit/money-movement.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** missing signed liquidity exposes no reservation or downstream success; every signed
+authority plan preserves stage order, eligible roles, quorum, actor distinctness, requester
+constraints, and satisfaction; GC-15 projects both approval passes and its complete signed ledger;
+GC-13 remains partial and unknown; policy simulation reads the latest evidence phase; derived money
+overflow returns diagnostics rather than aborting validation.
+
+The semantic companion injects a reservation and execution into an unsupported branch, reverses
+GC-03's ordered stages and replaces its eligible role, removes GC-15's invalidation event and one
+fresh approval, promotes GC-13 to a settled label, and restores GC-15's stale initial-snapshot
+headroom. Each mutation produces its named diagnostic.
+
+The arithmetic companion supplies individually safe fixture inputs whose reserve multiplication or
+headroom subtraction exceeds the safe-integer range. Both calls return deterministic diagnostics
+and do not throw. Browser coverage walks GC-15 from both original approvals through invalidation,
+the derived decision, both fresh approvals, reservation, execution, verification, and the
+thirteen-event record. It also proves that an unsupported firm cannot expose execution and that
+GC-13 displays the completed and incomplete receipt parts without a settled claim.
+
+**Revert:** all adversarial mutations remain inside companion tests.
+
+**Date:** 2026-07-28 (review corrections, D-067).

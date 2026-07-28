@@ -28,6 +28,7 @@ import {
   dispositionFor,
   liquidityAuthorityFor,
   type FirmData,
+  type JourneyPass,
   type ScenarioData,
 } from "./data";
 
@@ -40,23 +41,27 @@ const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synt
 export function reserveFloorMinor(firm: FirmData): number {
   return calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, firm.reserveMonths);
 }
-export function headroomMinor(scenario: ScenarioData, firm: FirmData): number | null {
+export function headroomMinor(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): number | null {
   const authority = liquidityAuthorityFor(scenario, firm.id);
   if (authority.kind === "missing") return null;
-  const { availableCashMinor, pendingActivityMinor } = authority.initialDecision;
+  const snapshot =
+    pass === "revalidated"
+      ? (authority.preExecutionRevalidation ?? authority.initialDecision)
+      : authority.initialDecision;
+  const { availableCashMinor, pendingActivityMinor } = snapshot;
   return calculateHeadroomMinor(availableCashMinor, pendingActivityMinor, reserveFloorMinor(firm));
 }
 /** Whether the branch's signed liquidity covers the canonical request under this
  * firm's reserve floor - the one comparison every proceed claim on screen rests on. */
-export function reserveHolds(scenario: ScenarioData, firm: FirmData): boolean | null {
-  const headroom = headroomMinor(scenario, firm);
+export function reserveHolds(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): boolean | null {
+  const headroom = headroomMinor(scenario, firm, pass);
   return headroom === null ? null : headroom >= CANONICAL_REQUEST.amountMinor;
 }
 export function reserveFloorMetric(firm: FirmData) {
   return derivedMetric(reserveFloorMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
-export function headroomMetric(scenario: ScenarioData, firm: FirmData) {
-  const headroom = headroomMinor(scenario, firm);
+export function headroomMetric(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial") {
+  const headroom = headroomMinor(scenario, firm, pass);
   return headroom === null ? null : derivedMetric(headroom, "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
 export function amountMetric() {
@@ -121,7 +126,7 @@ function proceedWhy(firm: FirmData, bankChanged: boolean | undefined, hasLiquidi
   };
 }
 
-export function buildDisposition(scenario: ScenarioData, firm: FirmData): DispositionVM {
+export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): DispositionVM {
   const kind = dispositionFor(scenario, firm.id);
   if (kind === "prohibited") {
     return {
@@ -154,7 +159,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
     };
   }
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
-  const headroom = headroomMetric(scenario, firm);
+  const headroom = headroomMetric(scenario, firm, pass);
   const authoritySummary = dualApproval
     ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
       (scenario.spec.bankChanged ? " The recent bank-instruction change adds a specialist-review stage." : "")
@@ -172,12 +177,13 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
   };
 }
 
-export function buildRecommendation(scenario: ScenarioData, firm: FirmData): RecommendationVM {
-  const disposition = buildDisposition(scenario, firm);
+export function buildRecommendation(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): RecommendationVM {
+  const disposition = buildDisposition(scenario, firm, pass);
   const proceed = disposition.kind === "proceed";
   return {
     spine: buildSpine("Decision", DISPOSITION_BADGES[disposition.kind]),
     disposition,
+    derivedDecision: scenario.spec.invalidation === true && pass === "revalidated",
     ...(proceed
       ? {
           recommendation: {
@@ -207,7 +213,7 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData): Rec
   };
 }
 
-export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): PolicyTraceVM {
+export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): PolicyTraceVM {
   const spec = scenario.spec;
   const reserveCite = firm.id === "firm-a" ? `${firm.policyVersion} §2` : `${firm.policyVersion} §3`;
   const rows = [
@@ -223,9 +229,9 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
       rule: "Cash-reserve floor (months of planned withdrawals)",
       result: spec.staleLiquidity
         ? "Cannot evaluate - liquidity evidence is older than policy allows"
-        : reserveHolds(scenario, firm) === null
+        : reserveHolds(scenario, firm, pass) === null
           ? "Cannot display - no signed numeric liquidity case covers this branch and firm"
-          : reserveHolds(scenario, firm)
+          : reserveHolds(scenario, firm, pass)
           ? "Satisfied after this movement"
           : "Breached - this movement would leave the household below the floor",
       version: reserveCite,
@@ -260,9 +266,31 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
   };
 }
 
-/** Approval stages. `phase` selects the recorded moment the surface shows: "gate"
- * (the authority surface mid-journey) or "final" (what the printable record shows). */
-export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate" | "final"): ApprovalStageVM[] {
+export function approvalPlanSatisfied(stages: readonly ApprovalStageVM[]): boolean {
+  let previousOrder = 0;
+  for (const stage of stages) {
+    if (stage.order <= previousOrder || !stage.satisfied) return false;
+    previousOrder = stage.order;
+    const eligible = stage.actors.filter(
+      (actor) =>
+        actor.status === "done" &&
+        stage.eligibleRoleIds.includes(actor.roleId) &&
+        (stage.requesterMayApprove || !actor.requesterExcluded),
+    );
+    const actorCount = stage.distinctActorsRequired
+      ? new Set(eligible.map((actor) => actor.actorId)).size
+      : eligible.length;
+    if (actorCount < stage.approvalsRequired) return false;
+  }
+  return true;
+}
+
+export function buildStages(
+  scenario: ScenarioData,
+  firm: FirmData,
+  _phase: "gate" | "final",
+  pass: JourneyPass = "initial",
+): ApprovalStageVM[] {
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const stages: ApprovalStageVM[] = [];
@@ -271,12 +299,33 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
   if (specialistReview) {
     if (spec.specialistExpired) {
       stages.push({
+        stageId: "bank-change-specialist-review",
+        order: 1,
         title: "Stage 1 - Bank-instruction specialist review",
         requirement: "The changed bank instruction requires review by a banking specialist before execution.",
+        eligibleRoleIds: ["bank-change-specialist"],
+        approvalsRequired: 1,
+        distinctActorsRequired: false,
+        requesterMayApprove: false,
+        satisfied: false,
         stepState: "active",
         actors: [
-          { name: CAST.specialist, role: "Banking specialist", status: "expired", statusLabel: "Escalated, then expired" },
-          { name: CAST.principal, role: "Operations manager (escalation)", status: "expired", statusLabel: "Expired unresolved" },
+          {
+            actorId: "actor-alex-kim",
+            name: CAST.specialist,
+            roleId: "bank-change-specialist",
+            role: "Banking specialist",
+            status: "expired",
+            statusLabel: "Escalated, then expired",
+          },
+          {
+            actorId: "actor-jordan-bell",
+            name: CAST.principal,
+            roleId: "operations-manager",
+            role: "Operations manager (escalation)",
+            status: "expired",
+            statusLabel: "Expired unresolved",
+          },
         ],
         authorityEvents: [
           {
@@ -294,19 +343,26 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
       });
     } else {
       stages.push({
+        stageId: "bank-change-specialist-review",
+        order: 1,
         title: "Stage 1 - Bank-instruction specialist review",
         requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        stepState: phase === "final" ? "done" : "active",
+        eligibleRoleIds: ["bank-change-specialist"],
+        approvalsRequired: 1,
+        distinctActorsRequired: false,
+        requesterMayApprove: false,
+        satisfied: true,
+        stepState: "done",
         actors: [
-          phase === "final"
-            ? {
-                name: CAST.specialist,
-                role: "Banking specialist",
-                status: "done",
-                statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
-                timestampIso: timeline.specialistReviewedAt,
-              }
-            : { name: CAST.specialist, role: "Banking specialist", status: "pending", statusLabel: "Awaiting review" },
+          {
+            actorId: "actor-alex-kim",
+            name: CAST.specialist,
+            roleId: "bank-change-specialist",
+            role: "Banking specialist",
+            status: "done",
+            statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
+            timestampIso: timeline.specialistReviewedAt,
+          },
         ],
         expiry: "expires Aug 12",
         escalation: "Escalates to: operations manager",
@@ -315,39 +371,53 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
   }
   if (dualApproval) {
     const stageNumber = specialistReview ? 2 : 1;
-    const stageReached = !specialistReview || phase === "final";
-    const second =
-      phase === "final" && !spec.invalidation && !spec.specialistExpired
-        ? {
-            name: CAST.opsApprover2,
-            role: "Operations",
-            status: "done",
-            statusLabel: `Approved · ${formatDemoInstant(timeline.approvalTwoAt)}`,
-            timestampIso: timeline.approvalTwoAt,
-          }
-        : { name: CAST.opsApprover2, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
+    const stageReached = !spec.specialistExpired;
+    const approvalOneAt =
+      pass === "revalidated" ? timeline.freshApprovalOneAt : timeline.approvalOneAt;
+    const approvalTwoAt =
+      pass === "revalidated" ? timeline.freshApprovalTwoAt : timeline.approvalTwoAt;
+    const statusPrefix =
+      pass === "revalidated" && spec.invalidation
+        ? "Fresh approval on derived decision"
+        : "Approved";
     stages.push({
+      stageId: "ops-dual-approval",
+      order: stageNumber,
       title: `Stage ${stageNumber} - Dual operations approval`,
       requirement: "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
-      stepState: spec.specialistExpired ? "pending" : phase === "final" && !spec.invalidation ? "done" : stageReached ? "active" : "pending",
+      eligibleRoleIds: ["operations"],
+      approvalsRequired: 2,
+      distinctActorsRequired: true,
+      requesterMayApprove: false,
+      satisfied: stageReached,
+      stepState: stageReached ? "done" : "pending",
       actors: [
         {
+          actorId: "actor-miguel-torres",
           name: CAST.opsApprover1,
+          roleId: "operations",
           role: "Operations",
-          status: spec.invalidation && phase === "final" ? "voided" : stageReached && !spec.specialistExpired ? "done" : "pending",
-            statusLabel:
-              spec.invalidation && phase === "final"
-                ? `Approval voided - evidence changed · ${formatDemoInstant(timeline.approvalOneAt)}`
-                : stageReached && !spec.specialistExpired
-                ? `Approved · ${formatDemoInstant(timeline.approvalOneAt)}`
-                : "Awaiting prior stage",
-            ...(stageReached && !spec.specialistExpired
-              ? { timestampIso: timeline.approvalOneAt }
-              : {}),
+          status: stageReached ? "done" : "pending",
+          statusLabel: stageReached
+            ? `${statusPrefix} · ${formatDemoInstant(approvalOneAt)}`
+            : "Awaiting prior stage",
+          ...(stageReached ? { timestampIso: approvalOneAt } : {}),
         },
-        second,
         {
+          actorId: "actor-priya-nair",
+          name: CAST.opsApprover2,
+          roleId: "operations",
+          role: "Operations",
+          status: stageReached ? "done" : "pending",
+          statusLabel: stageReached
+            ? `${statusPrefix} · ${formatDemoInstant(approvalTwoAt)}`
+            : "Awaiting prior stage",
+          ...(stageReached ? { timestampIso: approvalTwoAt } : {}),
+        },
+        {
+          actorId: "actor-dana-ellison",
           name: CAST.requester,
+          roleId: "advisor",
           role: "Advisor (requester)",
           status: "pending",
           statusLabel: "Cannot approve",
@@ -356,44 +426,31 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
         },
       ],
     });
-  } else {
-    const approver =
-      spec.invalidation && phase === "final"
-        ? {
-            name: CAST.opsApprover1,
-            role: "Operations",
-            status: "voided",
-            statusLabel: `Approval voided - evidence changed · ${formatDemoInstant(timeline.approvalOneAt)}`,
-            timestampIso: timeline.approvalOneAt,
-          }
-        : spec.invalidation || phase === "final"
-          ? {
-              name: CAST.opsApprover1,
-              role: "Operations",
-              status: "done",
-              statusLabel: `Approved · ${formatDemoInstant(timeline.approvalOneAt)}`,
-              timestampIso: timeline.approvalOneAt,
-            }
-          : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
-    stages.push({
-      title: "Stage 1 - Approval",
-      requirement: `Below ${firm.name}'s dual-approval threshold at this amount. ${firm.name} policy does not name an approver role for this stage.`,
-      stepState: phase === "final" && !spec.invalidation ? "done" : "active",
-      actors: [approver],
-    });
   }
   return stages;
 }
 
-export function buildApprovals(scenario: ScenarioData, firm: FirmData): ApprovalVM {
+export function buildApprovals(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): ApprovalVM {
+  const stages = buildStages(scenario, firm, "gate", pass);
+  const satisfied = approvalPlanSatisfied(stages);
+  const revalidated = scenario.spec.invalidation === true && pass === "revalidated";
   return {
     spine: buildSpine("Authority"),
-    stages: buildStages(scenario, firm, "gate"),
-    binding: { decisionHash: IDS.decisionHash, bundleHash: IDS.bundleHash },
+    stages,
+    satisfied,
+    pass,
+    binding: {
+      decisionHash: revalidated ? IDS.derivedDecisionHash : IDS.decisionHash,
+      bundleHash: revalidated ? IDS.refreshedBundleHash : IDS.bundleHash,
+    },
     gate: {
       restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
       figures: [{ label: "Amount", metric: amountMetric() }],
-      primaryLabel: "Approve this movement",
+      primaryLabel: "Continue after recorded approvals",
     },
     fakeClass: "synthetic-fixture",
   };

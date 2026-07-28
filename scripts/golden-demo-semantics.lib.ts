@@ -7,10 +7,10 @@ import {
 import {
   MINOR_UNITS_PER_MAJOR,
   MONEY_METRIC_FORMAT,
-  headroomMinor,
   isMoneyQuantity,
   minorFromMajor,
-  reserveFloorMinor,
+  tryHeadroomMinor,
+  tryReserveFloorMinor,
 } from "@contracts/money-movement";
 import { readSignedMoney, type LoadedCase, type ScenarioRefs } from "./golden-cases.lib";
 
@@ -86,6 +86,58 @@ export interface DemoSemanticSnapshot {
     initialSurfaceMoneyMinor: number[];
     safetyBeforePendingMinor: number | null;
     safetyAfterPendingMinor: number | null;
+  };
+  executionGuards: Array<{
+    scenarioId: string;
+    firmId: string;
+    signedLiquidityAuthority: boolean;
+    reservationVisible: boolean;
+    executionReached: boolean;
+    verificationReached: boolean;
+  }>;
+  authorityPlans: Array<{
+    scenarioId: string;
+    firmId: string;
+    pass: "initial" | "revalidated";
+    satisfied: boolean;
+    stages: Array<{
+      stageId: string;
+      order: number;
+      eligibleRoleIds: string[];
+      approvalsRequired: number;
+      distinctActorsRequired: boolean;
+      requesterMayApprove: boolean;
+      satisfied: boolean;
+      completedActorIds: string[];
+      completedRoleIds: string[];
+    }>;
+  }>;
+  approvalInvalidationLifecycle: {
+    eventTypes: string[];
+    eventInstants: string[];
+    originalApprovals: number;
+    freshApprovals: number;
+    freshPlanSatisfied: boolean;
+    freshActorIds: string[];
+    freshRoleIds: string[];
+    initialReservationVisible: boolean;
+    revalidatedReservationVisible: boolean;
+    revalidatedExecutionReached: boolean;
+    revalidatedVerificationReached: boolean;
+    revalidatedExecutionStatuses: string[];
+    revalidatedVerificationProves: string[];
+  };
+  partialReceipt: {
+    completedParts: string[];
+    incompleteParts: string[];
+    observedStatuses: string[];
+    statusLabels: string[];
+    proves: string[];
+    notProvenYet: string[];
+  };
+  invalidationPolicySimulation: {
+    currentHeadroomMinor: number | null;
+    draftedHeadroomMinor: number | null;
   };
 }
 
@@ -343,7 +395,15 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       problems.push(`${at}: displayed liquidity, pending activity, and reserve floor must each be a whole non-negative amount`);
       continue;
     }
-    const expectedHeadroom = headroomMinor(d.availableCashMinor!, d.pendingActivityMinor!, d.reserveFloorMinor);
+    const expectedHeadroom = tryHeadroomMinor(
+      d.availableCashMinor!,
+      d.pendingActivityMinor!,
+      d.reserveFloorMinor,
+    );
+    if (expectedHeadroom === null) {
+      problems.push(`${at}: displayed headroom derivation exceeds the safe integer range`);
+      continue;
+    }
     if (d.headroomMinor !== expectedHeadroom) {
       problems.push(`${at}: displayed headroom ${d.headroomMinor} is not available - pending - reserve (${expectedHeadroom})`);
     }
@@ -600,7 +660,10 @@ export function validateGoldenDemoSemantics(
     if (refs.canonicalRequestAmountUsd !== signed.requestAmountUsd) {
       problems.push(`${caseId}: scenarios.yaml canonical request amount drift`);
     }
-    if (reserveFloorMinor(expectedMonthlyMinor, reserveMonths) !== expectedFloorMinor) {
+    const derivedFloor = tryReserveFloorMinor(expectedMonthlyMinor, reserveMonths);
+    if (derivedFloor === null) {
+      problems.push(`${caseId}: signed reserve-floor derivation exceeds the safe integer range`);
+    } else if (derivedFloor !== expectedFloorMinor) {
       problems.push(`${caseId}: signed reserve floor is not monthly withdrawal times reserve horizon`);
     }
     if (demoFirm.reserveFloorMinor !== expectedFloorMinor) {
@@ -619,8 +682,18 @@ export function validateGoldenDemoSemantics(
     } else if (expectedAvailable === null || expectedPending === null) {
       problems.push(`${caseId}: the canonical case must state signedMoney.availableLiquidityUsd and pendingLiquidityUsd`);
     } else {
-      const expectedHeadroom = reserveFloorMinor(expectedMonthlyMinor, reserveMonths);
-      const headroom = expectedAvailable - expectedPending - expectedHeadroom;
+      const expectedHeadroom = tryReserveFloorMinor(expectedMonthlyMinor, reserveMonths);
+      const headroom =
+        expectedHeadroom === null
+          ? null
+          : tryHeadroomMinor(
+              expectedAvailable,
+              expectedPending,
+              expectedHeadroom,
+            );
+      if (expectedHeadroom === null || headroom === null) {
+        problems.push(`${caseId}: rendered liquidity derivation exceeds the safe integer range`);
+      } else {
       if (rendered.availableCashMinor !== expectedAvailable || rendered.pendingActivityMinor !== expectedPending) {
         problems.push(`${caseId}: rendered liquidity drift, fixture=${expectedAvailable}/${expectedPending}, demo=${rendered.availableCashMinor}/${rendered.pendingActivityMinor}`);
       }
@@ -632,6 +705,7 @@ export function validateGoldenDemoSemantics(
       }
       if (headroom < expectedRequestMinor) {
         problems.push(`${caseId}: the signed liquidity no longer covers the signed request under a ${reserveMonths}-month reserve`);
+      }
       }
     }
     // Surface 11's simulated policy draft shows a floor too: bind it to the signed
@@ -645,10 +719,16 @@ export function validateGoldenDemoSemantics(
     problems.push("the policy-draft simulation displays no reserve floor to fence");
   } else if (!isMoneyQuantity(demo.draftedReserveMonths) || !isMoneyQuantity(demo.plannedWithdrawalMonthlyMinor)) {
     problems.push("the policy-draft simulation has no whole reserve horizon or monthly schedule to derive from");
-  } else if (
-    demo.draftedReserveFloorMinor !== reserveFloorMinor(demo.plannedWithdrawalMonthlyMinor, demo.draftedReserveMonths)
-  ) {
-    problems.push("the policy-draft reserve floor is not the monthly withdrawal times the drafted horizon");
+  } else {
+    const draftedFloor = tryReserveFloorMinor(
+      demo.plannedWithdrawalMonthlyMinor,
+      demo.draftedReserveMonths,
+    );
+    if (draftedFloor === null) {
+      problems.push("the policy-draft reserve-floor derivation exceeds the safe integer range");
+    } else if (demo.draftedReserveFloorMinor !== draftedFloor) {
+      problems.push("the policy-draft reserve floor is not the monthly withdrawal times the drafted horizon");
+    }
   }
 
   if (!sameMembers(refs.executionStates, OBSERVED_STATUS_IDS)) {
@@ -709,6 +789,208 @@ export function validateGoldenDemoSemantics(
   ) {
     problems.push(
       "GC-15 must keep revalidation pending activity off initial surfaces, then render initial and refreshed pending values in order",
+    );
+  }
+
+  for (const guard of demo.executionGuards) {
+    if (
+      !guard.signedLiquidityAuthority &&
+      (guard.reservationVisible ||
+        guard.executionReached ||
+        guard.verificationReached)
+    ) {
+      problems.push(
+        `${guard.scenarioId}/${guard.firmId}: missing signed liquidity authority must expose no reservation, execution, or verification state`,
+      );
+    }
+  }
+
+  for (const { data } of cases) {
+    if (
+      !isObj(data) ||
+      data.expectedDisposition !== "proceed" ||
+      !isNonEmptyString(data.scenarioRef) ||
+      !isNonEmptyString(data.firm)
+    ) {
+      continue;
+    }
+    const expectedAuthority = isObj(data.expectedAuthority)
+      ? data.expectedAuthority
+      : null;
+    const expectedStages = Array.isArray(expectedAuthority?.stages)
+      ? expectedAuthority.stages
+      : [];
+    const plan = demo.authorityPlans.find(
+      (candidate) =>
+        candidate.scenarioId === data.scenarioRef &&
+        candidate.firmId === data.firm &&
+        candidate.pass === "initial",
+    );
+    if (!plan) {
+      problems.push(`${String(data.caseId)}: demo has no initial authority plan`);
+      continue;
+    }
+    if (plan.stages.length !== expectedStages.length) {
+      problems.push(
+        `${String(data.caseId)}: rendered authority stage count does not match the signed ordered plan`,
+      );
+      continue;
+    }
+    expectedStages.forEach((rawStage, index) => {
+      if (!isObj(rawStage)) return;
+      const actual = plan.stages[index];
+      const expectedRoles = Array.isArray(rawStage.eligibleRoleIds)
+        ? rawStage.eligibleRoleIds.filter(isNonEmptyString)
+        : [];
+      if (
+        !actual ||
+        actual.stageId !== rawStage.stageId ||
+        actual.order !== rawStage.order ||
+        !sameMembers(actual.eligibleRoleIds, expectedRoles) ||
+        actual.approvalsRequired !== rawStage.approvalsRequired ||
+        actual.distinctActorsRequired !== rawStage.distinctActorsRequired ||
+        actual.requesterMayApprove !== rawStage.requesterMayApprove
+      ) {
+        problems.push(
+          `${String(data.caseId)}: rendered authority stage ${index + 1} drifts from its signed id, order, eligible roles, quorum, or requester constraint`,
+        );
+      }
+      if (actual?.satisfied) {
+        const eligibleActors = actual.completedActorIds.filter(
+          (_, actorIndex) =>
+            expectedRoles.includes(actual.completedRoleIds[actorIndex]!),
+        );
+        const completedCount = actual.distinctActorsRequired
+          ? new Set(eligibleActors).size
+          : eligibleActors.length;
+        if (completedCount < actual.approvalsRequired) {
+          problems.push(
+            `${String(data.caseId)}: rendered authority marks a stage satisfied without its signed eligible quorum`,
+          );
+        }
+      }
+    });
+    const eligibility = isObj(data.expectedExecutionEligibility)
+      ? data.expectedExecutionEligibility.eligible
+      : undefined;
+    if (
+      (eligibility === true && !plan.satisfied) ||
+      (eligibility === false && plan.satisfied)
+    ) {
+      problems.push(
+        `${String(data.caseId)}: rendered authority satisfaction contradicts signed execution eligibility`,
+      );
+    }
+  }
+
+  const expectedGc15Types = Array.isArray(gc15?.expectedLedgerEvents)
+    ? gc15.expectedLedgerEvents.flatMap((entry) =>
+        isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
+      )
+    : [];
+  const lifecycle = demo.approvalInvalidationLifecycle;
+  if (
+    expectedGc15Types.length === 0 ||
+    lifecycle.eventTypes.length !== expectedGc15Types.length ||
+    lifecycle.eventTypes.some(
+      (eventType, index) => eventType !== expectedGc15Types[index],
+    ) ||
+    lifecycle.eventInstants.some(
+      (instant, index) =>
+        index > 0 && instant < lifecycle.eventInstants[index - 1]!,
+    ) ||
+    lifecycle.originalApprovals !== 2 ||
+    lifecycle.freshApprovals !== 2 ||
+    !lifecycle.freshPlanSatisfied ||
+    new Set(lifecycle.freshActorIds).size !== 2 ||
+    !lifecycle.freshRoleIds.every((roleId) => roleId === "operations") ||
+    lifecycle.initialReservationVisible ||
+    !lifecycle.revalidatedReservationVisible ||
+    !lifecycle.revalidatedExecutionReached ||
+    !lifecycle.revalidatedVerificationReached ||
+    lifecycle.revalidatedExecutionStatuses.join(",") !== "submitted" ||
+    !lifecycle.revalidatedVerificationProves.includes(
+      "Submission accepted by the capability",
+    )
+  ) {
+    problems.push(
+      "GC-15 visible lifecycle must preserve both approval passes, invalidation, reservation, execution, and submitted verification in signed order",
+    );
+  }
+
+  const gc13 = caseData(cases, "GC-13-partial-salesforce-success");
+  const gc13Explanation = Array.isArray(gc13?.expectedExplanationNodes)
+    ? gc13.expectedExplanationNodes
+        .flatMap((node) => (isObj(node) && isNonEmptyString(node.summary) ? [node.summary] : []))
+        .join(" ")
+    : "";
+  const gc13Verification = isObj(gc13?.expectedVerificationState)
+    ? gc13.expectedVerificationState
+    : null;
+  if (
+    !gc13Explanation.includes("instruction-created") ||
+    !gc13Explanation.includes("disbursement-scheduled") ||
+    gc13Verification?.observedStatus !== "unknown" ||
+    demo.partialReceipt.completedParts.join(",") !== "instruction-created" ||
+    demo.partialReceipt.incompleteParts.join(",") !==
+      "disbursement-scheduled" ||
+    demo.partialReceipt.observedStatuses.join(",") !== "completed,unknown" ||
+    demo.partialReceipt.statusLabels.some((label) =>
+      label.toLowerCase().includes("settled"),
+    ) ||
+    !demo.partialReceipt.proves.includes(
+      "Completed part: instruction-created",
+    ) ||
+    !demo.partialReceipt.notProvenYet.includes(
+      "Incomplete part: disbursement-scheduled",
+    )
+  ) {
+    problems.push(
+      "GC-13 must render the exact completed and incomplete receipt parts while the movement remains unknown and unconfirmed",
+    );
+  }
+
+  const gc15RevalidationAvailable = minorFromMajor(
+    gc15Signed?.preExecutionRevalidation?.availableLiquidityUsd ?? null,
+  );
+  const gc15ReserveFloor = minorFromMajor(gc15Signed?.reserveFloorUsd ?? null);
+  const currentGc15Headroom =
+    gc15RevalidationAvailable === null ||
+    gc15RevalidationPending === null ||
+    gc15ReserveFloor === null
+      ? null
+      : tryHeadroomMinor(
+          gc15RevalidationAvailable,
+          gc15RevalidationPending,
+          gc15ReserveFloor,
+        );
+  const draftedGc15Floor =
+    demo.plannedWithdrawalMonthlyMinor === null
+      ? null
+      : tryReserveFloorMinor(
+          demo.plannedWithdrawalMonthlyMinor,
+          demo.draftedReserveMonths,
+        );
+  const draftedGc15Headroom =
+    gc15RevalidationAvailable === null ||
+    gc15RevalidationPending === null ||
+    draftedGc15Floor === null
+      ? null
+      : tryHeadroomMinor(
+          gc15RevalidationAvailable,
+          gc15RevalidationPending,
+          draftedGc15Floor,
+        );
+  if (
+    currentGc15Headroom === null ||
+    draftedGc15Headroom === null ||
+    demo.invalidationPolicySimulation.currentHeadroomMinor !==
+      currentGc15Headroom ||
+    demo.invalidationPolicySimulation.draftedHeadroomMinor !==
+      draftedGc15Headroom
+  ) {
+    problems.push(
+      "GC-15 policy simulation must use the latest pre-execution liquidity snapshot",
     );
   }
   return problems;

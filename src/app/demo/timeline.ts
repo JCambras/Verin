@@ -20,7 +20,14 @@ export interface DemoTimeline {
   readonly approvalOneAt: string;
   readonly approvalTwoAt: string;
   readonly revalidatedAt: string;
+  readonly approvalInvalidatedAt: string;
+  readonly derivedDecisionAt: string;
+  readonly freshApprovalOneAt: string;
+  readonly freshApprovalTwoAt: string;
+  readonly reservationAt: string;
   readonly executionAt: string;
+  readonly executionSucceededAt: string;
+  readonly statusObservedAt: string;
   readonly retryAt: string;
   readonly completionVerifiedAt: string;
   readonly nextPollAt: string;
@@ -48,18 +55,26 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   const revalidationOffset = specialist ? 50 * MINUTE : 25 * MINUTE;
   const executionOffset = specialist ? 54 * MINUTE : 29 * MINUTE;
   const executionAt = add(requestAt, executionOffset);
+  const revalidatedAt =
+    authority.kind === "signed" &&
+    authority.preExecutionRevalidationAt
+      ? authority.preExecutionRevalidationAt
+      : add(requestAt, revalidationOffset);
   return {
     requestAt,
     decisionAt: add(requestAt, 10 * SECOND),
     specialistReviewedAt: add(requestAt, 15 * MINUTE),
     approvalOneAt: add(requestAt, approvalOneOffset),
     approvalTwoAt: add(requestAt, approvalTwoOffset),
-    revalidatedAt:
-      authority.kind === "signed" &&
-      authority.preExecutionRevalidationAt
-        ? authority.preExecutionRevalidationAt
-        : add(requestAt, revalidationOffset),
+    revalidatedAt,
+    approvalInvalidatedAt: add(revalidatedAt, SECOND),
+    derivedDecisionAt: add(revalidatedAt, 10 * SECOND),
+    freshApprovalOneAt: add(revalidatedAt, 6 * MINUTE),
+    freshApprovalTwoAt: add(revalidatedAt, 9 * MINUTE),
+    reservationAt: add(revalidatedAt, 10 * MINUTE),
     executionAt,
+    executionSucceededAt: add(executionAt, 10 * SECOND),
+    statusObservedAt: add(executionAt, 20 * SECOND),
     retryAt: add(executionAt, MINUTE),
     completionVerifiedAt: add(executionAt, 98 * MINUTE),
     nextPollAt: add(executionAt, 12 * 60 * MINUTE),

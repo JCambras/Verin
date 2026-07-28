@@ -12,6 +12,8 @@
  */
 import type { DispositionKind } from "./model";
 
+export type JourneyPass = "initial" | "revalidated";
+
 // A fixed demo world clock keeps freshness and screenshots stable.
 export const DEMO_NOW = "2026-07-26";
 export const DEMO_TIME_ZONE = "America/New_York";
@@ -229,6 +231,8 @@ export const CAST = {
 export const IDS = {
   decisionHash: "a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0",
   bundleHash: "5e21c9a6b3d84f07a5c1e92b64d38a7f0a3f9c2e41b7d5f08c6a92e13b48d70f",
+  derivedDecisionHash: "d9124aef6b8c37e029f154c8a6d3b25e78fc41a6d90b2e573c8f14a625db9e70",
+  refreshedBundleHash: "9b47c18d5e620af3d7861c4b892ef530a14d768ce305bf42a79e16dc4f823b51",
   idempotencyKey: "mm-smiths-renovation-aug15-4c7f",
   reservationId: "rsv-8f21-smiths-liquidity",
   conflictKeys: ["liquidity:smiths:2026-08", "bank-instruction:smiths:chase-4417"],
