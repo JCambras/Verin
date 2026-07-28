@@ -20,6 +20,9 @@ const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: "o", role:
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
 const advisor = advisorAuthorization.value;
+const advisorPiiAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "pii.view");
+if (!advisorPiiAuthorization.ok) throw new Error("advisor should hold pii.view");
+const advisorPii = advisorPiiAuthorization.value;
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();
@@ -32,7 +35,7 @@ async function seed(): Promise<SqlDb> {
 describe("observability-coverage fence", () => {
   it("enforces: the account-opening flow emits spans for the flow and its external calls", async () => {
     const db = await seed();
-    await startAccountOpening(db, advisor, { householdName: "H", firstName: "A", lastName: "B", email: null, accountType: "ira-roth" });
+    await startAccountOpening(db, advisor, advisorPii, { householdName: "H", firstName: "A", lastName: "B", email: null, accountType: "ira-roth" });
     const names = new Set(recentSpans().map((s) => s.name));
     expect(names.has("flow.account-opening.start"), "missing flow span").toBe(true);
     expect(names.has("crm.household.create"), "missing external-call span").toBe(true);

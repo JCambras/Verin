@@ -158,8 +158,8 @@ describe("tenant isolation (integration)", () => {
     const store = makeExecutionStore(db);
     const state = { id: "exec-1", orgId: ORG_A, flowId: "f", status: "suspended" as const, resumeToken: "tok-cross", cursor: 1, data: {} };
     await store.create(state, tenantA);
-    expect(await store.loadById("exec-1", tenantA)).not.toBeNull();
-    expect(await store.loadById("exec-1", tenantB)).toBeNull();
+    expect(await store.loadById("exec-1", grantA)).not.toBeNull();
+    expect(await store.loadById("exec-1", grantB)).toBeNull();
   });
 
   it("saving a state under the wrong tenant is refused (org/tenant mismatch is a wiring bug)", async () => {

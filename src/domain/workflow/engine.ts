@@ -4,10 +4,10 @@
  * is authored. A step may `suspend` (returning a resume token) instead of running
  * to completion; the engine persists the continuation and returns. An external
  * event (a webhook) calls resumeFlow(token, payload) to run the remaining steps.
- * Resume is idempotent at the write layer (auditedWrite), so a doubly-fired
- * webhook has exactly-once effect (charter #16).
+ * Resume is idempotent at the write layer, so replay has exactly-once effect.
  */
 import { isAppError, type AppError } from "@contracts/errors";
+import type { ActionGrant } from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
 import type { TenantContext } from "@contracts/tenant";
 
@@ -35,7 +35,7 @@ export interface ExecutionState extends PIIBearing {
 export interface ExecutionStore extends PIIBearing {
   create(state: ExecutionState, tenant: TenantContext): Promise<void>;
   save(state: ExecutionState, tenant: TenantContext): Promise<void>;
-  loadById(id: string, tenant: TenantContext): Promise<ExecutionState | null>;
+  loadById(id: string, grant: ActionGrant<"pii.view">): Promise<ExecutionState | null>;
   loadByToken(token: string): Promise<ExecutionState | null>;
 }
 

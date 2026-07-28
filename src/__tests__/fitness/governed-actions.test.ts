@@ -16,6 +16,7 @@ import {
   isSqlExecutorCall,
   normalizedPath,
   REPO_ROOT,
+  returnedCallableMembers,
   structuralPiiExposures,
   typeKey,
 } from "./_fence-utils";
@@ -561,7 +562,15 @@ function exportedCallables(sf: SourceFile): ExportedCallable[] {
       ),
     );
   }
-  return callables;
+  const returned = callables.flatMap((callable) =>
+    returnedCallableMembers(callable.declaration, callable.name).map((member) => ({
+      name: member.name,
+      declaration: member.declaration,
+      signature: member.signature,
+      anchors: [...callable.anchors, member.declaration],
+    }))
+  );
+  return [...callables, ...returned];
 }
 
 export function deriveGovernedSinks(project: Project): GovernedSink[] {
@@ -572,11 +581,15 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
     for (const callable of exportedCallables(sf)) {
       const grantAction = actionGrantAction(callable.signature);
       const outputAction = governedOutputAction(callable.signature.getReturnType());
+      const returnsCallableMembers =
+        returnedCallableMembers(callable.declaration, callable.name).length > 0;
       const returnsPii = structuralPiiExposures(
         callable.signature.getReturnType(),
         {
           path: `${callable.name}.return`,
-          includeMarked: true,
+          includeMarked: !returnsCallableMembers,
+          opaqueIsExposure: !grantAction && !outputAction,
+          inspectCallSignatures: !returnsCallableMembers,
           isEscaped: isGovernedNonPiiField,
         },
       ).length > 0;
@@ -607,6 +620,26 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
  */
 export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why: string }> = [
   {
+    callable: "src/infrastructure/pii/scrub.ts :: scrub",
+    why: "PII scrub boundary returns an opaque structural clone only after recursively redacting every sensitive field and value.",
+  },
+  {
+    callable: "src/infrastructure/store/db.ts :: createDbFromDump",
+    why: "global database capability factory; the opaque return is a SQL executor, not a tenant record, and repositories govern every data-returning method.",
+  },
+  {
+    callable: "src/infrastructure/store/db.ts :: createDb",
+    why: "global database capability factory; the opaque return is a SQL executor, not a tenant record, and repositories govern every data-returning method.",
+  },
+  {
+    callable: "src/infrastructure/store/db.ts :: getDb",
+    why: "global database capability factory; the opaque return is a SQL executor, not a tenant record, and repositories govern every data-returning method.",
+  },
+  {
+    callable: "src/infrastructure/store/db.ts :: createMemoryDb",
+    why: "test database capability factory; the opaque return is a SQL executor, not a tenant record, and repositories govern every data-returning method.",
+  },
+  {
     callable: "src/infrastructure/identity/identity-store.ts :: findUserByEmail",
     why: "pre-authentication: this lookup PRODUCES the row a Principal is minted from, and a pii.view grant is minted FROM a Principal — requiring one here is circular. Org-qualified login is a recorded deferral (Sable F3).",
   },
@@ -635,8 +668,8 @@ export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why:
     why: "the HMAC-verified wrapper around the same capability-keyed resume — it holds no human identity to authorize.",
   },
   {
-    callable: "src/infrastructure/store/execution-store.ts :: makeExecutionStore",
-    why: "a FACTORY, not a boundary: it takes only the SQL driver, and every method on the store it returns requires a sealed TenantContext (asserted at entry, fenced by tenant-context-required).",
+    callable: "src/infrastructure/store/execution-store.ts :: makeExecutionStore.loadByToken",
+    why: "capability-keyed webhook resume: the unguessable token selects one continuation before its tenant is known; resumeFlow rechecks the loaded tenant against the sealed system tenant.",
   },
 ];
 
@@ -647,6 +680,8 @@ export function unboundedPiiReads(project: Project): string[] {
     const file = normalizedPath(sf.getFilePath());
     if (!file.startsWith("src/infrastructure/")) continue;
     for (const callable of exportedCallables(sf)) {
+      const returnsCallableMembers =
+        returnedCallableMembers(callable.declaration, callable.name).length > 0;
       if (
         actionGrantAction(callable.signature) ||
         governedOutputAction(callable.signature.getReturnType()) ||
@@ -656,7 +691,9 @@ export function unboundedPiiReads(project: Project): string[] {
           callable.signature.getReturnType(),
           {
             path: `${callable.name}.return`,
-            includeMarked: true,
+            includeMarked: !returnsCallableMembers,
+            opaqueIsExposure: true,
+            inspectCallSignatures: !returnsCallableMembers,
             isEscaped: isGovernedNonPiiField,
           },
         ).length === 0
@@ -1820,6 +1857,65 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(detectUnguardedGovernedSinks(project)).toEqual([
         `src/infrastructure/new-adapter/repository.ts :: listClients: boundary must require ActionGrant<"pii.view">`,
       ]);
+    });
+    it("traverses unsafe union siblings beside exact sealed wrappers", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tokenized.ts": `export interface Tokenized<T> { readonly value: T; readonly piiFree: true }`,
+        "/src/contracts/secret.ts": `export interface SecretValue { readonly redacted: true }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { Tokenized } from "../../contracts/tokenized";
+          import type { SecretValue } from "../../contracts/secret";
+          import type { TenantContext } from "../../contracts/tenant";
+          export function tokenizedOrRaw(tenant: TenantContext): Tokenized<string> | { email: string } {
+            return { email: tenant.orgId };
+          }
+          export function secretOrRaw(tenant: TenantContext): SecretValue | { email: string } {
+            return { email: tenant.orgId };
+          }
+        `,
+      });
+      const hits = detectUnguardedGovernedSinks(project);
+      expect(hits.some((hit) => hit.includes(":: tokenizedOrRaw:"))).toBe(true);
+      expect(hits.some((hit) => hit.includes(":: secretOrRaw:"))).toBe(true);
+    });
+    it("fails closed on opaque governed outputs", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { TenantContext } from "../../contracts/tenant";
+          export async function loadOpaque(tenant: TenantContext): Promise<unknown> {
+            return tenant.orgId;
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/new-adapter/repository.ts :: loadOpaque: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+    it("derives PII sinks from methods returned by every exported factory form", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Client extends PIIBearing { email: string }
+          export const factories = {
+            make() {
+              return { list(tenant: TenantContext): Client[] { return [{ email: tenant.orgId }]; } };
+            },
+          };
+          export class Factory {
+            make() {
+              return { load(tenant: TenantContext): Client[] { return [{ email: tenant.orgId }]; } };
+            }
+          }
+        `,
+      });
+      const hits = detectUnguardedGovernedSinks(project);
+      expect(hits.some((hit) => hit.includes(":: factories.make.list:"))).toBe(true);
+      expect(hits.some((hit) => hit.includes(":: Factory.make.load:"))).toBe(true);
     });
     it("derives audit-export sinks from governed output markers", () => {
       const project = inMemoryProject({

@@ -436,6 +436,24 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       isNodeModuleSpecifier(loaderSpecifier(expression))
     );
   };
+  const isReflectGet = (node: Node | undefined): boolean => {
+    let expression = expressionProvenance(node);
+    if (
+      Node.isBinaryExpression(expression) &&
+      expression.getOperatorToken().getKind() === SyntaxKind.CommaToken
+    ) {
+      expression = expressionProvenance(expression.getRight());
+    }
+    if (Node.isPropertyAccessExpression(expression)) {
+      return expression.getName() === "get" &&
+        isAmbientGlobalReference(expression.getExpression());
+    }
+    if (Node.isElementAccessExpression(expression)) {
+      return literalPropertyKey(expression.getArgumentExpression()) === "get" &&
+        isAmbientGlobalReference(expression.getExpression());
+    }
+    return false;
+  };
   for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     const initializer = declaration.getInitializer();
     const expression = unwrapExpression(initializer);
@@ -468,6 +486,21 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         specifier: null,
         line: member.line,
         kind: "require-reference",
+      });
+    }
+  }
+  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    if (!isReflectGet(call.getExpression())) continue;
+    const [receiver, key] = call.getArguments();
+    const memberName = literalPropertyKey(key);
+    if (
+      isCreateRequireNamespace(receiver) &&
+      (memberName === null || memberName === "createRequire")
+    ) {
+      refs.push({
+        specifier: null,
+        line: call.getStartLineNumber(),
+        kind: "create-require",
       });
     }
   }
@@ -864,7 +897,37 @@ interface StructuralPiiOptions {
   readonly location?: Node;
   readonly includeMarked?: boolean;
   readonly checkParameterNames?: boolean;
+  readonly opaqueIsExposure?: boolean;
+  readonly inspectCallSignatures?: boolean;
   readonly isEscaped?: (path: string, declaration: Node) => boolean;
+}
+
+function typeIsExactDeclaration(type: Type, file: string, name: string): boolean {
+  if (type.isUnion() || type.isIntersection()) return false;
+  const candidates = [type, type.getTargetType()].filter(
+    (candidate): candidate is Type => candidate !== undefined,
+  );
+  return candidates.some((candidate) =>
+    [candidate.getAliasSymbol(), candidate.getSymbol()].some((symbol) =>
+      symbol?.getName() === name &&
+      symbol.getDeclarations().some((declaration) =>
+        normalizedPath(declaration.getSourceFile().getFilePath()) === file
+      )
+    )
+  );
+}
+
+function typeIsOnlySafePiiWrapper(type: Type): boolean {
+  const members = type.getUnionTypes();
+  if (members.length > 0) {
+    return members.every((member) =>
+      member.isNull() ||
+      member.isUndefined() ||
+      typeIsOnlySafePiiWrapper(member)
+    );
+  }
+  return typeIsExactDeclaration(type, "src/contracts/tokenized.ts", "Tokenized") ||
+    typeIsExactDeclaration(type, "src/contracts/secret.ts", "SecretValue");
 }
 
 function typeDeclaredAs(type: Type, file: string, name: string): boolean {
@@ -923,8 +986,7 @@ export function structuralPiiSignatureExposures(
     if (
       options.checkParameterNames !== false &&
       isPIIField(parameter.getName()) &&
-      !typeDeclaredAs(parameterType, "src/contracts/tokenized.ts", "Tokenized") &&
-      !typeDeclaredAs(parameterType, "src/contracts/secret.ts", "SecretValue")
+      !typeIsOnlySafePiiWrapper(parameterType)
     ) return [path];
     return structuralPiiExposures(parameterType, {
       ...options,
@@ -949,8 +1011,12 @@ export function structuralPiiExposures(
   options: StructuralPiiOptions,
 ): string[] {
   if (
-    typeDeclaredAs(type, "src/contracts/tokenized.ts", "Tokenized") ||
-    typeDeclaredAs(type, "src/contracts/secret.ts", "SecretValue")
+    options.opaqueIsExposure &&
+    (type.isAny() || type.isUnknown())
+  ) return [options.path];
+  if (
+    typeIsExactDeclaration(type, "src/contracts/tokenized.ts", "Tokenized") ||
+    typeIsExactDeclaration(type, "src/contracts/secret.ts", "SecretValue")
   ) return [];
   if (typeDeclaredAs(type, "src/contracts/pii.ts", "PIIBearing")) {
     return options.includeMarked ? [options.path] : [];
@@ -994,8 +1060,7 @@ export function structuralPiiExposures(
       const path = `${options.path}.${property.getName()}`;
       if (
         isPIIField(property.getName()) &&
-        !typeDeclaredAs(propertyType, "src/contracts/tokenized.ts", "Tokenized") &&
-        !typeDeclaredAs(propertyType, "src/contracts/secret.ts", "SecretValue") &&
+        !typeIsOnlySafePiiWrapper(propertyType) &&
         !options.isEscaped?.(path, declaration)
       ) return [path];
       return inspectNested
@@ -1009,14 +1074,139 @@ export function structuralPiiExposures(
     })
     : [];
   if (!inspectNested) return [...nestedArguments, ...properties];
-  const calls = type.getCallSignatures().flatMap((signature) =>
-    structuralPiiSignatureExposures(signature, {
-      ...options,
-      path: `${options.path}.<call>`,
-      seen: nextSeen,
-    })
-  );
+  const calls = options.inspectCallSignatures === false
+    ? []
+    : type.getCallSignatures().flatMap((signature) =>
+      structuralPiiSignatureExposures(signature, {
+        ...options,
+        path: `${options.path}.<call>`,
+        seen: nextSeen,
+      })
+    );
   return [...nestedArguments, ...properties, ...calls];
+}
+
+export interface ReturnedCallableMember {
+  readonly name: string;
+  readonly declaration: Node;
+  readonly signature: Signature;
+}
+
+export function returnedCallableMembers(
+  declaration: Node,
+  owner: string,
+): ReturnedCallableMember[] {
+  const body = Node.isFunctionDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration) ||
+      Node.isMethodDeclaration(declaration) ||
+      Node.isGetAccessorDeclaration(declaration)
+    ? declaration.getBody()
+    : null;
+  if (!body) return [];
+  const returned: Node[] = [];
+  if (!Node.isBlock(body)) returned.push(body);
+  for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
+    const enclosing = statement.getFirstAncestor((ancestor) =>
+      Node.isFunctionDeclaration(ancestor) ||
+      Node.isFunctionExpression(ancestor) ||
+      Node.isArrowFunction(ancestor) ||
+      Node.isMethodDeclaration(ancestor) ||
+      Node.isGetAccessorDeclaration(ancestor)
+    );
+    if (enclosing === declaration && statement.getExpression()) {
+      returned.push(statement.getExpression()!);
+    }
+  }
+  const resolveObject = (expression: Node, seen = new Set<string>()): Node | null => {
+    const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    if (Node.isObjectLiteralExpression(expression)) return expression;
+    if (
+      Node.isParenthesizedExpression(expression) ||
+      Node.isAsExpression(expression) ||
+      Node.isSatisfiesExpression(expression) ||
+      Node.isTypeAssertion(expression)
+    ) return resolveObject(expression.getExpression(), seen);
+    if (Node.isCallExpression(expression)) {
+      const callee = expression.getExpression();
+      if (
+        Node.isPropertyAccessExpression(callee) &&
+        callee.getExpression().getText() === "Object" &&
+        ["freeze", "seal"].includes(callee.getName()) &&
+        expression.getArguments().length === 1
+      ) return resolveObject(expression.getArguments()[0]!, seen);
+      return null;
+    }
+    if (!Node.isIdentifier(expression)) return null;
+    const symbol = expression.getSymbol();
+    const target = symbol?.getAliasedSymbol() ?? symbol;
+    for (const candidate of target?.getDeclarations() ?? []) {
+      if (!Node.isVariableDeclaration(candidate) || !candidate.getInitializer()) continue;
+      return resolveObject(candidate.getInitializer()!, seen);
+    }
+    return null;
+  };
+  const resolveCallable = (identifier: Node): Node | undefined => {
+    const symbol = identifier.getSymbol();
+    const target = symbol?.getAliasedSymbol() ?? symbol;
+    const candidates = [
+      ...(Node.isIdentifier(identifier) ? identifier.getDefinitionNodes() : []),
+      ...(target?.getDeclarations() ?? []),
+    ];
+    for (const candidate of candidates) {
+      if (Node.isFunctionDeclaration(candidate)) return candidate;
+      if (!Node.isVariableDeclaration(candidate)) continue;
+      const initializer = candidate.getInitializer();
+      if (
+        initializer &&
+        (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+      ) return initializer;
+    }
+    return undefined;
+  };
+  const members: ReturnedCallableMember[] = [];
+  const collect = (object: Node, visited: Set<string>): void => {
+    if (!Node.isObjectLiteralExpression(object)) return;
+    for (const property of object.getProperties()) {
+      if (Node.isMethodDeclaration(property)) {
+        members.push({
+          name: `${owner}.${property.getName()}`,
+          declaration: property,
+          signature: property.getSignature(),
+        });
+        continue;
+      }
+      if (Node.isSpreadAssignment(property)) {
+        const spread = resolveObject(property.getExpression(), visited);
+        if (spread) collect(spread, visited);
+        continue;
+      }
+      const callable = Node.isPropertyAssignment(property)
+        ? property.getInitializer()
+        : Node.isShorthandPropertyAssignment(property)
+        ? resolveCallable(property.getNameNode())
+        : undefined;
+      if (
+        callable &&
+        (Node.isArrowFunction(callable) ||
+          Node.isFunctionExpression(callable) ||
+          Node.isFunctionDeclaration(callable))
+      ) {
+        members.push({
+          name: `${owner}.${property.getName()}`,
+          declaration: callable,
+          signature: callable.getSignature(),
+        });
+      }
+    }
+  };
+  for (const expression of returned) {
+    const object = resolveObject(expression);
+    if (object) collect(object, new Set());
+  }
+  return members;
 }
 
 const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);

@@ -26,6 +26,9 @@ const advisorPrincipal = principalFromIdentity({ userId: "u-pii", orgId: ORG, ro
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
 const advisor = advisorAuthorization.value;
+const advisorPiiAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "pii.view");
+if (!advisorPiiAuthorization.ok) throw new Error("advisor should hold pii.view");
+const advisorPii = advisorPiiAuthorization.value;
 const FIXTURES = {
   householdName: "Okonkwo-Blackwood Household",
   firstName: "Zephyrine",
@@ -153,7 +156,7 @@ describe("traces never carry raw names or account numbers", () => {
 
   it("the REAL account-opening flow (start → webhook resume) emits spans free of the client's PII", async () => {
     const before = recentSpans().length;
-    const started = await startAccountOpening(db, advisor, {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: FIXTURES.householdName,
       firstName: FIXTURES.firstName,
       lastName: FIXTURES.lastName,

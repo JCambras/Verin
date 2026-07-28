@@ -63,10 +63,11 @@ function pct(sorted: number[], p: number): number {
 async function runFlow(
   db: Awaited<ReturnType<typeof createMemoryDb>>,
   advisor: ActionGrant<"execution.initiate">,
+  piiGrant: ActionGrant<"pii.view">,
   i: number,
 ): Promise<{ startMs: number; resumeMs: number }> {
   const s0 = performance.now();
-  const started = await startAccountOpening(db, advisor, {
+  const started = await startAccountOpening(db, advisor, piiGrant, {
     householdName: `Load Household ${i}`,
     firstName: "Load",
     lastName: `Contact ${i}`,
@@ -111,6 +112,12 @@ async function main(): Promise<void> {
   );
   if (!advisorAuthorization.ok) throw new Error("load advisor lacks execution.initiate");
   const advisor = advisorAuthorization.value;
+  const piiAuthorization = authorizeGovernedAction(
+    actorRefOf(advisorPrincipal),
+    "pii.view",
+  );
+  if (!piiAuthorization.ok) throw new Error("load advisor lacks pii.view");
+  const piiGrant = piiAuthorization.value;
 
   const seedStart = performance.now();
   await db.transaction(async (tx) => {
@@ -145,7 +152,7 @@ async function main(): Promise<void> {
   const stepDurations: number[] = [];
   const flowStart = performance.now();
   for (let i = 0; i < FLOWS; i++) {
-    const { startMs, resumeMs } = await runFlow(db, advisor, i);
+    const { startMs, resumeMs } = await runFlow(db, advisor, piiGrant, i);
     stepDurations.push(startMs, resumeMs);
   }
   const flowWallMs = performance.now() - flowStart;
@@ -162,7 +169,7 @@ async function main(): Promise<void> {
   // concurrent-step p95 rather than sitting inert next to the write path.
   const startTasks = Array.from({ length: CONCURRENCY }, async (_, i) => {
     const s = performance.now();
-    const r = await startAccountOpening(db, advisor, {
+    const r = await startAccountOpening(db, advisor, piiGrant, {
       householdName: `Concurrent Household ${i}`,
       firstName: "Concurrent",
       lastName: `Contact ${i}`,

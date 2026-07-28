@@ -1,28 +1,9 @@
 /**
- * House-CRM store schema (ADR-0004/0007). Portable PostgreSQL DDL — runs on PGlite
- * (dev/CI) and managed Postgres (prod) unchanged. The audit_log is append-only
- * (BEFORE UPDATE/DELETE triggers RAISE EXCEPTION) and hash-chained per org; the
- * outbox delivers audit entries at-least-once; crm_write_cache gives idempotency.
- *
- * VERSIONED MIGRATIONS (D-016 executed by deep-review r6 finding #6). The schema is
- * an ORDERED list of migrations, each recorded in `schema_migrations` once applied,
- * so a schema change is an APPENDED migration rather than an in-place DDL edit that
- * silently no-ops on an already-initialized dataDir. `runMigrations` applies every
- * not-yet-recorded version in order, each in its own transaction (DDL is
- * transactional in Postgres), recording the version in the SAME transaction - a
- * crash mid-migration leaves neither a half-applied schema nor a
- * recorded-but-unapplied version. There is no production store yet (dev/CI stores
- * are ephemeral / reseedable), so version 1 is a hardened baseline rather than a
- * text→timestamptz data conversion; the mechanism is what future prod changes ride.
- *
- * Every temporal column is `timestamptz` (not `text`): the app boundary keeps ISO
- * strings on BOTH sides (writers emit `toISOString()`; the driver serializes the
- * string and the `timestamptz` read-parser in `db.ts` normalizes back to a canonical
- * UTC ISO-8601 string), so ordering and `<`/`>` comparisons are instant-correct
- * instead of lexicographic on whatever offset a writer happened to emit - closing the
- * `claimed_at < $2` foot-gun in `audit-store.ts`.
+ * Portable PostgreSQL schema and ordered migrations (ADR-0004/0007, D-016).
+ * Each version's DDL and ledger row commit in one transaction. Temporal columns
+ * are timestamptz while the application boundary remains canonical ISO strings.
  */
-import { appError } from "@contracts/errors";
+import { appError, isAppError } from "@contracts/errors";
 import { safeReason } from "@infra/observability/safe-reason";
 import type { SqlDb } from "./db";
 
@@ -372,45 +353,62 @@ for (const [i, m] of MIGRATIONS.entries()) {
 export const MIGRATION_SQL = [SCHEMA_MIGRATIONS_DDL, ...MIGRATIONS.map((m) => m.sql)].join("\n");
 
 /**
- * Run every probe for one version and refuse the upgrade if ANY finds orphans.
- * Probes are read-only and run BEFORE the transaction, so a store that cannot take
- * the new constraints is reported with its data byte-for-byte untouched instead of
- * dying inside a rollback with a bare driver error. All probes run - an operator
- * fixing one relationship should not discover the next one on the next boot.
+ * Run every read-only probe for one version and report all orphan classes.
  */
 async function assertPreflightClean(db: SqlDb, m: Migration): Promise<void> {
-  const blocked: string[] = [];
-  for (const probe of m.preflight ?? []) {
-    const { rows } = await db.query<{ orphans: number }>(probe.sql);
-    const orphans = Number(rows[0]?.orphans ?? 0);
-    if (orphans > 0) blocked.push(`${probe.relationship}: ${orphans} row(s) in ${probe.subject} reference a parent in another tenant (or no parent at all)`);
-  }
-  if (blocked.length > 0) {
-    throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
+  try {
+    const blocked: string[] = [];
+    for (const probe of m.preflight ?? []) {
+      const { rows } = await db.query<{ orphans: number }>(probe.sql);
+      const orphans = Number(rows[0]?.orphans ?? 0);
+      if (orphans > 0) blocked.push(`${probe.relationship}: ${orphans} row(s) in ${probe.subject} reference a parent in another tenant (or no parent at all)`);
+    }
+    if (blocked.length > 0) {
+      throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
+    }
+  } catch (cause) {
+    if (isAppError(cause)) throw cause;
+    throw migrationFailure("preflight", cause, m);
   }
 }
 
+type MigrationStage = "ledger-bootstrap" | "applied-version-read" | "preflight" | "mutation";
+
+function migrationFailure(stage: MigrationStage, cause: unknown, migration?: Migration) {
+  const category = safeReason(cause);
+  const identity = migration ? `migration ${migration.version} (${migration.name})` : "migration ledger";
+  const outcome = stage === "mutation" ? "failed and was rolled back" : `${stage} failed`;
+  return appError("INTERNAL", `${identity} ${outcome} (${category})`, {
+    stage,
+    category,
+    ...(migration ? { version: migration.version, name: migration.name } : {}),
+  });
+}
+
 export async function runMigrations(db: SqlDb): Promise<void> {
-  await db.exec(SCHEMA_MIGRATIONS_DDL);
-  const recorded = await db.query<{ version: number }>("SELECT version FROM schema_migrations");
+  try {
+    await db.exec(SCHEMA_MIGRATIONS_DDL);
+  } catch (cause) {
+    throw migrationFailure("ledger-bootstrap", cause);
+  }
+  let recorded: { rows: Array<{ version: number }> };
+  try {
+    recorded = await db.query<{ version: number }>("SELECT version FROM schema_migrations");
+  } catch (cause) {
+    throw migrationFailure("applied-version-read", cause);
+  }
   const applied = new Set(recorded.rows.map((r) => Number(r.version)));
   const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
   const batch = applied.size === 0 ? pending.slice(0, 1) : pending;
   for (const m of batch) await assertPreflightClean(db, m);
   for (const m of batch) {
-    // The migration's DDL and its ledger record commit as ONE transaction: a crash
-    // mid-migration leaves neither a half-applied schema nor a recorded-but-unapplied
-    // version, so re-running always resumes cleanly (safe even for a future
-    // non-idempotent ALTER). The version record is a PARAMETERIZED write - no SQL is
-    // built by interpolation.
     try {
       await db.transaction(async (tx) => {
         await tx.exec(m.sql);
         await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
       });
     } catch (cause) {
-      const category = safeReason(cause);
-      throw appError("INTERNAL", `migration ${m.version} (${m.name}) failed and was rolled back (${category})`, { version: m.version, name: m.name, category });
+      throw migrationFailure("mutation", cause, m);
     }
   }
   if (batch.length < pending.length) await runMigrations(db);

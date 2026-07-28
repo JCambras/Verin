@@ -1932,3 +1932,40 @@ an earlier committed schema mutation.
 **Revert path:** revert this changeset to restore positional leading-token trust,
 direct-loader-only scans, marker-only PII sinks, adapter-import-only repository
 discovery, and per-migration preflight ordering.
+
+---
+
+## D-055 - Semantic security walkers and migration diagnostics fail closed
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-053, D-054, v3 §15.1/§15.2/§15.3,
+charter #1/#4/#7/#13
+
+Five shared roots closed the eight review findings. Module-reference analysis now
+recognizes `Reflect.get` access to `createRequire`. Structural PII analysis exempts
+only an exact `Tokenized` or `SecretValue`, traverses unsafe union siblings, and
+treats opaque ungoverned outputs as PII. The only opaque exceptions are exact,
+reasoned configuration, scrubber, database-capability, and resume-token boundaries.
+
+Sealed construction walks project-owned containers and callable returns while
+contextual object and implemented class methods are checked against their declared
+contracts. One shared returned-callable walker supplies tenant and governed-sink
+discovery for function, arrow, object, and class factories.
+
+`ExecutionStore.loadById` now requires and asserts `ActionGrant<"pii.view">`.
+`loadByToken` is the sole capability-keyed PII escape. Account-opening binds both
+`execution.initiate` and `pii.view` before route work and threads each exact grant to
+its sink.
+
+Migration ledger bootstrap, applied-version reads, preflight probes, and mutations
+all convert driver failures to PII-safe `AppError` categories. Intentional preflight
+`AppError`s retain their actionable orphan report. Line ceilings remain unchanged at
+contracts 3892/3900, domain 1200/1200, and infrastructure 3200/3200.
+
+**Alternatives:** per-fence loader and PII scans were rejected because they drift.
+Treating capability factories as tenant-record reads was rejected in favor of exact
+reviewed opaque boundaries. Keeping `loadById` tenant-only was rejected because the
+returned state is PII-bearing and needs the exact viewing capability.
+
+**Revert path:** revert this changeset to restore direct-only reflected loading,
+union-wide wrapper exemptions, opaque-output trust, syntax-limited factory discovery,
+tenant-only continuation reads, and raw driver failures outside mutation transactions.

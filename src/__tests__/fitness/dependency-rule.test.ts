@@ -205,6 +205,7 @@ describe("dependency-rule fence", () => {
       `const nodeModule = require("node:module");\nconst load = nodeModule["createRequire"](import.meta.url);\nexport const value = load("@infra/store");`,
       `const nodeModule = await import("node:module");\nconst load = nodeModule.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `const nodeModule = await import("node:module");\nconst key = "createRequire";\nconst load = nodeModule[key](import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loaders fail closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),

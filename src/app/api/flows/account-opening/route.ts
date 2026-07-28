@@ -16,6 +16,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // original RBAC gate.
   const auth = await requireActionGrant(req, "execution.initiate");
   if (!auth.ok) return errorResponse(auth.error);
+  const pii = await requireActionGrant(req, "pii.view");
+  if (!pii.ok) return errorResponse(pii.error);
 
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return errorResponse(parsed.error);
@@ -36,7 +38,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const db = await getDb();
-  const result = await startAccountOpening(db, auth.value, {
+  const result = await startAccountOpening(db, auth.value, pii.value, {
     householdName: b.householdName,
     firstName: b.firstName,
     lastName: b.lastName,

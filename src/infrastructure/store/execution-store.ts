@@ -11,6 +11,7 @@
 import type { SqlDb } from "./db";
 import type { ExecutionState, ExecutionStore } from "@domain/workflow/engine";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { assertActionGrant } from "@contracts/authz";
 import { appError } from "@contracts/errors";
 
 interface Row {
@@ -53,9 +54,9 @@ export function makeExecutionStore(db: SqlDb): ExecutionStore {
         [state.id, state.status, state.resumeToken, JSON.stringify({ cursor: state.cursor, data: state.data }), new Date().toISOString(), tenant.orgId],
       );
     },
-    async loadById(id, tenant) {
-      assertTenantContext(tenant);
-      const res = await db.query<Row>("SELECT * FROM flow_executions WHERE id = $1 AND org_id = $2", [id, tenant.orgId]);
+    async loadById(id, grant) {
+      assertActionGrant(grant, "pii.view");
+      const res = await db.query<Row>("SELECT * FROM flow_executions WHERE id = $1 AND org_id = $2", [id, grant.tenant.orgId]);
       return res.rows[0] ? toState(res.rows[0]) : null;
     },
     async loadByToken(token) {

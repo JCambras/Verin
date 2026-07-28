@@ -197,6 +197,24 @@ function sealedType(
     );
     if (descendTypeArguments) {
       queue.push(...current.getAliasTypeArguments(), ...current.getTypeArguments());
+      const symbol = current.getAliasSymbol() ?? current.getSymbol();
+      const projectOwned = !symbol || symbol.getDeclarations().some((declaration) =>
+        Node.isTypeLiteral(declaration) ||
+        normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+      );
+      if (projectOwned) {
+        for (const property of current.getProperties()) {
+          const declaration = property.getValueDeclaration() ??
+            property.getDeclarations()[0];
+          if (declaration) queue.push(property.getTypeAtLocation(declaration));
+        }
+        for (const signature of [
+          ...current.getCallSignatures(),
+          ...current.getConstructSignatures(),
+        ]) {
+          queue.push(signature.getReturnType());
+        }
+      }
     }
   }
   return null;
@@ -458,13 +476,40 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
     for (const fn of sf.getDescendantsOfKind(kind)) {
       const body = fn.getBody();
       if (!body) continue;
+      const contextualMethodReturns = (): Type[] => {
+        if (!Node.isMethodDeclaration(fn)) return [];
+        const parent = fn.getParent();
+        const ownerTypes: Type[] = [];
+        if (Node.isObjectLiteralExpression(parent) && parent.getContextualType()) {
+          ownerTypes.push(parent.getContextualType()!);
+        }
+        const cls = fn.getFirstAncestorByKind(SyntaxKind.ClassDeclaration);
+        if (cls) {
+          ownerTypes.push(
+            ...cls.getImplements().map((implemented) =>
+              implemented.getExpression().getType()
+            ),
+            ...cls.getType().getBaseTypes(),
+          );
+        }
+        return ownerTypes.flatMap((ownerType) => {
+          const property = ownerType.getProperty(fn.getName());
+          if (!property) return [];
+          const declaration = property.getValueDeclaration() ??
+            property.getDeclarations()[0] ??
+            fn;
+          return property.getTypeAtLocation(declaration)
+            .getCallSignatures()
+            .map((signature) => signature.getReturnType());
+        });
+      };
       const annotatedReturns = fn.getReturnTypeNode()
         ? [fn.getReturnTypeNode()!.getType()]
         : Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)
         ? (fn.getContextualType()?.getCallSignatures() ?? []).map((signature) =>
           signature.getReturnType()
         )
-        : [];
+        : contextualMethodReturns();
       if (annotatedReturns.length === 0) continue;
       if (!Node.isBlock(body)) {
         for (const returnType of annotatedReturns) {
@@ -565,8 +610,12 @@ export function detectSealedTypeConstruction(project: Project): string[] {
     ] as const) {
       for (const node of sf.getDescendantsOfKind(kind)) {
         const typeNode = node.getTypeNode();
-        const sealed = typeNode ? sealedType(typeNode.getType()) : null;
-        if (sealed && normalized !== sealed.factory) {
+        const type = typeNode?.getType();
+        const direct = type ? sealedValueType(type) : null;
+        const sealed = type ? sealedType(type) : null;
+        const uncheckedContainer = sealed &&
+          isUncheckedSource(awaited(unwrapAssertions(node.getExpression()).getType()));
+        if ((direct || uncheckedContainer) && sealed && normalized !== sealed.factory) {
           out.push(
             `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
           );
@@ -576,7 +625,7 @@ export function detectSealedTypeConstruction(project: Project): string[] {
 
     for (const literal of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
       const contextual = literal.getContextualType();
-      const sealed = contextual ? sealedType(contextual) : null;
+      const sealed = contextual ? sealedValueType(contextual) : null;
       if (sealed && normalized !== sealed.factory) {
         out.push(
           `${normalized}:${literal.getStartLineNumber()} - object literal constructs sealed type '${sealed.typeName}'`,
@@ -1127,6 +1176,50 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toBe(true);
     });
 
+    it("catches sealed authority nested in unchecked structural containers", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const raw: string;
+          const casted = JSON.parse(raw) as { tenant: TenantContext };
+          const annotated: { tenant: TenantContext } = JSON.parse(raw);
+          void casted;
+          void annotated;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project);
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") && hit.includes("TenantContext")
+      )).toBe(true);
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:5") && hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("catches contextual object and implemented class method returns", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const raw: string;
+          interface Reviver { revive(): TenantContext }
+          const objectReviver: Reviver = {
+            revive() { return JSON.parse(raw); },
+          };
+          class ClassReviver implements Reviver {
+            revive() { return JSON.parse(raw); }
+          }
+          void objectReviver;
+          void ClassReviver;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("unchecked value"));
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:6"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:9"))).toBe(true);
+    });
+
     it("catches a coercion helper whose sealed type argument is INFERRED, not written", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -1395,6 +1488,20 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         .filter((hit) => hit.includes("unverifiable module load"));
       expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:2"))).toBe(true);
       expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:5"))).toBe(true);
+    });
+
+    it("catches reflected createRequire before it can expose factory modules", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as nodeModule from "node:module";
+          const created = Reflect.get(nodeModule, "createRequire")(import.meta.url);
+          created("../contracts/tenant");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:3") && hit.includes("unverifiable module load")
+      )).toBe(true);
     });
 
     it("catches system tenant and system write factories outside reviewed boundaries", () => {

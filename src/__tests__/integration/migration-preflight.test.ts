@@ -263,4 +263,45 @@ describe("migration failure diagnostics", () => {
     expect(failure!.message).not.toContain("duplicate key");
     expect(failure!.message).not.toContain("alice@example.com");
   });
+
+  it.each([
+    "ledger-bootstrap",
+    "applied-version-read",
+    "preflight",
+  ] as const)("sanitizes driver failures during %s", async (stage) => {
+    let queryCount = 0;
+    const driverError = Object.assign(
+      new Error("violating row includes alice@example.com"),
+      { code: "23503" },
+    );
+    const stub: SqlDb = {
+      exec: async () => {
+        if (stage === "ledger-bootstrap") throw driverError;
+      },
+      query: async () => {
+        queryCount += 1;
+        if (stage === "applied-version-read" && queryCount === 1) throw driverError;
+        if (stage === "preflight" && queryCount > 1) throw driverError;
+        return {
+          rows: stage === "preflight"
+            ? [{ version: 1 }, { version: 2 }]
+            : [],
+        } as never;
+      },
+      transaction: async <T>() => undefined as T,
+      dump: async () => new Blob(),
+      close: async () => undefined,
+    };
+    const failure = await runMigrations(stub).then(
+      () => null,
+      (error: unknown) => error as { code: string; message: string; context?: Record<string, unknown> },
+    );
+    expect(failure?.code).toBe("INTERNAL");
+    expect(failure?.context).toMatchObject({
+      stage,
+      category: "driver-error:23503",
+    });
+    expect(failure?.message).not.toContain("violating row");
+    expect(failure?.message).not.toContain("alice@example.com");
+  });
 });

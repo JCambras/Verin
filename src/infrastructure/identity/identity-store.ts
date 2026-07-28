@@ -70,11 +70,11 @@ function authenticatedUser(row: UserRow): AuthenticatedUser {
   return Object.freeze(value) as unknown as AuthenticatedUser;
 }
 
-function assertAuthenticatedUser(value: unknown): asserts value is AuthenticatedUser {
+function assertAuthenticatedUser(value: AuthenticatedUser): void {
   if (
     typeof value !== "object" ||
     value === null ||
-    (value as Record<symbol, unknown>)[AUTHENTICATED_USER_SEAL] !== true
+    (value as unknown as Record<symbol, unknown>)[AUTHENTICATED_USER_SEAL] !== true
   ) {
     throw appError("AUTH_FAILED", "Session creation requires an authenticated identity.");
   }

@@ -3668,3 +3668,74 @@ pnpm exec vitest run src/__tests__/unit/llm-boundary.test.ts \
 ```
 
 **Date:** 2026-07-28 (fifteenth review-fix round on v3 build-sequence prompt 6).
+
+---
+
+### PF-089 reflected CommonJS loaders are module references
+
+The companions acquire `createRequire` through
+`Reflect.get(nodeModule, "createRequire")`, then load a privileged tenant or secret
+module. Before the shared analysis changed, all three failed:
+
+```
+× createRequire loaders fail closed
+× catches reflected createRequire before it can expose factory modules
+× catches reflected createRequire before it can expose revealSecret
+```
+
+The dependency, privileged-factory, and secret scans now consume the same reflected
+module reference.
+
+### PF-090 sealed wrappers do not hide union siblings or opaque outputs
+
+The governed-sink companion returns both
+`Tokenized<string> | { email: string }` and
+`SecretValue | { email: string }`, plus `Promise<unknown>`. Before the exact-wrapper
+and opaque-output rules, all three produced no sink. They now derive `pii.view`.
+The shipped opaque exceptions are exact, reasoned, derived-complete, and checked for
+staleness.
+
+### PF-091 containers and contextual methods cannot launder sealed authority
+
+The sealed-construction companions plant an unchecked cast and annotation to
+`{ tenant: TenantContext }`, an object method contextually implementing
+`revive(): TenantContext`, and a class method implementing the same contract. Before
+the structural and contextual return walks, none was reported. Each planted line now
+reports `TenantContext`, while checked propagation and nullable containers remain
+clean.
+
+### PF-092 returned repository methods retain tenant and action boundaries
+
+The tenant companion plants exported object and class factory methods returning
+unscoped SQL methods. The governed companion returns PII-bearing methods from the
+same forms. Before the shared returned-callable walk, both detectors returned an
+empty list. They now report each nested method by its full owner path.
+
+The real `makeExecutionStore.loadById` became the non-vacuity proof: once discovered,
+the shipped fence failed until that method required and asserted
+`ActionGrant<"pii.view">`. `makeExecutionStore.loadByToken` remains the exact
+resume-token escape.
+
+### PF-093 every migration driver phase sanitizes diagnostics
+
+The migration companion injects a driver error containing an email independently at
+ledger bootstrap, applied-version read, and preflight query. Before the shared
+failure mapper, each raw driver error escaped with code `23503` and its original
+message. All three now return `INTERNAL`, the stable `driver-error:23503` category,
+their exact stage, and no planted row value. The existing mutation companion remains
+green, and the real orphan preflight still preserves its intentional actionable
+`AppError`.
+
+```
+pnpm exec vitest run src/__tests__/fitness/dependency-rule.test.ts \
+  src/__tests__/fitness/tokenized-factory-only.test.ts \
+  src/__tests__/fitness/no-secret-fallback.test.ts \
+  src/__tests__/fitness/tenant-context-required.test.ts \
+  src/__tests__/fitness/governed-actions.test.ts \
+  src/__tests__/integration/migration-preflight.test.ts \
+  src/__tests__/integration/tenant-isolation.test.ts \
+  src/__tests__/integration/account-opening.test.ts
+# 8 files, 299 tests passed
+```
+
+**Date:** 2026-07-28 (sixteenth review-fix round on v3 build-sequence prompt 6).

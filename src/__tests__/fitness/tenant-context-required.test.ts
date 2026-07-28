@@ -15,6 +15,7 @@ import {
   detectAppLayerSqlAccess,
   isSqlExecutorCall,
   REPO_ROOT,
+  returnedCallableMembers,
   typeKey,
 } from "./_fence-utils";
 
@@ -308,132 +309,6 @@ function exportedDomainCallableTypes(
   );
 }
 
-function returnedRepositoryEntries(
-  declaration: Node,
-  owner: string,
-): RepositoryEntry[] {
-  const body = Node.isFunctionDeclaration(declaration) ||
-      Node.isFunctionExpression(declaration) ||
-      Node.isArrowFunction(declaration)
-    ? declaration.getBody()
-    : null;
-  if (!body) return [];
-  const returnedExpressions: Node[] = [];
-  if (!Node.isBlock(body)) returnedExpressions.push(body);
-  for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
-    const containingFunction = statement.getFirstAncestor((ancestor) =>
-      Node.isFunctionDeclaration(ancestor) ||
-      Node.isFunctionExpression(ancestor) ||
-      Node.isArrowFunction(ancestor) ||
-      Node.isMethodDeclaration(ancestor)
-    );
-    if (containingFunction !== declaration) continue;
-    const expression = statement.getExpression();
-    if (expression) returnedExpressions.push(expression);
-  }
-  const resolveObject = (expression: Node, seen = new Set<string>()): Node | null => {
-    const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    if (Node.isObjectLiteralExpression(expression)) return expression;
-    if (Node.isParenthesizedExpression(expression) ||
-      Node.isAsExpression(expression) ||
-      Node.isSatisfiesExpression(expression) ||
-      Node.isTypeAssertion(expression)) {
-      return resolveObject(expression.getExpression(), seen);
-    }
-    if (Node.isCallExpression(expression)) {
-      const callee = expression.getExpression();
-      if (
-        Node.isPropertyAccessExpression(callee) &&
-        callee.getExpression().getText() === "Object" &&
-        ["freeze", "seal"].includes(callee.getName()) &&
-        expression.getArguments().length === 1
-      ) {
-        return resolveObject(expression.getArguments()[0]!, seen);
-      }
-      return null;
-    }
-    if (!Node.isIdentifier(expression)) return null;
-    const symbol = expression.getSymbol();
-    const target = symbol?.getAliasedSymbol() ?? symbol;
-    for (const candidate of target?.getDeclarations() ?? []) {
-      if (!Node.isVariableDeclaration(candidate)) continue;
-      const initializer = candidate.getInitializer();
-      if (initializer) return resolveObject(initializer, seen);
-    }
-    return null;
-  };
-  const expressions = returnedExpressions
-    .map((expression) => resolveObject(expression))
-    .filter((expression): expression is Node => expression !== null);
-  const entries: RepositoryEntry[] = [];
-  // `return { create, save }` (shorthand) and `return { ...base }` (spread) are
-  // the same returned port as `return { create() {…} }`. Dropping them left the
-  // ONLY check on an escaped factory's methods looking at a form the author can
-  // refactor away in one line.
-  const collect = (expression: Node, visited: Set<string>): void => {
-    if (!Node.isObjectLiteralExpression(expression)) return;
-    for (const property of expression.getProperties()) {
-      if (Node.isMethodDeclaration(property)) {
-        entries.push({
-          name: `${owner}.${property.getName()}`,
-          signatures: [property.getSignature()],
-        });
-        continue;
-      }
-      if (Node.isSpreadAssignment(property)) {
-        const spread = resolveObject(property.getExpression(), visited);
-        if (spread) collect(spread, visited);
-        continue;
-      }
-      const callable = Node.isPropertyAssignment(property)
-        ? property.getInitializer()
-        : Node.isShorthandPropertyAssignment(property)
-        ? resolveCallable(property.getNameNode())
-        : undefined;
-      if (
-        !callable ||
-        (!Node.isArrowFunction(callable) &&
-          !Node.isFunctionExpression(callable) &&
-          !Node.isFunctionDeclaration(callable))
-      ) {
-        continue;
-      }
-      entries.push({
-        name: `${owner}.${property.getName()}`,
-        signatures: [callable.getSignature()],
-      });
-    }
-  };
-  for (const expression of expressions) collect(expression, new Set());
-  return entries;
-}
-
-/** The function a shorthand property name stands for (a named inner function or a function-valued const). */
-function resolveCallable(identifier: Node): Node | undefined {
-  const symbol = identifier.getSymbol();
-  const target = symbol?.getAliasedSymbol() ?? symbol;
-  // A shorthand identifier's own symbol is the OBJECT PROPERTY, not the value it
-  // stands for; go-to-definition is what crosses back to the declaration.
-  const candidates = [
-    ...(Node.isIdentifier(identifier) ? identifier.getDefinitionNodes() : []),
-    ...(target?.getDeclarations() ?? []),
-  ];
-  for (const declaration of candidates) {
-    if (Node.isFunctionDeclaration(declaration)) return declaration;
-    if (!Node.isVariableDeclaration(declaration)) continue;
-    const initializer = declaration.getInitializer();
-    if (
-      initializer &&
-      (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
-    ) {
-      return initializer;
-    }
-  }
-  return undefined;
-}
-
 function sqlBackedInfrastructureModules(project: Project): Set<string> {
   const modules = new Set<string>(["src/infrastructure/store/db.ts"]);
   const isSqlAdapter = (specifier: string): boolean =>
@@ -518,10 +393,13 @@ export function detectMissingTenantParams(
           name: fn.getName() ?? "<anonymous>",
           signatures: [fn.getSignature()],
         });
-        entries.push(...returnedRepositoryEntries(
+        entries.push(...returnedCallableMembers(
           fn,
           fn.getName() ?? "<anonymous>",
-        ));
+        ).map((member) => ({
+          name: member.name,
+          signatures: [member.signature],
+        })));
       }
     }
     for (const declaration of sf.getVariableDeclarations()) {
@@ -531,11 +409,15 @@ export function detectMissingTenantParams(
           name: member.name,
           signatures: member.signatures,
         });
-      }
-      const initializer = declaration.getInitializer();
-      if (initializer &&
-        (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
-        entries.push(...returnedRepositoryEntries(initializer, declaration.getName()));
+        for (const signature of member.signatures) {
+          entries.push(...returnedCallableMembers(
+            signature.getDeclaration(),
+            member.name,
+          ).map((returned) => ({
+            name: returned.name,
+            signatures: [returned.signature],
+          })));
+        }
       }
     }
     for (const assignment of sf.getExportAssignments()) {
@@ -546,6 +428,15 @@ export function detectMissingTenantParams(
           name: member.name,
           signatures: member.signatures,
         });
+        for (const signature of member.signatures) {
+          entries.push(...returnedCallableMembers(
+            signature.getDeclaration(),
+            member.name,
+          ).map((returned) => ({
+            name: returned.name,
+            signatures: [returned.signature],
+          })));
+        }
       }
     }
     for (const cls of sf.getClasses().filter((candidate) => candidate.isExported())) {
@@ -555,6 +446,13 @@ export function detectMissingTenantParams(
           name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
           signatures: [method.getSignature()],
         });
+        entries.push(...returnedCallableMembers(
+          method,
+          `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
+        ).map((returned) => ({
+          name: returned.name,
+          signatures: [returned.signature],
+        })));
       }
     }
 
@@ -998,6 +896,37 @@ describe("tenant-context-required fence", () => {
         {
           ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
           detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("flags unscoped methods returned by exported object and class factories", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export const factories = {
+          make(db: SqlDb) {
+            return { load() { return db.query("SELECT 1"); } };
+          },
+        };
+        export class Factory {
+          make(db: SqlDb) {
+            return { save() { return db.query("SELECT 1"); } };
+          }
+        }
+      `);
+      const escapes = new Set([
+        ...ESCAPE_SET,
+        "src/infrastructure/crm/subject.ts :: factories.make",
+        "src/infrastructure/crm/subject.ts :: Factory.make",
+      ]);
+      expect(detectMissingTenantParams(project, escapes)).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: factories.make.load",
+          detail: "repository callable has no sealed tenant context",
+        },
+        {
+          ref: "src/infrastructure/crm/subject.ts :: Factory.make.save",
+          detail: "repository callable has no sealed tenant context",
         },
       ]);
     });

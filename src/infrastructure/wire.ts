@@ -189,9 +189,11 @@ async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps,
 export async function startAccountOpening(
   db: SqlDb,
   grant: ActionGrant<"execution.initiate">,
+  piiGrant: ActionGrant<"pii.view">,
   input: StartAccountOpeningInput,
 ): Promise<AccountOpeningStartResult> {
   assertActionGrant(grant, "execution.initiate");
+  assertActionGrant(piiGrant, "pii.view");
   const canonical = canonicalExecutionId(input.clientRequestId);
   if (!canonical.ok) {
     return { executionId: input.clientRequestId ?? "", status: "failed", error: canonical.error, data: {} };
@@ -205,7 +207,7 @@ export async function startAccountOpening(
   // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
   // leak another tenant's state.
   const loadOwnExecution = async (): Promise<ExecutionState | null> => {
-    const existing = await store.loadById(executionId, tenant);
+    const existing = await store.loadById(executionId, piiGrant);
     return existing && existing.flowId === accountOpeningFlow.id ? existing : null;
   };
   if (input.clientRequestId) {
