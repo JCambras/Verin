@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-07-27
 **Deciders:** Supervising authority (decision key `prompt6-askuser`, 2026-07-27); build agent records it
-**Relates to:** charter #5, v3 §15.1, v3 invariant 1, ADR-0006, ADR-0032/0030, D-048
+**Relates to:** charter #5, v3 §15.1, v3 invariant 1, ADR-0006, ADR-0032/0030, D-070
 
 ## Context
 

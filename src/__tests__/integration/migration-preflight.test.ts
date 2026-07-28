@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { MIGRATIONS, runMigrations } from "@infra/store/migrations";
+import { MIGRATIONS, MIGRATION_SQL, runMigrations } from "@infra/store/migrations";
 
 /**
  * MIGRATION-3 UPGRADE REHEARSAL (D-016/D-061). Migration 3 adds tenant-qualified
@@ -232,6 +232,95 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
     );
     await runMigrations(db);
     expect(await appliedVersions(db)).toEqual([1, 2, 3]);
+  });
+});
+
+/**
+ * AN EMPTY LEDGER IS A CLAIM, NOT A FACT. The bootstrap path trusts an empty
+ * schema_migrations enough to apply version 1 and RECORD it before any later
+ * preflight has run, which is safe only on a store that has genuinely never been
+ * migrated. A dump restored without its schema_migrations rows (or a dropped ledger)
+ * presents exactly the same way while holding real rows, so versions would be
+ * recorded against a schema nobody verified. The contract proven here is that such a
+ * store is refused BEFORE the first mutation, and that ZERO mutations occur.
+ */
+describe("virgin-store proof (restored dump with a missing ledger)", () => {
+  /** Every object in the schema, so "nothing changed" means the whole surface. */
+  const schemaSnapshot = async (db: SqlDb): Promise<unknown[]> => {
+    const result = await db.query(`
+      SELECT 'relation' AS kind, c.relname AS name FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
+      UNION ALL
+      SELECT 'trigger', t.tgname FROM pg_trigger t WHERE NOT t.tgisinternal
+      UNION ALL
+      SELECT 'routine', p.proname FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = current_schema()
+      ORDER BY 1, 2
+    `);
+    return result.rows;
+  };
+
+  it("refuses a store whose managed tables exist while the ledger is empty, changing nothing", async () => {
+    const db = await createMemoryDb();
+    await seed(db);
+    // The restore: every managed object is present, the ledger rows are not.
+    await db.query("DELETE FROM schema_migrations");
+
+    const schemaBefore = await schemaSnapshot(db);
+    const indexesBefore = await schemaIndexes(db);
+    const householdsBefore = await db.query("SELECT id, org_id, name FROM households ORDER BY id");
+    expect(await appliedVersions(db)).toEqual([]);
+
+    const message = await runMigrations(db).then(
+      () => "",
+      (error: { message?: string }) => error.message ?? "",
+    );
+
+    expect(message).toContain("the migration ledger is empty but this store already contains");
+    expect(message).toContain("no schema change was made and no version was recorded");
+    // The diagnostic must be actionable: it names the objects it found, and those
+    // are OUR identifiers, never row data.
+    expect(message).toContain("households");
+    expect(message).toContain("audit_log_no_update");
+    expect(message).not.toContain("@");
+
+    // ZERO mutations: the ledger is still empty and the schema is byte-for-byte as found.
+    expect(await appliedVersions(db)).toEqual([]);
+    expect(await schemaSnapshot(db)).toEqual(schemaBefore);
+    expect(await schemaIndexes(db)).toEqual(indexesBefore);
+    expect(await db.query("SELECT id, org_id, name FROM households ORDER BY id")).toEqual(householdsBefore);
+  });
+
+  it("refuses when a SINGLE managed object survives a partial restore", async () => {
+    const db = await createMemoryDb();
+    await db.exec("DROP TRIGGER audit_log_no_truncate ON audit_log;");
+    await db.exec("DROP TABLE tasks CASCADE;");
+    await db.query("DELETE FROM schema_migrations");
+    const message = await runMigrations(db).then(() => "", (e: { message?: string }) => e.message ?? "");
+    expect(message).toContain("the migration ledger is empty but this store already contains");
+    expect(await appliedVersions(db)).toEqual([]);
+  });
+
+  it("a GENUINELY virgin store still bootstraps every version (the proof is not a blanket refusal)", async () => {
+    const db = await createMemoryDb();
+    expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((m) => m.version));
+  });
+
+  it("the managed-object set is DERIVED from the shipped DDL, so a new table cannot escape it", async () => {
+    // Not a hand-list: every table, index, trigger, and function the migrations
+    // create must be present in the live schema of a fully-migrated store.
+    const db = await createMemoryDb();
+    const live = new Set((await schemaSnapshot(db)).map((row) => String((row as { name: string }).name)));
+    const declared = [
+      ...MIGRATION_SQL.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)/gi),
+      ...MIGRATION_SQL.matchAll(/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)/gi),
+      ...MIGRATION_SQL.matchAll(/CREATE\s+TRIGGER\s+([a-z_][a-z0-9_]*)/gi),
+      ...MIGRATION_SQL.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([a-z_][a-z0-9_]*)/gi),
+    ].map((m) => m[1]!.toLowerCase());
+    expect(declared.length).toBeGreaterThan(20);
+    expect(declared.filter((name) => !live.has(name))).toEqual([]);
   });
 });
 

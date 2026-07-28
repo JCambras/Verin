@@ -10,7 +10,7 @@
  * convenience code, which is why the piiSafe logger helper was deleted instead.
  *
  * Resolution is structural, never an enumerated vocabulary — see
- * domain/pii/projection-resolution.ts (D-048).
+ * domain/pii/projection-resolution.ts (D-070).
  */
 import { type Result, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";

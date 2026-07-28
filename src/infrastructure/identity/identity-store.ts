@@ -12,6 +12,7 @@ import type { SqlDb } from "@infra/store/db";
 import { isRole, type Role } from "@contracts/roles";
 import type { PIIBearing } from "@contracts/pii";
 import {
+  assertSameTenant,
   assertTenantContext,
   tenantFromIdentity,
   type TenantContext,
@@ -54,28 +55,38 @@ export interface AuthenticatedUser extends PIIBearing {
   readonly [AuthenticatedUserBrand]: "AuthenticatedUser";
 }
 
-const AUTHENTICATED_USER_SEAL = Symbol("verin.authenticated-user.seal");
+/**
+ * Membership in a module-private WeakSet, the same discipline the sealed security
+ * types use (contracts/tenant.ts): this is the value createSession trusts to prove
+ * an identity really authenticated, so the runtime half of the seal must not be
+ * COPYABLE. A marker property - even a non-enumerable own symbol - is readable off
+ * any real instance via Object.getOwnPropertySymbols and can then be stamped onto an
+ * arbitrary object, which would let a forged identity mint a session. WeakSet
+ * membership is only writable here, by `authenticate`.
+ */
+const AUTHENTICATED_USERS = new WeakSet<object>();
 
 function authenticatedUser(row: UserRow): AuthenticatedUser {
-  const value = Object.defineProperty(
-    {
-      id: row.id,
-      tenant: tenantFromIdentity(row.id, row.org_id),
-      email: row.email,
-      role: row.role,
-    },
-    AUTHENTICATED_USER_SEAL,
-    { value: true, enumerable: false },
-  );
-  return Object.freeze(value) as unknown as AuthenticatedUser;
+  const value = Object.freeze({
+    id: row.id,
+    tenant: tenantFromIdentity(row.id, row.org_id),
+    email: row.email,
+    role: row.role,
+  });
+  AUTHENTICATED_USERS.add(value);
+  return value as unknown as AuthenticatedUser;
 }
 
-function assertAuthenticatedUser(value: AuthenticatedUser): void {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    (value as unknown as Record<symbol, unknown>)[AUTHENTICATED_USER_SEAL] !== true
-  ) {
+// `unknown`, like every sibling assertX: typing the parameter as the sealed type it
+// is meant to VERIFY makes the compile-time half circular - the only callers that
+// could pass the check are the ones that already satisfied it. It returns void rather
+// than `asserts value is AuthenticatedUser` on purpose: an assertion signature would
+// hand out a sealed TenantContext (AuthenticatedUser.tenant) from an `unknown`, which
+// is a mint the tokenized-factory-only fence refuses outside a factory module, and
+// rightly so. No narrowing is needed here - createSession's parameter is already
+// typed, so this call is purely the runtime half.
+function assertAuthenticatedUser(value: unknown): void {
+  if (typeof value !== "object" || value === null || !AUTHENTICATED_USERS.has(value)) {
     throw appError("AUTH_FAILED", "Session creation requires an authenticated identity.");
   }
 }
@@ -180,13 +191,10 @@ export async function createSession(
 ): Promise<Principal> {
   assertTenantContext(tenant);
   assertAuthenticatedUser(user);
-  if (
-    tenant.actor.kind !== "human" ||
-    tenant.actor.actorId !== user.id ||
-    tenant.orgId !== user.tenant.orgId
-  ) {
-    throw appError("AUTH_FAILED", "Authenticated identity does not own the requested tenant context.");
-  }
+  // user.tenant is minted from the authenticated ROW (tenantFromIdentity(row.id,
+  // row.org_id)), so "same org, same human actor" is exactly the ownership check this
+  // used to spell out by hand.
+  assertSameTenant(tenant, user.tenant);
   const id = randomUUID();
   const now = new Date();
   const expires = new Date(now.getTime() + ttlMinutes * 60_000);

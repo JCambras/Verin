@@ -69,37 +69,61 @@ export function redactPIIValues(text: string): string {
 }
 
 /**
- * The ONE title-case word shape ambiguous-text detection keys on (a possible
- * person name), exported as a source fragment so every boundary that must agree
- * with this detector composes it rather than re-typing it.
+ * The ONE person-name word shape ambiguous-text detection keys on, exported as a
+ * source fragment so every boundary that must agree with this detector composes it
+ * rather than re-typing it.
+ *
+ * TWO cases, not one. Title case ("Alice", "Okonkwo-Blackwood") is what a
+ * capital-then-lowercase test finds; ALL CAPS ("ALICE", "SMITH", "O'BRIEN") is what
+ * it structurally CANNOT find, because `\p{Lu}\p{Ll}` requires the lowercase letter
+ * to be there. All-caps is an ordinary CRM rendering ("SMITH, JOHN"), so detecting
+ * only the first left every all-caps name invisible to the candidate walk, the
+ * masker, and the residual check at once - a raw name could be sealed into a
+ * Tokenized value carrying piiFree: true, which is exactly what v3 invariant 1
+ * forbids. Both halves resolve through the SAME span-specific trusted-identity or
+ * safe-template contract; neither gets a weaker escape, and there is no acronym
+ * allowlist - an unclassified all-caps run fails closed like any other.
  */
-export const TITLE_CASE_WORD_SOURCE = String.raw`\b\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?`;
+const TITLE_CASE_WORD = String.raw`\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?`;
+const ALL_CAPS_WORD = String.raw`\p{Lu}{2,}(?:[-']\p{Lu}+)?`;
+/** Unanchored, for composition into larger shapes. */
+const PERSON_WORD = `(?:${TITLE_CASE_WORD}|${ALL_CAPS_WORD})`;
+export const PERSON_WORD_SOURCE = String.raw`\b${PERSON_WORD}`;
 
 /** The predicate half of SENSITIVE_DIGIT_RUN_SOURCE (one shape, two consumers). */
 export function hasSensitiveDigitRun(value: string | number | bigint): boolean {
   return LONG_UNMASKED_NUMBER_RE.test(String(value).replace(/^-/, ""));
 }
 
-const TITLE_CASE_PERSON_RE =
-  /(?:^|[^\p{L}])\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?\s+\p{Lu}\p{Ll}{1,}(?:[-'][\p{Lu}]?\p{Ll}+)?(?:$|[^\p{L}])/u;
+// Composed from PERSON_WORD, never re-typed: a shape written twice is a shape that
+// drifts, and the all-caps half was missing here precisely because this pair had its
+// own inline copy of the title-case source.
+const PERSON_PAIR_RE = new RegExp(
+  `(?:^|[^\\p{L}])${PERSON_WORD}\\s+${PERSON_WORD}(?:$|[^\\p{L}])`,
+  "u",
+);
 const CREDENTIAL_VALUE_RE =
   /(?:\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|secret)\b\s*[:=]\s*\S+|\bbearer\s+[A-Za-z0-9._~+/-]+=*|\b(?:sk_(?:live|test)|ghp_)[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^/\s@]+@)/i;
 
-const TITLE_CASE_WORD_G = new RegExp(`${TITLE_CASE_WORD_SOURCE}\\b`, "gu");
+const PERSON_WORD_G = new RegExp(`${PERSON_WORD_SOURCE}\\b`, "gu");
 
 export function looksLikeAmbiguousSensitiveText(value: string): boolean {
-  const titleCaseWords = [...value.matchAll(TITLE_CASE_WORD_G)];
-  const embeddedTitleCaseWord = titleCaseWords.some((match) =>
+  // The redaction sentinel is the scrubber's OWN output and is itself all-caps, so
+  // every occurrence is neutralized before shape-testing. Comparing the whole value
+  // against it (the previous guard) was enough only while all-caps was invisible;
+  // now "[REDACTED] requested a transfer" would otherwise be refused as an embedded
+  // person word - the detector rejecting exactly the text the scrubber just made safe.
+  const residual = value.split(REDACTED).join(" ");
+  const personWords = [...residual.matchAll(PERSON_WORD_G)];
+  const embeddedPersonWord = personWords.some((match) =>
     match.index !== undefined &&
-    value.slice(0, match.index).trim().length > 0
+    residual.slice(0, match.index).trim().length > 0
   );
-  return value !== REDACTED && (
-    looksLikePIIValue(value) ||
-    LONG_UNMASKED_NUMBER_RE.test(value) ||
-    TITLE_CASE_PERSON_RE.test(value) ||
-    embeddedTitleCaseWord ||
-    CREDENTIAL_VALUE_RE.test(value)
-  );
+  return looksLikePIIValue(residual) ||
+    LONG_UNMASKED_NUMBER_RE.test(residual) ||
+    PERSON_PAIR_RE.test(residual) ||
+    embeddedPersonWord ||
+    CREDENTIAL_VALUE_RE.test(residual);
 }
 
 export function assertNoAmbiguousSensitiveText(

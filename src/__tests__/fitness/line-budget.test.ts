@@ -13,14 +13,21 @@ import { relative } from "node:path";
  * Ceilings carry interim build headroom and RATCHET DOWN to actual+buffer at
  * foundation close. Raising any ceiling is an ADR amendment, not a code change.
  */
+// ADR-0033 amends these to the smallest rounded envelopes that leave BOUNDED room
+// for correction. The measured baseline at that amendment was contracts 3892,
+// domain 1200, infrastructure 3200 - domain and infrastructure sat at exactly ZERO
+// headroom, so one added line in either failed `pnpm test` on an unrelated ceiling
+// and the only remedy was an ADR amendment rather than a code change. That pressure
+// is what compressed doc comments across contracts/metric.ts and
+// contracts/provenance.ts and deleted the migrations.ts header AGENTS.md still
+// points readers at. A ceiling that cannot absorb a correction buys no discipline;
+// it just converts review findings into documentation deletions. Headroom is
+// 108 / 50 / 100 and no more, and any FURTHER increase is still a measured ADR
+// amendment, never a code change.
 const CEILINGS = {
-  // 3500 (ADR-0029, v3 prompt-5 decision-core contracts) + 400 for the prompt-6
-  // Wave A security boundaries (ADR-0032 line-budget amendment, 600 -> 1000 on the
-  // pre-decision-core base; ADR-0030 leaves contracts at 1000). Every line here is
-  // ADR-authorized and no more: a ceiling is never rounded up for headroom.
-  contracts: 3900,
-  domain: 1200,
-  infrastructure: 3200, // raised by ADR-0030 (prompt-6 adversarial review hardening)
+  contracts: 4000,
+  domain: 1250,
+  infrastructure: 3300,
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

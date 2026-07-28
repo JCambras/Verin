@@ -6,7 +6,7 @@ import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 
 /**
- * THE AUDIT ROUTE'S TWO GRANTS, ACROSS A SESSION ROTATION (D-051 correction).
+ * THE AUDIT ROUTE'S TWO GRANTS, ACROSS A SESSION ROTATION (D-073 correction).
  *
  * `/api/audit` binds `audit.export` AND `pii.view` — exporting the chain and
  * resolving actor userIds to raw emails are different authorities. Each bind runs

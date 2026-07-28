@@ -11,6 +11,7 @@ import { realSemanticProject, inMemoryProject, REPO_ROOT } from "./_fence-utils"
 import {
   isSafeObservabilityPrimitive,
   OBSERVABILITY_VOCABULARY,
+  registerTestSpanName,
 } from "@domain/observability/safe-values";
 
 /**
@@ -35,7 +36,15 @@ import {
 const TRACER = "src/infrastructure/observability/tracer.ts";
 const LOGGER = "src/infrastructure/observability/logger.ts";
 const SAFE_VALUES = "src/domain/observability/safe-values.ts";
-const TEST_INJECTION_POINT = "registerTestSpanName";
+/**
+ * READ OFF the imported symbol, never spelled. detectShippedTestVocabularyUse
+ * resolves (name, declaring file) and reports nothing when either half goes stale,
+ * and its expected result is the empty list - so a rename would leave it green
+ * forever while shipped code widens the test span vocabulary. The sibling
+ * derivations survive a rename loudly instead (no call sites found, every registered
+ * value reported stale), which is why this is the one that needs pinning.
+ */
+const TEST_INJECTION_POINT = registerTestSpanName.name;
 const LOG_LEVELS = new Set(["trace", "debug", "info", "warn", "error", "fatal"]);
 
 export interface ObservabilityVocabulary {
@@ -506,6 +515,28 @@ export function detectVocabularyDrift(
 }
 
 /**
+ * Is the injection point still declared where the detector looks for it?
+ *
+ * Pinning the symbol through the import fixes its NAME; it cannot fix its HOME. A
+ * move that leaves a re-export behind still imports and still type-checks, while
+ * every `declaration.getSourceFile()` comparison in resolvesTo goes false and the
+ * shipped-caller scan degrades to a loop that can never report anything.
+ */
+export function detectUnresolvedTestInjectionPoint(project: Project): string[] {
+  const sf = project.getSourceFiles().find((candidate) =>
+    normalizedPath(candidate.getFilePath()) === SAFE_VALUES
+  );
+  const declarations = sf?.getExportedDeclarations().get(TEST_INJECTION_POINT) ?? [];
+  return declarations.some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) === SAFE_VALUES
+    )
+    ? []
+    : [
+      `${SAFE_VALUES} no longer declares an exported '${TEST_INJECTION_POINT}' - detectShippedTestVocabularyUse would resolve nothing and pass vacuously`,
+    ];
+}
+
+/**
  * The test-only span injection point must be unreachable from shipped code.
  * Keyed SEMANTICALLY (never on the identifier's text), so an aliased import —
  * `import { registerTestSpanName as reg }` then `reg("test.x")` — is caught.
@@ -625,6 +656,11 @@ describe("observability-vocabulary fence (charter #14)", () => {
     expect(leaks, `shipped code widening the test vocabulary:\n${leaks.join("\n")}`).toEqual([]);
   });
 
+  it("enforces: the test-only injection point still resolves where the scan looks", () => {
+    const unresolved = detectUnresolvedTestInjectionPoint(project);
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
   describe("detects (companion): planted vocabulary drift is caught", () => {
     it("flags a new span name that is not registered", () => {
       const found = collectObservabilityVocabulary(vocabularyFixture(`
@@ -723,6 +759,29 @@ describe("observability-vocabulary fence (charter #14)", () => {
       expect(detectShippedTestVocabularyUse(project)).toEqual([
         "src/infrastructure/consumer.ts:3 references registerTestSpanName",
       ]);
+    });
+
+    it("catches the injection point RENAMED or MOVED out from under the scan", () => {
+      const renamed = detectUnresolvedTestInjectionPoint(inMemoryProject({
+        [`/${SAFE_VALUES}`]: `export function ${TEST_INJECTION_POINT}Elsewhere(name: string): void { void name; }`,
+      }));
+      expect(renamed).toHaveLength(1);
+      expect(renamed[0]).toContain(TEST_INJECTION_POINT);
+      expect(renamed[0]).toContain("pass vacuously");
+
+      // Moved behind a re-export: still importable, still spelled the same, and
+      // still invisible to a scan keyed on the DECLARING file.
+      const moved = `${SAFE_VALUES.split("/").pop()!.replace(/\.ts$/, "")}-moved`;
+      expect(detectUnresolvedTestInjectionPoint(inMemoryProject({
+        [`/${SAFE_VALUES.replace(/[^/]+$/, `${moved}.ts`)}`]:
+          `export function ${TEST_INJECTION_POINT}(name: string): void { void name; }`,
+        [`/${SAFE_VALUES}`]: `export { ${TEST_INJECTION_POINT} } from "./${moved}";`,
+      }))).toHaveLength(1);
+    });
+
+    it("allows the injection point declared exactly where the scan looks", () => {
+      expect(detectUnresolvedTestInjectionPoint(vocabularyFixture("export const nothing = 1;")))
+        .toEqual([]);
     });
 
     it("checks a HOISTED span name and log message constant like an inline literal", () => {

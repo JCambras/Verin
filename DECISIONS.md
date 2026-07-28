@@ -1132,7 +1132,7 @@ references to either number refer to this entry; origin/main had already assigne
   clause). Fences: `tokenized-factory-only` (PF-031) + `llm-pii-boundary` (PF-032) + an ESLint edit-time
   mirror.
 - **Secret containment** (`contracts/secret.ts`): config secrets become closure-held `SecretValue`s
-  (every coercion path redacts; `.reveal()` allowlisted to the two HMAC consumers — PF-034). Span
+  (every coercion path redacts; the free function `revealSecret()` allowlisted to the two HMAC consumers — PF-034). Span
   attributes and span error messages are PII-scrubbed at the trace boundary (values by pattern, keys by
   the same field-name rule as the log scrubber); pino redact list extended to account/routing numbers;
   `safeReason` is the sanctioned exception-text log helper (a free-form deep-scrub helper lands with its
@@ -1154,7 +1154,7 @@ marked set from field names, so a new PII type cannot ship unmarked).
 not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0032);
 remove PF-030..PF-034 and this entry.
 
-### D-040 · 2026-07-26 · reversible · Prompt-6 security boundaries hardened after adversarial review
+### D-062 · 2026-07-26 · reversible · Prompt-6 security boundaries hardened after adversarial review
 
 All eleven review findings were legitimate manifestations of four deeper gaps:
 security identities could be minted at untrusted call sites, relational
@@ -1206,7 +1206,7 @@ credentials have no complete safe regex).
 has not shipped to a persistent store, and restore the prior PF-030 through
 PF-034 implementations. D-039 remains the underlying prompt-6 decision.
 
-### D-041 · 2026-07-26 · reversible · Prompt-6 authority, token immutability, and semantic boundary fences hardened
+### D-063 · 2026-07-26 · reversible · Prompt-6 authority, token immutability, and semantic boundary fences hardened
 
 All six second-round review findings were legitimate instances of three
 remaining structural gaps: authorization and masking still accepted
@@ -1247,10 +1247,10 @@ would recreate the false green).
 
 **Revert path:** revert this changeset and restore the prior `ActorRef`,
 projection input, shallow token contract, flow dependency signatures, driver
-code pattern, and PF-030 through PF-032 implementations. D-039 and D-040 remain
+code pattern, and PF-030 through PF-032 implementations. D-039 and D-062 remain
 the underlying prompt-6 decisions.
 
-### D-042 · 2026-07-27 · reversible · Prompt-6 execution proof, write attribution, workflow PII, and declaration-form fences hardened
+### D-064 · 2026-07-27 · reversible · Prompt-6 execution proof, write attribution, workflow PII, and declaration-form fences hardened
 
 All five third-round findings were legitimate instances of three deeper gaps:
 authorization proof stopped at the HTTP route, actor attribution was not sealed
@@ -1284,10 +1284,10 @@ their semantic callable shape is enforceable).
 
 **Revert path:** revert this review changeset and restore Principal-based flow
 start, tuple-shaped audited-write attribution, unmarked workflow state, and the
-prior declaration-form-specific PF-030/PF-032 implementations. D-039 through
-D-041 remain the underlying security-boundary decisions.
+prior declaration-form-specific PF-030/PF-032 implementations. D-039 and D-062 through
+D-063 remain the underlying security-boundary decisions.
 
-### D-043 · 2026-07-27 · reversible · Prompt-6 recovery and completeness fences hardened
+### D-065 · 2026-07-27 · reversible · Prompt-6 recovery and completeness fences hardened
 
 All eight fourth-round findings were legitimate instances of five remaining
 structural gaps: retry attribution did not distinguish the initiating human
@@ -1324,10 +1324,10 @@ move).
 
 **Revert path:** revert this changeset and restore the prior retry actor
 selection, slot-name schema, SQL-signature repository classification, manual
-surface table, and file-level reveal allowlist. D-039 through D-042 remain the
+surface table, and file-level reveal allowlist. D-039 and D-062 through D-064 remain the
 underlying security-boundary decisions.
 
-### D-044 · 2026-07-27 · reversible · Prompt-6 trusted-set, sink-authority, and compiler-resolution boundaries hardened
+### D-066 · 2026-07-27 · reversible · Prompt-6 trusted-set, sink-authority, and compiler-resolution boundaries hardened
 
 All six fifth-round findings were legitimate instances of four remaining
 structural gaps: entity masks were sealed individually without a complete-set
@@ -1359,10 +1359,10 @@ green coverage).
 
 **Revert path:** revert this changeset and restore individual entity bindings,
 route-only governed authorization, directory-scoped tenant discovery, manual
-LLM path resolution, and direct-symbol-only privileged access checks. D-039
-through D-043 remain the underlying prompt-6 decisions.
+LLM path resolution, and direct-symbol-only privileged access checks. D-039 and
+D-062 through D-065 remain the underlying prompt-6 decisions.
 
-### D-045 · 2026-07-27 · reversible · Prompt-6 completeness proofs and governed repository entry guards hardened
+### D-067 · 2026-07-27 · reversible · Prompt-6 completeness proofs and governed repository entry guards hardened
 
 All five sixth-round findings were legitimate instances of four remaining
 false assurances: a caller could label an arbitrary entity list complete,
@@ -1396,10 +1396,10 @@ boundaries).
 
 **Revert path:** revert this changeset and restore the public complete-set
 factory, file-level privileged factory allowances, manual governed sink table,
-and signature-only tenant fence. D-039 through D-044 remain the underlying
+and signature-only tenant fence. D-039 and D-062 through D-066 remain the underlying
 prompt-6 security decisions.
 
-### D-046 · 2026-07-27 · reversible · Prompt-6 resolver, observability, and callable-boundary proofs hardened
+### D-068 · 2026-07-27 · reversible · Prompt-6 resolver, observability, and callable-boundary proofs hardened
 
 All five seventh-round findings were legitimate instances of three remaining
 false assurances: projection trusted caller-supplied entity bindings,
@@ -1431,9 +1431,9 @@ because their runtime implementations are semantically inspectable).
 **Revert path:** revert this changeset and restore caller-provided
 `resolvedEntities`, heuristic observability values, function-declaration-only
 governed sinks, signature-only returned ports, and opaque types as safe leaves.
-D-039 through D-045 remain the underlying prompt-6 security decisions.
+D-039 and D-062 through D-067 remain the underlying prompt-6 security decisions.
 
-### D-047 · 2026-07-27 · reversible · Prompt-6 typed evidence, observability identity, and wrapper analysis hardened
+### D-069 · 2026-07-27 · reversible · Prompt-6 typed evidence, observability identity, and wrapper analysis hardened
 
 All seven eighth-round findings were legitimate instances of three remaining
 boundary gaps: evidence shape was inferred from key names, observability trusted
@@ -1465,10 +1465,10 @@ would suffer).
 
 **Revert path:** revert this changeset, restore raw observability primitives and
 syntax-only wrapper discovery, remove ADR-0030, and restore the 3,000-line
-infrastructure ceiling. D-039 through D-046 remain the underlying prompt-6
+infrastructure ceiling. D-039 and D-062 through D-068 remain the underlying prompt-6
 security decisions.
 
-### D-048 · 2026-07-27 · reversible · Ninth-round review: structural resolution, derived observability vocabulary, and boundary-honest fences
+### D-070 · 2026-07-27 · reversible · Ninth-round review: structural resolution, derived observability vocabulary, and boundary-honest fences
 
 The ninth adversarial round found one live crash path and a set of checks whose
 authority came from enumerated vocabularies rather than from structure.
@@ -1533,14 +1533,14 @@ see ADR-0031).
 **Revert path:** revert this changeset to restore the case-sensitive
 observability predicate, the enumerated projection vocabularies, the text-regex
 mutation classifier, the route-only governed surface scan, and `listOrgChain`.
-ADR-0031 would be withdrawn with it. D-039 through D-047 remain the underlying
+ADR-0031 would be withdrawn with it. D-039 and D-062 through D-069 remain the underlying
 prompt-6 security decisions.
 
-### D-049 · 2026-07-27 · reversible · Tenth-round review: leading-name binding, the account shape, and semantic fence keys
+### D-071 · 2026-07-27 · reversible · Tenth-round review: leading-name binding, the account shape, and semantic fence keys
 
-D-048 replaced two enumerated vocabularies with structural rules; the tenth round
+D-070 replaced two enumerated vocabularies with structural rules; the tenth round
 found that both structures were drawn slightly off the predicate they claimed to
-derive from, and that the D-048 crash fix had been narrowed rather than closed.
+derive from, and that the D-070 crash fix had been narrowed rather than closed.
 
 - **A multi-word name that OPENS the prose is bound whole.** Dropping the first
   word of every leading title-case run left a given name raw in the text a model
@@ -1583,12 +1583,12 @@ word as a name, which refuses ordinary prose).
 
 **Revert path:** revert this changeset to restore the leading-word shift, the
 3-18 digit account shape, the text-keyed injection-point filter, and the
-uncanonicalized `executionId`. D-048 and ADR-0031 stand independently.
+uncanonicalized `executionId`. D-070 and ADR-0031 stand independently.
 
-## D-050 — Sealed types, governed sinks, and observability vocabularies are closed structurally
+## D-072 — Sealed types, governed sinks, and observability vocabularies are closed structurally
 
 **Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.3/§15.4, charter #1/#4/#14,
-ADR-0018, ADR-0031, D-036, D-048, D-049
+ADR-0018, ADR-0031, D-036, D-070, D-071
 
 The prompt-6 boundaries held at runtime, but several of the fences that BACK them
 up could be walked around in one line. Closed as one story rather than
@@ -1599,7 +1599,7 @@ line-by-line:
   TenantContext {}` cannot launder), and construction detection covers type
   predicates / assertion signatures, explicit generic type arguments, and a
   sealed ANNOTATION filled by a call from outside the factory (superseded by
-  D-051, which decides that case from the initializer's TYPE rather than its
+  D-073, which decides that case from the initializer's TYPE rather than its
   callee). The ESLint mirror now seals all seven types and its two lists are asserted
   equal to the fence's registry, so it cannot drift narrower unnoticed.
 - **The write exemption keys on a real DML statement reaching a resolved SQL
@@ -1633,7 +1633,7 @@ line-by-line:
   proximity window, so a run redaction removed pre-mask survived post-mask:
   `"ssn Bob 123456789"` produced zero candidates and one refusing digit run — a
   refusal with nothing to declare. Extraction now runs over the subject-masked
-  text, so the refusal is satisfiable (D-049's claim now holds in both directions).
+  text, so the refusal is satisfiable (D-071's claim now holds in both directions).
 
 **Line budgets:** contracts measured 1019 and domain 1201 after these fixes. The
 ceilings were NOT raised (charter #1: platform ceilings only ratchet down);
@@ -1650,14 +1650,14 @@ an authority surface with no consumer); raise the contracts ceiling by ADR
 (rejected — the ratchet only goes down).
 
 **Revert path:** revert this changeset. The narrower fences and the previous
-vocabularies return; ADR-0031 and D-048/D-049 stand independently.
+vocabularies return; ADR-0031 and D-070/D-071 stand independently.
 
-## D-051 — The app layer holds no SQL, and every mint is decided by type
+## D-073 — The app layer holds no SQL, and every mint is decided by type
 
 **Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.2/§15.3/§15.4,
-charter #4/#7/#13/#14, ADR-0018, ADR-0031, D-036, D-050
+charter #4/#7/#13/#14, ADR-0018, ADR-0031, D-036, D-072
 
-D-050 closed the sealed-type and governed-sink stories against named evasions.
+D-072 closed the sealed-type and governed-sink stories against named evasions.
 This round closes them against the SHAPES those detectors could not see, and
 against the one place a persistence read could avoid both derivations entirely.
 
@@ -1680,7 +1680,7 @@ against the one place a persistence read could avoid both derivations entirely.
   unchanged; an advisor is still refused at the first grant.
   `detectUnwiredGovernedRoutes` therefore reads an authorization PROLOGUE — a
   sequence of (bind, fail-closed guard) pairs before any route work — instead of
-  exactly one pair. (CORRECTED by D-052: "no authorized caller sees a behaviour
+  exactly one pair. (CORRECTED by D-074: "no authorized caller sees a behaviour
   change" was true of roles and false of SESSIONS — a second grant meant a second
   identity resolution, which 401s once the session passes its half-life.)
 - **A mint is decided by the initializer's TYPE, never its callee.** The
@@ -1731,16 +1731,16 @@ both, and they authorize different things).
 
 **Revert path:** revert this changeset. `listOrgUserEmails`/`readStoreReadiness`
 fold back into their routes, the audit export returns to a single grant, and the
-detectors return to their D-050 shapes.
+detectors return to their D-072 shapes.
 
 ---
 
-## D-052 — One identity per request, and detectors that read shapes rather than spellings
+## D-074 — One identity per request, and detectors that read shapes rather than spellings
 
 **Date:** 2026-07-27 · **Reversible** · Relates to: ADR-0008, ADR-0018, ADR-0031,
-v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#12/#13/#14, D-030, D-050, D-051
+v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#12/#13/#14, D-030, D-072, D-073
 
-D-051 landed the audit export's second grant and decided mints from types. This
+D-073 landed the audit export's second grant and decided mints from types. This
 round fixes the two REACHABLE regressions that came with it, closes the compile
 bypass under v3 invariant 1's activation, and stops five detectors from keying on
 how code is spelled instead of what it does.
@@ -1754,7 +1754,7 @@ how code is spelled instead of what it does.
   the audit trail." The in-flight promise is memoized on a `WeakMap` keyed by the
   request, so BOTH grants stay required and fail-closed, the prologue shape the
   governed-actions fence reads is unchanged, and rotation stays exactly where
-  ADR-0008/D-030 put it. D-051's "no authorized caller sees a behaviour change"
+  ADR-0008/D-030 put it. D-073's "no authorized caller sees a behaviour change"
   is corrected in place: it held for roles, not for sessions.
 - **A logging helper never decides whether a write reports its own failure.**
   `observabilityId` throws on a non-opaque value, and `entityId` is CLIENT-SUPPLIED
@@ -1822,11 +1822,11 @@ ADR (rejected — the additions fit under it once duplicated prose was consolida
 
 **Revert path:** revert this changeset. `requirePrincipal` resolves per call again
 (and `/api/audit` 401s past the half-life), the error-path mints throw again, and
-the detectors return to their D-051 shapes.
+the detectors return to their D-073 shapes.
 
 ---
 
-## D-053 — Migrations report rather than repair, and the fence suite finishes
+## D-075 — Migrations report rather than repair, and the fence suite finishes
 
 **Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0018, ADR-0030, ADR-0032,
 D-016, v3 §15.1/§15.2/§15.3, charter #1/#4/#5/#7/#13
@@ -1902,9 +1902,9 @@ parameter, the four bypasses reopen, and the fence suite stops finishing.
 
 ---
 
-## D-054 - Exact projection trust and preflight-before-mutation upgrades
+## D-076 - Exact projection trust and preflight-before-mutation upgrades
 
-**Date:** 2026-07-28 · **Reversible** · Relates to: D-053, v3 §15.1/§15.2/§15.3,
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, v3 §15.1/§15.2/§15.3,
 charter #3/#4/#5/#7/#13
 
 Leading title-case projection text now fails closed unless an exact identity span
@@ -1935,9 +1935,9 @@ discovery, and per-migration preflight ordering.
 
 ---
 
-## D-055 - Semantic security walkers and migration diagnostics fail closed
+## D-077 - Semantic security walkers and migration diagnostics fail closed
 
-**Date:** 2026-07-28 · **Reversible** · Relates to: D-053, D-054, v3 §15.1/§15.2/§15.3,
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, D-076, v3 §15.1/§15.2/§15.3,
 charter #1/#4/#7/#13
 
 Five shared roots closed the eight review findings. Module-reference analysis now
@@ -1969,3 +1969,81 @@ returned state is PII-bearing and needs the exact viewing capability.
 **Revert path:** revert this changeset to restore direct-only reflected loading,
 union-wide wrapper exemptions, opaque-output trust, syntax-limited factory discovery,
 tenant-only continuation reads, and raw driver failures outside mutation transactions.
+
+## D-078 - Case-insensitive PII shapes, proven-virgin bootstrap, and one authority prologue
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, D-076, D-077, ADR-0030,
+ADR-0033, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+Fifteen review findings resolved to six roots.
+
+**A detector keyed on one case is a detector with a hole.** Every sensitive-text
+check composed a title-case shape (`\p{Lu}\p{Ll}`), which structurally cannot see an
+ALL-CAPS name. "SMITH, JOHN" is an ordinary CRM rendering, so the candidate walk, the
+masker, the residual check, and the LLM adapter's ingress gate were all blind at
+once and `projectForLlm` would seal a raw name into a `Tokenized` value claiming
+`piiFree: true`. The shape is now `PERSON_WORD_SOURCE` (title-case OR all-caps),
+composed once and consumed by all four, and an unclassified all-caps run fails closed
+through the SAME span-specific trusted-identity or safe-template contract the
+title-case ruling established. No acronym allowlist, no caller-supplied safe flag, no
+word vocabulary. The redaction sentinel is neutralized before shape-testing because
+`[REDACTED]` is itself all-caps.
+
+**An empty ledger is a claim, not a fact.** The bootstrap path trusted an empty
+`schema_migrations` enough to apply and RECORD migration 1 before evaluating later
+preflights. A dump restored without its ledger presents identically while holding
+real rows, so versions were recorded against a schema nobody verified.
+`assertManagedSchemaEmpty` proves the claim before the first mutation, against a
+managed-object set derived from the shipped DDL.
+
+**Two fences demanding the same statement slot make correct code unbuildable.** The
+tenant fence and the governed-actions fence each required their own assertion be
+literally statement #1, so a repository carrying both authorities as explicit
+parameters could satisfy neither. Both now derive one shared authority-prologue rule:
+required assertions run before anything else, in any order, and a dual-authority
+signature additionally proves the two name the same scope. `assertSameTenant` ships
+with a real caller (`createSession` had always written that comparison by hand).
+
+**A runtime seal must not be copyable.** `AuthenticatedUser` used a non-enumerable
+own symbol, readable off any real instance via `Object.getOwnPropertySymbols` and
+stampable onto a forged object that would then mint a session. It now uses the
+module-private WeakSet discipline the sealed security types already use, and its
+assertion takes `unknown`. It deliberately does NOT use an assertion signature: that
+would hand out a sealed `TenantContext` from an `unknown`, which the
+tokenized-factory-only fence refuses, correctly.
+
+**A shape is containment; an allowlist is just lost signal.** `safeReason` carried a
+ten-entry SQLSTATE allowlist that omitted exactly the classes a migration failure
+needs (42P01, 42703, 42P07, 42501, 3D000, 28P01), collapsing each to
+"unexpected-error" in the one diagnostic that names what went wrong. The rule is now
+the SQLSTATE shape itself, keyed on the two-character class, so a driver `code` of
+"ALICE" is still refused. Producer and validator share one exported source fragment.
+
+**Fences that fail open or key on the wrong thing.** App-layer SQL detection now
+fails closed on an executor the checker cannot narrow; the governed non-PII escape is
+keyed to the exact reviewed structural path rather than any same-named field nested
+inside the declaration; the test-only authority registries and the reviewed factory
+module list are existence-checked so a rename or typo breaks the build instead of
+silently disabling a rule; a sealed-type cast hidden inside a typed container is a
+mint; and the `llm-pii-boundary` module index is built once per project instead of
+rescanning every source file per specifier.
+
+**Registry and documentation truth.** Sixteen duplicate decision ids (D-040..D-055
+appeared twice) were renumbered monotonically to D-062..D-077 with every exact
+cross-reference updated. The proof-log range, the `revealSecret` accessor
+description, and the D-036/D-061 citations were reconciled to the code. ADR-0030's
+stated basis ("3,067 lines" against a 3,200 ceiling that shipped full) is corrected,
+and ADR-0033 records the measured baseline, the new ceilings, and what this round's
+own required corrections consumed.
+
+**Alternatives rejected:** an acronym allowlist for all-caps text (it is the word
+vocabulary the standing ruling forbids, and "IRA" and "SMITH" are indistinguishable
+to it); keeping the SQLSTATE allowlist and adding six codes (the next migration needs
+the seventh); making `assertSameTenant` fence-only scaffolding (charter #5 - it ships
+with `createSession` or not at all); and raising the infrastructure ceiling past the
+3,300 the amendment names to buy back the headroom this round spent.
+
+**Revert path:** revert this changeset to restore title-case-only PII detection, the
+trusting empty-ledger bootstrap, the two conflicting first-statement rules, the
+copyable `AuthenticatedUser` marker, the SQLSTATE allowlist, the fail-open SQL
+detector, and the duplicated decision ids.

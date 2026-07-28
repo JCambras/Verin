@@ -98,7 +98,24 @@ const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
 // ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex runs are
 // digits/uppercase and slugs are lowercase — so "seed" and "org" stay allowed.
 const NAME_SHAPED_RE = /\p{Lu}\p{Ll}/u;
-const REASON_RE = /^(?:unexpected-error|unknown-email|app-error:[A-Z_]+|driver-error:(?:\d{5}|\d{2}P\d{2}))$/;
+/**
+ * A well-formed SQLSTATE: a two-character CLASS followed by three subclass
+ * characters, all uppercase-alphanumeric. The class is where the shape gets its
+ * teeth - every standard and PostgreSQL class begins with a digit except the four
+ * alpha classes F0, HV, P0, and XX - so a bare `[0-9A-Z]{5}` would be too loose:
+ * a driver `code` of "ALICE" is exactly that shape, and echoing it would put a name
+ * in a log line. Fixed width plus a closed alphabet plus a real class is what makes
+ * this incapable of carrying row data.
+ *
+ * Exported as a source fragment for the same reason as the PII shapes in
+ * contracts/pii.ts: safeReason() PRODUCES this shape and REASON_RE below ACCEPTS it,
+ * so a widening on one side that missed the other would degrade the code an operator
+ * needs to "[REDACTED]" at the log formatter.
+ */
+export const SQLSTATE_SOURCE = String.raw`(?:\d[0-9A-Z]|F0|HV|P0|XX)[0-9A-Z]{3}`;
+const REASON_RE = new RegExp(
+  `^(?:unexpected-error|unknown-email|app-error:[A-Z_]+|driver-error:${SQLSTATE_SOURCE})$`,
+);
 
 function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
   return ID_FIELDS.has(field) && typeof value === "string" &&

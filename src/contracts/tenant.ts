@@ -100,3 +100,22 @@ export function assertTenantContext(value: unknown): asserts value is TenantCont
     throw appError("INTERNAL", "Not a sealed TenantContext — mint via tenantOf/systemTenant.");
   }
 }
+
+/**
+ * Two sealed contexts naming the SAME scope: same org, same actor identity. Carrying
+ * two authority values is only safe when they agree, so the authority-prologue rule
+ * requires this wherever a callable takes BOTH a TenantContext and an ActionGrant as
+ * explicit parameters - otherwise one could scope the query while the other carried
+ * the authorization, and nothing would notice they named different tenants.
+ */
+export function assertSameTenant(a: unknown, b: unknown): void {
+  assertTenantContext(a);
+  assertTenantContext(b);
+  if (
+    a.orgId !== b.orgId ||
+    a.actor.kind !== b.actor.kind ||
+    a.actor.actorId !== b.actor.actorId
+  ) {
+    throw appError("AUTH_FAILED", "Authority values name different tenant scopes.");
+  }
+}

@@ -3739,3 +3739,155 @@ pnpm exec vitest run src/__tests__/fitness/dependency-rule.test.ts \
 ```
 
 **Date:** 2026-07-28 (sixteenth review-fix round on v3 build-sequence prompt 6).
+
+## PF-094 - PF-100 - seventeenth review-fix round (all-caps PII, virgin-store proof, shared authority prologue)
+
+### PF-094 all-caps person shapes fail closed at the LLM projection
+
+Every sensitive-text detector composed `TITLE_CASE_WORD_SOURCE`
+(`\b\p{Lu}\p{Ll}{1,}`), which requires a lowercase letter immediately after the
+capital, so an ALL-CAPS name was invisible to all of them at once. Confirmed by
+running the shipped regexes: for `"ALICE SMITH requested a wire transfer"` the
+title-case matcher returned zero matches, `subjectCandidates` therefore built no
+candidate, the slot-count check passed trivially (`0 === 0`), `maskText` masked
+nothing, and `projectForLlm` returned `ok()` with the raw name inside a
+`Tokenized<string>` carrying `piiFree: true`. "SMITH, JOHN" is an ordinary CRM
+rendering, so this was not a corner case.
+
+The shape is now `PERSON_WORD_SOURCE` (title-case OR all-caps), composed once in
+`contracts/pii.ts` and consumed by the candidate walk, the masker, and the residual
+check, so a name shape cannot be a candidate in one and invisible in another. The
+redaction sentinel is neutralized before shape-testing, since `[REDACTED]` is itself
+all-caps.
+
+**Adversarial proof:** replaced the all-caps alternative with an unmatchable pattern
+and re-ran; 8 of the new companions failed (`ALICE SMITH`, `SMITH, JOHN`, a leading
+single all-caps surname, an evidence-only all-caps name, the two identity-span
+masking cases, and both residual-detection cases). Reverted; 53 passed.
+
+**Safe lookalikes that must still pass, and do:** the `[REDACTED]` sentinel and
+`{{slot_0001}}` placeholders embedded in prose; ordinary lowercase prose; a trusted
+static-template token that stays visible; and an all-caps name whose exact span is
+bound to a slot and masked. No acronym allowlist and no caller-supplied safe flag
+was introduced.
+
+### PF-095 an empty migration ledger is proven, not trusted
+
+`runMigrations` treated an empty `schema_migrations` as proof the store was virgin
+and applied plus RECORDED migration 1 before evaluating any later preflight. On a
+store whose tables exist while the ledger does not (a dump restored without its
+ledger rows, a dropped ledger) versions were recorded against a schema nobody
+verified, so the "a failed preflight leaves the recorded version exactly unchanged"
+guarantee did not hold.
+
+`assertManagedSchemaEmpty` now proves the claim before the first mutation, against a
+managed-object set DERIVED from the shipped DDL (so a new table cannot escape it).
+
+**Adversarial proof:** disabled the call and re-ran the regression; both new tests
+failed with `expected 'migration 3 (tenant-qualified-relatio...' to contain 'the
+migration ledger is empty but thi...'`, i.e. without the proof the store proceeded
+and recorded versions 1 and 2 before failing at migration 3. Reverted; 20 passed.
+
+**Non-vacuity of the regression itself:** it asserts ZERO mutations, comparing the
+full object snapshot (`pg_class` relations, non-internal triggers, routines),
+`pg_indexes`, the household rows, and the still-empty ledger before and after.
+
+### PF-096 the test-only authority registries are rename-safe
+
+`TEST_ONLY_INJECTION_POINTS` and the observability twin were hardcoded
+`{file, name}` string pairs; nothing asserted the symbol still existed, so a rename
+made the detector resolve nothing and pass vacuously while shipped code could call
+the renamed function and widen a production authority allowlist.
+
+**Adversarial proof (rename):** renaming `registerTestSystemActor` in
+`src/contracts/tenant.ts` now fails at `tokenized-factory-only.test.ts:377`, and
+`tsc` reports `TS2724`. **Adversarial proof (move, the half a symbol import cannot
+catch):** moving the declaration behind a re-export fails with
+`src/contracts/tenant.ts no longer declares an exported 'registerTestSystemActor' -
+detectShippedTestAuthorityUse would resolve nothing and pass vacuously`, while the
+sibling "has no shipped caller" test still passed, which is the vacuity itself. Same
+two proofs for `registerTestSpanName`. All reverted.
+
+### PF-097 a sealed type cast inside a container is a mint
+
+`(row as { tenant: TenantContext }).tenant` escaped the fence entirely: the narrow
+walk did not descend into properties, and the unchecked-container branch required
+the SOURCE to be `any`/`unknown`/`never` rather than the source's property. The
+ESLint mirror flagged the shape, inverting the "the mirror is a strict subset of the
+authoritative fence" relationship the fence asserts.
+
+**Adversarial proof:** a scratch module with the container cast and
+`consume(JSON.parse("{}"))` against `consume(t: TenantContext)` now reports
+`cast to sealed type 'TenantContext' outside its factory` and `sealed type
+'TenantContext' minted from an unchecked call argument outside its factory`; HEAD's
+copy of the fence run against the same file reported NEITHER. Reverted.
+
+**Safe lookalikes that must still pass, and do:** `new Map<string, TenantContext>()`
+(an empty container mints nothing), `const p: Principal | null = null`, the factory
+modules' own sanctioned casts, and re-shaping an already-sealed value. No escape was
+added: the one real shipped shape that tripped
+(`request-schema.ts` parsing a zod-inferred type whose properties are `Tokenized<...>`)
+was resolved by tightening the rule, not by exempting the file.
+
+### PF-098 every reviewed factory module must resolve
+
+`detectFactoryResultLaundering` did `if (!sf) continue;`, so a moved factory module
+or a path typo silently disabled the laundering check for that whole module.
+
+**Adversarial proof:** typing `src/contracts/tenant.ts` as
+`src/contracts/tennant.ts` in `REVIEWED_FACTORY_EXPORTS` now fails with
+`reviewed factory module does not resolve, so its laundering check silently does not
+run`; with the typo in place the laundering test itself still passed green.
+Reverted.
+
+### PF-099 app-layer SQL detection fails closed on an unresolvable executor
+
+`isSqlExecutorCall` read the callee's call signatures and returned false when there
+were none, so a callee widened past `SqlDb` (a `Function`-typed local, a cast to an
+anonymous function type, an opaque alias) issued the same SQL from the same place
+with no repository signature to carry an `ActionGrant` or a sealed `TenantContext`.
+This single derivation is asserted by BOTH the governed-actions and
+tenant-context-required fences, so it failing open undercut both.
+
+An unresolvable callee whose written name is `query`/`exec`/`execute` is now a
+violation. A callee whose signatures DID resolve to some other declared name stays
+clean, so the existing "a same-named non-SQL method is not persistence" companion
+still passes.
+
+**Adversarial proof:** the new companion plants `const query: Function = db.query`
+called through a cast and an opaque `{ exec: unknown }`; both are reported. The
+resolved-but-unrelated `cache.query({ id })` lookalike still reports nothing.
+
+### PF-100 one authority prologue, derived by both fences
+
+The tenant fence demanded its `assertTenantContext(tenant)` be literally statement
+#1 while the governed-actions fence demanded `assertActionGrant(grant, "...")` be
+statement #1 for the SAME callable, so a repository carrying both authorities as
+explicit parameters was unbuildable no matter how it was written. Both now derive
+`authorityPrologueViolations` from one implementation: every required assertion must
+appear in the maximal contiguous LEADING run of authority assertions, in any order,
+and a dual-authority signature additionally owes
+`assertSameTenant(tenant, grant.tenant)`.
+
+`assertSameTenant` ships with a real caller rather than as fence-only scaffolding:
+`createSession` had always written that exact comparison out by hand (same org, same
+human actor, against the tenant minted from the authenticated row).
+
+**Adversarial proof, both fences, same shapes:** a correct contiguous prologue passes
+(the previously unbuildable case); the same assertions in a different ORDER pass; a
+missing `assertSameTenant`, a missing grant assertion, a DELAYED assertion after a
+`db.query`, a SIDE EFFECT before the guards, BRANCHING logic interleaved into the
+prologue, and a same-tenant proof comparing the WRONG values each fail. The delayed
+case reports BOTH displaced assertions rather than only the first.
+
+### PF-094 - PF-100 verification
+
+```
+pnpm exec vitest run   # 54 files, 920 tests passed
+pnpm exec eslint .     # clean
+pnpm exec tsc --noEmit # clean
+pnpm knip              # clean
+pnpm v3:invariants     # 6 active-pass, 0 active-fail
+```
+
+**Date:** 2026-07-28 (seventeenth review-fix round on v3 build-sequence prompt 6).

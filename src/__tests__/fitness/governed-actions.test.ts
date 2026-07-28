@@ -10,6 +10,7 @@ import {
   type Type,
 } from "ts-morph";
 import {
+  authorityPrologueViolations,
   realSemanticProject,
   inMemoryProject,
   detectAppLayerSqlAccess,
@@ -19,6 +20,7 @@ import {
   returnedCallableMembers,
   structuralPiiExposures,
   typeKey,
+  type RequiredAuthorityAssertion,
 } from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
 import { ROLES } from "@contracts/roles";
@@ -492,14 +494,25 @@ const GOVERNED_NON_PII_FIELDS = new Set([
   "src/infrastructure/observability/tracer.ts :: RecordedSpan.name",
 ]);
 
-function isGovernedNonPiiField(_path: string, declaration: Node): boolean {
+/**
+ * An escape names ONE exact structural position. getFirstAncestorByKind reaches
+ * THROUGH an inline nested type literal, so keying on it let the single reviewed
+ * escape for a top-level machine-named field silently cover a same-named field
+ * nested anywhere inside that declaration: adding `attributes: { name: string }` to
+ * RecordedSpan would key to the identical string, report no exposure, and let an
+ * exported callable returning it derive no pii.view sink at all. The property must
+ * therefore be a DIRECT member of the named declaration, and the dotted path the
+ * caller computed must actually end at it - the sibling rule in
+ * llm-pii-boundary.test.ts keys the same way, and the two halves must agree.
+ */
+function isGovernedNonPiiField(path: string, declaration: Node): boolean {
   if (!Node.isPropertyNamed(declaration)) return false;
-  const owner = declaration.getFirstAncestorByKind(
-    SyntaxKind.InterfaceDeclaration,
-  )?.getName();
-  if (!owner) return false;
+  const owner = declaration.getParent();
+  if (!owner || !Node.isInterfaceDeclaration(owner)) return false;
+  const name = declaration.getName();
+  if (!path.endsWith(`.${name}`)) return false;
   return GOVERNED_NON_PII_FIELDS.has(
-    `${normalizedPath(declaration.getSourceFile().getFilePath())} :: ${owner}.${declaration.getName()}`,
+    `${normalizedPath(declaration.getSourceFile().getFilePath())} :: ${owner.getName()}.${name}`,
   );
 }
 
@@ -723,6 +736,26 @@ export function detectUnreviewedPreAuthPiiReads(
   ];
 }
 
+/**
+ * The explicit TenantContext parameter of a signature, if it has one. A callable
+ * carrying BOTH authorities owes an assertion on each PLUS proof they name the same
+ * scope: otherwise one value could scope the query while the other carried the
+ * authorization, and nothing would notice they disagreed.
+ */
+function tenantParameterName(signature: Signature): string | null {
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (
+      declaration &&
+      declaredAs(parameter.getTypeAtLocation(declaration), "src/contracts/tenant.ts", "TenantContext")
+    ) {
+      return parameter.getName();
+    }
+  }
+  return null;
+}
+
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out: string[] = [];
   for (const sink of deriveGovernedSinks(project)) {
@@ -735,41 +768,39 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
           sink.action,
         ));
     });
-    const declaration = sink.declaration;
-    const body = Node.isFunctionDeclaration(declaration) ||
-        Node.isMethodDeclaration(declaration) ||
-        Node.isArrowFunction(declaration) ||
-        Node.isFunctionExpression(declaration)
-      ? declaration.getBody()
-      : undefined;
-    if (!Node.isBlock(body) || !grant) {
+    if (!grant) {
       out.push(
         `${sink.file} :: ${sink.name}: boundary must require ActionGrant<"${sink.action}">`,
       );
       continue;
     }
-    const firstStatement = body.getStatements()[0];
-    const expression = firstStatement && Node.isExpressionStatement(firstStatement)
-      ? firstStatement.getExpression()
-      : null;
-    const args = expression && Node.isCallExpression(expression)
-      ? expression.getArguments()
-      : [];
-    const assertionIsFirstStatement = expression &&
-      Node.isCallExpression(expression) &&
-      callResolvesTo(
-        expression,
-        "src/contracts/authz.ts",
-        "assertActionGrant",
-      ) &&
-      args[0]?.getText() === grant.getName() &&
-      Node.isStringLiteral(args[1]) &&
-      args[1].getLiteralValue() === sink.action;
-    if (!assertionIsFirstStatement) {
-      out.push(
-        `${sink.file} :: ${sink.name}: first statement must assert ActionGrant<"${sink.action}">`,
-      );
-    }
+    const tenant = tenantParameterName(sink.signature);
+    const required: RequiredAuthorityAssertion[] = [
+      {
+        functionName: "assertActionGrant",
+        file: "src/contracts/authz.ts",
+        args: [grant.getName(), JSON.stringify(sink.action)],
+      },
+      ...(tenant
+        ? [
+          {
+            functionName: "assertTenantContext",
+            file: "src/contracts/tenant.ts",
+            args: [tenant],
+          },
+          {
+            functionName: "assertSameTenant",
+            file: "src/contracts/tenant.ts",
+            args: [tenant, `${grant.getName()}.tenant`],
+          },
+        ]
+        : []),
+    ];
+    out.push(
+      ...authorityPrologueViolations(sink.declaration, required).map((message) =>
+        `${sink.file} :: ${sink.name}: ${message}`
+      ),
+    );
   }
   return out;
 }
@@ -1969,7 +2000,7 @@ describe("governed-actions fence (v3 §15.3)", () => {
       });
       expect(detectUnguardedGovernedSinks(project).some((violation) =>
         violation ===
-          `src/infrastructure/crm/house-crm.ts :: listHouseholds: first statement must assert ActionGrant<"pii.view">`
+          `src/infrastructure/crm/house-crm.ts :: listHouseholds: assertActionGrant(grant, "pii.view") must appear in the contiguous authority prologue, before any side effect, database call, or branching logic`
       )).toBe(true);
     });
     it("rejects a route-local helper shadowing requireActionGrant", () => {
@@ -2369,6 +2400,65 @@ describe("governed-actions fence (v3 §15.3)", () => {
         `,
       });
       expect(detectAppLayerSqlAccess(project)).toEqual([]);
+    });
+
+    it("FAILS CLOSED on an executor the checker cannot narrow", () => {
+      // Resolving through the callee's SIGNATURE is what makes destructured and
+      // computed callsites resolve alike, but a callee widened past SqlDb yields
+      // ZERO call signatures. Returning "clean" there made the whole rule a
+      // one-line evasion: every form below issues the same SQL from the same place.
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            const query: Function = db.query;
+            const opaque = db as unknown as { exec: unknown };
+            await (query as (sql: string) => unknown)("SELECT id, email FROM users");
+            await (opaque.exec as Function)("SELECT id, email FROM users");
+            return null;
+          }
+        `,
+      });
+      const hits = detectAppLayerSqlAccess(project);
+      expect(hits.length, hits.join("\n")).toBeGreaterThanOrEqual(1);
+    });
+
+    it("keys a governed non-PII escape to the EXACT reviewed structural path", () => {
+      // The reviewed escape names one top-level machine-named field. Keying on the
+      // nearest ancestor interface let it silently cover a same-named field nested
+      // anywhere inside that interface, so a real PII exposure would derive no sink.
+      const withNested = inMemoryProject({
+        "/src/infrastructure/observability/tracer.ts": `
+          export interface RecordedSpan {
+            readonly name: string;
+            readonly attributes: { readonly name: string };
+          }
+          export function recorded(): RecordedSpan { throw new Error(); }
+        `,
+      });
+      const exposures = structuralPiiExposures(
+        withNested.getSourceFileOrThrow("/src/infrastructure/observability/tracer.ts")
+          .getInterfaceOrThrow("RecordedSpan").getType(),
+        { path: "RecordedSpan", isEscaped: isGovernedNonPiiField },
+      );
+      expect(exposures).toEqual(["RecordedSpan.attributes.name"]);
+
+      // ...and the reviewed top-level field itself is still escaped (the safe lookalike).
+      const reviewedOnly = inMemoryProject({
+        "/src/infrastructure/observability/tracer.ts": `
+          export interface RecordedSpan { readonly name: string }
+        `,
+      });
+      expect(structuralPiiExposures(
+        reviewedOnly.getSourceFileOrThrow("/src/infrastructure/observability/tracer.ts")
+          .getInterfaceOrThrow("RecordedSpan").getType(),
+        { path: "RecordedSpan", isEscaped: isGovernedNonPiiField },
+      )).toEqual([]);
     });
 
     it("rejects a client-supplied grant even when another argument carries the authorized value", () => {
@@ -2834,8 +2924,70 @@ describe("governed-actions fence (v3 §15.3)", () => {
       });
       // ...and the adapter that SKIPS the assertion still fails.
       expect(detectUnguardedGovernedSinks(unguarded)).toEqual([
-        `src/infrastructure/crm/clients.ts :: clientRepo.listClients: first statement must assert ActionGrant<"pii.view">`,
+        `src/infrastructure/crm/clients.ts :: clientRepo.listClients: assertActionGrant(grant, "pii.view") must appear in the contiguous authority prologue, before any side effect, database call, or branching logic`,
       ]);
+    });
+
+    /**
+     * THE AUTHORITY PROLOGUE, from the grant side. This fence and the
+     * tenant-context-required fence each used to demand their OWN assertion be
+     * literally statement #1, so a sink carrying both authorities as explicit
+     * parameters could not satisfy both at once. The shared rule accepts any order
+     * as long as every required assertion runs before anything else, and additionally
+     * requires proof the two authorities name the same tenant.
+     */
+    const dualAuthoritySink = (body: string): Project =>
+      inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function assertTenantContext(value: unknown): asserts value is TenantContext { void value; }
+          export function assertSameTenant(a: unknown, b: unknown): void { void a; void b; }
+        `,
+        "/src/contracts/authz.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> { void value; void action; }
+        `,
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/infrastructure/crm/people.ts": `
+          import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          import type { PIIBearing } from "../../contracts/pii";
+          export interface PersonRecord extends PIIBearing { fullName: string }
+          export function listPeople(
+            tenant: TenantContext,
+            grant: ActionGrant<"pii.view">,
+          ): PersonRecord[] {
+${body}
+          }
+        `,
+      });
+
+    it("PASSES a dual-authority sink whose prologue is contiguous (previously unbuildable)", () => {
+      expect(detectUnguardedGovernedSinks(dualAuthoritySink(`
+            assertActionGrant(grant, "pii.view");
+            assertTenantContext(tenant);
+            assertSameTenant(tenant, grant.tenant);
+            return [];
+      `))).toEqual([]);
+    });
+
+    it("rejects a dual-authority sink whose grant assertion is DELAYED past the prologue", () => {
+      expect(detectUnguardedGovernedSinks(dualAuthoritySink(`
+            assertTenantContext(tenant);
+            const rows: PersonRecord[] = [];
+            assertActionGrant(grant, "pii.view");
+            assertSameTenant(tenant, grant.tenant);
+            return rows;
+      `))).toHaveLength(2); // both assertions fell outside the prologue, and both are named
+    });
+
+    it("rejects a dual-authority sink that never proves the two name the same tenant", () => {
+      expect(detectUnguardedGovernedSinks(dualAuthoritySink(`
+            assertTenantContext(tenant);
+            assertActionGrant(grant, "pii.view");
+            return [];
+      `))).toHaveLength(1);
     });
 
     it("attributes a sink called from a route-LOCAL helper to its exported handler", () => {

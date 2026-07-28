@@ -1209,6 +1209,104 @@ export function returnedCallableMembers(
   return members;
 }
 
+/**
+ * THE AUTHORITY PROLOGUE - one rule, two fences.
+ *
+ * The governed-actions fence and the tenant-context-required fence each demand a
+ * runtime assertion on the authority they care about, and each USED to demand it be
+ * literally statement #1. For a callable carrying both authorities as explicit
+ * parameters - `f(db, tenant: TenantContext, grant: ActionGrant<"pii.view">)` - those
+ * two rules are unsatisfiable at the same time, so a correct dual-authority signature
+ * was simply unbuildable. It is latent only because the one governed repository today
+ * derives its tenant from `grant.tenant` inside the body.
+ *
+ * The property that actually matters is not "first" but "before anything else": every
+ * required assertion runs before any side effect, database call, branching business
+ * logic, or use of the authority it guards. So the prologue is the maximal CONTIGUOUS
+ * leading run of authority assertions, and a required assertion that is not in it is a
+ * violation. Both fences derive it from this one implementation, so they cannot
+ * disagree about what a valid prologue is.
+ */
+const AUTHORITY_ASSERTIONS: ReadonlyArray<{ readonly file: string; readonly functionName: string }> = [
+  { file: "src/contracts/authz.ts", functionName: "assertActionGrant" },
+  { file: "src/contracts/principal.ts", functionName: "assertPrincipal" },
+  { file: "src/contracts/principal.ts", functionName: "assertWriteActor" },
+  { file: "src/contracts/tenant.ts", functionName: "assertSameTenant" },
+  { file: "src/contracts/tenant.ts", functionName: "assertTenantContext" },
+];
+
+export interface RequiredAuthorityAssertion {
+  readonly functionName: string;
+  readonly file: string;
+  /** Expected argument texts, positionally. A string-literal action is compared as written. */
+  readonly args: readonly string[];
+}
+
+/** Resolved by SYMBOL, so an aliased import cannot pose as the assertion. */
+export function callResolvesToDeclaration(call: Node, file: string, name: string): boolean {
+  if (!Node.isCallExpression(call)) return false;
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return target?.getName() === name &&
+    target.getDeclarations().some((declaration) =>
+      normalizedPath(declaration.getSourceFile().getFilePath()) === file
+    );
+}
+
+function functionBody(declaration: Node): Node | undefined {
+  return Node.isFunctionDeclaration(declaration) ||
+      Node.isMethodDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration)
+    ? declaration.getBody()
+    : undefined;
+}
+
+/** The contiguous leading run of authority assertions, empty as soon as anything else appears. */
+function authorityPrologue(declaration: Node): CallExpression[] {
+  const body = functionBody(declaration);
+  if (!Node.isBlock(body)) return [];
+  const prologue: CallExpression[] = [];
+  for (const statement of body.getStatements()) {
+    if (!Node.isExpressionStatement(statement)) break;
+    const expression = statement.getExpression();
+    if (!Node.isCallExpression(expression)) break;
+    if (
+      !AUTHORITY_ASSERTIONS.some((assertion) =>
+        callResolvesToDeclaration(expression, assertion.file, assertion.functionName)
+      )
+    ) break;
+    prologue.push(expression);
+  }
+  return prologue;
+}
+
+/** One message per required assertion that is missing from the prologue. */
+export function authorityPrologueViolations(
+  declaration: Node,
+  required: readonly RequiredAuthorityAssertion[],
+): string[] {
+  if (required.length === 0) return [];
+  if (!Node.isBlock(functionBody(declaration))) {
+    return required.map((requirement) =>
+      `${requirement.functionName}(${requirement.args.join(", ")}) cannot run: the boundary has no statement body`,
+    );
+  }
+  const prologue = authorityPrologue(declaration);
+  return required
+    .filter((requirement) =>
+      !prologue.some((call) =>
+        callResolvesToDeclaration(call, requirement.file, requirement.functionName) &&
+        requirement.args.every((expected, index) =>
+          call.getArguments()[index]?.getText() === expected
+        )
+      )
+    )
+    .map((requirement) =>
+      `${requirement.functionName}(${requirement.args.join(", ")}) must appear in the contiguous authority prologue, before any side effect, database call, or branching logic`,
+    );
+}
+
 const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
 
 /**
@@ -1224,8 +1322,43 @@ const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
  * makes all three resolve alike; an unrelated `.query()` that takes no SQL string is
  * still not mistaken for persistence.
  */
+/**
+ * The name a call is WRITTEN under, for the fail-closed arm below only. `db.query(…)`,
+ * `db["query"](…)`, and a bare `query(…)` all answer "query".
+ */
+function syntacticCalleeName(call: CallExpression): string | undefined {
+  // `(query as (sql: string) => unknown)(…)` is the same call as `query(…)`: the cast
+  // supplies an anonymous signature, so the wrapper has to come off first or the
+  // fail-closed arm never sees a name at all.
+  let expression: Node = call.getExpression();
+  while (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isSatisfiesExpression(expression)
+  ) {
+    expression = expression.getExpression();
+  }
+  if (Node.isPropertyAccessExpression(expression)) return expression.getName();
+  if (Node.isIdentifier(expression)) return expression.getText();
+  if (Node.isElementAccessExpression(expression)) {
+    const argument = expression.getArgumentExpression();
+    return argument && Node.isStringLiteral(argument)
+      ? argument.getLiteralValue()
+      : undefined;
+  }
+  return undefined;
+}
+
 export function isSqlExecutorCall(call: CallExpression): boolean {
-  return call.getExpression().getType().getCallSignatures().some((signature) => {
+  const signatures = call.getExpression().getType().getCallSignatures();
+  // An anonymous signature (`__type`/`__call`, what a cast to a function type or an
+  // inline function type yields) resolves to no DECLARED name, so it proves nothing
+  // about what is being called and must not count as "the checker answered".
+  const declaredNames = signatures
+    .map((signature) => signature.getDeclaration().getSymbol()?.getName())
+    .filter((name): name is string => Boolean(name) && !name!.startsWith("__"));
+  const resolved = signatures.some((signature) => {
     const method = signature.getDeclaration().getSymbol()?.getName();
     if (!method || !SQL_EXECUTOR_METHODS.has(method)) return false;
     const parameter = signature.getParameters()[0];
@@ -1234,6 +1367,21 @@ export function isSqlExecutorCall(call: CallExpression): boolean {
     return Boolean(parameter && declaration &&
       parameter.getTypeAtLocation(declaration).isString());
   });
+  if (resolved) return true;
+  // FAIL CLOSED on a callee the checker cannot narrow. Resolving the executor through
+  // its SIGNATURE is what makes destructured and computed callsites resolve alike, but
+  // a callee widened past SqlDb - a `Function`-typed local, an opaque alias, a value
+  // behind an `any` - yields ZERO call signatures, and returning false there made this
+  // whole rule a one-line evasion: `const run: Function = db.query; run("SELECT … FROM
+  // users …")` issues exactly the same SQL from exactly the same place. Both fences
+  // that stand behind this derivation (governed-sink and tenant-scope) treat an
+  // unresolvable type as a violation everywhere else; this is the same answer.
+  // A callee whose signatures DID resolve but name something other than an executor
+  // is a genuine non-SQL call and stays clean, so an unrelated `.query()` taking no
+  // SQL string is still not mistaken for persistence.
+  if (declaredNames.length > 0) return false;
+  const written = syntacticCalleeName(call);
+  return Boolean(written && SQL_EXECUTOR_METHODS.has(written));
 }
 
 /**

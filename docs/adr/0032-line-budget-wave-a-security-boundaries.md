@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-26
-**Deciders:** Build agent (reversible, logged per the decision protocol; D-036)
+**Deciders:** Build agent (reversible, logged per the decision protocol; D-061)
 **Relates to:** ADR-0018 (line budgets), ADR-0023 (v3 ratification), charter #1/#7/#12
 **Amends:** ADR-0018 platform ceilings
 
@@ -45,5 +45,5 @@ scheduled by the ratified sequence, not budget drift.
 ## Consequences
 
 `src/__tests__/fitness/line-budget.test.ts` CEILINGS updates to {contracts: 1000,
-infrastructure: 3000} in the same PR as this ADR. DECISIONS.md logs this as D-036 with the
+infrastructure: 3000} in the same PR as this ADR. DECISIONS.md logs this as D-061 with the
 revert path (restore the old numbers once the security-boundary code is trimmed or moved).

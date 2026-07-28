@@ -7,7 +7,7 @@ import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
-import { observabilityId, registerTestSpanName } from "@domain/observability/safe-values";
+import { isSafeObservabilityPrimitive, observabilityId, registerTestSpanName } from "@domain/observability/safe-values";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -65,6 +65,20 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
     expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
+    // The SQLSTATE classes an operator most needs during a migration. Every one of
+    // these used to collapse to "unexpected-error", so the diagnostic that named the
+    // failing migration could not also name what actually went wrong.
+    for (const code of ["42P01", "42703", "42P07", "42501", "3D000", "28P01", "XX000", "P0001"]) {
+      expect(safeReason({ code, message: FIXTURES.email }), code).toBe(`driver-error:${code}`);
+      // ...and the value the log formatter will accept is the SAME shape, so an
+      // operator sees the code rather than "[REDACTED]".
+      expect(isSafeObservabilityPrimitive("reason", `driver-error:${code}`), code).toBe(true);
+    }
+    // Shapes that are five uppercase characters but name no real SQLSTATE class.
+    for (const code of ["ALICE", "SMITH", "ABCDE", "AB123"]) {
+      expect(safeReason({ code, message: "caller-controlled" }), code).toBe("unexpected-error");
+      expect(isSafeObservabilityPrimitive("reason", `driver-error:${code}`), code).toBe(false);
+    }
   });
   it("the production logger scrubs ambiguous values even under generic keys", () => {
     const { lines, logger } = makeSink();

@@ -122,7 +122,7 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
-- **Sealed security types (v3 §15, D-036) construct ONLY via their factories** - all SEVEN of
+- **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
   (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction`/`actorRefOf` in
   `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
@@ -153,6 +153,14 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `audit.export` AND `pii.view` - but every (bind, fail-closed guard) pair comes before any route work,
   and the authorized value must reach the sink's own `ActionGrant` PARAMETER. A sink handed to another
   function as a value is refused: there is no call site left to authorize.
+- **Authority assertions live in ONE contiguous prologue, not in a fixed statement slot.**
+  `authorityPrologueViolations` (`_fence-utils.ts`) is shared by the governed-actions and
+  tenant-context-required fences, so they cannot disagree: the prologue is the maximal contiguous
+  LEADING run of sealed-authority assertions, and any required assertion outside it fails. Order is
+  free; anything else (a db call, a branch, a side effect) ENDS the prologue. A callable taking BOTH a
+  `TenantContext` and an `ActionGrant` owes both assertions plus `assertSameTenant(tenant, grant.tenant)`
+  - two authorities that disagree about scope would otherwise go unnoticed. Demanding a literal
+  statement #1 in each fence separately is what made that signature unbuildable.
 - **The app layer holds NO raw SQL.** A resolved `db.query(...)`/`tx.exec(...)` anywhere under `src/app/`
   fails the build (`detectAppLayerSqlAccess`, asserted by BOTH the governed-actions and
   tenant-context-required fences). Both derivations read repository signatures under

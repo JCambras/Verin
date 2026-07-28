@@ -10,6 +10,7 @@ import {
   type Type,
 } from "ts-morph";
 import {
+  authorityPrologueViolations,
   realSemanticProject,
   inMemoryProject,
   detectAppLayerSqlAccess,
@@ -17,6 +18,7 @@ import {
   REPO_ROOT,
   returnedCallableMembers,
   typeKey,
+  type RequiredAuthorityAssertion,
 } from "./_fence-utils";
 
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
@@ -237,41 +239,55 @@ function runtimeGuard(signature: Signature): RuntimeGuard | null {
   return null;
 }
 
-function callResolvesTo(
-  call: Node,
-  file: string,
-  name: string,
-): boolean {
-  if (!Node.isCallExpression(call)) return false;
-  const symbol = call.getExpression().getSymbol();
-  const target = symbol?.getAliasedSymbol() ?? symbol;
-  return target?.getName() === name &&
-    target.getDeclarations().some((declaration) =>
-      normalizedPath(declaration.getSourceFile().getFilePath()) === file
-    );
+/** The ActionGrant parameter of a signature, with the exact action it is typed to. */
+function grantParameter(signature: Signature): { name: string; action: string } | null {
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) continue;
+    const parameterType = parameter.getTypeAtLocation(declaration);
+    if (!declaredAs(parameterType, "src/contracts/authz.ts", "ActionGrant")) continue;
+    const actionProperty = parameterType.getProperty("action");
+    const actionDeclaration = actionProperty?.getValueDeclaration() ??
+      actionProperty?.getDeclarations()[0];
+    const actionType = actionDeclaration && actionProperty
+      ? actionProperty.getTypeAtLocation(actionDeclaration)
+      : null;
+    if (!actionType?.isStringLiteral()) continue;
+    return { name: parameter.getName(), action: String(actionType.getLiteralValue()) };
+  }
+  return null;
 }
 
-function signatureHasFirstRuntimeGuard(
-  signature: Signature,
-  guard: RuntimeGuard,
-): boolean {
-  const declaration = signature.getDeclaration();
-  if (
-    !Node.isFunctionDeclaration(declaration) &&
-    !Node.isMethodDeclaration(declaration) &&
-    !Node.isFunctionExpression(declaration) &&
-    !Node.isArrowFunction(declaration)
-  ) {
-    return false;
-  }
-  const body = declaration.getBody();
-  if (!Node.isBlock(body)) return false;
-  const first = body.getStatements()[0];
-  if (!Node.isExpressionStatement(first)) return false;
-  const expression = first.getExpression();
-  return callResolvesTo(expression, guard.file, guard.functionName) &&
-    Node.isCallExpression(expression) &&
-    expression.getArguments()[0]?.getText() === guard.argument;
+/**
+ * The SHARED authority-prologue rule (see _fence-utils). This fence used to demand
+ * its tenant assertion be literally statement #1 while the governed-actions fence
+ * demanded the SAME position for its grant assertion, which made a signature carrying
+ * both authorities unbuildable. Both now derive the same prologue from one
+ * implementation: every required assertion must run before anything else, in any
+ * order, and a callable carrying both must also prove they name the same scope.
+ */
+function runtimeGuardViolations(signature: Signature, guard: RuntimeGuard): string[] {
+  const grant = grantParameter(signature);
+  const tenant = guard.functionName === "assertTenantContext" ? guard.argument : null;
+  const required: RequiredAuthorityAssertion[] = [
+    { functionName: guard.functionName, file: guard.file, args: [guard.argument] },
+    ...(grant && tenant && !tenant.includes(".")
+      ? [
+        {
+          functionName: "assertActionGrant",
+          file: "src/contracts/authz.ts",
+          args: [grant.name, JSON.stringify(grant.action)],
+        },
+        {
+          functionName: "assertSameTenant",
+          file: "src/contracts/tenant.ts",
+          args: [tenant, `${grant.name}.tenant`],
+        },
+      ]
+      : []),
+  ];
+  return authorityPrologueViolations(signature.getDeclaration(), required);
 }
 
 function exportedDomainCallableTypes(
@@ -471,7 +487,7 @@ export function detectMissingTenantParams(
       }
       const missingGuard = entry.signatures.some((signature) => {
         const guard = runtimeGuard(signature);
-        return !guard || !signatureHasFirstRuntimeGuard(signature, guard);
+        return !guard || runtimeGuardViolations(signature, guard).length > 0;
       });
       if (missingGuard) {
         out.push({
@@ -532,6 +548,7 @@ function repositoryFixture(
       export function assertTenantContext(value: unknown): asserts value is TenantContext {
         void value;
       }
+      export function assertSameTenant(a: unknown, b: unknown): void { void a; void b; }
     `,
     "/src/contracts/principal.ts": `
       import type { TenantContext } from "./tenant";
@@ -643,6 +660,115 @@ describe("tenant-context-required fence", () => {
           }
         `,
       }))).toEqual([]);
+    });
+
+    /**
+     * THE AUTHORITY PROLOGUE, from the tenant side. Both this fence and the
+     * governed-actions fence used to demand their own assertion be literally
+     * statement #1, which made a repository carrying BOTH authorities as explicit
+     * parameters unbuildable no matter how it was written. The shared rule requires
+     * the assertions to run before anything else, in any order, plus proof the two
+     * authorities name the same scope.
+     */
+    const dualAuthorityFixture = (body: string): Project =>
+      repositoryFixture(
+        `
+        import type { SqlDb } from "../store/db";
+        import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
+        import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+        export function listPeople(
+          db: SqlDb,
+          tenant: TenantContext,
+          grant: ActionGrant<"pii.view">,
+        ): unknown {
+${body}
+        }
+      `,
+        {
+          "/src/contracts/authz.ts": `
+            import type { TenantContext } from "./tenant";
+            export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+            export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
+              void value; void action;
+            }
+          `,
+        },
+      );
+
+    const dualAuthorityViolations = (body: string): unknown[] =>
+      detectMissingTenantParams(dualAuthorityFixture(body), new Set());
+
+    it("PASSES a dual-authority signature whose prologue is contiguous (previously unbuildable)", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toEqual([]);
+    });
+
+    it("PASSES the same prologue in a different order (the rule is 'before anything else', not 'first')", () => {
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(tenant, grant.tenant);
+          assertTenantContext(tenant);
+          return db.query("SELECT 1");
+      `)).toEqual([]);
+    });
+
+    it("rejects a dual-authority signature that never proves the two name the same tenant", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertActionGrant(grant, "pii.view");
+          return db.query("SELECT 1");
+      `)).toHaveLength(1);
+    });
+
+    it("rejects a dual-authority signature missing the grant assertion", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toHaveLength(1);
+    });
+
+    it("rejects a DELAYED guard: an assertion after the prologue has already ended", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertActionGrant(grant, "pii.view");
+          const rows = db.query("SELECT 1");
+          assertSameTenant(tenant, grant.tenant);
+          return rows;
+      `)).toHaveLength(1);
+    });
+
+    it("rejects a SIDE EFFECT before the guards", () => {
+      expect(dualAuthorityViolations(`
+          db.query("DELETE FROM audit_log");
+          assertTenantContext(tenant);
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toHaveLength(1);
+    });
+
+    it("rejects BRANCHING business logic interleaved into the prologue", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          if (grant.action !== "pii.view") return null;
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toHaveLength(1);
+    });
+
+    it("rejects a same-tenant proof that compares the WRONG values", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(grant.tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toHaveLength(1);
     });
 
     it("flags an exported repository function without tenant scope", () => {

@@ -30,7 +30,9 @@ const identitySpan = (requestText: string, rawText: string, slotId = SLOT_1) => 
 
 describe("the Tokenized factory scrubs by construction", () => {
   it("tokenizeText redacts PII-shaped values and seals the result", () => {
-    const t = tokenizeText(`Move $5,000 for ${RAW.email}, SSN ${RAW.ssn}, call ${RAW.phone}`);
+    // Labels stay lowercase on purpose: an all-caps run is person-shaped to the
+    // detector and fails closed unless a span binds it, exactly as a title-case one does.
+    const t = tokenizeText(`Move $5,000 for ${RAW.email}, ssn ${RAW.ssn}, call ${RAW.phone}`);
     expect(t.piiFree).toBe(true);
     expect(t.value).not.toContain(RAW.email);
     expect(t.value).not.toContain(RAW.ssn);
@@ -213,7 +215,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("derives sensitive entities into slot placeholders and scrubs the rest (v3 §15.1 stage 1)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
-      requestText: `wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
+      requestText: `wire $12,000 from ${RAW.name}'s retirement account, reach her at ${RAW.email} / ${RAW.phone}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }, { slotId: SLOT_2, slotType: "amount" }],
       evidence: { household: { name: RAW.name }, ssn: RAW.ssn, plannedWithdrawals: 12000 },
     });
@@ -545,5 +547,140 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     if (result.ok) {
       expect(result.value.maskedText.value).toBe("review account {{slot_0001}}");
     }
+  });
+});
+
+/**
+ * ALL-CAPS person shapes. A capital-then-lowercase test structurally cannot see
+ * them, so before this every detector on the path (the candidate walk, the masker,
+ * the residual check, and the adapter ingress gate) was blind to "SMITH, JOHN" -
+ * an ordinary CRM rendering - and projectForLlm would seal the raw name into a
+ * Tokenized value carrying piiFree: true. They resolve through the SAME
+ * span-specific provenance contract as title-case names: bound to a slot and
+ * masked, or refused. There is no acronym allowlist and no caller-supplied
+ * "this is safe" flag.
+ */
+describe("all-caps person shapes fail closed without span provenance", () => {
+  for (const requestText of [
+    "ALICE SMITH requested a wire transfer",
+    "SMITH, JOHN requested a wire transfer",
+    "please contact SMITH about the transfer",
+    "ALICE Smith requested a wire transfer",
+    "Alice SMITH requested a wire transfer",
+  ]) {
+    it(`refuses ${JSON.stringify(requestText)} when no slot binds the span`, () => {
+      const result = projectForLlm({
+        purpose: "intent-shaping",
+        requestText,
+        slots: [],
+        evidence: {},
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe("PII_VIOLATION");
+      // The refusal must not quote what it refused.
+      expect(result.error.message).not.toContain("SMITH");
+      expect(result.error.message).not.toContain("ALICE");
+    });
+  }
+
+  it("refuses a leading all-caps surname the way it refuses a leading title-case one", () => {
+    for (const requestText of ["SMITH requested a transfer", "Smith requested a transfer"]) {
+      expect(projectForLlm({
+        purpose: "intent-shaping",
+        requestText,
+        slots: [],
+        evidence: {},
+      }).ok).toBe(false);
+    }
+  });
+
+  it("refuses an all-caps name carried only in evidence", () => {
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "review the request",
+      slots: [],
+      evidence: { note: "ALICE SMITH requested a wire transfer" },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses an all-caps run bound to a span the projection does not actually mask", () => {
+    // A span whose bounds do not match the run leaves the name visible; the
+    // resolver refuses rather than emitting a partially masked request.
+    const requestText = "ALICE SMITH requested a wire transfer";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [{ slotId: SLOT_1, start: 0, end: 5 }],
+      evidence: {},
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("PASSES an all-caps name whose exact span is bound to a slot and masked", () => {
+    const requestText = "ALICE SMITH requested a wire transfer";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, "ALICE SMITH")],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maskedText.value).toBe("{{slot_0001}} requested a wire transfer");
+    expect(result.value.maskedText.value).not.toContain("ALICE");
+    expect(result.value.maskedText.value).not.toContain("SMITH");
+  });
+
+  it("PASSES a single all-caps surname whose exact span is bound and masked", () => {
+    const requestText = "SMITH requested a wire transfer";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, "SMITH")],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("{{slot_0001}} requested a wire transfer");
+    }
+  });
+
+  it("PASSES safe machine-token lookalikes: the redaction sentinel and slot placeholders", () => {
+    // Both are all-caps-shaped and both are the scrubber's OWN output, so the
+    // detector must not refuse the very text it just made safe.
+    expect(hasUnresolvedProjectionText(`${REDACTED} requested a wire transfer`)).toBe(false);
+    expect(hasUnresolvedProjectionText("{{slot_0001}} requested a wire transfer")).toBe(false);
+    expect(hasUnresolvedProjectionEvidence({ note: `${REDACTED} / {{slot_0001}}` })).toBe(false);
+    const t = tokenizeText(`${REDACTED} requested a wire transfer`);
+    expect(t.piiFree).toBe(true);
+  });
+
+  it("PASSES ordinary lowercase prose (the widened shape adds no false positive)", () => {
+    expect(hasUnresolvedProjectionText("review the requested transfer for 2024")).toBe(false);
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "review the requested transfer",
+      slots: [],
+      evidence: { plannedWithdrawals: 12000 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("PASSES a trusted static-template token that stays visible", () => {
+    const trusted = trustedStaticProjectionText("review-transaction-request");
+    expect(hasUnresolvedProjectionText(trusted.requestText, trusted.trustedSafeText)).toBe(false);
+  });
+
+  it("refuses an all-caps run the residual check sees after projection", () => {
+    expect(hasUnresolvedProjectionText("ALICE SMITH requested a wire transfer")).toBe(true);
+    expect(hasUnresolvedProjectionText("SMITH, JOHN")).toBe(true);
+    expect(hasUnresolvedProjectionText("{{slot_0001}} sends to SMITH")).toBe(true);
+    expect(hasUnresolvedProjectionEvidence({ note: "SMITH" })).toBe(true);
+    expect(hasUnresolvedProjectionEvidence({ SMITH: "requested" })).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import {
   hasSensitiveDigitRun, looksLikeAmbiguousSensitiveText, looksLikePIIValue,
-  redactPIIValues, REDACTED, SENSITIVE_DIGIT_RUN_SOURCE, TITLE_CASE_WORD_SOURCE,
+  redactPIIValues, REDACTED, SENSITIVE_DIGIT_RUN_SOURCE, PERSON_WORD_SOURCE,
   type PIIBearing,
 } from "@contracts/pii";
 export interface IdentitySpan extends PIIBearing { readonly slotId: string; readonly start: number; readonly end: number }
@@ -22,8 +22,12 @@ const SUBJECT_KEYS = new Set(["firstName", "fullName", "householdName", "lastNam
 const ACCOUNT_KEYS = new Set(["accountNumber", "accountRef", "account_number", "account_ref"]);
 const SLOT_PLACEHOLDER_G = /\{\{slot_\d{4}\}\}/g;
 const SLOT_PLACEHOLDER_EXACT_RE = /^\{\{slot_\d{4}\}\}$/;
-const TITLE_WORD_RE = new RegExp(TITLE_CASE_WORD_SOURCE, "u");
-const TITLE_RUN_RE = new RegExp(`${TITLE_CASE_WORD_SOURCE}(?:\\s+${TITLE_CASE_WORD_SOURCE})*`, "gu");
+// One shape, three consumers: the candidate walk that BINDS a span to a slot, the
+// masker that rewrites it, and the residual check that runs AFTER projection. They
+// compose the same source so a name shape cannot be a candidate here and invisible
+// there, or vice versa.
+const PERSON_WORD_RE = new RegExp(PERSON_WORD_SOURCE, "u");
+const PERSON_RUN_RE = new RegExp(`${PERSON_WORD_SOURCE}(?:\\s+${PERSON_WORD_SOURCE})*`, "gu");
 const ACCOUNT_RUN_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE, "g");
 const SIMULATED_SLOT = "{{slot_0000}}";
 const STATIC_PROJECTION_TEMPLATES = {
@@ -86,7 +90,7 @@ function validatedSafeText(
   return trustedSpans;
 }
 function subjectCandidates(text: string, safeText: readonly TrustedSafeTextSpan[]): Candidate[] {
-  return [...text.matchAll(TITLE_RUN_RE)].flatMap((match) => {
+  return [...text.matchAll(PERSON_RUN_RE)].flatMap((match) => {
     const rawText = match[0];
     const start = match.index ?? 0;
     const end = start + rawText.length;
@@ -103,7 +107,7 @@ function subjectCandidates(text: string, safeText: readonly TrustedSafeTextSpan[
   });
 }
 function strictSubjects(text: string): string[] {
-  return [...text.matchAll(TITLE_RUN_RE)].map((match) => match[0]);
+  return [...text.matchAll(PERSON_RUN_RE)].map((match) => match[0]);
 }
 function withSubjectsMasked(text: string, subjects: readonly string[]): string {
   return [...subjects].sort((a, b) => b.length - a.length).reduce(
@@ -245,7 +249,7 @@ export function hasUnresolvedProjectionText(value: string, safeText?: readonly T
   return looksLikePIIValue(residual) ||
     hasSensitiveDigitRun(residual) ||
     looksLikeAmbiguousSensitiveText(residual) ||
-    TITLE_WORD_RE.test(residual);
+    PERSON_WORD_RE.test(residual);
 }
 export function hasUnresolvedProjectionEvidence(
   value: unknown,

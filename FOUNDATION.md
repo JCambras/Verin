@@ -73,7 +73,7 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-083; every PF id names exactly one
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-100; every PF id names exactly one
 proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log).
 
 | Fence | Enforces (charter) | Proof |

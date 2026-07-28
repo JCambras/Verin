@@ -17,7 +17,7 @@ import {
   REPO_ROOT,
   typeKey,
 } from "./_fence-utils";
-import { SYSTEM_ACTOR_IDS } from "@contracts/tenant";
+import { registerTestSystemActor, SYSTEM_ACTOR_IDS } from "@contracts/tenant";
 
 const SEALED = [
   {
@@ -159,10 +159,23 @@ function normalizedPath(path: string): string {
  * that describe a VALUE (a type argument that flows out of a call, a declared
  * annotation) use the narrow walk, or `new Map<string, TenantContext>()` and
  * `useState<Principal | null>(null)` would fail the build while minting nothing.
+ *
+ * `candidates` narrows WHICH sealed types count, so the same walk can answer "does
+ * this cast's SOURCE already hold the very type its target names?" without a second
+ * copy of the traversal drifting away from this one.
+ *
+ * `descendForeignProperties` lifts the project-owned gate on property/return
+ * descent. That gate keeps the TARGET side from dragging library type graphs into
+ * every question, but on the SOURCE side it invents mints: `parsed.data as
+ * MaskedLlmRequest` starts from a type zod's .d.ts owns whose PROPERTIES are this
+ * repo's `Tokenized<…>` - the value plainly carries the sealed type, and only the
+ * owner of the containing symbol was foreign.
  */
 function sealedType(
   type: Type,
   descendTypeArguments = true,
+  candidates: readonly (typeof SEALED)[number][] = SEALED,
+  descendForeignProperties = false,
 ): (typeof SEALED)[number] | null {
   const queue = [type];
   const seen = new Set<string>();
@@ -173,7 +186,7 @@ function sealedType(
     seen.add(key);
     for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
       if (!symbol) continue;
-      for (const sealed of SEALED) {
+      for (const sealed of candidates) {
         if (
           symbol.getName() === sealed.typeName &&
           symbol.getDeclarations().some((declaration) =>
@@ -202,7 +215,7 @@ function sealedType(
         Node.isTypeLiteral(declaration) ||
         normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
       );
-      if (projectOwned) {
+      if (projectOwned || descendForeignProperties) {
         for (const property of current.getProperties()) {
           const declaration = property.getValueDeclaration() ??
             property.getDeclarations()[0];
@@ -352,10 +365,45 @@ function detectPrivilegedFactoryModuleAccess(project: Project): string[] {
  * accepts, so a shipped caller could attribute audit entries in a real tenant's
  * hash chain to the actor "test". Keyed SEMANTICALLY (never on identifier text)
  * so an aliased import — `import { registerTestSystemActor as reg }` — is caught.
+ *
+ * The name is READ OFF the imported symbol rather than spelled here, so a rename
+ * cannot leave this registry pointing at a symbol that no longer exists: the
+ * detector below filters on (name, declaring file), and an entry that resolves to
+ * nothing makes it return [] forever - green, while shipped code calls the renamed
+ * function and widens SYSTEM_ACTOR_IDS. The sibling SYSTEM_ACTOR_IDS check is
+ * rename-safe for exactly this reason (it imports the real value); this one was not.
  */
 const TEST_ONLY_INJECTION_POINTS = [
-  { file: "src/contracts/tenant.ts", name: "registerTestSystemActor" },
+  { file: "src/contracts/tenant.ts", name: registerTestSystemActor.name },
 ] as const;
+
+/**
+ * Injection points whose declaration no longer sits where the registry says.
+ * Importing the symbol pins its NAME, but not its home: a move that leaves a
+ * re-export behind still imports and still renames nothing, while every
+ * `declaration.getSourceFile()` comparison in the detector goes false. Existence is
+ * asserted against the real project (charter #4), never assumed - the same way each
+ * sealed factory path is.
+ */
+function detectUnresolvedTestAuthorityPoints(project: Project): string[] {
+  const out: string[] = [];
+  for (const point of TEST_ONLY_INJECTION_POINTS) {
+    const sf = project.getSourceFiles().find((candidate) =>
+      normalizedPath(candidate.getFilePath()) === point.file
+    );
+    const declarations = sf?.getExportedDeclarations().get(point.name) ?? [];
+    if (
+      !declarations.some((declaration) =>
+        normalizedPath(declaration.getSourceFile().getFilePath()) === point.file
+      )
+    ) {
+      out.push(
+        `${point.file} no longer declares an exported '${point.name}' - detectShippedTestAuthorityUse would resolve nothing and pass vacuously`,
+      );
+    }
+  }
+  return out;
+}
 
 export function detectShippedTestAuthorityUse(project: Project): string[] {
   const out: string[] = [];
@@ -368,11 +416,16 @@ export function detectShippedTestAuthorityUse(project: Project): string[] {
     for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
       if (identifier.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)) continue;
       const symbol = identifier.getSymbol();
+      // An unresolved identifier is checked HERE rather than inside the point loop:
+      // the registry name is now read off the real symbol, so it is a `string` and
+      // `target?.getName() !== point.name` no longer narrows `target` the way a
+      // comparison against a literal type did.
       const target = symbol?.getAliasedSymbol() ?? symbol;
+      if (!target) continue;
       for (const point of TEST_ONLY_INJECTION_POINTS) {
         if (
           normalized === point.file ||
-          target?.getName() !== point.name ||
+          target.getName() !== point.name ||
           !target.getDeclarations().some((declaration) =>
             normalizedPath(declaration.getSourceFile().getFilePath()) === point.file
           )
@@ -406,6 +459,21 @@ function awaited(type: Type): Type {
  */
 function isUncheckedSource(type: Type): boolean {
   return type.isAny() || type.isUnknown() || type.isNever();
+}
+
+/**
+ * Did the value a cast STARTS from already hold that sealed type, through a path
+ * the checker verified?
+ *
+ * This is what separates re-shaping an authorized value (`held as { tenant:
+ * TenantContext }`, where `held` already carries one) from MINTING one (`row as {
+ * tenant: TenantContext }`, where `row.tenant` was `unknown` a character earlier).
+ * An `any`/`unknown`/`never` source carries nothing by definition - the checker
+ * stopped reasoning about it - so it is refused before the walk even runs.
+ */
+function carriesSealedType(source: Type, sealed: (typeof SEALED)[number]): boolean {
+  return !isUncheckedSource(source) &&
+    sealedType(source, true, [sealed], true) !== null;
 }
 
 /**
@@ -611,15 +679,25 @@ export function detectSealedTypeConstruction(project: Project): string[] {
       for (const node of sf.getDescendantsOfKind(kind)) {
         const typeNode = node.getTypeNode();
         const type = typeNode?.getType();
-        const direct = type ? sealedValueType(type) : null;
+        // The TARGET is read with the FULL walk, because a cast to a CONTAINER of a
+        // sealed type hands out the sealed value at the property it names:
+        // `(row as { tenant: TenantContext }).tenant` is a TenantContext that never
+        // passed tenantOf/systemTenant. Gating on `sealedValueType` (the narrow walk)
+        // let that shape through entirely, which left this fence WEAKER than the
+        // ESLint mirror it is asserted to be a superset of - the mirror's descendant
+        // selector matches the name wherever it appears inside the cast.
         const sealed = type ? sealedType(type) : null;
-        const uncheckedContainer = sealed &&
-          isUncheckedSource(awaited(unwrapAssertions(node.getExpression()).getType()));
-        if ((direct || uncheckedContainer) && sealed && normalized !== sealed.factory) {
-          out.push(
-            `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
-          );
-        }
+        if (!sealed || normalized === sealed.factory) continue;
+        // ...and the SOURCE is what tells minting apart from re-shaping. Nothing is
+        // minted when the value already carried that same sealed type on the way in;
+        // an unchecked source (`JSON.parse`, an awaited `Promise<any>`) carries
+        // nothing, which is the whole compile-legal mint surface past a brand.
+        if (
+          carriesSealedType(awaited(unwrapAssertions(node.getExpression()).getType()), sealed)
+        ) continue;
+        out.push(
+          `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
+        );
       }
     }
 
@@ -690,6 +768,22 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         if (sealed && normalized !== sealed.factory) {
           out.push(
             `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an inferred or explicit type argument outside its factory`,
+          );
+        }
+        // A PARAMETER is an annotation the CALLER fills, so `consume(JSON.parse(x))`
+        // is the same mint as `const t: TenantContext = JSON.parse(x)` with the
+        // annotation moved one frame down - and it leaves no cast, no literal and no
+        // type argument on the line for any other rule here to see. Ordered
+        // cheap-test-first: the contextual (parameter) type is only resolved for an
+        // argument the checker has already stopped reasoning about.
+        for (const argument of call.getArguments()) {
+          if (!Node.isExpression(argument)) continue;
+          if (!isUncheckedSource(awaited(argument.getType()))) continue;
+          const parameter = argument.getContextualType();
+          const filled = parameter ? sealedType(parameter) : null;
+          if (!filled || normalized === filled.factory) continue;
+          out.push(
+            `${normalized}:${argument.getStartLineNumber()} - sealed type '${filled.typeName}' minted from an unchecked call argument outside its factory`,
           );
         }
       }
@@ -797,12 +891,38 @@ function callableSignatures(
   return signatures;
 }
 
+/**
+ * Reviewed factory modules whose path no longer resolves.
+ *
+ * detectFactoryResultLaundering asks each module for its exports, so an unresolved
+ * key does not fail - it silently disables the whole "exported X launders sealed
+ * type Y" check for that module, which is precisely what a moved factory or a typo
+ * in a new key produces. Asserted against the REAL project below (the companions
+ * feed deliberately partial in-memory trees, so the skip belongs there and the
+ * assertion belongs here), together with the reconciliation that the keys ARE the
+ * sealed factory paths: a sealed factory with no reviewed-export list would ship
+ * unlaundering-checked.
+ */
+function detectUnresolvedFactoryModules(project: Project): string[] {
+  return [...REVIEWED_FACTORY_EXPORTS.keys()]
+    .filter((file) =>
+      !project.getSourceFiles().some((sourceFile) =>
+        normalizedPath(sourceFile.getFilePath()) === file
+      )
+    )
+    .map((file) =>
+      `${file} - reviewed factory module does not resolve, so its laundering check silently does not run`
+    );
+}
+
 function detectFactoryResultLaundering(project: Project): string[] {
   const out: string[] = [];
   for (const [file, reviewed] of REVIEWED_FACTORY_EXPORTS) {
     const sf = project.getSourceFiles().find((sourceFile) =>
       normalizedPath(sourceFile.getFilePath()) === file
     );
+    // Resolution is not assumed: detectUnresolvedFactoryModules fails the build for
+    // the real project when a key stops resolving.
     if (!sf) continue;
     for (const [name, declarations] of sf.getExportedDeclarations()) {
       if (reviewed.has(name)) continue;
@@ -919,6 +1039,22 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
     }
   });
 
+  it("enforces: every reviewed factory module resolves, and covers exactly the sealed factories", () => {
+    const unresolved = detectUnresolvedFactoryModules(realSemanticProject());
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+    // Equal sets, not subset: a sealed factory absent from the reviewed lists gets
+    // no laundering check at all, and a key that is not a sealed factory is a path
+    // typo wearing a review.
+    expect([...REVIEWED_FACTORY_EXPORTS.keys()].sort()).toEqual(
+      [...new Set(SEALED.map((sealed) => sealed.factory))].sort(),
+    );
+  });
+
+  it("enforces: every test-only authority injection point still resolves where the registry says", () => {
+    const unresolved = detectUnresolvedTestAuthorityPoints(realSemanticProject());
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
   it("enforces: no production authority allowlist ships a test actor id", () => {
     expect([...SYSTEM_ACTOR_IDS].filter((id) => /^test\b/.test(id))).toEqual([]);
   });
@@ -995,6 +1131,35 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         "src/infrastructure/crm/aliased.ts:3 references registerTestSystemActor",
         "src/infrastructure/crm/direct.ts:3 references registerTestSystemActor",
       ]);
+    });
+
+    it("catches a test-authority injection point RENAMED or MOVED out from under the registry", () => {
+      const [point] = TEST_ONLY_INJECTION_POINTS;
+      // A rename: the detector's (name, file) filter matches nothing, so it returns
+      // [] and the shipped-caller assertion above passes over a widened allowlist.
+      const renamed = detectUnresolvedTestAuthorityPoints(inMemoryProject({
+        [`/${point.file}`]: `export function ${point.name}Elsewhere(id: string): string { return id; }`,
+      }));
+      expect(renamed).toHaveLength(1);
+      expect(renamed[0]).toContain(point.name);
+      expect(renamed[0]).toContain("pass vacuously");
+
+      // A MOVE behind a re-export: the name still imports (so pinning the symbol is
+      // not enough on its own), but no declaration lives at `file` any more, and
+      // every declaration-path comparison in the detector goes false.
+      const moved = `${point.file.split("/").pop()!.replace(/\.ts$/, "")}-moved`;
+      expect(detectUnresolvedTestAuthorityPoints(inMemoryProject({
+        [`/${point.file.replace(/[^/]+$/, `${moved}.ts`)}`]:
+          `export function ${point.name}(id: string): string { return id; }`,
+        [`/${point.file}`]: `export { ${point.name} } from "./${moved}";`,
+      }))).toHaveLength(1);
+    });
+
+    it("allows the injection point declared exactly where the registry says", () => {
+      const [point] = TEST_ONLY_INJECTION_POINTS;
+      expect(detectUnresolvedTestAuthorityPoints(inMemoryProject({
+        [`/${point.file}`]: `export function ${point.name}(id: string): string { return id; }`,
+      }))).toEqual([]);
     });
 
     it("catches a cast to a sub-interface that merely EXTENDS a sealed type", () => {
@@ -1195,6 +1360,57 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(hits.some((hit) =>
         hit.startsWith("src/app/evil.ts:5") && hit.includes("TenantContext")
       )).toBe(true);
+    });
+
+    it("catches a CONTAINER cast off a checked-but-unsealed source, and an unchecked call ARGUMENT", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const row: { tenant: unknown };
+          declare function consume(tenant: TenantContext): void;
+          const stolen = (row as { tenant: TenantContext }).tenant;
+          consume(JSON.parse("{}"));
+          void stolen;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.startsWith("src/app/evil.ts"));
+      // `row` is neither sealed NOR unchecked - the two conditions the old rule
+      // required - so both of its halves passed this shape, and the property access
+      // hands out a TenantContext that never saw tenantOf.
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:5") && hit.includes("cast to sealed type 'TenantContext'")
+      )).toBe(true);
+      // The parameter is the annotation; nothing on line 6 is a cast or a literal.
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:6") && hit.includes("unchecked call argument") &&
+        hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
+    it("allows RESHAPING an already-sealed value and passing one into a sealed parameter", () => {
+      const project = sealedFixture(
+        "/src/app/fine.ts",
+        `
+          import { systemTenant, type TenantContext } from "../contracts/tenant";
+          import type { Principal } from "../contracts/principal";
+          declare function consume(tenant: TenantContext): void;
+          declare const held: { tenant: TenantContext; note: string };
+          export const byOrg = new Map<string, TenantContext>();
+          export const current: Principal | null = null;
+          const reshaped = held as { tenant: TenantContext };
+          consume(systemTenant("seed", "org"));
+          void reshaped;
+        `,
+      );
+      // The exemptions the container rule must not eat: a cast whose SOURCE already
+      // carried the sealed type (a re-shape mints nothing), a sealed type merely
+      // NAMED in a generic position, a null-initialized nullable, and an argument
+      // the factory itself produced.
+      expect(detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/fine.ts")
+      )).toEqual([]);
     });
 
     it("catches contextual object and implemented class method returns", () => {
@@ -1567,6 +1783,22 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       for (const name of ["systemTenant", "systemWriteActor", "tokenizeText"]) {
         expect(hits.some((hit) => hit.includes(name)), name).toBe(true);
       }
+    });
+
+    it("catches a reviewed factory module that no longer resolves, and passes when all do", () => {
+      const modules = [...REVIEWED_FACTORY_EXPORTS.keys()];
+      const stub = (files: readonly string[]): Project =>
+        inMemoryProject(Object.fromEntries(
+          files.map((file) => [`/${file}`, "export const nothing = 1;"]),
+        ));
+      expect(detectUnresolvedFactoryModules(stub(modules))).toEqual([]);
+      // Drop one key's module: detectFactoryResultLaundering would skip it in
+      // silence, so every sealed type that module hands out stops being checked.
+      const [moved, ...rest] = modules;
+      const hits = detectUnresolvedFactoryModules(stub(rest));
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toContain(moved!);
+      expect(hits[0]).toContain("silently does not run");
     });
 
     it("catches direct tokenization outside the projection boundary", () => {

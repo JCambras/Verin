@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-07-27
-**Deciders:** Build agent (reversible, logged per the decision protocol; D-047)
+**Deciders:** Build agent (reversible, logged per the decision protocol; D-069)
 **Relates to:** ADR-0018, ADR-0032, charter #1/#7/#12/#14
 **Amends:** ADR-0032 infrastructure ceiling
 
@@ -11,10 +11,13 @@
 ADR-0032 raised the infrastructure ceiling to 3,000 lines for the initial
 prompt-6 security boundaries. Eight adversarial review rounds then required
 runtime-sealed authority, trusted LLM evidence schemas, safe observability
-identifiers, and semantic fence analysis across callable forms. The resulting
-infrastructure measures 3,067 lines. Compressing the security boundaries or
-moving adapter behavior into the domain layer would reduce clarity and weaken
-layer ownership.
+identifiers, and semantic fence analysis across callable forms. Infrastructure
+measured 3,067 lines when this ADR was written and 3,200 lines by the time the
+prompt-6 rounds closed, i.e. exactly at the ceiling raised here with no headroom
+left. That gap between the stated basis and what shipped is corrected in
+ADR-0033, which re-measures every layer and sets bounded headroom. Compressing
+the security boundaries or moving adapter behavior into the domain layer would
+reduce clarity and weaken layer ownership.
 
 ## Decision
 
@@ -41,7 +44,8 @@ buffer at the next wave gate.
 ## Consequences
 
 `src/__tests__/fitness/line-budget.test.ts` records the 3,200-line ceiling in
-the same change. No other budget changes.
+the same change. No other budget changes. Superseded for the ceiling VALUES by
+ADR-0033; the ratchet rule and the ADR-amendment requirement are unchanged.
 
 ## Revisit When
 

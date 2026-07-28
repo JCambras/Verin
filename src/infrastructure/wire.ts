@@ -335,11 +335,15 @@ export async function auditEvent(
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
       {
-        orgId: observabilityId("orgId", opts.actor.tenant.orgId),
+        // Same rule as audited-write's catch: the report of a lost audit entry must
+        // never itself throw. entityId is the obvious case, but orgId is no safer -
+        // a throw here escapes auditEvent, so the loss becomes silent AND the caller
+        // fails (a logout would return an unenveloped 500 with the session already
+        // revoked). Both identifiers degrade to the same value the log formatter
+        // would have written anyway.
+        orgId: observabilityIdOrRedacted("orgId", opts.actor.tenant.orgId),
         action: opts.action,
         entityType: opts.entityType,
-        // Same rule as audited-write's catch: the report of a lost audit entry must
-        // never itself throw over a caller-shaped entity id.
         entityId: observabilityIdOrRedacted("entityId", opts.entityId),
         code: recorded.error.code,
       },

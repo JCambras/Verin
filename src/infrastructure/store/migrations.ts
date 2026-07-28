@@ -1,7 +1,25 @@
 /**
- * Portable PostgreSQL schema and ordered migrations (ADR-0004/0007, D-016).
- * Each version's DDL and ledger row commit in one transaction. Temporal columns
- * are timestamptz while the application boundary remains canonical ISO strings.
+ * Portable PostgreSQL schema and ordered VERSIONED migrations (ADR-0004/0007,
+ * D-016/D-029). `MIGRATIONS` is an ordered list applied by `runMigrations`, which
+ * records each version in `schema_migrations`; a version's DDL and its ledger row
+ * commit in ONE transaction, so a store is never left claiming a version it did not
+ * fully apply. A schema change APPENDS a `{version, name, sql}` entry. Never edit a
+ * shipped entry's DDL: stores that already recorded that version will never re-run
+ * it, so the edit reaches new stores only and the two silently diverge.
+ *
+ * TEMPORAL COLUMNS ARE `timestamptz`, BUT THE APPLICATION BOUNDARY STAYS ISO STRINGS
+ * IN BOTH DIRECTIONS. Writers emit `toISOString()`; a read parser in `db.ts`
+ * (OID 1184, `new Date(v).toISOString()`) normalizes every read back to canonical UTC
+ * ISO. So callers never receive `Date` objects, and - the reason this matters beyond
+ * ergonomics - the round-trip is BYTE-EXACT. The audit hash chain hashes `created_at`
+ * as text, so a write-read cycle that changed the rendering by even one character
+ * (a space instead of `T`, a `+00` instead of `Z`, microseconds instead of millis)
+ * would break `verifyChain` on rows nobody touched. Adding a temporal column means
+ * adding it as `timestamptz` and leaving the boundary alone.
+ *
+ * Adding a table also means classifying it in the `org-id-required` fence, which
+ * DERIVES its table list from this DDL: an unclassified table fails the build rather
+ * than defaulting to unscoped.
  */
 import { appError, isAppError } from "@contracts/errors";
 import { safeReason } from "@infra/observability/safe-reason";
@@ -372,7 +390,62 @@ async function assertPreflightClean(db: SqlDb, m: Migration): Promise<void> {
   }
 }
 
-type MigrationStage = "ledger-bootstrap" | "applied-version-read" | "preflight" | "mutation";
+/**
+ * Every database object this schema OWNS, derived from the shipped DDL rather than
+ * re-listed by hand, so a new table or index cannot be added without also being
+ * covered by the virginity proof below. Columns need no separate entry: a managed
+ * column can only exist inside a managed table, which this already names.
+ */
+const MANAGED_OBJECT_RE =
+  /CREATE\s+(?:(?:OR\s+REPLACE\s+)?FUNCTION|TRIGGER|(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?|TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+([a-z_][a-z0-9_]*)/gi;
+const MANAGED_OBJECT_NAMES: ReadonlySet<string> = new Set(
+  [...MIGRATION_SQL.matchAll(MANAGED_OBJECT_RE)].map((match) => match[1]!.toLowerCase()),
+);
+
+// The ledger table is bootstrapped before this check runs, so its presence says
+// nothing about whether the store is virgin.
+const LEDGER_TABLE = "schema_migrations";
+
+/** Names only, never row data: every value this returns is one of OUR identifiers. */
+const MANAGED_OBJECT_PROBE_SQL = `
+SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
+UNION SELECT t.tgname FROM pg_trigger t WHERE NOT t.tgisinternal
+UNION SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = current_schema();
+`;
+
+/**
+ * An EMPTY ledger is a claim ("this store has never been migrated"), not a fact, and
+ * the bootstrap path below trusts it enough to apply version 1 and record it before
+ * any later preflight has run. That is safe on a genuinely virgin store - there are
+ * no rows to orphan - and unsafe on a store whose tables exist while the ledger does
+ * not: a dump restored without its schema_migrations rows, or a dropped ledger table.
+ * There, versions would be RECORDED against a schema nobody verified, so the
+ * "a failed preflight leaves the recorded version exactly unchanged" guarantee would
+ * not hold. So the claim is PROVEN before the first mutation: if any object this
+ * schema owns already exists, refuse, and leave the store byte-for-byte as found.
+ */
+async function assertManagedSchemaEmpty(db: SqlDb): Promise<void> {
+  let existing: string[];
+  try {
+    const { rows } = await db.query<{ name: string }>(MANAGED_OBJECT_PROBE_SQL);
+    existing = rows
+      .map((row) => String(row.name).toLowerCase())
+      .filter((name) => name !== LEDGER_TABLE && MANAGED_OBJECT_NAMES.has(name))
+      .sort();
+  } catch (cause) {
+    throw migrationFailure("virginity-check", cause);
+  }
+  if (existing.length === 0) return;
+  throw appError(
+    "INTERNAL",
+    `the migration ledger is empty but this store already contains ${existing.length} object(s) this schema owns; no schema change was made and no version was recorded. This is the shape of a restored dump whose schema_migrations rows were not restored, or a dropped ledger. Restore the ledger to the version the data was written at (or adopt the store deliberately by recording the applied versions), then restart. Objects found: ${existing.join(", ")}`,
+    { stage: "virginity-check", existingCount: existing.length },
+  );
+}
+
+type MigrationStage = "ledger-bootstrap" | "applied-version-read" | "virginity-check" | "preflight" | "mutation";
 
 function migrationFailure(stage: MigrationStage, cause: unknown, migration?: Migration) {
   const category = safeReason(cause);
@@ -399,6 +472,14 @@ export async function runMigrations(db: SqlDb): Promise<void> {
   }
   const applied = new Set(recorded.rows.map((r) => Number(r.version)));
   const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
+  // Bootstrap is dependency-aware: version 1 CREATES the tables versions 2..N probe,
+  // so on a virgin store the later preflights cannot run until it has been applied.
+  // Only a PROVEN-empty managed schema takes that path; everything else evaluates
+  // every pending preflight before the first mutation. The same dependency order is
+  // why a new migration's preflight may only read relations that already exist at
+  // the version BEFORE it - a probe against a table its own migration creates would
+  // fail permanently.
+  if (applied.size === 0) await assertManagedSchemaEmpty(db);
   const batch = applied.size === 0 ? pending.slice(0, 1) : pending;
   for (const m of batch) await assertPreflightClean(db, m);
   for (const m of batch) {

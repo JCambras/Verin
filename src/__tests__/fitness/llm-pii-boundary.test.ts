@@ -637,15 +637,36 @@ function unverifiableModuleLoadLines(sf: SourceFile): number[] {
 }
 
 /**
+ * The project's files indexed by normalized path - the "is this path in the
+ * project?" set and the "which file is it?" lookup in one structure.
+ *
+ * Keyed on the Project OBJECT, never module-global: the companions below each
+ * build their own in-memory Project, and one shared index would answer a
+ * fixture's resolution question with another fixture's files. First declaration
+ * wins, matching the `find` this replaces.
+ */
+const SOURCE_FILES_BY_PATH = new WeakMap<Project, ReadonlyMap<string, SourceFile>>();
+
+function sourceFilesByNormalizedPath(project: Project): ReadonlyMap<string, SourceFile> {
+  const cached = SOURCE_FILES_BY_PATH.get(project);
+  if (cached) return cached;
+  const index = new Map<string, SourceFile>();
+  for (const sf of project.getSourceFiles()) {
+    const normalized = normalizePath(sf);
+    if (!index.has(normalized)) index.set(normalized, sf);
+  }
+  SOURCE_FILES_BY_PATH.set(project, index);
+  return index;
+}
+
+/**
  * Resolve an import specifier to a project file's normalized path (alias,
  * @/-prefix, and relative forms; .ts/.tsx/index.ts candidates), or null for
  * external modules.
  */
 export function resolveToProjectPath(project: Project, fromNormalized: string, spec: string): string | null {
-  const known = new Set(project.getSourceFiles().map((sf) => normalizePath(sf)));
-  const sourceFile = project.getSourceFiles().find((candidate) =>
-    normalizePath(candidate) === fromNormalized
-  );
+  const known = sourceFilesByNormalizedPath(project);
+  const sourceFile = known.get(fromNormalized);
   if (!sourceFile) return null;
   const resolved = ts.resolveModuleName(
     spec,
