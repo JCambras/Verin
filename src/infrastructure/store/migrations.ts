@@ -22,8 +22,9 @@
  * than defaulting to unscoped.
  */
 import { appError, isAppError } from "@contracts/errors";
-import { safeReason } from "@infra/observability/safe-reason";
 import type { SqlDb } from "./db";
+import { migrationFailure } from "./migration-errors";
+import { migrationLedgerExists } from "./migration-support";
 
 export interface Migration {
   /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
@@ -402,8 +403,6 @@ const MANAGED_OBJECT_NAMES: ReadonlySet<string> = new Set(
   [...MIGRATION_SQL.matchAll(MANAGED_OBJECT_RE)].map((match) => match[1]!.toLowerCase()),
 );
 
-// The ledger table is bootstrapped before this check runs, so its presence says
-// nothing about whether the store is virgin.
 const LEDGER_TABLE = "schema_migrations";
 
 // Names only, never row data: every value here is one of OUR identifiers, and EVERY
@@ -448,20 +447,9 @@ async function assertManagedSchemaEmpty(db: SqlDb): Promise<void> {
   );
 }
 
-type MigrationStage = "ledger-bootstrap" | "applied-version-read" | "virginity-check" | "preflight" | "mutation";
-
-function migrationFailure(stage: MigrationStage, cause: unknown, migration?: Migration) {
-  const category = safeReason(cause);
-  const identity = migration ? `migration ${migration.version} (${migration.name})` : "migration ledger";
-  const outcome = stage === "mutation" ? "failed and was rolled back" : `${stage} failed`;
-  return appError("INTERNAL", `${identity} ${outcome} (${category})`, {
-    stage,
-    category,
-    ...(migration ? { version: migration.version, name: migration.name } : {}),
-  });
-}
-
 export async function runMigrations(db: SqlDb): Promise<void> {
+  const ledgerExisted = await migrationLedgerExists(db);
+  if (!ledgerExisted) await assertManagedSchemaEmpty(db);
   try {
     await db.exec(SCHEMA_MIGRATIONS_DDL);
   } catch (cause) {
@@ -482,7 +470,7 @@ export async function runMigrations(db: SqlDb): Promise<void> {
   // why a new migration's preflight may only read relations that already exist at
   // the version BEFORE it - a probe against a table its own migration creates would
   // fail permanently.
-  if (applied.size === 0) await assertManagedSchemaEmpty(db);
+  if (applied.size === 0 && ledgerExisted) await assertManagedSchemaEmpty(db);
   const batch = applied.size === 0 ? pending.slice(0, 1) : pending;
   for (const m of batch) await assertPreflightClean(db, m);
   for (const m of batch) {

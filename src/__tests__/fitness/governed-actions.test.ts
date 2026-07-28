@@ -802,11 +802,9 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
     }
     // ONE derivation, shared with the tenant-scope fence: an assertion per sealed
     // authority the signature carries - a tenant WRAPPED in an object parameter
-    // included, and in whatever order they are declared - plus proof that the tenant
-    // and the grant name the same scope. Otherwise one value could scope the query
-    // while the other carried the authorization, and nothing would notice they
-    // disagreed. Deriving it separately here is what let the two fences demand
-    // incompatible prologues for the same signature.
+    // included, and in whatever order they are declared - plus every tenant-to-grant
+    // and grant-to-grant scope proof. Deriving it separately here is what let the two
+    // fences demand incompatible prologues for the same signature.
     const { required, unfenceable } = requiredAuthorityPrologue(sink.signature);
     out.push(
       ...[
@@ -3092,6 +3090,86 @@ ${body}
             assertActionGrant(grant, "pii.view");
             return [];
       `))).toHaveLength(1);
+    });
+
+    const multiGrantSink = (params: string, body: string): Project =>
+      inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function assertSameTenant(a: unknown, b: unknown): void { void a; void b; }
+        `,
+        "/src/contracts/authz.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> { void value; void action; }
+        `,
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/infrastructure/crm/people.ts": `
+          import { assertSameTenant } from "../../contracts/tenant";
+          import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+          import type { PIIBearing } from "../../contracts/pii";
+          export interface PersonRecord extends PIIBearing { fullName: string }
+          export function listPeople(${params}): PersonRecord[] {
+${body}
+          }
+        `,
+      });
+
+    const grantOrders = [
+      `executionGrant: ActionGrant<"execution.initiate">, piiGrant: ActionGrant<"pii.view">`,
+      `piiGrant: ActionGrant<"pii.view">, executionGrant: ActionGrant<"execution.initiate">`,
+    ];
+
+    it.each(grantOrders)("PASSES two grants in either parameter order only when both authorities agree", (params) => {
+      expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+            assertActionGrant(executionGrant, "execution.initiate");
+            assertActionGrant(piiGrant, "pii.view");
+            assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+            return [];
+      `))).toEqual([]);
+    });
+
+    it.each(grantOrders)("rejects either parameter order when the grant pair is not compared", (params) => {
+      expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+            assertActionGrant(executionGrant, "execution.initiate");
+            assertActionGrant(piiGrant, "pii.view");
+            return [];
+      `))).toHaveLength(1);
+    });
+
+    it("requires the exact action assertion for every grant, not only the first", () => {
+      expect(detectUnguardedGovernedSinks(multiGrantSink(grantOrders[0]!, `
+            assertActionGrant(executionGrant, "execution.initiate");
+            assertActionGrant(piiGrant, "execution.initiate");
+            assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+            return [];
+      `))).toHaveLength(1);
+    });
+
+    it("requires all three grant pairs before work", () => {
+      const params = `executionGrant: ActionGrant<"execution.initiate">,
+            piiGrant: ActionGrant<"pii.view">,
+            auditGrant: ActionGrant<"audit.export">`;
+      const assertions = [
+        `assertActionGrant(executionGrant, "execution.initiate");`,
+        `assertActionGrant(piiGrant, "pii.view");`,
+        `assertActionGrant(auditGrant, "audit.export");`,
+      ];
+      const pairs = [
+        `assertSameTenant(executionGrant.tenant, piiGrant.tenant);`,
+        `assertSameTenant(executionGrant.tenant, auditGrant.tenant);`,
+        `assertSameTenant(piiGrant.tenant, auditGrant.tenant);`,
+      ];
+      expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+            ${[...assertions, ...pairs].join("\n            ")}
+            return [];
+      `))).toEqual([]);
+      for (const omitted of pairs) {
+        expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+            ${[...assertions, ...pairs.filter((pair) => pair !== omitted)].join("\n            ")}
+            return [];
+        `))).toHaveLength(1);
+      }
     });
 
     it("attributes a sink called from a route-LOCAL helper to its exported handler", () => {

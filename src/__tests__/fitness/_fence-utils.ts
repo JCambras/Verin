@@ -1369,37 +1369,48 @@ export function grantAction(authority: SealedAuthorityParameter): string | null 
 }
 
 /**
- * THE shared authority prologue for a signature: an assertion per sealed authority it
- * carries, plus - when it carries BOTH a tenant and a grant - proof that the two name
- * the same scope. One derivation, so the governed-sink and tenant-scope fences cannot
- * demand incompatible prologues (each used to require ITS assertion in the literal
- * first statement slot, which made a dual-authority signature unbuildable).
+ * THE shared authority prologue for a signature: an exact assertion per sealed
+ * authority it carries, tenant-to-grant comparisons, and every pairwise grant
+ * comparison. One derivation keeps the governed-sink and tenant-scope fences aligned.
  */
 export function requiredAuthorityPrologue(
   signature: Signature,
 ): { required: RequiredAuthorityAssertion[]; unfenceable: string[] } {
   const authorities = sealedAuthorityParameters(signature);
-  const grant = authorities.find((authority) => authority.kind === "grant");
-  const tenant = authorities.find((authority) => authority.kind === "tenant");
-  const action = grant ? grantAction(grant) : null;
-  const unfenceable = grant && action === null
-    ? [
-      `ActionGrant parameter '${grant.argument}' must be typed to ONE literal action; a union or generic action cannot be asserted or cross-checked against the tenant scope`,
-    ]
-    : [];
+  const grants = authorities.filter((authority) => authority.kind === "grant");
+  const tenants = authorities.filter((authority) => authority.kind === "tenant");
+  const actions = new Map(grants.map((grant) => [grant, grantAction(grant)]));
+  const unfenceable = grants.flatMap((grant) =>
+    actions.get(grant) === null
+      ? [
+        `ActionGrant parameter '${grant.argument}' must be typed to ONE literal action; a union or generic action cannot be asserted or cross-checked against the tenant scope`,
+      ]
+      : []
+  );
   const required: RequiredAuthorityAssertion[] = authorities.map((authority) => ({
     functionName: authority.assertion,
     file: authority.file,
-    args: authority === grant && action !== null
-      ? [authority.argument, JSON.stringify(action)]
+    args: authority.kind === "grant" && actions.get(authority) !== null
+      ? [authority.argument, JSON.stringify(actions.get(authority))]
       : [authority.argument],
   }));
-  if (grant && tenant) {
-    required.push({
-      functionName: "assertSameTenant",
-      file: "src/contracts/tenant.ts",
-      args: [tenant.argument, `${grant.argument}.tenant`],
-    });
+  for (const tenant of tenants) {
+    for (const grant of grants) {
+      required.push({
+        functionName: "assertSameTenant",
+        file: "src/contracts/tenant.ts",
+        args: [tenant.argument, `${grant.argument}.tenant`],
+      });
+    }
+  }
+  for (let left = 0; left < grants.length; left += 1) {
+    for (let right = left + 1; right < grants.length; right += 1) {
+      required.push({
+        functionName: "assertSameTenant",
+        file: "src/contracts/tenant.ts",
+        args: [`${grants[left]!.argument}.tenant`, `${grants[right]!.argument}.tenant`],
+      });
+    }
   }
   return { required, unfenceable };
 }
@@ -1491,8 +1502,17 @@ export function authorityPrologueViolations(
     .filter((requirement) =>
       !prologue.some((call) =>
         callResolvesToDeclaration(call, requirement.file, requirement.functionName) &&
-        requirement.args.every((expected, index) =>
-          authorityArgumentMatches(call.getArguments()[index], expected)
+        (
+          requirement.args.every((expected, index) =>
+            authorityArgumentMatches(call.getArguments()[index], expected)
+          ) ||
+          (
+            requirement.functionName === "assertSameTenant" &&
+            requirement.args.length === 2 &&
+            requirement.args.every((expected, index) =>
+              authorityArgumentMatches(call.getArguments()[1 - index], expected)
+            )
+          )
         )
       )
     )

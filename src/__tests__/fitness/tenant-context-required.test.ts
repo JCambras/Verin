@@ -26,6 +26,7 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/db.ts :: createDb", why: "global database connection factory" },
   { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
   { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
+  { ref: "src/infrastructure/store/migration-support.ts :: migrationLedgerExists", why: "read-only global migration ledger discovery" },
   { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
   { ref: "src/infrastructure/store/readiness.ts :: readStoreReadiness", why: "cross-tenant deployment probe that reads no tenant rows" },
   { ref: "src/infrastructure/identity/identity-store.ts :: findUserByEmail", why: "login resolves the tenant from the identity row" },
@@ -688,6 +689,42 @@ ${body}
           assertSameTenant(tenant, grant.tenant);
           return db.query("SELECT 1");
       `)).toEqual([]);
+    });
+
+    const grantPairParams = [
+      `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          piiGrant: ActionGrant<"pii.view">,`,
+      `db: SqlDb,
+          piiGrant: ActionGrant<"pii.view">,
+          executionGrant: ActionGrant<"execution.initiate">,`,
+    ];
+
+    it.each(grantPairParams)("PASSES a grant pair in either parameter order when both are asserted and compared", (params) => {
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(piiGrant.tenant, executionGrant.tenant);
+          return db.query("SELECT 1");
+      `, params)).toEqual([]);
+    });
+
+    it.each(grantPairParams)("rejects a grant pair in either parameter order without the cross-authority proof", (params) => {
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+    });
+
+    it("rejects a grant-pair proof delayed until after repository work", () => {
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          const rows = db.query("SELECT 1");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          return rows;
+      `, grantPairParams[0])).toHaveLength(1);
     });
 
     it("rejects the same omission when the GRANT is declared before the tenant", () => {

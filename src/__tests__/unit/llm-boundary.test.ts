@@ -239,6 +239,20 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(r.value.maskedText.value).not.toContain(RAW.name.toLowerCase());
     expect(r.value.maskedText.value).toContain("{{slot_0001}}");
   });
+  it("masks a short name only as a complete occurrence", () => {
+    const requestText = "Ann requested an annual review";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, "Ann")],
+      evidence: { firstName: "Ann" },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("{{slot_0001}} requested an annual review");
+    }
+  });
   it("refuses a non-machine-name mask slotId fail-closed (a '$&' slotId cannot re-insert the entity)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
@@ -352,6 +366,18 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       evidence: { load: () => "raw record" },
     });
     expect(result.ok).toBe(false);
+  });
+  it.each([
+    new Date("2026-01-01T00:00:00.000Z"),
+    new Map([["status", "ready"]]),
+    new (class ProjectionEvidence { readonly status = "ready"; })(),
+  ])("refuses non-plain evidence before masking", (evidence) => {
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "please review the request",
+      slots: [],
+      evidence: { value: evidence },
+    }).ok).toBe(false);
   });
   it("refuses unclassified numeric evidence leaves", () => {
     const result = projectForLlm({

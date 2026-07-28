@@ -45,6 +45,62 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await db.query("SELECT id FROM flow_executions")).rows).toEqual([]);
   });
 
+  it("refuses execution and PII grants from different tenants before exposing replay state", async () => {
+    const otherOrg = "org-2";
+    const now = new Date().toISOString();
+    await db.query(
+      "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Other Firm',$2,'verin-crm',$2,'high')",
+      [otherOrg, now],
+    );
+    await db.query(
+      "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('u2',$1,'other@firm.test','Other','advisor','active',$2,'verin-crm',$2,'high')",
+      [otherOrg, now],
+    );
+    const otherPrincipal = principalFromIdentity({
+      userId: "u2",
+      orgId: otherOrg,
+      role: "advisor",
+      actor: "other@firm.test",
+      sessionId: "s2",
+    });
+    const otherExecution = authorizeGovernedAction(actorRefOf(otherPrincipal), "execution.initiate");
+    const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
+    if (!otherExecution.ok || !otherPii.ok) throw new Error("other advisor should hold both grants");
+    const input = {
+      householdName: "Other Household",
+      firstName: "Other",
+      lastName: "Owner",
+      email: null,
+      accountType: "individual",
+      clientRequestId: "11111111-1111-4111-8111-111111111111",
+    };
+    const otherStarted = await startAccountOpening(db, otherExecution.value, otherPii.value, input);
+    await expect(startAccountOpening(db, advisor, otherPii.value, input))
+      .rejects.toMatchObject({ code: "AUTH_FAILED" });
+    expect(otherStarted.status).toBe("suspended");
+    expect((await db.query("SELECT id FROM households WHERE org_id = $1", [ORG])).rows).toEqual([]);
+  });
+
+  it("refuses execution and PII grants from different actors in the same tenant", async () => {
+    const otherPrincipal = principalFromIdentity({
+      userId: "u2",
+      orgId: ORG,
+      role: "advisor",
+      actor: "other@firm.test",
+      sessionId: "s2",
+    });
+    const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
+    if (!otherPii.ok) throw new Error("other advisor should hold pii.view");
+    await expect(startAccountOpening(db, advisor, otherPii.value, {
+      householdName: "Mixed Authority Household",
+      firstName: "Mixed",
+      lastName: "Authority",
+      email: null,
+      accountType: "individual",
+    })).rejects.toMatchObject({ code: "AUTH_FAILED" });
+    expect((await db.query("SELECT id FROM flow_executions")).rows).toEqual([]);
+  });
+
   it("suspends at e-sign, then finalizes on resume with a verifiable audit chain", async () => {
     const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: "Okafor Household",

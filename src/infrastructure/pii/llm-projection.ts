@@ -55,11 +55,18 @@ function orderedMasks(masks: readonly SensitiveMask[]): readonly SensitiveMask[]
   return [...masks].sort((a, b) => b.rawText.length - a.rawText.length);
 }
 
+function sensitiveOccurrence(rawText: string, global: boolean): RegExp {
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegExp(rawText)}(?![\\p{L}\\p{N}_])`,
+    global ? "giu" : "iu",
+  );
+}
+
 function maskText(text: string, masks: readonly SensitiveMask[]): string {
   let masked = text;
   for (const mask of masks) {
     masked = masked.replace(
-      new RegExp(escapeRegExp(mask.rawText), "gi"),
+      sensitiveOccurrence(mask.rawText, true),
       () => `{{${mask.slotId}}}`,
     );
   }
@@ -99,19 +106,19 @@ function maskRecord(
   return Object.fromEntries(entries);
 }
 
-function containsText(value: unknown, needle: string, seen = new WeakSet<object>()): boolean {
+function containsSensitiveOccurrence(value: unknown, needle: string, seen = new WeakSet<object>()): boolean {
   if (
     typeof value === "string" ||
     typeof value === "number" ||
     typeof value === "bigint"
   ) {
-    return String(value).toLocaleLowerCase().includes(needle.toLocaleLowerCase());
+    return sensitiveOccurrence(needle, false).test(String(value));
   }
   if (value == null || typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
   return Object.entries(value).some(([key, item]) =>
-    key.toLocaleLowerCase().includes(needle.toLocaleLowerCase()) ||
-    containsText(item, needle, seen)
+    sensitiveOccurrence(needle, false).test(key) ||
+    containsSensitiveOccurrence(item, needle, seen)
   );
 }
 
@@ -157,6 +164,9 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
         "LLM projection refused at the scrub boundary: invalid sensitive-value mask.",
       ));
     }
+    if (!isPlainProjectionData(input.evidence)) {
+      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
+    }
     const masks = orderedMasks(masksFromBindings(bindings));
     const maskedText = maskText(input.requestText, masks);
     const maskedEvidence = maskRecord(input.evidence, masks) as Readonly<Record<string, unknown>>;
@@ -164,8 +174,8 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
       throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
     }
     if (masks.some((mask) =>
-      containsText(maskedText, mask.rawText) ||
-      containsText(maskedEvidence, mask.rawText)
+      containsSensitiveOccurrence(maskedText, mask.rawText) ||
+      containsSensitiveOccurrence(maskedEvidence, mask.rawText)
     )) {
       throw appError("PII_VIOLATION", "Sensitive entity remained after masking.");
     }

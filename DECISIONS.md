@@ -2113,3 +2113,45 @@ its own measurement).
 **Revert path:** revert this changeset to restore the reachable-anywhere cast
 exemption, the whitespace sentinel stand-in, title-case-only observability ids, the
 order-dependent authority prologue, and the name-keyed SQL fail-closed arm.
+
+## D-080 - Grant pairs, migration bootstrap, and LLM projection fail before mutation
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-076, D-078, D-079,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of four shared-boundary gaps.
+
+Every `ActionGrant` in a callable now owes its own exact literal action assertion,
+and every pair of grants must prove equal tenant and actor scope in the contiguous
+authority prologue. An explicit `TenantContext` is compared with every grant as
+well. `startAccountOpening` performs the execution and PII grant comparison before
+request validation, replay loading, or writes. Cross-tenant replay and same-tenant
+cross-actor integration cases both fail with `AUTH_FAILED`.
+
+Migration bootstrap now discovers the ledger with a read-only, current-schema
+probe. If the ledger is absent, managed-schema virginity is proven before any DDL
+creates or changes the ledger. An existing empty ledger retains the post-bootstrap
+virginity check. A real PGlite regression drops the ledger from a populated store
+and proves the complete schema, indexes, and rows remain unchanged after refusal.
+
+Sensitive projection values are replaced only at complete Unicode letter, number,
+or underscore-delimited occurrences. Masking and the post-mask residual check use
+the same occurrence rule, so a binding for `Ann` masks `Ann` but leaves `annual`
+intact. Evidence must satisfy the plain-data contract before masking and again
+after masking; `Date`, `Map`, and class instances can no longer be flattened into
+apparently trusted plain objects.
+
+The line-budget fence measures contracts 3,944/4,000, domain 1,231/1,250,
+infrastructure 3,344/3,400, and presentation 918/6,000 after these corrections.
+No ceiling changes, so the ADR amendment process is preserved without a new
+amendment.
+
+**Alternatives rejected:** compare only the first grant (a third grant reopens the
+same hole); create the ledger and rely on refusal afterward (the refusal mutates the
+schema it claims unchanged); keep substring replacement and special-case short
+names (the next short value repeats the corruption); and trust post-mask validation
+alone (object flattening destroys the evidence needed to reject the input).
+
+**Revert path:** revert this changeset to restore first-grant-only prologue
+derivation, mutation-before-virginity proof, unbounded substring masking, and
+post-mask-only evidence validation.

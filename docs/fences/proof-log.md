@@ -3999,3 +3999,73 @@ pnpm golden:validate   # clean
 ```
 
 **Date:** 2026-07-28 (eighteenth review-fix round on v3 build-sequence prompt 6).
+
+### PF-108 every grant pair agrees before work
+
+`requiredAuthorityPrologue` previously selected only the first `ActionGrant`.
+Additional grants received no exact action check and no tenant or actor comparison.
+
+**Adversarial proof:** removing
+`assertSameTenant(grant.tenant, piiGrant.tenant)` from
+`src/infrastructure/wire.ts` made both authoritative fences fail:
+
+```
+src/infrastructure/wire.ts :: startAccountOpening:
+assertSameTenant(grant.tenant, piiGrant.tenant) must appear in the contiguous authority prologue
+```
+
+The governed-actions enforcement failed at line 1537 and the
+tenant-context-required enforcement failed at line 479. Reverted. In-memory
+companions cover both grant declaration orders, the opposite symmetric comparison
+order, a delayed comparison after SQL, a wrong second action, and all three pairs
+among three grants. Omitting any one of the three comparisons produces exactly one
+violation.
+
+### PF-109 missing migration ledger is refused without schema mutation
+
+Before the change, a real PGlite store with `schema_migrations` dropped was refused
+as non-virgin but gained `schema_migrations` and `schema_migrations_pkey` during the
+refusal, while the error claimed no schema change occurred.
+
+**Adversarial proof:** the dropped-ledger regression snapshots all current-schema
+relations, indexes, triggers, routines, and seeded household rows before
+`runMigrations`. The refusal leaves every snapshot equal and the ledger absent. The
+existing empty-ledger, partial-restore, neighbour-schema, and genuinely virgin
+bootstrap companions remain green. Driver failures in the new read-only discovery
+stage are reduced to the same PII-safe category contract.
+
+### PF-110 sensitive values replace complete occurrences only
+
+Before the change, an exact identity binding for `Ann` projected
+`Ann requested an annual review` as
+`{{slot_0001}} requested an {{slot_0001}}ual review`.
+
+**Adversarial proof:** the unit companion requires the projected result to equal
+`{{slot_0001}} requested an annual review`. The shared complete-occurrence matcher
+drives both replacement and the "sensitive entity remained" check, so weakening
+only one side fails the same test.
+
+### PF-111 non-plain evidence is refused before and after masking
+
+Before the change, `Date`, `Map`, and class instances were traversed with
+`Object.entries`, rebuilt as plain objects, and accepted. A `Date` became `{}` in
+the sealed LLM context.
+
+**Adversarial proof:** parameterized unit cases pass each shape nested in evidence
+and require `projectForLlm` to fail. The older function-valued evidence case still
+proves the post-mask invariant, so moving the check earlier did not replace the
+defense-in-depth check.
+
+### PF-108 - PF-111 verification
+
+```
+pnpm exec vitest run   # 54 files, 951 tests passed
+pnpm exec eslint .     # clean
+pnpm exec tsc --noEmit # clean
+pnpm knip              # clean
+pnpm v3:invariants     # 6 active-pass, 0 active-fail
+pnpm golden:validate   # all 16 signed cases passed
+pnpm build             # compiled and generated all routes
+```
+
+**Date:** 2026-07-28 (nineteenth review-fix round on v3 build-sequence prompt 6).

@@ -16,7 +16,7 @@ import {
   type ActionGrant,
   type GovernedOutput,
 } from "@contracts/authz";
-import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { assertSameTenant, assertTenantContext, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
@@ -194,6 +194,7 @@ export async function startAccountOpening(
 ): Promise<AccountOpeningStartResult> {
   assertActionGrant(grant, "execution.initiate");
   assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(grant.tenant, piiGrant.tenant);
   const canonical = canonicalExecutionId(input.clientRequestId);
   if (!canonical.ok) {
     return { executionId: input.clientRequestId ?? "", status: "failed", error: canonical.error, data: {} };

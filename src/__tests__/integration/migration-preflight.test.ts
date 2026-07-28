@@ -295,6 +295,26 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
     expect(await db.query("SELECT id, org_id, name FROM households ORDER BY id")).toEqual(householdsBefore);
   });
 
+  it("refuses a restored store whose ledger table was dropped without recreating it", async () => {
+    const db = await createMemoryDb();
+    await seed(db);
+    await db.exec("DROP TABLE schema_migrations");
+    const schemaBefore = await schemaSnapshot(db);
+    const indexesBefore = await schemaIndexes(db);
+    const householdsBefore = await db.query("SELECT id, org_id, name FROM households ORDER BY id");
+
+    const message = await runMigrations(db).then(
+      () => "",
+      (error: { message?: string }) => error.message ?? "",
+    );
+
+    expect(message).toContain("the migration ledger is empty but this store already contains");
+    expect(message).toContain("no schema change was made and no version was recorded");
+    expect(await schemaSnapshot(db)).toEqual(schemaBefore);
+    expect(await schemaIndexes(db)).toEqual(indexesBefore);
+    expect(await db.query("SELECT id, org_id, name FROM households ORDER BY id")).toEqual(householdsBefore);
+  });
+
   it("refuses when a SINGLE managed object survives a partial restore", async () => {
     const db = await createMemoryDb();
     await db.exec("DROP TRIGGER audit_log_no_truncate ON audit_log;");
@@ -383,6 +403,7 @@ describe("migration failure diagnostics", () => {
   it.each([
     "ledger-bootstrap",
     "applied-version-read",
+    "virginity-check",
     "preflight",
   ] as const)("sanitizes driver failures during %s", async (stage) => {
     let queryCount = 0;
@@ -394,7 +415,11 @@ describe("migration failure diagnostics", () => {
       exec: async () => {
         if (stage === "ledger-bootstrap") throw driverError;
       },
-      query: async () => {
+      query: async (sql: string) => {
+        if (sql.includes("SELECT EXISTS")) {
+          if (stage === "virginity-check") throw driverError;
+          return { rows: [{ exists: true }] } as never;
+        }
         queryCount += 1;
         if (stage === "applied-version-read" && queryCount === 1) throw driverError;
         if (stage === "preflight" && queryCount > 1) throw driverError;

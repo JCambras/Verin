@@ -53,6 +53,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/workflow/engine.ts :: FlowDefinition.steps.name", why: "machine-readable step id, reached as a nested path through FlowDefinition.steps" },
   { ref: "src/domain/workflow/flows/account-opening.ts :: FlowFieldSpec.name", why: "form-field key for the generic renderer" },
   { ref: "src/infrastructure/observability/tracer.ts :: RecordedSpan.name", why: "OTel span name (machine)" },
+  { ref: "src/infrastructure/store/migration-errors.ts :: MigrationIdentity.name", why: "migration label (machine)" },
   { ref: "src/infrastructure/store/migrations.ts :: Migration.name", why: "migration label (machine)" },
   // Decision-core (prompt 5, v3 §5) evidence REFERENCES. The PII field rule reads
   // `evidence` as sensitive because the projection layer's `evidence` really is the
