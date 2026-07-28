@@ -14,43 +14,33 @@
  * fenced by src/__tests__/fitness/v3-invariants.test.ts; the ratified-document
  * SHA-256 pins are re-verified here AND by the arch-version fence.
  *
- * Gates (ADR-0030) declare their wave, prompt range, and requirement set. Each
- * gate's requirement set is DERIVED from the invariants' own `gate` field when
- * reported, never restated in prose, and the ordering rule - no gate may require
- * an invariant whose activation prerequisite lands after that gate closes - is
- * re-checked here as defense in depth with the v3-gate-ordering fence.
+ * Gates (ADR-0030) declare their wave, prompt range, entry condition, outcome,
+ * and a list of TYPED requirements. This report is itself a document subject to
+ * the honesty ruling, so it does not merely PRINT the registry: it re-runs the
+ * whole gate rule set from the shared core (scripts/v3-gates.lib.ts) that the
+ * v3-gate-ordering fence proves rejects real violations, and refuses to print at
+ * all if the constitution is unsound. A gate reads green only when every typed
+ * requirement is met AND every requirement is decidable here.
  */
 import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { gateOrderingProblems, gateReadiness, type Gate, type Invariant as GateInvariant, type Registry as GateRegistry } from "./v3-gates.lib";
 
 interface Mechanism {
   type: string;
   ref: string;
 }
-interface Invariant {
-  id: number;
+interface Invariant extends GateInvariant {
   group: string;
-  gate: string;
-  name: string;
   status: "active" | "not-yet-active";
   activatesWhen: string;
-  activationPrompts?: number[];
-  activationArtifacts?: string[];
   mechanisms: Mechanism[];
   notes?: string;
 }
-interface Gate {
-  wave: string;
-  title: string;
-  prompts: [number, number];
-  requires: number[];
-  entryCondition: string;
-  outcome: string;
-}
-interface Registry {
+interface Registry extends GateRegistry {
   architectureVersion: string;
   documents: Array<{ path: string; sha256: string }>;
   gates: Record<string, Gate>;
@@ -84,19 +74,12 @@ for (const inv of registry.invariants) {
   if (inv.status === "active" && !inv.mechanisms.some((m) => m.type === "fitness")) {
     structural.push(`invariant ${inv.id}: active but maps to no runnable fitness mechanism`);
   }
-  // Gate ordering (ADR-0030), defense in depth with src/__tests__/fitness/v3-gate-ordering.test.ts:
-  // a gate that requires an invariant whose prerequisite lands in a later wave is unreachable.
-  const gate = registry.gates[inv.gate];
-  if (!gate) {
-    structural.push(`invariant ${inv.id}: gate '${inv.gate}' is not declared in gates`);
-  } else if (inv.status === "not-yet-active") {
-    const lands = Math.max(...(inv.activationPrompts ?? [Number.NaN]));
-    if (!Number.isFinite(lands)) structural.push(`invariant ${inv.id}: not-yet-active but declares no activationPrompts`);
-    else if (lands > gate.prompts[1]) {
-      structural.push(`invariant ${inv.id}: gated at ${inv.gate} (prompts ${gate.prompts.join("-")}) but activates at prompt ${lands} - the gate could never go green (ADR-0030)`);
-    }
-  }
 }
+// The WHOLE gate rule set (ADR-0030), not a subset: ordering, activation-ownership
+// integrity, prose/structured agreement, activation-artifact honesty, and the
+// no-empty-requirement-set rule. Same shared core the v3-gate-ordering fence proves
+// adversarially, so this report can never emit a claim that fence would reject.
+structural.push(...gateOrderingProblems(registry, (p) => existsSync(join(ROOT, p))));
 
 // ---------- verify the ratified-document pins (arch-version, defense in depth) ----------
 for (const doc of registry.documents) {
@@ -115,7 +98,8 @@ if (structural.length > 0) fail(`registry/pin problems:\n  - ${structural.join("
 // ---------- execute the mapped fitness fences (one vitest run, per-file results) ----------
 const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
 const active = registry.invariants.filter((i) => i.status === "active");
-const fitnessFiles = [...new Set(active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)))];
+const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filter((r) => r.kind === "fitness").map((r) => r.ref!));
+const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
 
 const fileResults = new Map<string, boolean>();
 if (fitnessFiles.length > 0) {
@@ -226,15 +210,24 @@ for (const inv of registry.invariants) {
   }
 }
 
-// ---------- gate readiness (ADR-0030: the requirement set is DERIVED, never restated in prose) ----------
+// ---------- gate readiness (ADR-0030: typed requirements; an undecidable gate is NEVER green) ----------
 console.log(bold("\n  PHASE GATES"));
-for (const [key, gate] of Object.entries(registry.gates)) {
-  const required = registry.invariants.filter((i) => i.gate === key).map((i) => i.id);
-  const blocking = required.filter((id) => stateById.get(id) !== "active-pass");
-  const label = `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}) requires ${required.map((n) => `#${n}`).join(" ")}`;
-  if (blocking.length === 0) console.log(`    ${green("✓ green          ")} ${label}`);
-  else console.log(dim(`    ○ not yet green   ${label} - awaiting ${blocking.map((n) => `#${n}`).join(" ")}`));
-  console.log(dim(`                       └ wave may begin when: ${gate.entryCondition}`));
+console.log(dim("  green (every typed requirement met) · not yet green (a requirement is unmet) · not-yet-verifiable (an outcome clause nothing can decide yet)\n"));
+const GATE_STATE_WIDTH = "○ not-yet-verifiable".length;
+const gateIndent = " ".repeat(4 + GATE_STATE_WIDTH + 1);
+const gateTag = (s: string) => s.padEnd(GATE_STATE_WIDTH, " ");
+for (const view of gateReadiness(registry, {
+  invariantState: (id) => stateById.get(id),
+  exists: (p) => existsSync(join(ROOT, p)),
+  ciDeclares: (ref) => ciText.includes(ref),
+  fitnessPassed: (ref) => fileResults.get(ref),
+})) {
+  const { key, gate } = view;
+  const label = `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}) requires ${view.requirements.map((r) => r.label).join(" · ")}`;
+  if (view.state === "green") console.log(`    ${green(gateTag("✓ green"))} ${label}`);
+  else if (view.state === "not-yet-green") console.log(dim(`    ${gateTag("○ not yet green")} ${label}\n${gateIndent}└ awaiting: ${view.blocking.join(" · ")}`));
+  else console.log(dim(`    ${gateTag("○ not-yet-verifiable")} ${label}\n${gateIndent}└ no mechanism decides: ${view.blocking.join(" · ")}`));
+  console.log(dim(`${gateIndent}└ wave may begin when: ${gate.entryCondition}`));
 }
 
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));

@@ -496,7 +496,7 @@
     },
     {
       "id": "v3-gate-ordering",
-      "title": "No phase gate requires an invariant whose activation prerequisite lands in a later wave; Gate A requires 1/2/4/5, Gate B requires 3 (ADR-0030)",
+      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires lands after it closes; Gate A requires 1/2/4/5, Gate B requires 3 (ADR-0030)",
       "status": "enforced",
       "phase": "v3-0",
       "mechanisms": [
@@ -509,8 +509,16 @@
           "ref": "v3-invariants.json"
         },
         {
+          "type": "file",
+          "ref": "scripts/v3-gates.lib.ts"
+        },
+        {
           "type": "fitness",
           "ref": "src/__tests__/fitness/v3-gate-ordering.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "v3-invariants"
         }
       ]
     },

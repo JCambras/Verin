@@ -6168,17 +6168,32 @@ requirements are green; no document, proof, or UI may claim invariant 3 is imple
 exists.
 
 Implemented as structure, not prose (ADR-0030): `v3-invariants.json` gates are now `{wave, prompts,
-requires, entryCondition, outcome}`, gate B is registered, invariant 3 moves to gate B, every
-not-yet-active invariant declares `activationPrompts`, and invariant 3 declares `activationArtifacts`
+requires, entryCondition, outcome}`, invariant 3 moves to gate B, every not-yet-active invariant declares
+`activationPrompts`, and invariant 3 declares `activationArtifacts`
 (`config/domains/account-opening.yaml`, `config/domains/money-movement.yaml`) that must exist before it
 may be flipped to `active`. `src/__tests__/fitness/v3-gate-ordering.test.ts` fails the build if any gate
-requires an invariant whose prerequisite lands after that gate closes, if a gate's `requires` set drifts
-from the registry's assignments, or if prose names a later prompt than the structured field admits.
+requires something that lands after that gate closes, if activation ownership drifts from the
+requirement list, or if prose names a later prompt than the structured field admits.
 The ratified `verin-prompt-sequence-v3.md` keeps its verbatim bytes and pin; its Gate A sentence is read
 through ADR-0030, the same mechanism ADR-0024 and ADR-0026 use to override v3's letter.
+
+Review round `gatea-opus-review-1` (2026-07-28) amended ADR-0030 in place on four points, without
+touching the original ruling: **(1)** all nine gates of the ratified sequence are registered (0, A, B, C,
+D, E, F, G/H, I) - Gate D's entry condition cited "Gate C is green", a precondition nothing could
+compute; **(2)** `requires` becomes a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
+`ci-gate` | `evidence`), separating activation OWNERSHIP (`invariant.gate`, what the ordering rule is
+computed against, and which every gate must require for the invariants it owns) from gate REQUIREMENT
+(what a gate needs to be green, which may REFERENCE invariants earlier gates own - Gate C restates
+invariant 1 without taking it from Gate A); **(3)** a gate with no machine-checkable requirement is
+rejected by the fence and can never read green in the report, because empty sets never prove readiness;
+**(4)** the rule set moves to `scripts/v3-gates.lib.ts` so the blocking runner enforces every rule the
+fence does - the runner's report is itself a document bound by ruling clause 5, and it previously
+re-checked only the ordering rule. The fence also stopped asserting invariant 3's transient
+`not-yet-active` status and now asserts the durable rule that `active` requires its declared prompt-10
+artifacts to exist.
 
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
-set is an amendment to ADR-0030 and ADR-0023, never a registry edit alone.
+list is an amendment to ADR-0030 and ADR-0023, never a registry edit alone.

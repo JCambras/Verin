@@ -10,9 +10,14 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 governed decision and execution layer; ADRs 0023-0030). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). **The registry, not the prompt-sequence
-prose, is the authoritative statement of what each gate requires**: gates declare `{wave, prompts,
-requires}` and the gate-ordering fence rejects a gate that requires an invariant whose prerequisite lands
-in a later wave (ADR-0030 - Gate A requires 1/2/4/5; invariant 3 is required at Gate B because its
+prose, is the authoritative statement of what each gate requires**: all nine gates (0, A, B, C, D, E, F,
+G/H, I) declare `{wave, prompts, requires, entryCondition, outcome}` with TYPED requirements
+(`invariant`/`artifact`/`fitness`/`ci-gate`, plus `evidence` for an outcome clause nothing decides yet,
+which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
+gate must require every invariant it owns and may reference invariants earlier gates own. One shared rule
+set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
+rejects a gate requiring anything that lands after that gate closes, and a gate with no machine-checkable
+requirement (ADR-0030 - Gate A requires 1/2/4/5; invariant 3 is required at Gate B because its
 prerequisite is prompt 10). The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new

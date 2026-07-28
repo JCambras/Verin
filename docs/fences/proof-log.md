@@ -9315,3 +9315,103 @@ cannot be green by always failing).
 → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)`.
 
 **Date:** 2026-07-28 (ADR-0030, D-061).
+
+### PF-018 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
+
+**What changed (ADR-0030, amended in place).** All nine gates of the ratified sequence are registered;
+`gates.<G>.requires` became a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
+`ci-gate` | `evidence`); activation OWNERSHIP was separated from gate REQUIREMENT; a gate with no
+machine-checkable requirement is rejected; and the rule set moved to `scripts/v3-gates.lib.ts` so the
+BLOCKING RUNNER enforces every rule the fence does - the runner's report is itself a document bound by
+ruling clause 5, and it previously re-checked only the ordering rule. Five further injections were
+applied to the real `v3-invariants.json`, each observed failing, each reverted.
+
+**Injection 4 - a gate with nothing to decide.** Removed gate C's only machine-checkable requirement
+(its reference to invariant 1), leaving the `evidence` clause. Under the previous model this shape read
+`✓ green`.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0030)
+```
+The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
+```
+v3-invariants: registry/pin problems:
+  - gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0030)
+```
+
+**Injection 5 - activation ownership drifting from the requirement list.** Removed invariant 3 from gate
+B's `requires` while leaving `invariants[3].gate = "B"` - the drift the old EQUAL check caught in one
+direction only.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate B: owns invariant 3 (its activation gate) but does not require it - activation ownership and gate requirements drifted apart (ADR-0030)
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+AssertionError: expected [] to deeply equal [ 3 ]
+```
+
+**Injection 6 - the circular dependency re-created BY REFERENCE.** Left invariant 3 owned by gate B and
+had gate 0 (prompts 1-3) merely *reference* it - the evasion the new reference model opens up and the
+ordering rule must still decide.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0030).
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0030).
+```
+
+**Injection 7 - the reported defect: an entry condition depending on an unregistered gate.** Deleted gate
+C, leaving gate D's `entryCondition` citing "Gate C is green" - a precondition nothing can compute.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate D: entryCondition depends on "Gate C", which is not registered - nothing can compute or report it (ADR-0030)
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: every gate of the ratified prompt sequence is registered, over its ratified prompt range
+AssertionError: expected [ '0', 'A', 'B', 'D', 'E', 'F', …(2) ] to deeply equal [ '0', 'A', 'B', 'C', 'D', 'E', …(3) ]
+```
+
+**Injection 8 - the RUNNER's own honesty (the finding this round).** Injections 2 and 3 above were
+re-applied and run through `pnpm v3:invariants` alone, because the previous runner re-checked only the
+ordering rule and would have printed a report claiming invariant 3 was implemented.
+
+**Observed failure (verbatim), invariant 3 flipped to `active` with a real fitness mechanism:**
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+```
+**and, understating the structured prerequisite while the prose still named prompt 10:**
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a gate referencing an
+invariant a later gate owns; an invariant its own activation gate does not require; a gate with no
+machine-checkable requirement; a requirement naming no prompt, an unknown kind, or an unregistered
+invariant; an `evidence` requirement with no note (silent deferral); an artifact produced after its own
+gate closes; an entry condition depending on an unregistered or later gate; and three readiness cases
+proving a requirement-less gate and a gate carrying an unmechanized outcome clause both render
+`not-yet-verifiable` while a fully-met gate renders `green` (so the readiness computation cannot pass by
+always failing).
+
+**Revert:** `v3-invariants.json` restored byte-identically from the pre-injection copy after each
+injection (verified by string comparison);
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 21 passed (21)`, `pnpm test` →
+`548 passed`, `pnpm v3:invariants` → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with
+all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet green`).
+
+**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-opus-review-1`).

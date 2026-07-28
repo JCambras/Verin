@@ -57,10 +57,17 @@ three-state report - **active-pass / active-fail / not-yet-active** - and is a b
 (`v3-invariants` in `.github/workflows/ci.yml`) that fails on any active-fail. A not-yet-active invariant
 is rendered visibly distinct from a passing one; CI never fakes green (v3 §17 preamble).
 
-**Gate requirements are read from the registry, not from the prompt-sequence prose.** Each gate declares
-its wave, prompt range, and `requires` set; the gate-ordering fence
-(`src/__tests__/fitness/v3-gate-ordering.test.ts`) fails the build if a gate requires an invariant whose
-activation prerequisite lands in a later wave. Per **ADR-0030**, `verin-prompt-sequence-v3.md:186`
+**Gate requirements are read from the registry, not from the prompt-sequence prose.** All nine gates of
+the ratified sequence (0, A, B, C, D, E, F, G/H, I) are registered with their wave, prompt range, entry
+condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
+(machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
+green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
+every invariant it owns, and may additionally reference invariants an earlier gate owns. The shared rule
+set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
+(`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
+fails the build if a gate requires anything that lands after that gate closes, or if a gate declares no
+machine-checkable requirement (an empty set would read green merely by being registered). Per
+**ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
 4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
 opening becomes domain configuration - is in Wave B. Invariant 3 is not weakened or waived: until prompt
