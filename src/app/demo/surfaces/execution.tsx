@@ -6,7 +6,8 @@
  * keys inspectable.
  */
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
-import type { ExecutionVM } from "../model";
+import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { DEV_BADGE_TEXT, type ExecutionVM } from "../model";
 import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow } from "./shared";
 
 export function ExecutionSurface({
@@ -30,6 +31,9 @@ export function ExecutionSurface({
   return (
     <SurfaceShell spine={vm.spine} title="Execution" description={vm.deferredNote}>
       <ExecutionTimeline caption="Execution timeline" rows={vm.rows.map((r) => toTimelineRow(r))} />
+      <p>
+        <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+      </p>
       <JourneyNav
         back={{ href: demoHref("safety", scenarioId, firmId), label: "Back to the safety check" }}
         forward={{ href: demoHref("verification", scenarioId, firmId), label: "View verification" }}

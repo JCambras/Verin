@@ -7,10 +7,23 @@
  */
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
-import type { FakeClass } from "./model";
+import type { DispositionVM, FakeClass } from "./model";
 
 export const SETUP_FIRM_IDS = ["firm-a", "firm-b"] as const;
 export type SetupFirmId = (typeof SETUP_FIRM_IDS)[number];
+
+export const SETUP_POLICY_GROUP_IDS = [
+  "reserve",
+  "freshness",
+  "bank-change",
+  "threshold",
+  "expiry",
+] as const;
+export type SetupPolicyGroupId = (typeof SETUP_POLICY_GROUP_IDS)[number];
+export type SetupSelections = Record<
+  SetupFirmId,
+  Record<SetupPolicyGroupId, string>
+>;
 
 export const SETUP_STEP_IDS = [
   "profiles",
@@ -94,7 +107,7 @@ export interface FirmChoiceVM {
 }
 
 export interface SetupPolicyGroupVM {
-  readonly id: "reserve" | "freshness" | "bank-change" | "threshold" | "expiry";
+  readonly id: SetupPolicyGroupId;
   readonly title: string;
   readonly question: string;
   readonly rationale: string;
@@ -158,17 +171,51 @@ export interface SetupProofFirmVM {
   readonly decisionHash: string;
   readonly bundleHash: string;
   readonly policyVersion: string;
+  readonly configurationHash: string;
+  readonly configurationProvenance: string;
+  readonly disposition: DispositionVM;
+  readonly reachesAuthority: boolean;
+  readonly reserveMetric: DisplayMetric;
+  readonly reserveSummary: string;
+  readonly reserveDetail: string;
+  readonly freshnessSummary: string;
+  readonly freshnessDetail: string;
+  readonly authoritySummary: string;
+  readonly authorityDetail: string;
+  readonly strongestProofTitle: string;
+  readonly strongestProofDetail: string;
+  readonly selectedOptions: readonly {
+    readonly groupId: SetupPolicyGroupId;
+    readonly label: string;
+  }[];
+  readonly approvalClock: {
+    readonly id: string;
+    readonly escalation: string;
+    readonly expiry: string;
+  };
   readonly exportHref: string;
   readonly exportLabel: string;
 }
 
 export interface SetupProofVM {
-  readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
   readonly engineLabel: string;
   readonly exportQuestion: string;
   readonly exportHint: string;
   readonly exportError: string;
 }
+
+export interface SetupActivatedSnapshotVM {
+  readonly snapshotVersion: string;
+  readonly snapshotHash: string;
+  readonly canonicalConfiguration: string;
+  readonly activatedAt: string;
+  readonly selections: SetupSelections;
+  readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
+}
+
+export type SetupActivationResult =
+  | { readonly ok: true; readonly snapshot: SetupActivatedSnapshotVM }
+  | { readonly ok: false; readonly error: string };
 
 export interface MoneyMovementSetupVM {
   readonly steps: readonly SetupStepVM[];

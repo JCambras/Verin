@@ -14,10 +14,8 @@ import type {
   SetupChoiceOptionVM,
   SetupFirmId,
   SetupPolicyGroupVM,
-  SetupProofFirmVM,
 } from "./setup-model";
 import { derivedMetric, fixtureMetric, prov } from "./provenance";
-import { getJourney } from "./journey";
 import {
   CANONICAL_REQUEST,
   DEMO_NOW,
@@ -28,10 +26,6 @@ import {
   type SignedLiquidityCase,
 } from "./data";
 
-/** The branch the setup's two outcomes are drawn from: one recent, unverified bank
- * instruction, which is exactly where Firm A and Firm B diverge. Both the on-screen
- * proof identity and each export target name it, so they cannot disagree. */
-const SETUP_SCENARIO_ID = "recent-bank-change-block";
 const DERIVED_INPUTS = [
   prov("synthetic-fixture", OBSERVED_RECENT),
   prov("synthetic-fixture", OBSERVED_RECENT),
@@ -246,30 +240,6 @@ function firmChoices(
   return { firmId, initialOptionId, options };
 }
 
-/**
- * The export identity for one firm, READ from the decision-record view model the
- * export target renders. Nothing here is restated: scenario, firm, decision id,
- * input hash, decision hash, and policy-bearing bundle hash are the destination's
- * own values, so the step that claims hash-bound identity cannot navigate away.
- */
-function proofFirm(firmId: SetupFirmId): SetupProofFirmVM {
-  const record = getJourney(SETUP_SCENARIO_ID, firmId).record;
-  const identity = record.identity;
-  return {
-    firmId: identity.firm.id as SetupFirmId,
-    firmLabel: identity.firm.label,
-    scenarioId: identity.scenario.id,
-    scenarioLabel: identity.scenario.label,
-    decisionId: identity.decisionId,
-    inputHash: identity.inputHash,
-    decisionHash: identity.decisionHash,
-    bundleHash: identity.bundleHash,
-    policyVersion: record.hashes.policyVersion,
-    exportHref: `/app/demo/record?scenario=${identity.scenario.id}&firm=${identity.firm.id}`,
-    exportLabel: `${identity.firm.label} decision record`,
-  };
-}
-
 function group(
   id: SetupPolicyGroupVM["id"],
   title: string,
@@ -377,7 +347,6 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       ],
     },
     proof: {
-      firms: [proofFirm("firm-a"), proofFirm("firm-b")],
       engineLabel: "Labeled deterministic presentation builder · not production evaluator output",
       exportQuestion: "Which profile's decision record do you want to export?",
       exportHint: "The setup produced two outcomes, so the export names one of them. The identifiers above are what the exported record carries.",

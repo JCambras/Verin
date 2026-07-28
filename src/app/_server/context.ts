@@ -17,6 +17,12 @@ import { actorRefOf, authorizeGovernedAction, type ActionGrant, type GovernedAct
 
 export { getDb, requireRole };
 
+interface SessionCookieSource {
+  readonly cookies: {
+    get(name: string): { readonly value: string } | undefined;
+  };
+}
+
 /**
  * ONE identity resolution per request. Sliding renewal ROTATES the session id and
  * writes the new cookie to the RESPONSE store, while `req.cookies` keeps the id the
@@ -27,9 +33,9 @@ export { getDb, requireRole };
  * keeps the fence-required prologue shape (one `requireActionGrant` per action) while
  * leaving rotation exactly where ADR-0008/D-030 put it: inside requirePrincipal.
  */
-const REQUEST_PRINCIPAL = new WeakMap<NextRequest, Promise<Result<Principal, AppError>>>();
+const REQUEST_PRINCIPAL = new WeakMap<SessionCookieSource, Promise<Result<Principal, AppError>>>();
 
-export function requirePrincipal(req: NextRequest): Promise<Result<Principal, AppError>> {
+export function requirePrincipal(req: SessionCookieSource): Promise<Result<Principal, AppError>> {
   const inFlight = REQUEST_PRINCIPAL.get(req);
   if (inFlight) return inFlight;
   const resolving = resolvePrincipalOnce(req);
@@ -37,7 +43,7 @@ export function requirePrincipal(req: NextRequest): Promise<Result<Principal, Ap
   return resolving;
 }
 
-async function resolvePrincipalOnce(req: NextRequest): Promise<Result<Principal, AppError>> {
+async function resolvePrincipalOnce(req: SessionCookieSource): Promise<Result<Principal, AppError>> {
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   if (!cookie) return err(appError("AUTH_FAILED", "Not signed in."));
   const db = await getDb();
@@ -55,7 +61,7 @@ async function resolvePrincipalOnce(req: NextRequest): Promise<Result<Principal,
   return ok(principal);
 }
 
-export async function requirePrincipalWithRole(req: NextRequest, allowed: readonly Role[]): Promise<Result<Principal, AppError>> {
+export async function requirePrincipalWithRole(req: SessionCookieSource, allowed: readonly Role[]): Promise<Result<Principal, AppError>> {
   const p = await requirePrincipal(req);
   if (!p.ok) return p;
   return requireRole(p.value, allowed);

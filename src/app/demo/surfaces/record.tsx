@@ -29,10 +29,10 @@ function DocSection({ n, title, children }: { n: number; title: string; children
 }
 
 /** On paper (and on this surface) reasoning prints expanded - never behind a tap. */
-function ExpandedWhy({ why }: { why: WhyVM }) {
+function ExpandedWhy({ why, testId }: { why: WhyVM; testId?: string }) {
   return (
     <p className="text-sm text-slate-700">
-      {why.reason}
+      <span data-testid={testId}>{why.reason}</span>
       {why.regulation ? <span className="mt-0.5 block text-xs text-slate-600">Regulation: {why.regulation}</span> : null}
     </p>
   );
@@ -147,7 +147,9 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Policy version</dt>
-                    <dd className="font-mono text-xs text-slate-800">{vm.hashes.policyVersion}</dd>
+                    <dd className="font-mono text-xs text-slate-800" data-testid="record-identity-policy-version">
+                      {vm.hashes.policyVersion}
+                    </dd>
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Household instructions</dt>
@@ -157,6 +159,34 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     <dt className="text-xs text-slate-600">Audit-chain position</dt>
                     <dd className="font-mono text-xs text-slate-800">{vm.hashes.auditPosition}</dd>
                   </div>
+                  {vm.activatedConfiguration ? (
+                    <>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">Activated snapshot version</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-snapshot-version">
+                          {vm.activatedConfiguration.snapshotVersion}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">Configuration provenance</dt>
+                        <dd className="text-xs text-slate-800" data-testid="record-identity-configuration-provenance">
+                          {vm.activatedConfiguration.configurationProvenance}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col sm:col-span-2">
+                        <dt className="text-xs text-slate-600">Activated snapshot hash</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-snapshot-hash">
+                          {vm.activatedConfiguration.snapshotHash}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col sm:col-span-2">
+                        <dt className="text-xs text-slate-600">Configuration hash</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-configuration-hash">
+                          {vm.activatedConfiguration.configurationHash}
+                        </dd>
+                      </div>
+                    </>
+                  ) : null}
                 </dl>
                 <PrintButton />
               </header>
@@ -193,6 +223,12 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                   <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.disposition.fakeClass]} />
                 </p>
                 <p className="text-sm text-slate-800">{vm.disposition.headline}</p>
+                <p className="text-xs text-slate-600">
+                  Disposition code:{" "}
+                  <span className="font-mono" data-testid="record-identity-disposition">
+                    {vm.disposition.kind}
+                  </span>
+                </p>
                 {vm.disposition.blockers?.map((b) => (
                   <p key={b.condition} className="text-sm text-slate-700">
                     Blocker: {b.condition} (resolution: {b.affordanceLabel})
@@ -204,7 +240,7 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     Source: <span className="font-mono text-xs">{vm.disposition.source.ref}</span>
                   </p>
                 ) : null}
-                <ExpandedWhy why={vm.disposition.why} />
+                <ExpandedWhy why={vm.disposition.why} testId="record-identity-explanation" />
                 {vm.disposition.doctrine ? <p className="text-sm text-slate-600">{vm.disposition.doctrine}</p> : null}
               </DocSection>
 

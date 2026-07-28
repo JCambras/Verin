@@ -12,6 +12,21 @@ import { login, PRINCIPAL } from "./helpers";
  */
 
 const SHOTS = "demo-screens";
+const IDENTITY_FIELDS = [
+  "snapshot-version",
+  "snapshot-hash",
+  "scenario",
+  "firm",
+  "decision-id",
+  "input-hash",
+  "policy-version",
+  "configuration-hash",
+  "configuration-provenance",
+  "disposition",
+  "explanation",
+  "decision-hash",
+  "bundle-hash",
+] as const;
 
 async function checkAxe(page: Page, name: string) {
   // Settle the surface-entry fade (design §12.2) first: scanning mid-animation
@@ -34,6 +49,30 @@ async function snap(page: Page, index: number, name: string) {
 /** Every fake-backed surface must show the development-only provenance badge. */
 async function expectDevBadge(page: Page) {
   expect(await page.getByTestId("dev-provenance-badge").count()).toBeGreaterThan(0);
+}
+
+async function readProofIdentity(
+  page: Page,
+  firmId: "firm-a" | "firm-b",
+): Promise<Map<string, string>> {
+  const identity = new Map<string, string>();
+  for (const field of IDENTITY_FIELDS) {
+    const value = (
+      await page.getByTestId(`identity-${firmId}-${field}`).textContent()
+    )?.trim();
+    expect(value, `${firmId} ${field} must be shown before export`).toBeTruthy();
+    identity.set(field, value!);
+  }
+  return identity;
+}
+
+async function expectRecordIdentity(
+  page: Page,
+  identity: ReadonlyMap<string, string>,
+) {
+  for (const [field, value] of identity) {
+    await expect(page.getByTestId(`record-identity-${field}`)).toHaveText(value);
+  }
 }
 
 test("the setup-first journey is clickable end-to-end on labeled fakes", async ({ page }) => {
@@ -153,13 +192,8 @@ test("each firm's export lands on the record whose identifiers the proof step sh
     await page.getByRole("button", { name: "Run under both profiles" }).click();
     await page.getByRole("button", { name: "View complete proof trail" }).click();
 
-    // Read all six canonical values shown immediately before export.
-    const shown = new Map<string, string>();
-    for (const field of ["scenario", "firm", "decision-id", "input-hash", "decision-hash", "bundle-hash"]) {
-      const value = (await page.getByTestId(`identity-${firmId}-${field}`).textContent())?.trim();
-      expect(value, `${firmId} ${field} must be shown before export`).toBeTruthy();
-      shown.set(field, value!);
-    }
+    // Read the complete activated configuration and canonical decision identity.
+    const shown = await readProofIdentity(page, firmId);
     expect(shown.get("decision-id")).toContain(firmId);
 
     // Export without choosing a firm names the gap instead of guessing one.
@@ -169,18 +203,162 @@ test("each firm's export lands on the record whose identifiers the proof step sh
     const firmLabel = firmId === "firm-a" ? "Firm A" : "Firm B";
     await page.getByTestId("export-choice").getByRole("radio", { name: new RegExp(firmLabel) }).check();
     await page.getByRole("button", { name: "Export decision record" }).click();
-    await expect(page).toHaveURL(new RegExp(`/app/demo/record\\?scenario=recent-bank-change-block&firm=${firmId}$`));
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/app/demo/record\\?scenario=recent-bank-change-block&firm=${firmId}&activation=[a-f0-9]{64}$`,
+      ),
+    );
 
-    // Byte-for-byte: scenario, firm, decision id, shared request/evidence input
-    // hash, decision hash, and firm-specific policy-bearing bundle hash survive.
-    for (const [field, value] of shown) {
-      await expect(page.getByTestId(`record-identity-${field}`)).toHaveText(value);
-    }
+    // Byte-for-byte: the frozen version, configuration, outcome, and all identity
+    // hashes survive the export boundary.
+    await expectRecordIdentity(page, shown);
   }
+});
+
+test("a changed selection freezes, exports, and requires reactivation after another edit", async ({
+  page,
+  context,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/setup");
+  for (const label of [
+    "Continue with both firms",
+    "Confirm required controls",
+    "Use this starting posture",
+    "Review signed impact",
+    "Send for approval",
+  ]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Acknowledge and activate demonstration" })
+    .click();
+  await page.getByRole("button", { name: "Run under both profiles" }).click();
+  await page
+    .getByRole("button", { name: "View complete proof trail" })
+    .click();
+  const priorIdentity = await readProofIdentity(page, "firm-a");
+  const priorHash = priorIdentity.get("snapshot-hash")!;
+
+  for (const heading of [
+    "Identical facts, different correct outcomes",
+    "Run the Smiths request under both profiles",
+    "A different human acknowledges immutable versions",
+    "See the impact on signed examples",
+    "Tune only the decisions that can legitimately differ",
+  ]) {
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  }
+
+  await page
+    .getByTestId("choice-reserve-firm-a")
+    .getByRole("radio", { name: /9 months/ })
+    .check();
+  await page.getByRole("button", { name: "Review signed impact" }).click();
+  await page.getByRole("button", { name: "Send for approval" }).click();
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await page
+    .getByRole("button", { name: "Acknowledge and activate demonstration" })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Confirm the distinct-human" }),
+  ).toBeVisible();
+
+  const priorRecord = await context.newPage();
+  await priorRecord.goto(
+    `/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&activation=${priorHash}`,
+  );
+  await expectRecordIdentity(priorRecord, priorIdentity);
+  await priorRecord.close();
+
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Acknowledge and activate demonstration" })
+    .click();
+  const changedVersion = (
+    await page.getByTestId("request-snapshot-version").textContent()
+  )?.trim();
+  const changedHash = (
+    await page.getByTestId("request-snapshot-hash").textContent()
+  )?.trim();
+  const changedPolicy = (
+    await page.getByTestId("request-firm-a-policy-version").textContent()
+  )?.trim();
+  expect(changedVersion).not.toBe(priorIdentity.get("snapshot-version"));
+  expect(changedHash).not.toBe(priorHash);
+  expect(changedPolicy).not.toBe("FA-4.2");
+
+  await page.getByRole("button", { name: "Run under both profiles" }).click();
+  const changedDisposition = (
+    await page.getByTestId("outcome-firm-a-disposition").textContent()
+  )?.trim();
+  const changedExplanation = (
+    await page.getByTestId("outcome-firm-a-explanation").textContent()
+  )?.trim();
+  await page
+    .getByRole("button", { name: "View complete proof trail" })
+    .click();
+  const changedIdentity = await readProofIdentity(page, "firm-a");
+  expect(changedIdentity.get("snapshot-version")).toBe(changedVersion);
+  expect(changedIdentity.get("snapshot-hash")).toBe(changedHash);
+  expect(changedIdentity.get("policy-version")).toBe(changedPolicy);
+  expect(changedIdentity.get("disposition")).toBe("proceed");
+  expect(changedIdentity.get("explanation")).toBe(changedExplanation);
+  expect(changedIdentity.get("decision-id")).not.toBe(
+    priorIdentity.get("decision-id"),
+  );
+  expect(changedIdentity.get("bundle-hash")).not.toBe(
+    priorIdentity.get("bundle-hash"),
+  );
+  expect(changedIdentity.get("decision-hash")).not.toBe(
+    priorIdentity.get("decision-hash"),
+  );
+  expect(changedDisposition).toBe("proceed");
+
+  await page
+    .getByTestId("export-choice")
+    .getByRole("radio", { name: /Firm A/ })
+    .check();
+  await page.getByRole("button", { name: "Export decision record" }).click();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/app/demo/record\\?scenario=recent-bank-change-block&firm=firm-a&activation=${changedHash}$`,
+    ),
+  );
+  await expectRecordIdentity(page, changedIdentity);
 });
 
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {
   await login(page, PRINCIPAL);
+
+  await page.goto("/app/demo/workspace?scenario=stale-evidence&firm=firm-a");
+  await expect(
+    page.getByText("Available cash", { exact: true }).locator(".."),
+  ).toContainText("as of 2026-07-26");
+  await expect(
+    page
+      .getByText("Planned monthly withdrawal", { exact: true })
+      .locator(".."),
+  ).toContainText("as of 2026-06-09");
+  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
+  await expect(
+    page
+      .getByText("Available cash in the taxable brokerage account", {
+        exact: true,
+      })
+      .locator(".."),
+  ).toContainText("as of 2026-07-26");
+  await expect(
+    page
+      .getByText("Planned monthly withdrawal", { exact: true })
+      .locator(".."),
+  ).toContainText("as of 2026-06-09");
+  await page.goto("/app/demo/decision?scenario=stale-evidence&firm=firm-a");
+  await expect(page.getByTestId("blocker-row")).toContainText(
+    "Planned-withdrawal evidence is 47 days old",
+  );
 
   // Same request, same evidence, Firm B: BLOCKED with resolving affordances (amber).
   await page.goto("/app/demo/decision?scenario=recent-bank-change-block&firm=firm-b");
@@ -247,8 +425,12 @@ test("print posture: the record's identity header prints complete; app chrome an
   await page.emulateMedia({ media: "print" });
   // Design §9: wordmark, watermark chip, decision id, and the FULL hashes stay on paper.
   await expect(page.getByTestId("record-watermark")).toBeVisible();
-  await expect(page.getByText("dec-smiths-renovation-2026-0726").first()).toBeVisible();
-  await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
+  await expect(page.getByTestId("record-identity-decision-id")).toHaveText(
+    /^dec-firm-a-[a-f0-9]{24}$/,
+  );
+  await expect(page.getByTestId("record-identity-decision-hash")).toHaveText(
+    /^[a-f0-9]{64}$/,
+  );
   // App chrome and interactive controls disappear.
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Print this record" })).toBeHidden();
@@ -264,6 +446,19 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
   const defaulted = await page.goto("/app/demo/decision");
   expect(defaulted?.status()).toBe(200);
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
+
+  const missingSnapshot = "f".repeat(64);
+  const failedClosed = await page.goto(
+    `/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&activation=${missingSnapshot}`,
+  );
+  expect(failedClosed?.status()).toBe(200);
+  await expect(
+    page.getByRole("heading", { name: "Decision record unavailable" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Activated setup snapshot" }),
+  ).toContainText(missingSnapshot);
+  await expect(page.getByTestId("record-identity-decision-id")).toHaveCount(0);
 });
 
 test("legacy comparison and query activation aliases redirect to setup without activating", async ({ page }) => {

@@ -10,10 +10,9 @@ import type {
   SetupChoiceOptionVM,
   SetupFirmId,
   SetupPolicyGroupVM,
+  SetupSelections,
   SetupStepVM,
 } from "../setup-model";
-
-export type SetupSelections = Record<SetupFirmId, Record<SetupPolicyGroupVM["id"], string>>;
 
 export function selectedOption(
   groups: readonly SetupPolicyGroupVM[],
@@ -75,11 +74,13 @@ export function SetupHeading({ step }: { step: SetupStepVM }) {
 
 export function SetupActionRow({
   primaryLabel,
+  primaryDisabled,
   onPrimary,
   onBack,
   children,
 }: {
   primaryLabel: string;
+  primaryDisabled?: boolean;
   onPrimary: () => void;
   onBack?: () => void;
   children?: ReactNode;
@@ -97,7 +98,7 @@ export function SetupActionRow({
             Back
           </Button>
         ) : null}
-        <Button type="button" onClick={onPrimary}>
+        <Button type="button" onClick={onPrimary} disabled={primaryDisabled}>
           {primaryLabel}
         </Button>
       </div>
@@ -128,6 +129,7 @@ function OptionCard({
   onSelect: (optionId: string) => void;
 }) {
   const inputId = `${group.id}-${firmId}-${option.id}`;
+  const effect = option.smithsEffect;
   return (
     <label
       htmlFor={inputId}
@@ -153,6 +155,20 @@ function OptionCard({
         {selected && option.reserveMetric ? (
           <span className="mt-2 block">
             <Metric metric={option.reserveMetric} />
+          </span>
+        ) : null}
+        {selected ? (
+          <span className="mt-2 block rounded-md border border-slate-200 bg-white p-2">
+            <span className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={effect.status.status} label={effect.status.label} />
+              <span className="text-xs font-medium text-slate-800">{effect.summary}</span>
+            </span>
+            <span className="mt-1 block text-xs text-slate-600">{effect.detail}</span>
+            {effect.reachesAuthority === undefined ? null : (
+              <span className="mt-1 block text-xs text-slate-700">
+                {effect.reachesAuthority ? "Reaches authority" : "Stops before authority"}
+              </span>
+            )}
           </span>
         ) : null}
       </span>

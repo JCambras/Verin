@@ -10,13 +10,15 @@
  * Nothing here is computed at render time: the per-scenario `disposition` is contract
  * data (the same value scenarios.yaml carries), never derived in a component.
  */
+import { createHash } from "node:crypto";
 import type { DispositionKind } from "./model";
 
 // A fixed demo world clock keeps freshness and screenshots stable.
 export const DEMO_NOW = "2026-07-26";
 export const RETRIEVED_AT = "Jul 26, 09:14";
 export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
-export const OBSERVED_STALE = "2026-06-12"; // 44 days old: visibly receded, over policy age
+export const OBSERVED_GC09_BALANCE = "2026-07-26";
+export const OBSERVED_STALE = "2026-06-09"; // 47 days old: visibly receded, over policy age
 export const DEADLINE = "August 15, 2026";
 
 // ── The Smiths household (contract §2; scenarios.yaml household.required_shape) ──────
@@ -67,6 +69,7 @@ export interface FirmData {
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
   readonly eligibleRole: string | null;
+  readonly requesterConstraint: string | null;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
   readonly policyVersion: string;
   readonly policyActiveSince: string;
@@ -79,6 +82,7 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
     eligibleRole: "operations",
+    requesterConstraint: "may-not-satisfy-both-approvals",
     bankChangeHandling: "specialist-review",
     policyVersion: "FA-4.2",
     policyActiveSince: "2026-05-01",
@@ -90,6 +94,7 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
     eligibleRole: null, // contract silence - not invented (scenarios.yaml firms note)
+    requesterConstraint: null,
     bankChangeHandling: "block-until-independently-verified",
     policyVersion: "FB-2.1",
     policyActiveSince: "2026-06-18",
@@ -138,33 +143,24 @@ export const LOW_HEADROOM_LIQUIDITY: SignedLiquidityCase = {
   requestMinor: CANONICAL_REQUEST.amountMinor,
 };
 
-/** Per-firm decision identity for the one canonical Smiths request. Two profiles
- * evaluate the SAME firm-neutral request and evidence, so inputHash is shared. The
- * complete decision input bundle also includes policy/configuration, so bundleHash is
- * firm-specific. Every surface that shows or exports an identity reads this one map. */
 export interface DecisionIdentity {
   readonly decisionId: string;
   readonly inputHash: string;
   readonly decisionHash: string;
   readonly bundleHash: string;
 }
-const SHARED_INPUT_HASH = "5e21c9a6b3d84f07a5c1e92b64d38a7f0a3f9c2e41b7d5f08c6a92e13b48d70f";
-export const DECISION_IDENTITIES: Record<string, DecisionIdentity> = {
-  "firm-a": {
-    decisionId: "dec-smiths-renovation-2026-0726-firm-a",
-    inputHash: SHARED_INPUT_HASH,
-    decisionHash: "a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0",
-    bundleHash: "114daac26ffbec30d1bc147be68cd401146c1bdf089e3709ddfa47018bf2501e",
-  },
-  "firm-b": {
-    decisionId: "dec-smiths-renovation-2026-0726-firm-b",
-    inputHash: SHARED_INPUT_HASH,
-    decisionHash: "c8b40d7e29f61a35d0e74c92b18f5a63e07d2c94a5b31f68e2d90c47a6b1358f",
-    bundleHash: "de4aa9e12483df0a8340d9764c716bee0e5a036de925c8a57d2f5c2ff3d6ae5c",
-  },
-};
-export function decisionIdentityFor(firmId: string): DecisionIdentity {
-  return DECISION_IDENTITIES[firmId] ?? DECISION_IDENTITIES[DEFAULT_FIRM]!;
+
+export interface DecisionConfiguration {
+  readonly policyVersion: string;
+  readonly reserveMonths: number;
+  readonly freshnessDays: number;
+  readonly bankChangeHandling: FirmData["bankChangeHandling"];
+  readonly dualApprovalThresholdMinor: number;
+  readonly approvalsRequired: number;
+  readonly eligibleRole: string | null;
+  readonly requesterConstraint: string | null;
+  readonly approvalClockId: string;
+  readonly activatedSnapshotHash: string | null;
 }
 
 // The demo cast (synthetic personas, labeled like all fixture data).
@@ -190,7 +186,7 @@ export const IDS = {
 // fake service; it never computes an outcome.
 export interface ScenarioSpec {
   readonly bankChanged?: boolean;
-  readonly staleLiquidity?: boolean;
+  readonly stalePlannedWithdrawals?: boolean;
   readonly conflictingInstruction?: boolean;
   readonly thirdPartyDestination?: boolean;
   readonly invalidation?: boolean;
@@ -213,7 +209,7 @@ export const SCENARIOS: readonly ScenarioData[] = [
   { id: "safe-proceed", title: "Safe proceed", description: "No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.", outcomeClass: "governed submission", disposition: "proceed", spec: {} },
   { id: "recent-bank-change-block", title: "Recent bank change", description: "The recently changed bank instruction triggers each firm's configured handling for the same facts.", outcomeClass: "resolvable block", disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true } },
   { id: "permanent-prohibition", title: "Permanent prohibition", description: "The requested movement violates the household-specific destination restriction; no approval can waive it.", outcomeClass: "permanent prohibition", disposition: "prohibited", spec: { thirdPartyDestination: true } },
-  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { staleLiquidity: true } },
+  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { stalePlannedWithdrawals: true } },
   { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true } },
   { id: "dual-approval", title: "Dual approval", description: "The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.", outcomeClass: "quorum approval", disposition: "proceed", spec: {} },
   { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true } },
@@ -245,4 +241,124 @@ export function resolveFirmId(id: string | undefined): string | null {
 /** The disposition this scenario lands on for this firm - recorded contract data. */
 export function dispositionFor(scenario: ScenarioData, firmId: string): DispositionKind {
   return scenario.perFirm?.[firmId] ?? scenario.disposition;
+}
+
+export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration {
+  return {
+    policyVersion: firm.policyVersion,
+    reserveMonths: firm.reserveMonths,
+    freshnessDays: 30,
+    bankChangeHandling: firm.bankChangeHandling,
+    dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
+    approvalsRequired: firm.approvalsRequired,
+    eligibleRole: firm.eligibleRole,
+    requesterConstraint: firm.requesterConstraint,
+    approvalClockId: "1d-3d",
+    activatedSnapshotHash: null,
+  };
+}
+
+function digest(value: readonly unknown[]): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function canonicalDecisionInputFor(scenario: ScenarioData) {
+  const stalePlannedWithdrawals =
+    scenario.spec.stalePlannedWithdrawals === true;
+  const bankChanged = scenario.spec.bankChanged === true;
+  const destination = scenario.spec.thirdPartyDestination
+    ? THIRD_PARTY_DESTINATION
+    : bankChanged
+      ? BANK_INSTRUCTION.changed
+      : BANK_INSTRUCTION.stable;
+  return {
+    scenarioId: scenario.id,
+    request: {
+      text: CANONICAL_REQUEST.text,
+      amountMinor: CANONICAL_REQUEST.amountMinor,
+      purpose: CANONICAL_REQUEST.purpose,
+      deadline: CANONICAL_REQUEST.deadline,
+      destination,
+    },
+    evidence: {
+      availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
+      availableCashObservedAt: stalePlannedWithdrawals
+        ? OBSERVED_GC09_BALANCE
+        : OBSERVED_RECENT,
+      pendingApprovedMinor: SMITHS_LIQUIDITY.pendingMinor,
+      plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+      plannedWithdrawalObservedAt: stalePlannedWithdrawals
+        ? OBSERVED_STALE
+        : OBSERVED_RECENT,
+      bankInstruction: bankChanged
+        ? BANK_INSTRUCTION.changed
+        : BANK_INSTRUCTION.stable,
+      bankInstructionObservedAt: bankChanged
+        ? BANK_INSTRUCTION.changedOn
+        : "2026-05-20",
+      destinationRestrictionRef: DESTINATION_RESTRICTION.ref,
+      destinationRestriction: DESTINATION_RESTRICTION.text,
+      conflictingFundingInstructions:
+        scenario.spec.conflictingInstruction === true
+          ? [
+              "Renovation costs are paid from the Joint Taxable account",
+              "Large one-time needs are funded from the Smith Family Taxable account",
+            ]
+          : [],
+    },
+    branchFacts: {
+      invalidation: scenario.spec.invalidation === true,
+      competing: scenario.spec.competing === true,
+      duplicateRetry: scenario.spec.duplicateRetry === true,
+      partial: scenario.spec.partial === true,
+      delayedNigo: scenario.spec.delayedNigo === true,
+      specialistExpired: scenario.spec.specialistExpired === true,
+    },
+  };
+}
+
+export function decisionIdentityFor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  options: {
+    readonly configuration?: DecisionConfiguration;
+    readonly disposition?: DispositionKind;
+    readonly explanation?: string;
+  } = {},
+): DecisionIdentity {
+  const configuration = options.configuration ?? decisionConfigurationFor(firm);
+  const inputHash = digest([
+    "verin-demo-input-v2",
+    canonicalDecisionInputFor(scenario),
+  ]);
+  const bundleHash = digest([
+    "verin-demo-bundle-v1",
+    inputHash,
+    firm.id,
+    configuration.policyVersion,
+    configuration.reserveMonths,
+    configuration.freshnessDays,
+    configuration.bankChangeHandling,
+    configuration.dualApprovalThresholdMinor,
+    configuration.approvalsRequired,
+    configuration.eligibleRole,
+    configuration.requesterConstraint,
+    configuration.approvalClockId,
+    configuration.activatedSnapshotHash,
+  ]);
+  const disposition = options.disposition ?? dispositionFor(scenario, firm.id);
+  const decisionHash = digest([
+    "verin-demo-decision-v1",
+    scenario.id,
+    firm.id,
+    bundleHash,
+    disposition,
+    options.explanation ?? `${scenario.id}:${disposition}`,
+  ]);
+  return {
+    decisionId: `dec-${firm.id}-${decisionHash.slice(0, 24)}`,
+    inputHash,
+    decisionHash,
+    bundleHash,
+  };
 }

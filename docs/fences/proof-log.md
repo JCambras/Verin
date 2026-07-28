@@ -5492,10 +5492,11 @@ vacuously - including `SetupProofVM.stages`, one of the three dead fields PF-set
 removed, because `vm.stages` is read on `ApprovalVM` at `authority.tsx:42`.
 
 **Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts` RULE C. Reads are now
-keyed by the receiver type the checker resolves (`readProperties`), and a field is
-rendered only by a read on its DECLARING owner or on a structural projection of it (a
-presentation primitive's `SpineStation` prop against `SpineStationVM`). A receiver with
-no project-declared type falls back to a name-only read.
+keyed by the receiver declaration the checker resolves (`readProperties`), and a field
+is rendered only by a read whose symbol resolves to the actual interface declaration
+that owns it. Ownerless inline shapes, Records, and unrelated named structural subsets
+do not count. Delegation to a presentation primitive first projects the fields
+explicitly through the declaring view model.
 
 **Adversarial proof:** `SetupProofVM.stages` was re-declared and re-populated - the
 exact collision the old detector could not see. The production check failed with the
@@ -5508,7 +5509,9 @@ src/app/demo/setup-model.ts:164 :: SetupProofVM.stages is populated but never re
 The injection was reverted. Enabling owner-awareness also caught one more pre-existing
 dead field, `DecisionJourneyVM.outcomeClass` (the `outcomeClass` reads in the demo
 launcher are on `ScenarioData`, not on the journey view model); it was deleted with its
-population site in `journey.ts`.
+population site in `journey.ts`. Planted companions now separately prove that an
+ownerless `{ title: string }` prop and an unrelated named subset cannot rescue a dead
+same-name field.
 
 ## PF-setup-08 · a two-firm proof cannot export one firm's record
 
@@ -5521,22 +5524,28 @@ pushed a fixed `firm-a` record URL for both firms.
 
 **Fence:** `exportIdentityViolations` in
 `src/__tests__/fitness/demo-semantic-truth.test.ts`, plus the e2e proof in
-`e2e/demo-journey.spec.ts` that follows each export and compares the visible scenario,
-firm, decision id, shared firm-neutral input hash, decision hash, and firm-specific
-policy-bearing bundle hash on the exported record. All six values originate in
-`RecordVM.identity`; the proof card and export URL project that destination identity.
-The semantic fence additionally proves the two firms share one input hash while their
-bundle hashes and decision identities remain distinct.
+`e2e/demo-journey.spec.ts` that follows each export and compares the visible snapshot
+version and hash, scenario, firm, policy version, configuration hash and provenance,
+disposition and explanation, decision id, shared firm-neutral input hash, decision
+hash, and firm-specific policy-bearing bundle hash on the exported record. The bounded
+evaluator derives all values from the frozen activated selection. The semantic fence
+also proves stable identical inputs, distinct scenario and material-input identities,
+shared firm-neutral input hashes, distinct firm bundles, immutable prior snapshots,
+and fail-closed unsupported combinations.
 
-**Adversarial proof:** `proofFirm` was changed to emit `&firm=firm-a` for both firms.
-The production check failed with file:line:
+**Adversarial proof:** companions substitute the other firm's export, an invented input
+hash, a shared policy-bearing bundle, and a shared decision identity. Each is rejected
+with the evaluator source file and line. The browser proof changes Firm A's reserve,
+activates and runs it, compares every field through export, edits the activated draft,
+proves the prior snapshot still exports byte-identically, and requires a new
+acknowledgment before the edited draft can run.
 
 ```text
-src/app/demo/build-setup.ts:256 :: firm-b exports to firm "firm-a" - a two-firm proof may not export one firm's record
+src/app/demo/setup-evaluator.ts:339 :: firm-b exports to firm "firm-a" - a two-firm proof may not export one firm's record
 ```
 
-The injection was reverted. Companions additionally prove an invented input hash, a
-shared policy-bearing bundle hash, and a shared decision identity are all rejected.
+The injections are confined to companion inputs and the production snapshot remains
+unchanged.
 
 ## PF-setup-09 · a reserve projection cannot run on a partial liquidity basis
 
@@ -5549,7 +5558,10 @@ figures were called "available after reserve" for the same Smiths request.
 **Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` now pins the WHOLE basis
 (available, pending, request) for the signed Smiths cases on both surfaces, pins the
 GC-05 low-headroom basis and its expected disposition to the signed fixture, and
-recomputes the journey's headroom from that basis.
+recomputes the journey's headroom from that basis. The shared recent-bank-change
+comparison includes GC-04 explicitly, using its signed "identical facts to GC-03"
+relationship only for the omitted numeric balance while still reading GC-04's own
+request and pending evidence. A planted GC-04 request drift is rejected by name.
 
 **Adversarial proof:** `SMITHS_LIQUIDITY.pendingMinor` was set to the old unsigned
 `4_000_000`. The production check failed with four file:line violations naming both
@@ -5563,3 +5575,27 @@ src/app/demo/build-decision.ts:36 :: firm-b journey headroom 20900000 differs fr
 ```
 
 The injection was reverted.
+
+## PF-setup-10 · GC-09 freshness cannot move to the wrong evidence
+
+**Date:** 2026-07-28.
+
+**Invariant:** GC-09 records fresh available cash observed 2026-07-26 and a stale
+planned-withdrawal schedule observed 2026-06-09, 47 days before evaluation. Staleness
+must remain attached to the reserve-material planned-withdrawal evidence on both the
+workspace and evidence surfaces.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` reads both observations
+from the captain-signed GC-09 fixture and compares them to both rendered view models.
+It also pins the 47-day blocker and refresh affordance. `e2e/demo-journey.spec.ts`
+asserts the two provenance dates on both actual surfaces.
+
+**Adversarial proof:** the two timestamps were swapped in the evidence builder. The
+focused production check failed with both declaring file and line violations:
+
+```text
+src/app/demo/build-context.ts:44 :: available cash uses 2026-06-09, not the signed 2026-07-26
+src/app/demo/build-context.ts:47 :: planned withdrawals use 2026-07-26, not the signed stale timestamp 2026-06-09
+```
+
+The injection was reverted and the focused semantic suite passed all 26 tests.

@@ -3,12 +3,16 @@
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT } from "../model";
-import type { MoneyMovementSetupVM, SetupFirmId, SetupPolicyGroupVM } from "../setup-model";
+import type {
+  MoneyMovementSetupVM,
+  SetupFirmId,
+  SetupPolicyGroupVM,
+  SetupSelections,
+} from "../setup-model";
 import {
   CategoryLabel,
   DemoNotice,
   PolicyChoiceGroup,
-  type SetupSelections,
   selectedOption,
 } from "./setup-shared";
 

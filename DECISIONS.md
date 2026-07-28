@@ -3192,3 +3192,48 @@ means restoring two free-standing constants and deleting the whole-basis asserti
 `inert-turbopack-comment` remains resolved as an evidence-backed rejection, not a
 no-op-by-omission: `src/infrastructure/store/db.ts` is unchanged and PF-setup-06 records
 the build measurements showing the comment is load-bearing for Turbopack's file tracer.
+
+### D-064 · 2026-07-28 · reversible · Activated setup snapshots own their decisions
+
+Review exposed one underlying ownership defect: setup choices were interactive, but
+outcome proof and export still borrowed fixed signed records. Activation now calls one
+bounded deterministic evaluator that validates both firms and all five closed choice
+groups, freezes the exact selection into a deep-immutable snapshot, and derives its
+version and canonical hash. Signed default profiles retain their signed policy
+versions; any supported mutation receives a demonstration-only profile version and
+provenance. Unsupported combinations fail closed before a run or export and name the
+combination.
+
+The activated snapshot owns every subsequent setup value: policy version,
+configuration hash and provenance, disposition and explanation, scenario and firm,
+shared firm-neutral input hash, firm-specific policy-bearing bundle hash, decision id,
+decision hash, authority reachability, approval clock, and export target. The record
+route resolves only a registered snapshot and fails closed rather than substituting a
+signed record. Editing a choice clears the active client snapshot and attestation; the
+prior server snapshot remains immutable and addressable, while the new draft requires
+another acknowledgment and activation.
+
+Canonical identity is derived from the scenario, firm, actual canonical
+request/evidence input, complete policy configuration, disposition, and explanation.
+Repeated identical inputs are stable. Firm-neutral facts share one input hash, while a
+different scenario, material input, firm policy, or activated configuration changes
+the bundle and decision identity.
+
+GC-09 now renders the signed fresh available-cash observation from 2026-07-26 and the
+stale planned-withdrawal observation from 2026-06-09 on both workspace and evidence
+surfaces. The semantic fence includes GC-04 in the identical recent-bank-change basis,
+and RULE C accepts only reads tied to the actual declaring view-model symbol. Ownerless
+and unrelated structural same-name reads fail. The 200 percent text path exercises all
+nine steps through proof, and the replacement measurements are recorded as a
+commit-bound historical snapshot.
+
+**Why:** activation, evaluation, proof, identity, and export are one ownership
+boundary. Allowing any later surface to borrow another record makes the activation
+claim false even when each individual screen looks plausible.
+
+**Revert path:** remove the demonstration snapshot evaluator and store together, then
+restore a non-interactive signed-profile path whose only possible exports are its
+fixed signed records.
+
+PF-setup-06 remains unchanged: the Turbopack ignore hint is still load-bearing and
+`src/infrastructure/store/db.ts` was not modified.

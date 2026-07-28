@@ -291,6 +291,13 @@ export interface RecordIdentityVM {
   readonly bundleHash: string;
 }
 
+export interface ActivatedConfigurationRecordVM {
+  readonly snapshotVersion: string;
+  readonly snapshotHash: string;
+  readonly configurationHash: string;
+  readonly configurationProvenance: string;
+}
+
 export interface RecordVM {
   readonly identity: RecordIdentityVM;
   readonly header: {
@@ -303,6 +310,7 @@ export interface RecordVM {
     readonly instructionVersion: string;
     readonly auditPosition: string;
   };
+  readonly activatedConfiguration: ActivatedConfigurationRecordVM | null;
   readonly intent: IntentVM;
   readonly evidence: readonly EvidenceRowVM[];
   readonly disposition: DispositionVM;

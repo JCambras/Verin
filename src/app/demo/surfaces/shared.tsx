@@ -89,9 +89,13 @@ export function SurfaceShell({
   description?: string;
   children: ReactNode;
 }) {
+  const renderedStations = spine?.stations.map((station) => ({
+    id: station.id,
+    state: station.state,
+  }));
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
-      {spine ? <DecisionSpine stations={spine.stations} stateSlot={spine.stateSlot ?? null} /> : null}
+      {spine ? <DecisionSpine stations={renderedStations!} stateSlot={spine.stateSlot ?? null} /> : null}
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
         {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}

@@ -23,11 +23,11 @@ function opacityForAge(asOf: string): number {
 export function FreshValue({ provenance, children }: { provenance: RecordProvenance; children: ReactNode }) {
   const label = provenanceLabel(provenance);
   return (
-    <span className="inline-flex items-baseline gap-1.5">
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-baseline gap-1.5">
       <span style={{ opacity: opacityForAge(provenance.asOf), transition: "opacity 150ms ease" }} title={label}>
         {children}
       </span>
-      <span className="text-xs text-slate-600">· {label}</span>
+      <span className="min-w-0 break-words text-xs text-slate-600">· {label}</span>
     </span>
   );
 }

@@ -41,11 +41,29 @@ async function assertAxe(page: Page, label: string) {
 }
 
 async function assertNoPageOverflow(page: Page) {
-  const dimensions = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
+  const dimensions = await page.evaluate(() => {
+    const clientWidth = document.documentElement.clientWidth;
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth,
+      offenders: [...document.querySelectorAll("*")]
+        .filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.right > clientWidth + 1 || rect.left < -1;
+        })
+        .slice(0, 12)
+        .map((element) => ({
+          tag: element.tagName,
+          testId: element.getAttribute("data-testid"),
+          text: element.textContent?.trim().slice(0, 80),
+          rect: element.getBoundingClientRect().toJSON(),
+        })),
+    };
+  });
+  expect(
+    dimensions.scrollWidth,
+    JSON.stringify(dimensions.offenders, null, 2),
+  ).toBe(dimensions.clientWidth);
 }
 
 async function assertReachableTargets(page: Page, expectChoiceInputs: boolean) {
@@ -205,7 +223,9 @@ test("the full setup journey is keyboard operable and announces activation error
   await expect(firmBExport).toBeChecked();
   await exportButton.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/app\/demo\/record\?scenario=recent-bank-change-block&firm=firm-b$/);
+  await expect(page).toHaveURL(
+    /\/app\/demo\/record\?scenario=recent-bank-change-block&firm=firm-b&activation=[a-f0-9]{64}$/,
+  );
 });
 
 test("200 percent text, reduced motion, and software-keyboard posture stay safe", async ({ page }) => {
@@ -222,17 +242,27 @@ test("200 percent text, reduced motion, and software-keyboard posture stay safe"
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "200%";
   });
-  await assertNoPageOverflow(page);
-  await expect(page.getByRole("heading", { name: STEPS[0].heading })).toBeVisible();
-
-  for (const step of STEPS.slice(0, 5)) {
-    await page.getByRole("button", { name: step.action }).click();
+  for (let index = 0; index < STEPS.length; index += 1) {
+    const step = STEPS[index]!;
+    await expect(
+      page.getByRole("heading", { name: step.heading }),
+    ).toBeVisible();
+    await assertNoPageOverflow(page);
+    await assertReachableTargets(page, step.choiceInputs);
+    await assertActionClearance(page);
+    await expect(page.getByTestId("setup-action-row")).toBeVisible();
+    const action = page.getByRole("button", { name: step.action });
+    await expect(action).toBeVisible();
+    await expect(action).toBeEnabled();
+    if (step.id === "activation") {
+      await expect(
+        page.locator('input:not([type="checkbox"]):not([type="radio"])'),
+      ).toHaveCount(0);
+      const checkbox = page.getByRole("checkbox");
+      await checkbox.focus();
+      await checkbox.scrollIntoViewIfNeeded();
+      await checkbox.check();
+    }
+    if (index < STEPS.length - 1) await action.click();
   }
-  await expect(page.locator('input:not([type="checkbox"]):not([type="radio"])')).toHaveCount(0);
-  const checkbox = page.getByRole("checkbox");
-  await checkbox.focus();
-  await checkbox.scrollIntoViewIfNeeded();
-  await assertNoPageOverflow(page);
-  await assertActionClearance(page);
-  await expect(page.getByTestId("setup-action-row")).toBeVisible();
 });

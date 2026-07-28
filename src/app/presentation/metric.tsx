@@ -23,7 +23,7 @@ export function Metric({ metric }: { metric: DisplayMetric }) {
         <span className="font-semibold tabular-nums text-slate-900">{formatMetricValue(metric)}</span>
       </FreshValue>
       {watermark ? (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" data-testid="metric-watermark">
+        <span className="max-w-full break-words rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" data-testid="metric-watermark">
           {watermark}
         </span>
       ) : null}

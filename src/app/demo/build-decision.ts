@@ -9,7 +9,7 @@
  */
 import { metric } from "@contracts/metric";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
-import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
+import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
@@ -23,6 +23,7 @@ import {
   SMITHS_LIQUIDITY,
   decisionIdentityFor,
   dispositionFor,
+  type DecisionIdentity,
   type FirmData,
   type ScenarioData,
 } from "./data";
@@ -65,10 +66,10 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
       affordanceLabel: "Request independent verification of the bank instruction",
     });
   }
-  if (spec.staleLiquidity) {
+  if (spec.stalePlannedWithdrawals) {
     out.push({
-      condition: "Liquidity evidence is forty-four days old; policy allows thirty",
-      affordanceLabel: "Refresh liquidity evidence",
+      condition: "Planned-withdrawal evidence is 47 days old; policy allows 30",
+      affordanceLabel: "Refresh planned-withdrawal evidence",
     });
   }
   if (spec.conflictingInstruction) {
@@ -90,8 +91,11 @@ function proceedWhy(firm: FirmData, bankChanged: boolean | undefined): WhyVM {
   };
 }
 
-export function buildDisposition(scenario: ScenarioData, firm: FirmData): DispositionVM {
-  const kind = dispositionFor(scenario, firm.id);
+export function buildDisposition(
+  scenario: ScenarioData,
+  firm: FirmData,
+  kind: DispositionKind = dispositionFor(scenario, firm.id),
+): DispositionVM {
   if (kind === "prohibited") {
     return {
       kind,
@@ -175,7 +179,11 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData): Rec
   };
 }
 
-export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): PolicyTraceVM {
+export function buildPolicyTrace(
+  scenario: ScenarioData,
+  firm: FirmData,
+  kind: DispositionKind = dispositionFor(scenario, firm.id),
+): PolicyTraceVM {
   const spec = scenario.spec;
   const reserveCite = firm.id === "firm-a" ? `${firm.policyVersion} §2` : `${firm.policyVersion} §3`;
   const rows = [
@@ -189,7 +197,9 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
     {
       order: 2,
       rule: "Cash-reserve floor (months of planned withdrawals)",
-      result: spec.staleLiquidity ? "Cannot evaluate - liquidity evidence is older than policy allows" : "Satisfied after this movement",
+      result: spec.stalePlannedWithdrawals
+        ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
+        : "Satisfied after this movement",
       version: reserveCite,
       why: { reason: `${firm.name} preserves ${firm.reserveMonths === 6 ? "six" : "twelve"} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
     },
@@ -214,7 +224,7 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
     },
   ];
   return {
-    spine: buildSpine("Decision", DISPOSITION_BADGES[dispositionFor(scenario, firm.id)]),
+    spine: buildSpine("Decision", DISPOSITION_BADGES[kind]),
     firmPolicyVersion: firm.policyVersion,
     householdInstructionVersion: "HH-INSTR-SMITH v3",
     rows,
@@ -224,7 +234,22 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
 
 /** Approval stages. `phase` selects the recorded moment the surface shows: "gate"
  * (the authority surface mid-journey) or "final" (what the printable record shows). */
-export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate" | "final"): ApprovalStageVM[] {
+export interface ApprovalClock {
+  readonly escalation: string;
+  readonly expiry: string;
+}
+
+const DEFAULT_APPROVAL_CLOCK: ApprovalClock = {
+  escalation: "Escalates after 1 day",
+  expiry: "Expires after 3 days",
+};
+
+export function buildStages(
+  scenario: ScenarioData,
+  firm: FirmData,
+  phase: "gate" | "final",
+  approvalClock: ApprovalClock = DEFAULT_APPROVAL_CLOCK,
+): ApprovalStageVM[] {
   const spec = scenario.spec;
   const stages: ApprovalStageVM[] = [];
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
@@ -254,6 +279,8 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
           requesterExcluded: true,
         },
       ],
+      expiry: approvalClock.expiry,
+      escalation: approvalClock.escalation,
     });
   } else {
     const approver =
@@ -267,6 +294,8 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
       requirement: `Below ${firm.name}'s dual-approval threshold at this amount. ${firm.name} policy does not name an approver role for this stage.`,
       stepState: phase === "final" && !spec.invalidation ? "done" : "active",
       actors: [approver],
+      expiry: approvalClock.expiry,
+      escalation: approvalClock.escalation,
     });
   }
   if (spec.bankChanged && firm.bankChangeHandling === "specialist-review") {
@@ -300,11 +329,15 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
   return stages;
 }
 
-export function buildApprovals(scenario: ScenarioData, firm: FirmData): ApprovalVM {
-  const identity = decisionIdentityFor(firm.id);
+export function buildApprovals(
+  scenario: ScenarioData,
+  firm: FirmData,
+  identity: DecisionIdentity = decisionIdentityFor(scenario, firm),
+  approvalClock: ApprovalClock = DEFAULT_APPROVAL_CLOCK,
+): ApprovalVM {
   return {
     spine: buildSpine("Authority"),
-    stages: buildStages(scenario, firm, "gate"),
+    stages: buildStages(scenario, firm, "gate", approvalClock),
     binding: { decisionHash: identity.decisionHash, bundleHash: identity.bundleHash },
     gate: {
       restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,

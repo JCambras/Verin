@@ -14,7 +14,7 @@ import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { buildRecord } from "./build-summary";
-import { dispositionFor, firmById, scenarioById } from "./data";
+import { decisionIdentityFor, dispositionFor, firmById, scenarioById } from "./data";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
 function reachOf(scenarioId: string, firmId: string) {
@@ -42,19 +42,25 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
   const firm = firmById(firmId);
   const reached = reachOf(scenario.id, firm.id);
   const stopNote = stopNoteOf(scenario.id, firm.id);
+  const recommendation = buildRecommendation(scenario, firm);
+  const disposition = recommendation.disposition;
+  const identity = decisionIdentityFor(scenario, firm, {
+    disposition: disposition.kind,
+    explanation: disposition.why.reason,
+  });
   return {
     scenarioId: scenario.id,
     firmId: firm.id,
     workspace: buildWorkspace(scenario),
     intent: buildIntent(scenario),
     evidence: buildEvidence(scenario),
-    recommendation: buildRecommendation(scenario, firm),
+    recommendation,
     policyTrace: buildPolicyTrace(scenario, firm),
-    approvals: reached.authority ? buildApprovals(scenario, firm) : null,
+    approvals: reached.authority ? buildApprovals(scenario, firm, identity) : null,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario) : null,
     verification: reached.execution ? buildVerification(scenario) : null,
     stopNote,
-    record: buildRecord(scenario, firm, reached, stopNote),
+    record: buildRecord(scenario, firm, reached, stopNote, { identity, disposition }),
   };
 }

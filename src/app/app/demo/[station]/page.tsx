@@ -8,6 +8,9 @@
 import { notFound, redirect } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
+import { activatedSetupSnapshot } from "@app/demo/setup-activation-store";
+import { buildActivatedRecord } from "@app/demo/setup-evaluator";
+import type { SetupFirmId } from "@app/demo/setup-model";
 import {
   DEMO_SEQUENCE,
   LEGACY_SETUP_ALIASES,
@@ -23,6 +26,7 @@ import { SafetySurface } from "@app/demo/surfaces/safety";
 import { ExecutionSurface } from "@app/demo/surfaces/execution";
 import { VerificationSurface } from "@app/demo/surfaces/verification";
 import { RecordSurface } from "@app/demo/surfaces/record";
+import { SurfaceShell } from "@app/demo/surfaces/shared";
 
 export const runtime = "nodejs";
 
@@ -51,6 +55,34 @@ export default async function DemoStationPage({
   const scenarioId = resolveScenarioId(first(sp.scenario));
   const firmId = resolveFirmId(first(sp.firm));
   if (!scenarioId || !firmId) notFound();
+  const activation = first(sp.activation);
+  if (station === "record" && activation) {
+    const snapshot = activatedSetupSnapshot(activation);
+    const snapshotFirm = snapshot?.firms.find(
+      (candidate) => candidate.firmId === firmId,
+    );
+    if (
+      !snapshot ||
+      !snapshotFirm ||
+      snapshotFirm.scenarioId !== scenarioId
+    ) {
+      return (
+        <SurfaceShell
+          title="Decision record unavailable"
+          description="The export failed closed before any unrelated signed record could be substituted."
+        >
+          <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+            Activated setup snapshot {activation} does not match scenario {scenarioId} and firm {firmId}.
+          </p>
+        </SurfaceShell>
+      );
+    }
+    return (
+      <RecordSurface
+        vm={buildActivatedRecord(snapshot, firmId as SetupFirmId)}
+      />
+    );
+  }
   const journey = getJourney(scenarioId, firmId);
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
 

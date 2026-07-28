@@ -7,11 +7,23 @@ import {
   LOW_HEADROOM_LIQUIDITY,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
+  decisionIdentityFor,
+  firmById,
   resolveFirmId,
   resolveScenarioId,
+  scenarioById,
 } from "@app/demo/data";
 import { headroomMinor } from "@app/demo/build-decision";
 import { getJourney } from "@app/demo/journey";
+import {
+  activateMoneyMovementSetup,
+  buildActivatedRecord,
+} from "@app/demo/setup-evaluator";
+import type {
+  SetupActivatedSnapshotVM,
+  SetupFirmId,
+  SetupSelections,
+} from "@app/demo/setup-model";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import { REPO_ROOT } from "./_fence-utils";
 
@@ -33,6 +45,7 @@ import { REPO_ROOT } from "./_fence-utils";
 
 interface GoldenCase {
   readonly caseId: string;
+  readonly scenarioRefNote: string;
   readonly firm: "firm-a" | "firm-b";
   readonly trigger: { readonly maskedRequestSummary: string };
   readonly firmConfiguration: {
@@ -44,6 +57,8 @@ interface GoldenCase {
   };
   readonly householdEvidence: readonly {
     readonly evidenceKind: string;
+    readonly observedAt: string;
+    readonly freshness: string;
     readonly summary: string;
   }[];
   readonly expectedDisposition: "proceed" | "blocked" | "prohibited";
@@ -143,11 +158,20 @@ function monthlyMinorFrom(caseFile: GoldenCase): number {
   return Number(match[1]) * 100;
 }
 
-function availableBalanceMinorFrom(caseFile: GoldenCase): number {
+function availableBalanceMinorFrom(
+  caseFile: GoldenCase,
+  identicalFactsBasis?: LiquidityBasis,
+): number {
   for (const evidence of caseFile.householdEvidence) {
     if (evidence.evidenceKind !== "account-balance") continue;
     const match = evidence.summary.match(/available balance (\d+) USD/);
     if (match) return Number(match[1]) * 100;
+  }
+  if (
+    identicalFactsBasis &&
+    caseFile.scenarioRefNote.includes("Identical facts to GC-03")
+  ) {
+    return identicalFactsBasis.availableMinor;
   }
   throw new Error(
     `${caseFile.caseId} does not carry a parseable available balance`,
@@ -179,9 +203,12 @@ function requestMinorFrom(caseFile: GoldenCase): number {
   return Number(match[1]) * 100;
 }
 
-function basisOf(caseFile: GoldenCase): LiquidityBasis {
+function basisOf(
+  caseFile: GoldenCase,
+  identicalFactsBasis?: LiquidityBasis,
+): LiquidityBasis {
   return {
-    availableMinor: availableBalanceMinorFrom(caseFile),
+    availableMinor: availableBalanceMinorFrom(caseFile, identicalFactsBasis),
     pendingMinor: pendingMinorFrom(caseFile),
     requestMinor: requestMinorFrom(caseFile),
   };
@@ -193,6 +220,44 @@ function sameBasis(left: LiquidityBasis, right: LiquidityBasis): boolean {
     left.pendingMinor === right.pendingMinor &&
     left.requestMinor === right.requestMinor
   );
+}
+
+export function sharedLiquidityBasisViolations(
+  reference: { readonly caseRef: string; readonly basis: LiquidityBasis },
+  comparisons: readonly {
+    readonly caseRef: string;
+    readonly basis: LiquidityBasis;
+  }[],
+): string[] {
+  return comparisons
+    .filter((candidate) => !sameBasis(reference.basis, candidate.basis))
+    .map(
+      (candidate) =>
+        `${candidate.caseRef} liquidity basis (${describeBasis(candidate.basis)}) differs from ${reference.caseRef} (${describeBasis(reference.basis)})`,
+    );
+}
+
+interface StaleEvidenceAssignment {
+  readonly availableCashAsOf: string;
+  readonly plannedWithdrawalsAsOf: string;
+}
+
+export function staleEvidenceViolations(
+  actual: StaleEvidenceAssignment,
+  truth: StaleEvidenceAssignment,
+): string[] {
+  const violations: string[] = [];
+  if (actual.availableCashAsOf !== truth.availableCashAsOf) {
+    violations.push(
+      `${sourceRef("src/app/demo/build-context.ts", "const availableCashAsOf")} :: available cash uses ${actual.availableCashAsOf}, not the signed ${truth.availableCashAsOf}`,
+    );
+  }
+  if (actual.plannedWithdrawalsAsOf !== truth.plannedWithdrawalsAsOf) {
+    violations.push(
+      `${sourceRef("src/app/demo/build-context.ts", "const plannedWithdrawalsAsOf")} :: planned withdrawals use ${actual.plannedWithdrawalsAsOf}, not the signed stale timestamp ${truth.plannedWithdrawalsAsOf}`,
+    );
+  }
+  return violations;
 }
 
 function describeBasis(basis: LiquidityBasis): string {
@@ -213,9 +278,18 @@ export function goldenSemanticTruth(): SemanticTruth {
   }
   const basisA = basisOf(happyA);
   const basisB = basisOf(happyB);
-  const basisRecent = basisOf(recentA);
-  if (!sameBasis(basisA, basisB) || !sameBasis(basisA, basisRecent)) {
-    throw new Error("signed cases disagree on the Smiths liquidity basis");
+  const basisRecentA = basisOf(recentA);
+  const basisRecentB = basisOf(recentB, basisRecentA);
+  const basisViolations = sharedLiquidityBasisViolations(
+    { caseRef: happyA.caseId, basis: basisA },
+    [
+      { caseRef: happyB.caseId, basis: basisB },
+      { caseRef: recentA.caseId, basis: basisRecentA },
+      { caseRef: recentB.caseId, basis: basisRecentB },
+    ],
+  );
+  if (basisViolations.length > 0) {
+    throw new Error(`signed cases disagree on the Smiths liquidity basis: ${basisViolations.join("; ")}`);
   }
 
   const firm = (
@@ -264,6 +338,30 @@ function initialOptionOf(
   );
   if (!option) throw new Error(`missing ${group?.id ?? "unknown"} initial option for ${firmId}`);
   return option;
+}
+
+function setupSelections(): SetupSelections {
+  const vm = buildMoneyMovementSetup();
+  const selections = {
+    "firm-a": {} as SetupSelections["firm-a"],
+    "firm-b": {} as SetupSelections["firm-b"],
+  };
+  for (const group of vm.policyGroups) {
+    for (const firm of group.firms) {
+      selections[firm.firmId][group.id] = firm.initialOptionId;
+    }
+  }
+  return selections;
+}
+
+function activatedSnapshot(
+  mutate?: (selections: SetupSelections) => void,
+): SetupActivatedSnapshotVM {
+  const selections = setupSelections();
+  mutate?.(selections);
+  const result = activateMoneyMovementSetup(selections);
+  if (!result.ok) throw new Error(result.error);
+  return result.snapshot;
 }
 
 export function demoSemanticFacts(): DemoSemanticFacts {
@@ -442,6 +540,12 @@ export interface ExportIdentity {
   readonly decisionHash: string;
   readonly bundleHash: string;
   readonly policyVersion: string;
+  readonly snapshotVersion: string;
+  readonly snapshotHash: string;
+  readonly configurationHash: string;
+  readonly configurationProvenance: string;
+  readonly disposition: string;
+  readonly explanation: string;
   readonly exportHref: string;
 }
 
@@ -450,7 +554,10 @@ export function exportIdentityViolations(
   rendered: (scenarioId: string, firmId: string) => ExportIdentity | null,
 ): string[] {
   const violations: string[] = [];
-  const where = sourceRef("src/app/demo/build-setup.ts", "function proofFirm");
+  const where = sourceRef(
+    "src/app/demo/setup-evaluator.ts",
+    "export function activateMoneyMovementSetup",
+  );
   for (const identity of claimed) {
     const url = new URL(identity.exportHref, "http://demo.invalid");
     const scenarioId = url.searchParams.get("scenario");
@@ -482,6 +589,12 @@ export function exportIdentityViolations(
       "decisionHash",
       "bundleHash",
       "policyVersion",
+      "snapshotVersion",
+      "snapshotHash",
+      "configurationHash",
+      "configurationProvenance",
+      "disposition",
+      "explanation",
     ] as const) {
       if (identity[field] !== target[field]) {
         violations.push(
@@ -506,9 +619,19 @@ export function exportIdentityViolations(
   return violations;
 }
 
-function renderedIdentity(scenarioId: string, firmId: string): ExportIdentity | null {
+function renderedIdentity(
+  snapshot: SetupActivatedSnapshotVM,
+  scenarioId: string,
+  firmId: string,
+): ExportIdentity | null {
   if (resolveScenarioId(scenarioId) === null || resolveFirmId(firmId) === null) return null;
-  const record = getJourney(scenarioId, firmId).record;
+  const record = buildActivatedRecord(snapshot, firmId as SetupFirmId);
+  if (
+    record.identity.scenario.id !== scenarioId ||
+    record.activatedConfiguration === null
+  ) {
+    return null;
+  }
   return {
     firmId: record.identity.firm.id,
     firmLabel: record.identity.firm.label,
@@ -519,39 +642,271 @@ function renderedIdentity(scenarioId: string, firmId: string): ExportIdentity | 
     decisionHash: record.identity.decisionHash,
     bundleHash: record.identity.bundleHash,
     policyVersion: record.hashes.policyVersion,
-    exportHref: `/app/demo/record?scenario=${record.identity.scenario.id}&firm=${record.identity.firm.id}`,
+    snapshotVersion: record.activatedConfiguration.snapshotVersion,
+    snapshotHash: record.activatedConfiguration.snapshotHash,
+    configurationHash: record.activatedConfiguration.configurationHash,
+    configurationProvenance:
+      record.activatedConfiguration.configurationProvenance,
+    disposition: record.disposition.kind,
+    explanation: record.disposition.why.reason,
+    exportHref: `/app/demo/record?scenario=${record.identity.scenario.id}&firm=${record.identity.firm.id}&activation=${record.activatedConfiguration.snapshotHash}`,
   };
+}
+
+function claimedIdentities(
+  snapshot: SetupActivatedSnapshotVM,
+): readonly [ExportIdentity, ExportIdentity] {
+  const identity = (firm: SetupActivatedSnapshotVM["firms"][number]) => ({
+    firmId: firm.firmId,
+    firmLabel: firm.firmLabel,
+    scenarioId: firm.scenarioId,
+    scenarioLabel: firm.scenarioLabel,
+    decisionId: firm.decisionId,
+    inputHash: firm.inputHash,
+    decisionHash: firm.decisionHash,
+    bundleHash: firm.bundleHash,
+    policyVersion: firm.policyVersion,
+    snapshotVersion: snapshot.snapshotVersion,
+    snapshotHash: snapshot.snapshotHash,
+    configurationHash: firm.configurationHash,
+    configurationProvenance: firm.configurationProvenance,
+    disposition: firm.disposition.kind,
+    explanation: firm.disposition.why.reason,
+    exportHref: firm.exportHref,
+  });
+  return [identity(snapshot.firms[0]), identity(snapshot.firms[1])];
 }
 
 describe("demo semantic-truth fence", () => {
   it("enforces: each firm's export identity equals the record its export target renders", () => {
-    const violations = exportIdentityViolations(buildMoneyMovementSetup().proof.firms, renderedIdentity);
+    const snapshot = activatedSnapshot();
+    const violations = exportIdentityViolations(
+      claimedIdentities(snapshot),
+      (scenarioId, firmId) => renderedIdentity(snapshot, scenarioId, firmId),
+    );
     expect(violations, `setup/export identity drift:\n${violations.join("\n")}`).toEqual([]);
   });
 
   it("enforces: firms share one neutral input hash but carry distinct bundles and decisions", () => {
-    const [firmA, firmB] = buildMoneyMovementSetup().proof.firms;
+    const [firmA, firmB] = activatedSnapshot().firms;
     expect(firmA.inputHash).toBe(firmB.inputHash);
     expect(firmA.bundleHash).not.toBe(firmB.bundleHash);
     expect(firmA.decisionId).not.toBe(firmB.decisionId);
     expect(firmA.decisionHash).not.toBe(firmB.decisionHash);
   });
 
+  it("enforces: canonical identity is stable and changes with scenario, firm, or material input", () => {
+    const stable = getJourney("safe-proceed", "firm-a").record.identity;
+    expect(getJourney("safe-proceed", "firm-a").record.identity).toEqual(stable);
+
+    const prohibited = getJourney(
+      "permanent-prohibition",
+      "firm-a",
+    ).record.identity;
+    expect(prohibited.bundleHash).not.toBe(stable.bundleHash);
+    expect(prohibited.decisionId).not.toBe(stable.decisionId);
+    expect(prohibited.decisionHash).not.toBe(stable.decisionHash);
+
+    const recentA = getJourney(
+      "recent-bank-change-block",
+      "firm-a",
+    ).record.identity;
+    const recentB = getJourney(
+      "recent-bank-change-block",
+      "firm-b",
+    ).record.identity;
+    expect(recentA.inputHash).toBe(recentB.inputHash);
+    expect(recentA.bundleHash).not.toBe(recentB.bundleHash);
+
+    const safeScenario = scenarioById("safe-proceed");
+    const materialInputChange = {
+      ...safeScenario,
+      spec: { ...safeScenario.spec, thirdPartyDestination: true },
+    };
+    const safeInput = decisionIdentityFor(
+      safeScenario,
+      firmById("firm-a"),
+    );
+    const changedInput = decisionIdentityFor(
+      materialInputChange,
+      firmById("firm-a"),
+    );
+    expect(changedInput.inputHash).not.toBe(safeInput.inputHash);
+    expect(changedInput.bundleHash).not.toBe(safeInput.bundleHash);
+    expect(changedInput.decisionId).not.toBe(safeInput.decisionId);
+
+    const initial = activatedSnapshot();
+    const changed = activatedSnapshot((selections) => {
+      selections["firm-a"].reserve = "9-months";
+    });
+    expect(changed.firms[0].inputHash).toBe(initial.firms[0].inputHash);
+    expect(changed.firms[0].bundleHash).not.toBe(initial.firms[0].bundleHash);
+    expect(changed.firms[0].decisionId).not.toBe(initial.firms[0].decisionId);
+    expect(changed.firms[0].decisionHash).not.toBe(initial.firms[0].decisionHash);
+  });
+
+  it("enforces: activation freezes one immutable configuration and forward-fixes mutations", () => {
+    const selections = setupSelections();
+    const first = activateMoneyMovementSetup(selections);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const frozenBytes = JSON.stringify(first.snapshot);
+    const priorPolicyVersion = first.snapshot.firms[0].policyVersion;
+    const priorDisposition = first.snapshot.firms[0].disposition;
+    const priorIdentity = {
+      decisionId: first.snapshot.firms[0].decisionId,
+      inputHash: first.snapshot.firms[0].inputHash,
+      bundleHash: first.snapshot.firms[0].bundleHash,
+      decisionHash: first.snapshot.firms[0].decisionHash,
+    };
+
+    selections["firm-a"].reserve = "9-months";
+    expect(JSON.stringify(first.snapshot)).toBe(frozenBytes);
+    expect(Object.isFrozen(first.snapshot)).toBe(true);
+    expect(Object.isFrozen(first.snapshot.selections["firm-a"])).toBe(true);
+
+    const second = activateMoneyMovementSetup(selections);
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.snapshot.snapshotVersion).not.toBe(
+      first.snapshot.snapshotVersion,
+    );
+    expect(second.snapshot.snapshotHash).not.toBe(first.snapshot.snapshotHash);
+    expect(second.snapshot.firms[0].policyVersion).not.toBe(priorPolicyVersion);
+    expect(second.snapshot.firms[0].policyVersion).not.toBe("FA-4.2");
+    expect(second.snapshot.firms[0].configurationProvenance).toBe(
+      "Demonstration-only configuration",
+    );
+    expect(first.snapshot.firms[0].disposition).toEqual(priorDisposition);
+    expect({
+      decisionId: first.snapshot.firms[0].decisionId,
+      inputHash: first.snapshot.firms[0].inputHash,
+      bundleHash: first.snapshot.firms[0].bundleHash,
+      decisionHash: first.snapshot.firms[0].decisionHash,
+    }).toEqual(priorIdentity);
+  });
+
+  it("enforces: unsupported setup combinations fail closed and name the combination", () => {
+    const selections = setupSelections();
+    selections["firm-a"].reserve = "18-months";
+    const result = activateMoneyMovementSetup(selections);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("Unsupported setup combination");
+    expect(result.error).toContain("firm-a:reserve=18-months");
+    expect(result.error).toContain("firm-b[");
+  });
+
+  it("enforces: GC-09 freshness stays attached to the signed evidence rows", () => {
+    const gc09 = signed(loadGolden("GC-09-stale-evidence.json"));
+    const available = gc09.householdEvidence.find(
+      (evidence) => evidence.evidenceKind === "account-balance",
+    )!;
+    const planned = gc09.householdEvidence.find(
+      (evidence) => evidence.evidenceKind === "planned-withdrawals",
+    )!;
+    expect(available.freshness).toBe("fresh");
+    expect(planned.freshness).toBe("stale");
+    const truth = {
+      availableCashAsOf: available.observedAt.slice(0, 10),
+      plannedWithdrawalsAsOf: planned.observedAt.slice(0, 10),
+    };
+    const journey = getJourney("stale-evidence", "firm-a");
+    const availableRow = journey.evidence.rows.find(
+      (row) =>
+        row.kind === "metric" &&
+        row.label === "Available cash in the taxable brokerage account",
+    );
+    const plannedRow = journey.evidence.rows.find(
+      (row) =>
+        row.kind === "metric" && row.label === "Planned monthly withdrawal",
+    );
+    expect(availableRow?.kind).toBe("metric");
+    expect(plannedRow?.kind).toBe("metric");
+    if (availableRow?.kind !== "metric" || plannedRow?.kind !== "metric") return;
+    const evidenceViolations = staleEvidenceViolations(
+      {
+        availableCashAsOf: availableRow.metric.provenance.asOf,
+        plannedWithdrawalsAsOf: plannedRow.metric.provenance.asOf,
+      },
+      truth,
+    );
+    const workspaceViolations = staleEvidenceViolations(
+      {
+        availableCashAsOf: journey.workspace.liquidity.provenance.asOf,
+        plannedWithdrawalsAsOf:
+          journey.workspace.plannedMonthlyWithdrawal.provenance.asOf,
+      },
+      truth,
+    );
+    expect(
+      [...evidenceViolations, ...workspaceViolations],
+      "GC-09 rendered timestamp assignment drift",
+    ).toEqual([]);
+    const blocker = journey.recommendation.disposition.blockers?.find(
+      (candidate) => candidate.condition.includes("Planned-withdrawal"),
+    );
+    expect(blocker?.condition).toContain("47 days");
+    expect(blocker?.affordanceLabel).toBe(
+      "Refresh planned-withdrawal evidence",
+    );
+  });
+
+  it("detects: swapped GC-09 evidence timestamps cannot pass", () => {
+    const truth = {
+      availableCashAsOf: "2026-07-26",
+      plannedWithdrawalsAsOf: "2026-06-09",
+    };
+    const violations = staleEvidenceViolations(
+      {
+        availableCashAsOf: truth.plannedWithdrawalsAsOf,
+        plannedWithdrawalsAsOf: truth.availableCashAsOf,
+      },
+      truth,
+    );
+    expect(violations).toHaveLength(2);
+    expect(violations[0]).toContain("build-context.ts:");
+    expect(violations[1]).toContain("planned withdrawals");
+  });
+
+  it("detects: GC-04 liquidity drift cannot hide behind the first three signed cases", () => {
+    const basis = {
+      availableMinor: 42_000_000,
+      pendingMinor: 0,
+      requestMinor: 7_500_000,
+    };
+    const violations = sharedLiquidityBasisViolations(
+      { caseRef: "GC-01", basis },
+      [
+        { caseRef: "GC-02", basis },
+        { caseRef: "GC-03", basis },
+        {
+          caseRef: "GC-04",
+          basis: { ...basis, requestMinor: basis.requestMinor + 100 },
+        },
+      ],
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("GC-04");
+  });
+
   describe("detects (companion): a proof that cannot survive its own export", () => {
     it("flags a hardcoded firm-a export behind a Firm B proof card", () => {
-      const [firmA, firmB] = buildMoneyMovementSetup().proof.firms;
+      const snapshot = activatedSnapshot();
+      const [firmA, firmB] = claimedIdentities(snapshot);
       const violations = exportIdentityViolations(
         [firmA, { ...firmB, exportHref: firmA.exportHref }],
-        renderedIdentity,
+        (scenarioId, firmId) => renderedIdentity(snapshot, scenarioId, firmId),
       );
       expect(violations.some((violation) => violation.includes("may not export one firm's record"))).toBe(true);
     });
 
     it("flags an invented input hash that the exported record does not carry", () => {
-      const [firmA, firmB] = buildMoneyMovementSetup().proof.firms;
+      const snapshot = activatedSnapshot();
+      const [firmA, firmB] = claimedIdentities(snapshot);
       const violations = exportIdentityViolations(
         [{ ...firmA, inputHash: "sha256:demo-7b15c2b2e2a7f0c9" }, firmB],
-        renderedIdentity,
+        (scenarioId, firmId) => renderedIdentity(snapshot, scenarioId, firmId),
       );
       expect(violations.some((violation) =>
         violation.includes("inputHash") && violation.includes("but the exported record carries"),
@@ -559,17 +914,22 @@ describe("demo semantic-truth fence", () => {
     });
 
     it("flags two policy-bearing firm bundles sharing one bundle hash", () => {
-      const [firmA, firmB] = buildMoneyMovementSetup().proof.firms;
+      const snapshot = activatedSnapshot();
+      const [firmA, firmB] = claimedIdentities(snapshot);
       const violations = exportIdentityViolations(
         [firmA, { ...firmB, bundleHash: firmA.bundleHash }],
-        renderedIdentity,
+        (scenarioId, firmId) => renderedIdentity(snapshot, scenarioId, firmId),
       );
       expect(violations.some((violation) => violation.includes("share one bundle hash"))).toBe(true);
     });
 
     it("flags two firm outcomes sharing one decision identity", () => {
-      const [firmA] = buildMoneyMovementSetup().proof.firms;
-      const violations = exportIdentityViolations([firmA, firmA], renderedIdentity);
+      const snapshot = activatedSnapshot();
+      const [firmA] = claimedIdentities(snapshot);
+      const violations = exportIdentityViolations(
+        [firmA, firmA],
+        (scenarioId, firmId) => renderedIdentity(snapshot, scenarioId, firmId),
+      );
       expect(violations.some((violation) => violation.includes("share one decision identity"))).toBe(true);
     });
   });

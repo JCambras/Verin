@@ -36,10 +36,9 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    resolves each receiver's type through the checker, so an unrelated view model
  *    that merely shares a property name (`ApprovalVM.stages` vs `SetupProofVM.stages`)
  *    cannot stand in as proof - the exact way a bare-name match passed vacuously.
- *    A receiver whose type is a structural projection of the view model (a
- *    presentation primitive's `SpineStation` prop against `SpineStationVM`) DOES
- *    count: that is the render path. A receiver with no project-declared type
- *    (an inline prop shape, a `Record`) falls back to a name-only read.
+ *    A read counts only when the receiver resolves to the actual declaration that
+ *    owns the field. Ownerless inline shapes, Records, and unrelated structural
+ *    subsets do not prove that a populated view-model field reaches a surface.
  *
  * All three detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
@@ -186,6 +185,7 @@ const CONSUMER_DIRS = ["src/app/demo/surfaces", "src/app/app/demo", "src/app/pre
 
 export interface DeclaredField {
   readonly file: string;
+  readonly sourcePath: string;
   readonly line: number;
   readonly owner: string;
   readonly name: string;
@@ -197,22 +197,23 @@ export function declaredViewModelFields(project: Project): DeclaredField[] {
     const file = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
     for (const iface of sf.getInterfaces()) {
       for (const property of iface.getProperties()) {
-        fields.push({ file, line: property.getStartLineNumber(), owner: iface.getName(), name: property.getName() });
+        fields.push({
+          file,
+          sourcePath: sf.getFilePath(),
+          line: property.getStartLineNumber(),
+          owner: iface.getName(),
+          name: property.getName(),
+        });
       }
     }
   }
   return fields;
 }
 
-/** One property READ, with the receiver types it was read through. A receiver that
- * resolves to no project-declared type (an inline `{ x: T }` prop, a `Record`, an
- * `any`) carries no owners and counts as a name-only read. Owners are what close the
- * collision hole: `vm.stages` on ApprovalVM can no longer stand in as proof that
- * SetupProofVM.stages is rendered. */
+/** One property READ, with the receiver declarations it was read through. */
 export interface ReadOwner {
   readonly name: string;
-  /** Every property the receiver type declares - used for the structural test below. */
-  readonly properties: readonly string[];
+  readonly declarationFiles: readonly string[];
 }
 export interface PropertyRead {
   readonly name: string;
@@ -234,12 +235,18 @@ function ownersOf(node: Node | undefined): ReadOwner[] {
   const constituents = type.isUnion() ? type.getUnionTypes() : [type];
   const owners = new Map<string, ReadOwner>();
   for (const constituent of constituents) {
-    const symbol = constituent.getAliasSymbol() ?? constituent.getSymbol();
+    const symbol = constituent.getSymbol() ?? constituent.getAliasSymbol();
     const name = symbol?.getName();
     if (!name || name === "__type" || name === "__object") continue;
     const declarations = symbol?.getDeclarations() ?? [];
     if (declarations.length === 0 || declarations.every((d) => d.getSourceFile().isDeclarationFile())) continue;
-    owners.set(name, { name, properties: constituent.getProperties().map((p) => p.getName()) });
+    const declarationFiles = declarations.map((declaration) =>
+      declaration.getSourceFile().getFilePath(),
+    );
+    owners.set(`${name}:${declarationFiles.join("|")}`, {
+      name,
+      declarationFiles,
+    });
   }
   return [...owners.values()];
 }
@@ -280,31 +287,22 @@ export function readProperties(project: Project): PropertyRead[] {
 }
 
 /**
- * A field is rendered when a consumer reads it through the DECLARING view model, or
- * through a structural projection of it - a presentation primitive whose prop type
- * (`SpineStation`) is a subset of the view model (`SpineStationVM`) IS the render
- * path. A read on an unrelated type that merely shares the property name is not.
+ * A field is rendered only when a consumer reads it through the declaration that
+ * owns the field. A same-name property on an inline or unrelated structural type is
+ * not evidence that the populated view-model field reached a surface.
  */
 export function deadFieldViolations(fields: readonly DeclaredField[], reads: readonly PropertyRead[]): string[] {
-  const declaredProperties = new Map<string, Set<string>>();
-  for (const field of fields) {
-    const set = declaredProperties.get(field.owner) ?? new Set<string>();
-    set.add(field.name);
-    declaredProperties.set(field.owner, set);
-  }
   const byName = new Map<string, PropertyRead[]>();
   for (const read of reads) byName.set(read.name, [...(byName.get(read.name) ?? []), read]);
 
   const rendered = (field: DeclaredField): boolean => {
-    const own = declaredProperties.get(field.owner) ?? new Set<string>();
-    return (byName.get(field.name) ?? []).some((read) => {
-      if (read.owners.length === 0) return true; // receiver type unknown - name-only read
-      return read.owners.some(
+    return (byName.get(field.name) ?? []).some((read) =>
+      read.owners.some(
         (owner) =>
-          owner.name === field.owner ||
-          (owner.properties.length > 0 && owner.properties.every((property) => own.has(property))),
-      );
-    });
+          owner.name === field.owner &&
+          owner.declarationFiles.includes(field.sourcePath),
+      ),
+    );
   };
 
   return fields
@@ -370,51 +368,83 @@ describe("demo-skeleton-honesty fence", () => {
 
   describe("detects (companion): drifted or dishonest skeletons CANNOT pass", () => {
     it("RULE C flags a populated-but-never-rendered field with file:line", () => {
-      const models = inMemoryProject({
+      const project = inMemoryProject({
         "/src/app/demo/setup-model.ts": `export interface ProofVM {\n  readonly inputHash: string;\n  readonly ghostField: string;\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `import type { ProofVM } from "../setup-model";\nexport function Proof({ vm }: { vm: ProofVM }) { return vm.inputHash; }`,
       });
-      const consumers = inMemoryProject({
-        "/src/app/demo/surfaces/proof.tsx": `export function Proof({ vm }: { vm: { inputHash: string } }) { return vm.inputHash; }`,
-      });
-      const violations = deadFieldViolations(declaredViewModelFields(models), readProperties(consumers));
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
       expect(violations.length).toBe(1);
       expect(violations[0]).toContain("setup-model.ts:3");
       expect(violations[0]).toContain("ProofVM.ghostField");
     });
 
     it("RULE C is owner-aware: an unrelated property of the same name does NOT rescue a dead field", () => {
-      const models = inMemoryProject({
+      const project = inMemoryProject({
         "/src/app/demo/setup-model.ts": `export interface SetupProofVM {\n  readonly engineLabel: string;\n  readonly stages: readonly string[];\n}`,
-      });
-      // `vm.stages` IS read here - on a different view model, exactly the collision
-      // that made the bare-name detector pass vacuously.
-      const consumers = inMemoryProject({
         "/src/app/demo/surfaces/authority.tsx": `interface ApprovalVM { readonly stages: readonly string[]; readonly binding: string }\nexport function Authority({ vm }: { vm: ApprovalVM }) { return [vm.stages, vm.binding]; }`,
-        "/src/app/demo/surfaces/proof.tsx": `interface SetupProofVM { readonly engineLabel: string; readonly stages: readonly string[] }\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.engineLabel; }`,
+        "/src/app/demo/surfaces/proof.tsx": `import type { SetupProofVM } from "../setup-model";\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.engineLabel; }`,
       });
-      const violations = deadFieldViolations(declaredViewModelFields(models), readProperties(consumers));
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
       expect(violations.length).toBe(1);
       expect(violations[0]).toContain("SetupProofVM.stages");
     });
 
     it("RULE C counts a read on the DECLARING owner as rendered", () => {
-      const models = inMemoryProject({
+      const project = inMemoryProject({
         "/src/app/demo/setup-model.ts": `export interface SetupProofVM {\n  readonly stages: readonly string[];\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `import type { SetupProofVM } from "../setup-model";\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.stages; }`,
       });
-      const consumers = inMemoryProject({
-        "/src/app/demo/surfaces/proof.tsx": `interface SetupProofVM { readonly stages: readonly string[] }\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.stages; }`,
-      });
-      expect(deadFieldViolations(declaredViewModelFields(models), readProperties(consumers))).toEqual([]);
+      expect(
+        deadFieldViolations(
+          declaredViewModelFields(project),
+          readProperties(project),
+        ),
+      ).toEqual([]);
     });
 
     it("RULE C counts destructured and string-indexed reads as rendered", () => {
-      const models = inMemoryProject({
+      const project = inMemoryProject({
         "/src/app/demo/setup-model.ts": `export interface StepVM {\n  readonly kicker: string;\n  readonly title: string;\n}`,
+        "/src/app/demo/surfaces/step.tsx": `import type { StepVM } from "../setup-model";\nexport function Step(vm: StepVM) {\n  const { kicker } = vm;\n  return kicker + vm["title"];\n}`,
       });
-      const consumers = inMemoryProject({
-        "/src/app/demo/surfaces/step.tsx": `export function Step(vm: Record<string, string>) {\n  const { kicker } = vm;\n  return kicker + vm["title"];\n}`,
+      expect(
+        deadFieldViolations(
+          declaredViewModelFields(project),
+          readProperties(project),
+        ),
+      ).toEqual([]);
+    });
+
+    it("RULE C rejects ownerless inline same-name properties", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofVM {\n  readonly title: string;\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `export function Proof({ vm }: { vm: { title: string } }) { return vm.title; }`,
       });
-      expect(deadFieldViolations(declaredViewModelFields(models), readProperties(consumers))).toEqual([]);
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain("ProofVM.title");
+    });
+
+    it("RULE C rejects an unrelated named structural subset", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofVM {\n  readonly title: string;\n  readonly detail: string;\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `interface TitleOnly { readonly title: string }\nexport function Proof({ vm }: { vm: TitleOnly }) { return vm.title; }`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(2);
+      expect(violations.some((violation) => violation.includes("ProofVM.title"))).toBe(true);
     });
 
     it("RULE A flags a skeleton scenario the contract does not know", () => {

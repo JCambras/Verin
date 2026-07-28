@@ -4,8 +4,11 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MoneyMovementSetupVM,
+  SetupActivatedSnapshotVM,
+  SetupActivationResult,
   SetupFirmId,
   SetupPolicyGroupVM,
+  SetupSelections,
   SetupStepVM,
 } from "../setup-model";
 import { ActivationBody, ChoicesBody, ImpactBody } from "./setup-choices";
@@ -15,7 +18,6 @@ import {
   SetupActionRow,
   SetupHeading,
   SetupProgress,
-  type SetupSelections,
 } from "./setup-shared";
 
 function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
@@ -32,6 +34,7 @@ function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
 function StepBody({
   vm,
   step,
+  snapshot,
   selections,
   onSelect,
   attested,
@@ -43,6 +46,7 @@ function StepBody({
 }: {
   vm: MoneyMovementSetupVM;
   step: SetupStepVM;
+  snapshot: SetupActivatedSnapshotVM | null;
   selections: SetupSelections;
   onSelect: (firmId: SetupFirmId, groupId: SetupPolicyGroupVM["id"], optionId: string) => void;
   attested: boolean;
@@ -74,29 +78,52 @@ function StepBody({
         />
       );
     case "request":
-      return <RequestBody vm={vm} selections={selections} />;
+      return snapshot ? (
+        <RequestBody vm={vm} snapshot={snapshot} />
+      ) : (
+        <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+          No immutable activated configuration is available. Return to activation and acknowledge the current draft.
+        </p>
+      );
     case "outcomes":
-      return <OutcomesBody vm={vm} selections={selections} />;
+      return snapshot ? (
+        <OutcomesBody vm={vm} snapshot={snapshot} />
+      ) : (
+        <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+          Outcomes are unavailable because the current choices have not been activated.
+        </p>
+      );
     case "proof":
-      return (
+      return snapshot ? (
         <ProofBody
           vm={vm}
-          selections={selections}
+          snapshot={snapshot}
           exportFirmId={exportFirmId}
           onExportFirm={onExportFirm}
           exportError={exportError}
         />
+      ) : (
+        <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+          Proof and export are unavailable because the current choices have not been activated.
+        </p>
       );
   }
 }
 
-export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) {
+export function MoneyMovementSetupSurface({
+  vm,
+  activate,
+}: {
+  vm: MoneyMovementSetupVM;
+  activate: (selections: SetupSelections) => Promise<SetupActivationResult>;
+}) {
   const router = useRouter();
   const initial = useMemo(() => initialSelections(vm), [vm]);
   const [stepIndex, setStepIndex] = useState(0);
   const [selections, setSelections] = useState<SetupSelections>(initial);
   const [attested, setAttested] = useState(false);
-  const [activated, setActivated] = useState(false);
+  const [activeSnapshot, setActiveSnapshot] = useState<SetupActivatedSnapshotVM | null>(null);
+  const [activating, setActivating] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const [exportFirmId, setExportFirmId] = useState<SetupFirmId | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -114,27 +141,43 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
       [firmId]: { ...current[firmId], [groupId]: optionId },
     }));
     setAttested(false);
-    setActivated(false);
+    setActiveSnapshot(null);
     setActivationError(null);
     setExportFirmId(null);
     setExportError(null);
   }
 
-  function primary() {
+  async function primary() {
     if (step.id === "activation") {
       if (!attested) {
         setActivationError("Confirm the distinct-human demonstration attestation before activation.");
         return;
       }
       setActivationError(null);
-      setActivated(true);
+      setActivating(true);
+      let result: SetupActivationResult;
+      try {
+        result = await activate(selections);
+      } catch {
+        setActiveSnapshot(null);
+        setActivationError("Activation failed closed before any configuration or decision identity was created.");
+        setActivating(false);
+        return;
+      }
+      setActivating(false);
+      if (!result.ok) {
+        setActiveSnapshot(null);
+        setActivationError(result.error);
+        return;
+      }
+      setActiveSnapshot(result.snapshot);
       move(stepIndex + 1);
       return;
     }
     if (step.id === "proof") {
-      const target = vm.proof.firms.find((candidate) => candidate.firmId === exportFirmId);
+      const target = activeSnapshot?.firms.find((candidate) => candidate.firmId === exportFirmId);
       if (!target) {
-        setExportError(vm.proof.exportError);
+        setExportError(activeSnapshot ? vm.proof.exportError : "Activate the current draft before export.");
         return;
       }
       setExportError(null);
@@ -161,6 +204,7 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
       <StepBody
         vm={vm}
         step={step}
+        snapshot={activeSnapshot}
         selections={selections}
         onSelect={select}
         attested={attested}
@@ -177,14 +221,15 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
         exportError={exportError}
       />
       <SetupActionRow
-        primaryLabel={step.primaryLabel}
-        onPrimary={primary}
+        primaryLabel={activating ? "Activating…" : step.primaryLabel}
+        primaryDisabled={activating}
+        onPrimary={() => void primary()}
         {...(stepIndex > 0 ? { onBack: back } : {})}
       >
         {step.id === "activation"
           ? "The proposer and approver are different synthetic humans. Real activation remains blocked on the real lifecycle."
           : stepIndex > activationIndex
-            ? activated
+            ? activeSnapshot
               ? "Demonstration versions activated locally for this setup-to-run proof."
               : "No demonstration version is active."
             : "Changes remain a labeled demonstration draft."}

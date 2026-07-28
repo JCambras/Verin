@@ -19,6 +19,7 @@ import {
   DEMO_NOW,
   DESTINATION_RESTRICTION,
   HOUSEHOLD,
+  OBSERVED_GC09_BALANCE,
   OBSERVED_RECENT,
   OBSERVED_STALE,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
@@ -40,7 +41,12 @@ export function destinationFor(scenario: ScenarioData): string {
 }
 
 export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
-  const liquidityAsOf = scenario.spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
+  const availableCashAsOf = scenario.spec.stalePlannedWithdrawals
+    ? OBSERVED_GC09_BALANCE
+    : OBSERVED_RECENT;
+  const plannedWithdrawalsAsOf = scenario.spec.stalePlannedWithdrawals
+    ? OBSERVED_STALE
+    : OBSERVED_RECENT;
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -56,8 +62,8 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
       custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
     })),
-    liquidity: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
-    plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+    liquidity: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", availableCashAsOf),
+    plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", plannedWithdrawalsAsOf),
     pendingActivity: fact(`Pending approved activity: ${PENDING_ACTIVITY_STATEMENT.toLowerCase()}`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
     onRamp: {
       title: "What do the Smiths need?",
@@ -90,19 +96,24 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
 
 export function buildEvidence(scenario: ScenarioData): EvidenceVM {
   const spec = scenario.spec;
-  const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
+  const availableCashAsOf = spec.stalePlannedWithdrawals
+    ? OBSERVED_GC09_BALANCE
+    : OBSERVED_RECENT;
+  const plannedWithdrawalsAsOf = spec.stalePlannedWithdrawals
+    ? OBSERVED_STALE
+    : OBSERVED_RECENT;
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
       label: "Available cash in the taxable brokerage account",
-      metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
+      metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", availableCashAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
     {
       kind: "metric",
       label: "Planned monthly withdrawal",
-      metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+      metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", plannedWithdrawalsAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
