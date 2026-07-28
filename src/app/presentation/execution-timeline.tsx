@@ -18,6 +18,7 @@ export interface ExecutionTimelineRow {
   readonly status: string;
   readonly statusLabel: string;
   readonly timestamp: string;
+  readonly timestampIso: string;
   readonly honestyLine?: string;
   readonly plainClaim?: string;
   readonly affordanceLabel?: string;
@@ -45,7 +46,12 @@ export function ExecutionTimeline({ caption, rows }: { caption: string; rows: re
         </thead>
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <tr key={`${r.step}-${r.timestamp}`} className="print-avoid-break">
+            <tr
+              key={`${r.step}-${r.timestamp}`}
+              className="print-avoid-break"
+              data-testid="timeline-event"
+              data-event-instant={r.timestampIso}
+            >
               <td className="px-3 py-2 align-top">
                 <div className="flex flex-col items-start gap-1">
                   <span className="flex flex-wrap items-center gap-2 text-slate-800">

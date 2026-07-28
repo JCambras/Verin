@@ -142,6 +142,7 @@ export interface IntentVM {
   readonly spine: DecisionSpineVM;
   readonly household: string;
   readonly requestText: string;
+  readonly requestAt: FactVM;
   readonly requestProvenance: RecordProvenance;
   readonly requestFakeClass: FakeClass;
   /** The interpreted intent echoed back as typed slots - LLM-drafted, set apart (§6.5). */
@@ -198,6 +199,7 @@ export interface ActorSlotVM {
   readonly role: string;
   readonly status: string; // StatusBadge key
   readonly statusLabel: string;
+  readonly timestampIso?: string;
   readonly note?: string; // e.g. "You requested this - you cannot approve"
   readonly requesterExcluded?: boolean;
 }
@@ -229,9 +231,22 @@ export interface SafetyCheckVM {
   readonly status: string;
   readonly statusLabel: string;
   readonly detail?: string;
+  readonly relatedDecision?: {
+    readonly sourceCaseId: string;
+    readonly disposition: DispositionKind;
+    readonly requestAtIso: string;
+    readonly decidedAtIso: string;
+    readonly requestAt: string;
+    readonly decidedAt: string;
+  };
 }
 export interface InvalidationVM {
-  readonly voidedActor: { readonly name: string; readonly role: string; readonly when: string };
+  readonly voidedActor: {
+    readonly name: string;
+    readonly role: string;
+    readonly when: string;
+    readonly timestampIso: string;
+  };
   readonly deltaSentence: string;
   readonly before: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
   readonly after: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
@@ -241,6 +256,7 @@ export interface InvalidationVM {
 export interface SafetyVM {
   readonly spine: DecisionSpineVM;
   readonly revalidatedAt: FactVM;
+  readonly revalidatedAtIso: string;
   readonly checks: readonly SafetyCheckVM[];
   readonly reservationId: string;
   readonly conflictKeys: readonly string[];
@@ -260,6 +276,7 @@ export interface ExecutionRowVM {
   readonly status: ObservedStatusId | VerificationProjectionId | ExecutionReceiptId; // labels cannot mint states
   readonly statusLabel: string;
   readonly timestamp: string;
+  readonly timestampIso: string;
   readonly honestyLine?: string; // "Accepted for processing - settlement not yet confirmed"
   readonly plainClaim?: string; // idempotency in plain words (§8.3)
   readonly affordanceLabel?: string; // NIGO / stuck resolving affordance
@@ -333,6 +350,7 @@ export interface RecordVM {
   readonly header: {
     readonly decisionId: string;
     readonly createdAt: string;
+    readonly createdAtIso: string;
     readonly provenance: DerivedProvenance;
     readonly watermark: string | null; // DEMO_WATERMARK when demonstration-derived
   };

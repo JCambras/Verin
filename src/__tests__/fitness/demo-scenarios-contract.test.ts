@@ -77,9 +77,9 @@ export const PINNED_IDS: Record<string, readonly string[]> = {
     "submitted",
     "in-flight",
     "completed",
-    "rejected",
     "nigo",
     "unknown",
+    "rejected",
   ],
   provenance_labels: [
     "synthetic-fixture",
@@ -102,6 +102,20 @@ export const PINNED_IDS: Record<string, readonly string[]> = {
     "returned-status",
     "delayed-exception-events",
     "replay-corpus",
+  ],
+};
+const SHIPPED_ID_PREFIXES: Record<string, readonly string[]> = {
+  state_vocabulary: [
+    "proceed",
+    "blocked",
+    "prohibited",
+    "awaiting-approval",
+    "approved",
+    "submitted",
+    "in-flight",
+    "completed",
+    "nigo",
+    "unknown",
   ],
 };
 
@@ -195,6 +209,21 @@ export function baselineViolations(data: ScenariosData, pinned: Record<string, r
     }
     for (const dup of new Set(present.filter((id, i) => present.indexOf(id) !== i))) {
       issues.push(`${setName}: id "${dup}" appears more than once - ids are never reused`);
+    }
+    for (let index = 0; index < Math.min(pinnedIds.length, present.length); index += 1) {
+      if (present[index] !== pinnedIds[index]) {
+        issues.push(
+          `${setName}: id "${present[index]}" at position ${index} breaks the append-only sequence; expected "${pinnedIds[index]}"`,
+        );
+      }
+    }
+    const shippedPrefix = SHIPPED_ID_PREFIXES[setName] ?? [];
+    for (let index = 0; index < shippedPrefix.length; index += 1) {
+      if (present[index] !== shippedPrefix[index]) {
+        issues.push(
+          `${setName}: id "${present[index]}" at position ${index} breaks the shipped append-only prefix; expected "${shippedPrefix[index]}"`,
+        );
+      }
     }
   }
   return issues;
@@ -329,6 +358,25 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     const doubled = parseData(realText);
     doubled.elements = [...(doubled.elements ?? []), { id: "approvals", reality_now: "user-entered-demo-input", reality_at_phase1: "user-entered-demo-input" }];
     expect(baselineViolations(doubled).some((i) => i.includes(`id "approvals" appears more than once`))).toBe(true);
+  });
+
+  it("flags a stable id inserted before the pinned append-only prefix", () => {
+    const reordered = parseData(realText);
+    const states = reordered.state_vocabulary ?? [];
+    reordered.state_vocabulary = [
+      ...states.slice(0, -3),
+      states.at(-1)!,
+      ...states.slice(-3, -1),
+    ];
+    const coordinatedPin = {
+      ...PINNED_IDS,
+      state_vocabulary: idsOf(reordered.state_vocabulary),
+    };
+    expect(
+      baselineViolations(reordered, coordinatedPin).some((i) =>
+        i.includes("breaks the shipped append-only prefix"),
+      ),
+    ).toBe(true);
   });
 
   it("flags a coordinated firm rename (firms + per_firm keys changed together) that cross-refs alone would miss", () => {

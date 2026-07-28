@@ -5568,3 +5568,49 @@ the focused adversarial suites, all 557 Vitest cases, all 17 Playwright cases wi
 lint, knip, the v3 invariant report, and the production build pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-065).
+
+## F105 · exact signed sources, decisive evidence, stable prefixes, and request-relative time
+
+**Fences:** `src/__tests__/fitness/demo-scenarios-contract.test.ts` and
+`src/__tests__/fitness/golden-cases.test.ts`.
+**Invariant:** stable IDs preserve the shipped sequence; every displayed source is a captain-signed
+exact branch, firm, disposition, request, unit, cadence, liquidity, and reserve-policy match; an
+exact candidate cannot be hidden as missing; every disposition retains its decisive evidence; both
+GC-10 and GC-11 remain represented; and every visible source-bound event starts with, follows, and
+renders the signed request trigger in chronological order.
+
+The stable-ID companion reorders `rejected` ahead of the shipped `nigo` and `unknown` IDs and also
+rewrites the current pin to match. Set membership and the current pin therefore agree, but the
+shipped-prefix fence still reports:
+
+```text
+state_vocabulary: id "rejected" at position 8 breaks the shipped append-only prefix; expected "nigo"
+```
+
+The signed-source companions replace an exact binding with a missing-authority message, remove the
+captain signoff, point at the wrong branch and firm, and independently mutate disposition, request
+amount, currency, cadence, and reserve horizon. Each mutation must produce the exact-source
+diagnostic. Removing GC-11 from both semantic projections separately produces:
+
+```text
+GC-11-simultaneous-distributions-second: exact signed branch-and-firm authority is not represented by the demo
+```
+
+The evidence companion removes both the decisive source row and its matching matrix row from GC-04
+and GC-06. The gate still requires the changed bank instruction and household restriction,
+respectively, so coordinated deletion cannot make either signed outcome pass vacuously. Every
+remaining blocked or prohibited case has its own trigger-specific required-fact set, and an
+unclassified future case fails closed.
+
+The timeline companions move a GC-12 event before its request, reverse GC-13, detach GC-14 from its
+trigger, and move GC-15 revalidation away from the signed evidence retrieval instant. The visible
+projection checks canonical instants, rendered timestamp text, request-relative ordering, and local
+ordering in America/New_York, UTC, and Asia/Tokyo. The browser journey proves GC-12's request,
+execution, and retry order at 1280px and 390px, GC-15's revalidation after its request, and GC-11's
+separately bound blocked outcome.
+
+**Revert:** all mutations remain inside companion tests. The focused 72-test fence run, all 563
+Vitest cases, all 17 Playwright cases with axe, `pnpm golden:validate`, typecheck, lint, knip, the
+v3 invariant report, and the production build pass on the corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-066).

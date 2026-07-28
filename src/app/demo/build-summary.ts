@@ -28,6 +28,7 @@ import {
   DISPOSITION_BADGES,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
+import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   CANONICAL_REQUEST,
   DEMO_NOW,
@@ -230,10 +231,12 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { a
     [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
     DEMO_NOW,
   );
+  const timeline = timelineFor(scenario, firm);
   return {
     header: {
       decisionId: "dec-smiths-renovation-2026-0726",
-      createdAt: "Jul 26, 2026, 14:05",
+      createdAt: formatDemoInstant(timeline.decisionAt, undefined, true),
+      createdAtIso: timeline.decisionAt,
       provenance,
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
@@ -244,14 +247,14 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { a
       instructionVersion: "HH-INSTR-SMITH v3",
       auditPosition: IDS.auditPosition,
     },
-    intent: buildIntent(scenario),
+    intent: buildIntent(scenario, firm),
     evidence: buildEvidence(scenario, firm).rows,
     disposition: buildDisposition(scenario, firm),
     precedence: buildPolicyTrace(scenario, firm).rows,
     approvalStages: reached.authority ? buildStages(scenario, firm, "final") : null,
     safety: reached.safety ? buildSafety(scenario, firm) : null,
-    execution: reached.execution ? buildExecution(scenario).rows : null,
-    verification: reached.execution ? buildVerification(scenario) : null,
+    execution: reached.execution ? buildExecution(scenario, firm).rows : null,
+    verification: reached.execution ? buildVerification(scenario, firm) : null,
     stopNote,
     provenanceAppendix: provenance.derivedFrom,
   };

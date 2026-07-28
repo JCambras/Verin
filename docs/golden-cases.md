@@ -116,10 +116,12 @@ Every case - in this document and in its fixture - states all of:
    retrievedAt, freshness (`fresh`/`stale`/`unknown`), source, provenance label, summary, and
    `observedAbsent: true` when an explicit absence is the fact;
 4. **evidence completeness** - one explicit matrix row per fact required to compute or validate the
-   expected result, naming the evidence source and whether it is present or observed absent. Every
-   proceed case records request amount, source balance, planned-withdrawal schedule, pending
-   liquidity activity, destination bank instruction, and destination restriction. Silence is never
-   inferred as benign;
+   expected result, naming the evidence source and whether it is present or observed absent.
+   Proceed cases record request amount, source balance, planned-withdrawal schedule, pending
+   liquidity activity, destination bank instruction, and destination restriction. Blocked and
+   prohibited cases record the decisive evidence for their signed trigger, including the changed
+   bank instruction, reserve breach, household restriction, legal hold, household ambiguity, or
+   stale snapshot that determines the result. Silence is never inferred as benign;
 5. **policy versions** - domain config, firm policy, household-instruction version ids (empty only
    with a recorded `householdInstructionsNote`, e.g. GC-08), regulatory version (or null);
 6. **household instructions** - kind, version id, summary (same recorded-silence escape);
@@ -555,10 +557,11 @@ labels flip only when prompt 27 lands against the real sandbox.
   (CI job `golden-cases`, blocking): every required §5 field present and populated in every fixture,
   evidence completeness and canonical UTC instants enforced, amount/unit/schedule/reserve/status
   semantics aligned with the live demo and scenarios.yaml, branch-and-firm source binding and
-  phased revalidation enforced, GC-16 fixture and visible event order enforced, structural
-  consistency (§5) enforced, doc/fixture ids in sync, all twelve spec-required case names covered,
-  at least twelve cases, and every signoff in one of the two legal §1 shapes (all reapproved by the
-  captain, 2026-07-28).
+  phased revalidation enforced, every exact signed source represented, request-relative visible
+  event order enforced, GC-16 fixture and visible event order enforced, structural consistency
+  (§5) enforced, doc/fixture ids in sync, all twelve spec-required case names covered, at least
+  twelve cases, and every signoff in one of the two legal §1 shapes (all reapproved by the captain,
+  2026-07-28).
 - The `golden-cases` fitness fence (`src/__tests__/fitness/golden-cases.test.ts`) runs the same
   validator inside `pnpm test` and ships the adversarial companion proving a broken or prematurely
   signed case CANNOT pass (charter #4: detection is not verification).

@@ -179,6 +179,23 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/comparison?scenario=competing-liquidity&firm=firm-a");
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("Missing signed branch-and-firm liquidity authority")).toBeVisible();
+  await page.goto("/app/demo/safety?scenario=competing-liquidity&firm=firm-a");
+  const sibling = page.locator(
+    '[data-related-source-case="GC-11-simultaneous-distributions-second"]',
+  );
+  await expect(sibling).toHaveAttribute("data-related-disposition", "blocked");
+  const siblingRequestAt = await sibling.getAttribute(
+    "data-related-request-instant",
+  );
+  const siblingDecisionAt = await sibling.getAttribute(
+    "data-related-decision-instant",
+  );
+  expect(Date.parse(siblingDecisionAt!)).toBeGreaterThan(
+    Date.parse(siblingRequestAt!),
+  );
+  await expect(sibling).toContainText(
+    "GC-11-simultaneous-distributions-second",
+  );
 
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
   await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
@@ -195,11 +212,21 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
 
+  await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a");
+  const invalidationRequestAt = await page
+    .getByTestId("request-timestamp")
+    .getAttribute("data-event-instant");
   for (const surface of ["workspace", "evidence", "decision", "authority"]) {
     await page.goto(`/app/demo/${surface}?scenario=approval-invalidation&firm=firm-a`);
     await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
   }
   await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
+  const invalidationRevalidatedAt = await page
+    .getByTestId("revalidation-timestamp")
+    .getAttribute("data-event-instant");
+  expect(Date.parse(invalidationRevalidatedAt!)).toBeGreaterThan(
+    Date.parse(invalidationRequestAt!),
+  );
   await expect(page.getByTestId("voided-approval")).toBeVisible();
   await expect(page.getByText("Approval voided - evidence changed").first()).toBeVisible();
   await expect(page.getByTestId("what-changed")).toBeVisible();
@@ -223,13 +250,39 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // Duplicate retry: the product claim in plain words, keys matching byte-for-byte.
+  await page.goto("/app/demo/intent?scenario=duplicate-retry&firm=firm-a");
+  const duplicateRequestAt = await page
+    .getByTestId("request-timestamp")
+    .getAttribute("data-event-instant");
   await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a");
   await expect(page.getByText("Already submitted once - Verin did not send it again.")).toBeVisible();
   await expect(page.getByText("Duplicate suppressed")).toBeVisible();
+  const duplicateEvents = page.getByTestId("timeline-event");
+  await expect(duplicateEvents).toHaveCount(2);
+  const duplicateInstants = await duplicateEvents.evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute("data-event-instant")!),
+  );
+  expect(duplicateInstants.every((instant) =>
+    Date.parse(instant) > Date.parse(duplicateRequestAt!),
+  )).toBe(true);
+  expect(Date.parse(duplicateInstants[1]!)).toBeGreaterThan(
+    Date.parse(duplicateInstants[0]!),
+  );
+  await expect(duplicateEvents.nth(0)).toContainText("Jul 26, 16:39");
+  await expect(duplicateEvents.nth(1)).toContainText("Jul 26, 16:40");
   await snap(page, 16, "execution-duplicate-suppressed");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a");
+  await expect(page.getByTestId("timeline-event").nth(0)).toContainText(
+    "Jul 26, 16:39",
+  );
+  await expect(page.getByTestId("timeline-event").nth(1)).toContainText(
+    "Jul 26, 16:40",
+  );
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // Delayed NIGO: first-class appended row with its resolving affordance.
-  await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-a");
+  await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-b");
   await expect(page.getByText("Returned NIGO", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Fix and resubmit the authorization" })).toBeVisible();
   await snap(page, 17, "verification-delayed-nigo");

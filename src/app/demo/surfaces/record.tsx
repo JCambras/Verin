@@ -111,7 +111,11 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Created</dt>
-                    <dd className="text-slate-800">{vm.header.createdAt}</dd>
+                    <dd className="text-slate-800">
+                      <time dateTime={vm.header.createdAtIso} data-event-instant={vm.header.createdAtIso}>
+                        {vm.header.createdAt}
+                      </time>
+                    </dd>
                   </div>
                   <div className="flex flex-col sm:col-span-2">
                     <dt className="text-xs text-slate-600">Decision hash</dt>
@@ -339,7 +343,7 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
           <td>
             <div aria-hidden className="print-running">
               <span>{running}</span>
-              <span>{vm.header.createdAt}</span>
+              <time dateTime={vm.header.createdAtIso}>{vm.header.createdAt}</time>
             </div>
           </td>
         </tr>

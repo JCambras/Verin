@@ -16,6 +16,7 @@ import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type Blocker
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
+import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   CANONICAL_REQUEST,
   CAST,
@@ -263,6 +264,7 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
  * (the authority surface mid-journey) or "final" (what the printable record shows). */
 export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate" | "final"): ApprovalStageVM[] {
   const spec = scenario.spec;
+  const timeline = timelineFor(scenario, firm);
   const stages: ApprovalStageVM[] = [];
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
   const specialistReview = spec.bankChanged && firm.bankChangeHandling === "specialist-review";
@@ -279,13 +281,13 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
         authorityEvents: [
           {
             type: "ApprovalStageEscalated",
-            timestamp: "2026-07-27T22:20:00.000Z",
-            display: "Escalated to operations manager · Jul 27, 18:20",
+            timestamp: timeline.escalatedAt,
+            display: `Escalated to operations manager · ${formatDemoInstant(timeline.escalatedAt)}`,
           },
           {
             type: "ApprovalStageExpired",
-            timestamp: "2026-07-28T22:20:00.000Z",
-            display: "Expired unresolved · Jul 28, 18:20",
+            timestamp: timeline.expiredAt,
+            display: `Expired unresolved · ${formatDemoInstant(timeline.expiredAt)}`,
           },
         ],
         expired: true,
@@ -297,7 +299,13 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
         stepState: phase === "final" ? "done" : "active",
         actors: [
           phase === "final"
-            ? { name: CAST.specialist, role: "Banking specialist", status: "done", statusLabel: "Reviewed · Jul 26, 11:15" }
+            ? {
+                name: CAST.specialist,
+                role: "Banking specialist",
+                status: "done",
+                statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
+                timestampIso: timeline.specialistReviewedAt,
+              }
             : { name: CAST.specialist, role: "Banking specialist", status: "pending", statusLabel: "Awaiting review" },
         ],
         expiry: "expires Aug 12",
@@ -314,7 +322,8 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
             name: CAST.opsApprover2,
             role: "Operations",
             status: "done",
-            statusLabel: specialistReview ? "Approved · Jul 26, 11:47" : "Approved · Jul 26, 10:31",
+            statusLabel: `Approved · ${formatDemoInstant(timeline.approvalTwoAt)}`,
+            timestampIso: timeline.approvalTwoAt,
           }
         : { name: CAST.opsApprover2, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
@@ -326,14 +335,15 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
           name: CAST.opsApprover1,
           role: "Operations",
           status: spec.invalidation && phase === "final" ? "voided" : stageReached && !spec.specialistExpired ? "done" : "pending",
-          statusLabel:
-            spec.invalidation && phase === "final"
-              ? "Approval voided - evidence changed"
-              : stageReached && !spec.specialistExpired
-                ? specialistReview
-                  ? "Approved · Jul 26, 11:32"
-                  : "Approved · Jul 26, 10:02"
+            statusLabel:
+              spec.invalidation && phase === "final"
+                ? `Approval voided - evidence changed · ${formatDemoInstant(timeline.approvalOneAt)}`
+                : stageReached && !spec.specialistExpired
+                ? `Approved · ${formatDemoInstant(timeline.approvalOneAt)}`
                 : "Awaiting prior stage",
+            ...(stageReached && !spec.specialistExpired
+              ? { timestampIso: timeline.approvalOneAt }
+              : {}),
         },
         second,
         {
@@ -349,9 +359,21 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
   } else {
     const approver =
       spec.invalidation && phase === "final"
-        ? { name: CAST.opsApprover1, role: "Operations", status: "voided", statusLabel: "Approval voided - evidence changed" }
+        ? {
+            name: CAST.opsApprover1,
+            role: "Operations",
+            status: "voided",
+            statusLabel: `Approval voided - evidence changed · ${formatDemoInstant(timeline.approvalOneAt)}`,
+            timestampIso: timeline.approvalOneAt,
+          }
         : spec.invalidation || phase === "final"
-          ? { name: CAST.opsApprover1, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:02" }
+          ? {
+              name: CAST.opsApprover1,
+              role: "Operations",
+              status: "done",
+              statusLabel: `Approved · ${formatDemoInstant(timeline.approvalOneAt)}`,
+              timestampIso: timeline.approvalOneAt,
+            }
           : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
       title: "Stage 1 - Approval",

@@ -44,6 +44,7 @@ export function toTimelineRow(r: ExecutionRowVM): ExecutionTimelineRow {
     status: r.status,
     statusLabel: r.statusLabel,
     timestamp: r.timestamp,
+    timestampIso: r.timestampIso,
     ...(r.honestyLine ? { honestyLine: r.honestyLine } : {}),
     ...(r.plainClaim ? { plainClaim: r.plainClaim } : {}),
     ...(r.affordanceLabel ? { affordanceLabel: r.affordanceLabel } : {}),

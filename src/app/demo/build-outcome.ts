@@ -8,10 +8,11 @@
  * minute 4:05 deferral annotation). Honest-status doctrine (§8): submitted is never
  * settled, green is earned, NIGO and stuck are first-class.
  */
-import type { ExecutionRowVM, ExecutionVM, SafetyVM, VerificationVM } from "./model";
+import type { ExecutionRowVM, ExecutionVM, SafetyCheckVM, SafetyVM, VerificationVM } from "./model";
 import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
 import { CAST, IDS, RETRIEVED_AT, liquidityAuthorityFor, type FirmData, type ScenarioData } from "./data";
+import { formatDemoInstant, relatedDecisionAt, timelineFor } from "./timeline";
 
 const IDENTIFIERS = [
   { label: "Idempotency key", value: IDS.idempotencyKey },
@@ -21,10 +22,11 @@ const IDENTIFIERS = [
 
 export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
   const spec = scenario.spec;
+  const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const initial = authority.kind === "signed" ? authority.initialDecision : null;
   const refreshed = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
-  const checks = authority.kind === "missing"
+  const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
         {
           label: "Signed liquidity authority unavailable for this branch and firm",
@@ -69,23 +71,52 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
     checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
   }
   if (spec.competing) {
-    checks.push({
-      label: "Concurrent request detected against the same liquidity",
-      status: "done",
-      statusLabel: "Reservation held",
-      detail: "This request reserved first and proceeds. The competing request is blocked by the reservation and cannot jointly violate the reserve floor.",
-    } as (typeof checks)[number]);
+    const related = authority.kind === "signed" ? authority.relatedDecisions?.[0] : undefined;
+    checks.push(
+      related
+        ? {
+            label: "Concurrent request detected against the same liquidity",
+            status: "done",
+            statusLabel: "Reservation held",
+            detail: `Signed case ${related.sourceCaseId} records the sibling request at ${formatDemoInstant(related.requestAt, undefined, true)} as ${related.disposition} at ${formatDemoInstant(relatedDecisionAt(related.requestAt), undefined, true)}, after this request's reservation committed.`,
+            relatedDecision: {
+              sourceCaseId: related.sourceCaseId,
+              disposition: related.disposition,
+              requestAtIso: related.requestAt,
+              decidedAtIso: relatedDecisionAt(related.requestAt),
+              requestAt: formatDemoInstant(related.requestAt, undefined, true),
+              decidedAt: formatDemoInstant(relatedDecisionAt(related.requestAt), undefined, true),
+            },
+          }
+        : {
+            label: "Competing request outcome authority unavailable",
+            status: "pending",
+            statusLabel: "Evidence missing",
+            detail: "The demo cannot state the sibling outcome without its own signed case binding.",
+          },
+    );
   }
   return {
     spine: buildSpine("Safety", spec.invalidation ? { status: "voided", label: "Approval voided" } : undefined),
-    revalidatedAt: fact("Material evidence re-checked Jul 26, 13:58", "deterministic-engine-output", "2026-07-26", "Jul 26, 13:58"),
+    revalidatedAt: fact(
+      `Material evidence re-checked ${formatDemoInstant(timeline.revalidatedAt)}`,
+      "deterministic-engine-output",
+      timeline.revalidatedAt,
+      formatDemoInstant(timeline.revalidatedAt),
+    ),
+    revalidatedAtIso: timeline.revalidatedAt,
     checks,
     reservationId: IDS.reservationId,
     conflictKeys: IDS.conflictKeys,
     idempotencyKey: IDS.idempotencyKey,
     invalidation: spec.invalidation && initial && refreshed
       ? {
-          voidedActor: { name: CAST.opsApprover1, role: "Operations", when: "Jul 26, 10:02" },
+          voidedActor: {
+            name: CAST.opsApprover1,
+            role: "Operations",
+            when: formatDemoInstant(timeline.approvalOneAt),
+            timestampIso: timeline.approvalOneAt,
+          },
           deltaSentence: "A new $15,000 pending distribution appeared after this approval was given.",
           before: {
             label: "Initial decision · pending activity",
@@ -95,7 +126,7 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
           after: {
             label: "Pre-execution revalidation · pending distribution",
             metric: fixtureMetric(refreshed.pendingActivityMinor, "currency-minor", "synthetic-fixture", "2026-07-26"),
-            retrievedAt: "Jul 26, 13:58",
+            retrievedAt: formatDemoInstant(timeline.revalidatedAt),
           },
           why: {
             reason:
@@ -108,8 +139,9 @@ export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
   };
 }
 
-export function buildExecution(scenario: ScenarioData): ExecutionVM {
+export function buildExecution(scenario: ScenarioData, firm: FirmData): ExecutionVM {
   const spec = scenario.spec;
+  const timeline = timelineFor(scenario, firm);
   const rows: ExecutionRowVM[] = [];
   if (spec.partial) {
     rows.push(
@@ -118,8 +150,9 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
         target: "Salesforce managed capability",
         status: "completed",
         statusLabel: "Settled · verified",
-        timestamp: "Jul 26, 14:02",
-        honestyLine: "Verified against returned custodian status, Jul 26, 15:40.",
+        timestamp: formatDemoInstant(timeline.executionAt),
+        timestampIso: timeline.executionAt,
+        honestyLine: `Verified against returned custodian status, ${formatDemoInstant(timeline.completionVerifiedAt)}.`,
         identifiers: IDENTIFIERS,
         fakeClass: "fake-adapter-response",
       },
@@ -128,7 +161,8 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
         target: "Salesforce managed capability",
         status: "unknown",
         statusLabel: "Unconfirmed",
-        timestamp: "Jul 26, 14:02",
+        timestamp: formatDemoInstant(timeline.executionAt),
+        timestampIso: timeline.executionAt,
         honestyLine: "No returned status for this part - an exception decision has been requested.",
         affordanceLabel: "Review the exception",
         identifiers: IDENTIFIERS,
@@ -141,7 +175,8 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
       target: "Salesforce managed capability",
       status: "submitted",
       statusLabel: "Submitted",
-      timestamp: "Jul 26, 14:02",
+      timestamp: formatDemoInstant(timeline.executionAt),
+      timestampIso: timeline.executionAt,
       honestyLine: "Accepted for processing - settlement not yet confirmed.",
       identifiers: IDENTIFIERS,
       fakeClass: "fake-adapter-response",
@@ -153,7 +188,8 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
       target: "Salesforce managed capability",
       status: "duplicate-suppressed",
       statusLabel: "Duplicate suppressed",
-      timestamp: "Jul 26, 14:03",
+      timestamp: formatDemoInstant(timeline.retryAt),
+      timestampIso: timeline.retryAt,
       plainClaim: "Already submitted once - Verin did not send it again.",
       identifiers: [{ label: "Idempotency key (matches the original byte-for-byte)", value: IDS.idempotencyKey }],
       fakeClass: "fake-adapter-response",
@@ -168,10 +204,27 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
   };
 }
 
-export function buildVerification(scenario: ScenarioData): VerificationVM {
+export function buildVerification(scenario: ScenarioData, firm: FirmData): VerificationVM {
   const spec = scenario.spec;
-  const proves = [fact("Submission accepted by the capability", "fake-adapter-response", "2026-07-26", "Jul 26, 14:02")];
-  if (spec.partial) proves.push(fact("Money-market redemption settled", "fake-adapter-response", "2026-07-26", "Jul 26, 15:40"));
+  const timeline = timelineFor(scenario, firm);
+  const proves = [
+    fact(
+      "Submission accepted by the capability",
+      "fake-adapter-response",
+      timeline.executionAt,
+      formatDemoInstant(timeline.executionAt),
+    ),
+  ];
+  if (spec.partial) {
+    proves.push(
+      fact(
+        "Money-market redemption settled",
+        "fake-adapter-response",
+        timeline.completionVerifiedAt,
+        formatDemoInstant(timeline.completionVerifiedAt),
+      ),
+    );
+  }
   const appended: ExecutionRowVM[] = [];
   if (spec.delayedNigo) {
     appended.push({
@@ -179,7 +232,8 @@ export function buildVerification(scenario: ScenarioData): VerificationVM {
       target: "Salesforce managed capability",
       status: "nigo",
       statusLabel: "Returned NIGO",
-      timestamp: "Jul 28, 07:12",
+      timestamp: formatDemoInstant(timeline.delayedExceptionAt),
+      timestampIso: timeline.delayedExceptionAt,
       honestyLine: "Returned - the bank letter of authorization is not in good order: signature missing.",
       affordanceLabel: "Fix and resubmit the authorization",
       identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
@@ -192,7 +246,8 @@ export function buildVerification(scenario: ScenarioData): VerificationVM {
       target: "Salesforce managed capability",
       status: "stuck",
       statusLabel: "Stuck",
-      timestamp: "Jul 28, 14:02",
+      timestamp: formatDemoInstant(timeline.delayedExceptionAt),
+      timestampIso: timeline.delayedExceptionAt,
       honestyLine: "No status for two days - the stuck-state rule (forty-eight hours unconfirmed) fired.",
       affordanceLabel: "Escalate to operations",
       identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
@@ -207,7 +262,7 @@ export function buildVerification(scenario: ScenarioData): VerificationVM {
       "Funds availability at the destination bank",
       "That the instruction will not be returned not-in-good-order",
     ],
-    nextPoll: "Next status poll: Jul 27, 06:00",
+    nextPoll: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
     appended,
     fakeClass: "fake-adapter-response",
   };

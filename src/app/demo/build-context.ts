@@ -12,6 +12,7 @@ import { metric } from "@contracts/metric";
 import type { EvidenceRowVM, EvidenceVM, IntentVM, WorkspaceVM } from "./model";
 import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
+import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   ACCOUNTS,
   BANK_INSTRUCTION,
@@ -69,12 +70,19 @@ export function buildWorkspace(scenario: ScenarioData, firm: FirmData): Workspac
   };
 }
 
-export function buildIntent(scenario: ScenarioData): IntentVM {
+export function buildIntent(scenario: ScenarioData, firm: FirmData): IntentVM {
+  const requestAt = timelineFor(scenario, firm).requestAt;
   return {
     spine: buildSpine("Intent"),
     household: HOUSEHOLD.name,
     requestText: CANONICAL_REQUEST.text,
-    requestProvenance: prov("user-entered-demo-input", DEMO_NOW),
+    requestAt: fact(
+      `Request received ${formatDemoInstant(requestAt)}`,
+      "user-entered-demo-input",
+      requestAt,
+      formatDemoInstant(requestAt),
+    ),
+    requestProvenance: prov("user-entered-demo-input", requestAt),
     requestFakeClass: "user-entered-demo-input",
     interpreted: {
       slots: [

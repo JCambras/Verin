@@ -138,14 +138,14 @@ state_vocabulary:
   - id: completed
     label: completed
     class: execution
-  - id: rejected
-    label: rejected
-    class: execution
   - id: nigo
     label: NIGO
     class: execution
   - id: unknown
     label: unknown
+    class: execution
+  - id: rejected
+    label: rejected
     class: execution
 
 # --------------------------------------------------------------------------

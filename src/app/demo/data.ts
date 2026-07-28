@@ -14,6 +14,7 @@ import type { DispositionKind } from "./model";
 
 // A fixed demo world clock keeps freshness and screenshots stable.
 export const DEMO_NOW = "2026-07-26";
+export const DEMO_TIME_ZONE = "America/New_York";
 export const RETRIEVED_AT = "Jul 26, 09:14";
 export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
 export const OBSERVED_STALE = "2026-06-12"; // 44 days old: visibly receded, over policy age
@@ -55,8 +56,17 @@ export interface LiquiditySnapshotData {
 export interface SignedLiquidityAuthority {
   readonly kind: "signed";
   readonly sourceCaseId: string;
+  readonly requestAt: string;
   readonly initialDecision: LiquiditySnapshotData;
   readonly preExecutionRevalidation?: LiquiditySnapshotData;
+  readonly preExecutionRevalidationAt?: string;
+  readonly relatedDecisions?: readonly SignedRelatedDecisionAuthority[];
+}
+export interface SignedRelatedDecisionAuthority {
+  readonly sourceCaseId: string;
+  readonly requestAt: string;
+  readonly disposition: DispositionKind;
+  readonly initialDecision: LiquiditySnapshotData;
 }
 export interface MissingLiquidityAuthority {
   readonly kind: "missing";
@@ -64,17 +74,75 @@ export interface MissingLiquidityAuthority {
 }
 export type LiquidityAuthority = SignedLiquidityAuthority | MissingLiquidityAuthority;
 const NO_PENDING_ACTIVITY = "No pending or reserved liquidity activity was observed at evaluation time";
+const SIGNED_CASE_TIMES = {
+  "GC-01-firm-a-happy-path": {
+    requestAt: "2026-07-26T13:30:00.000Z",
+  },
+  "GC-02-firm-b-happy-path": {
+    requestAt: "2026-07-26T13:30:00.000Z",
+  },
+  "GC-03-recent-bank-change-firm-a": {
+    requestAt: "2026-07-26T13:30:00.000Z",
+  },
+  "GC-10-simultaneous-distributions-first": {
+    requestAt: "2026-07-26T19:00:00.000Z",
+  },
+  "GC-11-simultaneous-distributions-second": {
+    requestAt: "2026-07-26T19:00:30.000Z",
+  },
+  "GC-12-duplicate-retry": {
+    requestAt: "2026-07-26T20:10:00.000Z",
+  },
+  "GC-13-partial-salesforce-success": {
+    requestAt: "2026-07-26T20:45:00.000Z",
+  },
+  "GC-14-delayed-nigo": {
+    requestAt: "2026-07-26T21:15:00.000Z",
+  },
+  "GC-15-approval-invalidation": {
+    requestAt: "2026-07-26T21:45:00.000Z",
+    preExecutionRevalidationAt: "2026-07-26T21:58:02.000Z",
+  },
+  "GC-16-specialist-review-expiration": {
+    requestAt: "2026-07-26T22:20:00.000Z",
+  },
+} as const;
+type SignedCaseId = keyof typeof SIGNED_CASE_TIMES;
 const signedLiquidity = (
-  sourceCaseId: string,
+  sourceCaseId: SignedCaseId,
   availableCashMinor: number,
   pendingActivityMinor = 0,
   pendingNote = NO_PENDING_ACTIVITY,
   preExecutionRevalidation?: LiquiditySnapshotData,
-): SignedLiquidityAuthority => ({
-  kind: "signed",
+  relatedDecisions?: readonly SignedRelatedDecisionAuthority[],
+): SignedLiquidityAuthority => {
+  const caseTimes = SIGNED_CASE_TIMES[sourceCaseId] as {
+    readonly requestAt: string;
+    readonly preExecutionRevalidationAt?: string;
+  };
+  return {
+    kind: "signed",
+    sourceCaseId,
+    requestAt: caseTimes.requestAt,
+    initialDecision: { availableCashMinor, pendingActivityMinor, pendingNote },
+    ...(preExecutionRevalidation ? { preExecutionRevalidation } : {}),
+    ...(preExecutionRevalidation && caseTimes.preExecutionRevalidationAt
+      ? { preExecutionRevalidationAt: caseTimes.preExecutionRevalidationAt }
+      : {}),
+    ...(relatedDecisions ? { relatedDecisions } : {}),
+  };
+};
+const relatedDecision = (
+  sourceCaseId: SignedCaseId,
+  disposition: DispositionKind,
+  availableCashMinor: number,
+  pendingActivityMinor: number,
+  pendingNote: string,
+): SignedRelatedDecisionAuthority => ({
   sourceCaseId,
+  requestAt: SIGNED_CASE_TIMES[sourceCaseId].requestAt,
+  disposition,
   initialDecision: { availableCashMinor, pendingActivityMinor, pendingNote },
-  ...(preExecutionRevalidation ? { preExecutionRevalidation } : {}),
 });
 const INVALIDATION_LIQUIDITY = signedLiquidity(
   "GC-15-approval-invalidation",
@@ -202,7 +270,7 @@ export const SCENARIOS: readonly ScenarioData[] = [
   { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true } },
   { id: "dual-approval", title: "Dual approval", description: "The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.", outcomeClass: "quorum approval", disposition: "proceed", spec: {} },
   { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true }, signedLiquidity: { "firm-a": INVALIDATION_LIQUIDITY } },
-  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous requests test the shared-liquidity controls under each firm's policy.", outcomeClass: "firm-aware liquidity control", outcomeClassByFirm: { "firm-a": "first request proceeds; sibling blocked by reservation", "firm-b": "first request blocked by twelve-month reserve before reservation" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { competing: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-10-simultaneous-distributions-first", 16_000_000) } },
+  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous requests test the shared-liquidity controls under each firm's policy.", outcomeClass: "firm-aware liquidity control", outcomeClassByFirm: { "firm-a": "first request proceeds; sibling blocked by reservation", "firm-b": "first request blocked by twelve-month reserve before reservation" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { competing: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-10-simultaneous-distributions-first", 16_000_000, 0, NO_PENDING_ACTIVITY, undefined, [relatedDecision("GC-11-simultaneous-distributions-second", "blocked", 16_000_000, 7_500_000, "The first request's active $75,000 reservation reduces the sibling request's effective liquidity to $85,000")]) } },
   { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-12-duplicate-retry", 42_000_000) } },
   { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-13-partial-salesforce-success", 42_000_000) } },
   { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true }, signedLiquidity: { "firm-b": signedLiquidity("GC-14-delayed-nigo", 42_000_000) } },

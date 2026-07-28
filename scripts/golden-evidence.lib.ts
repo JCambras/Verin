@@ -7,6 +7,55 @@ const PROCEED_FACT_SOURCES = {
   "destination-bank-instruction": "bank-instruction",
   "destination-restriction": "household-instruction",
 } as const;
+const PROCEED_FACTS = Object.entries(PROCEED_FACT_SOURCES);
+const REQUIRED_FACT_SOURCES_BY_CASE = {
+  "GC-01-firm-a-happy-path": PROCEED_FACTS,
+  "GC-02-firm-b-happy-path": PROCEED_FACTS,
+  "GC-03-recent-bank-change-firm-a": PROCEED_FACTS,
+  "GC-04-recent-bank-change-firm-b": [
+    ["request-amount", "trigger"],
+    ["destination-bank-instruction", "bank-instruction"],
+    ["source-account-balance", "account-balance"],
+  ],
+  "GC-05-insufficient-liquidity": [
+    ["request-amount", "trigger"],
+    ["source-account-balance", "account-balance"],
+    ["pending-liquidity-activity", "pending-actions"],
+    ["planned-withdrawal-schedule", "planned-withdrawals"],
+  ],
+  "GC-06-household-restriction": [
+    ["request-amount", "trigger"],
+    ["source-account-balance", "account-balance"],
+    ["destination-bank-instruction", "bank-instruction"],
+    ["destination-restriction", "household-instruction"],
+  ],
+  "GC-07-regulatory-prohibition": [
+    ["request-amount", "trigger"],
+    ["source-account-balance", "account-balance"],
+    ["regulatory-account-restriction", "account-restriction"],
+  ],
+  "GC-08-ambiguous-household": [
+    ["request-amount", "trigger"],
+    ["household-identity", "household-directory"],
+  ],
+  "GC-09-stale-evidence": [
+    ["request-amount", "trigger"],
+    ["source-account-balance", "account-balance"],
+    ["planned-withdrawal-schedule", "planned-withdrawals"],
+  ],
+  "GC-10-simultaneous-distributions-first": PROCEED_FACTS,
+  "GC-11-simultaneous-distributions-second": [
+    ["request-amount", "trigger"],
+    ["source-account-balance", "account-balance"],
+    ["pending-liquidity-activity", "pending-actions"],
+    ["planned-withdrawal-schedule", "planned-withdrawals"],
+  ],
+  "GC-12-duplicate-retry": PROCEED_FACTS,
+  "GC-13-partial-salesforce-success": PROCEED_FACTS,
+  "GC-14-delayed-nigo": PROCEED_FACTS,
+  "GC-15-approval-invalidation": PROCEED_FACTS,
+  "GC-16-specialist-review-expiration": PROCEED_FACTS,
+} satisfies Record<string, readonly (readonly [string, string])[]>;
 
 const isObj = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -75,10 +124,18 @@ export function validateEvidenceCompleteness(c: Record<string, unknown>): string
   for (const kind of rowsByKind.keys()) {
     if (!referencedKinds.has(kind)) problems.push(`householdEvidence kind "${kind}" is missing from evidenceCompleteness`);
   }
-  if (c.expectedDisposition === "proceed") {
-    for (const [fact, source] of Object.entries(PROCEED_FACT_SOURCES)) {
+  const caseId = nonEmpty(c.caseId) ? c.caseId : "(missing caseId)";
+  const requiredFacts =
+    REQUIRED_FACT_SOURCES_BY_CASE[
+      caseId as keyof typeof REQUIRED_FACT_SOURCES_BY_CASE
+    ];
+  if (!requiredFacts) {
+    problems.push(`${caseId}: no decisive-evidence rule classifies this signed case`);
+  } else {
+    const subject = c.expectedDisposition === "proceed" ? "proceed" : caseId;
+    for (const [fact, source] of requiredFacts) {
       if (!factSources.get(fact)?.includes(source)) {
-        problems.push(`proceed requires evidenceCompleteness fact "${fact}" sourced by "${source}"`);
+        problems.push(`${subject} requires evidenceCompleteness fact "${fact}" sourced by "${source}"`);
       }
     }
   }

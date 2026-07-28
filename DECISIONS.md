@@ -3392,3 +3392,29 @@ because it never arms.
 false when borrowed from another decision context or shown before it existed.
 **Revert path:** the authority union and its accessor are confined to the demo fake-service
 layer; removing phase or firm binding requires reverting the companion semantic and browser proofs.
+
+### D-066 · 2026-07-28 · reversible · Signed demo authority is exact, paired, and chronological
+
+The demo projects each source-bound request instant from its captain-signed fixture and derives
+every later visible instant through one stable case-relative timeline. The semantic snapshot
+requires the projection to remain byte-equal to the fixture trigger, every event to remain at or
+after that request, every display to contain its rendered instant, and the ordered sequence to
+remain monotonic in the demo zone, UTC, and a second representative zone.
+
+A source case is eligible only when its signoff, scenario, firm, disposition, request, currency,
+cadence, liquidity, and reserve policy exactly match the rendered decision. An exact candidate
+cannot be hidden behind a missing-authority message. The competing-liquidity branch projects both
+GC-10 and GC-11, so the first request's proceed result and the sibling's reservation-blocked result
+have separate signed ownership. Evidence completeness now requires the decisive source facts for
+blocked and prohibited cases as well as the full input set for proceed cases.
+
+The stable state registry is also enforced as an ordered prefix, not merely a set. Existing IDs
+cannot be reordered while preserving membership, and new IDs append after the previously shipped
+sequence.
+
+**Why:** signed truth includes ownership, causal order, and the decisive evidence for every
+disposition. Set equality and unconstrained pointers allowed semantically impossible displays to
+pass while all individual artifacts remained internally valid.
+**Revert path:** the fixture-backed trigger map, timeline projector, exact-source index,
+case-specific evidence requirements, and ordered-prefix check are independent pure boundaries and
+can be reverted together with their companion mutations.

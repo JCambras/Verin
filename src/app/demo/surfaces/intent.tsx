@@ -25,6 +25,13 @@ export function IntentSurface({ vm, scenarioId, firmId }: { vm: IntentVM; scenar
           <FreshValue provenance={vm.requestProvenance}>“{vm.requestText}”</FreshValue>
           <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.requestFakeClass]} />
         </p>
+        <p className="text-xs text-slate-600">
+          <FreshValue provenance={vm.requestAt.provenance}>
+            <time dateTime={vm.requestAt.provenance.asOf} data-testid="request-timestamp" data-event-instant={vm.requestAt.provenance.asOf}>
+              {vm.requestAt.display}
+            </time>
+          </FreshValue>
+        </p>
       </section>
 
       <section aria-label="Interpreted intent" className="flex flex-col gap-2">

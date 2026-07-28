@@ -14,6 +14,7 @@ export interface ApprovalActorSlot {
   readonly role: string;
   readonly status: string;
   readonly statusLabel: string;
+  readonly timestampIso?: string;
   readonly note?: string;
   readonly requesterExcluded?: boolean;
 }
@@ -39,7 +40,11 @@ export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
       </div>
       <ul className="flex flex-col divide-y divide-slate-100">
         {stage.actors.map((a) => (
-          <li key={a.name} className="flex flex-wrap items-center justify-between gap-2 py-2">
+          <li
+            key={a.name}
+            className="flex flex-wrap items-center justify-between gap-2 py-2"
+            data-event-instant={a.timestampIso}
+          >
             {/* A voided actor's CONTENT recedes to 0.7 (secondary text steps up to
                 slate-800 so the WCAG 1.4.3 floor holds - design §12.1); the state
                 badge stays at full strength: it announces the void, it is not stale. */}

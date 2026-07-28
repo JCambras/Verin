@@ -1,5 +1,9 @@
 import { formatMetricValue, type DisplayMetric } from "@contracts/metric";
-import { MONEY_CURRENCY, RESERVE_CADENCE } from "@contracts/money-movement";
+import {
+  MONEY_CURRENCY,
+  RESERVE_CADENCE,
+  headroomMinor as calculateHeadroomMinor,
+} from "@contracts/money-movement";
 import { buildExecution, buildVerification } from "../src/app/demo/build-outcome";
 import { getJourney } from "../src/app/demo/journey";
 import {
@@ -20,7 +24,14 @@ import {
   firmById,
   liquidityAuthorityFor,
 } from "../src/app/demo/data";
-import type { DemoSemanticSnapshot, DisplayedDecision, RenderedMoney } from "./golden-demo-semantics.lib";
+import { formatDemoInstant } from "../src/app/demo/timeline";
+import type {
+  DemoSemanticSnapshot,
+  DisplayedDecision,
+  RenderedMoney,
+  SourceTimeline,
+  SourceTimelineEvent,
+} from "./golden-demo-semantics.lib";
 
 const DRAFT_FLOOR_LABEL = "Smith household reserve floor";
 const DRAFT_HEADROOM_LABEL = "Available after reserve";
@@ -52,20 +63,23 @@ function draftSimulation(scenarioId: string, firmId: string) {
 /** Every decision the demo actually renders, with the liquidity arithmetic behind it. */
 function displayedDecisions(): DisplayedDecision[] {
   return SCENARIOS.flatMap((scenario) =>
-    Object.values(FIRMS).map((firm) => {
+    Object.values(FIRMS).flatMap((firm) => {
       const simulated = draftSimulation(scenario.id, firm.id);
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const initial = authority.kind === "signed" ? authority.initialDecision : null;
       const revalidation = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
-      return {
+      const reserveFloor = reserveFloorMinor(firm);
+      const primary: DisplayedDecision = {
         scenarioId: scenario.id,
         firmId: firm.id,
+        decisionRole: "primary",
         disposition: dispositionFor(scenario, firm.id),
         sourceCaseId: authority.kind === "signed" ? authority.sourceCaseId : null,
+        requestAt: authority.kind === "signed" ? authority.requestAt : null,
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
-        reserveFloorMinor: reserveFloorMinor(firm),
+        reserveFloorMinor: reserveFloor,
         headroomMinor: headroomMinor(scenario, firm),
         revalidationAvailableCashMinor: revalidation?.availableCashMinor ?? null,
         revalidationPendingActivityMinor: revalidation?.pendingActivityMinor ?? null,
@@ -73,6 +87,144 @@ function displayedDecisions(): DisplayedDecision[] {
         simulatedHeadroomMinor: simulated.headroomMinor,
         simulatedDisposition: simulated.disposition,
       };
+      const related =
+        authority.kind === "signed"
+          ? (authority.relatedDecisions ?? []).map(
+              (decision): DisplayedDecision => ({
+                scenarioId: scenario.id,
+                firmId: firm.id,
+                decisionRole: "competing-sibling",
+                disposition: decision.disposition,
+                sourceCaseId: decision.sourceCaseId,
+                requestAt: decision.requestAt,
+                liquidityAuthorityMissing: null,
+                availableCashMinor: decision.initialDecision.availableCashMinor,
+                pendingActivityMinor:
+                  decision.initialDecision.pendingActivityMinor,
+                reserveFloorMinor: reserveFloor,
+                headroomMinor: calculateHeadroomMinor(
+                  decision.initialDecision.availableCashMinor,
+                  decision.initialDecision.pendingActivityMinor,
+                  reserveFloor,
+                ),
+                revalidationAvailableCashMinor: null,
+                revalidationPendingActivityMinor: null,
+                simulatedFloorMinor: null,
+                simulatedHeadroomMinor: null,
+                simulatedDisposition: null,
+              }),
+            )
+          : [];
+      return [primary, ...related];
+    }),
+  );
+}
+
+function sourceTimelines(): SourceTimeline[] {
+  const event = (
+    kind: string,
+    instant: string,
+    display: string,
+    includeSeconds = false,
+  ): SourceTimelineEvent => ({
+    kind,
+    instant,
+    display,
+    renderedInstant: formatDemoInstant(instant, undefined, includeSeconds),
+  });
+  return SCENARIOS.flatMap((scenario) =>
+    Object.values(FIRMS).flatMap((firm) => {
+      const authority = liquidityAuthorityFor(scenario, firm.id);
+      if (authority.kind === "missing") return [];
+      const journey = getJourney(scenario.id, firm.id);
+      const primaryEvents: SourceTimelineEvent[] = [
+        event(
+          "request",
+          journey.intent.requestAt.provenance.asOf,
+          journey.intent.requestAt.display,
+        ),
+        event(
+          "decision-recorded",
+          journey.record.header.createdAtIso,
+          journey.record.header.createdAt,
+          true,
+        ),
+        ...(journey.record.approvalStages ?? []).flatMap((stage) => [
+          ...stage.actors.flatMap((actor) =>
+            actor.timestampIso
+              ? [
+                  event(
+                    "approval",
+                    actor.timestampIso,
+                    actor.statusLabel,
+                  ),
+                ]
+              : [],
+          ),
+          ...(stage.authorityEvents ?? []).map((authorityEvent) =>
+            event(
+              authorityEvent.type,
+              authorityEvent.timestamp,
+              authorityEvent.display,
+            ),
+          ),
+        ]),
+        ...(journey.safety
+          ? [
+              event(
+                "revalidation",
+                journey.safety.revalidatedAtIso,
+                journey.safety.revalidatedAt.display,
+              ),
+            ]
+          : []),
+        ...(journey.execution?.rows ?? []).map((row) =>
+          event("execution", row.timestampIso, row.timestamp),
+        ),
+        ...(journey.verification?.appended ?? []).map((row) =>
+          event("verification-appended", row.timestampIso, row.timestamp),
+        ),
+      ];
+      const primary: SourceTimeline = {
+        sourceCaseId: authority.sourceCaseId,
+        scenarioId: scenario.id,
+        firmId: firm.id,
+        requestAt: authority.requestAt,
+        events: primaryEvents,
+      };
+      const related = (authority.relatedDecisions ?? []).flatMap(
+        (relatedAuthority) => {
+          const relatedDecision = journey.safety?.checks.find(
+            (check) =>
+              check.relatedDecision?.sourceCaseId ===
+              relatedAuthority.sourceCaseId,
+          )?.relatedDecision;
+          if (!relatedDecision) return [];
+          return [
+            {
+              sourceCaseId: relatedAuthority.sourceCaseId,
+              scenarioId: scenario.id,
+              firmId: firm.id,
+              requestAt: relatedAuthority.requestAt,
+              events: [
+                event(
+                  "request",
+                  relatedDecision.requestAtIso,
+                  relatedDecision.requestAt,
+                  true,
+                ),
+                event(
+                  "decision-recorded",
+                  relatedDecision.decidedAtIso,
+                  relatedDecision.decidedAt,
+                  true,
+                ),
+              ],
+            } satisfies SourceTimeline,
+          ];
+        },
+      );
+      return [primary, ...related];
     }),
   );
 }
@@ -116,13 +268,18 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       reserveFloorMinor: reserveFloorMinor(firm),
     })),
     decisions: displayedDecisions(),
+    sourceTimelines: sourceTimelines(),
     draftedReserveMonths: DRAFT_RESERVE_MONTHS,
     draftedReserveFloorMinor: draftSimulation(SCENARIOS[0]!.id, "firm-a").floorMinor,
     executionTimelineStatuses: SCENARIOS.flatMap((scenario) =>
-      buildExecution(scenario).rows.map((row) => row.status),
+      firms.flatMap((firm) =>
+        buildExecution(scenario, firm).rows.map((row) => row.status),
+      ),
     ),
     verificationTimelineStatuses: SCENARIOS.flatMap((scenario) =>
-      buildVerification(scenario).appended.map((row) => row.status),
+      firms.flatMap((firm) =>
+        buildVerification(scenario, firm).appended.map((row) => row.status),
+      ),
     ),
     authorityLapseEvents,
     approvalInvalidationPhases: {

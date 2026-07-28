@@ -230,6 +230,37 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("flags decisive evidence removed together with its matrix row from non-proceed cases", () => {
+    const cases = clone();
+    const gc04 = caseById(cases, "GC-04-recent-bank-change-firm-b");
+    gc04.householdEvidence = (gc04.householdEvidence as Array<Record<string, unknown>>).filter(
+      (row) => row.evidenceKind !== "bank-instruction",
+    );
+    gc04.evidenceCompleteness = (gc04.evidenceCompleteness as Array<Record<string, unknown>>).filter(
+      (row) => row.fact !== "destination-bank-instruction",
+    );
+    const gc06 = caseById(cases, "GC-06-household-restriction");
+    gc06.householdEvidence = (gc06.householdEvidence as Array<Record<string, unknown>>).filter(
+      (row) => row.evidenceKind !== "household-instruction",
+    );
+    gc06.evidenceCompleteness = (gc06.evidenceCompleteness as Array<Record<string, unknown>>).filter(
+      (row) => row.fact !== "destination-restriction",
+    );
+    const problems = run(cases);
+    expect(
+      problems.some((p) =>
+        p.includes("GC-04-recent-bank-change-firm-b requires evidenceCompleteness fact") &&
+        p.includes('"destination-bank-instruction"'),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some((p) =>
+        p.includes("GC-06-household-restriction requires evidenceCompleteness fact") &&
+        p.includes('"destination-restriction"'),
+      ),
+    ).toBe(true);
+  });
+
   it("flags signed request amount and monthly-withdrawal drift in the demo", () => {
     const amountDrift = demoClone();
     amountDrift.requestAmountMinor = 7_400_000;
@@ -388,6 +419,130 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, wrongFirm).some((p) =>
         p.includes("belongs to firm firm-b, not this firm"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects missing or incomplete source bindings when an exact signed candidate exists", () => {
+    const missing = demoClone();
+    const safeFirmA = missing.decisions.find(
+      (decision) =>
+        decision.scenarioId === "safe-proceed" &&
+        decision.firmId === "firm-a" &&
+        decision.decisionRole === "primary",
+    )!;
+    safeFirmA.sourceCaseId = null;
+    safeFirmA.requestAt = null;
+    safeFirmA.liquidityAuthorityMissing = "Missing";
+    safeFirmA.availableCashMinor = null;
+    safeFirmA.pendingActivityMinor = null;
+    safeFirmA.headroomMinor = null;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, missing).some((p) =>
+        p.includes("claims missing authority although exact signed candidate(s) exist"),
+      ),
+    ).toBe(true);
+
+    const unsignedCases = clone();
+    (caseById(unsignedCases, "GC-01-firm-a-happy-path").signoff as Record<string, unknown>).status =
+      "pending-captain";
+    expect(
+      validateGoldenDemoSemantics(unsignedCases, realRefs, realDemo).some((p) =>
+        p.includes("is not a signed exact match"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires source bindings to match disposition, request, units, cadence, and reserve policy", () => {
+    const mutations: Array<
+      [string, (source: Record<string, unknown>) => void]
+    > = [
+      ["disposition", (source) => { source.expectedDisposition = "blocked"; }],
+      ["request", (source) => { (source.signedMoney as Record<string, unknown>).requestAmountUsd = 74_000; }],
+      ["currency", (source) => { (source.signedMoney as Record<string, unknown>).currency = "EUR"; }],
+      ["cadence", (source) => { (source.signedMoney as Record<string, unknown>).cadence = "year"; }],
+      ["reserve", (source) => { (source.firmConfiguration as Record<string, unknown>).cashReserveMonths = 7; }],
+    ];
+    for (const [label, mutate] of mutations) {
+      const cases = clone();
+      mutate(caseById(cases, "GC-10-simultaneous-distributions-first"));
+      expect(
+        validateGoldenDemoSemantics(cases, realRefs, realDemo).some((p) =>
+          p.includes("GC-10-simultaneous-distributions-first") &&
+          p.includes("is not a signed exact match"),
+        ),
+        label,
+      ).toBe(true);
+    }
+  });
+
+  it("requires both signed sides of the competing-liquidity pair to remain represented", () => {
+    const unbound = demoClone();
+    unbound.decisions = unbound.decisions.filter(
+      ({ sourceCaseId }) =>
+        sourceCaseId !== "GC-11-simultaneous-distributions-second",
+    );
+    unbound.sourceTimelines = unbound.sourceTimelines.filter(
+      ({ sourceCaseId }) =>
+        sourceCaseId !== "GC-11-simultaneous-distributions-second",
+    );
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, unbound).some((p) =>
+        p.includes(
+          "GC-11-simultaneous-distributions-second: exact signed branch-and-firm authority is not represented",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags source-bound visible events that precede or misorder the signed request", () => {
+    const beforeRequest = demoClone();
+    const duplicate = beforeRequest.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-12-duplicate-retry",
+    )!;
+    duplicate.events[1]!.instant = "2026-07-26T20:09:59.000Z";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, beforeRequest).some((p) =>
+        p.includes("GC-12-duplicate-retry") &&
+        p.includes("precedes its signed request"),
+      ),
+    ).toBe(true);
+
+    const reversed = demoClone();
+    reversed.sourceTimelines
+      .find(({ sourceCaseId }) => sourceCaseId === "GC-13-partial-salesforce-success")!
+      .events.reverse();
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, reversed).some((p) =>
+        p.includes("GC-13-partial-salesforce-success") &&
+        p.includes("out of order"),
+      ),
+    ).toBe(true);
+
+    const detached = demoClone();
+    detached.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-14-delayed-nigo",
+    )!.requestAt = "2026-07-26T13:30:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, detached).some((p) =>
+        p.includes("visible request instant") &&
+        p.includes("signed trigger"),
+      ),
+    ).toBe(true);
+
+    const detachedRevalidation = demoClone();
+    detachedRevalidation.sourceTimelines
+      .find(({ sourceCaseId }) => sourceCaseId === "GC-15-approval-invalidation")!
+      .events.find(({ kind }) => kind === "revalidation")!.instant =
+        "2026-07-26T22:10:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        detachedRevalidation,
+      ).some((p) =>
+        p.includes("visible revalidation instant") &&
+        p.includes("signed evidence retrieval"),
       ),
     ).toBe(true);
   });

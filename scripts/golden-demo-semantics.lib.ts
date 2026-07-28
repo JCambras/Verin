@@ -25,8 +25,10 @@ export interface RenderedMoney {
 export interface DisplayedDecision {
   scenarioId: string;
   firmId: string;
+  decisionRole: "primary" | "competing-sibling";
   disposition: string;
   sourceCaseId: string | null;
+  requestAt: string | null;
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -39,6 +41,21 @@ export interface DisplayedDecision {
   simulatedFloorMinor: number | null;
   simulatedHeadroomMinor: number | null;
   simulatedDisposition: string | null;
+}
+
+export interface SourceTimelineEvent {
+  kind: string;
+  instant: string;
+  display: string;
+  renderedInstant: string;
+}
+
+export interface SourceTimeline {
+  sourceCaseId: string;
+  scenarioId: string;
+  firmId: string;
+  requestAt: string;
+  events: SourceTimelineEvent[];
 }
 
 export interface DemoSemanticSnapshot {
@@ -56,6 +73,7 @@ export interface DemoSemanticSnapshot {
     reserveFloorMinor: number;
   }>;
   decisions: DisplayedDecision[];
+  sourceTimelines: SourceTimeline[];
   draftedReserveMonths: number;
   draftedReserveFloorMinor: number | null;
   executionTimelineStatuses: string[];
@@ -83,6 +101,67 @@ const sameMembers = (left: Iterable<string>, right: Iterable<string>): boolean =
   const b = [...new Set(right)].sort();
   return a.length === b.length && a.every((value, index) => value === b[index]);
 };
+const sourceKey = (scenarioId: string, firmId: string, disposition: string): string =>
+  `${scenarioId}\u0000${firmId}\u0000${disposition}`;
+
+interface ExactSourceCandidate {
+  id: string;
+}
+
+function exactSourceCandidates(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+): Map<string, ExactSourceCandidate[]> {
+  const candidates = new Map<string, ExactSourceCandidate[]>();
+  for (const { data } of cases) {
+    if (!isObj(data) || !isNonEmptyString(data.caseId)) continue;
+    const scenarioId = data.scenarioRef;
+    const firmId = data.firm;
+    const disposition = data.expectedDisposition;
+    const signoff = isObj(data.signoff) ? data.signoff : null;
+    const firmConfiguration = isObj(data.firmConfiguration)
+      ? data.firmConfiguration
+      : null;
+    const signed = readSignedMoney(data);
+    const demoFirm =
+      typeof firmId === "string"
+        ? demo.firms.find((firm) => firm.id === firmId)
+        : undefined;
+    const requestMinor = minorFromMajor(signed?.requestAmountUsd ?? null);
+    const monthlyMinor = minorFromMajor(
+      signed?.plannedWithdrawalMonthlyUsd ?? null,
+    );
+    const floorMinor = minorFromMajor(signed?.reserveFloorUsd ?? null);
+    if (
+      !isNonEmptyString(scenarioId) ||
+      !isNonEmptyString(firmId) ||
+      !isNonEmptyString(disposition) ||
+      signoff?.status !== "signed" ||
+      signoff.authority !== "captain" ||
+      !isNonEmptyString(signoff.signedBy) ||
+      !isNonEmptyString(signoff.signedAt) ||
+      !signed ||
+      !demoFirm ||
+      requestMinor !== demo.requestAmountMinor ||
+      signed.currency !== demo.currency ||
+      signed.cadence !== demo.cadence ||
+      floorMinor !== demoFirm.reserveFloorMinor ||
+      firmConfiguration?.cashReserveMonths !== demoFirm.reserveMonths ||
+      (monthlyMinor !== null &&
+        monthlyMinor !== demo.plannedWithdrawalMonthlyMinor) ||
+      minorFromMajor(signed.availableLiquidityUsd) === null ||
+      minorFromMajor(signed.pendingLiquidityUsd) === null
+    ) {
+      continue;
+    }
+    const key = sourceKey(scenarioId, firmId, disposition);
+    candidates.set(key, [
+      ...(candidates.get(key) ?? []),
+      { id: data.caseId },
+    ]);
+  }
+  return candidates;
+}
 
 /**
  * Decompose a rendered money string into an EXACT decimal: `units` counted in
@@ -167,9 +246,20 @@ export function validateStatusVocabularyDocs(docs: { path: string; text: string 
 function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnapshot): string[] {
   const problems: string[] = [];
   if (demo.decisions.length === 0) return ["the demo renders no decision to fence"];
+  const candidatesByKey = exactSourceCandidates(cases, demo);
+  const boundSourceIds = new Set<string>();
   for (const d of demo.decisions) {
-    const at = `${d.scenarioId}/${d.firmId}`;
+    const at = `${d.scenarioId}/${d.firmId}/${d.decisionRole}`;
+    const candidates =
+      candidatesByKey.get(
+        sourceKey(d.scenarioId, d.firmId, d.disposition),
+      ) ?? [];
     if (d.sourceCaseId === null) {
+      if (candidates.length > 0) {
+        problems.push(
+          `${at}: claims missing authority although exact signed candidate(s) exist: ${candidates.map(({ id }) => id).join(", ")}`,
+        );
+      }
       if (!isNonEmptyString(d.liquidityAuthorityMissing)) {
         problems.push(`${at}: has no signed liquidity case but does not surface missing authority`);
       }
@@ -184,6 +274,7 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       }
       continue;
     }
+    boundSourceIds.add(d.sourceCaseId);
     if (d.liquidityAuthorityMissing !== null) {
       problems.push(`${at}: names a signed case and simultaneously claims liquidity authority is missing`);
     }
@@ -198,6 +289,26 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     }
     if (source?.firm !== d.firmId) {
       problems.push(`${at}: signed case "${d.sourceCaseId}" belongs to firm ${String(source?.firm)}, not this firm`);
+    }
+    if (source?.expectedDisposition !== d.disposition) {
+      problems.push(
+        `${at}: signed case "${d.sourceCaseId}" records disposition ${String(source?.expectedDisposition)}, not ${d.disposition}`,
+      );
+    }
+    const trigger = isObj(source?.trigger) ? source.trigger : null;
+    if (
+      !isNonEmptyString(d.requestAt) ||
+      !isNonEmptyString(trigger?.asOf) ||
+      d.requestAt !== trigger.asOf
+    ) {
+      problems.push(
+        `${at}: request instant drift, ${d.sourceCaseId}=${String(trigger?.asOf)}, demo=${String(d.requestAt)}`,
+      );
+    }
+    if (!candidates.some(({ id }) => id === d.sourceCaseId)) {
+      problems.push(
+        `${at}: source case "${d.sourceCaseId}" is not a signed exact match for branch, firm, disposition, request, currency, cadence, and reserve policy`,
+      );
     }
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
@@ -250,6 +361,167 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       }
     }
   }
+  for (const candidates of candidatesByKey.values()) {
+    for (const candidate of candidates) {
+      if (!boundSourceIds.has(candidate.id)) {
+        problems.push(
+          `${candidate.id}: exact signed branch-and-firm authority is not represented by the demo`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+const TIMELINE_TIME_ZONES = [
+  "America/New_York",
+  "UTC",
+  "Asia/Tokyo",
+] as const;
+
+function localTimelineKey(instant: string, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("sv-SE", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(instant))
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value }) => [type, value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function validateSourceTimelines(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+): string[] {
+  const problems: string[] = [];
+  const sourceIds = new Set(
+    demo.decisions.flatMap(({ sourceCaseId }) =>
+      sourceCaseId === null ? [] : [sourceCaseId],
+    ),
+  );
+  const timelineIds = demo.sourceTimelines.map(
+    ({ sourceCaseId }) => sourceCaseId,
+  );
+  for (const duplicate of new Set(
+    timelineIds.filter((id, index) => timelineIds.indexOf(id) !== index),
+  )) {
+    problems.push(`${duplicate}: source timeline is represented more than once`);
+  }
+  for (const sourceId of sourceIds) {
+    const timeline = demo.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === sourceId,
+    );
+    const source = caseData(cases, sourceId);
+    const trigger = isObj(source?.trigger) ? source.trigger : null;
+    if (!timeline) {
+      problems.push(`${sourceId}: source-bound demo decision has no visible timeline`);
+      continue;
+    }
+    if (!isNonEmptyString(trigger?.asOf) || timeline.requestAt !== trigger.asOf) {
+      problems.push(
+        `${sourceId}: visible request instant ${timeline.requestAt} does not match signed trigger ${String(trigger?.asOf)}`,
+      );
+    }
+    if (
+      timeline.scenarioId !== source?.scenarioRef ||
+      timeline.firmId !== source?.firm
+    ) {
+      problems.push(
+        `${sourceId}: visible timeline belongs to ${timeline.scenarioId}/${timeline.firmId}, not ${String(source?.scenarioRef)}/${String(source?.firm)}`,
+      );
+    }
+    const revalidationInstants = new Set(
+      (Array.isArray(source?.householdEvidence)
+        ? source.householdEvidence
+        : []
+      ).flatMap((row) =>
+        isObj(row) &&
+        row.liquidityPhase === "pre-execution-revalidation" &&
+        isNonEmptyString(row.retrievedAt)
+          ? [row.retrievedAt]
+          : [],
+      ),
+    );
+    if (revalidationInstants.size > 0) {
+      const visibleRevalidations = timeline.events
+        .filter(({ kind }) => kind === "revalidation")
+        .map(({ instant }) => instant);
+      if (
+        revalidationInstants.size !== 1 ||
+        visibleRevalidations.length !== 1 ||
+        !revalidationInstants.has(visibleRevalidations[0]!)
+      ) {
+        problems.push(
+          `${sourceId}: visible revalidation instant ${visibleRevalidations.join(", ") || "(missing)"} does not match signed evidence retrieval ${[...revalidationInstants].join(", ")}`,
+        );
+      }
+    }
+    if (timeline.events.length === 0) {
+      problems.push(`${sourceId}: visible timeline has no events`);
+      continue;
+    }
+    if (
+      timeline.events[0]?.kind !== "request" ||
+      timeline.events[0]?.instant !== timeline.requestAt
+    ) {
+      problems.push(`${sourceId}: visible timeline does not begin with its signed request`);
+    }
+    let previous = Number.NEGATIVE_INFINITY;
+    for (const [index, event] of timeline.events.entries()) {
+      const instant = new Date(event.instant).getTime();
+      if (
+        !Number.isFinite(instant) ||
+        new Date(instant).toISOString() !== event.instant
+      ) {
+        problems.push(
+          `${sourceId}: visible timeline event ${event.kind} has a non-canonical instant ${event.instant}`,
+        );
+        continue;
+      }
+      if (instant < new Date(timeline.requestAt).getTime()) {
+        problems.push(
+          `${sourceId}: visible timeline event ${event.kind} precedes its signed request`,
+        );
+      }
+      if (instant < previous) {
+        problems.push(
+          `${sourceId}: visible timeline event ${event.kind} is out of order at position ${index}`,
+        );
+      }
+      if (!event.display.includes(event.renderedInstant)) {
+        problems.push(
+          `${sourceId}: visible timeline event ${event.kind} displays "${event.display}", not its rendered instant "${event.renderedInstant}"`,
+        );
+      }
+      previous = instant;
+    }
+    for (const timeZone of TIMELINE_TIME_ZONES) {
+      const keys = timeline.events.map(({ instant }) =>
+        localTimelineKey(instant, timeZone),
+      );
+      if (keys.some((key, index) => index > 0 && key < keys[index - 1]!)) {
+        problems.push(
+          `${sourceId}: visible timeline is not monotonic when rendered in ${timeZone}`,
+        );
+      }
+    }
+  }
+  for (const timelineId of timelineIds) {
+    if (!sourceIds.has(timelineId)) {
+      problems.push(
+        `${timelineId}: visible timeline has no source-bound demo decision`,
+      );
+    }
+  }
   return problems;
 }
 
@@ -282,6 +554,7 @@ export function validateGoldenDemoSemantics(
   }
 
   problems.push(...validateDisplayedDecisions(cases, demo));
+  problems.push(...validateSourceTimelines(cases, demo));
 
   for (const [caseId, firmId] of canonicalCases) {
     const c = caseData(cases, caseId);

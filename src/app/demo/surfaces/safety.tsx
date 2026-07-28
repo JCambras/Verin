@@ -44,13 +44,24 @@ export function SafetySurface({
       description="After approval and before anything moves, Verin re-checks material evidence, holds a reservation, and refuses to execute on changed facts."
     >
       <p className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-        <FreshValue provenance={vm.revalidatedAt.provenance}>{vm.revalidatedAt.display}</FreshValue>
+        <FreshValue provenance={vm.revalidatedAt.provenance}>
+          <time dateTime={vm.revalidatedAtIso} data-testid="revalidation-timestamp" data-event-instant={vm.revalidatedAtIso}>
+            {vm.revalidatedAt.display}
+          </time>
+        </FreshValue>
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
 
       <section aria-label="Revalidation checks" className="flex flex-col divide-y divide-slate-100 rounded-lg border border-slate-200 bg-surface px-4 py-1">
         {vm.checks.map((c) => (
-          <div key={c.label} className="flex flex-col gap-1 py-2">
+          <div
+            key={c.label}
+            className="flex flex-col gap-1 py-2"
+            data-related-source-case={c.relatedDecision?.sourceCaseId}
+            data-related-disposition={c.relatedDecision?.disposition}
+            data-related-request-instant={c.relatedDecision?.requestAtIso}
+            data-related-decision-instant={c.relatedDecision?.decidedAtIso}
+          >
             <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-800">
               {c.label}
               <StatusBadge status={c.status} label={c.statusLabel} />
