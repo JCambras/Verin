@@ -1,19 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import type { Project } from "ts-morph";
 import {
+  localSpecifierTargets,
   moduleReferences,
   realProject,
   shippedSourceFiles,
   REPO_ROOT,
   type ModuleReference,
 } from "./_fence-utils";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 
 /**
  * LINE-BUDGET FENCE (ADR-0018, charter #1/#10). PER-LAYER ratchet-down ceilings on
@@ -95,43 +91,62 @@ export function budgetViolations(totals: Record<keyof typeof CEILINGS, number>):
   return out;
 }
 
-function runtimeDataArtifactPath(
-  importer: string,
-  reference: Pick<ModuleReference, "kind" | "specifier">,
-): string | null {
-  if (
-    reference.specifier === null ||
-    !reference.specifier.startsWith(".") ||
-    !reference.specifier.endsWith(".json") ||
-    !RUNTIME_JSON_REFERENCE_KINDS.has(reference.kind)
-  ) {
-    return null;
-  }
-  const artifact = resolve(dirname(importer), reference.specifier);
+function isWithinContractsRoot(artifact: string): boolean {
   const withinContracts = relative(CONTRACTS_RUNTIME_DATA_ROOT, artifact);
   return (
-      withinContracts === "" ||
-      withinContracts.startsWith("..") ||
-      isAbsolute(withinContracts)
-    )
-    ? null
-    : artifact;
+    withinContracts !== "" &&
+    !withinContracts.startsWith("..") &&
+    !isAbsolute(withinContracts)
+  );
 }
 
-function runtimeDataArtifactPaths(): string[] {
+/**
+ * The contracts registries a reference pulls into the runtime. The specifier is
+ * RESOLVED through the same authority the dependency rule uses, never matched as
+ * text: a `startsWith(".")` test calls `@contracts/registry.json` external, and a
+ * generated registry lands under an alias with its lines charged to nothing.
+ */
+function runtimeDataArtifactTargets(
+  project: Project,
+  importer: string,
+  reference: Pick<ModuleReference, "kind" | "specifier">,
+): string[] {
+  if (
+    reference.specifier === null ||
+    !RUNTIME_JSON_REFERENCE_KINDS.has(reference.kind)
+  ) {
+    return [];
+  }
+  return localSpecifierTargets(project, importer, reference.specifier).filter(
+    (target) => target.endsWith(".json") && isWithinContractsRoot(target),
+  );
+}
+
+/** Does any configured alias point DIRECTLY at a `.json` file? */
+function mapsAliasOntoJson(project: Project): boolean {
+  return Object.values(project.getCompilerOptions().paths ?? {}).some((targets) =>
+    targets.some((target) => target.endsWith(".json")),
+  );
+}
+
+function runtimeDataArtifactPaths(project: Project): string[] {
+  // A specifier is spelled literally in its importing file, so a file whose text
+  // never says `.json` reaches an artifact only through a mapping that HIDES the
+  // extension. tsconfig configures none today, which is what makes skipping those
+  // files exact rather than a sampled shortcut - and the moment one is configured
+  // the whole tree is scanned instead of trusting the spelling.
+  const scanEveryFile = mapsAliasOntoJson(project);
   const paths = new Set<string>();
-  for (const sourceFile of realProject().getSourceFiles()) {
-    // Only a specifier ENDING in `.json` can ever resolve to an artifact, and a
-    // specifier is spelled literally in its file, so a file with no `.json` text
-    // cannot contribute one. Skipping it is exact, not a sampled shortcut, and it
-    // keeps this fence off moduleReferences' whole-program symbol resolution.
-    if (!sourceFile.getFullText().includes(".json")) continue;
+  for (const sourceFile of project.getSourceFiles()) {
+    if (!scanEveryFile && !sourceFile.getFullText().includes(".json")) continue;
     for (const reference of moduleReferences(sourceFile)) {
-      const artifact = runtimeDataArtifactPath(
+      for (const artifact of runtimeDataArtifactTargets(
+        project,
         sourceFile.getFilePath(),
         reference,
-      );
-      if (artifact !== null) paths.add(artifact);
+      )) {
+        paths.add(artifact);
+      }
     }
   }
   return [...paths].sort();
@@ -192,7 +207,8 @@ describe("line-budget fence (per-layer)", () => {
 });
 
 describe("runtime JSON data-artifact budget", () => {
-  const paths = runtimeDataArtifactPaths();
+  const project = realProject();
+  const paths = runtimeDataArtifactPaths(project);
   const total = measureRuntimeDataArtifacts(paths);
 
   it(`enforces: imported contracts registries are explicit and within ${RUNTIME_DATA_ARTIFACT_CEILING} lines [now ${total}]`, () => {
@@ -219,20 +235,42 @@ describe("runtime JSON data-artifact budget", () => {
       ]);
     });
 
-    it("discovers a local runtime JSON import but not close lookalikes", () => {
+    it("discovers a runtime JSON import through EVERY spelling that reaches contracts", () => {
       const importer = join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.ts");
-      expect(runtimeDataArtifactPath(importer, {
-        kind: "import",
-        specifier: "./probe.json",
-      })).toBe(join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.json"));
+      const artifact = join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.json");
+      for (const specifier of [
+        "./probe.json",
+        // An ALIASED registry is the same artifact under another name: resolved,
+        // never text-matched, or its lines are charged to nothing.
+        "@contracts/probe.json",
+        "@/contracts/probe.json",
+      ]) {
+        expect(
+          runtimeDataArtifactTargets(project, importer, { kind: "import", specifier }),
+          specifier,
+        ).toEqual([artifact]);
+      }
       for (const reference of [
         { kind: "import-type", specifier: "./probe.json" },
         { kind: "import", specifier: "package/probe.json" },
         { kind: "import", specifier: "./probe.ts" },
         { kind: "import", specifier: "../probe.json" },
+        { kind: "import", specifier: "@app/probe.json" },
       ] as const) {
-        expect(runtimeDataArtifactPath(importer, reference)).toBeNull();
+        expect(
+          runtimeDataArtifactTargets(project, importer, reference),
+          reference.specifier,
+        ).toEqual([]);
       }
+    });
+
+    it("scans every file when an alias maps directly onto a .json target", () => {
+      expect(mapsAliasOntoJson(project)).toBe(false);
+      expect(
+        mapsAliasOntoJson({
+          getCompilerOptions: () => ({ paths: { "@registry": ["./src/contracts/big.json"] } }),
+        } as unknown as Project),
+      ).toBe(true);
     });
 
     it("counts a trailing newline as termination, not an empty line", () => {

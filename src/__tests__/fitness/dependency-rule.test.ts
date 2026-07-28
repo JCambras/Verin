@@ -320,6 +320,44 @@ describe("dependency-rule fence", () => {
           `export const value = load("@infra/store");`,
         ].join("\n"),
       ],
+      [
+        "the globalThis namespace",
+        [
+          `const load = globalThis.process.getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "an aliased globalThis-namespaced receiver",
+        [
+          "const platform = globalThis.process;",
+          `const load = platform.getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "a computed globalThis member",
+        [
+          `const load = globalThis["process"].getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "destructuring",
+        [
+          "const { getBuiltinModule } = process;",
+          `const load = getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "aliased destructuring",
+        [
+          "const { getBuiltinModule: acquire } = globalThis.process;",
+          `const load = acquire("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
     ])("ambient getBuiltinModule cannot bypass the layer fence through %s", (_name, source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -330,6 +368,9 @@ describe("dependency-rule fence", () => {
     });
 
     it("a local getBuiltinModule-shaped value remains an allowed lookalike", () => {
+      // NON-VACUOUS pair for the companion above: widening acquisition to the
+      // globalThis and destructured spellings must not widen it to a project-owned
+      // property that merely shares the name.
       const v = detectLayerViolations(
         inMemoryProject({
           "src/domain/ok.ts": [
@@ -341,6 +382,8 @@ describe("dependency-rule fence", () => {
             "};",
             "export const bound = process.getBuiltinModule.bind(process);",
             `export const called = process.getBuiltinModule.call(process, "local");`,
+            "const { getBuiltinModule } = process;",
+            "export const destructured = getBuiltinModule.call(process);",
           ].join("\n"),
         }),
       );
@@ -579,6 +622,28 @@ describe("dependency-rule fence", () => {
           `export const value = Ctor("return 1")();`,
         ].join("\n"),
       ],
+      [
+        "shorthand destructured constructor",
+        [
+          "const { constructor } = (() => {});",
+          `export const value = constructor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "shorthand assignment-destructured constructor",
+        [
+          "let constructor: any;",
+          "({ constructor } = (() => {}));",
+          `export const value = constructor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "shorthand destructured globalThis Function",
+        [
+          "const { Function } = globalThis;",
+          `export const value = Function("return 1")();`,
+        ].join("\n"),
+      ],
     ])("dynamic Function recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -644,6 +709,10 @@ describe("dependency-rule fence", () => {
             "const model = { constructor: () => 7 };",
             "const { now } = Date;",
             "const { constructor: ctor } = model;",
+            // The SHORTHAND spelling names a new local, so the source property has
+            // to be resolved through the receiver - reading the local would call
+            // every ambient member project-declared, and every project member ambient.
+            "const { constructor } = model;",
             "export const values = [",
             `  Reflect.get({}, "constructor"),`,
             "  Date.now(),",
@@ -652,6 +721,7 @@ describe("dependency-rule fence", () => {
             "  model.constructor(),",
             "  now(),",
             "  ctor(),",
+            "  constructor(),",
             "];",
           ].join("\n"),
         }),
