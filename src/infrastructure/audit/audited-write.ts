@@ -15,7 +15,6 @@ import { appError, isAppError, logLevelFor, type AppError } from "@contracts/err
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
 import {
-  observabilityId,
   observabilityIdOrRedacted,
   type ObservabilityAction,
   type ObservabilityEntityType,
@@ -118,12 +117,13 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // this helper is the single write chokepoint, the worst place to fly blind
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
     const known: AppError | null = isAppError(e) ? e : null;
-    // entityId is CLIENT-SUPPLIED on some writes (updateHouseholdName takes the id
-    // straight from the request body), so the mint here degrades rather than throws
-    // — a throw would escape before the failure-audit entry below is enqueued.
+    // EVERY id minted on this path degrades rather than throws: a throw would escape
+    // before the failure-audit entry below is enqueued, costing the write both its log
+    // line and its "[attempt failed]" chain entry. entityId is the obvious case
+    // (updateHouseholdName takes it from the request body); orgId is no safer.
     log[known ? logLevelFor(known.code) : "error"](
       {
-        orgId: observabilityId("orgId", orgId),
+        orgId: observabilityIdOrRedacted("orgId", orgId),
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId
@@ -151,7 +151,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
           {
-            orgId: observabilityId("orgId", orgId),
+            orgId: observabilityIdOrRedacted("orgId", orgId),
             action: opts.action,
             entityType: opts.entityType,
             entityId: opts.entityId

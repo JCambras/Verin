@@ -1111,7 +1111,7 @@ references to either number refer to this entry; origin/main had already assigne
   call requires it (writes carry it inside `WriteActor`); capability-keyed loads (session id, e-sign
   token, resume token) and the identity-provider internals are exact-match reviewed escapes, mirroring the
   org-id fence's NON_TENANT classification. Missing context cannot compile (TS2741) or parse (repository
-  asserts reject casts/spreads/JSON impostors with `INTERNAL`). Fence: `tenant-context-required` (PF-027).
+  asserts reject casts/spreads/JSON impostors with `INTERNAL`). Fence: `tenant-context-required` (PF-030).
 - **Per-action authorization** (`contracts/authz.ts`): `ActorRef` (human role-holder | system actor) +
   the seven v3 §15.3 permission points (eight actions - policy drafting and approval are distinct) with
   Phase 1 role allowlists. Surfaced actions mirror the previous
@@ -1122,25 +1122,25 @@ references to either number refer to this entry; origin/main had already assigne
   actions exclude the requesting-advisor role, and `evidence.supply`/`cco` are separated (review vs doing).
   System actors are refused every governed action (machines never approve; policy-automatic paths arrive
   with their own typed authority in prompt 18, which also brings quorum/actor-distinctness — these
-  allowlists are the role-level floor, not the authority machinery). Fence: `governed-actions` (PF-030).
+  allowlists are the role-level floor, not the authority machinery). Fence: `governed-actions` (PF-033).
 - **Tokenized + llm/ boundary**: `Tokenized<T>` lands with the ratified shape (verin-core-contracts.ts)
   and is constructible only via the scrubber factory `infrastructure/pii/tokenize.ts` (runtime-sealed,
   scrub-by-construction); `infrastructure/llm/` holds the ONLY LLM-bound shapes (masked request schema +
   evidence-to-LLM projection with deterministic known-entity masking) and no model client (first LLM
   surface = prompt 13; charter #5's no-dead-scaffolding is honored by keeping the boundary to the seam the
   ratified invariant 1 requires — v3 invariant 1 is ACTIVATED by this PR, per its registry activation
-  clause). Fences: `tokenized-factory-only` (PF-028) + `llm-pii-boundary` (PF-029) + an ESLint edit-time
+  clause). Fences: `tokenized-factory-only` (PF-031) + `llm-pii-boundary` (PF-032) + an ESLint edit-time
   mirror.
 - **Secret containment** (`contracts/secret.ts`): config secrets become closure-held `SecretValue`s
-  (every coercion path redacts; `.reveal()` allowlisted to the two HMAC consumers — PF-031). Span
+  (every coercion path redacts; `.reveal()` allowlisted to the two HMAC consumers — PF-034). Span
   attributes and span error messages are PII-scrubbed at the trace boundary (values by pattern, keys by
   the same field-name rule as the log scrubber); pino redact list extended to account/routing numbers;
   `safeReason` is the sanctioned exception-text log helper (a free-form deep-scrub helper lands with its
   first real consumer at the prompt-13 LLM logging surface, per charter #5).
-- **ADR-0029** (`docs/adr/0029-line-budget-wave-a-security-boundaries.md`): line-budget amendment
+- **ADR-0032** (`docs/adr/0032-line-budget-wave-a-security-boundaries.md`): line-budget amendment
   (contracts 600→1000, infrastructure 2500→3000 against the pre-decision-core base) — the sanctioned
   ADR path for growth scheduled by the ratified sequence; ratchet-down at wave gates unchanged.
-  Composed on rebase with main's decision-core raise (3500), the shipped contracts ceiling is 4000.
+  Composed on rebase with main's decision-core raise (3500), the shipped contracts ceiling is 3900.
 **Why:** v3 prompt 6's acceptance is that the security seams are structural even though Phase 1 uses a
 simplified identity provider — the seams are types + factories + fences, so swapping the identity provider
 or landing the real LLM surface later cannot move the boundary.
@@ -1151,8 +1151,8 @@ marked set from field names, so a new PII type cannot ship unmarked).
 **Revert path:** delete `contracts/{tenant,authz,tokenized,secret}.ts`, `infrastructure/pii/tokenize.ts`,
 `infrastructure/llm/`, the four fences + the reveal-allowlist checks, the ESLint mirror; restore
 `WriteActor{orgId}` signatures and plain-orgId repository params; flip v3 invariant 1 back to
-not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0029);
-remove PF-027..PF-031 and this entry.
+not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0032);
+remove PF-030..PF-034 and this entry.
 
 ### D-040 · 2026-07-26 · reversible · Prompt-6 security boundaries hardened after adversarial review
 
@@ -1185,7 +1185,7 @@ authoritative fences matched syntax rather than semantics.
   secrets. Exception reasons are static codes; logs and traces scrub ambiguous
   names, bare account numbers, and PII-named fields instead of forwarding
   exception text.
-- PF-027 through PF-031 now use semantic type/call resolution where syntax-only
+- PF-030 through PF-034 now use semantic type/call resolution where syntax-only
   matching admitted aliases, shorthand literals, classes, computed access, or
   another handler's authorization call. Exact escapes and liveness checks stay
   intact. Executed adversarial proofs are recorded in
@@ -1203,8 +1203,8 @@ exception messages after more pattern matching (rejected because names and
 credentials have no complete safe regex).
 
 **Revert path:** revert this review-fix changeset, remove migration 3 only if it
-has not shipped to a persistent store, and restore the prior PF-027 through
-PF-031 implementations. D-039 remains the underlying prompt-6 decision.
+has not shipped to a persistent store, and restore the prior PF-030 through
+PF-034 implementations. D-039 remains the underlying prompt-6 decision.
 
 ### D-041 · 2026-07-26 · reversible · Prompt-6 authority, token immutability, and semantic boundary fences hardened
 
@@ -1247,7 +1247,7 @@ would recreate the false green).
 
 **Revert path:** revert this changeset and restore the prior `ActorRef`,
 projection input, shallow token contract, flow dependency signatures, driver
-code pattern, and PF-027 through PF-029 implementations. D-039 and D-040 remain
+code pattern, and PF-030 through PF-032 implementations. D-039 and D-040 remain
 the underlying prompt-6 decisions.
 
 ### D-042 · 2026-07-27 · reversible · Prompt-6 execution proof, write attribution, workflow PII, and declaration-form fences hardened
@@ -1284,7 +1284,7 @@ their semantic callable shape is enforceable).
 
 **Revert path:** revert this review changeset and restore Principal-based flow
 start, tuple-shaped audited-write attribution, unmarked workflow state, and the
-prior declaration-form-specific PF-027/PF-029 implementations. D-039 through
+prior declaration-form-specific PF-030/PF-032 implementations. D-039 through
 D-041 remain the underlying security-boundary decisions.
 
 ### D-043 · 2026-07-27 · reversible · Prompt-6 recovery and completeness fences hardened
@@ -1823,3 +1823,79 @@ ADR (rejected — the additions fit under it once duplicated prose was consolida
 **Revert path:** revert this changeset. `requirePrincipal` resolves per call again
 (and `/api/audit` 401s past the half-life), the error-path mints throw again, and
 the detectors return to their D-051 shapes.
+
+---
+
+## D-053 — Migrations report rather than repair, and the fence suite finishes
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0018, ADR-0030, ADR-0032,
+D-016, v3 §15.1/§15.2/§15.3, charter #1/#4/#5/#7/#13
+
+Captain ruling `prompt6-opus5-round4` decided sixteen review findings. Three of
+them turned out to be the visible edge of a rebase collision: prompt 5's
+decision-core contracts landed on main UNDER prompt 6's new fences, and
+`llm-pii-boundary` had not completed a run since — 689 seconds, three assertions
+past the 20s timeout, so the failures beneath them had never been read.
+
+- **A migration REPORTS a store it cannot upgrade; it never repairs one.** Version
+  3's tenant-qualified edges are data now (`TENANT_EDGES`), generating both the
+  composite foreign keys and a read-only orphan PREFLIGHT that runs before any DDL
+  and names the migration and every violating relationship at once. The
+  `households.advisor_user_id` UPDATE it used to run is gone: silently NULLing a
+  column a human populated is data loss dressed as an upgrade. `runMigrations` also
+  rethrows with `{version, name}`, so a constraint abort at boot is no longer
+  indistinguishable from a dataDir lock. Two constraints
+  (`households_primary_contact_org_fk`, `tasks_assignee_org_fk`) were REMOVED: they
+  reference columns shipped code writes as literal NULL, so MATCH SIMPLE skips them
+  forever and no companion could ever trip them (charter #4/#5).
+- **The `pii.view` exemption for a read outside a tenant boundary is now written
+  down.** A repository returning raw PII with neither a boundary nor a grant derived
+  no sink at all — no grant required AND invisible to the unsupported-surface rule.
+  Eight callables take that shape and every one is genuinely pre-authorization,
+  capability-keyed, or not a read; each is an exact-match entry with its reason, and
+  the registry is derived complete both ways.
+- **Four fence bypasses closed:** a data-modifying CTE could merge an audit INSERT
+  into a PII read and collect the write-boundary exemption; a `createRequire` loader
+  in `llm/` walked past the reachability check; the scrubber's file-wide exemption
+  covered all seven sealed types instead of its own; and a module that renamed the
+  logger (`const l = log`) or took a child logger dropped out of the vocabulary
+  rules entirely. Route work decomposed into a same-file helper — the shape the
+  governed-actions fence DOCUMENTS as supported — was reported as unwired, and a
+  helper shared by GET and POST left the second verb's prologue unchecked.
+- **Three rebase-induced fence failures fixed at the source, not by exemption.**
+  `callablePIIExposures` read `String.prototype` members off branded primitives
+  (27 findings about `anchor(name)`); the `piiFree` rule fired on Zod schemas that
+  merely VALIDATE the flag; and `dependency-rule` read `declare const Brand: unique
+  symbol` — the nominal-brand idiom every sealed type is built from — as a restored
+  platform dependency. The 36 decision-core `evidence*` REFERENCES that remained are
+  reviewed escapes with reasons, not a narrowed PII rule.
+- **The suite finishes.** Every fence type walk keyed its visited set on
+  `type.getText()`, which PRINTS the type. The key is unchanged — memoized on the
+  interned compiler type — and companion fixtures stopped carrying `lib.dom.d.ts`.
+  `llm-pii-boundary` 689s → 4s; the full suite now runs 54 files / 851 tests in 40s.
+
+**Line budgets:** contracts **3892/3900**, domain 1189/1200, infrastructure
+3198/3200, presentation 918/6000. The contracts ceiling came DOWN from 4000 to the
+3,900 the ADRs actually authorize (3,500 from ADR-0029 + 400 from ADR-0032, with
+ADR-0030 leaving contracts at 1,000); the headroom that paid for it came from
+deleting six `Symbol(...)` seals that no code ever read — the WeakSets are what
+`isTenantContext`/`isPrincipal`/… actually check, and the docblocks now say so.
+No ceiling was raised (charter #1).
+
+**Governance:** the prompt-6 line-budget ADR was renumbered **0029 → 0032** (the
+number was already main's decision-core ADR) and every reference updated; the
+prompt-6 proof-log entries were renumbered to continue monotonically from PF-030,
+so each PF id names exactly one proof.
+
+**Alternatives:** automatic repair of the orphan rows (rejected, and forbidden by
+the ruling — the operator decides what the right owner is); narrowing `evidence` to
+`\bevidence\b` in `PII_FIELD_RE` to clear 36 findings in one line (rejected — that
+regex is also the runtime scrubber's authority, so narrowing it weakens a security
+boundary to satisfy a fence); an identity-keyed visited set (rejected as a silent
+behaviour change, though it was run first and reported the same findings, which is
+how the text key was confirmed equivalent); raising the contracts ceiling to fit
+(rejected — charter #1 ceilings only ratchet down).
+
+**Revert path:** revert this changeset. Migration 3 returns to its NULLing UPDATE
+and nine constraints, the `pii.view` inference goes back to requiring a tenant
+parameter, the four bypasses reopen, and the fence suite stops finishing.

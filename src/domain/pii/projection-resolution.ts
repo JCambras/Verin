@@ -226,22 +226,25 @@ function hasUnresolvedStrictText(value: string): boolean {
   return hasUnresolvedProjectionText(value) || TITLE_WORD_RE.test(residualOf(value));
 }
 
+// `path` is the ANCESTOR chain: a shared reference under two sibling keys is a DAG
+// and gets checked on its own merits, while a self-reachable object is a cycle and
+// stays fail-closed. A global visited set would refuse the DAG as if it were cyclic.
 export function hasUnresolvedProjectionEvidence(
   value: unknown,
-  seen = new WeakSet<object>(),
+  path: readonly object[] = [],
 ): boolean {
   if (typeof value === "string") return hasUnresolvedStrictText(value);
   if (typeof value === "number") return !Number.isFinite(value) || hasSensitiveDigitRun(value);
   if (typeof value === "bigint") return true;
   if (typeof value === "boolean" || value == null) return false;
-  if (typeof value !== "object" || seen.has(value)) return true;
-  seen.add(value);
+  if (typeof value !== "object" || path.includes(value)) return true;
+  const nested = [...path, value];
   if (Array.isArray(value)) {
-    return value.some((item) => hasUnresolvedProjectionEvidence(item, seen));
+    return value.some((item) => hasUnresolvedProjectionEvidence(item, nested));
   }
   return Object.entries(value).some(([nestedKey, item]) =>
     (!SLOT_PLACEHOLDER_EXACT_RE.test(nestedKey) && hasUnresolvedStrictText(nestedKey)) ||
-    hasUnresolvedProjectionEvidence(item, seen)
+    hasUnresolvedProjectionEvidence(item, nested)
   );
 }
 
@@ -251,14 +254,14 @@ export function hasUnresolvedProjectionEvidence(
  * anything is sealed — shape is checked structurally, never against a closed
  * vocabulary of blessed key names.
  */
-export function isPlainProjectionData(value: unknown, seen = new WeakSet<object>()): boolean {
+export function isPlainProjectionData(value: unknown, path: readonly object[] = []): boolean {
   if (value == null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value !== "object") return false;
-  if (seen.has(value)) return false;
-  seen.add(value);
-  if (Array.isArray(value)) return value.every((item) => isPlainProjectionData(item, seen));
+  if (path.includes(value)) return false; // ancestor chain: a cycle, not a shared sibling
+  const nested = [...path, value];
+  if (Array.isArray(value)) return value.every((item) => isPlainProjectionData(item, nested));
   const proto = Object.getPrototypeOf(value) as unknown;
   if (proto !== Object.prototype && proto !== null) return false;
-  return Object.values(value).every((item) => isPlainProjectionData(item, seen));
+  return Object.values(value).every((item) => isPlainProjectionData(item, nested));
 }

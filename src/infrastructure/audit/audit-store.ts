@@ -17,7 +17,7 @@ import {
 } from "@contracts/authz";
 import { log, safeReason } from "@infra/observability/logger";
 import {
-  observabilityId,
+  observabilityIdOrRedacted,
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
@@ -135,8 +135,8 @@ export async function drainOutbox(db: SqlDb, tenant: TenantContext): Promise<num
       if (updated?.rows[0]?.status === "parked") {
         log.error(
           {
-            outboxRowId: observabilityId("outboxRowId", row.id),
-            orgId: observabilityId("orgId", orgId),
+            outboxRowId: observabilityIdOrRedacted("outboxRowId", row.id),
+            orgId: observabilityIdOrRedacted("orgId", orgId),
             attempts: Number(updated.rows[0].attempts),
             reason: safeReason(err),
           },

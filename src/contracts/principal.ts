@@ -27,7 +27,6 @@ export interface Principal extends PIIBearing {
   readonly [PrincipalBrand]: "Principal";
 }
 
-const SEAL = Symbol("verin.principal.seal");
 const PRINCIPALS = new WeakSet<object>();
 
 export function principalFromIdentity(input: {
@@ -46,10 +45,7 @@ export function principalFromIdentity(input: {
   ) {
     throw appError("AUTH_FAILED", "Identity boundary returned an invalid principal.");
   }
-  const principal = Object.defineProperty({ ...input }, SEAL, {
-    value: true,
-    enumerable: false,
-  });
+  const principal = { ...input };
   PRINCIPALS.add(principal);
   return Object.freeze(principal) as unknown as Principal;
 }
@@ -82,7 +78,6 @@ export interface WriteActor {
 }
 
 declare const WriteActorBrand: unique symbol;
-const WRITE_ACTOR_SEAL = Symbol("verin.write-actor.seal");
 const WRITE_ACTORS = new WeakSet<object>();
 
 function mintWriteActor(
@@ -93,11 +88,7 @@ function mintWriteActor(
   if (!actorUserId) {
     throw appError("INTERNAL", "WriteActor requires an attributed actor.");
   }
-  const value = Object.defineProperty(
-    { tenant, actorUserId, delegatedBy },
-    WRITE_ACTOR_SEAL,
-    { value: true, enumerable: false },
-  );
+  const value = { tenant, actorUserId, delegatedBy };
   WRITE_ACTORS.add(value);
   return Object.freeze(value) as unknown as WriteActor;
 }

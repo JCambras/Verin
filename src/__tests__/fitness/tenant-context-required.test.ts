@@ -14,6 +14,7 @@ import {
   inMemoryProject,
   detectAppLayerSqlAccess,
   REPO_ROOT,
+  typeKey,
 } from "./_fence-utils";
 
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
@@ -78,7 +79,7 @@ function declaredAs(type: Type, file: string, name: string): boolean {
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {

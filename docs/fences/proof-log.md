@@ -1826,13 +1826,12 @@ remain byte-identical to their pre-fix SHA-256 digests.
 
 ## Prompt 6 - tenant, actor, PII, and secret boundaries (D-061)
 
-**Numbering note (rebase):** the five entries below were authored as PF-027..PF-031 on the prompt-6
-branch, in parallel with prompt 5 claiming PF-027..PF-029 above. The numbers are kept as authored so
-every in-branch reference stays valid; the entries are distinguished by their fence file paths
-(`tenant-context-required`, `tokenized-factory-only`, `llm-pii-boundary`, `governed-actions`,
-`no-secret-fallback`) rather than by number alone.
+**Numbering note (rebase):** these entries were authored as PF-027..PF-031 on the prompt-6 branch,
+in parallel with prompt 5 claiming PF-027..PF-029 above. On rebase every prompt-6 proof id was
+renumbered to continue the log monotonically from PF-030, so each PF id names exactly one proof;
+in-branch references were rewritten in the same change. A proof id is never reused.
 
-### PF-027 · tenant-context-required (sealed TenantContext on every repository/port call) · `src/__tests__/fitness/tenant-context-required.test.ts`
+### PF-030 · tenant-context-required (sealed TenantContext on every repository/port call) · `src/__tests__/fitness/tenant-context-required.test.ts`
 **Invariant (v3 §15.2, invariant 2; charter #7 — extends the org-id fence, never displaces it):** every
 exported repository function taking the SQL layer (`SqlDb`/`SqlQueryable`/`SqlTx`) must also take the
 sealed `TenantContext` (directly or inside a `WriteActor`), so a repository call without tenant scope
@@ -1861,7 +1860,7 @@ the caller's rows; impostors reject with `INTERNAL` before any SQL).
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 6 — tenant/actor/PII/secret boundaries).
 
-### PF-028 · tokenized-factory-only (sealed security types) · `src/__tests__/fitness/tokenized-factory-only.test.ts`
+### PF-031 · tokenized-factory-only (sealed security types) · `src/__tests__/fitness/tokenized-factory-only.test.ts`
 **Invariant (v3 §15.1 normative comment, invariant 1; ratified in docs/v3/verin-core-contracts.ts):**
 `Tokenized<T>`, `TenantContext`, and `ActionGrant` are constructible ONLY inside their factory modules
 (`infrastructure/pii/tokenize.ts`, `contracts/tenant.ts`, `contracts/authz.ts`). Anywhere else, an
@@ -1884,7 +1883,7 @@ factory's own sanctioned cast.
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 6).
 
-### PF-029 · llm-pii-boundary (v3 INVARIANT 1: no PII-bearing type reachable from llm/) · `src/__tests__/fitness/llm-pii-boundary.test.ts`
+### PF-032 · llm-pii-boundary (v3 INVARIANT 1: no PII-bearing type reachable from llm/) · `src/__tests__/fitness/llm-pii-boundary.test.ts`
 **Invariant (v3 §15.1, invariant 1 — ACTIVATED by this PR):** the marked set is DERIVED (every
 platform-layer interface with a raw PII-named field must extend `PIIBearing` or be one of six reviewed
 machine-name escapes), and the transitive import closure of every file under `llm/` must contain no
@@ -1927,7 +1926,7 @@ marked-alias/marked-class reachability from llm/; fence file `Tests 15 passed`.
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 6).
 
-### PF-030 · governed-actions (per-action authorization hooks) · `src/__tests__/fitness/governed-actions.test.ts`
+### PF-033 · governed-actions (per-action authorization hooks) · `src/__tests__/fitness/governed-actions.test.ts`
 **Invariant (v3 §15.3; charter #12 — extends route-level RBAC):** the `GOVERNED_ACTIONS` registry covers
 exactly the seven §15.3 permission points (eight actions - policy drafting and approval are distinct);
 separation of duties is pinned in the registry itself (compliance
@@ -1949,7 +1948,7 @@ route, the wrong-literal route, and the deleted-route-file case.
 
 **Date:** 2026-07-26 (v3 build-sequence prompt 6).
 
-### PF-031 · secret containment (reveal-allowlist extension of the config-hygiene fence) · `src/__tests__/fitness/no-secret-fallback.test.ts`
+### PF-034 · secret containment (reveal-allowlist extension of the config-hygiene fence) · `src/__tests__/fitness/no-secret-fallback.test.ts`
 **Invariant (v3 §15.4; charter #7/#15):** config secrets exist outside the config module only as
 `SecretValue` wrappers — every serialization/coercion path (String, template interpolation, JSON.stringify
 alone or nested, util.inspect, Object.entries/spread, exception-message interpolation) yields the
@@ -1972,12 +1971,12 @@ call, and the allowlisted call.
 
 ## Prompt-6 security-boundary review hardening (2026-07-26) - executed injection proofs
 
-The review found real false-green paths in PF-027 through PF-031 and real
+The review found real false-green paths in PF-030 through PF-034 and real
 cross-tenant relationship gaps below the repository signatures. Each existing
 rule was strengthened in place, with the following real-source violations
 injected, observed, and reverted.
 
-### PF-027 semantic repository coverage
+### PF-030 semantic repository coverage
 
 The repository fence now resolves SQL and tenant types semantically, including
 import aliases, inferred contextual parameters, nested options, and public
@@ -1992,7 +1991,7 @@ stale-escape checks remain.
     ❯ src/__tests__/fitness/tenant-context-required.test.ts:228
 ```
 
-### PF-028 sealed construction and trusted mint boundaries
+### PF-031 sealed construction and trusted mint boundaries
 
 `Tokenized`, `TenantContext`, `ActionGrant`, and `Principal` now carry
 compile-time brands. The semantic fence rejects aliased casts, contextual
@@ -2012,7 +2011,7 @@ factories outside reviewed source and script boundaries.
     ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:250
 ```
 
-### PF-029 raw projection exclusion and fail-closed tokenization
+### PF-032 raw projection exclusion and fail-closed tokenization
 
 Raw evidence projection contracts now live under `infrastructure/pii`, not
 `infrastructure/llm`. The derivation floor recognizes `requestText`, `rawText`,
@@ -2027,7 +2026,7 @@ text after deterministic masking.
     ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:211
 ```
 
-### PF-030 per-handler governed authorization
+### PF-033 per-handler governed authorization
 
 Every surfaced HTTP handler must bind the exact `requireActionGrant` call as
 its first statement, fail closed on its result as the second statement, and
@@ -2046,7 +2045,7 @@ thread the authorized value into the route's exact governed sink.
     ❯ src/__tests__/fitness/governed-actions.test.ts:182
 ```
 
-### PF-031 semantic secret access
+### PF-034 semantic secret access
 
 Secret bytes are held in a module-private `WeakMap`; the public object exposes
 no raw accessor. The free `revealSecret` function is resolved semantically, so
@@ -2095,12 +2094,12 @@ The CI seed plus `pnpm audit:chain` also verified the migrated store.
 
 ## Prompt-6 security-boundary review hardening, round 2 (2026-07-26)
 
-The second review found remaining false-green paths in PF-027 through PF-029.
+The second review found remaining false-green paths in PF-030 through PF-032.
 Each strengthened rule was proven against a real-source injection. The
 violations below were injected together, each fence was run independently, and
 all injections were then reverted.
 
-### PF-027 callable domain contracts
+### PF-030 callable domain contracts
 
 The tenant fence now discovers callable members and direct call signatures
 semantically on every exported domain interface, regardless of the interface
@@ -2116,7 +2115,7 @@ contract carry `TenantContext` on every call.
     ❯ src/__tests__/fitness/tenant-context-required.test.ts:290
 ```
 
-### PF-028 sealed actor and mask authority
+### PF-031 sealed actor and mask authority
 
 `ActorRef` and `EntityMaskBinding` joined the sealed-type registry.
 `tokenizeText`, `tokenizeRecord`, and `bindEntityMask` joined the semantic
@@ -2135,7 +2134,7 @@ and only the projection boundary may construct LLM tokens.
     ❯ src/__tests__/fitness/tokenized-factory-only.test.ts:282
 ```
 
-### PF-029 callable PII reachability
+### PF-032 callable PII reachability
 
 The marker-completeness floor resolves the real `PIIBearing` and `Tokenized`
 declarations semantically. It follows callable parameters, inline object
@@ -2161,7 +2160,7 @@ The third review found five legitimate structural gaps. The tests below were
 first added against the vulnerable implementation and failed. Each real-source
 violation was then injected after the fix, observed, and reverted.
 
-### PF-027 exported object repositories and non-interface ports
+### PF-030 exported object repositories and non-interface ports
 
 The tenant fence resolves exported repository values semantically, including
 callable object members. Exported interfaces, type aliases, and classes under
@@ -2181,7 +2180,7 @@ and abstract classes.
     ❯ src/__tests__/fitness/tenant-context-required.test.ts:410
 ```
 
-### PF-028 sealed write attribution
+### PF-031 sealed write attribution
 
 `WriteActor` is compile-time branded, runtime sealed, frozen, and asserted at
 the audited-write chokepoint. Direct attribution must equal the actor retained
@@ -2202,7 +2201,7 @@ callsite-fenced delegated factory.
     ❯ src/__tests__/unit/tenant-context.test.ts:92
 ```
 
-### PF-029 mapped aliases and persisted workflow PII
+### PF-032 mapped aliases and persisted workflow PII
 
 The PII fence inspects resolved alias properties across mapped, union, and
 intersection types, while excluding primitive-library members. Workflow data,
@@ -2227,7 +2226,7 @@ explicitly.
     ❯ src/__tests__/unit/llm-boundary.test.ts:123
 ```
 
-### PF-030 action-scoped execution boundary
+### PF-033 action-scoped execution boundary
 
 The account-opening execution API accepts only an
 `ActionGrant<"execution.initiate">`, validates the runtime action seal before
@@ -2280,7 +2279,7 @@ before the schema moved to generated `slot_0001` style ids.
   ❯ src/__tests__/unit/llm-boundary.test.ts:101
 ```
 
-### PF-027 closed repository callable classification
+### PF-030 closed repository callable classification
 
 An exported `unsafeListHouseholds()` was planted in `house-crm.ts`. It obtained
 `getDb()` internally and exposed no SQL type or tenant parameter.
@@ -2292,7 +2291,7 @@ An exported `unsafeListHouseholds()` was planted in `house-crm.ts`. It obtained
   ❯ src/__tests__/fitness/tenant-context-required.test.ts:312
 ```
 
-### PF-029 recursive PII and unverifiable LLM loads
+### PF-032 recursive PII and unverifiable LLM loads
 
 `contracts/result.ts` received an exported nested email envelope and an
 exported callable with an inline first name. The live LLM schema also received
@@ -2310,7 +2309,7 @@ a computed dynamic import.
   ❯ src/__tests__/fitness/llm-pii-boundary.test.ts:594
 ```
 
-### PF-030 derived governed surfaces and semantic helpers
+### PF-033 derived governed surfaces and semantic helpers
 
 A new audit route called `verifyAndListOrgChain` without registration or action
 authorization. A second injection replaced the real helper import in the live
@@ -2327,7 +2326,7 @@ audit route with a same-named local function.
   ❯ src/__tests__/fitness/governed-actions.test.ts:319
 ```
 
-### PF-031 exact HMAC secret consumption
+### PF-034 exact HMAC secret consumption
 
 The reviewed session-signing function was changed to assign revealed bytes to a
 local variable before forwarding them. File and function names still matched,
@@ -2370,7 +2369,7 @@ residual occurrences, and unresolved embedded proper names fail closed.
   src/__tests__/unit/llm-boundary.test.ts:298
 ```
 
-### PF-028 privileged factory module confinement
+### PF-031 privileged factory module confinement
 
 Factory references are still resolved semantically. In addition, namespace
 imports, re-exports, dynamic module access, and unverifiable module loads are
@@ -2384,7 +2383,7 @@ rejected for every privileged factory module.
   src/__tests__/fitness/tokenized-factory-only.test.ts:393
 ```
 
-### PF-031 secret module confinement
+### PF-034 secret module confinement
 
 `revealSecret` remains usable only as the direct key argument of the two exact
 HMAC consumers. Loading its module as a namespace, re-exporting it, or reaching
@@ -2398,7 +2397,7 @@ launder the symbol.
   src/__tests__/fitness/no-secret-fallback.test.ts:328
 ```
 
-### PF-030 action grants at governed sinks
+### PF-033 action grants at governed sinks
 
 Every registered governed sink requires an action-parameterized `ActionGrant`
 and validates it as its first statement. Raw PII reads and audit-row exports
@@ -2418,7 +2417,7 @@ rejects an assertion hidden inside a conditional first statement.
   src/__tests__/integration/tenant-isolation.test.ts:52
 ```
 
-### PF-027 semantic repository and port coverage
+### PF-030 semantic repository and port coverage
 
 Repository modules are derived from the transitive infrastructure SQL import
 graph, including literal dynamic loads and conservative rejection of
@@ -2440,7 +2439,7 @@ that imports the SQL driver directly.
   src/__tests__/fitness/tenant-context-required.test.ts:573
 ```
 
-### PF-029 TypeScript module resolution for LLM reachability
+### PF-032 TypeScript module resolution for LLM reachability
 
 Import reachability now uses `ts.resolveModuleName` with the project's compiler
 options and module-resolution host. Bundler-compatible `.js` specifiers resolve
@@ -2497,7 +2496,7 @@ lowercase name into the residual vocabulary, and removed object-key traversal.
   src/__tests__/unit/llm-boundary.test.ts:319
 ```
 
-### PF-028 exact privileged factory consumers
+### PF-031 exact privileged factory consumers
 
 An exported wrapper around `systemTenant` was planted in the already reviewed
 audit-store module. The function-scoped allowance rejected the new owner.
@@ -2509,7 +2508,7 @@ audit-store module. The function-scoped allowance rejected the new owner.
   src/__tests__/fitness/tokenized-factory-only.test.ts:408
 ```
 
-### PF-030 semantically derived governed sinks
+### PF-033 semantically derived governed sinks
 
 An exported tenant-only audit query returning action-marked chain rows was
 planted without adding any registry entry.
@@ -2521,7 +2520,7 @@ planted without adding any registry entry.
   src/__tests__/fitness/governed-actions.test.ts:544
 ```
 
-### PF-027 runtime tenant authority at repository entry
+### PF-030 runtime tenant authority at repository entry
 
 The direct `assertWriteActor(a)` call was removed from `createHousehold` while
 its typed WriteActor parameter and audited-write delegation remained intact.
@@ -2581,7 +2580,7 @@ field-specific operational values. Everything else maps to a static sentinel.
   src/__tests__/integration/pii-observability.test.ts:166
 ```
 
-### PF-027 factory-returned repository guards
+### PF-030 factory-returned repository guards
 
 The direct `assertTenantContext(tenant)` call was removed from the real
 `makeExecutionStore().loadById` implementation. The factory remained reviewed
@@ -2594,7 +2593,7 @@ and the domain port signature remained scoped.
   src/__tests__/fitness/tenant-context-required.test.ts:563
 ```
 
-### PF-030 governed callable forms
+### PF-033 governed callable forms
 
 An exported arrow returning `Promise<Household[]>` and accepting only
 `TenantContext` was planted in the real house-CRM adapter.
@@ -2606,7 +2605,7 @@ An exported arrow returning `Promise<Household[]>` and accepting only
   src/__tests__/fitness/governed-actions.test.ts:660
 ```
 
-### PF-029 unwrapped opaque LLM exports
+### PF-032 unwrapped opaque LLM exports
 
 An exported `unsafeOpaque(): unknown` was planted in the scrub module already
 reachable from `infrastructure/llm`.
@@ -2659,7 +2658,7 @@ field-bound wrappers.
   src/__tests__/integration/pii-observability.test.ts:87
 ```
 
-### PF-031 secret declaration-module confinement
+### PF-034 secret declaration-module confinement
 
 An exported function inside `contracts/secret.ts` returned
 `revealSecret(value)`. The prior scan skipped the declaration module.
@@ -2670,7 +2669,7 @@ An exported function inside `contracts/secret.ts` returned
   src/__tests__/fitness/no-secret-fallback.test.ts:447
 ```
 
-### PF-028 privileged factory declaration-module confinement
+### PF-031 privileged factory declaration-module confinement
 
 Wrappers around `systemTenant`, `systemWriteActor`, and `tokenizeText` were
 exported from their own declaration modules. The previous reviewed-callsite
@@ -2682,7 +2681,7 @@ check exempted those modules.
   src/__tests__/fitness/tokenized-factory-only.test.ts:663
 ```
 
-### PF-027, PF-030, and PF-029 transparent-wrapper coverage
+### PF-030, PF-033, and PF-032 transparent-wrapper coverage
 
 Three in-memory source injections wrapped callable objects in `Object.freeze`.
 The tenant fence missed an unguarded returned repository method, the governed
@@ -2710,7 +2709,7 @@ invariant report, and all 16 signed golden cases also passed.
 
 ## Round 9 — derived observability vocabulary, structural resolution, boundary-honest fences
 
-### PF-032 observability-vocabulary drift (NEW fence)
+### PF-035 observability-vocabulary drift (NEW fence)
 
 `withSpan("flow.account-opening.resume", …)` was renamed to
 `…reopen` and the "security-event audit could not be recorded" log message was
@@ -2727,7 +2726,7 @@ green build.
   src/__tests__/fitness/observability-vocabulary.test.ts:218
 ```
 
-### PF-033 test-only span vocabulary cannot leak into production
+### PF-036 test-only span vocabulary cannot leak into production
 
 `registerTestSpanName("test.sneaky")` was called from `src/infrastructure/wire.ts`.
 
@@ -2737,7 +2736,7 @@ green build.
   src/__tests__/fitness/observability-vocabulary.test.ts:229
 ```
 
-### PF-034 governed-sink mutation classified from SQL, not from text
+### PF-037 governed-sink mutation classified from SQL, not from text
 
 `listContacts(db, actor): Promise<Contact[]>` was appended to
 `src/infrastructure/crm/house-crm.ts` containing the comment
@@ -2750,7 +2749,7 @@ matched that word and dropped the PII read out of sink derivation entirely.
   src/__tests__/fitness/governed-actions.test.ts:697
 ```
 
-### PF-035 an LLM escape is keyed on the full dotted path
+### PF-038 an LLM escape is keyed on the full dotted path
 
 `readonly client: { name: string }` was added to `FlowDefinition`
 (`src/domain/workflow/engine.ts`). Keying the escape on the property's nearest
@@ -2763,7 +2762,7 @@ inside an inline nested type literal.
   src/__tests__/fitness/llm-pii-boundary.test.ts:701
 ```
 
-### PF-036 config-hygiene corpus non-vacuity
+### PF-039 config-hygiene corpus non-vacuity
 
 `SKIP_DIRS` was widened with `"src"` and `"docs"`, collapsing the scanned
 corpus. Both detectors previously compared `[] === []` and passed.
@@ -2774,7 +2773,7 @@ corpus. Both detectors previously compared `[] === []` and passed.
   src/__tests__/fitness/no-secret-fallback.test.ts:355
 ```
 
-### PF-037 sealed-type ESLint mirror covers the whole pii/ tree except the factory
+### PF-040 sealed-type ESLint mirror covers the whole pii/ tree except the factory
 
 `export const impostor = { value: "x", piiFree: true } as unknown as Tokenized<string>`
 was added to `src/infrastructure/pii/llm-projection.ts`. The override previously
@@ -2788,7 +2787,7 @@ src/infrastructure/pii/llm-projection.ts
 ✖ 2 problems (2 errors, 0 warnings)
 ```
 
-### PF-038 uppercase-hex request id no longer aborts a committed flow
+### PF-041 uppercase-hex request id no longer aborts a committed flow
 
 The opaque-id pattern was reverted to its case-SENSITIVE form. The
 account-opening flow committed its household/contact/application writes and then
@@ -2811,7 +2810,7 @@ failure (the two source injections were restored from a copy; `git diff` on
 
 ## Round 10 — leading-name binding, aligned account shape, semantic vocabulary fence
 
-### PF-039 a MULTI-word name that opens the prose is bound whole
+### PF-042 a MULTI-word name that opens the prose is bound whole
 
 `proseSubjectCandidates` was reverted to dropping the first word of ANY
 leading title-case run (`words.shift()`), the rule that let a given name reach a
@@ -2824,7 +2823,7 @@ model raw while its surname was masked.
   src/__tests__/unit/llm-boundary.test.ts
 ```
 
-### PF-040 account candidates are exactly the runs the residual check refuses
+### PF-043 account candidates are exactly the runs the residual check refuses
 
 `accountCandidates` was reverted to `\b\d{3,18}\b` over currency-stripped text
 behind a whole-string `looksLikePIIValue` early return. A year then demanded an
@@ -2837,7 +2836,7 @@ refusal no caller could satisfy.
   src/__tests__/unit/llm-boundary.test.ts
 ```
 
-### PF-041 a mixed-case request id cannot abort a committed flow
+### PF-044 a mixed-case request id cannot abort a committed flow
 
 The lowercase canonicalization AND the pre-write `observabilityId` proof were
 both removed from `startAccountOpening`. A mixed-case UUID (the route's shape
@@ -2852,7 +2851,7 @@ then threw out of the "flow started" log line — `NAME_SHAPED_RE` reads the
   src/__tests__/integration/account-opening.test.ts
 ```
 
-### PF-042 the test-only injection point is keyed semantically, not by text
+### PF-045 the test-only injection point is keyed semantically, not by text
 
 The `identifier.getText() !== TEST_INJECTION_POINT` pre-filter was restored ahead
 of `resolvesTo`, so shipped code importing the injection point under an alias
@@ -2865,7 +2864,7 @@ to the fence.
   src/__tests__/fitness/observability-vocabulary.test.ts
 ```
 
-### PF-043 a hoisted message/span constant is checked like an inline literal
+### PF-046 a hoisted message/span constant is checked like an inline literal
 
 `literalText` was reverted to syntax-only matching. `const SPAN = "…"` /
 `const MSG = "…"` call sites then produced no vocabulary entry and no
@@ -2889,7 +2888,7 @@ and the full suite is green again).
 
 ## Round 11 — sealed-type laundering, governed-sink derivation, observability enums
 
-### PF-044 a sub-interface that merely EXTENDS a sealed type is still a mint
+### PF-047 a sub-interface that merely EXTENDS a sealed type is still a mint
 
 `sealedType()`'s BFS was reverted to walking alias/type arguments and
 union/intersection members but NOT base types (the shape the sibling
@@ -2903,7 +2902,7 @@ resolved to nothing and passed both the fence and the ESLint mirror.
   src/__tests__/fitness/tokenized-factory-only.test.ts
 ```
 
-### PF-045 the ESLint mirror seals every type the fence seals
+### PF-048 the ESLint mirror seals every type the fence seals
 
 `SEALED_TYPES` was narrowed back to the original four
 (`Tokenized|TenantContext|ActionGrant|Principal`). A planted
@@ -2923,7 +2922,7 @@ $ npx eslint src/app/api/_evil-proof.ts     # 4-type mirror
   src/__tests__/fitness/tokenized-factory-only.test.ts
 ```
 
-### PF-046 shipped code cannot widen production authority, even through an alias
+### PF-049 shipped code cannot widen production authority, even through an alias
 
 `src/infrastructure/crm/_evil-proof.ts` was planted with
 `import { registerTestSystemActor as reg } … systemTenant(reg("test"), orgId)`,
@@ -2935,7 +2934,7 @@ the aliased form that defeated the observability equivalent in round 10.
   src/__tests__/fitness/tokenized-factory-only.test.ts
 ```
 
-### PF-047 a `FOR UPDATE` row lock does not exempt a PII read
+### PF-050 a `FOR UPDATE` row lock does not exempt a PII read
 
 `SQL_MUTATION_RE` was reverted to the unanchored `/\b(?:INSERT\s+INTO|UPDATE|
 DELETE\s+FROM)\b/i` over EVERY string argument of every call, and the
@@ -2951,7 +2950,7 @@ derivation, so neither owed its `ActionGrant<"pii.view">`.
   src/__tests__/fitness/governed-actions.test.ts
 ```
 
-### PF-048 a governed sink on a surface that cannot authorize fails the build
+### PF-051 a governed sink on a surface that cannot authorize fails the build
 
 `src/app/_evilproof/actions.ts` was planted calling `verifyAndListOrgChain` from
 a Server Action. The dedicated unsupported-surface rule names what to do instead
@@ -2965,7 +2964,7 @@ can never produce.
   src/__tests__/fitness/governed-actions.test.ts
 ```
 
-### PF-049 authorization is tracked by symbol, and the guard must actually return
+### PF-052 authorization is tracked by symbol, and the guard must actually return
 
 `referencesAuthorization` was reverted to identifier-TEXT matching, and
 `isFailClosedGuard` to accepting ANY nested return. A route reading
@@ -2984,7 +2983,7 @@ never-invoked nested function counted as fail-closed. Separately, reverting
   src/__tests__/fitness/governed-actions.test.ts
 ```
 
-### PF-050 an unregistered audited action degrades to `[REDACTED]`
+### PF-053 an unregistered audited action degrades to `[REDACTED]`
 
 `house-crm.ts`'s `action: "household.update"` was changed to
 `"household.archive"`. The attribute-vocabulary derivation reports it in BOTH
@@ -2999,7 +2998,7 @@ so neither half can pass vacuously.
   src/__tests__/fitness/observability-vocabulary.test.ts
 ```
 
-### PF-051 a DSN fallback reached through element access
+### PF-054 a DSN fallback reached through element access
 
 `config/index.ts` was changed to
 `process.env["DATABASE_URL"] ?? "postgres://verin:pw@db.internal:5432/verin"` —
@@ -3014,7 +3013,7 @@ value in a `SecretValue`.
   src/__tests__/fitness/no-secret-fallback.test.ts
 ```
 
-### PF-052 a frozen repository is still a repository
+### PF-055 a frozen repository is still a repository
 
 `src/infrastructure/crm/_evil-repo.ts` was planted exporting
 `Object.freeze({ listAll(db) { … } })` with no tenant parameter. `Readonly<T>`'s
@@ -3028,7 +3027,7 @@ none of its members.
   src/__tests__/fitness/tenant-context-required.test.ts
 ```
 
-### PF-053 a PII-shaped exported VALUE is import-reachable from llm/
+### PF-056 a PII-shaped exported VALUE is import-reachable from llm/
 
 `src/domain/_evil-roster.ts` (`export const DEMO_CLIENT = { firstName, email }`)
 was planted and imported from `src/infrastructure/llm/_evil-consumer.ts`. The
@@ -3049,7 +3048,7 @@ is green again: 48 files, 543 tests.
 
 **Date:** 2026-07-27 (eleventh review-fix round on v3 build-sequence prompt 6).
 
-### PF-054 a PII read moved INLINE into the route
+### PF-057 a PII read moved INLINE into the route
 
 `src/app/api/audit/route.ts` was reverted to the shape this round replaced —
 `db.query("SELECT id, email FROM users WHERE org_id = $1", …)` inline in the
@@ -3071,7 +3070,7 @@ could ever see it. Both halves of the rule fire.
   src/__tests__/fitness/tenant-context-required.test.ts
 ```
 
-### PF-055 an `any`-sourced sealed annotation
+### PF-058 an `any`-sourced sealed annotation
 
 `const forged: ActionGrant<"pii.view"> = JSON.parse("{}")` was added to the audit
 route. No cast names a sealed type, so ESLint sees nothing; the previous
@@ -3086,7 +3085,7 @@ class property, or a bare `body.grant` — walked past it.
   src/__tests__/fitness/tokenized-factory-only.test.ts
 ```
 
-### PF-056 a client-supplied grant in the grant parameter
+### PF-059 a client-supplied grant in the grant parameter
 
 The audit route was rewired to `listOrgUserEmails(auth.value as never,
 body.value.grant)` — the authorized value present, but in the WRONG argument,
@@ -3101,7 +3100,7 @@ wired.
   src/__tests__/fitness/governed-actions.test.ts
 ```
 
-### PF-057 a governed sink handed out as a value
+### PF-060 a governed sink handed out as a value
 
 `void Array.of(listOrgUserEmails);` was added to the same handler. The sink is
 never called here, so no route entry exists and the whole first-statement /
@@ -3114,7 +3113,7 @@ fail-closed / authorized-value chain would have applied to nothing.
   src/__tests__/fitness/governed-actions.test.ts
 ```
 
-### PF-058 an audit action typed as `string`
+### PF-061 an audit action typed as `string`
 
 `AuditedWriteOpts.action` was reverted from `ObservabilityAction` to `string`.
 Both log lines that carry it derived nothing and flagged nothing before this
@@ -3129,11 +3128,11 @@ value to `[REDACTED]` in the one line explaining a failed write.
   src/__tests__/fitness/observability-vocabulary.test.ts
 ```
 
-### PF-059 a compound-assignment secret fallback
+### PF-062 a compound-assignment secret fallback
 
 A `??=` compound assignment defaulting `process.env.SESSION_SECRET` to a
 hardcoded dev string was planted in `config/index.ts` (spelled out here only in
-prose — this fence scans its own docs, and PF-051 dodged the same way by using
+prose — this fence scans its own docs, and PF-054 dodged the same way by using
 element access). `??=`/`||=` were in neither the operator set nor the text regex,
 whose `\s*` after the operator cannot cross the `=`.
 
@@ -3144,7 +3143,7 @@ whose `\s*` after the operator cannot cross the `=`.
   src/__tests__/fitness/no-secret-fallback.test.ts
 ```
 
-### PF-060 the ESLint mirror unwired from a layer
+### PF-063 the ESLint mirror unwired from a layer
 
 `...noSealedTypeConstruction` was removed from the `src/app/**` block. Both
 name-list assertions stayed green — they compare the mirror's two arrays, which
@@ -3191,7 +3190,7 @@ injection is in production code; where it is in a detector, the detector's own
 branch is reverted, because a companion that survives its branch's deletion is not
 a companion (charter #4).
 
-### PF-046 two grants on one request, past the session half-life
+### PF-064 two grants on one request, past the session half-life
 
 `requirePrincipal`'s per-request memoization was removed, restoring the D-051
 shape (`return resolvePrincipalOnce(req)`). `/api/audit` was then driven through
@@ -3209,7 +3208,7 @@ The fresh-session and fail-closed cases (advisor without `audit.export` → 403,
 no cookie → 401) stayed green throughout, so the fix restores the aged path
 without loosening either grant.
 
-### PF-047 a client-shaped entityId must not abort the write's own failure report
+### PF-065 a client-shaped entityId must not abort the write's own failure report
 
 `observabilityIdOrRedacted` was reverted to `observabilityId` in `auditedWrite`'s
 catch. `auditedWrite({ entityId: "Smith", perform: () => { throw NOT_FOUND } })`
@@ -3225,7 +3224,7 @@ The passing form asserts BOTH halves: the typed NOT_FOUND result, and a
 `task.create.failed` row whose `entity_id` is still `Smith` while the log line
 carries `[REDACTED]` — refused from observability, not from the chain.
 
-### PF-048 the sealed-annotation rule, four ways
+### PF-066 the sealed-annotation rule, four ways
 
 Each branch reverted separately; each fails a different companion.
 
@@ -3248,7 +3247,7 @@ Each branch reverted separately; each fails a different companion.
 The fourth is the two-sided proof: the old predicate fails the real repository AND
 the nullable companion, so the narrowing is not a deletion.
 
-### PF-049 element-access is the only reference source that fires alone
+### PF-067 element-access is the only reference source that fires alone
 
 Dropping `PropertyAccessExpression` from `detectUntrustedFactoryCalls`'s reference
 sources changed NOTHING (a member access's NAME node is itself an Identifier that
@@ -3261,7 +3260,7 @@ string, and no identifier on that line resolves to it.
 × catches a factory named only in a STRING, through element access
 ```
 
-### PF-050 detectors keyed on shape, not spelling
+### PF-068 detectors keyed on shape, not spelling
 
 ```
 # isSqlExecutorCall requires a PropertyAccessExpression again
@@ -3305,7 +3304,7 @@ The last one is a companion repair: the old fixture had no fail-closed guard, so
 now plants a COMPLETE prologue binding the wrong action and asserts the exact
 message, so only that comparison can produce it.
 
-### PF-051 observability attributes: the message-less form and the sometimes-opaque union
+### PF-069 observability attributes: the message-less form and the sometimes-opaque union
 
 ```
 # attributesArgument -> `messageArgument(call) === args[1] ? args[0] : null`
@@ -3329,3 +3328,289 @@ injection; `git status` shows no unintended diff. The full suite is green again:
 (16/16) all pass.
 
 **Date:** 2026-07-27 (thirteenth review-fix round on v3 build-sequence prompt 6).
+
+---
+
+## Round 13 — non-destructive migrations, reviewed pre-auth reads, and a fence suite that finishes
+
+Every proof below was EXECUTED by reverting exactly one branch and running the
+suite, then restoring from a copy taken first. Two of them start from a fence that
+had never actually finished: the rebase onto main put prompt 5's decision-core
+contracts under prompt 6's fences, and `llm-pii-boundary` took **689 seconds** —
+three of its assertions blew past the 20s timeout, so the branch was red and the
+failures underneath had never been read.
+
+### PF-070 migration 3 refuses an upgrade it cannot apply, and changes nothing
+
+`await assertPreflightClean(db, m)` was deleted from `runMigrations`. The rehearsal
+suite drives the SHIPPED runner against a store rewound to version 2 (the v3
+constraints dropped, the ledger row removed) with one legacy row planted per
+relationship:
+
+```
+× refuses the upgrade and preserves the row when sessions_user_org_fk is violated
+× … households_advisor_org_fk … contacts_household_org_fk
+× … financial_accounts_household_org_fk … applications_household_org_fk
+× … applications_contact_household_org_fk … tasks_household_org_fk
+× reports EVERY violating relationship at once, not just the first
+  8 failed | 4 passed
+```
+
+The assertion is deliberately on the PREFLIGHT phrasing (`cannot be applied to this
+store; no schema change was made and no row was modified`), not on the relationship
+name: without the preflight the constraint still aborts inside the transaction and
+the driver error still names the constraint, so a test that only looked for the name
+passed with no preflight at all. That weaker form was written first and caught here.
+
+The `households.advisor_user_id` UPDATE that version 3 used to run is gone with it.
+A migration that silently NULLs a column a human populated is data loss dressed as an
+upgrade; the store is now REPORTED and left byte-for-byte intact, and each of the
+seven tests re-reads its planted row afterwards to prove it.
+
+Two constraints were removed rather than proven: `households_primary_contact_org_fk`
+and `tasks_assignee_org_fk` reference columns (`primary_contact_id`,
+`assignee_user_id`) that `house-crm.ts` writes as a literal NULL and no UPDATE ever
+sets. Under MATCH SIMPLE the check is unconditionally skipped, so no adversarial
+companion is possible — DDL no shipped code can trip (charter #4/#5).
+
+### PF-071 a failing migration says WHICH migration failed
+
+`runMigrations` now wraps each transaction and rethrows with `{version, name}`. Proven
+against a stub driver whose `transaction` throws a bare
+`duplicate key value violates unique constraint`: the surfaced error carries
+`migration 1 (baseline) failed and was rolled back` AND the driver's own text, so a
+constraint abort at Next.js boot is no longer indistinguishable from a dataDir lock.
+
+### PF-072 a data-modifying CTE cannot buy the write-boundary exemption
+
+`classifySql` tested the mutation pattern first and returned a SINGLE kind, so
+`WITH logged AS (INSERT INTO pii_access_log …) SELECT c.* FROM contacts c` classified
+as `"mutation"` only. `mutatesPersistence` is `includes("mutation") && !includes("read")`,
+so merging the audit INSERT into the PII read handed that read the write-boundary
+exemption from `pii.view` — the two-statement form was already refused (PF-041's
+round), and this was the same evasion with a semicolon removed.
+
+Statements are now classified by what they RETURN, looking past any CTE list:
+
+```
+# classifySql -> read only when afterCteList(statement) starts with SELECT
+× refuses the exemption when the audit write is MERGED INTO the PII read as a CTE
+× classifies CTE statements by what they RETURN, not by which keyword appears first
+```
+
+`WITH d AS (DELETE …) INSERT INTO … SELECT * FROM d` stays a pure write (its result is
+DML), and `INSERT … SELECT` / `DELETE … WHERE id IN (SELECT …)` still feed the write.
+
+### PF-073 route work decomposed into a helper is checked, not failed
+
+`sinkCalls` searched only the exported handler's own statements, while
+`enclosingHandlerName` deliberately attributed a sink called inside a same-file helper
+to that handler. The shape the fence DOCUMENTS as supported therefore reported
+`authorized value does not reach the ActionGrant parameter` for correctly wired code,
+and no companion exercised the disagreement. Reverting the walk to `routeWork`:
+
+```
+× accepts route work DECOMPOSED into a same-file helper the grant is passed to
+× checks EVERY verb that reaches a shared helper, not just the first
+× follows a helper called by another helper (nested decomposition)
+```
+
+Authorization travels by ARGUMENT POSITION and a helper parameter counts as authorized
+only when every call site this handler reaches passes an authorized value there, so
+`loadChain(await getDb(), body.grant)` is still refused.
+
+### PF-074 a helper shared by GET and POST owes BOTH prologues
+
+`exportedHandlerCalling` returned the FIRST matching handler despite its docstring
+saying "if exactly one does". Truncating the new `exportedHandlersCalling` result with
+`.slice(0, 1)`:
+
+```
+× checks EVERY verb that reaches a shared helper, not just the first
+```
+
+Discovery now emits one entry per reaching verb; the unauthorized POST is reported
+while the correctly wired GET is not.
+
+### PF-075 a PII read with no tenant boundary is REVIEWED, not invisible
+
+The `pii.view` inference required a TenantContext/WriteActor/ActionGrant PARAMETER, so
+`findUserByEmail(db, email): Promise<UserRow | null>` derived no sink at all — no grant
+required, and invisible to the unsupported-surface rule that keeps governed sinks off
+Server Actions. That exemption is real (a `pii.view` grant is minted FROM a Principal,
+so the credential lookup that PRODUCES one cannot hold it) but it was implicit and
+carried no reason. It is now an exact-match registry with a required `why`, derived
+complete both ways. Forcing `unboundedPiiReads` to return nothing:
+
+```
+# unboundedPiiReads -> if (true || …) continue
+× enforces: every PII read outside a tenant boundary is REVIEWED, with the reason it cannot hold a grant
+× catches a NEW unbounded PII read that no one reviewed
+```
+
+The companion plants `findUserByPhone(phone): Promise<UserRow | null>` and asserts all
+three arms: unreviewed is reported, reviewed-with-a-reason is suppressed, reviewed with
+a blank reason is not. A separate case proves a tenant-scoped read is not an escape
+CANDIDATE at all, so the registry can never be used to excuse one.
+
+### PF-076 the llm/ walk fails closed on a loader it cannot follow
+
+The reachability walk `continue`d on `specifier === null`, on the stated grounds that
+those are "already reported by unverifiableModuleLoadLines". They are not:
+that detector fires only on the `import` keyword or a callee literally spelled
+`require`, while `createRequire(import.meta.url)` and `module.require` arrive as
+`{specifier: null, kind: "create-require" | "require-reference"}`. Restoring the bare
+`continue`:
+
+```
+× rejects a createRequire loader in llm/ — the walk fails closed on what it cannot follow
+```
+
+The planted `src/infrastructure/llm/evil.ts` loads `../../domain/schema/entities` (a
+PIIBearing module) through `createRequire` and the fence went green.
+
+### PF-077 the scrubber's file-wide exemption is per-TYPE
+
+`if (normalized === "src/infrastructure/pii/tokenize.ts") continue;` skipped the
+invented-type-parameter rule for ALL SEVEN sealed types inside the factory, when the
+`normalized !== sealed.factory` guard two lines below already covered the Tokenized
+case it was written for. Restoring the file-wide skip:
+
+```
+× lets the scrubber mint its OWN sealed type, and nothing else, through a coercion helper
+```
+
+The fixture mints `Tokenized<string>` (its own, allowed) and
+`const stolen: TenantContext = coerce(JSON.parse("{}"))` (not its own) in the same file;
+only the second is reported. The two remaining hardcoded copies of that path are now
+derived from the SEALED registry.
+
+### PF-078 a `piiFree` SCHEMA is not a `piiFree` MINT
+
+The object-literal rule fired on any property named `piiFree`, which made
+`piiFree: z.literal(true)` — decision-core's Zod schema DESCRIBING the tokenized shape
+— a sealed-type construction, in both the fence and its ESLint mirror. It now requires
+the flag to BE the flag (a `true` literal, optionally `as const`, or a shorthand name
+bound to one). Deleting the `as const` unwrap:
+
+```
+# unwrapAssertions(value) -> value
+× catches a bare `piiFree: true` bag, but not a SCHEMA that merely validates the flag
+```
+
+That companion was written twice: the first version asserted only on the bare literal
+and survived the deletion, because `as const` was never planted. The ESLint mirror was
+re-proven the same way against a probe file carrying all four shapes — bare, `as const`,
+shorthand, and the schema — and reports exactly the first three.
+
+### PF-079 renaming the logger is not an escape
+
+`resolvesTo` followed import aliases but not local bindings, so `const l = log;
+l.info({}, msg)` resolved to the local VariableDeclaration and dropped the module out
+of BOTH the literal-message requirement and the drift check — while its messages still
+degraded to `"log event"` at runtime. `log.child({…}).info(…)` had the same hole (the
+inner symbol is `child`). Deleting the local-binding and child-logger arms:
+
+```
+× follows a LOCAL alias and a child logger — renaming the logger is not an escape
+```
+
+The companion asserts both directions in one fixture: two dynamic messages are caught
+and two literal ones are collected, through an alias and through a child logger. The
+existing negative case (a same-named local that is NOT the logger is ignored) still
+passes, so the walk widened by RESOLUTION, not by spelling.
+
+### PF-080 a preflight probe is the one sanctioned cross-tenant read, and only a read
+
+The version-3 probes are built at module load, so they never appear as a source literal
+the org-id fence could scan, and they read every tenant's rows by design — "can this
+schema change be applied to this store at all" is a question about the store. That
+exemption is now explicit and checked rather than accidental: a probe must be a single
+read-only SELECT. Neutering the filter:
+
+```
+# nonReadOnlyProbes -> .filter(() => false)
+× a preflight probe that mutates is caught (the exemption does not cover writes)
+```
+
+The enforcing assertion also carries a non-vacuity floor (`probes.length > 0`), so the
+rule cannot go green by there being nothing to check.
+
+### PF-081 a type-only `unique symbol` brand is not a platform dependency
+
+`dependency-rule` treats any ambient declaration in `contracts/` as a re-introduced
+platform dependency — the rule that stops `declare const fetch` from restoring a global.
+Main's stricter ambient handling met prompt 6's `declare const TenantContextBrand:
+unique symbol`, the nominal-brand idiom every sealed type is built from, and the fence
+went red on five contracts files. The exemption is now keyed on having no RUNTIME
+surface, not on the type node. Deleting it:
+
+```
+# ambientContractDeclarations -> (isTypeOnlyBrand check removed)
+× enforces: the real src/ tree has zero layer violations
+× a type-only `unique symbol` brand is not a platform dependency, but a USED one still is
+```
+
+The companion asserts both halves in one test: the branded interface is clean, and the
+SAME declaration referenced as a value (`export const key = TenantBrand;`) is still
+reported.
+
+### PF-082 lib members are not the project's PII surface
+
+`callablePIIExposures` walked `type.getProperties()` with no filter on where a member
+was DECLARED. A branded primitive (`type FirmId = string & Brand`) carries the whole
+String prototype, so every branded id in decision-core reported
+`String.prototype.anchor(name)` as a PII surface — 27 findings about a lib signature
+nobody wrote and nobody can change — and every `.d.ts` in `node_modules` was walked the
+same way, which is what made `markedModules` take 33 seconds. Deleting the filter:
+
+```
+# callablePIIExposures -> (src/ declaration check removed)
+× enforces: every platform-layer type with a raw PII-named field is PIIBearing-marked
+× enforces: the marked set is non-empty
+× does not read lib members off a BRANDED PRIMITIVE, but still reads the project's own
+```
+
+The companion is two-sided: a branded `FirmId` reports no `anchor`, and the project's
+own `notify(name: string)` is still reported, so the filter narrowed the SOURCE of the
+members, not the rule.
+
+The 36 findings that remained after this are decision-core evidence REFERENCES —
+branded `EvidenceSnapshotId` lists, `EvidenceKind` discriminators, and `EvidenceRequest`
+descriptors. `evidence` is in the PII field rule because the projection layer's
+`evidence` really is the client payload; these are the other thing that word names.
+Each is an exact-match escape with its reason, and the pre-existing
+"every escape is LOAD-BEARING" assertion proves none of them suppresses nothing.
+
+### PF-083 the fence suite finishes (689s → 4s), with the same answers
+
+Every fence type walk kept a visited set keyed on `${type.getText()}::${flags}`.
+`getText()` PRINTS the type: cheap for `string | null`, ruinous for a
+`z.infer<typeof …>` alias, and the decision-core contracts are ~3,500 lines of them.
+The key is UNCHANGED — still the same string, so two distinct type objects that print
+alike still collapse to one visit — but it is now memoized on the interned compiler
+type, so each type prints at most once per process. Companion fixtures also stopped
+carrying `lib.dom.d.ts` and `@types`, which ~165 of them re-parsed to answer a question
+about five lines of synthetic source.
+
+```
+llm-pii-boundary      689.03s (3 assertions past the 20s timeout)  ->  3.63s
+tokenized-factory-only 65.44s (1 assertion past the 20s timeout)   ->  17.9s
+full fitness suite     never completed                             ->  18.1s
+full test suite        never completed                             ->  54 files, 851 tests, 40s
+```
+
+Behavior-neutrality is the point, and it was checked rather than assumed: the
+identity-keyed variant tried first reported the SAME 71 findings as the text key, and
+the text key is what shipped.
+
+**Revert:** every injected file was restored from a copy taken before its injection
+(`git status` shows no unintended diff in `src/infrastructure/store/migrations.ts`,
+`src/__tests__/fitness/_fence-utils.ts`, `governed-actions.test.ts`,
+`llm-pii-boundary.test.ts`, `tokenized-factory-only.test.ts`,
+`observability-vocabulary.test.ts`, or `org-id-required.test.ts`). The full suite is
+green: 54 files, 851 tests. `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+`pnpm v3:invariants` (6 active-pass, 0 active-fail), `pnpm golden:validate` (16/16) and
+`next build` all pass.
+
+**Date:** 2026-07-28 (fourteenth review-fix round on v3 build-sequence prompt 6).

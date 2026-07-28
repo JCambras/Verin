@@ -1,4 +1,4 @@
-# ADR-0029: Line-budget amendment for the Wave A security boundaries (prompt 6)
+# ADR-0032: Line-budget amendment for the Wave A security boundaries (prompt 6)
 
 **Status:** Accepted
 **Date:** 2026-07-26

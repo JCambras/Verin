@@ -14,10 +14,11 @@ import { relative } from "node:path";
  * foundation close. Raising any ceiling is an ADR amendment, not a code change.
  */
 const CEILINGS = {
-  // 3500 (ADR-0029, v3 prompt-5 decision-core contracts) + 500 for the prompt-6
-  // Wave A security boundaries (ADR-0029 line-budget amendment, 600 -> 1000 on the
-  // pre-decision-core base). Both raises are ADR-authorized; ratchet-down resumes here.
-  contracts: 4000,
+  // 3500 (ADR-0029, v3 prompt-5 decision-core contracts) + 400 for the prompt-6
+  // Wave A security boundaries (ADR-0032 line-budget amendment, 600 -> 1000 on the
+  // pre-decision-core base; ADR-0030 leaves contracts at 1000). Every line here is
+  // ADR-authorized and no more: a ceiling is never rounded up for headroom.
+  contracts: 3900,
   domain: 1200,
   infrastructure: 3200, // raised by ADR-0030 (prompt-6 adversarial review hardening)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)

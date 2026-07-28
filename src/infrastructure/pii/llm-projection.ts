@@ -62,10 +62,13 @@ function maskText(text: string, masks: readonly SensitiveMask[]): string {
   return masked;
 }
 
+// `path` is the ANCESTOR chain, not a global visited set: one object referenced by
+// two sibling keys is a DAG, which JSON-shaped evidence projects fine, while an
+// object reachable from itself is a true cycle and stays refused.
 function maskRecord(
   value: unknown,
   masks: readonly SensitiveMask[],
-  seen = new WeakSet<object>(),
+  path: readonly object[] = [],
 ): unknown {
   if (typeof value === "string") return maskText(value, masks);
   if (typeof value === "number" || typeof value === "bigint") {
@@ -74,11 +77,11 @@ function maskRecord(
     return masked === raw ? value : masked;
   }
   if (value == null || typeof value !== "object") return value;
-  if (seen.has(value)) {
+  if (path.includes(value)) {
     throw appError("PII_VIOLATION", "LLM projection refused cyclic evidence.");
   }
-  seen.add(value);
-  if (Array.isArray(value)) return value.map((item) => maskRecord(item, masks, seen));
+  const nested = [...path, value];
+  if (Array.isArray(value)) return value.map((item) => maskRecord(item, masks, nested));
   const entries: Array<[string, unknown]> = [];
   const keys = new Set<string>();
   for (const [key, item] of Object.entries(value)) {
@@ -87,7 +90,7 @@ function maskRecord(
       throw appError("PII_VIOLATION", "LLM projection refused colliding evidence keys.");
     }
     keys.add(maskedKey);
-    entries.push([maskedKey, maskRecord(item, masks, seen)]);
+    entries.push([maskedKey, maskRecord(item, masks, nested)]);
   }
   return Object.fromEntries(entries);
 }

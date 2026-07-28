@@ -5,7 +5,7 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Node, Project, SyntaxKind, ts, type CallExpression, type CompilerOptions, type SourceFile } from "ts-morph";
+import { Node, Project, SyntaxKind, ts, type CallExpression, type CompilerOptions, type SourceFile, type Type, type VariableDeclaration } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -13,6 +13,29 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const SRC_ROOT = join(REPO_ROOT, "src");
 const IN_MEMORY_SRC_ROOT = resolve("/src");
+
+/**
+ * The visited-set key every fence type walk uses: `${text}::${flags}`, MEMOIZED on
+ * the interned compiler type.
+ *
+ * The key itself is unchanged — structural, so two distinct type objects that print
+ * alike still collapse to one visit — but `getText()` PRINTS the whole type, which
+ * is cheap for `string | null` and ruinous for a `z.infer<typeof …>` alias. Once the
+ * decision-core contracts landed, the llm-pii-boundary walk re-rendered those
+ * inferred types thousands of times just to ask "seen this?", and the fence took
+ * eleven minutes — three assertions past their 20s timeout. The checker interns type
+ * objects, so each one now prints at most once per process.
+ */
+const TYPE_KEYS = new WeakMap<object, string>();
+export function typeKey(type: Type): string {
+  const compilerType = type.compilerType as unknown as object;
+  let key = TYPE_KEYS.get(compilerType);
+  if (key === undefined) {
+    key = `${type.getText()}::${type.getFlags()}`;
+    TYPE_KEYS.set(compilerType, key);
+  }
+  return key;
+}
 
 export type Layer = "contracts" | "domain" | "infrastructure" | "app";
 const RANK: Record<Layer, number> = { contracts: 0, domain: 1, infrastructure: 2, app: 3 };
@@ -657,6 +680,28 @@ export interface ContractsExternalImportViolation {
   specifier: string;
 }
 
+/**
+ * A `declare const Brand: unique symbol` referenced ONLY from type positions is the
+ * nominal-brand idiom the sealed security types are built from — not a platform
+ * dependency. It has no runtime value and nothing resolves it at run time; the thing
+ * this rule exists to refuse is a `declare const fetch: …` the module then CALLS,
+ * and that one is referenced in a VALUE position, so it still fails.
+ */
+function isTypeOnlyBrand(declaration: VariableDeclaration): boolean {
+  if (declaration.getTypeNode()?.getText().replace(/\s+/g, " ").trim() !== "unique symbol") {
+    return false;
+  }
+  const nameNode = declaration.getNameNode();
+  return declaration.findReferencesAsNodes().every((reference) =>
+    reference === nameNode ||
+    reference.getAncestors().some((ancestor) =>
+      Node.isInterfaceDeclaration(ancestor) ||
+      Node.isTypeAliasDeclaration(ancestor) ||
+      ts.isTypeNode(ancestor.compilerNode)
+    )
+  );
+}
+
 function ambientContractDeclarations(sf: SourceFile): Array<{ line: number; name: string }> {
   const declarations: Array<{ line: number; name: string }> = [];
   for (const statement of sf.getStatements()) {
@@ -669,6 +714,7 @@ function ambientContractDeclarations(sf: SourceFile): Array<{ line: number; name
     if (!ambient) continue;
     if (Node.isVariableStatement(statement)) {
       for (const declaration of statement.getDeclarations()) {
+        if (isTypeOnlyBrand(declaration)) continue;
         declarations.push({
           line: declaration.getStartLineNumber(),
           name: declaration.getName(),
@@ -784,6 +830,12 @@ export function inMemoryProject(files: Record<string, string>): Project {
     // the in-memory /src tree instead of the host repo path.
     compilerOptions: {
       ...REPO_COMPILER_OPTIONS,
+      // Companion fixtures are tiny synthetic trees analysed for STRUCTURE, so they
+      // need no DOM surface and no @types packages — and the fence suite builds
+      // ~165 of them, each of which re-parsed lib.dom.d.ts and every ambient
+      // declaration before answering a question about five lines of fixture.
+      lib: ["lib.es2022.d.ts"],
+      types: [],
       baseUrl: "/",
       paths: {
         "@contracts/*": ["src/contracts/*"],

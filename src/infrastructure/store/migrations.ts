@@ -32,6 +32,21 @@ export interface Migration {
   readonly name: string;
   /** Idempotent-where-possible DDL for this version. Runs as one transaction. */
   readonly sql: string;
+  /** READ-ONLY probes run before this version's DDL; a non-zero count refuses the upgrade. */
+  readonly preflight?: readonly PreflightProbe[];
+}
+
+/**
+ * A pre-migration data check. `sql` MUST be read-only and return one `orphans` count:
+ * an unsatisfiable constraint is REPORTED, never repaired - no shipped migration
+ * deletes, rewrites, or re-points a row a human put there.
+ */
+export interface PreflightProbe {
+  /** The constraint this probe stands in for - the diagnostic names it. */
+  readonly relationship: string;
+  /** Child -> parent columns, so the diagnostic is actionable without the source. */
+  readonly subject: string;
+  readonly sql: string;
 }
 
 // Bookkeeping table: which migration versions this store has applied. Bootstrapped
@@ -274,60 +289,63 @@ const SESSIONS_EXPIRES_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
 `;
 
+/**
+ * Version 3's tenant-qualified parent edges, as DATA: each entry generates BOTH the
+ * composite foreign key and the read-only orphan PREFLIGHT below, so a relationship
+ * can never ship a constraint the migration cannot first check for. Every edge names
+ * a column shipped code actually populates - an FK on an always-NULL column is
+ * skipped by MATCH SIMPLE forever, so no companion could trip it (charter #4).
+ */
+interface TenantEdge {
+  readonly constraint: string;
+  readonly child: string;
+  readonly childColumns: readonly string[];
+  readonly parent: string;
+  readonly parentColumns: readonly string[];
+}
+
+const TENANT_EDGES: readonly TenantEdge[] = [
+  { constraint: "sessions_user_org_fk", child: "sessions", childColumns: ["user_id", "org_id"], parent: "users", parentColumns: ["id", "org_id"] },
+  { constraint: "households_advisor_org_fk", child: "households", childColumns: ["advisor_user_id", "org_id"], parent: "users", parentColumns: ["id", "org_id"] },
+  { constraint: "contacts_household_org_fk", child: "contacts", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "financial_accounts_household_org_fk", child: "financial_accounts", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "applications_household_org_fk", child: "account_opening_applications", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "applications_contact_household_org_fk", child: "account_opening_applications", childColumns: ["contact_id", "household_id", "org_id"], parent: "contacts", parentColumns: ["id", "household_id", "org_id"] },
+  { constraint: "tasks_household_org_fk", child: "tasks", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+];
+
+/**
+ * The orphan probe for one edge, mirroring MATCH SIMPLE exactly: a row with ANY
+ * NULL key column is skipped by the constraint, so it is skipped here too - the
+ * preflight must not refuse an upgrade the constraint would have accepted.
+ */
+const orphanProbeSql = (e: TenantEdge) =>
+  `SELECT count(*)::int AS orphans FROM ${e.child} c WHERE ${e.childColumns.map((col) => `c.${col} IS NOT NULL`).join(" AND ")} AND NOT EXISTS (SELECT 1 FROM ${e.parent} p WHERE ${e.childColumns.map((col, i) => `p.${e.parentColumns[i]} = c.${col}`).join(" AND ")});`;
+
 const TENANT_QUALIFIED_RELATIONSHIPS_SQL = `
 CREATE UNIQUE INDEX users_id_org_unique ON users(id, org_id);
 CREATE UNIQUE INDEX households_id_org_unique ON households(id, org_id);
 CREATE UNIQUE INDEX contacts_id_household_org_unique ON contacts(id, household_id, org_id);
 
-UPDATE households h
-SET advisor_user_id = NULL
-WHERE advisor_user_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM users u
-    WHERE u.id = h.advisor_user_id AND u.org_id = h.org_id
-  );
-
-ALTER TABLE sessions
-  ADD CONSTRAINT sessions_user_org_fk
-  FOREIGN KEY (user_id, org_id) REFERENCES users(id, org_id);
-
-ALTER TABLE households
-  ADD CONSTRAINT households_advisor_org_fk
-  FOREIGN KEY (advisor_user_id, org_id) REFERENCES users(id, org_id);
-ALTER TABLE households
-  ADD CONSTRAINT households_primary_contact_org_fk
-  FOREIGN KEY (primary_contact_id, id, org_id)
-  REFERENCES contacts(id, household_id, org_id);
-
-ALTER TABLE contacts
-  ADD CONSTRAINT contacts_household_org_fk
-  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
-
-ALTER TABLE financial_accounts
-  ADD CONSTRAINT financial_accounts_household_org_fk
-  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
-
-ALTER TABLE account_opening_applications
-  ADD CONSTRAINT applications_household_org_fk
-  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
-ALTER TABLE account_opening_applications
-  ADD CONSTRAINT applications_contact_household_org_fk
-  FOREIGN KEY (contact_id, household_id, org_id)
-  REFERENCES contacts(id, household_id, org_id);
-
-ALTER TABLE tasks
-  ADD CONSTRAINT tasks_household_org_fk
-  FOREIGN KEY (household_id, org_id) REFERENCES households(id, org_id);
-ALTER TABLE tasks
-  ADD CONSTRAINT tasks_assignee_org_fk
-  FOREIGN KEY (assignee_user_id, org_id) REFERENCES users(id, org_id);
+${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
+  ADD CONSTRAINT ${e.constraint}
+  FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
 `;
 
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
   { version: 2, name: "sessions-expires-index", sql: SESSIONS_EXPIRES_INDEX_SQL },
-  { version: 3, name: "tenant-qualified-relationships", sql: TENANT_QUALIFIED_RELATIONSHIPS_SQL },
+  {
+    version: 3,
+    name: "tenant-qualified-relationships",
+    sql: TENANT_QUALIFIED_RELATIONSHIPS_SQL,
+    preflight: TENANT_EDGES.map((e) => ({
+      relationship: e.constraint,
+      subject: `${e.child}(${e.childColumns.join(", ")}) -> ${e.parent}(${e.parentColumns.join(", ")})`,
+      sql: orphanProbeSql(e),
+    })),
+  },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free
@@ -353,6 +371,25 @@ for (const [i, m] of MIGRATIONS.entries()) {
 export const MIGRATION_SQL = [SCHEMA_MIGRATIONS_DDL, ...MIGRATIONS.map((m) => m.sql)].join("\n");
 
 /**
+ * Run every probe for one version and refuse the upgrade if ANY finds orphans.
+ * Probes are read-only and run BEFORE the transaction, so a store that cannot take
+ * the new constraints is reported with its data byte-for-byte untouched instead of
+ * dying inside a rollback with a bare driver error. All probes run - an operator
+ * fixing one relationship should not discover the next one on the next boot.
+ */
+async function assertPreflightClean(db: SqlDb, m: Migration): Promise<void> {
+  const blocked: string[] = [];
+  for (const probe of m.preflight ?? []) {
+    const { rows } = await db.query<{ orphans: number }>(probe.sql);
+    const orphans = Number(rows[0]?.orphans ?? 0);
+    if (orphans > 0) blocked.push(`${probe.relationship}: ${orphans} row(s) in ${probe.subject} reference a parent in another tenant (or no parent at all)`);
+  }
+  if (blocked.length > 0) {
+    throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
+  }
+}
+
+/**
  * Apply every not-yet-recorded migration version in order. Idempotent: an already
  * up-to-date store runs no DDL. Each version's DDL and its `schema_migrations` record
  * commit in ONE transaction, so the applied set and the actual schema never diverge.
@@ -364,14 +401,21 @@ export async function runMigrations(db: SqlDb): Promise<void> {
   const applied = new Set(recorded.rows.map((r) => Number(r.version)));
   for (const m of MIGRATIONS) {
     if (applied.has(m.version)) continue;
+    await assertPreflightClean(db, m);
     // The migration's DDL and its ledger record commit as ONE transaction: a crash
     // mid-migration leaves neither a half-applied schema nor a recorded-but-unapplied
     // version, so re-running always resumes cleanly (safe even for a future
     // non-idempotent ALTER). The version record is a PARAMETERIZED write - no SQL is
     // built by interpolation.
-    await db.transaction(async (tx) => {
-      await tx.exec(m.sql);
-      await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
-    });
+    try {
+      await db.transaction(async (tx) => {
+        await tx.exec(m.sql);
+        await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
+      });
+    } catch (cause) {
+      // Which migration failed is the one fact the driver's error does not carry, and
+      // without it a constraint abort is indistinguishable from a dataDir lock at boot.
+      throw appError("INTERNAL", `migration ${m.version} (${m.name}) failed and was rolled back: ${cause instanceof Error ? cause.message : String(cause)}`, { version: m.version, name: m.name });
+    }
   }
 }

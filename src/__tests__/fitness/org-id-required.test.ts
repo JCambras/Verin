@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { relative } from "node:path";
 import { SyntaxKind, type SourceFile } from "ts-morph";
 import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
-import { MIGRATION_SQL } from "@infra/store/migrations";
+import { MIGRATION_SQL, MIGRATIONS, type PreflightProbe } from "@infra/store/migrations";
 
 /**
  * ORG-ID-REQUIRED FENCE (ADR-0004, charter #7). Every SELECT/UPDATE/DELETE on a
@@ -85,6 +85,21 @@ export function detectMissingOrgId(sql: string): boolean {
   return !/\borg_id\s*(=|\bin\b)/i.test(sql);
 }
 
+/**
+ * Migration preflight probes are BUILT at module load, so they never appear as a
+ * source literal this fence could scan, and they read every tenant's rows on purpose
+ * — "can this schema change be applied to this store at all" is a question about the
+ * store, not about a tenant. The reviewed exemption is therefore narrow and checked,
+ * not implicit: a probe must be a single read-only SELECT. The moment one is allowed
+ * to write, an unscoped cross-tenant MUTATION would be running outside every rule
+ * this fence exists to enforce.
+ */
+export function nonReadOnlyProbes(probes: readonly PreflightProbe[]): string[] {
+  return probes
+    .filter((p) => !/^SELECT\b/i.test(normalizeSql(p.sql)) || /\b(INSERT|UPDATE|DELETE|MERGE|ALTER|DROP|TRUNCATE|CREATE|GRANT)\b/i.test(p.sql) || p.sql.replace(/;\s*$/, "").includes(";"))
+    .map((p) => `${p.relationship}: preflight probe must be a single read-only SELECT`);
+}
+
 /** Every string-ish literal in a file — including SQL assigned to variables. */
 export function sqlLiterals(sf: SourceFile): string[] {
   const out: string[] = [];
@@ -115,7 +130,19 @@ describe("org-id-required fence", () => {
     expect(offenders, `queries missing org_id:\n${offenders.join("\n")}`).toEqual([]);
   });
 
+  it("enforces: every migration preflight probe is a single read-only SELECT (the one sanctioned cross-tenant read)", () => {
+    const probes = MIGRATIONS.flatMap((m) => m.preflight ?? []);
+    // Non-vacuity floor: the exemption is only sound while there ARE probes to check.
+    expect(probes.length).toBeGreaterThan(0);
+    expect(nonReadOnlyProbes(probes), nonReadOnlyProbes(probes).join("\n")).toEqual([]);
+  });
+
   describe("detects (companion): a query without org_id is caught", () => {
+    it("a preflight probe that mutates is caught (the exemption does not cover writes)", () => {
+      expect(nonReadOnlyProbes([{ relationship: "r", subject: "s", sql: "UPDATE households SET advisor_user_id = NULL" }])).toHaveLength(1);
+      expect(nonReadOnlyProbes([{ relationship: "r", subject: "s", sql: "SELECT count(*) AS orphans FROM households; DELETE FROM households" }])).toHaveLength(1);
+      expect(nonReadOnlyProbes([{ relationship: "r", subject: "s", sql: "SELECT count(*)::int AS orphans FROM tasks c WHERE c.org_id IS NOT NULL;" }])).toEqual([]);
+    });
     it("flags a SELECT on households without org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE id = $1")).toBe(true);
     });

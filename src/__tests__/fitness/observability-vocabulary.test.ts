@@ -70,13 +70,47 @@ function literalText(node: Node | undefined): string | null {
   return type.isStringLiteral() ? String(type.getLiteralValue()) : null;
 }
 
-function resolvesTo(node: Node, file: string, name: string): boolean {
+/**
+ * Does this expression denote `file`'s exported `name`?
+ *
+ * Follows import aliases, LOCAL bindings (`const l = log; l.info(…)`), and pino's
+ * `.child({ … })` derivation. Import aliases alone were not enough: a module that
+ * renames the logger, or takes a child logger, emits exactly the same messages
+ * through exactly the same formatter — and an unregistered one still degrades to
+ * "log event" — so it must not drop out of the literal-message rule and the drift
+ * check by SPELLING. The walk is symbol-keyed, so a same-named local helper that is
+ * not this logger still resolves to itself and is ignored.
+ */
+function resolvesTo(
+  node: Node,
+  file: string,
+  name: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
   const symbol = node.getSymbol();
   const target = symbol?.getAliasedSymbol() ?? symbol;
-  return target?.getName() === name &&
+  if (
+    target?.getName() === name &&
     target.getDeclarations().some((declaration) =>
       normalizedPath(declaration.getSourceFile().getFilePath()) === file
-    );
+    )
+  ) {
+    return true;
+  }
+  if (Node.isCallExpression(node)) {
+    const callee = node.getExpression();
+    return Node.isPropertyAccessExpression(callee) && callee.getName() === "child" &&
+      resolvesTo(callee.getExpression(), file, name, seen);
+  }
+  for (const declaration of target?.getDeclarations() ?? []) {
+    const initializer = Node.isVariableDeclaration(declaration)
+      ? declaration.getInitializer()
+      : undefined;
+    if (initializer && resolvesTo(initializer, file, name, seen)) return true;
+  }
+  return false;
 }
 
 function isWithSpanCall(call: CallExpression): boolean {
@@ -504,10 +538,17 @@ function vocabularyFixture(consumer: string): Project {
       }
     `,
     "/src/infrastructure/observability/logger.ts": `
-      export const log = {
+      interface Logger {
+        info(obj: unknown, msg?: string): void;
+        warn(obj: unknown, msg?: string): void;
+        error(obj: unknown, msg?: string): void;
+        child(bindings: Readonly<Record<string, unknown>>): Logger;
+      }
+      export const log: Logger = {
         info(obj: unknown, msg?: string): void { void obj; void msg; },
         warn(obj: unknown, msg?: string): void { void obj; void msg; },
         error(obj: unknown, msg?: string): void { void obj; void msg; },
+        child(bindings: Readonly<Record<string, unknown>>): Logger { void bindings; return log; },
       };
     `,
     "/src/domain/observability/safe-values.ts": `
@@ -632,6 +673,36 @@ describe("observability-vocabulary fence (charter #14)", () => {
       expect(found.violations).toHaveLength(2);
       expect(found.violations.some((v) => v.includes("withSpan needs a literal span name"))).toBe(true);
       expect(found.violations.some((v) => v.includes("log message must be a literal"))).toBe(true);
+    });
+
+    it("follows a LOCAL alias and a child logger — renaming the logger is not an escape", () => {
+      const found = collectObservabilityVocabulary(vocabularyFixture(`
+        import { log } from "@infra/observability/logger";
+        const l = log;
+        export const run = (id: string) => {
+          l.info({}, \`aliased \${id}\`);
+          l.warn({}, "aliased operator message");
+          log.child({ flow: "x" }).error({}, \`child \${id}\`);
+          log.child({ flow: "x" }).error({}, "child operator message");
+        };
+      `));
+      expect(found.logMessages).toEqual(["aliased operator message", "child operator message"]);
+      // Both dynamic messages are caught: neither the rename nor the child logger
+      // takes a module out of the literal-message rule.
+      expect(found.violations.filter((v) => v.includes("log message must be a literal"))).toHaveLength(2);
+      expect(detectVocabularyDrift(found, { spanNames: [], logMessages: [] })).toEqual([
+        `unregistered log message "aliased operator message" — it would be emitted as "log event"`,
+        `unregistered log message "child operator message" — it would be emitted as "log event"`,
+      ]);
+    });
+
+    it("still ignores a same-named LOCAL that is not the real logger", () => {
+      const found = collectObservabilityVocabulary(vocabularyFixture(`
+        const log = { info(obj: unknown, msg?: string): void { void obj; void msg; } };
+        export const run = (id: string) => log.info({}, \`not the logger \${id}\`);
+      `));
+      expect(found.logMessages).toEqual([]);
+      expect(found.violations).toEqual([]);
     });
 
     it("flags shipped code calling the test-only injection point", () => {

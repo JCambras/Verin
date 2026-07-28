@@ -3,12 +3,12 @@
 **Status:** Accepted
 **Date:** 2026-07-27
 **Deciders:** Build agent (reversible, logged per the decision protocol; D-047)
-**Relates to:** ADR-0018, ADR-0029, charter #1/#7/#12/#14
-**Amends:** ADR-0029 infrastructure ceiling
+**Relates to:** ADR-0018, ADR-0032, charter #1/#7/#12/#14
+**Amends:** ADR-0032 infrastructure ceiling
 
 ## Context
 
-ADR-0029 raised the infrastructure ceiling to 3,000 lines for the initial
+ADR-0032 raised the infrastructure ceiling to 3,000 lines for the initial
 prompt-6 security boundaries. Eight adversarial review rounds then required
 runtime-sealed authority, trusted LLM evidence schemas, safe observability
 identifiers, and semantic fence analysis across callable forms. The resulting

@@ -14,6 +14,7 @@ import {
   inMemoryProject,
   realSemanticProject,
   REPO_ROOT,
+  typeKey,
 } from "./_fence-utils";
 import { SYSTEM_ACTOR_IDS } from "@contracts/tenant";
 
@@ -54,6 +55,14 @@ const SEALED = [
     factory: "src/domain/observability/safe-values.ts",
   },
 ] as const;
+
+/**
+ * The ONE factory allowed to build a `piiFree` payload — DERIVED from the registry
+ * above rather than spelled out at each check, so moving the scrubber cannot leave
+ * three hardcoded copies of its path behind.
+ */
+const TOKENIZED_FACTORY =
+  SEALED.find((sealed) => sealed.typeName === "Tokenized")!.factory;
 
 const TRUSTED_FACTORY_CALLS = [
   {
@@ -158,7 +167,7 @@ function sealedType(
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
@@ -518,6 +527,14 @@ function mintsThroughInventedTypeParameter(
     : null;
 }
 
+/** Strip `as T` / `<T>v` / `(v)` / `v satisfies T` down to the expression itself. */
+function unwrapAssertions(node: Node): Node {
+  return Node.isAsExpression(node) || Node.isTypeAssertion(node) ||
+      Node.isParenthesizedExpression(node) || Node.isSatisfiesExpression(node)
+    ? unwrapAssertions(node.getExpression())
+    : node;
+}
+
 export function detectSealedTypeConstruction(project: Project): string[] {
   const out: string[] = [];
   for (const sf of project.getSourceFiles()) {
@@ -551,12 +568,28 @@ export function detectSealedTypeConstruction(project: Project): string[] {
           `${normalized}:${literal.getStartLineNumber()} - object literal constructs sealed type '${sealed.typeName}'`,
         );
       }
-      const hasPiiFree = literal.getProperties().some((property) =>
-        (Node.isPropertyAssignment(property) ||
-          Node.isShorthandPropertyAssignment(property)) &&
-        property.getName() === "piiFree"
-      );
-      if (hasPiiFree && normalized !== "src/infrastructure/pii/tokenize.ts") {
+      // The impostor this rule exists to catch is a hand-built `{ value, piiFree:
+      // true }` — so the flag has to BE the flag. A Zod schema DECLARATION describes
+      // the shape a parser validates (`piiFree: z.literal(true)`, a ZodLiteral, not a
+      // boolean) and mints nothing; flagging it would make the decision-core
+      // contracts unrepresentable rather than making anything safer.
+      const hasPiiFree = literal.getProperties().some((property) => {
+        if (
+          !Node.isPropertyAssignment(property) &&
+          !Node.isShorthandPropertyAssignment(property)
+        ) return false;
+        if (property.getName() !== "piiFree") return false;
+        const value = Node.isPropertyAssignment(property)
+          ? property.getInitializer()
+          : property.getNameNode();
+        if (!value) return true;
+        const inner = unwrapAssertions(value);
+        // The flag itself (`piiFree: true`, `… as const`) or a name bound to it
+        // (`const piiFree = true as const; { value, piiFree }`). A CALL is a parser
+        // describing the flag, never a value claiming to have been scrubbed.
+        return inner.getKind() === SyntaxKind.TrueKeyword || Node.isIdentifier(inner);
+      });
+      if (hasPiiFree && normalized !== TOKENIZED_FACTORY) {
         out.push(
           `${normalized}:${literal.getStartLineNumber()} - object literal with 'piiFree' outside the scrubber factory`,
         );
@@ -586,7 +619,10 @@ export function detectSealedTypeConstruction(project: Project): string[] {
     // are.
     for (const kind of [SyntaxKind.CallExpression, SyntaxKind.NewExpression] as const) {
       for (const call of sf.getDescendantsOfKind(kind)) {
-        if (normalized === "src/infrastructure/pii/tokenize.ts") continue;
+        // Per-TYPE, never whole-file: the `normalized !== sealed.factory` guard below
+        // already exempts the Tokenized case this used to skip the file for, and
+        // skipping the whole file let `const t: TenantContext = coerce(raw)` inside
+        // the scrubber mint any of the OTHER six sealed types silently.
         const sealed = mintsThroughInventedTypeParameter(call);
         if (sealed && normalized !== sealed.factory) {
           out.push(
@@ -608,7 +644,7 @@ export function detectSealedTypeConstruction(project: Project): string[] {
       }
       if (
         cls.getProperties().some((property) => property.getName() === "piiFree") &&
-        normalized !== "src/infrastructure/pii/tokenize.ts"
+        normalized !== TOKENIZED_FACTORY
       ) {
         out.push(
           `${normalized}:${cls.getStartLineNumber()} - class declares 'piiFree' outside the scrubber factory`,
@@ -678,7 +714,7 @@ function callableSignatures(
   type: Type,
   seen = new Set<string>(),
 ): Signature[] {
-  const key = `${type.getText()}::${type.getFlags()}`;
+  const key = typeKey(type);
   if (seen.has(key)) return [];
   seen.add(key);
   const signatures = [...type.getCallSignatures()];
@@ -1005,6 +1041,25 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(hits.some((hit) => hit.includes("object literal with 'piiFree'"))).toBe(true);
     });
 
+    it("catches a bare `piiFree: true` bag, but not a SCHEMA that merely validates the flag", () => {
+      const project = sealedFixture(
+        "/src/domain/evil.ts",
+        `
+          declare const z: { strictObject(shape: object): object; literal<T>(v: T): { brand: "zod"; value: T }; string(): object };
+          export const bag = { value: "raw", piiFree: true };
+          export const asserted = { value: "raw", piiFree: true as const };
+          export const schema = z.strictObject({ value: z.string(), piiFree: z.literal(true) });
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("object literal with 'piiFree'"));
+      // Lines 3 and 4 are hand-built impostors — `as const` is not a different one;
+      // line 5 is a parser DESCRIBING the shape.
+      expect(hits).toHaveLength(2);
+      expect(hits[0]).toContain("src/domain/evil.ts:3");
+      expect(hits[1]).toContain("src/domain/evil.ts:4");
+    });
+
     it("catches a class implementing an aliased sealed type", () => {
       const project = sealedFixture(
         "/src/domain/evil.ts",
@@ -1162,6 +1217,28 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         .filter((hit) => hit.includes("explicit type argument"));
       expect(hits).toHaveLength(1);
       expect(hits[0]).toContain("src/infrastructure/pii/llm-projection.ts:6");
+    });
+
+    it("lets the scrubber mint its OWN sealed type, and nothing else, through a coercion helper", () => {
+      const project = sealedFixture("/src/app/unused.ts", "export const x = 1;");
+      project.createSourceFile(
+        "/src/infrastructure/pii/tokenize.ts",
+        `
+          import type { Tokenized } from "../../contracts/tokenized";
+          import type { TenantContext } from "../../contracts/tenant";
+          function coerce<T>(value: unknown): T { return value as T; }
+          export const sealed = coerce<Tokenized<string>>("raw");
+          export const stolen: TenantContext = coerce(JSON.parse("{}"));
+        `,
+        { overwrite: true },
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("type argument"));
+      // The exemption is per-TYPE, not per-FILE: Tokenized is this file's own type
+      // (allowed), TenantContext is not (a mint the whole-file skip used to swallow).
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toContain("TenantContext");
+      expect(hits.some((hit) => hit.includes("Tokenized"))).toBe(false);
     });
 
     it("allows a generic container merely PARAMETERIZED by a sealed type", () => {

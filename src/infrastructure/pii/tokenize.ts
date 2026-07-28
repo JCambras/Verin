@@ -16,7 +16,6 @@ import { assertNoAmbiguousSensitiveText, assertNoPIIValues } from "@contracts/pi
 import type { DeepReadonly, Tokenized } from "@contracts/tokenized";
 import { scrub } from "./scrub";
 
-const SEAL = Symbol("verin.tokenized.seal");
 const TOKENS = new WeakSet<object>();
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> {
@@ -29,11 +28,7 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> 
 }
 
 function seal<T>(value: T): Tokenized<T> {
-  const t = Object.defineProperty(
-    { value: deepFreeze(value), piiFree: true as const },
-    SEAL,
-    { value: true, enumerable: false },
-  );
+  const t = { value: deepFreeze(value), piiFree: true as const };
   TOKENS.add(t);
   // The ONE sanctioned Tokenized cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(t) as Tokenized<T>;

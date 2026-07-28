@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-07-27
 **Deciders:** Supervising authority (decision key `prompt6-askuser`, 2026-07-27); build agent records it
-**Relates to:** charter #5, v3 §15.1, v3 invariant 1, ADR-0006, ADR-0029/0030, D-048
+**Relates to:** charter #5, v3 §15.1, v3 invariant 1, ADR-0006, ADR-0032/0030, D-048
 
 ## Context
 
@@ -86,7 +86,7 @@ exactly that: outside the model, and outside this layer.
 adversarially proven before any model integration begins.
 
 **Sacrificed:** ~370 lines carried ahead of their first production caller, and
-the corresponding share of the ADR-0029/0030 line-budget headroom.
+the corresponding share of the ADR-0032/0030 line-budget headroom.
 
 ## Revisit When
 

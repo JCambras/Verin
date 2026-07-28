@@ -2,9 +2,11 @@
  * TenantContext (v3 §15.2; ADR-0026: FirmId ≡ org_id at the store layer). Every
  * repository read and port call requires one — the tenant-context-required fence
  * enforces the signatures; this module enforces construction. Sealed twice: a
- * unique-symbol brand (a missing tenant context does not COMPILE) and a runtime
- * module-private seal (a cast or deserialized impostor fails assertTenantContext
- * inside the repository, so it does not PARSE either). Minted only from an
+ * unique-symbol brand (a missing tenant context does not COMPILE) and membership
+ * in a module-private WeakSet only `mint` writes to (a cast or deserialized
+ * impostor fails assertTenantContext inside the repository, so it does not PARSE
+ * either — an attacker cannot forge WeakSet membership by copying keys off a real
+ * value the way a self-describing marker property invites). Minted only from an
  * authenticated Principal (tenantOf) or for a named system actor (systemTenant).
  * The Phase 1 identity provider sits BELOW this seam (ADR-0008).
  */
@@ -22,7 +24,6 @@ export interface TenantContext {
   readonly [TenantContextBrand]: "TenantContext";
 }
 
-const SEAL = Symbol("verin.tenant-context.seal");
 const TENANT_CONTEXTS = new WeakSet<object>();
 
 /**
@@ -62,10 +63,7 @@ function mint(orgId: string, actor: TenantContext["actor"]): TenantContext {
   if (typeof orgId !== "string" || orgId.length === 0) {
     throw appError("INTERNAL", "TenantContext requires a non-empty orgId.");
   }
-  const ctx = Object.defineProperty({ orgId, actor: Object.freeze(actor) }, SEAL, {
-    value: true,
-    enumerable: false,
-  });
+  const ctx = { orgId, actor: Object.freeze(actor) };
   TENANT_CONTEXTS.add(ctx);
   // The ONE sanctioned TenantContext cast (tokenized-factory-only fence allowlists this module).
   return Object.freeze(ctx) as unknown as TenantContext;

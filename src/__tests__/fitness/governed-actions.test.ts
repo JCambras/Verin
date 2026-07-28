@@ -15,6 +15,7 @@ import {
   detectAppLayerSqlAccess,
   isSqlExecutorCall,
   normalizedPath,
+  typeKey,
 } from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
 import { ROLES } from "@contracts/roles";
@@ -193,7 +194,7 @@ function declaredAs(
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
@@ -235,7 +236,7 @@ function containsDeclaredType(
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     if (declaredAs(current, file, name)) return true;
@@ -270,7 +271,7 @@ function governedOutputAction(type: Type): string | null {
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     if (declaredAs(current, "src/contracts/authz.ts", "GovernedOutput")) {
@@ -379,15 +380,52 @@ function sqlStatements(sql: string): string[] {
 
 type SqlKind = "mutation" | "locking-read" | "read" | "other";
 
+const SQL_TOP_KEYWORD_RE = /^(?:SELECT|INSERT|UPDATE|DELETE|TRUNCATE|MERGE|VALUES|TABLE)\b/i;
+
+/**
+ * What a statement RESULTS in, looking past any CTE list — the operation that
+ * produces the caller's rows. Walks `name [(cols)] AS [NOT] [MATERIALIZED] ( … )`
+ * groups by balancing parentheses (quoted values are already placeholders, so no
+ * paren inside a literal is counted) until a top-level keyword is reached.
+ */
+function afterCteList(statement: string): string {
+  let rest = statement.trim();
+  if (!/^WITH\b/i.test(rest)) return rest;
+  rest = rest.replace(/^WITH\s+(?:RECURSIVE\s+)?/i, "").trim();
+  while (!SQL_TOP_KEYWORD_RE.test(rest)) {
+    const open = rest.indexOf("(");
+    if (open < 0) return rest;
+    let depth = 0;
+    let i = open;
+    for (; i < rest.length; i += 1) {
+      if (rest[i] === "(") depth += 1;
+      else if (rest[i] === ")" && --depth === 0) break;
+    }
+    if (depth !== 0) return rest; // unbalanced (interpolated SQL) — stop walking
+    rest = rest.slice(i + 1).replace(/^\s*,?\s*/, "");
+  }
+  return rest;
+}
+
 /**
  * A LOCKING read (`SELECT … FOR UPDATE`) belongs to the write that follows it —
  * that is the pre-image house-crm reads inside its update transaction. A PLAIN
  * read alongside a write is a second boundary, not part of the first.
+ *
+ * A statement can be BOTH: `WITH x AS (INSERT INTO pii_access_log …) SELECT … FROM
+ * contacts` writes and RETURNS PII, so classifying it as "mutation" alone would let
+ * a repository merge its audit INSERT into its PII read and collect the write-
+ * boundary exemption for free. A read counts as its own boundary only when it is
+ * what the statement returns: a subquery feeding DML (`INSERT … SELECT`, `DELETE …
+ * WHERE id IN (SELECT …)`, `WITH d AS (DELETE …) INSERT …`) is the write's own input.
  */
-function classifySql(statement: string): SqlKind {
-  if (SQL_MUTATION_RE.test(statement.replace(SQL_ROW_LOCK_RE, " "))) return "mutation";
-  if (!SQL_READ_RE.test(statement)) return "other";
-  return SQL_ROW_LOCK_TEST.test(statement) ? "locking-read" : "read";
+function classifySql(statement: string): SqlKind[] {
+  const kinds: SqlKind[] = [];
+  if (SQL_MUTATION_RE.test(statement.replace(SQL_ROW_LOCK_RE, " "))) kinds.push("mutation");
+  if (SQL_READ_RE.test(statement) && /^SELECT\b/i.test(afterCteList(statement))) {
+    kinds.push(SQL_ROW_LOCK_TEST.test(statement) ? "locking-read" : "read");
+  }
+  return kinds.length > 0 ? kinds : ["other"];
 }
 
 /**
@@ -440,7 +478,7 @@ function sqlStatementTexts(declaration: Node): string[] {
 function mutatesPersistence(declaration: Node): boolean {
   const kinds = sqlStatementTexts(declaration)
     .flatMap(sqlStatements)
-    .map(classifySql);
+    .flatMap(classifySql);
   return kinds.includes("mutation") && !kinds.includes("read");
 }
 
@@ -571,6 +609,96 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
   return sinks;
 }
 
+/**
+ * The `pii.view` inference above requires a TENANT BOUNDARY parameter, so an
+ * exported repository that returns raw PII with neither a boundary nor a grant
+ * derives NO sink at all — it needs no grant AND is invisible to the Server-Action /
+ * unsupported-surface rule. That exemption is real (the identity boundary produces
+ * the very Principal a grant is minted from; requiring a grant there is circular),
+ * but it used to be IMPLICIT and carried no reason, unlike tenant-context-required's
+ * REVIEWED_ESCAPES. It is now an exact-match `file :: name` registry with a required
+ * `why`, DERIVED-complete both ways: a new unbounded PII read fails the build until
+ * a human writes down why it cannot hold a grant, and an entry that stops matching
+ * fails as stale.
+ */
+export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why: string }> = [
+  {
+    callable: "src/infrastructure/identity/identity-store.ts :: findUserByEmail",
+    why: "pre-authentication: this lookup PRODUCES the row a Principal is minted from, and a pii.view grant is minted FROM a Principal — requiring one here is circular. Org-qualified login is a recorded deferral (Sable F3).",
+  },
+  {
+    callable: "src/infrastructure/identity/identity-store.ts :: authenticate",
+    why: "pre-authentication: the credential check itself. There is no authenticated identity to authorize until it returns.",
+  },
+  {
+    callable: "src/infrastructure/identity/session.ts :: resolveSession",
+    why: "pre-authorization: turns a session cookie into the Principal every grant derives from (read-only path, ADR-0008/D-030).",
+  },
+  {
+    callable: "src/infrastructure/identity/session.ts :: resolveAndRenewSession",
+    why: "pre-authorization: the renewing arm of the same session resolution — same circularity as resolveSession.",
+  },
+  {
+    callable: "src/infrastructure/identity/session.ts :: requireRole",
+    why: "not a read at all: a pure predicate over an ALREADY-authenticated Principal that touches no store and returns its own argument.",
+  },
+  {
+    callable: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken",
+    why: "capability-keyed webhook resume: the unguessable e-sign token is the authority and the caller is a reserved system actor, not a human whose role could be checked.",
+  },
+  {
+    callable: "src/infrastructure/wire.ts :: esignCallback",
+    why: "the HMAC-verified wrapper around the same capability-keyed resume — it holds no human identity to authorize.",
+  },
+  {
+    callable: "src/infrastructure/store/execution-store.ts :: makeExecutionStore",
+    why: "a FACTORY, not a boundary: it takes only the SQL driver, and every method on the store it returns requires a sealed TenantContext (asserted at entry, fenced by tenant-context-required).",
+  },
+];
+
+/** `file :: name` for every exported infrastructure callable returning PII with no tenant boundary. */
+export function unboundedPiiReads(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!file.startsWith("src/infrastructure/")) continue;
+    for (const callable of exportedCallables(sf)) {
+      if (
+        actionGrantAction(callable.signature) ||
+        governedOutputAction(callable.signature.getReturnType()) ||
+        hasTenantBoundaryParameter(callable.signature) ||
+        mutatesPersistence(callable.declaration) ||
+        !containsDeclaredType(
+          callable.signature.getReturnType(),
+          "src/contracts/pii.ts",
+          "PIIBearing",
+        )
+      ) continue;
+      out.push(`${file} :: ${callable.name}`);
+    }
+  }
+  return out;
+}
+
+export function detectUnreviewedPreAuthPiiReads(
+  project: Project,
+  reviewed: ReadonlyArray<{ callable: string; why: string }>,
+): string[] {
+  const found = new Set(unboundedPiiReads(project));
+  const registered = new Set(reviewed.map((entry) => entry.callable));
+  return [
+    ...[...found].filter((callable) => !registered.has(callable)).map((callable) =>
+      `${callable}: returns PII with no tenant boundary and no grant, so it derives NO governed sink — review it into REVIEWED_PRE_AUTH_PII_READS with the reason it cannot hold one`
+    ),
+    ...reviewed.filter((entry) => !found.has(entry.callable)).map((entry) =>
+      `${entry.callable}: stale pre-auth PII escape — this callable is no longer an unbounded PII read`
+    ),
+    ...reviewed.filter((entry) => entry.why.trim().length === 0).map((entry) =>
+      `${entry.callable}: pre-auth PII escape must carry a reason`
+    ),
+  ];
+}
+
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out: string[] = [];
   for (const sink of deriveGovernedSinks(project)) {
@@ -694,11 +822,14 @@ interface AppHandler {
  * already followed. So an unexported enclosing function is resolved through the
  * exported handler that CALLS it, in this same file.
  */
-function enclosingHandlerName(call: CallExpression): string | null {
+function enclosingHandlerNames(call: CallExpression): string[] {
   let local: Node | null = null;
   for (const ancestor of call.getAncestors()) {
     if (Node.isFunctionDeclaration(ancestor)) {
-      if (ancestor.isExported()) return ancestor.getName() ?? null;
+      if (ancestor.isExported()) {
+        const name = ancestor.getName();
+        return name ? [name] : [];
+      }
       local ??= ancestor;
       continue;
     }
@@ -707,32 +838,73 @@ function enclosingHandlerName(call: CallExpression): string | null {
       // A nested arrow (a withSpan callback) is still INSIDE its handler: keep
       // walking unless this arrow is itself the exported handler.
       if (Node.isVariableDeclaration(declaration)) {
-        if (declaration.isExported()) return declaration.getName();
+        if (declaration.isExported()) return [declaration.getName()];
         local ??= declaration;
       }
     }
   }
-  return local ? exportedHandlerCalling(local) : null;
+  return local ? exportedHandlersCalling(local) : [];
 }
 
-/** The exported handler in this file whose body invokes `helper`, if exactly one does. */
-function exportedHandlerCalling(helper: Node): string | null {
+/** True when `body` contains a call that resolves to the callable keyed `targetKey`. */
+function invokesCallable(body: Node, targetKey: string): boolean {
+  return body.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
+    resolveCallTargets(call.getExpression()).some((declaration) =>
+      nodeKey(declaration) === targetKey || nodeKey(ownerOfCallable(declaration)) === targetKey
+    )
+  );
+}
+
+function ownerOfCallable(declaration: Node): Node {
+  return Node.isFunctionDeclaration(declaration)
+    ? declaration
+    : declaration.getFirstAncestorByKind(SyntaxKind.VariableDeclaration) ?? declaration;
+}
+
+/**
+ * EVERY exported handler in this file that reaches `helper`, directly or through
+ * another route-local helper — not the first one found. A helper shared by GET and
+ * POST used to yield a single entry, so the second verb's authorization prologue
+ * was never checked at all: the surface with the weaker prologue was the one that
+ * silently dropped out.
+ */
+function exportedHandlersCalling(helper: Node, seen = new Set<string>()): string[] {
+  const key = nodeKey(helper);
+  if (seen.has(key)) return [];
+  seen.add(key);
   const sf = helper.getSourceFile();
-  const helperKey = nodeKey(helper);
-  for (const candidate of exportedAppHandlers(sf)) {
-    const invokes = candidate.body.getDescendantsOfKind(SyntaxKind.CallExpression)
-      .some((call) =>
-        resolveCallTargets(call.getExpression()).some((declaration) => {
-          const owner = Node.isFunctionDeclaration(declaration)
-            ? declaration
-            : declaration.getFirstAncestorByKind(SyntaxKind.VariableDeclaration) ??
-              declaration;
-          return nodeKey(declaration) === helperKey || nodeKey(owner) === helperKey;
-        })
-      );
-    if (invokes) return candidate.name;
+  const direct = exportedAppHandlers(sf)
+    .filter((candidate) => invokesCallable(candidate.body, key))
+    .map((candidate) => candidate.name);
+  const indirect = routeLocalHelpers(sf)
+    .filter((local) => nodeKey(local.declaration) !== key && invokesCallable(local.body, key))
+    .flatMap((local) => exportedHandlersCalling(local.declaration, seen));
+  return [...new Set([...direct, ...indirect])];
+}
+
+interface RouteLocalHelper {
+  readonly declaration: Node;
+  readonly body: Node;
+  readonly parameters: readonly Node[];
+}
+
+/** The UNEXPORTED same-file callables a handler decomposes its route work into. */
+function routeLocalHelpers(sf: SourceFile): RouteLocalHelper[] {
+  const out: RouteLocalHelper[] = [];
+  for (const fn of sf.getFunctions()) {
+    const body = fn.getBody();
+    if (!fn.isExported() && body) out.push({ declaration: fn, body, parameters: fn.getParameters() });
   }
-  return null;
+  for (const variable of sf.getVariableDeclarations()) {
+    const initializer = variable.getInitializer();
+    if (
+      !variable.isExported() && initializer &&
+      (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))
+    ) {
+      out.push({ declaration: variable, body: initializer.getBody(), parameters: initializer.getParameters() });
+    }
+  }
+  return out;
 }
 
 function exportedAppHandlers(sf: SourceFile): Array<{ name: string; body: Node }> {
@@ -854,21 +1026,24 @@ export function discoverGovernedRoutes(
         );
         continue;
       }
-      const handler = enclosingHandlerName(call);
-      if (!handler) {
+      const handlers = enclosingHandlerNames(call);
+      if (handlers.length === 0) {
         violations.push(
           `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported app-surface handler`,
         );
         continue;
       }
-      entries.push({
-        file,
-        handler,
-        action: sink.action,
-        sink: sink.name,
-        sinkFile: sink.file,
-        grantIndex: actionGrantParameterIndex(sink.signature, sink.action),
-      });
+      // One entry PER reaching handler: each verb owes its own prologue.
+      for (const handler of handlers) {
+        entries.push({
+          file,
+          handler,
+          action: sink.action,
+          sink: sink.name,
+          sinkFile: sink.file,
+          grantIndex: actionGrantParameterIndex(sink.signature, sink.action),
+        });
+      }
     }
   }
   return {
@@ -1153,11 +1328,62 @@ export function detectUnwiredGovernedRoutes(
         }
       }
     }
-    const sinkCalls = routeWork
-      .flatMap((statement) =>
-        statement.getDescendantsOfKind(SyntaxKind.CallExpression)
-      )
-      .filter((call) => callMatchesSink(call, entry));
+    /**
+     * Route work may be DECOMPOSED into same-file helpers, and enclosingHandlerNames
+     * deliberately attributes a sink called inside one to this handler — so the
+     * wiring check has to follow it there. Searching only the handler's own
+     * statements reported the shape the fence documents as SUPPORTED as "authorized
+     * value does not reach the ActionGrant parameter", i.e. it failed correct code.
+     *
+     * Authorization travels by ARGUMENT POSITION, and a parameter counts as
+     * authorized only when EVERY call site THIS handler reaches passes an authorized
+     * value there — one unauthorized call site cannot launder the parameter for the
+     * others. Scoping to this handler's reachable work is what keeps a second verb
+     * sharing the helper from either excusing or contaminating this one: that verb
+     * is its own entry, checked against its own prologue.
+     */
+    const helpers = routeLocalHelpers(sf);
+    const helperOfCall = (call: CallExpression): RouteLocalHelper | undefined =>
+      resolveCallTargets(call.getExpression())
+        .flatMap((target) =>
+          helpers.filter((candidate) =>
+            nodeKey(candidate.declaration) === nodeKey(target) ||
+            nodeKey(candidate.declaration) === nodeKey(ownerOfCallable(target))
+          )
+        )[0];
+    const reachable: Node[] = [...routeWork];
+    const reached: RouteLocalHelper[] = [];
+    for (let index = 0; index < reachable.length; index += 1) {
+      for (const call of reachable[index]!.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        const helper = helperOfCall(call);
+        if (!helper || reached.includes(helper)) continue;
+        reached.push(helper);
+        reachable.push(helper.body);
+      }
+    }
+    const reachableCalls = reachable.flatMap((node) =>
+      node.getDescendantsOfKind(SyntaxKind.CallExpression)
+    );
+    // Fixpoint: authorization chains through nested helpers (handler → A(grant) → B(a)).
+    for (let pass = 0; pass <= reached.length; pass += 1) {
+      let changed = false;
+      for (const helper of reached) {
+        const sites = reachableCalls.filter((call) => helperOfCall(call) === helper);
+        helper.parameters.forEach((parameter, position) => {
+          if (derivedKeys.has(nodeKey(parameter))) return;
+          const authorizedEverywhere = sites.length > 0 && sites.every((site) => {
+            const argument = site.getArguments()[position];
+            return Boolean(argument && isAuthorizedValue(argument));
+          });
+          if (authorizedEverywhere) {
+            markDerived(parameter);
+            changed = true;
+          }
+        });
+      }
+      if (!changed) break;
+    }
+    const sinkCalls = reachableCalls.filter((call) => callMatchesSink(call, entry));
     const carriesGrant = (call: CallExpression): boolean => {
       const args = call.getArguments();
       // The GRANT argument specifically — not "some argument".
@@ -1201,6 +1427,18 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(GOVERNED_ACTIONS[action], `${action} must not include the requesting advisor role`).not.toContain("advisor");
     }
     expect(GOVERNED_ACTIONS["decision.approve"], "decision.approve must not include the requesting advisor role").not.toContain("advisor");
+  });
+
+  it("enforces: every PII read outside a tenant boundary is REVIEWED, with the reason it cannot hold a grant", () => {
+    const project = realSemanticProject();
+    const violations = detectUnreviewedPreAuthPiiReads(project, REVIEWED_PRE_AUTH_PII_READS);
+    expect(violations, violations.join("\n")).toEqual([]);
+    // Non-vacuity: the registry has to be SUPPRESSING something, and exactly the
+    // shipped set — an empty registry checked against an empty derivation proves
+    // nothing (charter #4).
+    expect(unboundedPiiReads(project).length).toBeGreaterThan(0);
+    expect([...REVIEWED_PRE_AUTH_PII_READS].map((e) => e.callable).sort())
+      .toEqual(unboundedPiiReads(project).sort());
   });
 
   it("enforces: governed sinks validate action-scoped grants at their execution boundaries", () => {
@@ -1269,6 +1507,89 @@ describe("governed-actions fence (v3 §15.3)", () => {
         `src/app/api/audit/route.ts :: GET: authorization prologue must bind requireActionGrant(req, "audit.export") before any route work`,
       ]);
     });
+    it("accepts route work DECOMPOSED into a same-file helper the grant is passed to", () => {
+      const project = governedTestProject(`
+          async function loadChain(db: unknown, grant: unknown) {
+            return listEverything(db, grant);
+          }
+          export async function GET(req: Request) {
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return loadChain(await getDb(), auth.value.grant);
+          }
+        `);
+      // The documented-supported shape: the sink lives in the helper, the authorized
+      // value reaches it through the helper's parameter. Searching only the handler's
+      // own statements reported this correct wiring as unauthorized.
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything", grantIndex: 1 },
+      ])).toEqual([]);
+    });
+
+    it("flags a same-file helper whose grant argument is CLIENT-supplied, not the authorized value", () => {
+      const project = governedTestProject(`
+          async function loadChain(db: unknown, grant: unknown) {
+            return listEverything(db, grant);
+          }
+          export async function GET(req: Request) {
+            const body: any = await req.json();
+            const auth = await requireActionGrant(req, "audit.export");
+            if (!auth.ok) return errorResponse(auth.error);
+            return loadChain(await getDb(), body.grant);
+          }
+        `);
+      expect(detectUnwiredGovernedRoutes(project, [
+        { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything", grantIndex: 1 },
+      ])).toHaveLength(1);
+    });
+
+    it("checks EVERY verb that reaches a shared helper, not just the first", () => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        import { requireActionGrant, errorResponse } from "@app/_server/context";
+        async function loadChain(db: unknown, grant: any) {
+          return verifyAndListOrgChain(db, grant);
+        }
+        export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          return loadChain({}, auth.value.grant);
+        }
+        export async function POST(req: Request) {
+          return loadChain({}, req);
+        }
+      `);
+      // Discovery must attribute the shared helper's sink to BOTH verbs — returning
+      // only the first left POST's prologue entirely unchecked.
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries.map((entry) => entry.handler).sort()).toEqual(["GET", "POST"]);
+      const violations = detectUnwiredGovernedRoutes(project, discovered.entries);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(":: POST:");
+    });
+
+    it("follows a helper called by another helper (nested decomposition)", () => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        import { requireActionGrant, errorResponse } from "@app/_server/context";
+        async function readChain(db: unknown, grant: any) {
+          return verifyAndListOrgChain(db, grant);
+        }
+        async function loadChain(db: unknown, grant: any) {
+          return readChain(db, grant);
+        }
+        export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          return loadChain({}, auth.value.grant);
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries.map((entry) => entry.handler)).toEqual(["GET"]);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toEqual([]);
+    });
+
     it("flags a DELETED route file for a surfaced action", () => {
       const project = inMemoryProject({});
       const v = detectUnwiredGovernedRoutes(project, [{ file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" }]);
@@ -1582,6 +1903,64 @@ describe("governed-actions fence (v3 §15.3)", () => {
         { file: "src/app/api/audit/route.ts", handler: "GET", action: "audit.export", sink: "listEverything" },
       ])).toHaveLength(1);
     });
+    it("catches a NEW unbounded PII read that no one reviewed", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/infrastructure/identity/directory.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          interface UserRow extends PIIBearing { email: string; displayName: string }
+          declare const db: { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> };
+          export async function findUserByPhone(phone: string): Promise<UserRow | null> {
+            const res = await db.query<UserRow>("SELECT email, display_name FROM users WHERE phone = $1", [phone]);
+            return res.rows[0] ?? null;
+          }
+        `,
+      });
+      // No tenant boundary, no grant: it derives no sink, so WITHOUT this registry it
+      // would be invisible to every rule in this fence.
+      expect(unboundedPiiReads(project)).toEqual([
+        "src/infrastructure/identity/directory.ts :: findUserByPhone",
+      ]);
+      expect(detectUnreviewedPreAuthPiiReads(project, [])).toEqual([
+        `src/infrastructure/identity/directory.ts :: findUserByPhone: returns PII with no tenant boundary and no grant, so it derives NO governed sink — review it into REVIEWED_PRE_AUTH_PII_READS with the reason it cannot hold one`,
+      ]);
+      // Reviewed WITH a reason, it is suppressed; reviewed with an empty one, it is not.
+      expect(detectUnreviewedPreAuthPiiReads(project, [
+        { callable: "src/infrastructure/identity/directory.ts :: findUserByPhone", why: "pre-authentication lookup" },
+      ])).toEqual([]);
+      expect(detectUnreviewedPreAuthPiiReads(project, [
+        { callable: "src/infrastructure/identity/directory.ts :: findUserByPhone", why: "  " },
+      ])).toEqual([
+        `src/infrastructure/identity/directory.ts :: findUserByPhone: pre-auth PII escape must carry a reason`,
+      ]);
+    });
+
+    it("catches a STALE pre-auth escape, and never swallows a tenant-scoped read", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          export function listContacts(tenant: TenantContext): Contact[] {
+            return [{ fullName: tenant.orgId }];
+          }
+        `,
+      });
+      // A tenant-scoped read is NOT an escape candidate: it stays a governed sink and
+      // owes its grant, so the registry can never be used to excuse one.
+      expect(unboundedPiiReads(project)).toEqual([]);
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/crm/contacts.ts :: listContacts: boundary must require ActionGrant<"pii.view">`,
+      ]);
+      expect(detectUnreviewedPreAuthPiiReads(project, [
+        { callable: "src/infrastructure/crm/contacts.ts :: listContacts", why: "no longer true" },
+      ])).toEqual([
+        `src/infrastructure/crm/contacts.ts :: listContacts: stale pre-auth PII escape — this callable is no longer an unbounded PII read`,
+      ]);
+    });
+
     it("does not let the word 'update' outside SQL exempt a PII read sink", () => {
       const project = inMemoryProject({
         "/src/contracts/pii.ts": `
@@ -2192,6 +2571,40 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(detectUnguardedGovernedSinks(project)).toEqual([
         `src/infrastructure/crm/contacts.ts :: listContacts: boundary must require ActionGrant<"pii.view">`,
       ]);
+    });
+
+    it("refuses the exemption when the audit write is MERGED INTO the PII read as a CTE", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> };
+          export async function listContacts(tenant: TenantContext): Promise<Contact[]> {
+            const res = await db.query<Contact>("WITH logged AS (INSERT INTO pii_access_log (org_id, at) VALUES ($1, now()) RETURNING org_id) SELECT c.* FROM contacts c JOIN logged l ON l.org_id = c.org_id", [tenant.orgId]);
+            return res.rows;
+          }
+        `,
+      });
+      // ONE statement, both a write and a read. Its RESULT is the SELECT, so the
+      // callable is still a PII read boundary — the two-statement form's escape
+      // does not reappear by merging the statements.
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/crm/contacts.ts :: listContacts: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+
+    it("classifies CTE statements by what they RETURN, not by which keyword appears first", () => {
+      // A data-modifying CTE whose result is a SELECT is BOTH; one whose result is
+      // DML is a pure write; a subquery feeding DML never makes the write a read.
+      expect(classifySql("WITH x AS (INSERT INTO a VALUES (1)) SELECT * FROM b")).toEqual(["mutation", "read"]);
+      expect(classifySql("WITH d AS (DELETE FROM a RETURNING *) INSERT INTO b SELECT * FROM d")).toEqual(["mutation"]);
+      expect(classifySql("WITH x (a, b) AS (SELECT 1, 2) INSERT INTO t SELECT * FROM x")).toEqual(["mutation"]);
+      expect(classifySql("DELETE FROM a WHERE id IN (SELECT id FROM b)")).toEqual(["mutation"]);
+      expect(classifySql("SELECT * FROM a WHERE id = $1 FOR UPDATE")).toEqual(["locking-read"]);
+      expect(classifySql("CREATE INDEX i ON a(b)")).toEqual(["other"]);
     });
 
     it("keeps the write exemption for a locking pre-image read inside an update", () => {

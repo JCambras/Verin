@@ -62,7 +62,13 @@ const noSealedTypeConstruction = [
   { selector: `TSAsExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
   { selector: `TSTypeAssertion TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
   { selector: `TSSatisfiesExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
-  { selector: "ObjectExpression > Property[key.name='piiFree']", message: sealedTypeMessage },
+  // The flag itself, not a parser DESCRIBING it: `{ value, piiFree: true }` is the
+  // hand-built impostor; `piiFree: z.literal(true)` inside a schema is a validator
+  // that mints nothing. Matches the fitness fence's rule exactly (a `true` literal,
+  // optionally `as const`, or a shorthand name bound to one).
+  { selector: "ObjectExpression > Property[key.name='piiFree'][value.type='Literal'][value.value=true]", message: sealedTypeMessage },
+  { selector: "ObjectExpression > Property[key.name='piiFree'] > TSAsExpression > Literal[value=true]", message: sealedTypeMessage },
+  { selector: "ObjectExpression > Property[key.name='piiFree'][shorthand=true]", message: sealedTypeMessage },
 ];
 
 export default tseslint.config(

@@ -371,6 +371,29 @@ describe("dependency-rule fence", () => {
       )).toBe(true);
     });
 
+    it("a type-only `unique symbol` brand is not a platform dependency, but a USED one still is", () => {
+      const branded = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/brand.ts": [
+            "declare const TenantBrand: unique symbol;",
+            "export interface Tenant { readonly orgId: string; readonly [TenantBrand]: 'Tenant' }",
+          ].join("\n"),
+        }),
+      );
+      expect(branded).toEqual([]);
+      // The SAME declaration referenced as a VALUE is the thing the rule refuses:
+      // the exemption is about having no runtime surface, not about the type node.
+      const used = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/leak.ts": [
+            "declare const TenantBrand: unique symbol;",
+            "export const key = TenantBrand;",
+          ].join("\n"),
+        }),
+      );
+      expect(used.some((v) => v.specifier === "<ambient-declaration TenantBrand>")).toBe(true);
+    });
+
     it("locally declared platform-like names do not trip contracts isolation", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({

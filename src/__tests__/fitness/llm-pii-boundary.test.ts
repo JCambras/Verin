@@ -14,6 +14,7 @@ import {
   inMemoryProject,
   moduleReferences,
   REPO_ROOT,
+  typeKey,
 } from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
 
@@ -51,6 +52,48 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/workflow/flows/account-opening.ts :: FlowFieldSpec.name", why: "form-field key for the generic renderer" },
   { ref: "src/infrastructure/observability/tracer.ts :: RecordedSpan.name", why: "OTel span name (machine)" },
   { ref: "src/infrastructure/store/migrations.ts :: Migration.name", why: "migration label (machine)" },
+  // Decision-core (prompt 5, v3 §5) evidence REFERENCES. The PII field rule reads
+  // `evidence` as sensitive because the projection layer's `evidence` really is the
+  // client payload; these are the other thing that word names - branded ids and
+  // request descriptors that point AT evidence. Every one is exact-match and proven
+  // load-bearing by the escapes-suppress-something assertion below, so a decision-core
+  // field that later starts carrying contents cannot hide behind them.
+  { ref: "src/contracts/decision-core/decision.ts :: ExplanationTenantReferences.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/decision.ts :: ExplanationTenantReferences.childNodes.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/decision.ts :: NormalizableDecisionRecord.result.executionPlan.steps.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/decision.ts :: NormalizableDecisionRecord.result.executionPlan.steps.compensatingAction.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/decision.ts :: NormalizableDecisionRecord.result.blockers.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/decision.ts :: BlockedDecision.blockers.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/decision.ts :: DecisionResult.blockers.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/decision.ts :: RevaluationCondition.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/decision.ts :: DecisionRecord.explanationTrace.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/decision.ts :: DecisionRecord.reevaluateWhen.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/evidence.ts :: DecisionInputBundle.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: NormalizableExecutionPrecondition.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: ExecutionPrecondition.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: NormalizableExternalAction.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: RetrySafeExternalAction.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: CompensatingAction.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: ExecutionStep.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: NormalizableExecutionPlan.steps.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/execution.ts :: NormalizableExecutionPlan.steps.compensatingAction.preconditions.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/explanation.ts :: ExplanationNode.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/explanation.ts :: ExplanationNode.childNodes.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/ids.ts :: ExecutionPreconditionReferenceSet.requiredEvidenceSnapshotRefs", why: "branded EvidenceSnapshotId references an execution precondition must revalidate against - identifiers, not evidence contents" },
+  { ref: "src/contracts/decision-core/normalization.ts :: NormalizableExplanationNode.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/normalization.ts :: NormalizableExplanationNode.childNodes.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/serialization.ts :: BundleHashPayload.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/serialization.ts :: DecisionHashPayload.explanationTrace.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/serialization.ts :: DecisionHashPayload.reevaluateWhen.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/serialization.ts :: BundleHashPreimage.payload.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/serialization.ts :: DecisionHashPreimage.payload.explanationTrace.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/serialization.ts :: DecisionHashPreimage.payload.reevaluateWhen.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/serialization.ts :: NormalizableDecisionInputBundle.evidenceSnapshotRefs", why: "a list of branded EvidenceSnapshotId REFERENCES (v3 §5) - the pointer to a snapshot, never the snapshot's contents" },
+  { ref: "src/contracts/decision-core/trigger.ts :: EvidenceRequest.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/trigger.ts :: ResolvableBlocker.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/trigger.ts :: ResolvableBlocker.resolvingEvidence.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/decision-core/trigger.ts :: NormalizableResolvableBlocker.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/trigger.ts :: ResolutionState.gaps.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
 ];
 const ESCAPE_SET = new Set(NON_PII_ESCAPES.map((e) => e.ref));
 const OPAQUE_LLM_INGRESS_ESCAPES = [
@@ -83,7 +126,7 @@ function declaredAs(type: Type, file: string, name: string): boolean {
   const seen = new Set<string>();
   while (queue.length) {
     const current = queue.shift()!;
-    const key = `${current.getText()}::${current.getFlags()}`;
+    const key = typeKey(current);
     if (seen.has(key)) continue;
     seen.add(key);
     for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
@@ -159,7 +202,7 @@ function aliasProperties(
   });
   const unique = new Map<string, { readonly name: string; readonly type: Type }>();
   for (const property of candidates) {
-    unique.set(`${property.name}::${property.type.getText()}`, property);
+    unique.set(`${property.name}::${typeKey(property.type)}`, property);
   }
   return [...unique.values()];
 }
@@ -175,7 +218,7 @@ function inlinePIIExposures(
   if (isTokenized(type) || isSecretValue(type)) return [];
   if (isPIIBearingType(type)) return includeMarked ? [path] : [];
   if (isLeafType(type)) return [];
-  const key = `${type.getText()}::${type.getFlags()}`;
+  const key = typeKey(type);
   if (seen.has(key)) return [];
   const nextSeen = new Set(seen).add(key);
   const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
@@ -305,6 +348,12 @@ function callablePIIExposures(
     const declaration = property.getValueDeclaration() ??
       property.getDeclarations()[0];
     if (!declaration) continue;
+    // PROJECT members only — the same rule inlinePIIExposures applies one function
+    // above. A branded primitive (`type FirmId = string & Brand`) carries the whole
+    // String prototype, so without this every branded id in decision-core reported
+    // `String.prototype.anchor(name)` as a PII surface: a lib signature nobody wrote,
+    // nobody can change, and that carries no tenant data.
+    if (!normalizePath(declaration.getSourceFile()).startsWith("src/")) continue;
     const propertyType = property.getTypeAtLocation(declaration);
     for (const signature of propertyType.getCallSignatures()) {
       exposures.push(
@@ -482,7 +531,7 @@ function opaqueTypeExposures(
   if (isTokenized(type) || isSecretValue(type)) return [];
   if (type.isAny() || type.isUnknown()) return [path];
   if (isLeafType(type)) return [];
-  const key = `${type.getText()}::${type.getFlags()}`;
+  const key = typeKey(type);
   if (seen.has(key)) return [];
   const nextSeen = new Set(seen).add(key);
   const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
@@ -721,10 +770,20 @@ export function detectPIIReachableFromLlm(project: Project): string[] {
           `${origin} reaches an unverifiable module load in ${current}:${line}`,
         );
       }
-      for (const { specifier: spec } of moduleReferences(sf)) {
-        // Non-literal loads carry no specifier; they are already reported above
-        // by unverifiableModuleLoadLines, so a null here is never a silent skip.
-        if (spec === null) continue;
+      for (const { specifier: spec, line, kind } of moduleReferences(sf)) {
+        // A null specifier is a load this walk CANNOT follow, so it fails closed
+        // here rather than being assumed reported elsewhere. It is not:
+        // unverifiableModuleLoadLines only fires on the `import` keyword or a callee
+        // literally named `require`, while a `createRequire(import.meta.url)` loader
+        // — or `module.require` — arrives as {specifier: null, kind: "create-require"
+        // | "require-reference"} and would otherwise walk straight past a
+        // PIIBearing module with the fence green.
+        if (spec === null) {
+          violations.push(
+            `${origin} reaches an unresolvable ${kind} module load in ${current}:${line}`,
+          );
+          continue;
+        }
         const target = resolveToProjectPath(project, current, spec);
         if (!target || visited.has(target)) continue;
         visited.add(target);
@@ -1042,6 +1101,46 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "src/infrastructure/llm/evil.ts reaches an unverifiable module load in src/infrastructure/llm/evil.ts:3",
       );
     });
+    it("does not read lib members off a BRANDED PRIMITIVE, but still reads the project's own", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/contracts/ids.ts": `
+          declare const Brand: unique symbol;
+          export type FirmId = string & { readonly [Brand]: "FirmId" };
+          export interface Holder { readonly firmId: FirmId }
+        `,
+        "/src/domain/own.ts": `
+          export interface Callbacks { readonly notify: (name: string) => void }
+        `,
+      });
+      // A branded string carries the WHOLE String prototype, including
+      // \`anchor(name: string)\` — a lib signature nobody wrote and nobody can change.
+      const unmarked = detectUnmarkedPIITypes(project, new Set());
+      expect(unmarked.some((ref) => ref.includes("anchor")), unmarked.join("\n")).toBe(false);
+      // The project's OWN callable parameter named for PII is still reported, so the
+      // filter narrowed the source of the members, not the rule.
+      expect(unmarked).toContain("src/domain/own.ts :: Callbacks.notify(name)");
+    });
+
+    it("rejects a createRequire loader in llm/ — the walk fails closed on what it cannot follow", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/schema/entities.ts": `import type { PIIBearing } from "@contracts/pii"; export interface Contact extends PIIBearing { firstName: string }`,
+        "/src/infrastructure/llm/evil.ts": `
+          import { createRequire } from "node:module";
+          const req = createRequire(import.meta.url);
+          export const load = () => req("../../domain/schema/entities") as unknown;
+        `,
+      });
+      // unverifiableModuleLoadLines only fires on the \`import\` keyword or a callee
+      // spelled \`require\`; this loader is neither, so if the walk skipped its null
+      // specifier the PII module would load with the fence green.
+      const violations = detectPIIReachableFromLlm(project);
+      expect(violations.some((violation) =>
+        violation.includes("unresolvable") && violation.includes("src/infrastructure/llm/evil.ts")
+      ), violations.join("\n")).toBe(true);
+    });
+
     it("resolves JavaScript import specifiers through TypeScript extension substitution", () => {
       const project = inMemoryProject({
         "/src/contracts/pii.ts": marker,

@@ -32,22 +32,17 @@ export interface ActorRef {
   readonly [ActorRefBrand]: "ActorRef";
 }
 
-const ACTOR_REF_SEAL = Symbol("verin.actor-ref.seal");
 const ACTOR_REFS = new WeakSet<object>();
 
 export function actorRefOf(p: Principal): ActorRef {
   const writeActor = writeActorOf(p);
-  const actor = Object.defineProperty(
-    {
-      kind: "human",
-      tenant: writeActor.tenant,
-      actorId: p.userId,
-      role: p.role,
-      writeActor,
-    },
-    ACTOR_REF_SEAL,
-    { value: true, enumerable: false },
-  );
+  const actor = {
+    kind: "human",
+    tenant: writeActor.tenant,
+    actorId: p.userId,
+    role: p.role,
+    writeActor,
+  };
   ACTOR_REFS.add(actor);
   return Object.freeze(actor) as unknown as ActorRef;
 }
@@ -93,7 +88,6 @@ export interface ActionGrant<A extends GovernedAction = GovernedAction> {
   readonly [ActionGrantBrand]: "ActionGrant";
 }
 
-const SEAL = Symbol("verin.action-grant.seal");
 const ACTION_GRANTS = new WeakSet<object>();
 
 export function authorizeGovernedAction<A extends GovernedAction>(
@@ -107,17 +101,13 @@ export function authorizeGovernedAction<A extends GovernedAction>(
     // Same client-facing message as requireRole, so surfaced behavior is unchanged.
     return err(appError("FORBIDDEN", "You do not have permission to perform this action.", { action }));
   }
-  const grant = Object.defineProperty(
-    {
-      action,
-      tenant: actor.tenant,
-      actorId: actor.actorId,
-      role: actor.role,
-      writeActor: actor.writeActor,
-    },
-    SEAL,
-    { value: true, enumerable: false },
-  );
+  const grant = {
+    action,
+    tenant: actor.tenant,
+    actorId: actor.actorId,
+    role: actor.role,
+    writeActor: actor.writeActor,
+  };
   ACTION_GRANTS.add(grant);
   // The ONE sanctioned ActionGrant cast (tokenized-factory-only fence allowlists this module).
   return ok(Object.freeze(grant) as unknown as ActionGrant<A>);
