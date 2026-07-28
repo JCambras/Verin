@@ -6,8 +6,8 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (279 unit/integration/fitness, non-UTC clock) ·
-> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` (12 tests) ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (unit, integration, and fitness on a non-UTC clock) ·
+> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
 > `pnpm golden:validate` (the 16-case golden truth set, D-035). Every
@@ -22,8 +22,18 @@ A four-layer Next.js/TypeScript app (`src/{contracts,domain,infrastructure,app}`
 rule, and a walking skeleton that runs end-to-end in a browser.
 
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
-Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); 26 build-failing fitness
-fences; ratchet-down line budgets + a separate presentation budget.
+Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); a build-failing
+fitness-fence suite; ratchet-down line budgets + a separate presentation budget.
+
+**v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-040):** the canonical decision
+type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
+plan, blocked/prohibited carry neither, a prohibition has no resolving condition (v3 invariants 7-9 as
+parse-level facts) - plus a versioned canonical serializer whose byte form is locked by the
+`fixtures/decision-core/` round-trip fixtures. Parsed contracts are recursively readonly and frozen,
+replay-ID collections reject duplicates, and version-keyed recursive fingerprints prevent nested
+projection growth under an unchanged hash-preimage version. Every named tenant-owned link is a strict
+`{ firmId, id }` reference, compensating actions carry the same retry-safety contract as execution
+steps, and replay time zones are pinned to a persisted versioned registry instead of host ICU data.
 
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
@@ -44,10 +54,10 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   (D-006); serialization mutex + `globalThis` singleton.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Four Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD; 12
-  tests) plus axe, green on a non-UTC clock.
+- **Four Playwright spec files** covering smoke, happy walkthrough, failure/access-control, and console
+  CRUD plus axe, green on a non-UTC clock.
 
-**Governance:** 28 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 29 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -58,16 +68,16 @@ captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/
 
 ## 2. Every fence, with its proof
 
-26 build-failing fences in `src/__tests__/fitness/`. **Each ships a co-located
+The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Each ships a co-located
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-026).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-029).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
 | `charter-drift` | the constitution enforces its own enforcement | PF-001 |
-| `dependency-rule` (ts-morph: static+relative+dynamic+require) | layer boundary (#1) | PF-002 + companions |
+| `dependency-rule` (ts-morph: TypeScript-resolved aliases/baseUrl/package mappings, static+relative+dynamic+CommonJS+createRequire+import-type+import-equals+source-declarations+triple-slash+implicit JSX runtime; fail-closed local paths, ambient declarations, and ES-only platform surface; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + extensions + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
@@ -91,6 +101,10 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
+| `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
+| `decision-core-illegal-states` | proceed requires usable authority with future expiration + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
+| `decision-core-tenant-scope` | registered prompt-5 reference boundaries reject cross-tenant values; an exact schema-derived inventory follows aliases, wrappers, and composites and fails on any unregistered scoped-reference collection (v3 invariant 2, ADR-0029, D-045-D-058) | PF-028 + companions |
+| `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation at standalone and plan boundaries; idempotency keys cannot alias; set-like execution references are duplicate-free and canonical (#16, ADR-0029, D-047-D-058) | PF-029 + companions |
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

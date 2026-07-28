@@ -508,3 +508,596 @@ Two follow-up rounds on the D-036/D-037 skeleton, no fence weakened:
   `position: fixed` strips could overlap page content. On screen the table wrapper is layout-inert
   (`display: contents`), so design §9's running-header/footer requirement is met unchanged.
 **Revert path:** revert the two commits; the D-036/D-037 skeleton stands unchanged beneath them.
+
+### D-040 · 2026-07-26 · reversible · Decision-core canonical type system landed (v3 build sequence, prompt 5) as Zod-first contracts
+
+The v3 §5 contracts land as `src/contracts/decision-core/` (ids, actor, trigger, evidence,
+authority, execution, decision, serialization): Zod strict schemas are the single source, TypeScript
+types are `z.infer`-derived, and the invariant-7/8/9 distinctions are PARSE-LEVEL facts - proceed
+requires authority + a non-empty execution plan; blocked/prohibited cannot carry either (unknown
+keys are rejections, not stripped); a prohibition has no resolving-evidence channel and a prohibited
+record admits no revaluation conditions (GC-07: "stays prohibited as recorded"); disposition and
+authority never collapse. Tenant scope is structural (TenantContext spine + cross-tenant
+intent/attribution refinements, invariant 2's contract-layer half); replay metadata is pinned in
+DecisionInputBundle with a versioned canonical serializer whose byte form is locked by
+`fixtures/decision-core/` round-trip fixtures. Vocabulary is drift-locked to
+`config/demo/scenarios.yaml` (DecisionResult kinds ≡ the disposition state class, asserted in the
+unit suite) and to the golden truth set's freshness/duration/reason-code vocab.
+**Why:** prompt 5's acceptance is that the type system enforces the major distinctions without
+reviewer discipline; landing schemas-first means every later boundary (store, API, ports, LLM)
+inherits the guarantees by parsing.
+**Enforcement (charter #1, same PR):** fence `src/__tests__/fitness/decision-core-illegal-states.test.ts`
+(registered as the mechanism for v3 invariants 7-9, now ACTIVE; ratchet extended to [2,5,7,8,9];
+proof PF-027), unit suite `src/__tests__/unit/decision-core.test.ts`, contracts ceiling re-baselined
+600→1550 by ADR-0029 (the ADR-0018 amendment path; zod admitted into `contracts/` by the same ADR).
+**Alternatives:** land in domain / split types-vs-schemas across layers / trim to fit the 600
+ceiling - all rejected in ADR-0029's table.
+**Revert path:** delete `src/contracts/decision-core/`, `fixtures/decision-core/`, the fence and
+unit suite, flip invariants 7-9 back (a charter-ADR matter - the v3-invariants ratchet makes the
+regression loud), restore the 600 ceiling with ADR-0029 marked superseded, and delete this entry.
+Nothing else imports the module yet (consumers are prompts 7, 9-19, 25-26).
+
+### D-039 · 2026-07-26 · captain-decision · Decision hashes use explicit preimages; execution plans reject cycles
+
+Captain-authorized review corrections define versioned, domain-separated SHA-256 preimages before
+approval and replay consumers land. `bundleHash` covers every material bundle input but excludes
+`id` and `bundleHash`; its set-like instruction-version and evidence-snapshot ID lists are sorted.
+`decisionHash` covers the complete decision record except `decisionHash` itself. Both projections
+enumerate their fields so contract growth cannot silently alter a versioned digest, and canonical
+fixtures lock the resulting digest. `ExecutionPlanSchema` now rejects every dependency cycle at the
+boundary, because a non-empty but unschedulable graph is not an executable plan under invariant 7.
+**Revert path:** remove the two projection contracts and digest assertions, restore the prior fixture
+hashes, and remove cycle detection and its fence case; no production approval or replay consumer
+depends on these prompt-5 contracts yet.
+
+### D-041 · 2026-07-26 · reversible · Replay boundary hardening closes review findings F2-F5 and F7-F10
+
+`DecisionInputBundle` now admits only the implemented 1.0.0 schema and canonical serializer, validates
+its time zone through the runtime's supported IANA data, and freezes both the parsed bundle and its
+replay-ID collections. Hash projections derive from exhaustive key lists checked against the inferred
+schema keys, while decision preimages omit explicit undefined optional properties so every parsed
+record is hashable. Canonical serialization rejects sparse arrays. The dependency fence now permits
+only Zod as an external `contracts/` import and rejects non-literal dynamic imports. The ADR-0029
+contracts ceiling is re-baselined from 1400 to 1550 through ADR-0018's amendment path after the
+review-hardened implementation measured 1446 lines.
+**Revert path:** revert the schema, serializer, projection-key, dependency-fence, and focused test
+changes together, then restore the 1400 ceiling and its ADR references.
+
+### D-042 · 2026-07-26 · reversible · Decision-core mutation, projection-growth, import-form, and duplicate-ID gaps closed
+
+Every parsed decision-core object and nested collection is now recursively readonly and frozen, so
+post-parse mutation cannot empty a plan, create a cycle, alter authority, or change hash-bound content.
+Replay bundles reject duplicate instruction-version and evidence-snapshot IDs at the schema boundary.
+Each hash preimage version is bound to a recursive Zod projection-schema fingerprint, including nested
+optional properties and union arms. The shared dependency-reference collector now covers TypeScript
+import types and import-equals declarations, closing the Zod-only contracts allowlist for all supported
+module-reference forms. Adversarial proof extends PF-027; the contracts measurement is 1480 under the
+unchanged 1550 ceiling.
+**Revert path:** revert the recursive readonly schemas, duplicate refinements, fingerprint lock, and
+AST collector additions together; no runtime consumer persists these prompt-5 contracts yet.
+
+### D-043 · 2026-07-27 · reversible · Dependency aliases resolve before boundary classification
+
+The shared dependency-fence classifier now resolves and normalizes every configured alias suffix
+against its source root before classifying the destination layer. Layer detection accepts only the
+repository source root and the explicit in-memory companion root, so traversal into `node_modules`
+cannot become project-local merely because a package contains its own `src` directory. This closes
+both alias-traversal forms from review finding F16 without rejecting valid same-layer aliases.
+**Alternatives:** reject every aliased `..` segment - safe but less precise than classifying the real
+normalized destination; keep prefix classification and special-case the two reported strings -
+rejected because equivalent traversal shapes would remain.
+**Revert path:** restore prefix-only alias classification and remove the three traversal companions
+and PF-002 extension.
+
+### D-044 · 2026-07-27 · reversible · Dependency references fail closed and nested source paths stay enforced
+
+The authoritative dependency detector now consumes every collected module reference directly.
+Non-literal dynamic `import()` and `require()` references in contracts, domain, or infrastructure are
+reported as unresolved violations because their destination layer cannot be proven; the outermost app
+layer remains free to load runtime-selected modules. Detector-local `__tests__` exclusions were removed,
+so every file supplied by shipped-source discovery is enforced, including a nested
+`src/contracts/__tests__/` path. Only the root `src/__tests__/` tooling tree remains outside shipped
+source discovery. The acceptance artifact no longer publishes exact test totals that drift whenever
+parameterized coverage grows.
+**Alternatives:** drop unresolved references as before - rejected because it fails open; exclude every
+nested `__tests__` directory - rejected because those paths are included by the repository's shipped
+source and TypeScript discovery.
+**Revert path:** restore statically-resolvable-only iteration and detector-local test exclusions, remove
+the four companions and PF-002 extension, and restore manual test totals only if they become generated.
+
+### D-045 · 2026-07-27 · captain-decision · Immutable cross-record links are structurally tenant-scoped
+
+Prompt-5 policy-version, household-instruction-version, evidence-snapshot, intent, and input-bundle
+links now use strict `{ firmId, id }` references. `DecisionInputBundleSchema` and
+`DecisionRecordSchema` reject every referenced tenant that differs from the enclosing record, so
+opaque branded ID strings no longer carry an unenforceable tenant convention. The schema and both
+hash-preimage envelopes advance from 1.0.0 to 1.1.0; the canonical serializer remains 1.0.0 because
+its byte algorithm is unchanged. Canonical fixtures pin the new bytes and digests, and no persisted
+consumer exists yet. Replay time zones reject aliases such as `US/Eastern` unless the caller supplies
+the runtime's canonical IANA identifier. The shared dependency collector also covers triple-slash
+type and path directives, with the contracts external allowlist and layer rule applied to each.
+**Why:** these are the bounded F20-F22 contract and governance corrections authorized by the captain;
+leaving tenant ownership or dependency form coverage to naming conventions would violate active
+invariant 2 and the same-PR fencing rule.
+**Revert path:** restore scalar links and the 1.0.0 fixtures/preimages together, remove the tenant-scope
+fence from charter #7 and invariant 2, accept non-canonical time-zone aliases, and remove the two
+triple-slash companions plus PF-002/PF-028 evidence.
+
+### D-046 · 2026-07-27 · reversible · Decision-record tenant scope is enforced recursively
+
+The D-045 rule now reaches every hash-bound policy, instruction, evidence-snapshot, and
+derived-decision link inside a `DecisionRecord`: precedence citations, recursive explanation nodes,
+prohibitions, execution preconditions, and derived-decision ancestry all carry strict `{ firmId, id }`
+references and must match the enclosing firm. Schema and both hash-preimage envelopes advance to 1.2.0;
+the canonical serializer remains 1.0.0, and canonical fixtures lock the new bytes and digests. PF-028
+now exercises each recursive path. The contracts ceiling is re-baselined from 1550 to 1650 through
+ADR-0029's ADR-0018 amendment path after the complete contract measured 1640 lines.
+**Why:** this fixes F23 at the ownership boundary instead of special-casing the three reported fields;
+a hash-bound record cannot cite another firm's immutable inputs.
+**Revert path:** restore the 1.1.0 decision shapes, fixtures, projection fingerprints, and hashes
+together, remove the recursive PF-028 cases, and restore the 1550 ceiling.
+
+### D-047 · 2026-07-27 · captain-decision · External actions, tenant references, replay zones, and dependency fences are structurally complete
+
+Compensating actions now share the execution step's retry-safe external-action shape: stable
+idempotency key, conflict keys, tenant-scoped reservation references, preconditions, and a
+tenant-scoped verification-rule reference. Parent and compensation keys cannot alias. Approval
+templates are tenant-scoped records, and the remaining configuration, source, subject, scope,
+template, target, reservation, and verification links carry strict `{ firmId, id }` references.
+The decision refinement reaches blockers, revaluation conditions, authority stages, execution
+steps, and compensating actions.
+
+Replay time zones now come from a closed registry identified by the persisted
+`timeZoneDataVersion`, not the host runtime's ICU data. The schema and both hash-preimage envelopes
+advance to 1.3.0, and the canonical fixtures lock the new bytes, projection fingerprints, and
+digests. The contracts external-import fence treats JSX as an implicit `react/jsx-runtime` import,
+so Zod remains the only permitted external dependency.
+
+The complete contract measures 1779 lines. ADR-0029 re-baselines the contracts ceiling from 1650
+to 1800 through ADR-0018's amendment path, and both ADR indexes report the enforced ceiling.
+**Why:** these are the bounded F25-F29 correctness and governance corrections authorized by the
+captain; leaving compensation retry behavior, tenant ownership, replay validation, or implicit
+dependencies to runtime convention would contradict charter #1/#7/#16 and v3 non-negotiables
+10-11.
+**Revert path:** restore the 1.2.0 schemas and fixtures together, remove the external-action fence
+and JSX companion, restore ICU-based validation, and return the contracts ceiling and indexes to
+1650.
+
+### D-048 · 2026-07-27 · captain-decision · Replay inputs, secure references, and dependency fences are canonical and fail closed
+
+Set-like instruction-version and evidence-snapshot collections are sorted at the
+`DecisionInputBundleSchema` boundary, so one approved bundle hash exposes one evaluator order.
+Secure request, event, and blob pointers now carry `{ firmId, id }`; human requests, system events,
+evidence snapshots, execution actions, and decision records reject mismatched pointer tenants.
+Execution dependency, conflict, reservation, and precondition-evidence collections reject
+duplicates, and direct derived-decision self-reference is illegal.
+
+One shared `iana-tzdb/2026b` registry contains all 418 canonical identifiers from the pinned
+release, is SHA-256 locked, canonicalizes identifier casing, rejects aliases outside the registry,
+and is consumed by both infrastructure configuration and replay bundles. The schema and both hash
+preimage envelopes advance to 1.4.0; fixtures lock the new references, versions, fingerprints, and
+digests.
+
+The dependency fence now resolves `paths` from each project's TypeScript compiler configuration,
+fails closed on local targets outside the four source layers, and checks contracts against an
+ES-only library surface so implicit DOM or Node globals are reported. The complete contracts layer
+measures 1988 lines, so ADR-0029 re-baselines the ceiling from 1800 to 2000 through ADR-0018's
+amendment path.
+**Why:** these are the bounded F30-F36 correctness and governance corrections authorized by the
+captain. They close hash/evaluator divergence, tenant leakage through secure storage, host-dependent
+replay validation, and silent dependency-fence bypasses without adding evaluator or execution logic.
+**Revert path:** restore the 1.3.0 schemas, fixtures, time-zone boundary, and hashes together;
+remove the new duplicate and lineage refinements plus dependency companions; restore host-ICU
+configuration validation; and return the contracts ceiling and indexes to 1800.
+
+### D-049 · 2026-07-27 · captain-decision · Execution, approval, time-zone, and dependency boundaries fail closed
+
+Every retry-safe external action now proves that its payload, reservations, evidence preconditions,
+and verification rule belong to the target tenant. Every execution plan proves that all steps and
+compensations share one tenant, and each precondition names at least one evidence snapshot to refresh.
+Approval-template expiration is strictly positive, and every instantiated approval or specialist stage
+expires later than its decision's `createdAt`.
+
+The `iana-tzdb/2026b` registry is derived from all 341 `Zone` records in the release's primary data
+files, including `Etc/UTC` and `Factory`. `Link` names remain aliases rather than distinct canonical
+replay values. The dependency fence now inspects triple-slash lib directives and source-local `.d.ts`
+files, and fails closed on indirect CommonJS loader references such as aliased `require`,
+`module.require`, and comma-expression invocation.
+
+The decision schema and both hash-preimage envelopes advance to 1.5.0; fixtures pin the new schema
+fingerprints and digests.
+**Why:** these bounded F37-F43 corrections close standalone tenant, revalidation, chronology, replay,
+and dependency-enforcement gaps without adding evaluator or execution logic.
+**Revert path:** restore the 1.4.0 schemas, registry, fixtures, and dependency collector together,
+remove the focused companions, and restore this correction's proof-log extensions.
+
+### D-050 · 2026-07-27 · captain-decision · Role ownership, authority order, and dependency resolution are structural
+
+Every immutable firm-configured role link now carries `{ firmId, id }`. Actor, eligible, specialist,
+escalation, and evidence-supplier role references must match their enclosing tenant. Role collections
+reject duplicates and normalize by firm then opaque ID, while authority stage arrays normalize by their
+explicit `order`. The schema and both hash-preimage envelopes advance to 1.6.0, and fixtures pin the
+new role shapes, projection fingerprints, and digests.
+
+The dependency fence now performs TypeScript module resolution for aliases, baseUrl modules, package
+imports, and package self-references. It rejects Node `createRequire` in inner layers, source-local
+ambient runtime and namespace declarations in contracts, and platform-global diagnostics by stable
+diagnostic code. The contracts layer measures 2137 lines, so ADR-0029 re-baselines its ceiling from
+2000 to 2200 through ADR-0018's amendment path.
+**Why:** these bounded F44-F50 corrections close tenant, canonical-hash, and dependency-enforcement gaps
+without adding evaluator, policy, or execution behavior.
+**Revert path:** restore scalar role links and caller-ordered authority collections, return the schemas,
+fixtures, fingerprints, and hashes to 1.5.0, remove the dependency companions, and restore the 2000-line
+ceiling.
+
+### D-051 · 2026-07-27 · captain-decision · Approval positivity, replay registries, and one canonical scoped-reference order
+
+Every approval duration - relative stage expiration and escalation delay alike - is strictly positive,
+decided by reading the duration's own component magnitudes and refusing any sign. A leading-minus
+heuristic silently inherits whichever ISO-8601 profile the validator ships, so the predicate is exported
+and asserted directly: today's grammar refuses signed components before the guard ever runs, which would
+otherwise leave its soundness unverifiable.
+
+`timeZoneDataVersion` becomes an enum derived from a supported-registry MAP rather than the single
+shipped literal, so a bundle can be replayed against the registry it recorded; versions are only ever
+added. The pinned release's 257 `Link` aliases are SHA-256-locked in their own registry and resolved to
+their canonical `Zone` at the CONFIGURATION boundary only, so `FIRM_TIMEZONE=UTC` boots again while
+`TimeZone` stays closed over the 341 `Zone` names and one zone keeps exactly one persisted, hashed
+spelling. `TimeZone` is branded, so a bare string cannot reach a time-zone field.
+
+`ids.ts` now exports THE canonical `{firmId, id}` comparator and set-identity helper; role sets,
+evidence-supplier sets, execution collections, replay collections, and both hash preimages consume them,
+replacing five near-identical implementations (two of which deduped in O(n^2)). Trigger arms carry their
+own tenant refinements and the discriminated union is composed FROM the refined arms, so no check exists
+in two places where only one copy runs. Canonical serialization detects cycles against the ancestors on
+the current path and names them, instead of surfacing a host-dependent `RangeError`, and builds its
+diagnostic path lazily.
+
+The schema and both hash-preimage envelopes advance to 1.7.0; fixtures pin the new projection fingerprint
+and digests. ADR-0029 re-baselines the contracts ceiling from 2200 to 2400 through ADR-0018's amendment
+path. (This entry's own line measurement went stale twice as review corrections landed; the FINAL
+measured figure lives in D-054 and in ADR-0029's current-state re-baseline, and is the only one to
+plan against.)
+**Why:** these are the bounded F51-F57 review corrections. They close an unsound positivity guard, an
+unguarded escalation delay, a replay-metadata field that could never be used for replay, an operational
+boot regression on long-legal timezone identifiers, a comparator that could diverge from the record it
+hashes, a duplicated refinement where only one copy ran, and an imprecise unbounded serializer refusal -
+without adding evaluator, policy, or execution behavior.
+**Revert path:** restore the 1.6.0 schemas, fixtures, fingerprints, and digests together; return
+`timeZoneDataVersion` to its literal and the config boundary to Zone-only validation; remove the Link
+registry, the shared comparator helpers, and the cycle detector; and return the contracts ceiling to 2200.
+
+### D-052 · 2026-07-27 · captain-decision · The replay registry map is consulted, and one tenant edge is not checked twice
+
+The supported-registry map now decides validity instead of only naming versions. A bundle's `timeZone`
+is validated against the registry its OWN `timeZoneDataVersion` names, while a standalone `TimeZone`
+admits the union of every supported registry. Both halves are required: a `TimeZone` closed over the
+newest registry would make a persisted bundle unparseable the moment a later release demotes one of its
+Zones to a Link (tzdb does this routinely), and a union with no per-bundle check would let a NEW bundle
+claim a zone its recorded release never had. `timeZoneDataVersion` is typed by the map's key union again,
+so an arbitrary string cannot reach a replay-metadata field without parsing.
+
+The version-keyed selection is proven on a CONSTRUCTED two-registry map. With one shipped registry, "the
+recorded version selects the registry" and "there is one registry" are indistinguishable through the
+shipped map, so the prior companion could only assert that its keys were its keys.
+
+`requireExternalAction` in the decision record collapses to the single step-target edge that adds
+information: `execution.ts` already binds every reference inside an action to that action's own
+`targetRef`, and every step's and compensation's `targetRef` to the first step's. The removed traversal
+was a hand-synchronized second copy; a coherent other-tenant plan inside a decision - the one case only
+the record can see - is now an explicit fence case.
+
+`HASH_PROJECTION_SCHEMA_FINGERPRINTS` keeps its Zod-emitter digest and gains its maintenance rule: a Zod
+upgrade that changes only emitter representation is reviewed and re-pinned WITHOUT a preimage-version bump
+and WITHOUT regenerating recorded hashes, and only once the schema semantics and canonical projection
+bytes are shown unchanged. Schema and preimage versions stay 1.7.0 - no projected field, byte, or digest
+changes.
+**Why:** these are the bounded F58-F61 review corrections. They close a replay-registry map that was
+declared but never read, a replay-version type that had degenerated to `string`, a duplicated tenant
+traversal, and a blocking fingerprint whose maintenance path pointed at an unnecessary data migration.
+**Revert path:** return `TimeZone` to the single shipped registry and drop the bundle's registry check,
+restore the `Object.keys(...) as [string, ...string[]]` cast, restore the full external-action traversal
+in `decision.ts`, and remove the fingerprint maintenance rule from the constant, ADR-0029, and the
+fixtures README.
+
+### D-053 · 2026-07-27 · captain-decision · The configuration boundary is release-scoped, and evidence chronology is structural
+
+Reading an already-persisted record and accepting a NEW operator value are two different time-zone
+boundaries, and only the first spans releases. `TimeZone` keeps admitting the union of every supported
+release so a persisted bundle stays parseable after a later release reclassifies one of its Zones, but
+`FIRM_TIMEZONE` is now validated against the CURRENT release alone. Otherwise a configured Zone that
+only an older release shipped would boot and then fail at EVERY bundle parse, because a new bundle
+stamps the current version - fail-late, where charter #7's config discipline is fail-closed at boot.
+
+The supported map now keys whole RELEASES, not Zone lists: each entry carries its own `Zone` names and
+its own `Link` alias table. A single un-versioned alias table could not follow ADR-0029's own adoption
+procedure, which adds "its version key + registries" (plural), so the alias half would have stayed
+pinned to 2026b while the Zone half advanced. Both halves are now selected together by version.
+
+An `EvidenceSnapshotRef` can no longer claim it was retrieved BEFORE the observation it records
+(`retrievedAt >= observedAt`; equality stays legal). The pair is a hash-bound immutable decision input
+and the fresh/stale/unknown label is derived from it, so an inverted pair is an illegal state rather
+than a lenient one - the same discipline the approval plane already carries.
+
+ADR-0029 re-baselines the contracts ceiling from 2300 to 2400 through ADR-0018's amendment path. The
+prior 2300 left 15 lines, which blocks the next edit of any size rather than budgeting a layer. The
+headroom is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`;
+the FINAL measured figure against that ceiling is recorded in D-054. No projected field, byte, or
+digest changes: schema and preimage versions stay 1.7.0.
+**Why:** these are the bounded F62-F64 review corrections. They close a configuration boundary that
+silently inherited a replay-only widening, an alias table that could not follow a registry adoption, an
+unconstrained evidence chronology, and a ceiling with no honest headroom.
+**Revert path:** return the configuration boundary to the cross-release union, flatten the release map
+back to Zone lists with one shared alias table, drop the `retrievedAt >= observedAt` refinement and its
+companion, and restore the 2300-line ceiling.
+
+### D-054 · 2026-07-27 · captain-decision · Placeholder zones are readable but not configurable, and the canonical refusal stays reachable
+
+The shipped tz release contains exactly one identifier the runtime cannot use: tzdb's `Factory`
+placeholder for a system whose zone was never set. CLDR/ICU deliberately omits it, so
+`Intl.DateTimeFormat` throws `RangeError` on it - confirmed by sweeping all 341 `Zone`s and 257 `Link`s
+against host ICU, where it is the only failure. `FIRM_TIMEZONE=Factory` therefore booted and then threw
+at the first local-time render: fail-late, the exact shape D-053's release-scoped boundary exists to
+refuse. Placeholders are now a THIRD per-release half beside `Zone`s and `Link`s, subtracted at the
+configuration boundary AFTER alias resolution, so an alias of a placeholder is refused too. A bundle
+that already recorded `Factory` still parses and hash-verifies - reading a persisted record and
+accepting a new operator value remain two boundaries. The completeness companion recorded here swept
+the registry through host ICU; **D-055 replaces it** with a proof that is deterministic from the
+pinned registry, for the reason recorded there.
+
+The canonical serializer's "only plain objects can be canonicalized" refusal was unreachable on the
+only paths that reach it in shipped code. Optional-property normalization rebuilt every nested object
+from its own entries, flattening a `Date`/`Map`/class instance to `{}` before `canonicalJson` ever saw
+it - two structurally different decision inputs collapsing onto one `bundleHash`, silently, in the
+audit-chain-critical path. Normalization now passes non-plain objects through untouched under ONE
+shared prototype rule, and the companion proves the refusal through `bundleHashPreimage` /
+`decisionHashPreimage` rather than through a direct call, which cannot see this gap. The bundle's
+canonical re-sort of its two reference collections moved BEFORE projection, so both preimages now have
+exactly one normalization path instead of a second one kept in sync by hand.
+
+`freshness` is documented as the evaluator's RECORDED verdict, not something this contract re-derives:
+the staleness threshold is per-evidence-kind policy this layer does not have. The dead
+`TIME_ZONE_DATA_VERSION` alias and the `TimeZoneSchema` pass-through export are gone, so the
+`DecisionInputBundleSchema` doc block attaches to the schema it describes.
+
+**Deferred, explicitly (charter: deferrals are named, never silent):** `EscalationStep.after` is
+constrained for strict positivity ONLY. Whether a delay must fall inside its stage's own `expiresAfter`,
+and whether two steps in one `escalationPath` may share a delay (there is no ordering authority on that
+array, unlike `ApprovalStage.order`), are approval-BINDING semantics owned by prompts 18/24. Prompt 5 is
+a schema layer and does not own them. **Un-defer trigger:** prompts 18/24 landing approval binding.
+
+The contracts layer measures **2364** lines by the line-budget fence's own metric against the 2400
+ceiling - **36 lines of headroom**, the FINAL post-review figure. No projected field, byte, or digest
+changes: schema and preimage versions stay 1.7.0 and every recorded hash still reproduces.
+**Why:** these are the bounded F65-F68 review corrections. They close a config boundary that admitted an
+unformattable zone, a normalization step that defeated the serializer's own refusal, a doc block
+orphaned by a dead alias, and a comment that overstated what the contract checks.
+**Revert path:** drop `placeholderZones` from the release shape and the config filter, restore the
+prototype-blind normalization and the post-projection re-sort spread, reinstate the
+`TIME_ZONE_DATA_VERSION` alias and the `TimeZoneSchema` re-export, and revert the two comments.
+
+### D-055 · 2026-07-27 · captain-decision · Timezone fences are deterministic from the pinned registry, never from host ICU
+
+D-054's completeness companion swept all 341 `Zone`s and 257 `Link`s of the pinned release through
+`Intl.DateTimeFormat` and asserted the unformattable set equalled the declared placeholder list
+exactly. That made a BLOCKING test require the running runtime's bundled tzdata to be at least as new
+as `iana-tzdb/2026b` - the precise host coupling the version-pinned registry exists to remove
+(`.env.example`: "validation never consults host ICU data, so it cannot drift with the OS"). The
+registry already carries `America/Coyhaique`, added in tzdata 2025a; `engines.node` is `>=20`, and
+Node 20 ships ICU 74/75 (≈ tzdata 2024a-2024b), where real `Zone`s would land in the unformattable set
+and turn the build red with no code change - diagnosing as "the placeholder list is wrong" rather than
+"the runtime is older than the pin". The exact-array arm was order-sensitive on top of that.
+
+Placeholder membership is therefore a DECLARATION carried by each release entry, reviewed when that
+release is adopted (ADR-0029's Revisit-When now says so), and the blocking proofs are deterministic
+from the pinned data: the declared set is pinned, the config boundary's admitted set is EXACTLY the
+release minus that set (an unlisted placeholder still boots, an over-broad subtraction refuses a real
+`Zone` - both fail), no `Link` targets a placeholder (**D-056 replaces that arm** with the equivalence
+it was standing in for, for the reason recorded there), `Factory` stays refused at the configuration
+boundary while a bundle that already recorded it still parses and hash-verifies, and the CONSTRUCTED
+two-release companion still proves the subtraction is release-scoped rather than hardcoded. No
+host-ICU observation remains that can fail the build. The `firmTimezone` comment at the boundary now
+states the placeholder exclusion that `.env.example` and ADR-0029 already carried.
+
+No contract, schema, projection, or byte changes: schema and preimage versions stay 1.7.0, every
+recorded hash still reproduces, and the contracts layer still measures **2364** lines against the 2400
+ceiling - **36 lines of headroom**, unchanged, since only a test, an infrastructure comment, and docs
+moved. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched.
+**Why:** a fence that fails on a supported runtime is not a fence; the property worth proving is that
+the boundary subtracts exactly what the release declares, which the pinned registry can decide alone.
+**Revert path:** restore the `Intl` sweep and the exact-equality arm in the placeholder test, and
+revert the `firmTimezone` comment, ADR-0029, and this entry's pointer in D-054.
+
+### D-056 · 2026-07-27 · captain-decision · Non-ratified helpers stay module-local, the require scan reads value position, and placeholder proofs are release-keyed
+
+Four decision-core runtime exports had no consumer anywhere in the repo and no place on the ratified
+surface (`docs/v3/verin-core-contracts.ts`): `HumanRequestTriggerSchema` and `SystemEventTriggerSchema`
+were zero-caller `.readonly()` aliases - `TriggerSchema` composes the un-readonly `*ObjectSchema`
+values, so removing them changes no parse behaviour - and `triggerFirmId` and `scopedReferenceKey` each
+had exactly one caller, inside their own module. `knip.json` treats `src/contracts/**/*.ts` as an entry
+point (the layer is a vocabulary other layers import from), so its dead-export rule cannot see them and
+charter #5 went unenforced here. All four are now module-local or gone. The THREE narrowing guards
+`isProceedDecision` / `isBlockedDecision` / `isProhibitedDecision` stay exported unchanged: they ARE
+ratified surface (`docs/v3/verin-core-contracts.ts`, SHA-256-pinned) held for later consumers, which is
+the distinction that makes the other four dead rather than early.
+
+The dependency-rule fence's `require` scan flagged every identifier spelled `require` that was not
+declared in the scanning file, including identifiers in MEMBER-NAME position. A member resolves into
+whichever module declares that property, so `cfg.require("x")` on a value imported from a sibling
+module - or any access through a receiver typed `any`, where the symbol resolves nowhere - reported as
+a `<non-literal require-reference>` layer violation and would have hard-failed an inner layer on a
+property that merely shares the spelling. The existing companion only exercised the SAME-FILE case,
+which passes because those symbols resolve locally, so the cross-module case was untested. The scan
+now reads value position only, and a `require` MEMBER is treated as the CommonJS loader when it hangs
+off an ambient global (`module`, `globalThis`) or is itself ambiently declared (`const m = module;
+m.require(…)`) - both arms proven live and independently non-vacuous. The implicit-JSX-runtime probe
+stopped materializing every node of every shipped file and early-exits at the first JSX node instead.
+
+The placeholder companion asserted `expect(placeholders.has(target)).toBe(false)` for every `Link` -
+"no alias of this release targets a placeholder", a DATA property of 2026b, not of the code, which
+deliberately handles the opposite case. A future release whose alias table does target a placeholder
+would have reddened the build on data this boundary already handles correctly, reading `expected true
+to be false` rather than naming the adoption: the same shape as the host-ICU coupling D-055 removed.
+The assertion is now the EQUIVALENCE it was standing in for - an alias is admitted exactly when its
+target is, and only then resolves to it - which holds for any release, with the refusing arm exercised
+on the pinned release plus one constructed alias that does target a declared placeholder. Placeholder
+membership is likewise checked against a review record keyed BY RELEASE rather than against a
+single-release module constant, so adopting a release ADDS an entry and an unreviewed release fails
+outright, while an unlisted or over-broad declaration still fails as before.
+
+`.env.example` and ADR-0029 no longer claim "Migration: none". Every IANA spelling that booted before
+ADR-0029 still boots - Zones and `Link` aliases alike, in any casing - but ECMA-402 fixed-offset
+identifiers such as `+05:30` and `-08:00`, which the superseded host-`Intl` guard accepted, now fail
+FATAL at boot. That is the entire blast radius and it is an explicit NON-GOAL: an offset carries no DST
+rules, belongs to no tzdb release, and has no canonical `Zone` to persist and hash, so it can never
+carry the release-scoped replay semantics every accepted value does.
+
+No schema, projection, byte, or digest changes: schema and preimage versions stay 1.7.0, both registry
+pins are untouched, and every recorded fixture hash still reproduces. The contracts layer now measures
+**2360** lines against the 2400 ceiling - **40 lines of headroom**, up from 36, because the dead
+exports left. `EscalationStep.after`'s deferral to prompts 18/24 (D-054) stands untouched, and
+placeholder membership stays review-enforced at release adoption (ADR-0029 Revisit-When), not
+fence-enforced.
+**Why:** charter #5 does not exempt a layer knip cannot police; a fence that fails on unrelated code is
+worse than none (charter #4); and a proof pinned to incidental release data fails the release it was
+meant to protect.
+**Revert path:** re-export the four helpers, restore the file-local `require` symbol test and the
+whole-AST JSX probe, restore the `no Link targets a placeholder` and module-constant assertions, and
+revert the `.env.example` / ADR-0029 migration wording.
+
+### D-057 · 2026-07-27 · captain-decision · Hash-bound sets share canonical authorities and defensive preimages
+
+Every set-like execution collection now rejects duplicates and normalizes through the shared
+authorities in `ids.ts`: conflict keys, reservation references, preconditions, each precondition's
+required evidence references, and dependency edges. Explanation evidence references and composite
+versioned-source citations follow the same discipline recursively. The decision hash preimage
+defensively applies the same pure execution and explanation normalizers as the parse boundaries,
+without parsing persistence-hydrated objects or weakening `canonicalJson`'s non-plain-object
+refusal. Optional-property normalization tracks ancestors before rebuilding containers, so cycles
+through either production preimage path return the documented circular-reference `AppError` instead
+of overflowing the host stack.
+
+This shared-normalization choice stands independently of the line budget. A separate handwritten
+decision-preimage normalizer would duplicate roughly 65 lines of recursive execution and explanation
+structure and create a second field list that could drift from the schemas. Parsing inside the hash
+builder would change the accepted runtime object boundary and hide intentional serializer refusals.
+Shared pure authorities avoid both defects while preserving the explicit, versioned preimage
+projections.
+
+`AmbiguityRef.candidateRefs` is now duplicate-free, canonical, and constrained to one tenant. The
+tenant fence derives the direct scoped-reference and composite-reference collection inventory from
+the decision-core schemas, compares it exactly with the explicit constraint registry, and separately
+exercises mixed-tenant and duplicate ambiguity candidates. It therefore proves the registered
+boundaries and inventory it actually checks, without claiming a broader subject list.
+
+Each IANA release now carries its data version, Zone registry, Link registry, and placeholders as one
+value, and the supported-release map derives its key from that embedded version. All timezone
+refusals use one bounded, single-line, release-aware formatter that removes control characters and
+reports non-string kinds without echoing arbitrary payloads. The dependency fence now uses its
+general expression unwrapper for asserted `node:module` loaders and follows variable provenance so
+an ambient `module` alias typed as `any` remains a CommonJS loader.
+
+The final contracts implementation measures **2726** lines by the line-budget fence's own metric.
+ADR-0029 re-baselines the contracts ceiling from 2400 to **2800** through ADR-0018's amendment path,
+leaving **74 lines of measured headroom**. The ratchet resumes from 2800; this is not standing
+permission for unrelated growth. All recorded bundle and decision fixture digests remain
+byte-identical, so schema and preimage versions stay 1.7.0.
+**Why:** semantically equivalent decisions must bind to one hash, tenant-scoped collections must
+reject mixed ownership, structured refusals must survive malformed runtime objects, and blocking
+fences must prove the bypasses they claim to close.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant/configuration
+boundaries remain supported.
+
+### D-058 · 2026-07-27 · captain-decision · Parse and preimage normalization share complete authorities
+
+Decision-record parse boundaries and decision-hash preimages now share pure normalization authorities
+for every canonical collection they bind: actor roles, specialist roles, approval stages, eligible
+roles, escalation roles, blocked evidence suppliers, explanations, and execution plans. Each recursive
+normalizer preserves non-plain objects instead of spreading them, so `canonicalJson` still rejects
+class instances at nested production preimage paths. Bundle preimages use the same release registry
+authority as `TimeZoneSchema` to canonicalize accepted Zone casing.
+
+The tenant inventory follows schema provenance through aliases, wrappers, and composite schemas before
+comparing the discovered collections with the explicit constraint registry. Its three synthetic
+companions prove each indirection form is visible. Standalone execution steps now bind a compensation
+target to the parent target's tenant, independently of the plan-level check. Recorded-release timezone
+membership refusals use the one bounded formatter and name the bundle's actual release. The dependency
+fence follows destructured `require` provenance from ambient `module` receivers, including type-erased
+aliases, and the ES-only contracts diagnostic gate includes TypeScript diagnostic 2584 for DOM globals.
+
+The shared-normalization rationale in D-057 remains independent of the line budget. After these
+completion corrections, the line-budget fence measures `contracts/` at **3016** lines. ADR-0029
+re-baselines the ceiling from 2800 to **3100** through ADR-0018's amendment path, leaving **84 lines
+of measured headroom**. The ratchet resumes from 3100 and does not authorize unrelated growth.
+Recorded bundle and decision fixture digests remain byte-identical, so schema and preimage versions
+stay 1.7.0.
+**Why:** hash equivalence must match every parse-time canonicalization, serializer refusals must survive
+every nested normalizer, tenant and dependency fences must fail under ordinary syntax indirection, and
+diagnostics must describe the actual replay release.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, execution,
+timezone, and dependency boundaries remain supported.
+
+### D-059 · 2026-07-27 · captain-decision · Schema discovery and replay traversal are semantic and stack-safe
+
+The decision-core tenant inventory now walks the exported runtime Zod schema graph. It recognizes every
+array, record, tuple, set, or map from which a `{firmId, id}` reference is reachable, independent of the
+source expression or wrapper factory that constructed it. The exact registry now includes
+`RecommendationSchema.parameters`, and record plus wrapper-factory companions prove those forms cannot
+escape discovery. The module inventory is exact as well, so adding a decision-core source module without
+classifying its exports fails the fence.
+
+Supported time-zone releases are one ordered list of inseparable release values. Both the supported map
+and bundle-schema factory derive version labels from each value's embedded `dataVersion`, and duplicate
+embedded versions are refused, so a caller cannot pair one release's zone data with another label.
+
+Optional-property normalization, recursive explanation normalization, and canonical serialization now
+use iterative traversals. A 12,000-level acyclic explanation passes through the complete production
+decision-preimage path, while the existing cycle and nested class-instance refusals remain unchanged.
+CommonJS loader detection resolves destructured receiver provenance through declaration and assignment
+forms for both `require` and `createRequire`, including computed literal keys and type-erased aliases.
+
+The shared-normalization rationale in D-057 remains independent of the line budget. These completion
+corrections measure `contracts/` at **3158** lines. ADR-0029 re-baselines the ceiling from 3100 to
+**3200** through ADR-0018's amendment path, leaving **42 lines of measured headroom**. The ratchet
+resumes from 3200 and does not authorize unrelated growth. Recorded bundle and decision fixture digests
+remain byte-identical, so schema and preimage versions stay 1.7.0.
+
+**Why:** a completeness fence must follow schema meaning instead of constructor spelling, replay labels
+must be inseparable from their data, and unbounded valid inputs must not depend on the host call stack.
+**Revert path:** none while decision hashes at version 1.7.0 and the prompt-5 tenant, replay, and
+dependency boundaries remain supported.
+
+### D-060 · 2026-07-27 · captain-decision · Exported boundaries prove tenant and retry safety behavior
+
+The decision-core tenant inventory covers every exported Zod value whose runtime schema graph contains
+a scoped-reference collection. Export names are unrestricted and shared schema objects are inventoried
+once per exported boundary rather than collapsed by identity. The registry is exact, and every entry
+supplies a legal payload plus a mixed-tenant payload that the registered exported schema must reject.
+Suffixless-export, reused-wrapper, and behavior-failure companions prove all three parts of that claim.
+
+`ExecutionStepSchema` itself rejects a self-dependency and a compensation that aliases the parent
+idempotency key. Scoped-reference uniqueness uses the one canonical tuple comparator, so unrestricted
+identifier strings cannot collide through delimiter concatenation. Explanation parsing and
+decision-record tenant traversal are iterative at the production schema boundary; the 12,000-level
+companion now enters through `DecisionRecordSchema.safeParse` before hashing.
+
+The dependency fence resolves computed loader keys through local literals and the latest preceding
+simple assignment for both destructuring and element access, shared by `require` and `createRequire`.
+Its static proof does not cover runtime, conditional, or configuration-derived property keys and is not
+a security boundary against a determined source author. No shipped source contains a `require` token.
+**Revisit-When:** shipped code intentionally needs a runtime-computed CommonJS loader key; replace or
+augment this fence with a runtime or compiler-level boundary rather than enumerating more spellings.
+
+Independently of the line measurement, parse boundaries and hash preimages continue to share pure
+normalization authorities so canonical collections cannot drift and non-plain inputs remain visible to
+the serializer refusal. The final contracts implementation measures **3412** lines. ADR-0029
+re-baselines the ceiling from 3200 to **3500** through ADR-0018's amendment path, leaving **88 lines of
+measured headroom**. The ratchet resumes from 3500 and does not authorize unrelated growth. Recorded
+bundle and decision fixture bytes and digests remain unchanged, so schema and preimage versions stay
+1.7.0.
+
+**Why:** exported validation boundaries must prove their actual tenant behavior, intrinsic retry
+hazards must fail at the standalone step boundary, and valid input depth must not depend on the host
+call stack.
+**Revert path:** none while prompt-5 tenant, execution, replay, and dependency boundaries remain
+supported.

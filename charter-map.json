@@ -121,6 +121,10 @@
         },
         {
           "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-tenant-scope.test.ts"
+        },
+        {
+          "type": "fitness",
           "ref": "src/__tests__/fitness/no-client-role-header.test.ts"
         }
       ]
@@ -283,6 +287,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/idempotency-exactly-once.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-external-action-safety.test.ts"
         }
       ]
     }
@@ -446,6 +454,26 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "decision-core-type-system",
+      "title": "Decision-core type system keeps illegal states unrepresentable - proceed requires authority + plan; blocked/prohibited carry neither; prohibitions carry no resolving condition (v3 prompt 5, invariants 7-9)",
+      "status": "enforced",
+      "phase": "v3-p5",
+      "mechanisms": [
+        {
+          "type": "adr",
+          "ref": "docs/adr/0029-decision-core-contracts.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
+        },
+        {
+          "type": "config",
+          "ref": "v3-invariants.json"
         }
       ]
     }

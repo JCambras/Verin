@@ -1,6 +1,6 @@
 # ADR-0001: Clean architecture with a fitness-enforced dependency rule
 
-**Status:** Accepted
+**Status:** Accepted (amended by ADR-0029: `contracts/` may import Zod - and only Zod; the layer remains free of project-local imports)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #1, #5; operating model (dependency-rule)
@@ -19,14 +19,24 @@ will drift or silently revert.
 
 Four layers under `src/`, dependencies point inward only:
 
-- `contracts/` — dependency-free types + pure functions. Imports nothing project-local.
+- `contracts/` - types + pure functions. Imports nothing project-local; ADR-0029 permits Zod as its
+  only external package.
 - `domain/` — entities, use-cases, ports (interfaces), the workflow engine + flows. Imports only `contracts/`.
 - `infrastructure/` — adapters / port implementations. Imports `domain/` + `contracts/`, never `app/`.
 - `app/` — Next.js App Router + presentation tier. May import anything (so the presentation tier is architecture-safe).
 
 Enforced three ways (defense in depth): ESLint `no-restricted-imports` at edit time
 (`eslint.config.mjs`); the authoritative `dependency-rule` fitness fence (ts-morph, Phase B) that resolves
-**static, relative, AND dynamic `import()`** and classifies each by resolved layer; and TS path aliases.
+static imports, re-exports, relative references, dynamic `import()`, direct and indirect CommonJS
+loaders, TypeScript import types, import-equals declarations, source-local declaration files,
+triple-slash type/path/lib references, and the implicit JSX runtime; classifies each by resolved layer;
+resolves aliases, baseUrl modules, package imports, and package self-references through TypeScript;
+rejects `createRequire`, local paths outside the layers, ambient contract declarations, and platform
+globals by diagnostic code; enforces the Zod-only external allowlist for `contracts/`; and TS path aliases.
+Computed loader-member keys are followed through local literal declarations and preceding simple
+assignments. Runtime, conditional, and configuration-derived keys are outside this static AST proof:
+the fence catches real source-layer violations, but is not a security boundary against a determined
+author rewriting a loader name at runtime. No shipped source currently contains a `require` token.
 
 ## Alternatives Rejected
 
@@ -51,4 +61,6 @@ split the repo into physical packages.
 ## Revisit When
 
 Interface indirection produces measurable, repeated boilerplate pain, OR physical service boundaries are
-needed for independent deploy/scale (then reconsider a package split — see the scale-ladder, ADR-0015).
+needed for independent deploy/scale (then reconsider a package split - see the scale-ladder, ADR-0015),
+OR shipped source intentionally needs a runtime-computed CommonJS loader key (then replace or augment
+the static fence with a runtime or compiler-level boundary).

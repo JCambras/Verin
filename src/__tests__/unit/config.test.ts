@@ -6,7 +6,14 @@ import { getConfig, resetConfigForTests } from "@infra/config";
  * process.env in the test (allowed — the no-process-env fence scans src/, not
  * tests) and resets the cache between cases.
  */
-const KEYS = ["APP_ENV", "VERIN_STORE_DRIVER", "DATABASE_URL", "SESSION_SECRET", "ESIGN_WEBHOOK_SECRET"] as const;
+const KEYS = [
+  "APP_ENV",
+  "FIRM_TIMEZONE",
+  "VERIN_STORE_DRIVER",
+  "DATABASE_URL",
+  "SESSION_SECRET",
+  "ESIGN_WEBHOOK_SECRET",
+] as const;
 const saved: Record<string, string | undefined> = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 
 function withEnv(overrides: Partial<Record<(typeof KEYS)[number], string>>): void {
@@ -32,6 +39,67 @@ describe("config fail-closed guards", () => {
   it("parses a valid development config", () => {
     withEnv({ APP_ENV: "development", VERIN_STORE_DRIVER: "pglite", SESSION_SECRET: goodSecret, ESIGN_WEBHOOK_SECRET: goodWebhook });
     expect(getConfig().store.driver).toBe("pglite");
+  });
+
+  it.each(["America/Chicago", "Europe/London", "Etc/UTC"])(
+    "accepts canonical IANA firm time zone %s",
+    (firmTimezone) => {
+      withEnv({
+        APP_ENV: "development",
+        FIRM_TIMEZONE: firmTimezone,
+        VERIN_STORE_DRIVER: "pglite",
+        SESSION_SECRET: goodSecret,
+        ESIGN_WEBHOOK_SECRET: goodWebhook,
+      });
+      expect(getConfig().firmTimezone).toBe(firmTimezone);
+    },
+  );
+
+  const bootWithTimezone = (firmTimezone: string) => {
+    withEnv({
+      APP_ENV: "development",
+      FIRM_TIMEZONE: firmTimezone,
+      VERIN_STORE_DRIVER: "pglite",
+      SESSION_SECRET: goodSecret,
+      ESIGN_WEBHOOK_SECRET: goodWebhook,
+    });
+    return getConfig().firmTimezone;
+  };
+
+  it("canonicalizes case and resolves pinned Link aliases to their canonical Zone", () => {
+    // A Link alias has always been a legal IANA identifier, so an operator running
+    // FIRM_TIMEZONE=UTC must still boot. Only the canonical Zone is kept, so nothing
+    // downstream ever persists or hashes two spellings of one zone.
+    expect(bootWithTimezone("america/new_york")).toBe("America/New_York");
+    expect(bootWithTimezone("UTC")).toBe("Etc/UTC");
+    expect(bootWithTimezone("US/Eastern")).toBe("America/New_York");
+    expect(bootWithTimezone("Asia/Calcutta")).toBe("Asia/Kolkata");
+    expect(bootWithTimezone("Europe/Kiev")).toBe("Europe/Kyiv");
+    expect(bootWithTimezone("Africa/Accra")).toBe("Africa/Abidjan");
+  });
+
+  it("still refuses an identifier that is neither a pinned Zone nor a pinned Link", () => {
+    expect(() => bootWithTimezone("Not/AZone")).toThrow(/firmTimezone/);
+    expect(() => bootWithTimezone("America/New_York_2")).toThrow(/firmTimezone/);
+  });
+
+  it("keeps invalid timezone boot diagnostics bounded and single-line", () => {
+    expect.assertions(3);
+    try {
+      bootWithTimezone(`Not/AZone\n${"x".repeat(10_000)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).toContain("iana-tzdb/2026b");
+      expect(message.length).toBeLessThan(240);
+      expect(message).not.toMatch(/[\r\n]/u);
+    }
+  });
+
+  it("refuses a declared placeholder Zone even though it IS a pinned Zone name", () => {
+    // `Factory` is in the pinned release - a bundle that recorded it still parses and
+    // hash-verifies - but no formatter resolves it, so booting on it would only throw
+    // at the first local-time render. Charter #7 is fail-closed at boot, never late.
+    expect(() => bootWithTimezone("Factory")).toThrow(/firmTimezone/);
   });
 
   it("refuses to boot in production without the postgres driver", () => {

@@ -1,0 +1,282 @@
+import { describe, expect, it } from "vitest";
+import {
+  CompensatingActionSchema,
+  ExecutionPlanSchema,
+  ExecutionStepSchema,
+  RetrySafeExternalActionSchema,
+} from "@contracts/decision-core/execution";
+
+const hash = "a".repeat(64);
+const action = {
+  targetRef: { firmId: "firm-a", id: "target:house-crm" },
+  command: {
+    commandType: "submit",
+    payloadRef: { firmId: "firm-a", id: "blob:submit" },
+    payloadHash: hash,
+  },
+  idempotencyKey: "idem:submit",
+  conflictKeys: ["conflict:liquidity"],
+  reservationRefs: [{ firmId: "firm-a", id: "reservation:liquidity" }],
+  preconditions: [
+    {
+      code: "evidence-still-fresh",
+      requiredEvidenceSnapshotRefs: [{ firmId: "firm-a", id: "evidence:balance" }],
+      mustStillHoldAtExecution: true,
+    },
+  ],
+  verificationRuleRef: { firmId: "firm-a", id: "verification:submitted" },
+};
+const compensation = {
+  ...action,
+  command: {
+    ...action.command,
+    commandType: "cancel",
+    payloadRef: { firmId: "firm-a", id: "blob:cancel" },
+  },
+  idempotencyKey: "idem:cancel",
+  reasonCode: "later-step-failed",
+};
+
+describe("decision-core external-action safety fence", () => {
+  it.each([
+    "idempotencyKey",
+    "conflictKeys",
+    "reservationRefs",
+    "preconditions",
+    "verificationRuleRef",
+  ] as const)("enforces: compensation requires %s", (key) => {
+    const incomplete = Object.fromEntries(
+      Object.entries(compensation).filter(([candidate]) => candidate !== key),
+    );
+    const parsed = CompensatingActionSchema.safeParse(incomplete);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path[0] === key)).toBe(true);
+    }
+  });
+
+  it("enforces: conflict control and pre-execution revalidation cannot be empty or advisory", () => {
+    expect(CompensatingActionSchema.safeParse({ ...compensation, conflictKeys: [] }).success).toBe(false);
+    expect(CompensatingActionSchema.safeParse({ ...compensation, preconditions: [] }).success).toBe(false);
+    expect(
+      CompensatingActionSchema.safeParse({
+        ...compensation,
+        preconditions: [{
+          ...compensation.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [],
+        }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CompensatingActionSchema.safeParse({
+        ...compensation,
+        preconditions: [{ ...compensation.preconditions[0]!, mustStillHoldAtExecution: false }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("enforces: standalone steps reject compensation idempotency-key aliasing", () => {
+    const parsed = ExecutionStepSchema.safeParse({
+      id: "step:1",
+      ...action,
+      dependsOn: [],
+      compensatingAction: {
+        ...compensation,
+        idempotencyKey: action.idempotencyKey,
+      },
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) => issue.path.includes("compensatingAction"))).toBe(true);
+    }
+  });
+
+  it("enforces: standalone steps reject self-dependencies", () => {
+    const parsed = ExecutionStepSchema.safeParse({
+      id: "step:1",
+      ...action,
+      dependsOn: ["step:1"],
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.some((issue) =>
+        issue.path.includes("dependsOn"),
+      )).toBe(true);
+    }
+  });
+
+  it.each([
+    ["conflictKeys", { conflictKeys: ["conflict:liquidity", "conflict:liquidity"] }],
+    [
+      "reservationRefs",
+      {
+        reservationRefs: [
+          { firmId: "firm-a", id: "reservation:liquidity" },
+          { firmId: "firm-a", id: "reservation:liquidity" },
+        ],
+      },
+    ],
+    [
+      "precondition evidence refs",
+      {
+        preconditions: [{
+          ...action.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [
+            { firmId: "firm-a", id: "evidence:balance" },
+            { firmId: "firm-a", id: "evidence:balance" },
+          ],
+        }],
+      },
+    ],
+    [
+      "preconditions",
+      {
+        preconditions: [
+          action.preconditions[0]!,
+          action.preconditions[0]!,
+        ],
+      },
+    ],
+  ])("enforces: %s are duplicate-free", (_name, override) => {
+    expect(RetrySafeExternalActionSchema.safeParse({ ...action, ...override }).success).toBe(false);
+  });
+
+  it.each([
+    [
+      "payload",
+      {
+        command: {
+          ...action.command,
+          payloadRef: { ...action.command.payloadRef, firmId: "firm-b" },
+        },
+      },
+    ],
+    [
+      "reservation",
+      {
+        reservationRefs: [
+          { ...action.reservationRefs[0]!, firmId: "firm-b" },
+        ],
+      },
+    ],
+    [
+      "precondition evidence",
+      {
+        preconditions: [{
+          ...action.preconditions[0]!,
+          requiredEvidenceSnapshotRefs: [
+            {
+              ...action.preconditions[0]!.requiredEvidenceSnapshotRefs[0]!,
+              firmId: "firm-b",
+            },
+          ],
+        }],
+      },
+    ],
+    [
+      "verification rule",
+      {
+        verificationRuleRef: {
+          ...action.verificationRuleRef,
+          firmId: "firm-b",
+        },
+      },
+    ],
+  ])("enforces: standalone actions reject a cross-tenant %s reference", (_name, override) => {
+    expect(
+      RetrySafeExternalActionSchema.safeParse({
+        ...action,
+        ...override,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("enforces: every step and compensation in one plan shares a tenant", () => {
+    const firmBAction = {
+      ...action,
+      targetRef: { firmId: "firm-b", id: "target:house-crm" },
+      command: {
+        ...action.command,
+        payloadRef: { firmId: "firm-b", id: "blob:firm-b" },
+      },
+      idempotencyKey: "idem:firm-b",
+      reservationRefs: [{ firmId: "firm-b", id: "reservation:firm-b" }],
+      preconditions: [{
+        ...action.preconditions[0]!,
+        requiredEvidenceSnapshotRefs: [
+          { firmId: "firm-b", id: "evidence:firm-b" },
+        ],
+      }],
+      verificationRuleRef: { firmId: "firm-b", id: "verification:firm-b" },
+    };
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:mixed",
+        steps: [
+          { id: "step:firm-a", ...action, dependsOn: [] },
+          { id: "step:firm-b", ...firmBAction, dependsOn: [] },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      ExecutionPlanSchema.safeParse({
+        id: "plan:mixed-compensation",
+        steps: [{
+          id: "step:firm-a",
+          ...action,
+          dependsOn: [],
+          compensatingAction: {
+            ...firmBAction,
+            idempotencyKey: "idem:firm-b-compensation",
+            reasonCode: "later-step-failed",
+          },
+        }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("enforces: a standalone step and its compensation share a tenant", () => {
+    const firmBCompensation = {
+      ...compensation,
+      targetRef: { firmId: "firm-b", id: "target:house-crm" },
+      command: {
+        ...compensation.command,
+        payloadRef: { firmId: "firm-b", id: "blob:cancel" },
+      },
+      reservationRefs: [
+        { firmId: "firm-b", id: "reservation:liquidity" },
+      ],
+      preconditions: [{
+        ...compensation.preconditions[0]!,
+        requiredEvidenceSnapshotRefs: [
+          { firmId: "firm-b", id: "evidence:balance" },
+        ],
+      }],
+      verificationRuleRef: {
+        firmId: "firm-b",
+        id: "verification:submitted",
+      },
+    };
+    expect(
+      ExecutionStepSchema.safeParse({
+        id: "step:1",
+        ...action,
+        dependsOn: [],
+        compensatingAction: firmBCompensation,
+      }).success,
+    ).toBe(false);
+  });
+
+  describe("detects (companion): complete retry-safe actions parse", () => {
+    it("accepts the shared action, compensation, and execution-step shapes", () => {
+      expect(RetrySafeExternalActionSchema.safeParse(action).success).toBe(true);
+      expect(CompensatingActionSchema.safeParse(compensation).success).toBe(true);
+      expect(
+        ExecutionPlanSchema.safeParse({
+          id: "plan:1",
+          steps: [{ id: "step:1", ...action, dependsOn: [], compensatingAction: compensation }],
+        }).success,
+      ).toBe(true);
+    });
+  });
+});

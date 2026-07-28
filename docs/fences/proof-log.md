@@ -50,6 +50,88 @@ INJECTED-DRIFT -> fitness:src/__tests__/fitness/this-fence-was-deleted.test.ts
 -> infrastructure (@infra/store)`. **Revert:** deleted the file; suite green. Also proven for relative,
 dynamic `import()`, and `require()` seams by the in-memory companions.
 
+**Extension (review finding F16):** configured alias suffixes are normalized before layer or external
+package classification. Test-first companions reproduced both bypasses against the prior classifier:
+```
+× alias traversal from contracts into infrastructure is normalized before classification
+  expected [] to include 'contracts->infrastructure'
+× alias traversal cannot disguise an external package as a contracts import
+  expected [] to have a length of 1 but got 0
+```
+The shared path classifier now accepts only paths inside the repository source root or the explicit
+in-memory source root. A third companion proves that an external package containing its own
+`src/contracts` directory cannot be mistaken for this repository's contracts layer.
+
+Real-tree injections then proved both requested forms independently:
+```
+# src/contracts/_adv_alias_traversal.ts
+import "@contracts/../infrastructure/store";
+
+dependency-rule violations:
+src/contracts/_adv_alias_traversal.ts: contracts -> infrastructure
+(@contracts/../infrastructure/store)
+
+# src/contracts/_adv_alias_traversal.ts
+import "@contracts/../../node_modules/react/index.js";
+
+contracts external-import violations:
+src/contracts/_adv_alias_traversal.ts:1
+(@contracts/../../node_modules/react/index.js)
+```
+**Revert (extension):** deleted the injected file; the focused dependency fence passed all 15 tests.
+
+**Extension (review findings F17-F18):** the shared detector now fails closed on non-literal dynamic
+`import()` and `require()` references in inner layers, and it no longer exempts nested `__tests__`
+directories that the shipped-source discovery includes. Before the implementation changed, four focused
+companions reproduced the bypasses:
+```
+× non-literal dynamic import() fails closed in an inner layer
+× non-literal require() fails closed in an inner layer
+× nested __tests__ paths remain subject to layer enforcement
+× nested __tests__ paths remain subject to the contracts external allowlist
+```
+Real-tree injections then proved all four forms after the fix:
+```
+dependency-rule violations:
+src/domain/_adv_unresolved_dynamic.ts:4: domain -> unresolved (<non-literal dynamic-import>)
+src/domain/_adv_unresolved_dynamic.ts:5: domain -> unresolved (<non-literal require>)
+src/contracts/__tests__/_adv_nested_test.ts:2: contracts -> infrastructure (@infra/store/db)
+
+contracts external-import violations:
+src/contracts/__tests__/_adv_nested_test.ts:1 (react)
+```
+**Revert (extension):** deleted both injected files; the focused dependency fence passed all 19 tests.
+
+**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-043/D-044).
+
+**Extension (review finding F21):** the shared reference collector now includes TypeScript
+triple-slash `types` and `path` directives. Test-first companions reproduced both omissions against
+the prior collector:
+```
+× triple-slash type references cannot evade the contracts allowlist
+  expected [] to have a length of 1 but got 0
+× triple-slash path references cannot cross project layers
+  expected [] to include 'contracts->infrastructure'
+```
+Real-tree injections then proved both forms independently:
+```
+# src/contracts/_adv_triple_slash.ts
+/// <reference path="../infrastructure/store/db.ts" />
+
+dependency-rule violations:
+src/contracts/_adv_triple_slash.ts:2: contracts -> infrastructure
+(../infrastructure/store/db.ts)
+
+# src/contracts/_adv_triple_slash.ts
+/// <reference types="react" />
+
+contracts external-import violations:
+src/contracts/_adv_triple_slash.ts:1 (react)
+```
+**Revert (extension):** deleted the injected file; the focused dependency fence passed all 21 tests.
+
+**Date:** 2026-07-27 (review hardening of the prompt-5 contracts dependency fence, D-045).
+
 ## PF-003 · no-process-env · `src/__tests__/fitness/no-process-env.test.ts`
 **Invariant (ADR-0003):** `process.env` only in `infrastructure/config`. **Injection:** `src/domain/_adv_env.ts`
 with `export const k = process.env.SECRET_TOKEN;`. **Observed:** `process.env read outside config:
@@ -757,3 +839,985 @@ and record agree under approval-invalidation at Firm B) and extracts the shared
 execution-timeline row mapper into `surfaces/shared.tsx` - neither changes any fence rule.
 
 **Date:** 2026-07-26 (review-fix round on the walking-skeleton PR, decision key nm-review-invalidation-s6).
+
+---
+
+### PF-027 · decision-core illegal-states (v3 invariants 7-9, prompt 5) · `src/__tests__/fitness/decision-core-illegal-states.test.ts`
+**Invariant (charter #1; v3 §5; ADR-0029, D-040):** the canonical type system makes the decision-core
+distinctions structural - a proceed decision REQUIRES an authority requirement and a non-empty
+execution plan (inv 7); a blocked decision cannot carry authority or a plan and its blockers must be
+genuinely resolvable (inv 8); a prohibited decision carries no resolving condition, authority, or plan,
+whether smuggled into the Prohibition or via record-level revaluation conditions (inv 9); disposition
+and authority never collapse into one plane. Every rejection is a Zod strict-schema PARSE failure over
+`src/contracts/decision-core/` - reviewer discipline is not a mechanism. The registry
+(`v3-invariants.json`) maps invariants 7-9 to this fence; the runner (`pnpm v3:invariants`) executes it.
+**Companion:** the legal counterpart of every rejection parses (a reject-everything schema cannot pass),
+including all three dispositions on a full DecisionRecord and a NON-prohibited record carrying
+revaluation conditions.
+
+**Injected violations (each run live, watched fail, reverted):**
+```
+# 1 - silent weakening: BlockedDecisionSchema z.strictObject -> z.object (unknown keys stripped, not rejected):
+  × enforces: invariant 8 - blocked cannot carry authority or an execution plan > rejects authority on a blocked result
+    AssertionError: expected rejection naming "authority": expected true to be false
+    ❯ expectRejected src/__tests__/fitness/decision-core-illegal-states.test.ts:80:73
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:107:7
+  × ... > rejects an execution plan on a blocked result
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:110:7
+# 2 - inv-7 hole: ProceedDecisionSchema.executionPlan made .optional():
+  × enforces: invariant 7 - proceed requires authority and an execution plan > rejects proceed without an execution plan
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:80:73
+```
+**Revert:** both injections restored; fence file `Tests 18 passed`. The rejection assertions demand the
+error name the offending path/key, so a schema that fails for an unrelated reason cannot green them.
+
+**Date:** 2026-07-26 (v3 build-sequence prompt 5 - the canonical core type system; invariants 7-9
+flipped ACTIVE in `v3-invariants.json`, ratchet extended to [2, 5, 7, 8, 9]).
+
+**Extension (selected review correction F6):** invariant 7 now rejects a non-empty execution plan
+whose dependency graph contains a cycle. Such a graph has steps but no executable ordering.
+Injection + observed failure (verbatim), reverted:
+```
+# cycle issue emission removed from ExecutionPlanSchema; two-step s1 -> s2 -> s1 supplied:
+  × rejects a dependency cycle (an unusable graph is still no executable plan)
+    AssertionError: expected rejection naming "steps": expected true to be false
+    ❯ expectRejected src/__tests__/fitness/decision-core-illegal-states.test.ts:84:73
+    ❯ src/__tests__/fitness/decision-core-illegal-states.test.ts:117:7
+```
+**Revert (extension):** restored cycle rejection; the fitness and decision-core unit files pass
+together (`Tests 37 passed`). The unit suite also accepts an acyclic diamond and rejects two- and
+three-step cycles, so the boundary does not enforce only the injected shape.
+
+**Extension (review corrections F2-F5 and F8-F10):** focused boundary tests were added before the
+implementation changed and reproduced five independent failures: unsupported schema/serializer
+versions parsed, an invalid time zone parsed, replay inputs remained mutable, a sparse array
+canonicalized to the same bytes as `[]`, and a parsed decision with explicit undefined optional
+properties could not be hashed. Observed failures:
+```
+× rejects replay metadata versions without a matching implementation
+  expected true to be false
+× rejects unsupported time zones before replay depends on firm-local time
+  expected true to be false
+× freezes parsed replay inputs and their nested collections
+  expected false to be true
+× refuses sparse arrays instead of colliding with dense arrays or emitting invalid JSON
+  expected true to be false
+× hashes every schema-valid decision even when optional keys were explicitly undefined
+  expected false to be true
+```
+The dependency fence and exhaustive projection-key assertion were then adversarially proven:
+```
+# Added `import { createElement } from "react"` to serialization.ts:
+× dependency-rule fence > enforces: the real src/ tree has zero layer violations
+  contracts external-import violations:
+  src/contracts/decision-core/serialization.ts:9 (react)
+
+# Added `futureOptional: z.string().optional()` to DecisionInputBundleSchema without
+# adding it to BUNDLE_HASH_PAYLOAD_KEYS:
+src/contracts/decision-core/serialization.ts(24,82): error TS2345
+  Property 'futureOptional' is missing ... but required in type 'Record<"futureOptional", never>'.
+```
+**Revert (extension):** both planted violations were removed. The focused unit and fitness run passed
+58 tests, including companions for non-literal dynamic imports, relative traversal to an external
+package, the one-package Zod allowlist, exact runtime schema-key coverage including the optional
+`derivedFromDecisionRef`, replay immutability, and canonicalization totality.
+
+**Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-041).
+
+**Extension (review corrections F12-F15):** the target commit reproduced all four gaps before
+implementation: parsed DecisionRecord, ExecutionPlan, and steps were mutable; duplicate replay IDs
+parsed; TypeScript import types and import-equals declarations produced zero dependency violations;
+and nested decision values entered the hash projection without a recursive version-shape lock.
+The dependency collector and nested projection lock were then adversarially proven:
+```
+# Added both forms to src/contracts/decision-core/actor.ts:
+# import React = require("react");
+# type ForbiddenImportType = import("react").ReactNode;
+× dependency-rule fence > enforces: the real src/ tree has zero layer violations
+  contracts external-import violations:
+  src/contracts/decision-core/actor.ts:13 (react)
+  src/contracts/decision-core/actor.ts:14 (react)
+
+# Added `futureOptional: z.string().optional()` to nested
+# RecommendationAlternativeSchema without changing decision-record/1.0.0:
+× binds each preimage version to its complete recursive projection schema
+  Expected: 5116bea473ea037d0b8e2be46e087ca658165a084f9672b9b5f1f4a56b100450
+  Received: 2c04705b992a3de633eb9addfe9bee9e5d29b0f8fdc99a53affaa7695ec01fcd
+```
+**Revert (extension):** both planted violations were removed. Focused tests cover deep runtime
+freezing, inferred readonly collections, duplicate replay-ID rejection, recursive optional-field
+detection, and both previously invisible TypeScript import forms. The contracts layer measures
+1480 lines under its unchanged 1550 ceiling.
+
+**Date:** 2026-07-26 (review hardening of the v3 prompt-5 decision-core contracts, D-042).
+
+### PF-028 · decision-core tenant scope (v3 invariant 2) · `src/__tests__/fitness/decision-core-tenant-scope.test.ts`
+**Invariant (charter #1/#7; v3 invariant 2 and §3 non-negotiable 11; ADR-0029, D-045/D-046):** every
+immutable policy-version, household-instruction-version, evidence-snapshot, intent, input-bundle, and
+derived-decision link carries its own `firmId` plus opaque branded ID. The bundle and decision schemas
+recursively reject any nested tenant that differs from the enclosing record, including precedence
+citations, explanation child nodes, prohibitions, and execution preconditions. The legal companion
+parses all four canonical fixtures so a reject-everything schema cannot pass.
+
+The target commit reproduced the missing contract before implementation:
+```
+{"crossTenantBundleAccepted":true}
+```
+The focused tests also proved the non-canonical replay context before the time-zone boundary tightened:
+```
+{"aliasAccepted":true,"timeZone":"US/Eastern"}
+```
+After the structured references landed, two real schema weakenings were injected together: the
+`policyVersionRef` tenant check and the `intentRef` tenant refinement were removed. Observed:
+```
+× enforces: every immutable bundle reference belongs to the bundle tenant
+  expected true to be false
+× enforces: intent, bundle, and actor references belong to the decision tenant
+  expected true to be false
+```
+**Revert:** restored both tenant checks; the focused fence passed. The unit suite separately rejects
+every bundle-reference class, both decision-record links, non-canonical IANA aliases, duplicate scoped
+IDs, and hash-preimage or schema-fingerprint drift.
+
+**Date:** 2026-07-27 (review corrections F20 and F22, D-045).
+
+**Extension (review correction F23):** the target commit accepted cross-tenant policy citations,
+explanation evidence, and execution-precondition evidence:
+```
+{
+  policyCitation: true,
+  explanationEvidence: true,
+  executionEvidence: true
+}
+```
+After scoped recursive references landed, the precedence and execution-precondition tenant checks
+were removed together. The real fence failed at the owning paths:
+```
+× enforces: precedence and explanation references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:119
+× enforces: prohibition and execution-precondition references belong to the decision tenant
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:162
+```
+**Revert (extension):** restored both recursive checks; the focused fence and canonical-fixture
+companion passed. The schema and hash-preimage envelopes advanced to 1.2.0, with new projection
+fingerprints and fixture digests.
+
+**Date:** 2026-07-27 (review correction F23, D-046).
+
+**Extension (review correction F26):** the external-action target tenant check was removed from
+`DecisionRecordSchema`. The real fence rejected the weakening:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:390
+```
+**Revert (extension):** restored the target-reference check. The extended fence also exercises
+domain configuration, evidence sources, subjects, approval templates, scopes, reservations,
+verification rules, authority stages, blockers, revaluation conditions, and compensating actions.
+
+**Date:** 2026-07-27 (review correction F26, D-047).
+
+### PF-029 · decision-core external-action safety (charter #16) · `src/__tests__/fitness/decision-core-external-action-safety.test.ts`
+**Invariant (charter #1/#16; v3 §3 non-negotiable 10; ADR-0029, D-047):** every external
+execution action, including a compensating action, carries stable idempotency, conflict control,
+tenant-scoped reservations, pre-execution conditions, and a tenant-scoped verification rule.
+Parent and compensation idempotency keys cannot alias.
+
+`idempotencyKey` was made optional in the shared action shape. The real fence failed:
+```
+× enforces: compensation requires idempotencyKey
+  expected true to be false
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:43
+```
+**Revert:** restored the required key. The legal companion parsed the shared action,
+compensation, and full execution plan, proving the fence does not reject every plan.
+
+**Date:** 2026-07-27 (review correction F25, D-047).
+
+### PF-002 extension · implicit JSX runtime dependency
+**Invariant (charter #1; ADR-0001/0029, D-047):** Zod is the only permitted external dependency
+in `contracts/`; JSX cannot add an invisible `react/jsx-runtime` import.
+
+A real `src/contracts/decision-core/jsx-probe.tsx` containing `<div />` was injected. The
+dependency fence reported:
+```
+contracts external-import violations:
+src/contracts/decision-core/jsx-probe.tsx:1 (react/jsx-runtime)
+```
+**Revert:** removed the probe. The in-memory companion keeps the implicit import form covered.
+
+**Date:** 2026-07-27 (review correction F27, D-047).
+
+### PF-027 extension · version-pinned replay time zones
+**Invariant (charter #1; v3 replay contract §12.1; ADR-0029, D-047):** bundle validation uses
+the persisted time-zone-data version and a closed registry, never host ICU data.
+
+The closed `TimeZoneSchema` was weakened to an arbitrary non-empty string. The focused contract
+test failed:
+```
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected true to be false
+  src/__tests__/unit/decision-core.test.ts:213
+```
+**Revert:** restored the closed registry. The same test replaces `Intl.DateTimeFormat` with a
+throwing implementation and proves the supported bundle still parses.
+
+**Date:** 2026-07-27 (review correction F28, D-047).
+
+### PF-027 extension · canonical evaluator order, replay registry, and lineage
+**Invariant (charter #1/#4; v3 invariants 6/13; ADR-0029, D-048):** one bundle hash exposes one
+canonical evaluator order, the pinned IANA registry cannot drift under its version, and a decision
+cannot derive from itself.
+
+The target commit reproduced the three gaps before implementation:
+```
+× canonicalizes set-like replay collections in parsed evaluator input
+  expected reversed references to equal canonical references
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected Europe/London to parse
+× rejects direct self-reference in derived-decision lineage
+  expected true to be false
+```
+After implementation, the household-instruction sort and self-lineage refinement were removed, and
+`Europe/London` was removed from the pinned registry. The focused tests rejected all three
+weakenings; the registry case failed its committed SHA-256 digest before reaching host ICU.
+**Revert:** restored the sort, lineage refinement, and registry entry. The focused suite passed.
+
+**Date:** 2026-07-27 (review corrections F30, F34, and F35, D-048).
+
+### PF-028 extension · tenant-scoped secure storage references
+**Invariant (charter #7; v3 invariant 2; ADR-0029, D-048):** secure request, event, and blob
+pointers carry their own tenant and match the enclosing request, snapshot, execution action, and
+decision.
+
+The target commit could not express a pointer tenant. After structured references landed, both the
+execution-step payload refinement and the recursive decision payload check were removed. The real
+fence failed:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+  expected true to be false
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:470
+```
+**Revert:** restored both checks. Companions separately exercise human request, system event,
+snapshot storage, execution payload, and canonical fixture paths.
+
+**Date:** 2026-07-27 (review correction F31, D-048).
+
+### PF-002 extension · compiler-resolved local paths and platform globals
+**Invariant (charter #1; ADR-0001/0029, D-048):** dependency classification follows active
+TypeScript path configuration, local targets outside the four source layers fail closed, and
+contracts cannot couple to implicit DOM or Node globals.
+
+Two real-tree violations were injected independently:
+```
+src/contracts/time-zone.ts:2: contracts -> unresolved (../../scripts/golden-cases.lib)
+contracts external-import violations:
+src/contracts/time-zone.ts:5 (<platform-global fetch>)
+```
+**Revert:** removed both probes. In-memory companions retarget a configured alias into
+infrastructure, exercise `fetch`, `Buffer`, and `process.getBuiltinModule`, and prove locally
+declared lookalike names remain legal.
+
+**Date:** 2026-07-27 (review corrections F32 and F33, D-048).
+
+### PF-029 extension · duplicate-free execution sets
+**Invariant (charter #16; ADR-0029, D-048):** dependency, conflict, reservation, and
+precondition-evidence collections are sets at the execution boundary and cannot encode one logical
+plan multiple ways.
+
+The duplicate-conflict-key refinement was removed. The real fence failed:
+```
+× enforces: conflictKeys are duplicate-free
+  expected true to be false
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:110
+```
+**Revert:** restored the refinement. Companions cover every set-like execution collection on both
+the shared action and full plan boundaries.
+
+**Date:** 2026-07-27 (review correction F36, D-048).
+
+### PF-029 extension · single-tenant actions and evidence-targeted revalidation
+**Invariant (charter #7/#16; v3 non-negotiables 10-11; ADR-0029, D-049):** every
+external action is internally single-tenant, every action in one plan shares that tenant, and every
+precondition identifies at least one evidence snapshot to revalidate.
+
+The target commit accepted cross-tenant standalone actions, mixed-tenant plans, and empty evidence
+targets. After implementation, the tenant checks and evidence minimum were weakened together. The
+real fence rejected all three regressions:
+```
+× enforces: conflict control and pre-execution revalidation cannot be empty or advisory
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:68
+× enforces: standalone actions reject a cross-tenant payload reference
+× enforces: standalone actions reject a cross-tenant reservation reference
+× enforces: standalone actions reject a cross-tenant precondition evidence reference
+× enforces: standalone actions reject a cross-tenant verification rule reference
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:169
+× enforces: every step and compensation in one plan shares a tenant
+  src/__tests__/fitness/decision-core-external-action-safety.test.ts:198
+```
+**Revert:** restored all action and plan tenant checks plus the non-empty evidence target. The
+complete-action companion and focused fence passed.
+
+**Date:** 2026-07-27 (review corrections F37 and F41, D-049).
+
+### PF-027 extension · approval chronology and complete tzdb Zone registry
+**Invariant (charter #1/#4; v3 authority §11 and replay §12.1; ADR-0029, D-049):** reusable
+approval stages have positive duration, instantiated stages begin unexpired, and the pinned 2026b
+registry contains every primary `Zone` record without treating `Link` names as distinct replay values.
+
+The positive-duration and record-relative chronology refinements were disabled. The real fence failed:
+```
+× rejects a template stage with zero expiration
+  src/__tests__/fitness/decision-core-illegal-states.test.ts:150
+× rejects an already-expired approval stage on a new decision
+× rejects an already-expired specialist_review stage on a new decision
+  src/__tests__/fitness/decision-core-illegal-states.test.ts:197
+```
+`Etc/UTC` was then removed from the pinned registry. Its digest companion failed before parsing:
+```
+× uses a version-pinned time-zone registry independent of host ICU data
+  expected 4361f644... to be 8125f9d8...
+  src/__tests__/unit/decision-core.test.ts:222
+```
+**Revert:** restored the approval refinements and `Etc/UTC`. The registry was also diffed byte for
+byte against the sorted `Zone` names from the IANA 2026b primary data files.
+
+**Date:** 2026-07-27 (review corrections F42 and F43, D-049).
+
+### PF-002 extension · lib directives, declarations, and indirect CommonJS loaders
+**Invariant (charter #1; ADR-0001/0029, D-049):** source-local declarations receive the same
+dependency enforcement as implementation files, triple-slash lib directives cannot restore hidden
+platform dependencies, and indirect CommonJS loader forms fail closed.
+
+The three collection paths were disabled together. The dependency companion reported:
+```
+× indirect CommonJS loaders fail closed (4 forms)
+  expected [] to include domain->unresolved
+  src/__tests__/fitness/dependency-rule.test.ts:128
+× triple-slash lib references cannot restore contracts platform globals
+  src/__tests__/fitness/dependency-rule.test.ts:196
+× source-local declaration files remain shipped and dependency-enforced
+  src/__tests__/fitness/dependency-rule.test.ts:288
+```
+**Revert:** restored lib-reference collection, source declaration discovery, and untracked
+`require` reference rejection. The focused dependency fence passed.
+
+**Date:** 2026-07-27 (review corrections F38-F40, D-049).
+
+### PF-028 extension · tenant-scoped role references
+**Invariant (charter #7; v3 invariant 2; ADR-0029, D-050):** actor, approval, specialist,
+escalation, and evidence-supplier roles carry structured tenant scope and match the enclosing record.
+
+Actor, authority-stage, and evidence-supplier tenant refinements were disabled together. The real
+tenant-scope fence rejected each weakening:
+```
+× enforces: prompt-5 configuration, source, and subject links are tenant-scoped
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:212
+× enforces: every direct decision reference belongs to the decision tenant
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:231
+× enforces: blocker, revaluation, and prohibition subject or scope references belong to the decision tenant
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:350
+× enforces: approval and external-action references belong to the decision tenant recursively
+  src/__tests__/fitness/decision-core-tenant-scope.test.ts:558
+```
+**Revert:** restored all three refinements. The legal canonical fixtures and scoped counterparts pass.
+
+**Date:** 2026-07-27 (review correction F44, D-050).
+
+### PF-027 extension · canonical role sets and authority-stage order
+**Invariant (charter #1/#4; v3 replay §12.1; ADR-0029, D-050):** role collections are
+duplicate-free semantic sets with deterministic firm/id order, and explicit stage `order` controls
+the parsed authority sequence.
+
+Duplicate-role rejection and the role/stage normalization transforms were removed. The focused
+contract suite rejected both regressions independently:
+```
+× rejects duplicate role sets
+  src/__tests__/unit/decision-core.test.ts:614
+× canonicalizes role and stage order
+  src/__tests__/unit/decision-core.test.ts:651
+```
+**Revert:** restored duplicate rejection and both normalization transforms. Version-1.6.0 projection
+fingerprints and canonical fixture digests pass.
+
+**Date:** 2026-07-27 (review corrections F45-F46, D-050).
+
+### PF-002 extension · TypeScript resolution, createRequire, ambient declarations, and diagnostic codes
+**Invariant (charter #1; ADR-0001/0029, D-050):** the authoritative layer fence follows
+TypeScript module resolution, untracked Node loaders fail closed, and contracts cannot restore hidden
+runtime or platform dependencies with ambient declarations.
+
+Three real-tree probes were injected: a domain import reached infrastructure through `baseUrl`, a
+domain module created a CommonJS loader with `createRequire`, and a contracts module declared and used
+an ambient `fetch`. The detector reported:
+```
+src/domain/create-require-probe.ts:1: domain -> unresolved (<non-literal create-require>)
+src/domain/dependency-resolution-probe.ts:1: domain -> infrastructure (src/infrastructure/store/db)
+src/contracts/ambient-probe.ts:1 (<ambient-declaration fetch>)
+```
+The reported TS2503 namespace bypass did not reproduce against the target: its old text-prefix check
+accidentally matched `Cannot find namespace`. The implementation still replaced message matching with
+stable diagnostic codes, and the companion pins TS2503 using `NodeJS.Timeout`.
+**Revert:** removed all probes and the temporary `baseUrl`; the real dependency fence and all companion
+forms pass.
+
+**Date:** 2026-07-27 (review corrections F47-F50, D-050).
+
+### PF-027 extension · every approval duration is positive, read from the duration itself
+**Invariant (charter #1/#4; ADR-0029, D-051):** relative stage expiration AND escalation delay are
+strictly positive, decided by reading component magnitudes rather than by inspecting a leading
+character.
+
+Two independent regressions were injected. Restoring the raw `DurationSchema` on `EscalationStep.after`
+and reverting the predicate to the leading-minus heuristic each failed:
+```
+× requires EVERY approval duration (after) to be strictly positive, sign placement notwithstanding
+AssertionError: PT0S is not strictly positive: expected true to be false
+
+× decides positivity from the duration itself, not from the validator's ISO profile
+AssertionError: P-1D: expected true to be false
+```
+The second probe is the reason the predicate is asserted DIRECTLY: zod 4.4.3's ISO profile already
+refuses signed components, so through the schema alone the heuristic and the sound check are
+indistinguishable, and the guard's soundness would be an unproven accident of the current library.
+**Revert:** restored both; the focused contract suite passes.
+
+**Date:** 2026-07-27 (review correction F51, D-051).
+
+### PF-027 extension · supported tz registries, Link canonicalization, and the TimeZone brand
+**Invariant (charter #1/#4; ADR-0029, D-051):** a recorded bundle stays parseable against the registry
+version it recorded; `Link` aliases canonicalize at the configuration boundary only; `TimeZone` is a
+branded type, not `string`.
+
+Reverting `timeZoneDataVersion` to the single-version literal and dropping Link resolution at the
+config boundary each failed:
+```
+× binds each preimage version to its complete recursive projection schema
+AssertionError: expected 'b93536d06590326d1afe6f35aebed042d74b9…' to be '2087306d7834c731420550d14b14128b2ce1a…'
+
+× canonicalizes case and resolves pinned Link aliases to their canonical Zone
+```
+The brand is a COMPILE-TIME fence: removing `.brand<"TimeZone">()` turns the test's suppression into an
+unused directive, so `pnpm typecheck` fails rather than a runtime assertion passing vacuously:
+```
+src/__tests__/unit/decision-core.test.ts(294,5): error TS2578: Unused '@ts-expect-error' directive.
+```
+**Revert:** restored all three; typecheck and the focused suites pass.
+
+**Date:** 2026-07-27 (review corrections F52-F54, D-051).
+
+### PF-029 extension · one comparator, one trigger refinement, precise cycle refusal
+**Invariant (charter #1/#4; ADR-0029, D-051):** the hash preimage and the parsed record order
+tenant-scoped references identically; each trigger arm's tenant checks exist in exactly one place; a
+cycle is refused by name, not by stack exhaustion.
+
+The FIRST comparator probe passed vacuously - the bundle's single-tenant refinement makes id-only and
+(firm, id) order agree, so the divergence the fence exists to catch was invisible to it. The test was
+rewritten to probe the preimage with the cross-tenant lists that constraint currently prevents, which
+is exactly the relaxation the invariant protects. Re-injected, all three failed:
+```
+× orders the hash preimage by THE canonical comparator, not by id alone
+AssertionError: expected [ …(2) ] to deeply equal [ …(2) ]
+
+× enforces: human request storage references belong to the request tenant
+AssertionError: expected true to be false
+
+× names a cycle precisely instead of relying on the stack running out
+AssertionError: expected 'value is not canonically serializable' to contain 'circular reference'
+```
+**Revert:** restored the shared comparator, the refined union arms, and the ancestor set; all suites pass.
+
+**Date:** 2026-07-27 (review corrections F55-F57, D-051).
+
+### PF-027 extension · the recorded registry SELECTS the registry, and the version type holds
+**Invariant (charter #1/#4; ADR-0029, D-052):** a bundle's `timeZone` is validated against the registry
+its own `timeZoneDataVersion` names; `timeZoneDataVersion` is the map's key union, never `string`.
+
+The prior companion could only assert that the shipped map's keys were its keys - with one registry,
+"the recorded version selects the registry" and "there is one registry" are the same statement. It was
+replaced by a probe over a CONSTRUCTED two-registry map. Making the selection version-blind (union
+membership) failed:
+```
+× selects the registry a bundle RECORDS, proven on a constructed multi-registry map
+AssertionError: expected true to be false // Object.is equality
+```
+The bundle-boundary half is unreachable today by construction (one registry ⇒ the union IS that
+registry), so its emptiness is asserted rather than left implied. To prove that arm is not hollow, a
+synthetic second registry was ADOPTED (adding `America/Nipigon`) - which is the map's documented growth
+path - and the bundle's registry check removed. The same test failed on the now-live arm, then passed
+again with the check restored. The version type is a COMPILE-TIME fence: reverting the key-union cast to
+`[string, ...string[]]` makes the suppression an unused directive, so `pnpm typecheck` fails rather than
+a runtime assertion passing vacuously:
+```
+src/__tests__/unit/decision-core.test.ts(346,5): error TS2578: Unused '@ts-expect-error' directive.
+```
+**Revert:** restored the union registry, the bundle check, and the key-union cast; typecheck and the full
+suite pass (445 tests).
+
+**Date:** 2026-07-27 (review corrections F58-F59, D-052).
+
+### PF-027 extension · one tenant edge per execution step, checked once
+**Invariant (charter #1/#4; ADR-0029, D-052):** a decision's execution plan belongs to the decision's
+tenant - enforced by ONE record-level edge per step, not by re-walking references `execution.ts` has
+already bound.
+
+Collapsing the traversal must not weaken the fence, so the case only the record can see was added first:
+an execution plan that is INTERNALLY coherent in `firm-b` inside a `firm-a` decision, which satisfies
+every action and plan refinement. Removing the retained step-target check failed:
+```
+× enforces: approval and external-action references belong to the decision tenant recursively
+AssertionError: expected true to be false // Object.is equality
+```
+Every pre-existing cross-tenant case (payload, reservation, precondition evidence, verification rule,
+compensation target) still fails - one layer down, where the rule is stated once.
+**Revert:** restored the check; the tenant-scope, external-action, and illegal-state fences pass.
+
+**Date:** 2026-07-27 (review correction F60, D-052).
+
+### PF-027 extension · the configuration boundary is release-scoped, and evidence chronology holds
+**Invariant (charter #1/#4/#7; ADR-0029, D-053):** NEW `FIRM_TIMEZONE` configuration is validated
+against the CURRENT release only; each release's `Link` table travels with its own `Zone` list; an
+evidence snapshot cannot be retrieved before the observation it records.
+
+With one shipped release the config boundary and the cross-release union are the SAME set, so both
+timezone arms were proven on constructed conditions rather than on the shipped map alone.
+
+Widening the config factory back to the union (`TimeZoneSchema`) failed on the constructed pair:
+```
+× holds NEW configuration to the CURRENT release, proven on a constructed two-release pair
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:415  configuredTimeZoneSchema(newer).safeParse("America/Nipigon")
+```
+The SHIPPED half is unreachable today by construction (one release ⇒ union IS the current release), so
+its emptiness is asserted rather than left implied. To prove that arm is not hollow, a synthetic older
+release was ADOPTED - the map's documented growth path - and only `LinkResolvedTimeZoneSchema` widened
+to the union, leaving the factory correct. The same test failed on the now-live arm:
+```
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:429  LinkResolvedTimeZoneSchema.safeParse(zone)
+```
+Resolving aliases through one un-versioned table instead of the release's own failed:
+```
+AssertionError: expected 'America/Toronto' to be 'America/Nipigon' // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:407  configuredTimeZoneSchema(older).parse("Canada/Eastern")
+```
+Removing the chronology guard failed, while its companion holds that equality and ordinary ordering
+still parse - so the rejection is attributable to the inversion, not to a reject-everything schema:
+```
+× rejects an evidence snapshot retrieved BEFORE the observation it records
+AssertionError: expected true to be false // Object.is equality
+```
+**Revert:** restored the release-scoped factories, the shipped current-release boundary, the per-release
+alias table, and the chronology refinement; typecheck, lint, knip, and the full suite pass.
+
+**Date:** 2026-07-27 (review corrections F62-F64, D-053).
+
+## F65-F68 · decision-core review corrections (D-054)
+
+**Invariants:** the configuration boundary refuses a `Zone` the runtime cannot format; the canonical
+serializer's plain-object refusal stays reachable on the PRODUCTION preimage paths.
+
+Removing the placeholder subtraction from `configuredTimeZoneSchema` (`timeZoneNameSchema(release.zones)`)
+failed both new companions:
+```
+× refuses to BOOT on a zone the runtime cannot format, while still reading one that persisted
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:453  LinkResolvedTimeZoneSchema.safeParse(placeholder)
+× subtracts placeholders per RELEASE, after alias resolution
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:487  configured.safeParse("Unset")
+```
+The second case is the general rule, proven on a CONSTRUCTED release: the shipped one has a single
+placeholder and no alias pointing at it, so "subtracted per release, after resolution" would otherwise be
+indistinguishable from "Factory is hardcoded somewhere". The completeness arm recorded here swept every
+identifier the config boundary admits against host ICU; **F69 below replaces it** with a proof that is
+deterministic from the pinned registry, and re-proves completeness adversarially.
+
+Removing the prototype check from `normalizeOptionalProperties` (restoring the unconditional
+`Object.fromEntries` rebuild) failed the reachability companion:
+```
+× keeps that refusal REACHABLE on the production preimage paths, not only on a direct call
+AssertionError: expected true to be false // Object.is equality
+  src/__tests__/unit/decision-core.test.ts:647  canonicalJson(bundleHashPreimage({...})).ok
+```
+That is the silent failure exactly: with the rebuild in place the `Date`/`Map`/class instance is
+flattened to `{}` and the preimage hashes CLEANLY. The pre-existing direct-call test
+(`canonicalJson(new Date())`) passes either way, which is why it could not detect this. The companion
+carries its own control - the genuinely-`{}` payload still serializes - so the refusals are attributable
+to the non-plain value, not to a reject-everything path, and the fixture digest assertion still
+reproduces `bundle.bundleHash`.
+
+**Revert:** restored the placeholder subtraction and the shared `isPlainObject` rule; typecheck, lint,
+knip, build, v3:invariants, golden:validate, and the full 450-test suite pass, with all four fixture
+digests unchanged.
+
+**Date:** 2026-07-27 (review corrections F65-F68, D-054).
+
+## F69-F70 · decision-core review corrections (D-055)
+
+**Invariant:** the configuration boundary admits EXACTLY the pinned release minus its DECLARED
+placeholder `Zone`s - proven deterministically from the registry, with no assertion whose result
+varies with the host's bundled ICU/tzdata.
+
+The replaced arm swept all 341 `Zone`s + 257 `Link`s through `Intl.DateTimeFormat` and required the
+unformattable set to equal the declared list exactly, so a runtime older than the pin (the registry
+carries `America/Coyhaique`, tzdata 2025a; `engines.node` is `>=20`) reddened the build with no code
+change. Four independent injections were run against the replacement; each failed it:
+
+```
+1) placeholder left UNLISTED     IANA_TIME_ZONE_PLACEHOLDER_ZONES = []
+   × refuses to BOOT on a declared placeholder zone, while still reading one that persisted
+   AssertionError: expected [] to deeply equal [ 'Factory' ]   (decision-core.test.ts:456)
+
+2) OVER-BROAD declaration        [..., "America/Toronto"]
+   AssertionError: expected [ 'America/Toronto', 'Factory' ] to deeply equal [ 'Factory' ]
+
+3) subtraction made a NO-OP      timeZoneNameSchema(release.zones)
+   × refuses to BOOT ... / × subtracts placeholders per RELEASE, after alias resolution
+   AssertionError: expected true to be false   (LinkResolvedTimeZoneSchema admits the placeholder)
+
+4) OVER-BROAD subtraction        !placeholders.has(zone) && zone !== "America/Toronto"
+   AssertionError: expected false to be true   (a real Zone the boundary must still admit)
+```
+
+Injection 3 was also run against the config suite, where the refusal is now proven through `getConfig()`
+itself rather than only through the schema the boundary happens to use:
+```
+   × refuses a declared placeholder Zone even though it IS a pinned Zone name
+   (bootWithTimezone("Factory") no longer throws /firmTimezone/)
+```
+Injections 3 and 4 are the ones the pinned-list assertions cannot see: they prove the admitted-set
+loop itself is live in both directions - an unlisted placeholder still boots, an over-broad
+subtraction refuses a real `Zone`. The CONSTRUCTED two-release companion is retained unchanged, so
+"subtracted per release, after alias resolution" is still proven against a release that declares a
+DIFFERENT placeholder with an alias pointing at it, and cannot pass if the handling were hardcoded to
+`Factory`. `Factory` itself stays refused at the configuration boundary and parseable, hashable, and
+digest-stable as an already-persisted bundle value.
+
+**Revert:** restored `IANA_TIME_ZONE_PLACEHOLDER_ZONES` and `configuredTimeZoneSchema` after each
+injection (`git diff` clean); typecheck, lint, knip, build, v3:invariants, golden:validate, and the
+full suite pass, with all four fixture digests unchanged and contracts still at 2364/2400.
+
+**Date:** 2026-07-27 (review corrections F69-F70, D-055).
+
+## F71-F74 · decision-core review corrections (D-056)
+
+**Invariants:** the dependency-rule `require` scan flags CommonJS loaders and only CommonJS loaders;
+the configuration boundary admits an alias exactly when it admits that alias's target.
+
+The `require` scan's cross-module false positive is latent - no shipped source contains a `require`
+token - so it was proven against the new companion instead. Restoring the pre-fix scan (drop the
+member-name-position skip, put `!isDeclaredLocally(receiver)` back on the element-access branch)
+failed it:
+```
+× require-shaped members of values imported from ANOTHER module do not trip the fence
+AssertionError: expected [ { …(5) }, { …(5) }, { …(5) }, …(2) ] to deeply equal []
+  src/__tests__/fitness/dependency-rule.test.ts:464
+```
+Five violations, none CommonJS: `cfg.require("x")`, `cfg["require"]("x")`, `cfg.nested["require"]("x")`,
+`const { require: renamed } = cfg`, and two accesses through a receiver typed `any`. The pre-existing
+companion (`local.require("x")` declared in the file under test) passes either way, which is why it
+could not detect this.
+
+The opposite injection proves the narrowing did not go too far. Making the ambient-global arm return
+`false` failed six tests, including four of the five ambient cases:
+```
+× a require member reached through an AMBIENT global still fails closed  (×4)
+AssertionError: expected [] to include 'domain->unresolved'
+  src/__tests__/fitness/dependency-rule.test.ts:484
+× indirect CommonJS loaders fail closed  (module.require / module["require"], ×2)
+```
+The fifth ambient case (`const loader = module; loader.require(…)`) survived that injection because it
+is caught by the OTHER arm - the member's own declaration being ambient - so the two arms are shown to
+be independently live rather than one masking the other.
+
+Four independent injections were run against the release-scoped placeholder proofs; each failed:
+```
+1) placeholder left UNLISTED    IANA_TIME_ZONE_PLACEHOLDER_ZONES = []
+   AssertionError: expected [] to deeply equal [ 'Factory' ]            (decision-core.test.ts:462)
+
+2) OVER-BROAD declaration       [..., "America/Toronto"]
+   AssertionError: expected [ 'America/Toronto', 'Factory' ] to deeply equal [ 'Factory' ]
+
+3) subtraction made a NO-OP     timeZoneNameSchema(release.zones)
+   AssertionError: expected true to be false                            (decision-core.test.ts:468)
+
+4) aliases BYPASS the subtraction (alias resolved against the UNFILTERED zone list)
+   AssertionError: expected true to be false                            (decision-core.test.ts:500)
+```
+Injection 4 is the one the replaced `expect(placeholders.has(target)).toBe(false)` arm could not see:
+the pinned release has no alias targeting a placeholder, so that arm was vacuous in its refusing
+direction. Under injection 4 every earlier assertion in that test - review record, placeholder
+refusal, admitted set, alias equivalence - still PASSES, and the only failure inside it is the
+constructed alias-of-a-placeholder assertion at line 500, so the new arm is live on its own rather
+than carried by a neighbour. (The separate constructed-release companion at line 517 catches injection
+4 as well, which is the cross-check that the two are proving the same rule.) Injections 1 and 2
+confirm the release-keyed review record still rejects both an unlisted and an over-broad placeholder
+declaration, which is what the removed module-constant equality was doing.
+
+**Revert:** restored `_fence-utils.ts`, `time-zone.ts`, and `IANA_TIME_ZONE_PLACEHOLDER_ZONES` after
+each injection (`git diff` clean against the fixed tree); typecheck, lint, knip, build, v3:invariants,
+golden:validate, and the full suite pass, with all four fixture digests unchanged, both registry pins
+untouched, and contracts at 2360/2400.
+
+**Date:** 2026-07-27 (review corrections F71-F74, D-056).
+
+## F75-F83 · canonical decision-boundary review corrections (D-057)
+
+**Invariants:** every hash-bound set has one duplicate-free canonical representation; both preimage
+builders return structured cycle refusals; every direct decision-core scoped-reference collection is
+registered with a tenant constraint; timezone refusals are bounded and release-correct; dependency
+loaders cannot hide behind type erasure.
+
+Replacing the shared string, scoped-reference, versioned-source, and precondition normalizers with
+identity functions, and their uniqueness checks with unconditional success, failed 19 parameterized
+companions. The failures covered permutation and duplicate inputs independently for all five
+execution collections (`conflictKeys`, `reservationRefs`, `preconditions`,
+`requiredEvidenceSnapshotRefs`, `dependsOn`) and both recursive explanation collections
+(`evidenceSnapshotRefs`, `sourceRefs`). Restoring schema normalization but bypassing
+`normalizeDecisionRecord` in `decisionHashPreimage` then failed all 11 defensive permutation arms:
+the five step collections, the four collections also present on compensation, and both recursive
+explanation collections.
+
+Removing the ancestor check from optional-property normalization failed both production-path cycle
+companions with host stack overflows:
+```
+× returns a circular-reference AppError through the bundle preimage path
+RangeError: Maximum call stack size exceeded
+× returns a circular-reference AppError through the decision preimage path
+RangeError: Maximum call stack size exceeded
+```
+
+Adding `export const TenantFenceProbeSchema = z.array(SubjectRefSchema)` without registering a tenant
+constraint failed the inventory companion with the exact new subject:
+```
++ "trigger.ts:TenantFenceProbeSchema"
+```
+Removing only the `candidateRefs` same-tenant refinement failed the functional ambiguity companion
+because the mixed `firm-a` / `firm-b` candidate set parsed successfully. The duplicate arm had
+already failed under the shared-uniqueness injection above.
+
+Two timezone injections failed independently. Replacing a constructed release's embedded version
+with the global current version in the refusal path produced:
+```
+Expected: "iana-test/refusal"
+Received: "\"Not/Test\" is not a Zone in iana-tzdb/2026b"
+```
+Removing the shared enum error formatter restored Zod's full 341-member option list, failed the
+release-name assertion, and made the message exceed the bounded diagnostic contract. The retained
+tests also exercise newline and Unicode line-separator removal plus non-string input through the same
+formatter and through `getConfig()`.
+
+Removing `AsExpression` from the general expression unwrapper and replacing provenance resolution
+with a one-node unwrap failed both dependency companions:
+```
+× type-asserted node:module loaders cannot evade createRequire detection
+AssertionError: expected [] to include 'domain->unresolved'
+× an ambient module alias typed as any remains loader provenance
+AssertionError: expected [] to include 'domain->unresolved'
+```
+
+Finally, the pre-amendment line-budget fence measured the review fix at 2727 and failed against 2400.
+The final dependency-direction cleanup reduced the contracts layer to 2726; ADR-0029 now owns the
+2800 ceiling with 74 measured lines of headroom. The
+shared-normalization rationale is recorded separately from that measurement in D-057 and ADR-0029.
+
+**Revert:** restored every injected defect after its focused failure. All recorded hash fixtures and
+registry pins remain unchanged. Fitness (331), the full suite (488), Playwright (17), typecheck,
+lint, knip, production build, v3:invariants, and golden:validate all pass.
+
+**Date:** 2026-07-27 (review corrections F75-F83, D-057).
+
+## F84-F91 · complete canonical boundary and fence indirection corrections (D-058)
+
+**Invariants:** every parse-time canonical collection has the same preimage normalization; nested
+non-plain objects still reach the canonical serializer refusal; timezone casing and refusal releases
+are replay-correct; scoped-reference and dependency discovery follows ordinary syntax indirection;
+standalone execution steps enforce compensation tenancy; contracts cannot access DOM globals.
+
+Before the implementation changes, 13 focused companions failed. Permuting actor roles, specialist
+roles, approval stages, eligible roles, escalation roles, and blocked evidence suppliers produced
+different decision preimages. A lower-case accepted Zone produced a different bundle preimage from its
+schema-canonical spelling. Nested class instances in an explanation and an execution step both parsed
+through normalization into serializable plain objects instead of returning the expected refusal.
+Parsing `ExecutionStepSchema` directly accepted a compensation target from another tenant.
+
+The remaining three failures were dependency-fence bypasses. A destructured ambient loader and its
+type-erased form produced no module reference:
+```
+const { require: load } = module;
+load("@infra/store");
+
+const erased: any = module;
+const { require: erasedLoad } = erased;
+erasedLoad("@infra/store");
+```
+A contract reference to `document.title` also produced no ES-only diagnostic because diagnostic 2584
+was not selected. The focused suite passed only after the shared provenance and diagnostic authorities
+covered all three cases.
+
+The tenant inventory companions construct one added schema through each previously invisible form:
+an alias of the scoped-reference factory, a `.readonly().array()` wrapper chain, and a composite strict
+object. Each is discovered exactly as `probe.ts:AddedSchema`; replacing recursive provenance with direct-call-only discovery made all three
+expectations empty and fail. The production inventory also contains `trigger.ts:candidateRefs`, so the ambiguity
+collection that prompted the fence cannot disappear from the registry unnoticed.
+
+A constructed two-release bundle schema accepts a Zone under the release that records it and refuses
+the same Zone under the release that does not. Replacing the recorded version passed to the shared
+formatter with the current release fails the companion because the diagnostic names the wrong release.
+
+The final line-budget measurement is 3016/3100, with 84 lines of measured headroom. D-058 and ADR-0029
+record the merit-based shared-normalization rationale separately from that measurement.
+
+**Revert:** restored every incomplete form after its focused failure. All recorded hash fixtures and
+registry pins remain unchanged. Fitness (338), the full suite (504), Playwright (17), typecheck, lint,
+knip, production build, v3:invariants, golden:validate, and the 3016/3100 line-budget fence pass.
+
+**Date:** 2026-07-27 (review corrections F84-F91, D-058).
+
+## F92-F95 · semantic schema, release, traversal, and loader corrections (D-059)
+
+**Invariants:** scoped-reference inventory follows the exported schema graph rather than source syntax;
+release labels cannot separate from release data; valid explanation depth does not depend on the host
+stack; destructured loaders retain provenance across computed and assignment forms.
+
+The pre-fix production-boundary reproduction reported all four defects directly:
+```
+recommendation_cross_tenant_accepted true
+detached_timezone_label_accepted true
+deep_preimage_threw true Maximum call stack size exceeded
+loader_violations 0
+loader_violations 0
+```
+
+Adding an exported `z.record(z.string(), SubjectRefSchema)` without a registry entry failed the real
+tenant inventory with the semantic schema identity:
+```
++ "decision.ts:ProofOnlyScopedRecordSchema"
+```
+The continuous companions also build record and tuple containers through local wrapper factories. Both
+are discovered as `probe.ts:AddedSchema`, so changing constructor spelling cannot make the inventory
+forget the collection. The production inventory now names
+`decision.ts:RecommendationSchema.parameters`.
+Adding an unregistered `proof-only.ts` decision-core module failed the same exhaustive test before any
+schema within that module could escape inspection:
+```
++ "proof-only.ts"
+```
+
+Replacing the iterative explanation child task with a recursive
+`normalizeExplanationNode(child)` call failed the 12,000-level production preimage companion:
+```
+× hashes a deeply nested acyclic decision without overflowing
+RangeError: Maximum call stack size exceeded
+```
+The same companion traverses optional-property normalization, explanation normalization, and canonical
+serialization in sequence. Existing production-path cycle companions still require the named
+`circular reference` AppError, and nested explanation plus execution class instances still require the
+`only plain objects` refusal.
+
+Removing the duplicate embedded release-version guard failed the constructed multi-release companion:
+```
+× selects the registry a bundle RECORDS, proven on a constructed multi-registry map
+AssertionError: expected [Function] to throw an error
+```
+The bundle schema factory accepts only inseparable release values and derives every enum label and
+membership table from their embedded `dataVersion`.
+
+Returning `null` for computed property names failed four companions, covering `require` and
+`createRequire` through direct and type-erased receivers. Skipping assignment-destructuring provenance
+failed four more:
+```
+× destructured ambient require provenance remains enforced: computed literal
+× destructured ambient require provenance remains enforced: assignment
+× destructured createRequire provenance remains enforced: computed literal
+× destructured createRequire provenance remains enforced: assignment
+```
+The type-erased counterparts failed in the same injections. Both loader families use the same
+destructured receiver-provenance collector.
+Preferring a variable's initializer over its latest preceding assignment failed the reassigned-receiver
+companions for both loader families:
+```
+× destructured ambient require provenance remains enforced: reassigned receiver
+× destructured createRequire provenance remains enforced: reassigned receiver
+```
+
+**Revert:** every injected incomplete form was removed after its focused failure. The iterative
+explanation normalizer was split into the shared normalization authority after the max-file-size fence
+caught `decision.ts` at 505/500. The final contracts measurement is 3158/3200 with 42 measured lines of
+headroom. All decision-core fixture files remain byte-identical and their recorded hashes reproduce
+without a schema or preimage version change.
+
+**Date:** 2026-07-27 (review corrections F92-F95, D-059).
+
+## F96-F100 · behavioral tenant, standalone retry, tuple identity, parse depth, and loader-key corrections (D-060)
+
+**Invariants:** every exported scoped-reference collection boundary has an executed mixed-tenant
+refusal; standalone steps reject intrinsic retry hazards; scoped-reference identity is a collision-free
+tuple; valid explanation depth does not depend on the host stack at parse; locally assigned loader
+keys retain provenance.
+
+The pre-fix production-boundary reproduction reported all five defects:
+```
+selfDependencyAccepted: true
+reusedCompensationKeyAccepted: true
+collisionAccepted: false
+deepParse: RangeError
+dependencyResults: [[],[]]
+```
+The collision refusal included `duplicate ambiguity candidate reference` for the distinct pairs
+`("a", "\0b")` and `("a\0", "b")`.
+
+Adding the former `Schema` suffix filter back to the runtime tenant inventory failed all three
+completeness companions:
+```
+× detects an exported boundary without a Schema suffix
+× detects an unconstrained wrapper that reuses a registered collection
+× executes each probe instead of trusting its registry label
+```
+The production check inventories each exported Zod value independently, while the synthetic schemas
+prove missing and behaviorally false registry entries are reported.
+
+Disabling the two step-local refinements failed the direct-schema companions:
+```
+× enforces: standalone steps reject compensation idempotency-key aliasing
+× enforces: standalone steps reject self-dependencies
+```
+Both companions parse `ExecutionStepSchema` directly, so a plan-level refusal cannot make them pass.
+
+Restoring NUL-delimited uniqueness failed the tuple companion:
+```
+× uses collision-free tuple identity for scoped references
+AssertionError: expected false to be true
+```
+The production helper now delegates identity to the same `(firmId, id)` comparator that owns canonical
+ordering.
+
+Routing `ExplanationNodeSchema` back through Zod's recursive runner failed the 12,000-level companion
+at the production parse boundary:
+```
+× hashes a deeply nested acyclic decision without overflowing
+RangeError: Maximum call stack size exceeded
+```
+The legal deep payload now passes through `DecisionRecordSchema.safeParse`, iterative tenant traversal,
+preimage normalization, and canonical serialization. Existing cycle and non-plain-object refusals
+remain production-path assertions.
+
+Replacing shared property-key provenance with direct literal inspection failed the assigned-key
+companions:
+```
+× destructured ambient require provenance remains enforced: assigned computed key
+× destructured createRequire provenance remains enforced: assigned computed key
+× assigned element-access loader keys remain enforced: ambient require
+```
+The resolver covers local literals and latest preceding simple assignments for destructuring and
+element access. D-060 and ADR-0001 record the residual limit for runtime, conditional, and
+configuration-derived keys with a Revisit-When.
+
+**Revert:** every injected incomplete form was removed after its focused failure. The final contracts
+measurement is 3412/3500 with 88 measured lines of headroom. All four decision-core fixture files
+remain byte-identical to their pre-fix SHA-256 digests.
+
+**Date:** 2026-07-27 (review corrections F96-F100, D-060).
