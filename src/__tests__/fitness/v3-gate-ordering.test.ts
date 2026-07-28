@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  ciJobBlocks,
   ciJobRuns,
   gateOrderingProblems,
   gateReadiness,
@@ -16,7 +17,8 @@ import {
 
 /**
  * V3 GATE-ORDERING FENCE (ADR-0030; captain rulings `gate-a-ordering`,
- * `gatea-opus-review-1` and `gatea-fix-review-2`, 2026-07-28). A phase gate that
+ * `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3` and
+ * `gatea-fix-review-3`, 2026-07-28). A phase gate that
  * requires something which lands in a LATER wave is unreachable by construction
  * - the exact circular dependency that made Gate A (Wave A, prompts 4-7) require
  * invariant 3, whose prerequisite is prompt 10 in Wave B. Such a gate can only
@@ -29,14 +31,18 @@ import {
  * not emit a claim this fence would reject. One core, two callers, no drift.
  * This file owns the ADVERSARIAL half (charter #4: detection is not
  * verification) plus the captain's ruled requirement sets and the two ratchets
- * that keep those sets from moving by a registry edit alone.
+ * that keep those sets from moving by a registry edit alone: the 30-invariant
+ * activation-ownership map, and every gate's COMPLETE typed requirement set -
+ * ids alone left an `evidence` clause deletable into a green gate.
  *
  * The rules:
  *  (a) every gate is well-formed - an integer prompt range inside the 30-prompt
  *      sequence, and every requirement is a typed `invariant` | `artifact` |
  *      `fitness` | `ci-gate` | `evidence` entry naming its id/ref and prompt, and
- *      a `ci-gate` additionally names the command its blocking job must run (a
- *      job name matching a comment or a path is not evidence);
+ *      a `ci-gate` additionally names the command its blocking job must run - a
+ *      job name matching a comment or a path is not evidence, and neither is a
+ *      job that runs the command without blocking on it (`continue-on-error`, or
+ *      a conditional that may exclude it from a normal push/PR run);
  *  (b) EMPTY SETS NEVER PROVE READINESS: a gate declaring no machine-checkable
  *      requirement is rejected, because it would read green on registration;
  *  (c) gates are totally ordered - their prompt ranges never overlap, so "later
@@ -74,7 +80,14 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const registry = JSON.parse(readFileSync(root + "v3-invariants.json", "utf8")) as Registry;
 const ciJobs = parseCiJobs(existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "");
 
-/** The nine gates of the ratified prompt sequence (docs/v3/verin-prompt-sequence-v3.md wave map). */
+/**
+ * The TEN gates of the ratified prompt sequence, over their ratified prompt ranges
+ * (docs/v3/verin-prompt-sequence-v3.md wave map, lines 42-56). G (27-28, "the full
+ * journey uses a real Salesforce invocation and an honestly labeled returned status")
+ * and H (29, investor demo hardening) are two gates there, and are two gates here:
+ * the registry's inherited `G/H` [27, 29] label let invariants provable at prompt 28
+ * be required only by a gate closing at 29 (ruling `gatea-fix-review-3`).
+ */
 const RATIFIED_GATES: Record<string, [number, number]> = {
   "0": [1, 3],
   A: [4, 7],
@@ -83,7 +96,8 @@ const RATIFIED_GATES: Record<string, [number, number]> = {
   D: [16, 19],
   E: [20, 22],
   F: [23, 26],
-  "G/H": [27, 29],
+  G: [27, 28],
+  H: [29, 29],
   I: [30, 30],
 };
 
@@ -100,34 +114,82 @@ const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
   6: "D", 7: "D", 8: "D", 9: "D", 10: "D", 11: "D", 12: "D", 13: "D",
   14: "E", 15: "E", 16: "E", 17: "E",
   18: "F", 19: "F", 20: "F", 21: "F", 22: "F", 23: "F", 24: "F", 25: "F",
-  26: "G/H", 27: "G/H", 28: "G/H", 29: "G/H", 30: "G/H",
+  26: "G", 27: "H", 28: "G", 29: "H", 30: "G",
 };
 
 /**
- * RATCHET 2 - the invariant ids each gate REQUIRES green (a superset of what it
- * owns; the captain's ruled sets). Gate A is `{1, 2, 4, 5}` and invariant 3 is
- * required at Gate B (ruling `gate-a-ordering`). Gate C references invariant 1;
- * Gate B additionally requires invariant 16 and Gate C invariant 11, because
- * each is complete inside that gate's own prompt range (ruling
- * `gatea-fix-review-2`) - while invariant 6 stays a Gate D requirement, since it
- * needs prompt 15's bundle AND prompt 16's evaluator. Gates 0 and I are
- * artifact/evidence-based and require no invariant.
+ * RATCHET 2 - the COMPLETE typed requirement set of every gate, not merely its
+ * invariant ids. Pinning ids alone left a gate's `artifact` / `fitness` /
+ * `ci-gate` / `evidence` requirements editable by a registry change nothing
+ * ratcheted: gate 0's only non-met requirement is its `evidence` clause, so
+ * deleting that one entry made every remaining requirement met and decidable and
+ * rendered gate 0 GREEN, with both prior ratchets and every structural rule still
+ * passing (ruling `gatea-fix-review-3`). A gate cannot be talked into readiness by
+ * dropping what it cannot yet prove.
+ *
+ * The ruled sets: Gate A is `{1, 2, 4, 5}` and invariant 3 is required at Gate B
+ * (ruling `gate-a-ordering`). Gate C references invariant 1; Gate B additionally
+ * requires invariant 16, Gate C invariant 11, and Gate D invariants 18 and 19,
+ * because each is complete inside that gate's own prompt range (rulings
+ * `gatea-fix-review-2`, `gatea-fix-review-3`) - while invariant 6 stays a Gate D
+ * requirement only, since it needs prompt 15's bundle AND prompt 16's evaluator.
+ * Gates 0 and I are artifact/evidence-based and require no invariant.
  */
-const GATE_INVARIANT_REQUIREMENTS: Record<string, number[]> = {
-  "0": [],
-  A: [1, 2, 4, 5],
-  B: [3, 16],
-  C: [1, 11],
-  D: [6, 7, 8, 9, 10, 11, 12, 13],
-  E: [14, 15, 16, 17],
-  F: [18, 19, 20, 21, 22, 23, 24, 25],
-  "G/H": [26, 27, 28, 29, 30],
-  I: [],
+const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
+  "0": [
+    "artifact:docs/demo-contract.md",
+    "artifact:config/demo/scenarios.yaml",
+    "artifact:docs/golden-cases.md",
+    "ci-gate:golden-cases runs 'pnpm golden:validate'",
+    "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts",
+    "ci-gate:e2e runs 'pnpm test:e2e'",
+    "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton",
+  ],
+  A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5"],
+  B: ["invariant:3", "invariant:16", "artifact:config/domains/account-opening.yaml", "artifact:config/domains/money-movement.yaml"],
+  C: [
+    "invariant:1",
+    "invariant:11",
+    "evidence:the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)",
+  ],
+  D: [
+    "invariant:6",
+    "invariant:7",
+    "invariant:8",
+    "invariant:9",
+    "invariant:10",
+    "invariant:11",
+    "invariant:12",
+    "invariant:13",
+    "invariant:18",
+    "invariant:19",
+  ],
+  E: ["invariant:14", "invariant:15", "invariant:16", "invariant:17"],
+  F: [
+    "invariant:18",
+    "invariant:19",
+    "invariant:20",
+    "invariant:21",
+    "invariant:22",
+    "invariant:23",
+    "invariant:24",
+    "invariant:25",
+  ],
+  G: ["invariant:26", "invariant:28", "invariant:30"],
+  H: ["invariant:27", "invariant:29"],
+  I: [
+    "artifact:docs/reviews/phase-1-adversarial-audit.md",
+    "evidence:no unresolved critical finding; every accepted limitation is visible in the demo and the documentation",
+  ],
 };
 
+/** Every requirement identified by kind + id/ref, plus the command a ci-gate must prove. */
+const requirementKey = (r: GateRequirement): string =>
+  r.kind === "invariant" ? `invariant:${r.id}` : r.kind === "ci-gate" ? `ci-gate:${r.ref} runs '${r.command}'` : `${r.kind}:${r.ref}`;
+
 const ownershipOf = (reg: Registry): Record<string, string> => Object.fromEntries(reg.invariants.map((i) => [String(i.id), i.gate]));
-const requirementsOf = (reg: Registry): Record<string, number[]> =>
-  Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, requiredInvariantIds(gate)]));
+const requirementsOf = (reg: Registry): Record<string, string[]> =>
+  Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, (gate.requires ?? []).map(requirementKey)]));
 const clone = (reg: Registry): Registry => JSON.parse(JSON.stringify(reg)) as Registry;
 
 describe("v3 gate-ordering fence", () => {
@@ -158,8 +220,8 @@ describe("v3 gate-ordering fence", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
   });
 
-  it("enforces (ratchet): every gate's invariant requirement set is the ruled one", () => {
-    expect(requirementsOf(registry)).toEqual(GATE_INVARIANT_REQUIREMENTS);
+  it("enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one", () => {
+    expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
   });
 
   it("enforces: every ci-gate requirement names a blocking job that exists and runs its command", () => {
@@ -350,6 +412,7 @@ describe("v3 gate-ordering fence", () => {
     });
     it("reads gate keys case-insensitively, and only where a gate is actually named", () => {
       expect(gatesNamedInProse("gate c is green")).toEqual(["C"]);
+      expect(gatesNamedInProse("Gate H is green: the demo runs in seven minutes")).toEqual(["H"]);
       expect(gatesNamedInProse("Gate G/H is green: the full journey runs")).toEqual(["G/H"]);
       expect(gatesNamedInProse("Gate A's corrected requirements are green")).toEqual(["A"]);
       expect(gatesNamedInProse("the gate is green and the gateway is open")).toEqual([]);
@@ -400,7 +463,7 @@ describe("v3 gate-ordering fence", () => {
           "",
         ].join("\n"),
       );
-      expect(jobs.get("audit-chain-verify")).toEqual(["echo skip"]);
+      expect(jobs.get("audit-chain-verify")?.commands).toEqual(["echo skip"]);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
       // but a `#` that is not a comment - quoted, or mid-word - stays part of the command
       const quoted = parseCiJobs(
@@ -444,8 +507,45 @@ describe("v3 gate-ordering fence", () => {
           "",
         ].join("\n"),
       );
-      expect(jobs.get("audit-chain-verify")).toEqual(["echo hello", "echo goodbye"]);
+      expect(jobs.get("audit-chain-verify")?.commands).toEqual(["echo hello", "echo goodbye"]);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
+    });
+
+    it("refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)", () => {
+      const workflow = (jobLevel: string, stepLevel: string) =>
+        parseCiJobs(
+          [
+            "name: ci",
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            ...(jobLevel === "" ? [] : [`    ${jobLevel}`]),
+            "    steps:",
+            "      - name: seed + verify org audit chains",
+            ...(stepLevel === "" ? [] : [`        ${stepLevel}`]),
+            "        run: pnpm db:seed && pnpm audit:chain",
+            "",
+          ].join("\n"),
+        );
+      const proves = (jobLevel: string, stepLevel: string) => ciJobRuns(workflow(jobLevel, stepLevel), "audit-chain-verify", "pnpm audit:chain");
+
+      // the command is present and correct in every one of these - and disabled
+      expect(proves("continue-on-error: true", "")).toBe(false);
+      expect(proves("", "continue-on-error: true")).toBe(false);
+      expect(proves("if: ${{ github.event_name == 'schedule' }}", "")).toBe(false);
+      expect(proves("", "if: ${{ false }}")).toBe(false);
+      // a neutralized job is not even a BLOCKING job, which is all charter-drift asks
+      expect(ciJobBlocks(workflow("continue-on-error: true", ""), "audit-chain-verify")).toBe(false);
+      expect(ciJobBlocks(workflow("if: ${{ github.ref == 'refs/heads/nope' }}", ""), "audit-chain-verify")).toBe(false);
+      expect(workflow("continue-on-error: true", "").get("audit-chain-verify")?.neutralizedBy).toBe("continue-on-error: true");
+
+      // and the unneutralized shape - plus an explicit `continue-on-error: false` - still proves it
+      expect(proves("", "")).toBe(true);
+      expect(proves("continue-on-error: false", "continue-on-error: false")).toBe(true);
+      expect(ciJobBlocks(workflow("", ""), "audit-chain-verify")).toBe(true);
+      expect(ciJobBlocks(workflow("", ""), "no-such-job")).toBe(false);
+      // the real workflow's blocking jobs are blocking
+      for (const ref of ["e2e", "golden-cases", "audit-chain-verify", "v3-invariants", "test"]) expect(ciJobBlocks(ciJobs, ref), ref).toBe(true);
     });
 
     it("reads a multi-line and a folded run script as the commands it actually executes", () => {
@@ -466,7 +566,7 @@ describe("v3 gate-ordering fence", () => {
           "",
         ].join("\n"),
       );
-      expect(jobs.get("audit-chain-verify")).toEqual(["pnpm db:seed", "pnpm audit:chain --strict"]);
+      expect(jobs.get("audit-chain-verify")?.commands).toEqual(["pnpm db:seed", "pnpm audit:chain --strict"]);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
       // folding must not let a match span two unrelated commands of the same script
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm db:seed pnpm audit:chain")).toBe(false);
@@ -485,10 +585,34 @@ describe("v3 gate-ordering fence", () => {
       expect(ownershipOf(moved)).not.toEqual(GATE_ASSIGNMENT_RATCHET);
       const dropped = clone(registry);
       dropped.gates.A!.requires = dropped.gates.A!.requires.filter((r) => r.id !== 4);
-      expect(requirementsOf(dropped)).not.toEqual(GATE_INVARIANT_REQUIREMENTS);
+      expect(requirementsOf(dropped)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
       // the pinned maps must match the registry they are pinning (no always-failing ratchet)
       expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
-      expect(requirementsOf(registry)).toEqual(GATE_INVARIANT_REQUIREMENTS);
+      expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
+    });
+
+    it("flags a gate DELETING the requirement it cannot yet prove - the one-line edit that turned gate 0 green", () => {
+      // Gate 0's every other requirement is already met on disk and in ci.yml, so its
+      // lone `evidence` clause is the only thing holding it below green.
+      const gutted = clone(registry);
+      gutted.gates["0"]!.requires = gutted.gates["0"]!.requires.filter((r) => r.kind !== "evidence");
+      expect(gateOrderingProblems(gutted, () => true)).toEqual([]); // every structural rule still passes...
+      expect(requirementsOf(gutted)).not.toEqual(GATE_REQUIREMENTS_RATCHET); // ...and the ratchet is what catches it
+      const view = gateReadiness(gutted, {
+        invariantState: () => "active-pass",
+        exists: () => true,
+        ciRuns: () => true,
+        fitnessPassed: () => true,
+      }).find((v) => v.key === "0")!;
+      expect(view.state).toBe("green");
+      // Downgrading it to a weaker kind is the same escape, and is caught the same way.
+      const weakened = clone(registry);
+      weakened.gates.C!.requires = weakened.gates.C!.requires.map((r) => (r.kind === "evidence" ? { ...r, kind: "artifact" as const, ref: "docs/demo-contract.md" } : r));
+      expect(requirementsOf(weakened)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
+      // and a swapped ci-gate command, which no id-only pin could see
+      const swapped = clone(registry);
+      swapped.gates["0"]!.requires.find((r) => r.kind === "ci-gate")!.command = "pnpm lint";
+      expect(requirementsOf(swapped)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
     it("accepts the corrected ordering (cannot pass by always-failing)", () => {

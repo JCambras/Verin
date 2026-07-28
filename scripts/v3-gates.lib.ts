@@ -1,13 +1,15 @@
 /**
  * V3 PHASE-GATE MODEL - the SHARED core of the gate constitution (ADR-0030;
- * captain rulings `gate-a-ordering`, `gatea-opus-review-1` and
- * `gatea-fix-review-2`, 2026-07-28).
+ * captain rulings `gate-a-ordering`, `gatea-opus-review-1`, `gatea-fix-review-2`,
+ * `gatea-review-3` and `gatea-fix-review-3`, 2026-07-28).
  *
  * Both checkers of `v3-invariants.json` import this module, so the blocking
  * runner (scripts/v3-invariants.ts, CI job `v3-invariants`) and the fitness
  * fence (src/__tests__/fitness/v3-gate-ordering.test.ts) cannot drift apart:
  * the fence proves these rules reject real violations, the runner refuses to
  * PRINT a report that violates them. Same split as scripts/golden-cases.lib.ts.
+ * The CI half of it (`parseCiJobs`) is the repo's ONE structured CI authority -
+ * the registry fence and the charter-drift fence read the workflow through it too.
  *
  * TWO SEPARATE RELATIONS (the review-round correction):
  *  - ACTIVATION OWNERSHIP - `invariant.gate` names the one gate at which that
@@ -158,11 +160,40 @@ function shellCommandLines(script: string): string[] {
   return commands;
 }
 
+/** A job of the blocking workflow, as the ci-gate rules read it. */
+export interface CiJob {
+  /**
+   * Set when the job cannot be counted on to fail the build: `continue-on-error`,
+   * or a conditional that may exclude it from a normal push/PR run. A neutralized
+   * job proves nothing, however correct its steps look.
+   */
+  neutralizedBy?: string;
+  /** The commands its steps actually run; a neutralized STEP contributes none. */
+  commands: string[];
+}
+
+/**
+ * What, if anything, stops a job or step from blocking the build. `continue-on-error`
+ * anything but literal `false` swallows the failure; ANY `if:` makes the run
+ * conditional, and a GitHub expression is not decidable here - so both are treated as
+ * neutralizing. Fail-closed on purpose: an `if:` that is genuinely always true still
+ * has to be re-stated in the registry's terms rather than trusted (ADR-0030).
+ */
+function neutralizerOf(node: unknown): string | undefined {
+  const n = node as { "continue-on-error"?: unknown; if?: unknown } | null;
+  if (n === null || typeof n !== "object") return undefined;
+  const cont = n["continue-on-error"];
+  if (cont !== undefined && cont !== false) return `continue-on-error: ${String(cont)}`;
+  if (n.if !== undefined) return `if: ${String(n.if)}`;
+  return undefined;
+}
+
 /**
  * A ci-gate requirement is only evidence if the named job EXISTS in the blocking
- * workflow and RUNS the required command. A bare substring match is satisfied by
- * a comment, a path, or an unrelated step - the tautological shape charter #4
- * rejects - so the workflow is parsed into `job key -> the commands its steps run`.
+ * workflow, BLOCKS the build, and RUNS the required command. A bare substring match
+ * is satisfied by a comment, a path, or an unrelated step - the tautological shape
+ * charter #4 rejects - so the workflow is parsed into `job key -> {what neutralizes
+ * it, the commands its steps run}`.
  *
  * Structure comes from the real YAML parser, not a line scanner. A scanner cannot
  * tell a command from a sibling `env:` value or a step `name:`, and it loses every
@@ -175,13 +206,15 @@ function shellCommandLines(script: string): string[] {
  * script text, so a commented-out command is genuinely part of the run value and
  * only the SHELL treats it as disabled. `shellCommandLines` therefore strips shell
  * comments too - otherwise "# pnpm audit:chain temporarily disabled" would keep
- * proving the gate it just switched off.
+ * proving the gate it just switched off. PRESENT-BUT-DISABLED is the whole defect
+ * class here, and `continue-on-error: true` is its cheapest spelling: the command
+ * still runs, its failure just stops mattering.
  *
  * A workflow this cannot parse yields NO jobs, so every ci-gate reads unmet - the
  * honest answer when the evidence cannot be read at all.
  */
-export function parseCiJobs(yamlText: string): Map<string, string[]> {
-  const jobs = new Map<string, string[]>();
+export function parseCiJobs(yamlText: string): Map<string, CiJob> {
+  const jobs = new Map<string, CiJob>();
   let doc: unknown;
   try {
     doc = parseYaml(yamlText);
@@ -193,19 +226,31 @@ export function parseCiJobs(yamlText: string): Map<string, string[]> {
   for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
     const steps = (job as { steps?: unknown } | null)?.steps;
     const commands = (Array.isArray(steps) ? steps : [])
+      .filter((step) => neutralizerOf(step) === undefined)
       .map((step) => (step as { run?: unknown } | null)?.run)
       .filter((run): run is string => typeof run === "string")
       .flatMap(shellCommandLines);
-    jobs.set(key, commands);
+    const neutralizedBy = neutralizerOf(job);
+    jobs.set(key, neutralizedBy === undefined ? { commands } : { neutralizedBy, commands });
   }
   return jobs;
 }
 
-/** True only when `ref` is a declared job that runs `command` in one of its steps. */
-export function ciJobRuns(jobs: Map<string, string[]>, ref: string, command: string): boolean {
+/**
+ * True only when `ref` is a declared job that will actually fail the build. This is
+ * the weakest ci-gate claim the repo makes - the charter map names blocking jobs
+ * without naming a command, so nothing there may be invented for them.
+ */
+export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
+  const job = jobs.get(ref);
+  return job !== undefined && job.neutralizedBy === undefined;
+}
+
+/** True only when `ref` is a declared, blocking job that runs `command` in one of its steps. */
+export function ciJobRuns(jobs: Map<string, CiJob>, ref: string, command: string): boolean {
   const needle = collapse(command);
-  if (needle === "") return false;
-  return (jobs.get(ref) ?? []).some((r) => r.includes(needle));
+  if (needle === "" || !ciJobBlocks(jobs, ref)) return false;
+  return (jobs.get(ref)?.commands ?? []).some((r) => r.includes(needle));
 }
 
 /** The invariant ids a gate requires green, in registry order (the captain's ruled sets). */

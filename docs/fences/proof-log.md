@@ -9727,3 +9727,156 @@ and verified byte-identical with `diff -q` (`git status` clean of the file); `sc
 and `scripts/v3-invariants.ts` restored the same way after injection 20.
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-review-3`).
+
+### PF-018 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
+
+**SUPERSESSION CROSS-REFERENCE (read before re-running injections 14, 15, 17-19).** Every injection above
+is preserved verbatim as what actually ran against the implementation of its own round; none is rewritten.
+Two things they exercised have since been strengthened, so a reader re-running them should expect MORE, not
+less:
+
+- Injections 14 and 15 proved the **invariant-id** ratchets. The requirement ratchet now pins each gate's
+  COMPLETE TYPED set, so `requirementsOf` returns strings like `"ci-gate:e2e runs 'pnpm test:e2e'"` rather
+  than id arrays, and the fence's test is now named *"enforces (ratchet): every gate's COMPLETE typed
+  requirement set is the ruled one"*. Injection 21 below is the case ids alone could not see.
+- Injections 17-19 proved that a `ci-gate` needs a real job running a real command. The rule now also
+  requires that job to BLOCK. Their verdicts are unchanged; injections 22 and 23 cover the disabled-but-present
+  configurations the command-level check could not see, and injection 24 extends the same authority to
+  `charter-drift.test.ts` check (a'), which until this round still used `ci.includes(ref)`.
+
+**What changed.** (1) `GATE_REQUIREMENTS_RATCHET` replaces `GATE_INVARIANT_REQUIREMENTS`, pinning every
+requirement of every gate by `kind` + id/ref (+ `command` for a `ci-gate`). (2) `parseCiJobs` returns
+`{neutralizedBy?, commands}` per job and drops the commands of a neutralized STEP, so `continue-on-error`
+(job or step) and any `if:` stop a job from proving a `ci-gate`; `ciJobBlocks` exposes the weaker
+job-exists-and-blocks claim. (3) charter-drift (a') reads the workflow through that same parser, and the
+charter map's `axe`/`unit` refs become the blocking job keys that run them (`e2e`, `test`). (4) Gate D
+additionally requires invariants 18 and 19 (complete at prompt 18, inside Wave D; ownership stays at Gate F),
+and the merged `G/H` registry label is split into the ratified Gate G (27-28) and Gate H (29).
+
+**Injection 21 - deleting the one requirement a gate cannot prove (the reported hole).** Removed gate 0's
+lone `evidence` entry from `v3-invariants.json` and changed nothing else. Every other gate-0 requirement is
+already satisfied - the three artifacts exist, `golden-cases` and `e2e` run their commands in `ci.yml`, and
+`demo-skeleton-honesty.test.ts` passes - so the deletion leaves unmet = 0 and undecidable = 0.
+
+**Observed failure (verbatim), the gate-ordering fence:**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+AssertionError: expected { '0': [ …(6) ], …(9) } to deeply equal { '0': [ …(7) ], …(9) }
+
+- Expected
++ Received
+
+@@ -4,11 +4,10 @@
+      "artifact:config/demo/scenarios.yaml",
+      "artifact:docs/golden-cases.md",
+      "ci-gate:golden-cases runs 'pnpm golden:validate'",
+      "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts",
+      "ci-gate:e2e runs 'pnpm test:e2e'",
+-     "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton",
+    ],
+```
+(and the companion `flags an invariant pushed to another gate, or a gate quietly dropping a ruled
+requirement` fails with the identical diff, so the rule is proven twice).
+
+**Observed, `pnpm v3:invariants` under the same injection - what the ratchet is preventing (verbatim):**
+```
+    ✓ green              gate 0 (wave 0, prompts 1-3) requires docs/demo-contract.md · config/demo/scenarios.yaml · docs/golden-cases.md · golden-cases · src/__tests__/fitness/demo-skeleton-honesty.test.ts · e2e
+                         └ wave may begin when: None - Wave 0 opens the build sequence.
+```
+The readiness state machine is CORRECT here - every requirement it was given is met and decidable. That is
+exactly why the requirement set itself has to be ratcheted: a gate must not be able to earn readiness by
+deleting what it cannot prove.
+
+**Injection 22 - a blocking job that runs the command and swallows its failure.** Added
+`continue-on-error: true` to the `audit-chain-verify` JOB in `.github/workflows/ci.yml`, leaving
+`run: pnpm db:seed && pnpm audit:chain` untouched:
+```yaml
+  audit-chain-verify:
+    name: audit-chain-verify (charter #13)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+```
+
+**Observed failure (verbatim), the registry fence:**
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently (blocking CI job `v3-invariants`, exit 1):
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+
+v3-invariants: ACTIVE invariants failing:
+  - #5 Ledger records are append-only
+```
+
+**Injection 23 - the same command behind a condition that excludes the normal push/PR run.** Reverted
+injection 22 and instead gated the STEP:
+```yaml
+      - name: seed + verify org audit chains
+        if: ${{ github.event_name == 'schedule' }}
+        run: pnpm db:seed && pnpm audit:chain
+```
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > proves a ci-gate only by a declared job that RUNS the command, not by a mention
+AssertionError: expected false to be true // Object.is equality
+```
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+(`Tests 2 failed | 48 passed (50)` across the two registry fences.)
+
+**Injection 24 - a mapped ci-gate job deleted, its name surviving in a comment (charter-drift (a')).**
+Deleted the whole `golden-cases:` job from `ci.yml` and left `# golden-cases temporarily removed while we
+debug flakiness` in its place. The previous check was `ci.includes(m.ref)`, transcribed and run over the
+injected file:
+```
+previous check, ci.includes("golden-cases"): true
+```
+
+**Observed failure (verbatim), charter-drift:**
+```
+ FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real, blocking job of the BLOCKING ci.yml
+AssertionError: enforced CI gates are not blocking jobs of .github/workflows/ci.yml:
+golden-cases-truth-set -> ci-gate:golden-cases: expected [ Array(1) ] to deeply equal []
+```
+and the gate-ordering fence, on the same injection, for gate 0's own requirement:
+```
+AssertionError: gate 0: ci job 'golden-cases' does not run 'pnpm golden:validate': expected [ Array(1) ] to deeply equal []
+```
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** deleting gate 0's
+`evidence` clause - asserting that every structural rule still passes, that readiness renders `green`, and
+that the ratchet is what rejects it - paired with a downgraded requirement kind and a swapped `ci-gate`
+command, neither of which an id-only pin could see; and a `ci-gate` matrix over job-level
+`continue-on-error`, step-level `continue-on-error`, a job `if:`, a step `if:`, the un-neutralized shape,
+an explicit `continue-on-error: false`, and `ciJobBlocks` over the real workflow's blocking jobs - so the
+check cannot pass by always failing. charter-drift is proof-log-exempt for its companion (PF-001), so
+injection 24 is its adversarial evidence.
+
+**Post-state (verbatim, `pnpm v3:invariants` PHASE GATES after the split, abbreviated to the gate lines):**
+```
+    ○ not-yet-verifiable gate 0 (wave 0, prompts 1-3) …
+    ○ not yet green      gate A (wave A, prompts 4-7) requires #1 · #2 · #4 · #5
+    ○ not yet green      gate B (wave B, prompts 8-11) requires #3 · #16 · config/domains/account-opening.yaml · config/domains/money-movement.yaml
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle …
+    ○ not yet green      gate D (wave D, prompts 16-19) requires #6 · #7 · #8 · #9 · #10 · #11 · #12 · #13 · #18 · #19
+    ○ not yet green      gate E (wave E, prompts 20-22) requires #14 · #15 · #16 · #17
+    ○ not yet green      gate F (wave F, prompts 23-26) requires #18 · #19 · #20 · #21 · #22 · #23 · #24 · #25
+    ○ not yet green      gate G (wave G, prompts 27-28) requires #26 · #28 · #30
+    ○ not yet green      gate H (wave H, prompts 29-29) requires #27 · #29
+    ○ not yet green      gate I (wave I, prompts 30-30) requires docs/reviews/phase-1-adversarial-audit.md · no unresolved critical finding …
+```
+Ten gates, none green.
+
+**Revert:** `.github/workflows/ci.yml` restored from a pre-injection copy after each of injections 22-24 and
+verified byte-identical with `diff -q` (`git status` reports the file unmodified against HEAD);
+`v3-invariants.json` restored the same way after injection 21.
+
+**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-3`).

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ciJobRuns, parseCiJobs } from "../../../scripts/v3-gates.lib";
+import { ciJobRuns, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
  * V3-INVARIANT REGISTRY FENCE (ADR-0023; v3 §17 preamble: CI reports active,
@@ -56,7 +56,7 @@ const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedu
 export const ACTIVE_RATCHET = [1, 2, 5, 7, 8, 9];
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
-export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciJobs: Map<string, string[]> }): string[] {
+export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciJobs: Map<string, CiJob> }): string[] {
   const problems: string[] = [];
   const invs = reg.invariants ?? [];
 

@@ -6224,9 +6224,27 @@ holding it back, undecidable ones included, so gate C names its `evidence` claus
 only `#1 · #11`. The gate state machine is unchanged: green still requires zero unmet AND zero
 undecidable requirements, and no gate reads green.
 
+Review round `gatea-fix-review-3` (2026-07-28) amended ADR-0030 in place a fourth time: **(1)** the
+requirement ratchet pins each gate's COMPLETE TYPED requirement set (kind plus id/ref, plus a `ci-gate`'s
+command) rather than its invariant ids - gate 0's only unmet requirement was its `evidence` clause, so
+deleting that one entry passed every structural rule and both prior ratchets and printed `✓ green` for a
+gate whose §4 surface completeness nothing decides; **(2)** a `ci-gate` is proven only by a job that also
+BLOCKS: `continue-on-error` (job or step) and any `if:` are read as neutralizing, because a command whose
+failure is ignored or skipped keeps every parse green while the gate stops gating - present-but-disabled,
+one level up from the shell comment; **(3)** charter-drift check (a') stops using `ci.includes(ref)` and
+reads the workflow through the same `parseCiJobs`, so a deleted job no longer matches its own leftover
+comment, and the charter map's `axe`/`unit` refs become the blocking job keys that run them (`e2e`,
+`test`) rather than job DISPLAY-name text; **(4)** Gate D additionally requires invariants 18 and 19,
+both complete at prompt 18 inside Wave D, with activation ownership staying at Gate F - the same
+requirement-vs-ownership split already applied to 16 and 11; **(5)** the merged `G/H` registry label is
+split into the two gates the ratified wave map declares, Gate G (prompts 27-28; invariants 26, 28, 30)
+and Gate H (prompt 29; invariants 27, 29), which moves the registry toward the ratified sequence and so
+needs no reading key. ADR-0024's prompt-27 deferral still governs Gate G. All ten gates read non-green.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
-list, or any invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and both ratchets in
+list - of any requirement kind, including deleting an `evidence` clause - or any invariant's `gate`, is
+an amendment to ADR-0030, ADR-0023, and both ratchets in
 `src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.

@@ -1,5 +1,5 @@
 {
-  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G/H, I) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven, pinned for all 30 invariants by the fence's ratchet) is distinct from gate REQUIREMENT ('gates.<G>.requires'): a gate must require every invariant it owns, and may additionally REFERENCE an invariant another gate owns as long as that invariant is fully proven by the time the referencing gate closes (Gate C restates invariant 1 without taking it from Gate A; Gate B requires invariant 16, whose closed policy AST is complete at prompt 9, though Gate E owns it). A requirement is set at the EARLIEST gate that can prove the WHOLE invariant, never at the first gate that touches part of it - which is why invariant 6 is required only at Gate D (it needs prompt 15's bundle AND prompt 16's evaluator). ORDERING RULE: nothing a gate requires may land after that gate closes, decided from each requirement's PROOF POINT - the last of an invariant's 'activationPrompts', or, when it declares none, the closing prompt of the gate that owns it (so a reference to an invariant a LATER gate owns fails whether or not it is already active), and a non-invariant requirement's own 'prompt'. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. A 'ci-gate' requirement must name the 'command' its blocking job runs: a job name matching a comment or a path is not evidence. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
+  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G, H, I - G and H are the two separate gates of the ratified wave map, prompts 27-28 and 29) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven, pinned for all 30 invariants by the fence's ratchet) is distinct from gate REQUIREMENT ('gates.<G>.requires', whose COMPLETE typed set is pinned by a second ratchet, so an 'evidence' clause cannot be deleted into a green gate): a gate must require every invariant it owns, and may additionally REFERENCE an invariant another gate owns as long as that invariant is fully proven by the time the referencing gate closes (Gate C restates invariant 1 without taking it from Gate A; Gate B requires invariant 16, whose closed policy AST is complete at prompt 9, though Gate E owns it; Gate D requires invariants 18 and 19, whose authority and approval-binding guarantees are complete at prompt 18, though Gate F owns them). A requirement is set at the EARLIEST gate that can prove the WHOLE invariant, never at the first gate that touches part of it - which is why invariant 6 is required only at Gate D (it needs prompt 15's bundle AND prompt 16's evaluator). ORDERING RULE: nothing a gate requires may land after that gate closes, decided from each requirement's PROOF POINT - the last of an invariant's 'activationPrompts', or, when it declares none, the closing prompt of the gate that owns it (so a reference to an invariant a LATER gate owns fails whether or not it is already active), and a non-invariant requirement's own 'prompt'. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. A 'ci-gate' requirement must name the 'command' its blocking job runs, and is proven only by a job that EXISTS, BLOCKS (no 'continue-on-error', no conditional), and RUNS that command: a job name matching a comment or a path is not evidence, and neither is a present-but-disabled command. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
   "architectureVersion": "v3",
   "documents": [
     {
@@ -200,10 +200,20 @@
         {
           "kind": "invariant",
           "id": 13
+        },
+        {
+          "kind": "invariant",
+          "id": 18,
+          "note": "REFERENCED, NOT OWNED (ruling gatea-fix-review-3): invariant 18's whole subject - every non-automatic approval stage defines role eligibility, quorum, actor-distinctness, expiration, and escalation - is complete at prompt 18, where authority and approval stages land INSIDE Wave D. Gate D is therefore the earliest gate that can honestly prove it, so Gate D may not go green without it. Its activation ownership stays with Gate F, which re-asserts it over the prompts 23-26 execution paths."
+        },
+        {
+          "kind": "invariant",
+          "id": 19,
+          "note": "REFERENCED, NOT OWNED (ruling gatea-fix-review-3): invariant 19's whole subject - approval invalidates on a material input-bundle hash change - is complete at prompt 18, where approval binds to decisionHash + inputBundleHash INSIDE Wave D. Gate D is therefore the earliest gate that can honestly prove it. Its activation ownership stays with Gate F, which re-asserts it over pre-execution revalidation."
         }
       ],
       "entryCondition": "Gate C is green: the canonical request reaches a validated immutable input bundle (Wave C, prompts 12-15).",
-      "outcome": "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green (Wave D, prompts 16-19)."
+      "outcome": "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green, and the prompt-18 authority/approval guarantees (invariants 18 and 19) are proven where they land (Wave D, prompts 16-19)."
     },
     "E": {
       "wave": "E",
@@ -277,12 +287,12 @@
       "entryCondition": "Gate E is green.",
       "outcome": "Concurrent, repeated, failed, and delayed execution paths are safe and recorded; approval/execution invariants 18-25 green against fakes (Wave F, prompts 23-26)."
     },
-    "G/H": {
-      "wave": "G-H",
-      "title": "Real Salesforce, full assembly, and investor demo hardening",
+    "G": {
+      "wave": "G",
+      "title": "Real Salesforce and full assembly",
       "prompts": [
         27,
-        29
+        28
       ],
       "requires": [
         {
@@ -291,23 +301,35 @@
         },
         {
           "kind": "invariant",
-          "id": 27
-        },
-        {
-          "kind": "invariant",
           "id": 28
-        },
-        {
-          "kind": "invariant",
-          "id": 29
         },
         {
           "kind": "invariant",
           "id": 30
         }
       ],
-      "entryCondition": "Gate F is green. Prompt 27 is DEFERRED pending sandbox access (ADR-0024); Phase 1 is never declared complete on fakes.",
-      "outcome": "The full journey uses real Salesforce invocation and honest returned status; demo invariants 26-30 green (Waves G-H, prompts 27-29; Phase 1 completion)."
+      "entryCondition": "Gate F is green. Prompt 27 is DEFERRED pending sandbox access (ADR-0024); until the trigger fires no external status claim may be presented as real, and Phase 1 is never declared complete on fakes.",
+      "outcome": "The full journey uses a real Salesforce invocation and an honestly labeled returned status; the assembled vertical proves Firm B differs only through configuration and the printable record reconstructs from ledger + replay (invariants 26, 28, 30; Wave G, prompts 27-28)."
+    },
+    "H": {
+      "wave": "H",
+      "title": "Investor demo hardening",
+      "prompts": [
+        29,
+        29
+      ],
+      "requires": [
+        {
+          "kind": "invariant",
+          "id": 27
+        },
+        {
+          "kind": "invariant",
+          "id": 29
+        }
+      ],
+      "entryCondition": "Gate G is green: the full journey uses a real Salesforce invocation with an honestly labeled returned status (Wave G, prompts 27-28).",
+      "outcome": "The demo runs in seven minutes and emits measured proof: the UI distinguishes every decision and execution state and the natural-language policy path is choreographed end to end (invariants 27 and 29; Wave H, prompt 29; Phase 1 completion)."
     },
     "I": {
       "wave": "I",
@@ -330,7 +352,7 @@
           "note": "NO MECHANISM YET: severity adjudication is the adversarial reviewer's judgment, so the report's existence is checkable here but its verdict is not. This gate is never green on registration alone."
         }
       ],
-      "entryCondition": "Gate G/H is green: the full journey runs on a real Salesforce invocation with honest returned status.",
+      "entryCondition": "Gate H is green: the demo runs in seven minutes on a real Salesforce invocation with an honestly labeled returned status.",
       "outcome": "No unresolved critical finding; all accepted limitations are visible in the demo and documentation (Wave I, prompt 30)."
     }
   },
@@ -634,7 +656,8 @@
       "activationPrompts": [
         18
       ],
-      "mechanisms": []
+      "mechanisms": [],
+      "notes": "ACTIVATION OWNED BY GATE F, REQUIRED FROM GATE D ONWARD (ruling gatea-fix-review-3). Its whole subject is complete at prompt 18, inside Wave D, so Gate D may not go green without it; Gate F re-asserts it over the prompts 23-26 execution paths it owns. Ownership and requirement are separate relations - this invariant appears in two gates' requirement lists and only one gate's activation ownership."
     },
     {
       "id": 19,
@@ -646,7 +669,8 @@
       "activationPrompts": [
         18
       ],
-      "mechanisms": []
+      "mechanisms": [],
+      "notes": "ACTIVATION OWNED BY GATE F, REQUIRED FROM GATE D ONWARD (ruling gatea-fix-review-3). Its whole subject is complete at prompt 18, inside Wave D, so Gate D may not go green without it; Gate F re-asserts it over pre-execution revalidation (prompt 23), which depends on this binding. Ownership and requirement are separate relations - this invariant appears in two gates' requirement lists and only one gate's activation ownership."
     },
     {
       "id": 20,
@@ -737,7 +761,7 @@
     {
       "id": 26,
       "group": "demo",
-      "gate": "G/H",
+      "gate": "G",
       "name": "The identical $75,000 request produces different correct results for Firm A and Firm B with zero core-code change",
       "status": "not-yet-active",
       "activatesWhen": "the full vertical is assembled (Wave G prompt 28: Firm B differs only through configuration)",
@@ -749,7 +773,7 @@
     {
       "id": 27,
       "group": "demo",
-      "gate": "G/H",
+      "gate": "H",
       "name": "The UI distinguishes blocked, prohibited, approved, submitted, and verified states",
       "status": "not-yet-active",
       "activatesWhen": "the demo UI lands (Wave 0 prompt 3 begins it - docs/demo-design-language.md now authored per ADR-0028; demo-complete at Wave H prompt 29)",
@@ -762,7 +786,7 @@
     {
       "id": 28,
       "group": "demo",
-      "gate": "G/H",
+      "gate": "G",
       "name": "Every external status claim shown in the demo is backed by a real adapter response",
       "status": "not-yet-active",
       "activatesWhen": "the real Salesforce adapter lands (Wave G prompt 27) - DEFERRED pending sandbox access (ADR-0024, captain directive 2026-07-26). Until the trigger fires, no external status claim may be presented as real (fake-backed claims stay provenance-labeled per ADR-0027), and Phase 1 is never declared complete",
@@ -774,7 +798,7 @@
     {
       "id": 29,
       "group": "demo",
-      "gate": "G/H",
+      "gate": "H",
       "name": "The constrained natural-language policy path results in a structured draft, simulation, approval, version activation, and changed replay outcome",
       "status": "not-yet-active",
       "activatesWhen": "the NL policy path lands (Wave E prompt 22) and is demo-choreographed (Wave H prompt 29)",
@@ -787,7 +811,7 @@
     {
       "id": 30,
       "group": "demo",
-      "gate": "G/H",
+      "gate": "G",
       "name": "The printable decision record can be reconstructed entirely from ledger and replay artifacts",
       "status": "not-yet-active",
       "activatesWhen": "the printable examiner-grade artifact is generated from ledger + replay data (Wave G prompt 28)",

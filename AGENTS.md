@@ -10,8 +10,8 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 governed decision and execution layer; ADRs 0023-0030). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). **The registry, not the prompt-sequence
-prose, is the authoritative statement of what each gate requires**: all nine gates (0, A, B, C, D, E, F,
-G/H, I) declare `{wave, prompts, requires, entryCondition, outcome}` with TYPED requirements
+prose, is the authoritative statement of what each gate requires**: all ten gates (0, A, B, C, D, E, F,
+G, H, I) declare `{wave, prompts, requires, entryCondition, outcome}` with TYPED requirements
 (`invariant`/`artifact`/`fitness`/`ci-gate`, plus `evidence` for an outcome clause nothing decides yet,
 which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
 gate must require every invariant it owns and may reference one another gate owns when it is fully proven
@@ -21,9 +21,12 @@ rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` en
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
 `ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A requires 1/2/4/5;
 invariant 3 is required at Gate B because its prerequisite is prompt 10). `ci-gate` evidence is a real
-YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a shell-comment strip: a command in a comment,
-a step `name:`, an `env:` value, or a commented-out block-scalar line proves nothing. Two ratchets in the fence pin
-the 30-invariant gate-assignment map and every gate's invariant requirement set: moving one is an
+YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a shell-comment strip, and the job must BLOCK:
+a command in a comment, a step `name:`, an `env:` value, a commented-out block-scalar line, or a job/step
+carrying `continue-on-error` or an `if:` proves nothing. That parse (`parseCiJobs`) is the repo's one
+structured CI authority - charter-drift reads its enforced `ci-gate` mechanisms through it too. Two
+ratchets in the fence pin the 30-invariant gate-assignment map and every gate's COMPLETE TYPED
+requirement set: moving one, including deleting an `evidence` clause, is an
 ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new

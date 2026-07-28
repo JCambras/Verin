@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ciJobBlocks, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
  * own enforcement"). Fails the build if:
  *  (a) any 'enforced' mapping in charter-map.json points at a mechanism (file,
  *      config, fitness test, or CI gate) that no longer exists or is disabled;
- *  (a') any enforced ci-gate is missing from the BLOCKING ci.yml specifically —
- *      a name surviving only in the non-blocking scheduled.yml does not count;
+ *  (a') any enforced ci-gate is not a real, blocking job of ci.yml specifically —
+ *      a name surviving only in the non-blocking scheduled.yml does not count, nor
+ *      does one surviving as a comment, a path, or a job that cannot fail the build;
  *  (b) any fitness fence — INCLUDING this one — is disabled or focused
  *      (skip/only/x-prefixed variants);
  *  (c) any of the 16 charter non-negotiables is missing from the map;
@@ -71,12 +73,17 @@ const RATCHETED_ENFORCED_IDS = [
   "replay-corpus-substrate",
 ];
 
-function blockingCiText(): string {
+function blockingCiJobs(): Map<string, CiJob> {
   // ONLY the blocking workflow counts: gate names also appear in the non-blocking
   // scheduled.yml, so a whole-directory scan would stay green after a gate is
-  // deleted from ci.yml.
+  // deleted from ci.yml. And the workflow is PARSED, through the one structured CI
+  // authority the gate rules use (scripts/v3-gates.lib.ts) - a substring search
+  // matched a deleted job's own leftover comment, and could not see a job left
+  // unable to fail the build (ADR-0030, ruling `gatea-fix-review-3`). charter-map
+  // entries name a job but no command, so this proves the weaker of the two claims:
+  // the job EXISTS and BLOCKS. Nothing is invented for them.
   const f = p(".github/workflows/ci.yml");
-  return existsSync(f) ? readFileSync(f, "utf8") : "";
+  return parseCiJobs(existsSync(f) ? readFileSync(f, "utf8") : "");
 }
 
 describe("charter-drift fence", () => {
@@ -93,16 +100,16 @@ describe("charter-drift fence", () => {
     expect(missing, `enforced mappings point at missing mechanisms:\n${missing.join("\n")}`).toEqual([]);
   });
 
-  it("(a') every enforced ci-gate is declared in the BLOCKING ci.yml", () => {
-    const ci = blockingCiText();
+  it("(a') every enforced ci-gate is a real, blocking job of the BLOCKING ci.yml", () => {
+    const jobs = blockingCiJobs();
     const missing: string[] = [];
     for (const entry of allEntries) {
       for (const m of entry.mechanisms) {
         if (effectiveStatus(entry, m) !== "enforced") continue;
-        if (m.type === "ci-gate" && !ci.includes(m.ref)) missing.push(`${entry.id} -> ci-gate:${m.ref}`);
+        if (m.type === "ci-gate" && !ciJobBlocks(jobs, m.ref)) missing.push(`${entry.id} -> ci-gate:${m.ref}`);
       }
     }
-    expect(missing, `enforced CI gates not found in .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);
+    expect(missing, `enforced CI gates are not blocking jobs of .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);
   });
 
   it("(b) no fitness fence is disabled or focused (this file included)", () => {

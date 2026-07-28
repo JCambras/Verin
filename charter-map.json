@@ -217,7 +217,7 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "axe"
+          "ref": "e2e"
         }
       ]
     },
@@ -335,7 +335,7 @@
         },
         {
           "type": "ci-gate",
-          "ref": "unit"
+          "ref": "test"
         }
       ]
     },

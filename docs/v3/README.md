@@ -57,16 +57,18 @@ three-state report - **active-pass / active-fail / not-yet-active** - and is a b
 (`v3-invariants` in `.github/workflows/ci.yml`) that fails on any active-fail. A not-yet-active invariant
 is rendered visibly distinct from a passing one; CI never fakes green (v3 §17 preamble).
 
-**Gate requirements are read from the registry, not from the prompt-sequence prose.** All nine gates of
-the ratified sequence (0, A, B, C, D, E, F, G/H, I) are registered with their wave, prompt range, entry
+**Gate requirements are read from the registry, not from the prompt-sequence prose.** All ten gates of
+the ratified sequence (0, A, B, C, D, E, F, G, H, I - G closes after prompts 27-28 and H after 29, as the
+wave map declares) are registered with their wave, prompt range, entry
 condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
 (machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
 green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
 every invariant it owns, and may additionally reference an invariant another gate owns as long as that
 invariant is fully proven by the time the referencing gate closes. A requirement is set at the EARLIEST
 gate that can prove the WHOLE invariant - so Gate B requires invariant 16 (closed policy AST, complete at
-prompt 9) and Gate C requires invariant 11 (validation stage, complete at prompt 15) without taking
-either from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
+prompt 9), Gate C requires invariant 11 (validation stage, complete at prompt 15), and Gate D requires
+invariants 18 and 19 (approval stages and approval invalidation, complete at prompt 18) without taking
+any of them from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
 prompt 15's bundle and prompt 16's evaluator. The shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
@@ -74,10 +76,14 @@ fails the build if a gate requires anything whose PROOF POINT falls after that g
 declares no machine-checkable requirement (an empty set would read green merely by being registered), or
 if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
 parse of `.github/workflows/ci.yml` plus a shell-comment strip of each `run` script, so a command named
-only in a comment, a step `name:`, an `env:` value, or a commented-out line proves nothing. A gate's
+only in a comment, a step `name:`, an `env:` value, or a commented-out line proves nothing - and neither
+does one in a job or step neutralized by `continue-on-error` or an `if:`, which runs without blocking.
+That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
+`ci-gate` mechanisms through it too. A gate's
 `awaiting:` line names every requirement holding it back, undecidable ones included. Two ratchets in the
-fence pin the complete 30-invariant gate-assignment map and every gate's invariant requirement set, so
-neither moves by a registry edit alone. Per
+fence pin the complete 30-invariant gate-assignment map and every gate's COMPLETE TYPED requirement set,
+so neither moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered
+gate 0 green. Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
 4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
