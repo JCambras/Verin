@@ -13,7 +13,11 @@ import {
   verifyStoredByteChain,
   type ChainVerdict,
 } from "@infra/audit/hash-chain";
-import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
+import { parseRecordProvenance } from "@contracts/provenance";
+import {
+  decisionLedgerChainPreimage,
+  parseRecordedLedgerEvent,
+} from "./ledger-schema-registry";
 
 export interface DecisionLedgerRow {
   readonly orgId: string;
@@ -262,12 +266,44 @@ function verifyL4(
 
 function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
   const { rows, stored } = snapshot;
-  const l1Raw = verifyStoredByteChain(rows.map((row) => ({
-    sequence: row.sequence,
-    canonicalBytes: row.payloadJson,
-    prevHash: row.prevHash,
-    entryHash: row.entryHash,
-  })), snapshot.start);
+  const chainRows = [];
+  for (const row of rows) {
+    const provenance = parseRecordProvenance({
+      source: row.provSource,
+      asOf: row.provAsOf,
+      confidence: row.provConfidence,
+    });
+    const preimage = provenance
+      ? decisionLedgerChainPreimage(
+          row.schemaVersion,
+          row.serializerVersion,
+          row.payloadJson,
+          provenance,
+        )
+      : null;
+    if (!preimage) {
+      const l1 = level(
+        "L1",
+        false,
+        chainRows.length,
+        row.sequence,
+        "ledger chain preimage or provenance is unsupported",
+      );
+      return {
+        ok: false,
+        entriesChecked: l1.entriesChecked,
+        entriesStored: stored,
+        levels: [l1],
+      };
+    }
+    chainRows.push({
+      sequence: row.sequence,
+      canonicalBytes: preimage,
+      prevHash: row.prevHash,
+      entryHash: row.entryHash,
+    });
+  }
+  const l1Raw = verifyStoredByteChain(chainRows, snapshot.start);
   const l1 = { ...l1Raw, level: "L1" as const };
   const fail = (levels: LedgerVerificationLevel[]): LedgerVerification => ({
     ok: false,

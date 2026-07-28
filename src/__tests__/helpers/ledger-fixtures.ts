@@ -52,6 +52,11 @@ const base = (id: string, occurredAt = LEDGER_TIME) => ({
   correlationId: "corr:ledger-test",
 });
 
+const canonicalHash = (value: unknown): string =>
+  createHash("sha256")
+    .update(unwrap(canonicalJson(value as never)), "utf8")
+    .digest("hex");
+
 export function decisionRecordingInput(): RecordDecisionInput {
   const inputBundle = DecisionInputBundleSchema.parse(
     fixture("decision-input-bundle"),
@@ -81,6 +86,7 @@ export function decisionRecordingInput(): RecordDecisionInput {
         type: "EvidenceSnapshotRecorded",
         evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
         contentHash: snapshot.contentHash,
+        snapshotHash: canonicalHash(snapshot),
       })),
     LedgerEntrySchema.parse({
       ...base("ledger:decision:0"),
@@ -161,6 +167,7 @@ export function laterEvidenceRecording(id: string): {
       type: "EvidenceSnapshotRecorded",
       evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
       contentHash: snapshot.contentHash,
+      snapshotHash: canonicalHash(snapshot),
     }),
   };
 }
@@ -183,6 +190,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       type: "EvidenceSnapshotRecorded",
       evidenceSnapshotRef: { firmId: LEDGER_ORG, id: "evidence:1" },
       contentHash: LEDGER_HASH,
+      snapshotHash: LEDGER_HASH,
     },
     {
       ...base("sample:approval"),

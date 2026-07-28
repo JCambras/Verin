@@ -23,8 +23,9 @@ settle now.
 ## Decision
 
 - Add `decision_ledger` as a sibling to `audit_log`. It owns an independent,
-  GENESIS-rooted, per-organization sequence and hash chain. Its hash preimage is
-  exactly `canonicalJson(full typed event)`, followed by the prior hash.
+  GENESIS-rooted, per-organization sequence and hash chain. Its versioned hash
+  preimage binds the exact canonical typed-event bytes and the producer provenance,
+  followed by the prior hash.
 - Freeze the prompt-7 vocabulary at 16 discriminated event types, including
   `ApprovalStageExpired` and `ApprovalStageEscalated`. Each event records ledger
   schema and canonical serializer versions. Old bytes are never rewritten.
@@ -45,11 +46,13 @@ settle now.
   approval events.
 - Every ledger row stores the provenance of the producer that appended it
   (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
-  an unregistered source, and surfaces classify a row from the stored value - never
-  from an actor name.
+  an unregistered source, the chain binds all three fields, and surfaces classify a
+  row from the stored value - never from an actor name.
 - Evidence snapshots and input bundles are content-addressed and reusable: a later
   decision over the same immutable inputs links the stored bytes. Reuse demands byte
   equality, so an id collision with different bytes is refused, never overwritten.
+  Each evidence-recording event binds a digest of the complete canonical snapshot
+  metadata in addition to the encrypted content hash.
 - All immutable source tables reject UPDATE, DELETE, and TRUNCATE through database
   triggers. A ts-morph anti-fork fence permits raw ledger INSERT text only in the
   sole repository and forward migration. Repository exports expose no immutable
@@ -59,7 +62,9 @@ settle now.
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
   state is never located by physical row order: a released reservation resolves its
   owning decision through the keyed `decision_reservation_index`, and a create that
-  names a reservation another decision holds live is refused.
+  names a reservation another decision has ever owned is refused. The projection
+  persists its derived provenance summary, so a bounded decision read never joins
+  every contributing ledger row.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
@@ -79,15 +84,15 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
-  carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 5,900,
-  domain 1,350 to 1,600, and infrastructure 3,550 to 5,000. Measured
-  state is contracts 5,875 (25 headroom), domain 1,576 (24), and infrastructure 4,899 (101) -
+  carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,000,
+  domain 1,350 to 1,600, and infrastructure 3,550 to 5,500. Measured state is
+  contracts 5,895 (105 headroom), domain 1,576 (24), and infrastructure 5,462 (38) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain
   writer (`ledger-store.ts`), the immutable content-addressed source rows
   (`ledger-sources.ts`), and derived projection and reservation state
-  (`ledger-projection-store.ts`).
+  (`ledger-projection-store.ts`), with replay orchestration in `ledger-rebuild.ts`.
 
 ## Alternatives Rejected
 

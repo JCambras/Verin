@@ -4,14 +4,30 @@
  * append-only, so this module either writes new bytes or reuses byte-identical stored
  * ones - it never rewrites, and it refuses a same-id/different-bytes collision.
  */
+import { createHash } from "node:crypto";
 import type { SqlQueryable } from "@infra/store/db";
 import { appError, type AppError } from "@contracts/errors";
 import { err, type Result } from "@contracts/result";
-import type { EvidenceSnapshotRef, DecisionInputBundle } from "@contracts/decision-core/evidence";
-import type { DecisionRecord } from "@contracts/decision-core/decision";
+import { assertNoPIIValues } from "@contracts/pii";
+import {
+  EvidenceSnapshotRefSchema,
+  DecisionInputBundleSchema,
+  type EvidenceSnapshotRef,
+  type DecisionInputBundle,
+} from "@contracts/decision-core/evidence";
+import {
+  DecisionRecordSchema,
+  type DecisionRecord,
+} from "@contracts/decision-core/decision";
+import type {
+  DecisionRecorded,
+  EvidenceSnapshotRecorded,
+} from "@contracts/decision-core/ledger";
 import {
   CANONICAL_SERIALIZER_VERSION,
+  bundleHashPreimage,
   canonicalJson,
+  decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 
@@ -20,6 +36,26 @@ export function canonical(value: unknown, label: string): Result<string, AppErro
   return serialized.ok
     ? serialized
     : err(appError("VALIDATION", `${label} is not canonically serializable`));
+}
+
+export function canonicalDigest(value: unknown, label: string): Result<string, AppError> {
+  const bytes = canonical(value, label);
+  return bytes.ok
+    ? {
+        ok: true,
+        value: createHash("sha256").update(bytes.value, "utf8").digest("hex"),
+      }
+    : bytes;
+}
+
+export function replaySourcesContainPII(values: readonly unknown[]): boolean {
+  try {
+    values.forEach((value) =>
+      assertNoPIIValues(value, "decision ledger replay source"));
+    return false;
+  } catch {
+    return true;
+  }
 }
 
 async function reuseStoredBytes(
@@ -59,11 +95,12 @@ export async function insertEvidenceSnapshots(
     await tx.query(
       `INSERT INTO evidence_snapshots
         (org_id,id,canonical_json,schema_version,serializer_version,
-         content_hash,recorded_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+         content_hash,snapshot_hash,recorded_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [
         snapshot.firmId, snapshot.id, bytes.value, snapshot.schemaVersion,
-        CANONICAL_SERIALIZER_VERSION, snapshot.contentHash, recordedAt,
+        CANONICAL_SERIALIZER_VERSION, snapshot.contentHash,
+        createHash("sha256").update(bytes.value, "utf8").digest("hex"), recordedAt,
       ],
     );
   }
@@ -133,4 +170,185 @@ export async function insertDecisionSources(
       record.decisionHash, record.createdAt,
     ],
   );
+}
+
+function replaySourceError(reason: string): never {
+  throw appError("STORE_CONSTRAINT", reason);
+}
+
+function requireCanonicalSource<T>(
+  value: unknown,
+  bytes: string,
+  parser: { safeParse(input: unknown): { success: boolean; data?: T } },
+  label: string,
+): T {
+  const parsed = parser.safeParse(value);
+  if (!parsed.success || parsed.data === undefined) {
+    return replaySourceError(`${label} is invalid during replay`);
+  }
+  const canonicalBytes = canonical(parsed.data, label);
+  if (!canonicalBytes.ok || canonicalBytes.value !== bytes) {
+    return replaySourceError(`${label} bytes are not canonical during replay`);
+  }
+  if (replaySourcesContainPII([parsed.data])) {
+    return replaySourceError(`${label} contains prohibited PII during replay`);
+  }
+  return parsed.data;
+}
+
+export async function verifyReplayEvidence(
+  tx: SqlQueryable,
+  event: EvidenceSnapshotRecorded,
+): Promise<string> {
+  const result = await tx.query<{
+    canonical_json: string;
+    schema_version: string;
+    serializer_version: string;
+    content_hash: string;
+    snapshot_hash: string;
+  }>(
+    `SELECT canonical_json, schema_version, serializer_version, content_hash,
+            snapshot_hash
+       FROM evidence_snapshots
+      WHERE org_id = $1 AND id = $2`,
+    [event.firmId, event.evidenceSnapshotRef.id],
+  );
+  const row = result.rows[0];
+  if (!row) return replaySourceError("evidence snapshot is missing during replay");
+  let value: unknown;
+  try {
+    value = JSON.parse(row.canonical_json);
+  } catch {
+    return replaySourceError("evidence snapshot is not JSON during replay");
+  }
+  const snapshot = requireCanonicalSource(
+    value,
+    row.canonical_json,
+    EvidenceSnapshotRefSchema,
+    "evidence snapshot",
+  );
+  const snapshotHash = createHash("sha256")
+    .update(row.canonical_json, "utf8")
+    .digest("hex");
+  if (
+    snapshot.firmId !== event.firmId ||
+    snapshot.id !== event.evidenceSnapshotRef.id ||
+    snapshot.schemaVersion !== row.schema_version ||
+    row.serializer_version !== CANONICAL_SERIALIZER_VERSION ||
+    snapshot.contentHash !== row.content_hash ||
+    event.contentHash !== row.content_hash ||
+    snapshotHash !== row.snapshot_hash ||
+    event.snapshotHash !== row.snapshot_hash
+  ) {
+    return replaySourceError("evidence snapshot binding differs during replay");
+  }
+  return snapshot.id;
+}
+
+export async function loadVerifiedReplayDecision(
+  tx: SqlQueryable,
+  event: DecisionRecorded,
+  verifiedEvidence: ReadonlySet<string>,
+): Promise<DecisionRecord> {
+  const decisions = await tx.query<{
+    input_bundle_id: string;
+    canonical_json: string;
+    schema_version: string;
+    serializer_version: string;
+    decision_hash: string;
+    created_at: string;
+  }>(
+    `SELECT input_bundle_id, canonical_json, schema_version, serializer_version,
+            decision_hash, created_at
+       FROM decision_records
+      WHERE org_id = $1 AND id = $2`,
+    [event.firmId, event.decisionRef.id],
+  );
+  const decisionRow = decisions.rows[0];
+  if (!decisionRow) return replaySourceError("decision record is missing during replay");
+  const bundles = await tx.query<{
+    canonical_json: string;
+    schema_version: string;
+    serializer_version: string;
+    engine_version: string;
+    primitive_set_version: string;
+    time_zone_data_version: string;
+    bundle_hash: string;
+  }>(
+    `SELECT canonical_json, schema_version, serializer_version, engine_version,
+            primitive_set_version, time_zone_data_version, bundle_hash
+       FROM decision_input_bundles
+      WHERE org_id = $1 AND id = $2`,
+    [event.firmId, decisionRow.input_bundle_id],
+  );
+  const bundleRow = bundles.rows[0];
+  if (!bundleRow) return replaySourceError("decision input bundle is missing during replay");
+  let decisionValue: unknown;
+  let bundleValue: unknown;
+  try {
+    decisionValue = JSON.parse(decisionRow.canonical_json);
+    bundleValue = JSON.parse(bundleRow.canonical_json);
+  } catch {
+    return replaySourceError("decision replay source is not JSON");
+  }
+  const record = requireCanonicalSource(
+    decisionValue,
+    decisionRow.canonical_json,
+    DecisionRecordSchema,
+    "decision record",
+  );
+  const bundle = requireCanonicalSource(
+    bundleValue,
+    bundleRow.canonical_json,
+    DecisionInputBundleSchema,
+    "decision input bundle",
+  );
+  const decisionHash = canonicalDigest(
+    decisionHashPreimage(record),
+    "decision hash preimage",
+  );
+  const bundleHash = canonicalDigest(
+    bundleHashPreimage(bundle),
+    "bundle hash preimage",
+  );
+  const memberships = await tx.query<{
+    evidence_snapshot_id: string;
+    ordinal: number | string;
+  }>(
+    `SELECT evidence_snapshot_id, ordinal
+       FROM decision_input_bundle_evidence
+      WHERE org_id = $1 AND bundle_id = $2
+      ORDER BY ordinal ASC`,
+    [event.firmId, bundle.id],
+  );
+  const memberIds = memberships.rows.map((row, index) =>
+    Number(row.ordinal) === index ? row.evidence_snapshot_id : "");
+  const expectedIds = bundle.evidenceSnapshotRefs.map((ref) => ref.id);
+  if (
+    record.firmId !== event.firmId ||
+    record.id !== event.decisionRef.id ||
+    record.inputBundleRef.id !== bundle.id ||
+    decisionRow.input_bundle_id !== bundle.id ||
+    decisionRow.schema_version !== bundle.schemaVersion ||
+    decisionRow.serializer_version !== bundle.canonicalSerializerVersion ||
+    decisionRow.decision_hash !== record.decisionHash ||
+    decisionRow.created_at !== record.createdAt ||
+    bundleRow.schema_version !== bundle.schemaVersion ||
+    bundleRow.serializer_version !== bundle.canonicalSerializerVersion ||
+    bundleRow.engine_version !== bundle.engineVersion ||
+    bundleRow.primitive_set_version !== bundle.primitiveSetVersion ||
+    bundleRow.time_zone_data_version !== bundle.timeZoneDataVersion ||
+    bundleRow.bundle_hash !== bundle.bundleHash ||
+    !decisionHash.ok ||
+    decisionHash.value !== record.decisionHash ||
+    event.decisionHash !== record.decisionHash ||
+    !bundleHash.ok ||
+    bundleHash.value !== bundle.bundleHash ||
+    memberIds.length !== expectedIds.length ||
+    memberIds.some((id, index) => id !== expectedIds[index]) ||
+    expectedIds.some((id) => !verifiedEvidence.has(id))
+  ) {
+    return replaySourceError("decision replay source binding differs during replay");
+  }
+  return record;
 }

@@ -5,7 +5,11 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
-import { deriveArtifactProvenance, type Confidence, type DerivedProvenance, type RecordProvenance, type SourceSystem } from "@contracts/provenance";
+import {
+  deriveArtifactProvenance,
+  type DerivedProvenance,
+  type RecordProvenance,
+} from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
@@ -23,6 +27,13 @@ import {
 export interface ProjectedDecision {
   readonly projection: DecisionProjection;
   readonly provenance: DerivedProvenance;
+}
+
+export interface PreparedProjection {
+  readonly event: LedgerEntry;
+  readonly decisionId: string;
+  readonly stateJson: string;
+  readonly provenanceJson: string;
 }
 
 function decisionIdOf(event: LedgerEntry): string | undefined {
@@ -46,7 +57,8 @@ async function resolveDecisionId(
   if (direct) return direct;
   if (event.type !== "ReservationReleased") return undefined;
   const row = await tx.query<{ decision_id: string }>(
-    "SELECT decision_id FROM decision_reservation_index WHERE org_id = $1 AND reservation_id = $2",
+    `SELECT decision_id FROM decision_reservation_index
+      WHERE org_id = $1 AND reservation_id = $2 FOR UPDATE`,
     [orgId, event.reservationRef.id],
   );
   return row.rows[0]?.decision_id;
@@ -56,83 +68,158 @@ async function loadProjection(
   tx: SqlQueryable,
   orgId: string,
   event: LedgerEntry,
-): Promise<DecisionProjection | undefined> {
+): Promise<{
+  readonly decisionId: string;
+  readonly state?: DecisionProjection;
+  readonly provenance?: DerivedProvenance;
+} | undefined> {
   const id = await resolveDecisionId(tx, orgId, event);
   if (!id) return undefined;
-  const row = await tx.query<{ state_json: string }>(
-    "SELECT state_json FROM decision_state_projection WHERE org_id = $1 AND decision_id = $2",
+  const row = await tx.query<{ state_json: string; provenance_json: string }>(
+    `SELECT state_json, provenance_json
+       FROM decision_state_projection
+      WHERE org_id = $1 AND decision_id = $2 FOR UPDATE`,
     [orgId, id],
   );
   return row.rows[0]
-    ? JSON.parse(row.rows[0].state_json) as DecisionProjection
-    : undefined;
+    ? {
+        decisionId: id,
+        state: JSON.parse(row.rows[0].state_json) as DecisionProjection,
+        provenance: JSON.parse(row.rows[0].provenance_json) as DerivedProvenance,
+      }
+    : { decisionId: id };
 }
 
-/** One live reservation belongs to one decision; a competing live claim is refused. */
-async function indexReservation(
+async function assertReservationOwnership(
   tx: SqlQueryable,
   event: LedgerEntry,
   ownerDecisionId: string,
 ): Promise<void> {
   if (event.type === "ReservationCreated") {
-    const claimed = await tx.query<{ decision_id: string }>(
+    const owner = await tx.query<{ decision_id: string }>(
+      `SELECT decision_id FROM decision_reservation_index
+        WHERE org_id = $1 AND reservation_id = $2 FOR UPDATE`,
+      [event.firmId, event.reservationRef.id],
+    );
+    if (owner.rows[0] && owner.rows[0].decision_id !== ownerDecisionId) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "reservation is permanently owned by another decision",
+      );
+    }
+  }
+}
+
+async function writeReservationIndex(
+  tx: SqlQueryable,
+  projection: PreparedProjection,
+): Promise<void> {
+  const { event, decisionId } = projection;
+  if (event.type === "ReservationCreated") {
+    await tx.query(
       `INSERT INTO decision_reservation_index
         (org_id, reservation_id, decision_id, status)
        VALUES ($1,$2,$3,'active')
-       ON CONFLICT (org_id, reservation_id) DO UPDATE
-         SET decision_id = EXCLUDED.decision_id, status = 'active'
-         WHERE decision_reservation_index.decision_id = EXCLUDED.decision_id
-            OR decision_reservation_index.status = 'released'
-       RETURNING decision_id`,
-      [event.firmId, event.reservationRef.id, ownerDecisionId],
+       ON CONFLICT (org_id, reservation_id) DO UPDATE SET status = 'active'
+         WHERE decision_reservation_index.decision_id = EXCLUDED.decision_id`,
+      [event.firmId, event.reservationRef.id, decisionId],
     );
-    if (claimed.rows.length === 0) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "reservation is already held live by another decision",
-      );
-    }
-    return;
-  }
-  if (event.type === "ReservationReleased") {
+  } else if (event.type === "ReservationReleased") {
     await tx.query(
       `UPDATE decision_reservation_index SET status = 'released'
-        WHERE org_id = $1 AND reservation_id = $2`,
-      [event.firmId, event.reservationRef.id],
+        WHERE org_id = $1 AND reservation_id = $2 AND decision_id = $3`,
+      [event.firmId, event.reservationRef.id, decisionId],
     );
   }
 }
 
-/** Fold one appended event into derived state, stamped with its ledger sequence. */
-export async function applyProjection(
+export async function prepareProjection(
   tx: SqlQueryable,
   event: LedgerEntry,
   sequence: number,
+  provenance: RecordProvenance,
   record?: DecisionRecord,
-): Promise<void> {
-  const current = await loadProjection(tx, event.firmId, event);
+): Promise<PreparedProjection | undefined> {
+  const loaded = await loadProjection(tx, event.firmId, event);
+  if (
+    event.type !== "DecisionRecorded" &&
+    decisionIdOf(event) !== undefined &&
+    !loaded?.state
+  ) {
+    throw appError("STORE_CONSTRAINT", "decision projection is missing");
+  }
+  if (event.type === "ReservationReleased" && !loaded?.state) {
+    throw appError("STORE_CONSTRAINT", "reservation owner projection is missing");
+  }
   const next = foldDecisionProjection({
-    ...(current ? { current } : {}),
+    ...(loaded?.state ? { current: loaded.state } : {}),
     event,
     sequence,
     ...(record ? { decisionRecord: record } : {}),
   });
-  if (!next) return;
-  await indexReservation(tx, event, next.decisionId);
+  if (!next) return undefined;
+  await assertReservationOwnership(tx, event, next.decisionId);
   const stateJson = canonicalJson(next as unknown as JsonValue);
-  if (!stateJson.ok) {
+  const nextProvenance = deriveArtifactProvenance(
+    loaded?.provenance ? [loaded.provenance, provenance] : [provenance],
+    loaded?.provenance && loaded.provenance.asOf > provenance.asOf
+      ? loaded.provenance.asOf
+      : provenance.asOf,
+  );
+  const provenanceJson = canonicalJson(nextProvenance as unknown as JsonValue);
+  if (!stateJson.ok || !provenanceJson.ok) {
     throw appError("VALIDATION", "decision projection is not canonically serializable");
   }
+  return {
+    event,
+    decisionId: next.decisionId,
+    stateJson: stateJson.value,
+    provenanceJson: provenanceJson.value,
+  };
+}
+
+export async function persistProjection(
+  tx: SqlQueryable,
+  projection: PreparedProjection | undefined,
+  sequence: number,
+): Promise<void> {
+  if (!projection) return;
+  await writeReservationIndex(tx, projection);
   await tx.query(
     `INSERT INTO decision_state_projection
-      (org_id, decision_id, state_json, last_sequence, updated_at)
-     VALUES ($1,$2,$3,$4,$5)
+      (org_id, decision_id, state_json, provenance_json, last_sequence, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (org_id, decision_id) DO UPDATE
        SET state_json = EXCLUDED.state_json,
+           provenance_json = EXCLUDED.provenance_json,
            last_sequence = EXCLUDED.last_sequence,
            updated_at = EXCLUDED.updated_at`,
-    [event.firmId, next.decisionId, stateJson.value, sequence, event.recordedAt],
+    [
+      projection.event.firmId,
+      projection.decisionId,
+      projection.stateJson,
+      projection.provenanceJson,
+      sequence,
+      projection.event.recordedAt,
+    ],
   );
+}
+
+export async function applyProjection(
+  tx: SqlQueryable,
+  event: LedgerEntry,
+  sequence: number,
+  provenance: RecordProvenance,
+  record?: DecisionRecord,
+): Promise<void> {
+  const projection = await prepareProjection(
+    tx,
+    event,
+    sequence,
+    provenance,
+    record,
+  );
+  await persistProjection(tx, projection, sequence);
 }
 
 /** Discard derived state so a replay can rebuild it from immutable rows alone. */
@@ -178,43 +265,18 @@ export async function listDecisionProjections(
   limit?: number,
 ): Promise<ProjectedDecision[]> {
   const rows = await db.query<{
-    decision_id: string;
     state_json: string;
-    prov_source: string;
-    prov_asof: string;
-    prov_confidence: string;
+    provenance_json: string;
   }>(
-    `WITH windowed AS (
-       SELECT decision_id, state_json, last_sequence
-         FROM decision_state_projection
-        WHERE org_id = $1
-        ORDER BY last_sequence DESC, decision_id ASC
-        LIMIT $2::bigint
-     )
-     SELECT w.decision_id, w.state_json,
-            l.prov_source, l.prov_asof, l.prov_confidence
-       FROM windowed w
-       JOIN decision_ledger l
-         ON l.org_id = $1 AND l.decision_id = w.decision_id
-      ORDER BY w.last_sequence DESC, w.decision_id ASC, l.sequence ASC`,
+    `SELECT state_json, provenance_json
+       FROM decision_state_projection
+      WHERE org_id = $1
+      ORDER BY last_sequence DESC, decision_id ASC
+      LIMIT $2::bigint`,
     [orgId, limit ?? null],
   );
-  const folded = new Map<string, { state: string; inputs: RecordProvenance[] }>();
-  for (const row of rows.rows) {
-    const entry = folded.get(row.decision_id) ?? { state: row.state_json, inputs: [] };
-    entry.inputs.push({
-      source: row.prov_source as SourceSystem,
-      asOf: row.prov_asof,
-      confidence: row.prov_confidence as Confidence,
-    });
-    folded.set(row.decision_id, entry);
-  }
-  return [...folded.values()].map(({ state, inputs }) => ({
-    projection: JSON.parse(state) as DecisionProjection,
-    provenance: deriveArtifactProvenance(
-      inputs,
-      inputs.reduce((latest, input) =>
-        input.asOf > latest ? input.asOf : latest, inputs[0]!.asOf),
-    ),
+  return rows.rows.map((row) => ({
+    projection: JSON.parse(row.state_json) as DecisionProjection,
+    provenance: JSON.parse(row.provenance_json) as DerivedProvenance,
   }));
 }
