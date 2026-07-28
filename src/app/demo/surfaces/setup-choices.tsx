@@ -68,11 +68,13 @@ function ImpactFirmCard({
   summary,
   detail,
   status,
+  signed,
 }: {
   firmId: SetupFirmId;
   summary: string;
   detail: string;
   status: { status: string; label: string };
+  signed: boolean;
 }) {
   const firmLabel = firmId === "firm-a" ? "Firm A" : "Firm B";
   return (
@@ -86,6 +88,11 @@ function ImpactFirmCard({
       </div>
       <p className="mt-2 text-sm font-medium text-slate-900">{summary}</p>
       <p className="mt-1 text-xs text-slate-600">{detail}</p>
+      {signed ? null : (
+        <p className="mt-2 text-xs text-slate-800" data-testid={`impact-${firmId}-varied`}>
+          Projected under the current selection. This outcome is not the one the signed case records.
+        </p>
+      )}
     </article>
   );
 }
@@ -106,11 +113,12 @@ export function ImpactBody({
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         {vm.impacts.map((impact) => {
           const a = impact.groupId
-            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-a").signedCaseEffect
+            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-a")
             : null;
           const b = impact.groupId
-            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-b").signedCaseEffect
+            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-b")
             : null;
+          const varied = (a !== null && a.truthLabel !== "Signed") || (b !== null && b.truthLabel !== "Signed");
           return (
             <section
               key={impact.id}
@@ -120,7 +128,8 @@ export function ImpactBody({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs text-slate-700">{impact.caseRef}</span>
-                <StatusBadge status="done" label="Captain signed" />
+                <StatusBadge status="done" label="Captain-signed case" />
+                {varied ? <StatusBadge status="pending" label="Varied from signed selection" /> : null}
               </div>
               <h2 id={`impact-${impact.id}-title`} className="mt-2 text-base font-semibold text-slate-900">
                 {impact.title}
@@ -128,8 +137,20 @@ export function ImpactBody({
               <p className="mt-1 text-xs text-slate-600">{impact.facts}</p>
               {a && b ? (
                 <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-                  <ImpactFirmCard firmId="firm-a" summary={a.summary} detail={a.detail} status={a.status} />
-                  <ImpactFirmCard firmId="firm-b" summary={b.summary} detail={b.detail} status={b.status} />
+                  <ImpactFirmCard
+                    firmId="firm-a"
+                    summary={a.signedCaseEffect.summary}
+                    detail={a.signedCaseEffect.detail}
+                    status={a.signedCaseEffect.status}
+                    signed={a.truthLabel === "Signed"}
+                  />
+                  <ImpactFirmCard
+                    firmId="firm-b"
+                    summary={b.signedCaseEffect.summary}
+                    detail={b.signedCaseEffect.detail}
+                    status={b.signedCaseEffect.status}
+                    signed={b.truthLabel === "Signed"}
+                  />
                 </div>
               ) : (
                 <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">

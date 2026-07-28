@@ -3059,3 +3059,63 @@ removes the dishonest URL activation path.
 **Revert path:** when the real policy lifecycle, evaluator, authority runtime,
 ports, and ledger projections become reachable, delete each matching setup fake
 and badge in the same vertical slice using the recorded deletion map.
+
+### D-062 · 2026-07-28 · reversible · One signed liquidity figure, an amended contract, and three fenced gaps
+
+Gate-review corrections to D-061, each fixed at its cause rather than at the
+reported line:
+
+`AVAILABLE_CASH_MINOR` restated an unsigned $200,000 while the new setup step
+rendered the captain-signed $420,000 (GC-01/02/03), so one Smiths request showed
+two available-cash figures on two surfaces reachable from the same launcher. The
+constant is now READ from `ACCOUNTS[0].balanceMinor`, the journey's evidence label
+names that source, and the semantic-truth fence pins BOTH surfaces to the signed
+golden balance (PF-setup-03). This closes the same drift class the $8,000 schedule
+alignment opened.
+
+The normative demo contract is amended, not silently superseded: §3 and §4 now
+carry a setup-first annotation naming D-061, and the acceptance checklist records
+which of surfaces 10 and 11's required items the replacement meets. The free-text
+policy draft and its `llm-proposed-draft` provenance are marked OPEN with an
+un-defer trigger rather than counted as delivered - no evaluator backs a free-form
+rule today, so offering the input would be mock theater (charter #5).
+
+Signed-impact cards no longer render a bare "Captain signed" badge over an outcome
+the operator's live selection produced. The badge is scoped to the case
+("Captain-signed case"), and any firm card whose selected option is not the signed
+one is labeled a projection. A fence asserts every impact group opens on the signed
+option for both firms.
+
+Three dead view-model fields (`SetupChoiceOptionVM.headroomMetric`,
+`SetupProofVM.stages`, `SetupRequestVM.requestHash`) were deleted. knip sees
+unreferenced exports, never unread object properties, so RULE C of the
+demo-skeleton-honesty fence now fails the build on any demo view-model field no
+surface, route, or presentation primitive reads (PF-setup-04). It caught three
+pre-existing dead fields on the older journey view model, deleted with their
+population sites.
+
+The e2e input-label 44px check selected `#setup-journey ...` against a wrapper that
+carries `data-testid="setup-journey"`, so it asserted nothing at any viewport. It is
+now scoped by test id, and each step declares whether it renders choice inputs, so
+an empty match set fails instead of passing (PF-setup-05).
+
+**Why:** every one of these was a truth-telling defect, not a style problem: two
+liquidity figures for one request, a governing document contradicting the product, a
+captain-signed badge over an unsigned outcome, capabilities shipped inside types that
+nothing renders, and a green check that measured nothing.
+**Revert path:** each fence is independently removable; reverting the liquidity
+alignment means restoring a second literal and deleting the two cross-surface
+assertions.
+
+One unrelated config gap found while running the gates: `vitest.config.ts` raised
+`testTimeout` to 20s for the slow PGlite work but left `hookTimeout` at its 10s
+default, and the store integration suites do that work in `beforeEach` (fresh WASM
+Postgres instance, migrations, seed). The setup path therefore got half the budget
+its own test bodies get. `hookTimeout` now matches. No suite behavior changed on a
+healthy machine; this removes a latent cap on a slow runner.
+
+The review's `inert-turbopack-comment` finding was tested and REJECTED, not actioned.
+The premise (the magic comment only binds to a dynamic `import()` specifier) is false
+for Turbopack's file tracer, which honors it in exactly this argument position.
+Removing it reintroduces a build warning whose own remedy text prescribes that comment;
+`src/infrastructure/store/db.ts` is unchanged. Measurements are in proof log PF-setup-06.

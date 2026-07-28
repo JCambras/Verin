@@ -28,7 +28,13 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    and traversal specifiers ("./../data") dressed up as sibling imports; a
  *    non-literal dynamic specifier cannot be verified, so it cannot pass.
  *
- * Both detectors are pure functions so the companions can feed violating inputs
+ *  RULE C - NO DEAD VIEW-MODEL FIELDS. Every field declared on a demo view model
+ *    must be read by a surface or a demo route. knip sees unreferenced EXPORTS,
+ *    never unread object properties, so a builder can populate a field no screen
+ *    renders - built-but-not-shipped inside a type (charter #5). Each unread field
+ *    fails the build with the declaring file:line.
+ *
+ * All three detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
  */
 
@@ -164,6 +170,75 @@ function surfacesProject(dir: string = join(REPO_ROOT, SURFACES_DIR)): Project {
   return project;
 }
 
+// ── RULE C: no dead view-model fields ───────────────────────────────────────────────
+const VIEW_MODEL_FILES = ["src/app/demo/model.ts", "src/app/demo/setup-model.ts"];
+/** Where a view-model field may legitimately be read: the surfaces, the routes that
+ * hand view models to them, and the presentation primitives they render through.
+ * Anything else is not a rendered field. */
+const CONSUMER_DIRS = ["src/app/demo/surfaces", "src/app/app/demo", "src/app/presentation"];
+
+export interface DeclaredField {
+  readonly file: string;
+  readonly line: number;
+  readonly owner: string;
+  readonly name: string;
+}
+
+export function declaredViewModelFields(project: Project): DeclaredField[] {
+  const fields: DeclaredField[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
+    for (const iface of sf.getInterfaces()) {
+      for (const property of iface.getProperties()) {
+        fields.push({ file, line: property.getStartLineNumber(), owner: iface.getName(), name: property.getName() });
+      }
+    }
+  }
+  return fields;
+}
+
+/** Every property name a consumer READS: `vm.foo`, `{ foo }` destructuring, and
+ * `vm["foo"]`. A name reached any of those ways counts as rendered. */
+export function readPropertyNames(project: Project): Set<string> {
+  const names = new Set<string>();
+  for (const sf of project.getSourceFiles()) {
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+      names.add(access.getName());
+    }
+    for (const element of sf.getDescendantsOfKind(SyntaxKind.BindingElement)) {
+      names.add((element.getPropertyNameNode() ?? element.getNameNode()).getText().replace(/^["']|["']$/g, ""));
+    }
+    for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
+      const argument = access.getArgumentExpression();
+      const literal = argument?.asKind(SyntaxKind.StringLiteral) ?? argument?.asKind(SyntaxKind.NoSubstitutionTemplateLiteral);
+      if (literal) names.add(literal.getLiteralText());
+    }
+  }
+  return names;
+}
+
+export function deadFieldViolations(fields: readonly DeclaredField[], read: ReadonlySet<string>): string[] {
+  return fields
+    .filter((field) => !read.has(field.name))
+    .map(
+      (field) =>
+        `${field.file}:${field.line} :: ${field.owner}.${field.name} is populated but never rendered - ship it or delete it (charter #5)`,
+    );
+}
+
+function projectOf(relativePaths: readonly string[], isDir: boolean): Project {
+  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+  for (const rel of relativePaths) {
+    const full = join(REPO_ROOT, rel);
+    if (isDir) {
+      for (const f of walk(full, (p) => p.endsWith(".ts") || p.endsWith(".tsx"))) project.addSourceFileAtPath(f);
+    } else {
+      project.addSourceFileAtPath(full);
+    }
+  }
+  return project;
+}
+
 const yamlText = readFileSync(join(REPO_ROOT, "config/demo/scenarios.yaml"), "utf8");
 
 describe("demo-skeleton-honesty fence", () => {
@@ -185,7 +260,37 @@ describe("demo-skeleton-honesty fence", () => {
     expect(violations, `surface import-boundary violations:\n${violations.join("\n")}`).toEqual([]);
   });
 
+  it("RULE C enforces: every demo view-model field is rendered by a surface or route", () => {
+    const fields = declaredViewModelFields(projectOf(VIEW_MODEL_FILES, false));
+    expect(fields.length, "no view-model fields found - the fence went stale (charter #4)").toBeGreaterThan(0);
+    const violations = deadFieldViolations(fields, readPropertyNames(projectOf(CONSUMER_DIRS, true)));
+    expect(violations, `dead view-model fields:\n${violations.join("\n")}`).toEqual([]);
+  });
+
   describe("detects (companion): drifted or dishonest skeletons CANNOT pass", () => {
+    it("RULE C flags a populated-but-never-rendered field with file:line", () => {
+      const models = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofVM {\n  readonly inputHash: string;\n  readonly ghostField: string;\n}`,
+      });
+      const consumers = inMemoryProject({
+        "/src/app/demo/surfaces/proof.tsx": `export function Proof({ vm }: { vm: { inputHash: string } }) { return vm.inputHash; }`,
+      });
+      const violations = deadFieldViolations(declaredViewModelFields(models), readPropertyNames(consumers));
+      expect(violations.length).toBe(1);
+      expect(violations[0]).toContain("setup-model.ts:3");
+      expect(violations[0]).toContain("ProofVM.ghostField");
+    });
+
+    it("RULE C counts destructured and string-indexed reads as rendered", () => {
+      const models = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface StepVM {\n  readonly kicker: string;\n  readonly title: string;\n}`,
+      });
+      const consumers = inMemoryProject({
+        "/src/app/demo/surfaces/step.tsx": `export function Step(vm: Record<string, string>) {\n  const { kicker } = vm;\n  return kicker + vm["title"];\n}`,
+      });
+      expect(deadFieldViolations(declaredViewModelFields(models), readPropertyNames(consumers))).toEqual([]);
+    });
+
     it("RULE A flags a skeleton scenario the contract does not know", () => {
       const skeleton = skeletonFacts();
       const drifted = { ...skeleton, scenarios: { ...skeleton.scenarios, "invented-branch": { disposition: "proceed" } } };

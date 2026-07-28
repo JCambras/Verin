@@ -33,6 +33,16 @@ annotations. Nothing else is altered:
    Decision Spine as persistent orientation, the distinct proceed / blocked / prohibited treatments
    (blocked shows resolving affordances; prohibited shows the stamp and zero affordances), and the
    approval-invalidation moment. UI work is blocked until that document lands.
+3. **Setup-first replacement (captain decision D-061, 2026-07-28).** Surfaces 10 and 11 are no
+   longer delivered as two standalone screens reached at the end of the journey. Their required
+   visible proof moves INTO one setup-first journey at `/app/demo/setup`, which establishes each
+   firm's governed profile BEFORE the Smiths request and then runs that one signed request under
+   both profiles. What the replacement honestly delivers, and what it does NOT, is marked inline at
+   §3 and §4 below and itemized in
+   [`demo-contract-checklist.md`](./demo-contract-checklist.md). The free-form policy-authoring
+   input is deliberately not carried over: a closed choice set replaces it so the demo cannot imply
+   a rule builder no evaluator backs. Requirements the replacement does not meet stay marked open,
+   never quietly dropped.
 
 This contract is amended only by captain decision, recorded in the PR that changes it.
 
@@ -192,6 +202,10 @@ Visible proof:
 - no code deployment;
 - explanation changes because policy changed, not because a prompt changed.
 
+> **Setup-first annotation (D-061).** This moment now runs inside the setup journey's "Identical
+> facts, different correct outcomes" step: the same pinned request under two pinned demonstration
+> profiles, firm-labeled, with neither firm ranked. All four visible proofs above are preserved.
+
 ### Minute 6:25-7:00 - Policy authoring proof
 
 Enter:
@@ -200,6 +214,15 @@ Enter:
 
 Show structured draft, deterministic interpretation, simulation delta, human approval, version
 activation, and changed rerun result.
+
+> **Setup-first annotation (D-061).** The policy change now happens BEFORE the request rather than
+> after it, through the setup journey's five closed choice groups. Preserved: deterministic
+> interpretation (a chosen horizon derives its reserve dollars through
+> `src/domain/money-movement/reserve-projection.ts`), simulation delta (the signed-case impact
+> step), attributed distinct-human approval, version activation, and the changed rerun result.
+> **Not met, and open:** the free-text draft and its `llm-proposed-draft` provenance. No evaluator
+> or policy AST backs a free-form rule today, so offering the input would be mock theater
+> (charter #5). Un-defer trigger: the closed policy AST and deterministic evaluator land.
 
 ---
 
@@ -215,11 +238,18 @@ activation, and changed rerun result.
 8. Execution timeline (renders `fake-adapter-response` data until the sandbox trigger fires; the
    surface itself is built now)
 9. Verification state (same deferral posture as surface 8)
-10. Firm A / Firm B comparison
-11. Policy draft and simulation impact
+10. Firm A / Firm B comparison (delivered by the setup journey's outcome-comparison step, D-061)
+11. Policy draft and simulation impact (delivered by the setup journey's closed choice, signed-case
+    impact, and activation steps, D-061; the free-text draft stays open - see the §3 annotation)
 12. Printable examiner-grade decision artifact
 
 No binding decision logic may live in the UI.
+
+> **Setup-first annotation (D-061).** Surfaces 10 and 11 are requirements, not file names. They are
+> now reached through `/app/demo/setup` instead of two standalone screens; the deleted
+> `comparison.tsx` and `policy-authoring.tsx` are recorded with their replacements in
+> [`demo-setup-replacement.md`](./demo-setup-replacement.md). The legacy `/app/demo/comparison` and
+> `/app/demo/policy-authoring` routes redirect there, so no contract surface became unreachable.
 
 > **Design-language annotation.** Every surface above derives its look from
 > [`demo-design-language.md`](./demo-design-language.md) (annotation 2, "How to read this

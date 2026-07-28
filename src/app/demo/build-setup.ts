@@ -72,7 +72,6 @@ function reserveOption(
     detail: "Reserve dollars are derived from the pinned household schedule and are never entered directly.",
     truthLabel,
     reserveMetric: derivedMetric(smiths.requiredReserveMinor, "currency-minor", DERIVED_INPUTS, DEMO_NOW),
-    headroomMetric: derivedMetric(smiths.headroomMinor, "currency-minor", DERIVED_INPUTS, DEMO_NOW),
     smithsEffect: effect(
       smiths.reserveSatisfied ? "done" : "blocked",
       smiths.reserveSatisfied ? "Reserve satisfied" : "Reserve not satisfied",
@@ -327,7 +326,6 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       summary: "Smith household · taxable account · household-titled destination · bank instruction changed 4 days ago",
       requestRef: "request:smiths-renovation@demo-2026-07-28",
       evidenceRef: "smiths-evidence@2026-07-26T14:00Z",
-      requestHash: "sha256:demo-7b15c2b2e2a7f0c9",
       facts: [
         { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "Synthetic fixture", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
         { label: "Available balance", metric: fixtureMetric(CURRENT_BALANCE_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
@@ -339,11 +337,6 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       ],
     },
     proof: {
-      stages: [
-        { label: "Evidence", firmA: "Pinned", firmB: "Pinned", category: "Synthetic fixture" },
-        { label: "Policy", firmA: "FA-MM-DEMO-1.0", firmB: "FB-MM-DEMO-1.0", category: "Firm policy" },
-        { label: "Safety contract", firmA: "Required", firmB: "Required", category: "Universal safety" },
-      ],
       firmADecisionId: "decision-a-smiths-075-demo",
       firmBDecisionId: "decision-b-smiths-075-demo",
       inputHash: "sha256:demo-7b15c2b2e2a7f0c9",

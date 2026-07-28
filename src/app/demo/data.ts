@@ -39,10 +39,13 @@ export const ACCOUNTS: readonly AccountData[] = [
   { id: "acct-trad", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
 ];
 
-// Liquidity inputs. The monthly schedule is the captain-signed golden truth:
-// Firm A reserve = 6 * $8,000 = $48,000; Firm B = 12 * $8,000 = $96,000.
+// Liquidity inputs. Both the taxable-brokerage balance and the monthly schedule are
+// captain-signed golden truth (GC-01/02/03: available balance $420,000; $8,000/month),
+// so Firm A reserve = 6 * $8,000 = $48,000 and Firm B = 12 * $8,000 = $96,000.
+// The available balance is READ from the account fixture rather than restated, so the
+// journey and the setup journey cannot show two liquidity figures for one request.
 // Reserve dollars are always derived and are never stored as separate constants.
-export const AVAILABLE_CASH_MINOR = 20_000_000; // $200,000 available cash
+export const AVAILABLE_CASH_MINOR = ACCOUNTS[0]!.balanceMinor; // $420,000 taxable brokerage
 export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 800_000; // $8,000 / month
 export const PENDING_DISTRIBUTION_MINOR = 4_000_000; // $40,000 approved, not yet settled
 

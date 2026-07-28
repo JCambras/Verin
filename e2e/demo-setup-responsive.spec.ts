@@ -10,16 +10,19 @@ const WIDTHS = [
   { width: 1440, height: 1100 },
 ] as const;
 
+/** `choiceInputs` records whether the step renders radio/checkbox controls, so the
+ * 44px label check below fails loudly instead of passing on an empty match set
+ * (charter #4: detection is not verification). */
 const STEPS = [
-  { id: "profiles", heading: "Start with the policy, not the request", action: "Continue with both firms" },
-  { id: "controls", heading: "Confirm the controls no firm can weaken", action: "Confirm required controls" },
-  { id: "posture", heading: "Begin conservatively, then make differences explicit", action: "Use this starting posture" },
-  { id: "choices", heading: "Tune only the decisions that can legitimately differ", action: "Review signed impact" },
-  { id: "impact", heading: "See the impact on signed examples", action: "Send for approval" },
-  { id: "activation", heading: "A different human acknowledges immutable versions", action: "Acknowledge and activate demonstration" },
-  { id: "request", heading: "Run the Smiths request under both profiles", action: "Run under both profiles" },
-  { id: "outcomes", heading: "Identical facts, different correct outcomes", action: "View complete proof trail" },
-  { id: "proof", heading: "Every outcome has a proof trail", action: "Export decision record" },
+  { id: "profiles", heading: "Start with the policy, not the request", action: "Continue with both firms", choiceInputs: false },
+  { id: "controls", heading: "Confirm the controls no firm can weaken", action: "Confirm required controls", choiceInputs: false },
+  { id: "posture", heading: "Begin conservatively, then make differences explicit", action: "Use this starting posture", choiceInputs: false },
+  { id: "choices", heading: "Tune only the decisions that can legitimately differ", action: "Review signed impact", choiceInputs: true },
+  { id: "impact", heading: "See the impact on signed examples", action: "Send for approval", choiceInputs: false },
+  { id: "activation", heading: "A different human acknowledges immutable versions", action: "Acknowledge and activate demonstration", choiceInputs: true },
+  { id: "request", heading: "Run the Smiths request under both profiles", action: "Run under both profiles", choiceInputs: false },
+  { id: "outcomes", heading: "Identical facts, different correct outcomes", action: "View complete proof trail", choiceInputs: false },
+  { id: "proof", heading: "Every outcome has a proof trail", action: "Export decision record", choiceInputs: false },
 ] as const;
 
 async function settle(page: Page) {
@@ -45,7 +48,7 @@ async function assertNoPageOverflow(page: Page) {
   expect(dimensions.scrollWidth).toBe(dimensions.clientWidth);
 }
 
-async function assertReachableTargets(page: Page) {
+async function assertReachableTargets(page: Page, expectChoiceInputs: boolean) {
   const actions = page.locator("a[href], button");
   for (let index = 0; index < await actions.count(); index += 1) {
     const action = actions.nth(index);
@@ -56,8 +59,12 @@ async function assertReachableTargets(page: Page) {
     expect(box!.height, `action ${index} height`).toBeGreaterThanOrEqual(44);
   }
 
-  const inputs = page.locator('#setup-journey input[type="radio"], #setup-journey input[type="checkbox"]');
-  for (let index = 0; index < await inputs.count(); index += 1) {
+  const inputs = page
+    .getByTestId("setup-journey")
+    .locator('input[type="radio"], input[type="checkbox"]');
+  const inputCount = await inputs.count();
+  expect(inputCount > 0, `step renders ${inputCount} choice inputs`).toBe(expectChoiceInputs);
+  for (let index = 0; index < inputCount; index += 1) {
     const input = inputs.nth(index);
     if (!(await input.isVisible())) continue;
     const id = await input.getAttribute("id");
@@ -100,7 +107,7 @@ async function walkSetup(page: Page, width: number) {
     const step = STEPS[index]!;
     await expect(page.getByRole("heading", { level: 1, name: step.heading })).toBeVisible();
     await assertNoPageOverflow(page);
-    await assertReachableTargets(page);
+    await assertReachableTargets(page, step.choiceInputs);
     await assertActionClearance(page);
     await assertAxe(page, `${width}-${step.id}`);
 

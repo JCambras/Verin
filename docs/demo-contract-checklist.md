@@ -22,6 +22,11 @@ milestone, never Phase 1 completion.
 **Surface numbers** refer to contract §4. All surfaces derive their look from
 [`demo-design-language.md`](./demo-design-language.md).
 
+**Setup-first replacement (D-061).** Surfaces 10 and 11 are now reached through the setup journey at
+`/app/demo/setup` rather than as two standalone screens (contract §3/§4 annotation 3). The moment map
+and the two sections below record which of their required items the replacement meets and which stay
+open; nothing was dropped by deleting the old files.
+
 ---
 
 ## Moment map
@@ -35,8 +40,8 @@ milestone, never Phase 1 completion.
 | 3:20-4:05 Safety before execution | 7 Pre-execution safety check | `EvidenceSnapshotRecorded`, `ReservationCreated`, `ApprovalInvalidated` (invalidation branch), `ReservationReleased` (release branch) |
 | 4:05-5:00 Real execution | 8 Execution timeline | `ExecutionStarted`, `ExecutionSucceeded` / `ExecutionPartiallySucceeded` / `ExecutionFailed` |
 | 5:00-5:40 Honest verification | 9 Verification state | `StatusObserved`, `VerificationClosed` / `VerificationStuck`, `ExceptionDecisionRequested` (delayed-NIGO branch) |
-| 5:40-6:25 Firm B comparison | 10 Firm A / Firm B comparison | second `DecisionRecorded` (+ its own downstream chain) under the Firm B tenant |
-| 6:25-7:00 Policy authoring proof | 11 Policy draft and simulation impact | rerun `DecisionRecorded` pinning the new policy version (see note below) |
+| 5:40-6:25 Firm B comparison | 10 Firm A / Firm B comparison (setup journey outcome step, D-061) | second `DecisionRecorded` (+ its own downstream chain) under the Firm B tenant |
+| 6:25-7:00 Policy authoring proof | 11 Policy draft and simulation impact (setup journey choice, impact, and activation steps, D-061) | rerun `DecisionRecorded` pinning the new policy version (see note below) |
 | Wrap (spans all moments) | 12 Printable examiner-grade decision artifact | the complete `LedgerEntry` chain + the replayable `DecisionRecord` |
 
 **Ledger-vocabulary notes (recorded, not improvised around):**
@@ -145,25 +150,33 @@ until the sandbox trigger fires.
 
 ## Minute 5:40-6:25 - Firm B comparison
 
-Surface: **10 Firm A / Firm B comparison**.
+Surface: **10 Firm A / Firm B comparison** - reached through the setup journey's outcome-comparison
+step (D-061), not a standalone screen.
 
 - [ ] Different policy version shown.
 - [ ] Different reserve logic or approval result shown.
 - [ ] No code deployment occurred (Firm A / Firm B differ only through
       [`config/demo/scenarios.yaml`](../config/demo/scenarios.yaml)-class configuration).
 - [ ] Explanation changes because policy changed, not because a prompt changed.
+- [ ] Neither firm is presented as the winner (D-061: both outcomes honor the same safety contract).
 
 Backing: a second `DecisionRecorded` under the Firm B tenant with its own downstream chain; the
-comparison surface renders both decisions' traces side by side.
+comparison step renders both decisions' traces as firm-labeled cards.
 
 ## Minute 6:25-7:00 - Policy authoring proof
 
-Surface: **11 Policy draft and simulation impact**.
+Surface: **11 Policy draft and simulation impact** - reached through the setup journey's closed
+choice, signed-case impact, and activation steps (D-061), not a standalone screen.
 
-- [ ] Structured draft shown (`llm-proposed-draft` provenance).
-- [ ] Deterministic interpretation of the draft shown.
-- [ ] Simulation delta shown (which prior decisions would change).
-- [ ] Attributed human approval required and shown.
+- [ ] Structured draft shown - **open under D-061.** The free-text input and its `llm-proposed-draft`
+      provenance are deliberately not offered while no policy AST or evaluator backs a free-form rule
+      (charter #5). Un-defer trigger: the closed policy AST and deterministic evaluator land.
+- [ ] Deterministic interpretation of the draft shown (a chosen horizon derives its reserve dollars
+      through `src/domain/money-movement/reserve-projection.ts`; the administrator never types
+      dollars).
+- [ ] Simulation delta shown (which prior decisions would change - the signed-case impact step, and
+      every card whose selection leaves the captain-signed option is labeled as a variation).
+- [ ] Attributed human approval required and shown (a distinct proposer and approver).
 - [ ] Version activation shown.
 - [ ] Changed rerun result shown.
 

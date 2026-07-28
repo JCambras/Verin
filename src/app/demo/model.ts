@@ -206,7 +206,6 @@ export interface ApprovalStageVM {
   readonly actors: readonly ActorSlotVM[];
   readonly expiry?: string;
   readonly escalation?: string;
-  readonly expired?: boolean;
 }
 export interface ApprovalVM {
   readonly spine: DecisionSpineVM;
@@ -307,8 +306,6 @@ export interface RecordVM {
 export interface DecisionJourneyVM {
   readonly scenarioId: string;
   readonly firmId: string;
-  readonly scenarioTitle: string;
-  readonly firmName: string;
   readonly outcomeClass: string;
   readonly workspace: WorkspaceVM;
   readonly intent: IntentVM;

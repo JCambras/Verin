@@ -5384,3 +5384,98 @@ expected 'other' to be 'presentation'
 
 The injection was reverted. The corrected fence measurement is 3,273 of 6,000
 lines, including setup surfaces and demo route entries.
+
+## PF-setup-03 · one signed liquidity figure across both reachable surfaces
+
+**Date:** 2026-07-28.
+
+**Invariant:** The Smiths available balance is captain-signed golden truth
+(GC-01/GC-02/GC-03: 420000 USD) and is READ from one fixture, so the journey
+stations and the setup request step can never show two liquidity figures for the
+same request. The prior `AVAILABLE_CASH_MINOR = 20_000_000` restated an unsigned
+$200,000 while the setup step rendered the signed $420,000.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` (extended), registered
+under `demo-skeleton-honesty` in `charter-map.json`.
+
+**Adversarial proof:** The derived constant in `src/app/demo/data.ts` was temporarily
+restated as the old literal. The production check failed on both the signed-truth
+comparison and the cross-surface comparison:
+
+```text
+src/app/demo/data.ts:48 :: journey available balance 20000000 differs from captain-signed 42000000
+src/app/demo/data.ts:48 :: the setup step shows 42000000 while the journey stations show 20000000 for the same request
+```
+
+The injection was reverted. The focused fence and its two new companions then passed.
+
+## PF-setup-04 · no dead view-model fields
+
+**Date:** 2026-07-28.
+
+**Invariant:** Every field declared on a demo view model is read by a surface, a demo
+route, or a presentation primitive. knip reports unreferenced EXPORTS and cannot see an
+unread object property, so a builder could populate a field no screen renders -
+built-but-not-shipped inside a type (charter #5).
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts` RULE C, registered under
+`demo-skeleton-honesty` in `charter-map.json`.
+
+**Adversarial proof:** `SetupRequestVM.requestHash` (a duplicate of the rendered
+`proof.inputHash`) was temporarily re-declared and re-populated. The production check
+failed with the declaring file:line:
+
+```text
+src/app/demo/setup-model.ts:145 :: SetupRequestVM.requestHash is populated but never rendered - ship it or delete it (charter #5)
+```
+
+The injection was reverted. Enabling the fence also caught three pre-existing dead
+fields - `ApprovalStageVM.expired`, `DecisionJourneyVM.scenarioTitle`, and
+`DecisionJourneyVM.firmName` - which were deleted with their population sites.
+
+## PF-setup-05 · the 44px input-target check cannot pass vacuously
+
+**Date:** 2026-07-28.
+
+**Invariant:** A PASS-emitting browser check proves what it claims (charter #4). The
+input-label target loop previously selected `#setup-journey input[...]`, but the setup
+wrapper carries `data-testid="setup-journey"` and no element has that id, so
+`inputs.count()` was 0 and the loop never executed an assertion at any viewport.
+
+**Fence:** `e2e/demo-setup-responsive.spec.ts` - the selector is now scoped by test id,
+and each step declares `choiceInputs`, so a step that should render radios or a checkbox
+fails when the selector matches nothing.
+
+**Adversarial proof:** The pre-fix selector was restored while keeping the
+`choiceInputs` expectation. The choices step failed at the first viewport:
+
+```text
+expect(received).toBe(expected) // step renders 0 choice inputs
+Expected: true
+Received: false
+```
+
+The injection was reverted. The full spec then passed at 390, 768, 1024, and 1440 CSS
+pixels with 28 radio labels and one checkbox label measured per pass.
+
+## PF-setup-06 · the store's turbopackIgnore hint is load-bearing (rejected finding)
+
+**Date:** 2026-07-28.
+
+**Claim under test:** gate review reported the `/* turbopackIgnore: true */` argument
+comment in `src/infrastructure/store/db.ts` as inert, on the premise that the magic
+comment only has meaning on a dynamic `import()` specifier, and recommended deleting it.
+
+**Result: the claim is false.** Turbopack's Node-file-trace pass honors the comment in
+exactly this argument position, and Turbopack's own diagnostic prescribes this exact
+form. Measured with `pnpm build` (APP_ENV=development, since `next build` forces
+NODE_ENV=production - see the CLAUDE.md sharp edge):
+
+- comment present: build clean, no warnings.
+- comment removed: `Turbopack build encountered 1 warnings` / `Encountered unexpected
+  file in NFT list`, import trace `./next.config.ts -> ./src/infrastructure/store/db.ts
+  -> ./src/app/ready/route.ts`, with the remedy `add ignore comments:
+  path.join(/*turbopackIgnore: true*/ process.cwd(), bar)`.
+
+Without it, `process.cwd()` makes the tracer pull the whole project into the standalone
+output file list. The comment was restored unchanged; the finding is not actioned.

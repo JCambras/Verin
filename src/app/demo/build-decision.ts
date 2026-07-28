@@ -280,7 +280,6 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
         ],
         expiry: "expired Jul 25",
         escalation: "Escalates to: principal",
-        expired: true,
       });
     } else {
       stages.push({

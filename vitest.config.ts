@@ -38,5 +38,10 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
     testTimeout: 20000,
+    // Matches testTimeout deliberately: the store integration suites build a fresh
+    // PGlite (WASM Postgres) instance, migrate it, and seed it in beforeEach, so their
+    // slow path is the HOOK, not the test body. Leaving hookTimeout at its 10s default
+    // would cap the setup at half the budget its own test bodies get.
+    hookTimeout: 20000,
   },
 });

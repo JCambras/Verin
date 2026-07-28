@@ -83,7 +83,6 @@ export interface SetupChoiceOptionVM {
   readonly detail?: string;
   readonly truthLabel: "Signed" | "Recommended" | "Supported";
   readonly reserveMetric?: DisplayMetric;
-  readonly headroomMetric?: DisplayMetric;
   readonly smithsEffect: ChoiceEffectVM;
   readonly signedCaseEffect: ChoiceEffectVM;
 }
@@ -126,13 +125,6 @@ export interface SetupFactVM {
   readonly fakeClass: FakeClass;
 }
 
-export interface ProofStageVM {
-  readonly label: string;
-  readonly firmA: string;
-  readonly firmB: string;
-  readonly category: SetupFactVM["category"] | "Firm policy" | "Universal safety";
-}
-
 export interface SetupActivationVM {
   readonly proposer: string;
   readonly proposerRole: string;
@@ -150,11 +142,9 @@ export interface SetupRequestVM {
   readonly facts: readonly SetupFactVM[];
   readonly evidenceRef: string;
   readonly requestRef: string;
-  readonly requestHash: string;
 }
 
 export interface SetupProofVM {
-  readonly stages: readonly ProofStageVM[];
   readonly firmADecisionId: string;
   readonly firmBDecisionId: string;
   readonly inputHash: string;

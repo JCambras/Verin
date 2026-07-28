@@ -90,7 +90,7 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
-      label: "Available cash across household accounts",
+      label: "Available cash in the taxable brokerage account",
       metric: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",

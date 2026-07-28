@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MoneyMovementSetupVM, SetupFirmId, SetupPolicyGroupVM } from "../setup-model";
+import type {
+  MoneyMovementSetupVM,
+  SetupFirmId,
+  SetupPolicyGroupVM,
+  SetupStepVM,
+} from "../setup-model";
 import { ActivationBody, ChoicesBody, ImpactBody } from "./setup-choices";
 import { ControlsBody, PostureBody, ProfilesBody } from "./setup-governance";
 import { OutcomesBody, ProofBody, RequestBody } from "./setup-run";
@@ -26,7 +31,7 @@ function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
 
 function StepBody({
   vm,
-  stepIndex,
+  step,
   selections,
   onSelect,
   attested,
@@ -34,25 +39,25 @@ function StepBody({
   activationError,
 }: {
   vm: MoneyMovementSetupVM;
-  stepIndex: number;
+  step: SetupStepVM;
   selections: SetupSelections;
   onSelect: (firmId: SetupFirmId, groupId: SetupPolicyGroupVM["id"], optionId: string) => void;
   attested: boolean;
   onAttested: (value: boolean) => void;
   activationError: string | null;
 }) {
-  switch (stepIndex) {
-    case 0:
+  switch (step.id) {
+    case "profiles":
       return <ProfilesBody vm={vm} />;
-    case 1:
+    case "controls":
       return <ControlsBody vm={vm} />;
-    case 2:
+    case "posture":
       return <PostureBody vm={vm} />;
-    case 3:
+    case "choices":
       return <ChoicesBody vm={vm} selections={selections} onSelect={onSelect} />;
-    case 4:
+    case "impact":
       return <ImpactBody vm={vm} selections={selections} />;
-    case 5:
+    case "activation":
       return (
         <ActivationBody
           vm={vm}
@@ -62,11 +67,11 @@ function StepBody({
           error={activationError}
         />
       );
-    case 6:
+    case "request":
       return <RequestBody vm={vm} selections={selections} />;
-    case 7:
+    case "outcomes":
       return <OutcomesBody vm={vm} selections={selections} />;
-    default:
+    case "proof":
       return <ProofBody vm={vm} selections={selections} />;
   }
 }
@@ -80,6 +85,7 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
   const [activated, setActivated] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
   const step = vm.steps[stepIndex]!;
+  const activationIndex = vm.steps.findIndex((candidate) => candidate.id === "activation");
 
   function move(nextIndex: number) {
     setStepIndex(nextIndex);
@@ -97,17 +103,17 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
   }
 
   function primary() {
-    if (stepIndex === 5) {
+    if (step.id === "activation") {
       if (!attested) {
         setActivationError("Confirm the distinct-human demonstration attestation before activation.");
         return;
       }
       setActivationError(null);
       setActivated(true);
-      move(6);
+      move(stepIndex + 1);
       return;
     }
-    if (stepIndex === 8) {
+    if (step.id === "proof") {
       router.push(vm.proof.exportHref);
       return;
     }
@@ -130,7 +136,7 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
       <SetupHeading step={step} />
       <StepBody
         vm={vm}
-        stepIndex={stepIndex}
+        step={step}
         selections={selections}
         onSelect={select}
         attested={attested}
@@ -145,9 +151,9 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
         onPrimary={primary}
         {...(stepIndex > 0 ? { onBack: back } : {})}
       >
-        {stepIndex === 5
+        {step.id === "activation"
           ? "The proposer and approver are different synthetic humans. Real activation remains blocked on the real lifecycle."
-          : stepIndex >= 6
+          : stepIndex > activationIndex
             ? activated
               ? "Demonstration versions activated locally for this setup-to-run proof."
               : "No demonstration version is active."

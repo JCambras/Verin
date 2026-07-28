@@ -19,11 +19,11 @@ different measures, so they are not presented as one time series.
 
 | Scope | Delivery parent | After replacement | Change |
 |---|---:|---:|---:|
-| Runtime, `src` excluding `src/__tests__` | 11,304 | 12,605 | +1,301 |
-| Tests, `src/__tests__` plus `e2e` | 10,257 | 10,857 | +600 |
-| Fake runtime, `src/app/demo` | 2,824 | 4,149 | +1,325 |
-| Setup presentation only | 0 | 1,155 | +1,155 |
-| Total presentation scope | 2,306 | 3,238 | +932 |
+| Runtime, `src` excluding `src/__tests__` | 11,304 | 12,612 | +1,308 |
+| Tests, `src/__tests__` plus `e2e` | 10,257 | 11,063 | +806 |
+| Fake runtime, `src/app/demo` | 2,824 | 4,156 | +1,332 |
+| Setup presentation only | 0 | 1,182 | +1,182 |
+| Total presentation scope | 2,306 | 3,265 | +959 |
 | Contracts | 3,394 | 3,394 | 0 |
 | Domain | 714 | 748 | +34 |
 | Infrastructure | 2,210 | 2,212 | +2 |
@@ -78,7 +78,10 @@ and render typed view models only.
 768 by 1024, 1024 by 900, and 1440 by 1100 CSS pixels. That is 36 blocking
 screenshots uploaded by the existing `demo-screens` CI artifact. At each step it
 checks page overflow, axe, 44 by 44 action targets, input label targets, and
-safe-area clearance. Companion paths prove question to Firm A to Firm B phone
+safe-area clearance. The input-label check is scoped by test id and each step
+declares whether it renders choice inputs, so a selector that matches nothing
+fails instead of passing vacuously (charter #4; proof log PF-setup-05).
+Companion paths prove question to Firm A to Firm B phone
 order, no comparison table or carousel, keyboard-only completion, announced
 activation errors, 200 percent text, reduced motion, and the absence of
 software-keyboard-triggering free-text controls.

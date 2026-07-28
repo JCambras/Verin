@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
+  AVAILABLE_CASH_MINOR,
   FIRMS,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
 } from "@app/demo/data";
@@ -14,10 +15,13 @@ import { REPO_ROOT } from "./_fence-utils";
  *
  * The setup demo must consume the captain-signed golden facts instead of carrying
  * a second reserve or outcome truth. The signed monthly schedule and firm policy
- * horizons derive the displayed floors through the domain projection. The recent
- * bank-change comparison must preserve the signed GC-03/GC-04 dispositions and
- * execution reachability. Failures identify the implementation source with
- * file:line so the owner can remove drift instead of editing another constant.
+ * horizons derive the displayed floors through the domain projection. The signed
+ * liquidity input is pinned on BOTH reachable surfaces - the journey stations and
+ * the setup request step - so one Smiths request can never show two available-cash
+ * figures. The recent bank-change comparison must preserve the signed GC-03/GC-04
+ * dispositions and execution reachability. Failures identify the implementation
+ * source with file:line so the owner can remove drift instead of editing another
+ * constant.
  */
 
 interface GoldenCase {
@@ -41,6 +45,7 @@ interface GoldenCase {
 
 export interface SemanticTruth {
   readonly monthlyMinor: number;
+  readonly availableBalanceMinor: number;
   readonly firms: Record<
     "firm-a" | "firm-b",
     {
@@ -55,6 +60,10 @@ export interface SemanticTruth {
 
 export interface DemoSemanticFacts {
   readonly monthlyMinor: number;
+  /** The liquidity input the journey stations render and derive headroom from. */
+  readonly journeyAvailableMinor: number;
+  /** The "Available balance" the setup request step renders for the same request. */
+  readonly setupAvailableMinor: number;
   readonly firms: Record<
     "firm-a" | "firm-b",
     {
@@ -108,6 +117,17 @@ function monthlyMinorFrom(caseFile: GoldenCase): number {
   return Number(match[1]) * 100;
 }
 
+function availableBalanceMinorFrom(caseFile: GoldenCase): number {
+  for (const evidence of caseFile.householdEvidence) {
+    if (evidence.evidenceKind !== "account-balance") continue;
+    const match = evidence.summary.match(/available balance (\d+) USD/);
+    if (match) return Number(match[1]) * 100;
+  }
+  throw new Error(
+    `${caseFile.caseId} does not carry a parseable available balance`,
+  );
+}
+
 export function goldenSemanticTruth(): SemanticTruth {
   const happyA = signed(loadGolden("GC-01-firm-a-happy-path.json"));
   const happyB = signed(loadGolden("GC-02-firm-b-happy-path.json"));
@@ -117,6 +137,12 @@ export function goldenSemanticTruth(): SemanticTruth {
   const monthlyB = monthlyMinorFrom(happyB);
   if (monthlyA !== monthlyB) {
     throw new Error("signed happy-path cases disagree on the monthly schedule");
+  }
+  const balanceA = availableBalanceMinorFrom(happyA);
+  const balanceB = availableBalanceMinorFrom(happyB);
+  const balanceRecent = availableBalanceMinorFrom(recentA);
+  if (balanceA !== balanceB || balanceA !== balanceRecent) {
+    throw new Error("signed cases disagree on the Smiths available balance");
   }
 
   const firm = (
@@ -132,6 +158,7 @@ export function goldenSemanticTruth(): SemanticTruth {
 
   return {
     monthlyMinor: monthlyA,
+    availableBalanceMinor: balanceA,
     firms: {
       "firm-a": firm(happyA, recentA),
       "firm-b": firm(happyB, recentB),
@@ -171,8 +198,16 @@ export function demoSemanticFacts(): DemoSemanticFacts {
       recentExecutionEligible: bank.smithsEffect.reachesAuthority === true,
     };
   };
+  const setupBalance = buildMoneyMovementSetup().request.facts.find(
+    (candidate) => candidate.label === "Available balance",
+  )?.metric?.value;
+  if (setupBalance === undefined) {
+    throw new Error("the setup request step no longer renders an available balance");
+  }
   return {
     monthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+    journeyAvailableMinor: AVAILABLE_CASH_MINOR,
+    setupAvailableMinor: Number(setupBalance),
     firms: { "firm-a": firm("firm-a"), "firm-b": firm("firm-b") },
   };
 }
@@ -185,6 +220,21 @@ export function semanticTruthViolations(
   if (actual.monthlyMinor !== truth.monthlyMinor) {
     violations.push(
       `${sourceRef("src/app/demo/data.ts", "export const PLANNED_WITHDRAWAL_MONTHLY_MINOR")} :: monthly schedule ${actual.monthlyMinor} differs from captain-signed ${truth.monthlyMinor}`,
+    );
+  }
+  if (actual.journeyAvailableMinor !== truth.availableBalanceMinor) {
+    violations.push(
+      `${sourceRef("src/app/demo/data.ts", "export const AVAILABLE_CASH_MINOR")} :: journey available balance ${actual.journeyAvailableMinor} differs from captain-signed ${truth.availableBalanceMinor}`,
+    );
+  }
+  if (actual.setupAvailableMinor !== truth.availableBalanceMinor) {
+    violations.push(
+      `${sourceRef("src/app/demo/build-setup.ts", "const CURRENT_BALANCE_MINOR")} :: setup available balance ${actual.setupAvailableMinor} differs from captain-signed ${truth.availableBalanceMinor}`,
+    );
+  }
+  if (actual.setupAvailableMinor !== actual.journeyAvailableMinor) {
+    violations.push(
+      `${sourceRef("src/app/demo/data.ts", "export const AVAILABLE_CASH_MINOR")} :: the setup step shows ${actual.setupAvailableMinor} while the journey stations show ${actual.journeyAvailableMinor} for the same request`,
     );
   }
   for (const [firmIndex, firmId] of (["firm-a", "firm-b"] as const).entries()) {
@@ -244,6 +294,23 @@ describe("demo semantic-truth fence", () => {
     ).toEqual([]);
   });
 
+  it("enforces: every signed-impact card opens on the captain-signed option", () => {
+    const vm = buildMoneyMovementSetup();
+    const compared = vm.impacts.filter((impact) => impact.groupId !== null);
+    expect(compared.length).toBeGreaterThan(0);
+    for (const impact of compared) {
+      const group = vm.policyGroups.find((candidate) => candidate.id === impact.groupId);
+      expect(group, `impact "${impact.id}" references unknown group "${impact.groupId}"`).toBeDefined();
+      for (const firm of group!.firms) {
+        const option = firm.options.find((candidate) => candidate.id === firm.initialOptionId);
+        expect(
+          option?.truthLabel,
+          `"${impact.id}" opens on a non-signed ${firm.firmId} option, so its captain-signed card would show an unsigned outcome`,
+        ).toBe("Signed");
+      }
+    }
+  });
+
   it("enforces: the bounded setup leaves requester participation unresolved", () => {
     const vm = buildMoneyMovementSetup();
     expect(vm.policyGroups).toHaveLength(5);
@@ -262,6 +329,33 @@ describe("demo semantic-truth fence", () => {
       );
       expect(violations[0]).toContain("src/app/demo/data.ts:");
       expect(violations[0]).toContain("monthly schedule");
+    });
+
+    it("flags a journey liquidity input the signed cases do not state", () => {
+      const actual = demoSemanticFacts();
+      const violations = semanticTruthViolations(
+        { ...actual, journeyAvailableMinor: 20_000_000 },
+        goldenSemanticTruth(),
+      );
+      expect(violations.some((violation) =>
+        violation.includes("src/app/demo/data.ts:") &&
+        violation.includes("journey available balance"),
+      )).toBe(true);
+    });
+
+    it("flags two available-cash figures for one request", () => {
+      const actual = demoSemanticFacts();
+      const violations = semanticTruthViolations(
+        { ...actual, setupAvailableMinor: actual.journeyAvailableMinor - 100 },
+        goldenSemanticTruth(),
+      );
+      expect(violations.some((violation) =>
+        violation.includes("build-setup.ts:") &&
+        violation.includes("setup available balance"),
+      )).toBe(true);
+      expect(violations.some((violation) =>
+        violation.includes("while the journey stations show"),
+      )).toBe(true);
     });
 
     it("flags a duplicated or drifted displayed reserve floor", () => {
