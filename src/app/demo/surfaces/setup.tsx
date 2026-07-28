@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MoneyMovementSetupVM,
@@ -22,6 +22,7 @@ import {
 import {
   activationResponseMatchesDraft,
   captureSetupActivationDraft,
+  type SetupActivationDraft,
 } from "./setup-activation-state";
 
 function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
@@ -127,9 +128,19 @@ export function MoneyMovementSetupSurface({
   const router = useRouter();
   const initial = useMemo(() => initialSelections(vm), [vm]);
   const [stepIndex, setStepIndex] = useState(0);
-  const [selections, setSelections] = useState<SetupSelections>(initial);
-  const currentSelections = useRef<SetupSelections>(initial);
-  const draftGeneration = useRef(0);
+  // The draft carries its generation IN COMMITTED STATE. The F8 guard compares what
+  // the user actually saw when they activated against what is on screen when the
+  // response lands, so its inputs may only ever describe a committed render - never a
+  // render pass React discarded (StrictMode double-invoke, an interrupted concurrent
+  // render), which is why the updater below is pure and the mirror is an effect.
+  const [draft, setDraft] = useState<SetupActivationDraft>(() =>
+    captureSetupActivationDraft(0, initial),
+  );
+  const committedDraft = useRef(draft);
+  useEffect(() => {
+    committedDraft.current = draft;
+  }, [draft]);
+  const selections = draft.selections;
   const [attested, setAttested] = useState(false);
   const [activeSnapshot, setActiveSnapshot] = useState<SetupActivatedSnapshotVM | null>(null);
   const [activating, setActivating] = useState(false);
@@ -146,15 +157,12 @@ export function MoneyMovementSetupSurface({
 
   function select(firmId: SetupFirmId, groupId: SetupPolicyGroupVM["id"], optionId: string) {
     if (activating) return;
-    setSelections((current) => {
-      const next = {
-        ...current,
-        [firmId]: { ...current[firmId], [groupId]: optionId },
-      };
-      currentSelections.current = next;
-      draftGeneration.current += 1;
-      return next;
-    });
+    setDraft((current) =>
+      captureSetupActivationDraft(current.generation + 1, {
+        ...current.selections,
+        [firmId]: { ...current.selections[firmId], [groupId]: optionId },
+      }),
+    );
     setAttested(false);
     setActiveSnapshot(null);
     setActivationError(null);
@@ -171,16 +179,16 @@ export function MoneyMovementSetupSurface({
       setActivationError(null);
       setActivating(true);
       const captured = captureSetupActivationDraft(
-        draftGeneration.current,
-        currentSelections.current,
+        committedDraft.current.generation,
+        committedDraft.current.selections,
       );
       try {
         const result: SetupActivationResult = await activate(captured.selections);
         if (
           !activationResponseMatchesDraft(
             captured,
-            draftGeneration.current,
-            currentSelections.current,
+            committedDraft.current.generation,
+            committedDraft.current.selections,
           )
         ) {
           setActiveSnapshot(null);
@@ -201,8 +209,8 @@ export function MoneyMovementSetupSurface({
         setActivationError(
           activationResponseMatchesDraft(
             captured,
-            draftGeneration.current,
-            currentSelections.current,
+            committedDraft.current.generation,
+            committedDraft.current.selections,
           )
             ? "Activation failed closed before any configuration or decision identity was created."
             : "The draft changed during activation. Review and acknowledge the current selections before trying again.",

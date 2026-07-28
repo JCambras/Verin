@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
-import { Node, Project, SyntaxKind } from "ts-morph";
+import { Node, Project, SyntaxKind, type TypeLiteralNode } from "ts-morph";
 import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
 import { SCENARIOS, FIRMS } from "@app/demo/data";
 
@@ -39,6 +39,9 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    A read counts only when the receiver resolves to the actual declaration that
  *    owns the field. Ownerless inline shapes, Records, and unrelated structural
  *    subsets do not prove that a populated view-model field reaches a surface.
+ *    The walk DESCENDS into nested inline object types (`authorityPlan`,
+ *    `RecordVM.header`, `readonly {...}[]` elements): a top-level-only walk let a dead
+ *    field hide one level down inside a shipped view model.
  *
  * All three detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
@@ -188,23 +191,60 @@ export interface DeclaredField {
   readonly sourcePath: string;
   readonly line: number;
   readonly owner: string;
+  /** The exact declaration that OWNS this field, identified by position rather than
+   * name, so a nested inline object type (all of which the checker names `__type`) is
+   * still a distinguishable owner. */
+  readonly ownerKey: string;
   readonly name: string;
 }
 
+/** A declaration's identity across ts-morph projects: same file, same offset. */
+function declarationKey(declaration: Node): string {
+  return `${declaration.getSourceFile().getFilePath()}#${declaration.getStart()}`;
+}
+
+/** The inline object types reachable from a declared type node - through arrays,
+ * `readonly` operators, parentheses, unions, and intersections. `header: {...}`,
+ * `selectedOptions: readonly {...}[]`, and `stateSlot?: {...} | null` all declare
+ * fields that a builder can populate and no screen can render. */
+function nestedTypeLiterals(typeNode: Node | undefined): TypeLiteralNode[] {
+  if (typeNode === undefined) return [];
+  if (Node.isTypeLiteral(typeNode)) return [typeNode];
+  if (Node.isArrayTypeNode(typeNode)) return nestedTypeLiterals(typeNode.getElementTypeNode());
+  if (Node.isParenthesizedTypeNode(typeNode)) return nestedTypeLiterals(typeNode.getTypeNode());
+  if (Node.isTypeOperatorTypeNode(typeNode)) return nestedTypeLiterals(typeNode.getTypeNode());
+  if (Node.isUnionTypeNode(typeNode) || Node.isIntersectionTypeNode(typeNode)) {
+    return typeNode.getTypeNodes().flatMap((member) => nestedTypeLiterals(member));
+  }
+  return [];
+}
+
+/** Every field a view model declares, including the members of its nested inline
+ * object types. Descending matters: a top-level-only walk let `authorityPlan.mode` sit
+ * populated and unrendered inside a shipped view model (charter #5). */
 export function declaredViewModelFields(project: Project): DeclaredField[] {
   const fields: DeclaredField[] = [];
   for (const sf of project.getSourceFiles()) {
     const file = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
-    for (const iface of sf.getInterfaces()) {
-      for (const property of iface.getProperties()) {
+    const collect = (properties: readonly Node[], owner: string, ownerKey: string): void => {
+      for (const property of properties) {
+        if (!Node.isPropertySignature(property)) continue;
+        const name = property.getName();
         fields.push({
           file,
           sourcePath: sf.getFilePath(),
           line: property.getStartLineNumber(),
-          owner: iface.getName(),
-          name: property.getName(),
+          owner,
+          ownerKey,
+          name,
         });
+        for (const literal of nestedTypeLiterals(property.getTypeNode())) {
+          collect(literal.getMembers(), `${owner}.${name}`, declarationKey(literal));
+        }
       }
+    };
+    for (const iface of sf.getInterfaces()) {
+      collect(iface.getProperties(), iface.getName(), declarationKey(iface));
     }
   }
   return fields;
@@ -213,7 +253,7 @@ export function declaredViewModelFields(project: Project): DeclaredField[] {
 /** One property READ, with the receiver declarations it was read through. */
 export interface ReadOwner {
   readonly name: string;
-  readonly declarationFiles: readonly string[];
+  readonly declarationKeys: readonly string[];
 }
 export interface PropertyRead {
   readonly name: string;
@@ -223,7 +263,9 @@ export interface PropertyRead {
 /** The project-declared types a receiver expression resolves to. Unions contribute
  * every constituent, so `vm: ApprovalVM | null` still reports ApprovalVM; types whose
  * only declarations are ambient (`Record`, `Array`) contribute nothing, because they
- * say nothing about which view model is being rendered. */
+ * say nothing about which view model is being rendered. Anonymous object types keep
+ * their declaration position, which is what lets a nested inline shape be owned by the
+ * view model that declares it and by nothing else. */
 function ownersOf(node: Node | undefined): ReadOwner[] {
   if (node === undefined) return [];
   let type;
@@ -237,15 +279,13 @@ function ownersOf(node: Node | undefined): ReadOwner[] {
   for (const constituent of constituents) {
     const symbol = constituent.getSymbol() ?? constituent.getAliasSymbol();
     const name = symbol?.getName();
-    if (!name || name === "__type" || name === "__object") continue;
+    if (!name || name === "__object") continue;
     const declarations = symbol?.getDeclarations() ?? [];
     if (declarations.length === 0 || declarations.every((d) => d.getSourceFile().isDeclarationFile())) continue;
-    const declarationFiles = declarations.map((declaration) =>
-      declaration.getSourceFile().getFilePath(),
-    );
-    owners.set(`${name}:${declarationFiles.join("|")}`, {
+    const declarationKeys = declarations.map(declarationKey);
+    owners.set(`${name}:${declarationKeys.join("|")}`, {
       name,
-      declarationFiles,
+      declarationKeys,
     });
   }
   return [...owners.values()];
@@ -297,11 +337,7 @@ export function deadFieldViolations(fields: readonly DeclaredField[], reads: rea
 
   const rendered = (field: DeclaredField): boolean => {
     return (byName.get(field.name) ?? []).some((read) =>
-      read.owners.some(
-        (owner) =>
-          owner.name === field.owner &&
-          owner.declarationFiles.includes(field.sourcePath),
-      ),
+      read.owners.some((owner) => owner.declarationKeys.includes(field.ownerKey)),
     );
   };
 
@@ -379,6 +415,51 @@ describe("demo-skeleton-honesty fence", () => {
       expect(violations.length).toBe(1);
       expect(violations[0]).toContain("setup-model.ts:3");
       expect(violations[0]).toContain("ProofVM.ghostField");
+    });
+
+    it("RULE C descends: a dead field inside a NESTED inline object type is flagged with file:line", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofFirmVM {\n  readonly authorityPlan: {\n    readonly mode: string;\n    readonly reached: boolean;\n  };\n  readonly selectedOptions: readonly {\n    readonly groupId: string;\n    readonly label: string;\n  }[];\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `import type { ProofFirmVM } from "../setup-model";\nexport function Proof({ vm }: { vm: ProofFirmVM }) {\n  return [vm.authorityPlan.reached, vm.selectedOptions.map((o) => o.label)];\n}`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(2);
+      expect(violations[0]).toContain("setup-model.ts:3");
+      expect(violations[0]).toContain("ProofFirmVM.authorityPlan.mode");
+      expect(violations[1]).toContain("ProofFirmVM.selectedOptions.groupId");
+    });
+
+    it("RULE C descends: a nested field read through its OWN view model counts as rendered", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofFirmVM {\n  readonly approvalClock: {\n    readonly escalation: string;\n  };\n}`,
+        "/src/app/demo/surfaces/proof.tsx": `import type { ProofFirmVM } from "../setup-model";\nexport function Proof({ vm }: { vm: ProofFirmVM }) { return vm.approvalClock.escalation; }`,
+      });
+      expect(
+        deadFieldViolations(
+          declaredViewModelFields(project),
+          readProperties(project),
+        ),
+      ).toEqual([]);
+    });
+
+    it("RULE C descends: a same-named nested field on an unrelated shape does NOT rescue it", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface ProofFirmVM {\n  readonly approvalClock: {\n    readonly escalation: string;\n  };\n}`,
+        "/src/app/demo/surfaces/clock.tsx": `interface LocalClock { readonly escalation: string }\nexport function Clock({ clock }: { clock: LocalClock }) { return clock.escalation; }`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(2);
+      expect(
+        violations.some((violation) =>
+          violation.includes("ProofFirmVM.approvalClock.escalation"),
+        ),
+      ).toBe(true);
     });
 
     it("RULE C is owner-aware: an unrelated property of the same name does NOT rescue a dead field", () => {

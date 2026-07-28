@@ -175,7 +175,6 @@ export interface SetupProofFirmVM {
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
   readonly authorityPlan: {
-    readonly mode: "none" | "specialist-review";
     readonly reached: boolean;
     readonly summary: string;
     readonly detail: string;

@@ -61,7 +61,6 @@ export function buildRecord(
     },
     header: {
       createdAt: "Jul 26, 2026, 14:05",
-      provenance,
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
     hashes: {

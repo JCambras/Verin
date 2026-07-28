@@ -202,7 +202,7 @@ export function buildPolicyTrace(
         ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
         : "Satisfied after this movement",
       version: reserveCite,
-      why: { reason: `${firm.name} preserves ${firm.reserveMonths === 6 ? "six" : "twelve"} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
+      why: { reason: `${firm.name} preserves ${firm.reserveMonths} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
     },
     {
       order: 3,

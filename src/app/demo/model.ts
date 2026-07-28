@@ -13,7 +13,7 @@
  * fake service (./service.ts) and the surface components share exactly one vocabulary.
  */
 import type { DisplayMetric } from "@contracts/metric";
-import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
+import type { RecordProvenance, SourceSystem } from "@contracts/provenance";
 
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
@@ -302,7 +302,6 @@ export interface RecordVM {
   readonly identity: RecordIdentityVM;
   readonly header: {
     readonly createdAt: string;
-    readonly provenance: DerivedProvenance;
     readonly watermark: string | null; // DEMO_WATERMARK when demonstration-derived
   };
   readonly hashes: {

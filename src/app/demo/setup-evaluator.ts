@@ -15,10 +15,11 @@ import {
   type DecisionConfiguration,
   type FirmData,
 } from "./data";
-import { derivedMetric, prov } from "./provenance";
+import { RESERVE_FLOOR_INPUTS, derivedMetric } from "./provenance";
 import {
   SETUP_FIRM_IDS,
   SETUP_POLICY_GROUP_IDS,
+  type MoneyMovementSetupVM,
   type SetupActivatedSnapshotVM,
   type SetupActivationResult,
   type SetupFirmId,
@@ -138,22 +139,24 @@ function canonicalConfiguration(selections: SetupSelections): string {
 }
 
 function optionFor(
+  vm: MoneyMovementSetupVM,
   firmId: SetupFirmId,
   groupId: SetupPolicyGroupId,
   optionId: string,
 ) {
-  const group = buildMoneyMovementSetup().policyGroups.find(
-    (candidate) => candidate.id === groupId,
-  );
+  const group = vm.policyGroups.find((candidate) => candidate.id === groupId);
   const firm = group?.firms.find((candidate) => candidate.firmId === firmId);
   return firm?.options.find((candidate) => candidate.id === optionId) ?? null;
 }
 
-function validateSelections(selections: SetupSelections): string | null {
+function validateSelections(
+  vm: MoneyMovementSetupVM,
+  selections: SetupSelections,
+): string | null {
   for (const firmId of SETUP_FIRM_IDS) {
     for (const groupId of SETUP_POLICY_GROUP_IDS) {
       const optionId = selections[firmId][groupId];
-      if (!optionFor(firmId, groupId, optionId)) {
+      if (!optionFor(vm, firmId, groupId, optionId)) {
         return `Unsupported setup combination: ${canonicalConfiguration(selections)}. ${firmId}:${groupId}=${optionId} is not a supported closed choice.`;
       }
       const evaluatorSupports =
@@ -175,10 +178,10 @@ function validateSelections(selections: SetupSelections): string | null {
 }
 
 function matchesSignedProfile(
+  vm: MoneyMovementSetupVM,
   firmId: SetupFirmId,
   selections: SetupSelections,
 ): boolean {
-  const vm = buildMoneyMovementSetup();
   return vm.policyGroups.every((group) => {
     const firm = group.firms.find((candidate) => candidate.firmId === firmId);
     return firm?.initialOptionId === selections[firmId][group.id];
@@ -198,7 +201,6 @@ function runtimeFirm(
       THRESHOLD_MINOR[selections[firmId].threshold]!,
     bankChangeHandling: BANK_HANDLING[selections[firmId]["bank-change"]]!,
     policyVersion,
-    policyActiveSince: DEMO_NOW,
   };
 }
 
@@ -222,13 +224,13 @@ function decisionConfiguration(
 }
 
 function evaluateFirm(
+  vm: MoneyMovementSetupVM,
   firmId: SetupFirmId,
   selections: SetupSelections,
   snapshotHash: string,
 ): Omit<SetupProofFirmVM, "exportHref"> {
-  const vm = buildMoneyMovementSetup();
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
-  const signed = matchesSignedProfile(firmId, selections);
+  const signed = matchesSignedProfile(vm, firmId, selections);
   const configurationHash = digest([
     "verin-demo-profile-configuration-v1",
     firmId,
@@ -278,7 +280,7 @@ function evaluateFirm(
   );
   const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => ({
     groupId,
-    label: optionFor(firmId, groupId, selections[firmId][groupId])!.label,
+    label: optionFor(vm, firmId, groupId, selections[firmId][groupId])!.label,
   }));
   return {
     firmId,
@@ -299,10 +301,7 @@ function evaluateFirm(
     reserveMetric: derivedMetric(
       projection.requiredReserveMinor,
       "currency-minor",
-      [
-        prov("synthetic-fixture", OBSERVED_RECENT),
-        prov("synthetic-fixture", OBSERVED_RECENT),
-      ],
+      RESERVE_FLOOR_INPUTS,
       DEMO_NOW,
     ),
     reserveSummary: projection.reserveSatisfied
@@ -341,9 +340,9 @@ export function activateMoneyMovementSetup(value: unknown): SetupActivationResul
       error: `Unsupported setup combination: ${combinationName(value)}. Both firms and all five closed choice groups are required.`,
     };
   }
-  const validationError = validateSelections(selections);
-  if (validationError) return { ok: false, error: validationError };
   const vm = buildMoneyMovementSetup();
+  const validationError = validateSelections(vm, selections);
+  if (validationError) return { ok: false, error: validationError };
   const canonical = canonicalConfiguration(selections);
   const snapshotHash = digest([
     "verin-demo-activated-snapshot-v1",
@@ -356,8 +355,8 @@ export function activateMoneyMovementSetup(value: unknown): SetupActivationResul
   const snapshotVersion = `MM-DEMO-SNAPSHOT-${snapshotHash
     .slice(0, 12)
     .toUpperCase()}`;
-  const evaluatedA = evaluateFirm("firm-a", selections, snapshotHash);
-  const evaluatedB = evaluateFirm("firm-b", selections, snapshotHash);
+  const evaluatedA = evaluateFirm(vm, "firm-a", selections, snapshotHash);
+  const evaluatedB = evaluateFirm(vm, "firm-b", selections, snapshotHash);
   const firms: [SetupProofFirmVM, SetupProofFirmVM] = [
     {
       ...evaluatedA,

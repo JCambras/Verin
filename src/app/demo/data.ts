@@ -77,7 +77,6 @@ export interface FirmData {
   readonly requesterConstraint: string | null;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
   readonly policyVersion: string;
-  readonly policyActiveSince: string;
 }
 export const FIRMS: Record<string, FirmData> = {
   "firm-a": {
@@ -90,7 +89,6 @@ export const FIRMS: Record<string, FirmData> = {
     requesterConstraint: "may-not-satisfy-both-approvals",
     bankChangeHandling: "specialist-review",
     policyVersion: "FA-4.2",
-    policyActiveSince: "2026-05-01",
   },
   "firm-b": {
     id: "firm-b",
@@ -102,7 +100,6 @@ export const FIRMS: Record<string, FirmData> = {
     requesterConstraint: null,
     bankChangeHandling: "block-until-independently-verified",
     policyVersion: "FB-2.1",
-    policyActiveSince: "2026-06-18",
   },
 };
 export const DEFAULT_FIRM = "firm-a";

@@ -14,6 +14,7 @@ import {
   deriveArtifactProvenance,
 } from "@contracts/provenance";
 import type { FactVM, FakeClass } from "./model";
+import { DEMO_NOW, OBSERVED_RECENT } from "./data";
 
 /** The SourceSystem a fake class renders under (drives the FreshValue "source · as of"
  * label). The precise fake class is always ALSO carried by a DevProvenanceBadge. */
@@ -49,6 +50,19 @@ export function fixtureMetric(value: number, format: MetricFormat, fakeClass: Fa
 export function derivedMetric(value: number, format: MetricFormat, inputs: readonly RecordProvenance[], asOf: string): DisplayMetric {
   return metric(value, format, deriveArtifactProvenance(inputs, asOf));
 }
+
+/**
+ * The ONE derivation trace behind every displayed reserve floor (ADR-0022). The floor
+ * is months x the signed monthly schedule, so its leaf sources are the signed balance
+ * and schedule fixtures PLUS the administrator-chosen horizon - the same $48,000 or
+ * $96,000 figure must never carry a different trace depending on which step drew it,
+ * so the setup step and the activated snapshot read this list instead of restating it.
+ */
+export const RESERVE_FLOOR_INPUTS: readonly RecordProvenance[] = [
+  prov("synthetic-fixture", OBSERVED_RECENT),
+  prov("synthetic-fixture", OBSERVED_RECENT),
+  prov("user-entered-demo-input", DEMO_NOW),
+];
 
 /** The demonstration provenance for the whole decision record (§9 watermark rules). */
 export function recordProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {

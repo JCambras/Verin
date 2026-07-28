@@ -20,6 +20,7 @@ import {
   scenarioById,
 } from "@app/demo/data";
 import { headroomMinor } from "@app/demo/build-decision";
+import { RESERVE_FLOOR_INPUTS, derivedMetric } from "@app/demo/provenance";
 import { getJourney } from "@app/demo/journey";
 import {
   activateMoneyMovementSetup,
@@ -31,6 +32,8 @@ import type {
   SetupSelections,
 } from "@app/demo/setup-model";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
+import type { DisplayMetric } from "@contracts/metric";
+import { isDemonstration } from "@contracts/provenance";
 import { REPO_ROOT } from "./_fence-utils";
 
 /**
@@ -296,6 +299,136 @@ export function staleImpactViolations(
   return violations;
 }
 
+/** The three things an exported record says about ONE activated reserve horizon: the
+ * prose in the precedence trace, the reserve floor it prints, and the headroom left
+ * after this movement. All three derive from the activated `reserveMonths`, so any
+ * disagreement means the record contradicts itself in front of an examiner. */
+interface ReserveHorizonAssignment {
+  readonly reserveMonths: number;
+  readonly precedenceReason: string;
+  readonly reserveFloorMinor: number;
+  readonly headroomMinor: number;
+}
+
+/** Spelled forms a horizon could be printed as. Listed so the fence recognises the
+ * exact regression it exists to stop: a nine-month activation printing "twelve". */
+const HORIZON_WORDS: Readonly<Record<number, string>> = {
+  6: "six",
+  9: "nine",
+  12: "twelve",
+};
+
+/** Every horizon an administrator can activate (setup-evaluator RESERVE_MONTHS). */
+const SUPPORTED_RESERVE_MONTHS = [6, 9, 12] as const;
+
+export function reserveHorizonViolations(
+  actual: ReserveHorizonAssignment,
+  supportedMonths: readonly number[],
+  basis: LiquidityBasis,
+  monthlyMinor: number,
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/build-decision.ts",
+    "months of planned withdrawals in cash",
+  );
+  const violations: string[] = [];
+  if (
+    !new RegExp(`\\b${actual.reserveMonths}\\b`).test(actual.precedenceReason)
+  ) {
+    violations.push(
+      `${where} :: the precedence reason "${actual.precedenceReason}" never states the activated ${actual.reserveMonths}-month horizon`,
+    );
+  }
+  for (const months of supportedMonths) {
+    if (months === actual.reserveMonths) continue;
+    const word = HORIZON_WORDS[months];
+    for (const token of [String(months), ...(word === undefined ? [] : [word])]) {
+      if (new RegExp(`\\b${token}\\b`, "i").test(actual.precedenceReason)) {
+        violations.push(
+          `${where} :: the precedence reason states the "${token}" month horizon while the activated horizon is ${actual.reserveMonths} months`,
+        );
+      }
+    }
+  }
+  const projected = projectReserve({
+    availableMinor: basis.availableMinor,
+    pendingMinor: basis.pendingMinor,
+    requestMinor: basis.requestMinor,
+    plannedMonthlyMinor: monthlyMinor,
+    reserveMonths: actual.reserveMonths,
+  });
+  if (actual.reserveFloorMinor !== projected.requiredReserveMinor) {
+    violations.push(
+      `${where} :: the printed reserve floor ${actual.reserveFloorMinor} is not ${actual.reserveMonths} months of the signed ${monthlyMinor} schedule`,
+    );
+  }
+  if (actual.headroomMinor !== projected.headroomMinor) {
+    violations.push(
+      `${where} :: the printed headroom ${actual.headroomMinor} does not follow the activated ${actual.reserveMonths}-month floor`,
+    );
+  }
+  return violations;
+}
+
+/** A displayed figure reduced to its ADR-0022 derivation trace. */
+interface MetricTrace {
+  readonly value: number;
+  readonly source: string;
+  readonly demonstration: boolean;
+  readonly derivedFrom: readonly string[];
+}
+
+export function metricTraceOf(displayed: DisplayMetric): MetricTrace {
+  const provenance = displayed.provenance;
+  return {
+    value: Number(displayed.value),
+    source: provenance.source,
+    demonstration: isDemonstration(provenance),
+    derivedFrom:
+      "derivedFrom" in provenance ? [...provenance.derivedFrom].sort() : [],
+  };
+}
+
+/**
+ * The SAME displayed figure, drawn on two steps, must carry one derivation trace.
+ * A reserve floor whose leaf sources depend on which screen rendered it understates
+ * its own inputs on one of them (charter #3 / ADR-0022).
+ */
+export function derivationTraceViolations(
+  label: string,
+  setupStep: MetricTrace,
+  activated: MetricTrace,
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/provenance.ts",
+    "export const RESERVE_FLOOR_INPUTS",
+  );
+  const violations: string[] = [];
+  if (setupStep.value !== activated.value) {
+    violations.push(
+      `${where} :: ${label} shows ${setupStep.value} on the setup step but ${activated.value} in the activated snapshot`,
+    );
+  }
+  if (setupStep.source !== activated.source) {
+    violations.push(
+      `${where} :: ${label} is sourced "${setupStep.source}" on the setup step and "${activated.source}" in the activated snapshot`,
+    );
+  }
+  if (setupStep.demonstration !== activated.demonstration) {
+    violations.push(
+      `${where} :: ${label} is a demonstration artifact on only one of the two steps`,
+    );
+  }
+  if (
+    setupStep.derivedFrom.join("|") !== activated.derivedFrom.join("|")
+  ) {
+    violations.push(
+      `${where} :: ${label} traces to [${setupStep.derivedFrom.join(", ")}] on the setup step but [${activated.derivedFrom.join(", ")}] in the activated snapshot`,
+    );
+  }
+  return violations;
+}
+
 interface BankInstructionDateAssignment {
   readonly sourceDate: string;
   readonly sourceAgeDays: number;
@@ -304,6 +437,10 @@ interface BankInstructionDateAssignment {
   readonly setupValue: string;
   readonly impactFacts: string;
   readonly blocker: string;
+  /** The request headline the setup step prints. It names the age without the date, so
+   * it is checked for the derived age only - but it IS checked: a hand-typed "4 days
+   * ago" beside a derived one is exactly how the signed date stops being the source. */
+  readonly requestSummary: string;
   readonly inputHash: string;
 }
 
@@ -384,6 +521,11 @@ export function bankInstructionDateViolations(
         `${where} :: ${label} does not render signed ${signedDate} as ${signedAgeDays} days old`,
       );
     }
+  }
+  if (!actual.requestSummary.includes(`${signedAgeDays} days ago`)) {
+    violations.push(
+      `${where} :: request summary does not render the ${signedAgeDays} days derived from signed ${signedDate}`,
+    );
   }
   const expectedHash = recentBankInputHash(signedDate);
   if (actual.inputHash !== expectedHash) {
@@ -680,7 +822,7 @@ export interface ExportIdentity {
   readonly configurationProvenance: string;
   readonly disposition: string;
   readonly explanation: string;
-  readonly authorityMode: string;
+  readonly authorityReached: string;
   readonly authorityStages: string;
   readonly exportHref: string;
 }
@@ -731,7 +873,7 @@ export function exportIdentityViolations(
       "configurationProvenance",
       "disposition",
       "explanation",
-      "authorityMode",
+      "authorityReached",
       "authorityStages",
     ] as const) {
       if (identity[field] !== target[field]) {
@@ -787,7 +929,7 @@ function renderedIdentity(
       record.activatedConfiguration.configurationProvenance,
     disposition: record.disposition.kind,
     explanation: record.disposition.why.reason,
-    authorityMode: record.approvalStages === null ? "none" : "specialist-review",
+    authorityReached: String(record.approvalStages !== null),
     authorityStages: JSON.stringify(record.approvalStages ?? []),
     exportHref: `/app/demo/record?scenario=${record.identity.scenario.id}&firm=${record.identity.firm.id}&activation=${record.activatedConfiguration.snapshotHash}`,
   };
@@ -812,7 +954,7 @@ function claimedIdentities(
     configurationProvenance: firm.configurationProvenance,
     disposition: firm.disposition.kind,
     explanation: firm.disposition.why.reason,
-    authorityMode: firm.authorityPlan.mode,
+    authorityReached: String(firm.authorityPlan.reached),
     authorityStages: JSON.stringify(firm.authorityPlan.stages),
     exportHref: firm.exportHref,
   });
@@ -931,7 +1073,7 @@ describe("demo semantic-truth fence", () => {
   it("enforces: the evaluator freezes ordered authority stages and export consumes them unchanged", () => {
     const snapshot = activatedSnapshot();
     const firmA = snapshot.firms[0];
-    expect(firmA.authorityPlan.mode).toBe("specialist-review");
+    expect(firmA.authorityPlan.reached).toBe(true);
     expect(firmA.authorityPlan.stages.map((stage) => stage.title)).toEqual([
       "Stage 1 - Bank-instruction specialist review",
       "Stage 2 - Dual operations approval",
@@ -1069,6 +1211,106 @@ describe("demo semantic-truth fence", () => {
     ).toEqual([]);
   });
 
+  it("enforces: the exported record's reserve prose, floor, and headroom all name the ACTIVATED horizon", () => {
+    for (const months of SUPPORTED_RESERVE_MONTHS) {
+      const snapshot = activatedSnapshot((selections) => {
+        selections["firm-a"].reserve = `${months}-months`;
+      });
+      const record = buildActivatedRecord(snapshot, "firm-a");
+      const reserveRow = record.precedence.find((row) =>
+        row.rule.startsWith("Cash-reserve floor"),
+      );
+      const headroom = record.disposition.figures?.find((figure) =>
+        figure.label.includes("reserve"),
+      );
+      expect(reserveRow, "the record lost its cash-reserve precedence row").toBeDefined();
+      expect(headroom, "the record lost its post-reserve headroom figure").toBeDefined();
+      const violations = reserveHorizonViolations(
+        {
+          reserveMonths: months,
+          precedenceReason: reserveRow?.why?.reason ?? "",
+          reserveFloorMinor: Number(snapshot.firms[0].reserveMetric.value),
+          headroomMinor: Number(headroom?.metric.value),
+        },
+        SUPPORTED_RESERVE_MONTHS,
+        SMITHS_LIQUIDITY,
+        PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+      );
+      expect(
+        violations,
+        `activated ${months}-month horizon drift:\n${violations.join("\n")}`,
+      ).toEqual([]);
+    }
+  });
+
+  it("enforces: the reserve floor carries ONE derivation trace on the setup step and the snapshot", () => {
+    const vm = buildMoneyMovementSetup();
+    const reserveGroup = vm.policyGroups.find((group) => group.id === "reserve")!;
+    for (const months of SUPPORTED_RESERVE_MONTHS) {
+      const snapshot = activatedSnapshot((selections) => {
+        selections["firm-a"].reserve = `${months}-months`;
+      });
+      const option = reserveGroup.firms
+        .find((firm) => firm.firmId === "firm-a")!
+        .options.find((candidate) => candidate.id === `${months}-months`)!;
+      expect(option.reserveMetric, "the setup option lost its reserve figure").toBeDefined();
+      const violations = derivationTraceViolations(
+        `the ${months}-month Firm A reserve floor`,
+        metricTraceOf(option.reserveMetric!),
+        metricTraceOf(snapshot.firms[0].reserveMetric),
+      );
+      expect(
+        violations,
+        `reserve-floor provenance drift:\n${violations.join("\n")}`,
+      ).toEqual([]);
+    }
+  });
+
+  it("detects: a reserve floor missing the administrator-chosen horizon leaf cannot pass", () => {
+    const complete = metricTraceOf(
+      derivedMetric(4_800_000, "currency-minor", RESERVE_FLOOR_INPUTS, DEMO_NOW),
+    );
+    const understated = metricTraceOf(
+      derivedMetric(
+        4_800_000,
+        "currency-minor",
+        RESERVE_FLOOR_INPUTS.filter(
+          (input) => input.source !== "user-input",
+        ),
+        DEMO_NOW,
+      ),
+    );
+    const violations = derivationTraceViolations(
+      "the six-month Firm A reserve floor",
+      complete,
+      understated,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("user-input");
+  });
+
+  it("detects: a nine-month activation that prints \"twelve\" cannot pass", () => {
+    const violations = reserveHorizonViolations(
+      {
+        reserveMonths: 9,
+        precedenceReason:
+          "Firm A preserves twelve months of planned withdrawals in cash.",
+        reserveFloorMinor: 12 * PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+        headroomMinor: 0,
+      },
+      SUPPORTED_RESERVE_MONTHS,
+      SMITHS_LIQUIDITY,
+      PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+    );
+    expect(violations.some((violation) => violation.includes('"twelve"'))).toBe(true);
+    expect(
+      violations.some((violation) => violation.includes("never states the activated 9-month")),
+    ).toBe(true);
+    expect(
+      violations.some((violation) => violation.includes("printed reserve floor")),
+    ).toBe(true);
+  });
+
   it("enforces: the signed bank-change date drives evidence, display, and input identity", () => {
     const gc03 = signed(
       loadGolden("GC-03-recent-bank-change-firm-a.json"),
@@ -1103,6 +1345,7 @@ describe("demo semantic-truth fence", () => {
           setupValue: setupFact.value ?? "",
           impactFacts: impact.facts,
           blocker: blocker?.condition ?? "",
+          requestSummary: vm.request.summary,
           inputHash: decisionIdentityFor(
             scenarioById("recent-bank-change-block"),
             firmById("firm-a"),
@@ -1153,11 +1396,12 @@ describe("demo semantic-truth fence", () => {
         setupValue: "Changed 2 days ago",
         impactFacts: "Change 2 days ago",
         blocker: "Changed recently",
+        requestSummary: "bank instruction changed 2 days ago",
         inputHash: recentBankInputHash("2026-07-24"),
       },
       "2026-07-22",
     );
-    expect(violations).toHaveLength(8);
+    expect(violations).toHaveLength(9);
     expect(violations.at(-1)).toContain("canonical input hash");
   });
 

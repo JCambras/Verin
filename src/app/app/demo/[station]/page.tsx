@@ -5,7 +5,10 @@
  * to the surface component. Surfaces never see the contract data or the service -
  * only view models (Gate 0: the UI does not invent decisions).
  */
+import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { getDb } from "@infra/store/db";
+import { resolveSession, SESSION_COOKIE } from "@infra/identity/session";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
 import { activatedSetupSnapshot } from "@app/demo/setup-activation-store";
@@ -57,30 +60,44 @@ export default async function DemoStationPage({
   if (!scenarioId || !firmId) notFound();
   const activation = first(sp.activation);
   if (station === "record" && activation) {
-    const snapshot = activatedSetupSnapshot(activation);
+    // Read-only identity: a Server Component cannot set the rotated cookie
+    // requirePrincipal writes, so the activation scope is resolved through
+    // resolveSession (ADR-0008, D-030). A snapshot is readable only by the
+    // principal that activated it.
+    const session = await resolveSession(
+      await getDb(),
+      (await cookies()).get(SESSION_COOKIE)?.value,
+    );
+    const snapshot = session.ok
+      ? activatedSetupSnapshot(
+          { orgId: session.value.orgId, userId: session.value.userId },
+          activation,
+        )
+      : null;
     const snapshotFirm = snapshot?.firms.find(
       (candidate) => candidate.firmId === firmId,
     );
-    if (
-      !snapshot ||
-      !snapshotFirm ||
-      snapshotFirm.scenarioId !== scenarioId
-    ) {
+    // Every miss fails CLOSED and names what is unavailable. An activated
+    // configuration is never recomputed here and no unrelated signed record is
+    // ever substituted for one that is gone.
+    if (snapshot && snapshotFirm && snapshotFirm.scenarioId === scenarioId) {
       return (
-        <SurfaceShell
-          title="Decision record unavailable"
-          description="The export failed closed before any unrelated signed record could be substituted."
-        >
-          <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
-            Activated setup snapshot {activation} does not match scenario {scenarioId} and firm {firmId}.
-          </p>
-        </SurfaceShell>
+        <RecordSurface
+          vm={buildActivatedRecord(snapshot, firmId as SetupFirmId)}
+        />
       );
     }
     return (
-      <RecordSurface
-        vm={buildActivatedRecord(snapshot, firmId as SetupFirmId)}
-      />
+      <SurfaceShell
+        title="Decision record unavailable"
+        description="The export failed closed before any unrelated signed record could be substituted."
+      >
+        <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+          {snapshot
+            ? `Activated setup snapshot ${activation} does not contain scenario ${scenarioId} for firm ${firmId}.`
+            : `Activated setup snapshot ${activation} is not available to this session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record.`}
+        </p>
+      </SurfaceShell>
     );
   }
   const journey = getJourney(scenarioId, firmId);

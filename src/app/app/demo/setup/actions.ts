@@ -24,6 +24,11 @@ export async function activateSetup(
     };
   }
   const result = activateMoneyMovementSetup(selections);
-  if (result.ok) registerActivatedSetupSnapshot(result.snapshot);
+  if (result.ok) {
+    registerActivatedSetupSnapshot(
+      { orgId: principal.value.orgId, userId: principal.value.userId },
+      result.snapshot,
+    );
+  }
   return result;
 }

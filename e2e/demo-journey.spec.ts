@@ -347,6 +347,16 @@ test("a changed selection freezes, exports, and requires reactivation after anot
     ),
   );
   await expectRecordIdentity(page, changedIdentity);
+
+  // The exported record must state the ACTIVATED nine-month horizon. The old prose
+  // branched on six-vs-twelve, so a nine-month activation printed "twelve" beside its
+  // own $72,000 floor - a self-contradicting examiner-grade artifact.
+  const reserveRow = page
+    .getByRole("listitem")
+    .filter({ hasText: "Cash-reserve floor" });
+  await expect(reserveRow).toContainText("9 months of planned withdrawals");
+  await expect(reserveRow).not.toContainText("twelve");
+  await expect(reserveRow).not.toContainText("six");
 });
 
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {

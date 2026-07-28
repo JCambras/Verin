@@ -10,7 +10,6 @@ export function evaluateAuthorityPlan(
 ): SetupProofFirmVM["authorityPlan"] {
   if (disposition.kind !== "proceed") {
     return {
-      mode: "none",
       reached: false,
       summary: "Independent bank verification is required before authority exists",
       detail: "No approval can substitute for the missing evidence.",
@@ -35,7 +34,6 @@ export function evaluateAuthorityPlan(
   } as const;
   if (!dualApproval) {
     return {
-      mode: "specialist-review",
       reached: true,
       summary: "Specialist review; no dual approval at this amount",
       detail: "The evaluator creates no standard approval below the configured threshold.",
@@ -69,7 +67,6 @@ export function evaluateAuthorityPlan(
         ]),
   ];
   return {
-    mode: "specialist-review",
     reached: true,
     summary: "Specialist review, then two distinct operations approvers",
     detail: `${approvalClock.escalation}. ${approvalClock.expiry}.`,

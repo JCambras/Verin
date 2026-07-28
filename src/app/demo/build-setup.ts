@@ -15,7 +15,7 @@ import type {
   SetupFirmId,
   SetupPolicyGroupVM,
 } from "./setup-model";
-import { derivedMetric, fixtureMetric, prov } from "./provenance";
+import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric, prov } from "./provenance";
 import {
   CANONICAL_REQUEST,
   BANK_INSTRUCTION,
@@ -28,12 +28,6 @@ import {
   SMITHS_LIQUIDITY,
   type SignedLiquidityCase,
 } from "./data";
-
-const DERIVED_INPUTS = [
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("user-entered-demo-input", DEMO_NOW),
-];
 
 /** Whole dollars from integer minor units, for the one place a signed liquidity basis
  * is stated as prose. The numbers are never restated by hand. */
@@ -83,7 +77,7 @@ function reserveOption(
     label: `${months} months`,
     detail: "Reserve dollars are derived from the pinned household schedule and are never entered directly.",
     truthLabel,
-    reserveMetric: derivedMetric(smiths.requiredReserveMinor, "currency-minor", DERIVED_INPUTS, DEMO_NOW),
+    reserveMetric: derivedMetric(smiths.requiredReserveMinor, "currency-minor", RESERVE_FLOOR_INPUTS, DEMO_NOW),
     smithsEffect: effect(
       smiths.reserveSatisfied ? "done" : "blocked",
       smiths.reserveSatisfied ? "Reserve satisfied" : "Reserve not satisfied",
@@ -336,7 +330,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     },
     request: {
       title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
-      summary: "Smith household · taxable account · household-titled destination · bank instruction changed 4 days ago",
+      summary: `Smith household · taxable account · household-titled destination · bank instruction changed ${BANK_INSTRUCTION.changedAgeDays} days ago`,
       requestRef: "request:smiths-renovation@demo-2026-07-28",
       evidenceRef: "smiths-evidence@2026-07-26T14:00Z",
       facts: [

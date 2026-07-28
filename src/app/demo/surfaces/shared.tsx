@@ -93,9 +93,15 @@ export function SurfaceShell({
     id: station.id,
     state: station.state,
   }));
+  // Read through the view model's OWN shapes rather than handing the whole objects to
+  // DecisionSpine's structural props: the dead-field fence only counts a field as
+  // rendered when the read resolves to the view model that declares it.
+  const renderedStateSlot = spine?.stateSlot
+    ? { status: spine.stateSlot.status, label: spine.stateSlot.label }
+    : null;
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
-      {spine ? <DecisionSpine stations={renderedStations!} stateSlot={spine.stateSlot ?? null} /> : null}
+      {spine ? <DecisionSpine stations={renderedStations!} stateSlot={renderedStateSlot} /> : null}
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
         {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}

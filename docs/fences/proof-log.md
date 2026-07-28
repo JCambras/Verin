@@ -5705,3 +5705,126 @@ src/app/demo/data.ts:20 :: canonical input hash does not bind signed bank-change
 
 The injection was reverted. The focused unit and semantic suites then passed all
 60 tests.
+
+## PF-setup-15 · the exported record names the ACTIVATED reserve horizon
+
+**Date:** 2026-07-28.
+
+**Invariant:** the setup lets an administrator activate a 6-, 9-, or 12-month reserve
+horizon, and the exported decision record must state THAT horizon. The precedence-trace
+prose, the printed reserve floor, and the post-reserve headroom all derive from the one
+activated `reserveMonths`, so an examiner-grade artifact can never contradict itself.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` activates each supported
+horizon, exports the Firm A record, and runs `reserveHorizonViolations` over the rendered
+prose, the snapshot's reserve figure, and the record's headroom figure - re-deriving the
+expected floor and headroom from the domain projection rather than from the builder.
+
+**Adversarial proof:** the prose was temporarily returned to its 6-vs-12 ternary and then
+to a nine-month-prints-"twelve" variant. Both failed with the owning source line:
+
+```text
+src/app/demo/build-decision.ts:205 :: the precedence reason "Firm A preserves six months of planned withdrawals in cash." never states the activated 6-month horizon
+src/app/demo/build-decision.ts:205 :: the precedence reason "Firm A preserves twelve months of planned withdrawals in cash." never states the activated 9-month horizon
+src/app/demo/build-decision.ts:205 :: the precedence reason states the "twelve" month horizon while the activated horizon is 9 months
+```
+
+The injection was reverted. A planted companion keeps the detector honest by feeding it a
+nine-month activation whose prose says "twelve".
+
+## PF-setup-16 · one derivation trace behind one reserve floor
+
+**Date:** 2026-07-28.
+
+**Invariant:** the same displayed reserve floor carries ONE ADR-0022 derivation trace
+whichever step drew it. Its leaf sources are the signed balance and schedule fixtures
+plus the administrator-chosen horizon (`user-input`), so the setup step and the frozen
+activated snapshot must agree on value, source, demonstration flag, and `derivedFrom`.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares the setup option's
+`reserveMetric` against the activated snapshot's for every supported horizon through
+`derivationTraceViolations`; both read the single `RESERVE_FLOOR_INPUTS` list.
+
+**Adversarial proof:** the activated snapshot was temporarily built from only the two
+fixture leaves. The production check failed with the owning source line:
+
+```text
+src/app/demo/provenance.ts:61 :: the 6-month Firm A reserve floor traces to [fixture, user-input] on the setup step but [fixture] in the activated snapshot
+```
+
+The injection was reverted. A planted companion feeds the detector a trace with the
+`user-input` horizon leaf removed.
+
+## PF-setup-17 · RULE C descends into nested view-model shapes
+
+**Date:** 2026-07-28.
+
+**Invariant:** every field a demo view model declares is rendered by a surface or a demo
+route - INCLUDING members of nested inline object types (`authorityPlan`, `approvalClock`,
+`RecordVM.header`, `readonly {...}[]` elements). A top-level-only walk let a populated
+field hide one level down inside a shipped view model (charter #5).
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts` RULE C now collects nested
+type-literal members and identifies each owner by DECLARATION POSITION rather than name,
+because the checker names every anonymous object type `__type`.
+
+**Adversarial proof:** the deleted `authorityPlan.mode` label was temporarily restored in
+both the view model and the evaluator. The production check failed with the owning
+source line:
+
+```text
+src/app/demo/setup-model.ts:178 :: SetupProofFirmVM.authorityPlan.mode is populated but never rendered - ship it or delete it (charter #5)
+```
+
+The injection was reverted. Three planted companions cover the new behaviour: a dead
+nested field is flagged, a nested field read through its own view model counts as
+rendered, and a same-named nested field on an unrelated local shape does not rescue it.
+Strengthening the rule also surfaced two real findings, both fixed: `RecordVM.header.provenance`
+was deleted (the record renders the watermark and the flattened appendix, never the object),
+and `SurfaceShell` now reads `stateSlot.status`/`.label` through the view model that owns
+them instead of handing the object to a structural presentation prop.
+
+## PF-setup-18 · the request summary derives its bank-change age
+
+**Date:** 2026-07-28.
+
+**Invariant:** the signed 2026-07-22 bank-instruction change is the single source for the
+displayed age everywhere it appears, the setup request headline included.
+
+**Fence:** `bankInstructionDateViolations` in
+`src/__tests__/fitness/demo-semantic-truth.test.ts` now also checks `request.summary`
+against the age derived from the GC-03 fixture date.
+
+**Adversarial proof:** the summary was temporarily hardcoded to "changed 3 days ago" while
+every other consumer stayed derived. The production check failed with the owning source
+line:
+
+```text
+src/app/demo/data.ts:20 :: request summary does not render the 4 days derived from signed 2026-07-22
+```
+
+The injection was reverted. The companion's planted assignment now expects nine violations.
+
+## PF-setup-19 · the activation registry is scoped and bounded
+
+**Date:** 2026-07-28.
+
+**Invariant:** an activated snapshot (F1) is readable ONLY by the principal that activated
+it, the registry is bounded by a per-principal LRU and a TTL, and every miss returns null
+so the caller fails closed - naming what is unavailable rather than recomputing an outcome
+or borrowing a captain-signed record.
+
+**Fence:** `src/__tests__/unit/setup-activation-store.test.ts` registers real activations
+and asserts scoping across users and orgs, eviction past the LRU limit, expiry past the
+TTL, and a null miss for an unknown hash. `src/app/app/demo/[station]/page.tsx` resolves
+the scope read-only through `resolveSession` and renders a named fail-closed message.
+
+**Adversarial proof:** three injections, each failing:
+
+```text
+scopeKey dropped the userId    → "scopes entries: another principal holding the hash reads nothing" failed: expected {…} to be null
+LRU limit raised by 1000       → "bounds each principal…" failed: the oldest activation must be evicted, not retained forever
+TTL comparison offset by a day → "expires entries…" failed: expected {…} to be null
+```
+
+Each injection was reverted; the suite then passed all five tests.
