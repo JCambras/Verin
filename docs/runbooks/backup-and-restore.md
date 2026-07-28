@@ -37,7 +37,11 @@ fail this drill (SEC 17a-4 / SOC 2 CC7.4).
 2. **Restore:** provision a fresh instance from the target snapshot/PITR point (RTO ≤ 4h).
 3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row
    counts match expectations. Confirm `/ready` returns ready.
-4. **Cut over:** point the stateless app tier at the restored store (a deployment config change — the app
+4. **Repair derived state (only if needed):** if the restore predates a decision-projection write, run
+   `pnpm ledger:rebuild` to discard derived decision state and replay the immutable ledger into it. It
+   refuses any org whose chain does not verify, so it can never launder a corrupted source into
+   derived state; immutable rows are never touched.
+5. **Cut over:** point the stateless app tier at the restored store (a deployment config change — the app
    tier holds no state).
 
 ## Revisit

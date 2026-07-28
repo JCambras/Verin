@@ -5404,3 +5404,39 @@ reproduces the online fold byte-identically.
 **Revert:** restored the guard. All four projection companions pass.
 
 **Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0033, D-099).
+
+## A swallowed mid-batch refusal leaves a verifiable anchor (D-100)
+
+**Invariant:** the ledger anchor covers exactly the entries that committed, even when a
+caller catches the abort and commits its own transaction anyway.
+
+**Injection:** moved the per-entry anchor and checkpoint upserts in
+`src/infrastructure/ledger/ledger-store.ts` back out of the append loop (one upsert per
+batch, after it), then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/decision-ledger.test.ts -t "swallows a mid-batch refusal"
+× keeps the anchor verifiable when a producer swallows a mid-batch refusal
+AssertionError: ledger anchor count, sequence, or head hash differs: expected false to be true
+```
+
+**Revert:** restored the per-entry upserts. L4 verifies the partial append.
+
+## Replayed decision state is labeled by its least trustworthy event (D-100)
+
+**Invariant:** a projection folded from any synthetic event renders as a demonstration,
+whatever provenance recorded the decision (ADR-0022).
+
+**Injection:** restored the `AND l.event_type = 'DecisionRecorded'` filter on the
+provenance join in `src/infrastructure/ledger/ledger-projection-store.ts`, so the label
+came from the recording row alone, then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/ledger-projections.test.ts -t "least trustworthy"
+× labels replayed state by its least trustworthy event, not by the recording one
+AssertionError: expected false to be true
+```
+
+**Revert:** restored the join over every contributing row.
+
+**Date:** 2026-07-28 (review follow-up to D-099, ADR-0033, D-100).

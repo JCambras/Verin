@@ -34,6 +34,8 @@ export interface DecisionLedgerRow {
   readonly prevHash: string;
   readonly entryHash: string;
   readonly provSource: string;
+  readonly provAsOf: string;
+  readonly provConfidence: string;
 }
 
 export interface LedgerVerificationLevel extends ChainVerdict {
@@ -67,6 +69,8 @@ interface DbLedgerRow {
   prev_hash: string;
   entry_hash: string;
   prov_source: string;
+  prov_asof: string;
+  prov_confidence: string;
 }
 
 function toRow(row: DbLedgerRow): DecisionLedgerRow {
@@ -89,6 +93,8 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
     prevHash: row.prev_hash,
     entryHash: row.entry_hash,
     provSource: row.prov_source,
+    provAsOf: row.prov_asof,
+    provConfidence: row.prov_confidence,
   };
 }
 

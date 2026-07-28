@@ -4,7 +4,9 @@ import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { GENESIS_HASH, computeChainHash } from "@infra/audit/hash-chain";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
-import { appError, isAppError, type AppError } from "@contracts/errors";
+import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
+import { log } from "@infra/observability/logger";
+import { isDriverConstraintError, logSafeReason } from "@infra/store/driver-errors";
 import { err, ok, type Result } from "@contracts/result";
 import { SOURCE_SYSTEMS, type RecordProvenance } from "@contracts/provenance";
 import {
@@ -27,7 +29,11 @@ import {
 } from "@contracts/decision-core/serialization";
 import { listDecisionLedger } from "./ledger-verification";
 import { assertLedgerSourceBindings } from "./ledger-bindings";
-import { canonical, insertDecisionSources } from "./ledger-sources";
+import {
+  canonical,
+  insertDecisionSources,
+  insertEvidenceSnapshots,
+} from "./ledger-sources";
 import {
   applyProjection,
   clearDerivedState,
@@ -107,10 +113,21 @@ function validProvenance(provenance: RecordProvenance): boolean {
     !Number.isNaN(Date.parse(provenance.asOf));
 }
 
-function storeFailure(error: unknown): AppError {
-  return isAppError(error)
-    ? error
-    : appError("STORE_CONSTRAINT", "decision ledger append was rejected");
+/**
+ * The real driver error is logged before mapping: this is the sole ledger write
+ * chokepoint, so collapsing an outage, a bug, and a genuine constraint violation into
+ * one opaque code would leave a failed append undiagnosable.
+ */
+function storeFailure(orgId: string, error: unknown): AppError {
+  const known = isAppError(error) ? error : null;
+  log[known ? logLevelFor(known.code) : "error"](
+    { orgId, code: known?.code ?? null, reason: logSafeReason(error) },
+    "decision ledger append failed",
+  );
+  if (known) return known;
+  return isDriverConstraintError(error)
+    ? appError("STORE_CONSTRAINT", "decision ledger append violated a store constraint")
+    : appError("INTERNAL", "decision ledger append failed");
 }
 
 async function lockTenant(tx: SqlQueryable, orgId: string): Promise<void> {
@@ -163,30 +180,30 @@ async function appendPrepared(
       sequence,
       event.type === "DecisionRecorded" ? decisionRecord : undefined,
     );
-    appended.push({ id: event.id, sequence, entryHash });
-    prevHash = entryHash;
-    sequence += 1;
-  }
-  const last = appended.at(-1);
-  if (last) {
+    // Per entry, never once per batch: if a later event of this batch throws and a
+    // future producer swallows it inside its own transaction, the rows that DID
+    // commit still have an anchor that matches them, so L4 stays repairable.
     await tx.query(
       `INSERT INTO decision_ledger_anchor
         (org_id,max_sequence,entry_count,head_hash,updated_at)
-       VALUES ($1,$2,$3,$4,$5)
+       VALUES ($1,$2,1,$3,$4)
        ON CONFLICT (org_id) DO UPDATE
          SET max_sequence = EXCLUDED.max_sequence,
-             entry_count = decision_ledger_anchor.entry_count + EXCLUDED.entry_count,
+             entry_count = decision_ledger_anchor.entry_count + 1,
              head_hash = EXCLUDED.head_hash,
              updated_at = EXCLUDED.updated_at`,
-      [orgId, last.sequence, appended.length, last.entryHash, events.at(-1)!.event.recordedAt],
+      [orgId, sequence, entryHash, event.recordedAt],
     );
     await tx.query(
       `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
        VALUES ($1,$2,$3)
        ON CONFLICT (org_id) DO UPDATE
          SET last_sequence = EXCLUDED.last_sequence, rebuilt_at = EXCLUDED.rebuilt_at`,
-      [orgId, last.sequence, events.at(-1)!.event.recordedAt],
+      [orgId, sequence, event.recordedAt],
     );
+    appended.push({ id: event.id, sequence, entryHash });
+    prevHash = entryHash;
+    sequence += 1;
   }
   return appended;
 }
@@ -205,6 +222,26 @@ function prepareEvents(
     prepared.push(item.value);
   }
   return ok(prepared);
+}
+
+/**
+ * Immutable evidence and the events that record it are appended together: every
+ * supplied snapshot belongs to the appending tenant and is named by exactly one
+ * `EvidenceSnapshotRecorded` of the same batch, and no such event names bytes the batch
+ * does not carry. Both write paths hold to this, so evidence never lands unrecorded.
+ */
+function evidenceCorresponds(
+  snapshots: readonly EvidenceSnapshotRef[],
+  events: readonly PreparedEvent[],
+  orgId: string,
+): boolean {
+  const named = events.flatMap(({ event }) =>
+    event.type === "EvidenceSnapshotRecorded" ? [event.evidenceSnapshotRef.id] : []);
+  const unique = new Set(named);
+  return named.length === snapshots.length &&
+    unique.size === named.length &&
+    snapshots.every((snapshot) =>
+      snapshot.firmId === orgId && unique.has(snapshot.id));
 }
 
 function validateDecisionInput(
@@ -249,22 +286,12 @@ function validateDecisionInput(
   const decisionEvents = events.value.filter(
     ({ event }) => event.type === "DecisionRecorded",
   );
-  const evidenceEvents = events.value.filter(
-    ({ event }) => event.type === "EvidenceSnapshotRecorded",
-  );
-  const snapshotValues = snapshots.map((parsed) => parsed.success ? parsed.data : never());
-  const eventEvidenceIds = new Set(evidenceEvents.map(
-    ({ event }) => event.type === "EvidenceSnapshotRecorded"
-      ? event.evidenceSnapshotRef.id
-      : "",
-  ));
+  const snapshotValues = snapshots.flatMap((parsed) =>
+    parsed.success ? [parsed.data] : []);
   const event = decisionEvents[0]?.event;
   if (
     decisionEvents.length !== 1 ||
-    evidenceEvents.length !== snapshotValues.length ||
-    snapshotValues.some((snapshot) =>
-      snapshot.firmId !== record.data.firmId ||
-      !eventEvidenceIds.has(snapshot.id)) ||
+    !evidenceCorresponds(snapshotValues, events.value, record.data.firmId) ||
     event?.type !== "DecisionRecorded" ||
     event.decisionRef.id !== record.data.id ||
     event.decisionHash !== record.data.decisionHash ||
@@ -280,10 +307,6 @@ function validateDecisionInput(
     record: record.data,
     events: events.value,
   });
-}
-
-function never(): never {
-  throw appError("INTERNAL", "unreachable invalid snapshot");
 }
 
 /** Atomically persist evidence, bundle, immutable decision, events, and projections. */
@@ -313,7 +336,7 @@ export async function recordDecision(
     });
     return ok(appended);
   } catch (error) {
-    return err(storeFailure(error));
+    return err(storeFailure(prepared.value.record.firmId, error));
   }
 }
 
@@ -322,12 +345,17 @@ export async function recordDecision(
  * a transaction, so a future audited CRM write can commit its outbox intent and
  * decision event atomically. Adapter-boundary errors throw typed AppError values
  * to force the caller's transaction to abort.
+ *
+ * `evidenceSnapshots` carries evidence gathered AFTER the decision - what a
+ * verification-time `StatusObserved` cites - so its promoted, foreign-keyed id is never
+ * a dead reference. Recording a decision still requires `recordDecision` (the bundle).
  */
 export async function appendDecisionEvents(
   tx: SqlQueryable,
   orgId: string,
   inputs: readonly LedgerEntry[],
   provenance: RecordProvenance,
+  evidenceSnapshots: readonly EvidenceSnapshotRef[] = [],
 ): Promise<AppendedLedgerEntry[]> {
   if (!validProvenance(provenance)) {
     throw appError("VALIDATION", "decision ledger provenance is invalid");
@@ -336,13 +364,20 @@ export async function appendDecisionEvents(
   if (!prepared.ok) throw prepared.error;
   if (
     prepared.value.length === 0 ||
-    prepared.value.some(({ event }) =>
-      event.type === "DecisionRecorded" ||
-      event.type === "EvidenceSnapshotRecorded")
+    prepared.value.some(({ event }) => event.type === "DecisionRecorded")
   ) {
-    throw appError("VALIDATION", "source-recording events require recordDecision");
+    throw appError("VALIDATION", "recording a decision requires recordDecision");
+  }
+  const parsed = evidenceSnapshots.map((value) => EvidenceSnapshotRefSchema.safeParse(value));
+  if (parsed.some((snapshot) => !snapshot.success)) {
+    throw appError("VALIDATION", "evidence snapshot is invalid");
+  }
+  const snapshots = parsed.flatMap((snapshot) => snapshot.success ? [snapshot.data] : []);
+  if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
+    throw appError("VALIDATION", "decision source rows and recording events do not correspond");
   }
   await lockTenant(tx, orgId);
+  await insertEvidenceSnapshots(tx, snapshots, prepared.value.at(-1)!.event.recordedAt);
   return appendPrepared(tx, orgId, prepared.value, provenance);
 }
 

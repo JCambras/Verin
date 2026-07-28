@@ -1,7 +1,11 @@
 # Decision-core canonical-serialization fixtures (ADR-0029, D-040)
 
-Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
-displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle`,
+Synthetic test vectors - NOT product data (charter #3: labeled synthetic, never fed to a compliance
+decision). The bundle and the proceed record ARE seeded, as labeled-synthetic decision-ledger history
+for the demo tenant (`scripts/seed-decision-ledger.ts`, D-061): every row they produce carries
+`prov_source = 'fixture'`, and `/app/ledger` renders that state behind the shared synthetic-fixture
+provenance badge. Nothing here may reach a surface unlabeled, and `canFeedComplianceDecision` refuses
+all of it. The files contain one `DecisionInputBundle`,
 three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
 `src/contracts/decision-core/serialization.ts`, schema version 1.7.0 and serializer version
 1.0.0), and one digest lock for the canonical bytes of every prompt-7 ledger event

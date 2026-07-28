@@ -24,6 +24,7 @@ import {
   LEDGER_PROVENANCE,
   allLedgerEventSamples,
   decisionRecordingInput,
+  laterEvidenceRecording,
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
@@ -404,6 +405,87 @@ describe("decision ledger storage and L1-L4 verification", () => {
     } finally {
       await other.close();
     }
+  });
+
+  it("distinguishes a store constraint from a failure that is not one", async () => {
+    await recordFixture(db);
+    const duplicate = await recordDecision(db, decisionRecordingInput());
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.ok ? null : duplicate.error.code).toBe("STORE_CONSTRAINT");
+
+    const unavailable: SqlDb = {
+      ...db,
+      transaction: () => Promise.reject(new TypeError("driver is gone")),
+    };
+    const failed = await recordDecision(unavailable, decisionRecordingInput());
+    expect(failed.ok).toBe(false);
+    // A bug or an outage must never be reported as a client-resolvable conflict.
+    expect(failed.ok ? null : failed.error.code).toBe("INTERNAL");
+  });
+
+  it("persists evidence gathered after the decision and refuses an uncited snapshot", async () => {
+    await recordFixture(db);
+    const observed = allLedgerEventSamples().find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    await expect(append(db, [observed])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+
+    const later = laterEvidenceRecording("evidence:status:1");
+    const cited = LedgerEntrySchema.parse({
+      ...observed,
+      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: later.snapshot.id },
+    });
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [later.event, cited],
+      LEDGER_PROVENANCE,
+      [later.snapshot],
+    ))).resolves.toHaveLength(2);
+    const promoted = await db.query<{ evidence_snapshot_id: string | null }>(
+      "SELECT evidence_snapshot_id FROM decision_ledger WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, cited.id],
+    );
+    expect(promoted.rows[0]?.evidence_snapshot_id).toBe(later.snapshot.id);
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [laterEvidenceRecording("evidence:status:2").event],
+      LEDGER_PROVENANCE,
+    ))).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
+  it("keeps the anchor verifiable when a producer swallows a mid-batch refusal", async () => {
+    await recordFixture(db);
+    const samples = allLedgerEventSamples();
+    const accepted = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalStageExpired")!,
+      priorDecisionHash: (await db.query<{ decision_hash: string }>(
+        "SELECT decision_hash FROM decision_records WHERE org_id = $1 AND id = $2",
+        [LEDGER_ORG, "dec:GC-01:0001"],
+      )).rows[0]!.decision_hash,
+    });
+    const refused = samples.find((event) => event.type === "ApprovalRecorded")!;
+    await db.transaction(async (tx) => {
+      try {
+        await appendDecisionEvents(
+          tx,
+          LEDGER_ORG,
+          [accepted, refused],
+          LEDGER_PROVENANCE,
+        );
+      } catch {
+        // A future producer that swallows the abort must not be able to commit
+        // ledger rows the anchor does not cover: L4 would break with no repair.
+      }
+    });
+    const verdict = await verifyDecisionLedger(db, LEDGER_ORG);
+    expect(verdict.ok, verdict.levels.at(-1)?.reason ?? "").toBe(true);
+    expect(verdict.entriesChecked).toBe(6);
   });
 
   it("composes CRM mutation, operational audit intent, and ledger append in one transaction", async () => {

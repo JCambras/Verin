@@ -5,7 +5,7 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
-import type { RecordProvenance } from "@contracts/provenance";
+import { deriveArtifactProvenance, type Confidence, type DerivedProvenance, type RecordProvenance, type SourceSystem } from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
@@ -14,10 +14,15 @@ import {
   type DecisionProjection,
 } from "@domain/ledger/projections";
 
-/** A projection with the provenance of the producer that recorded its decision. */
+/**
+ * A projection with the provenance of the fold that produced it. A projection is a
+ * derived artifact, so its label comes from the LEAST trustworthy event folded into it
+ * (ADR-0022), never the recording event alone - one synthetic approval, execution, or
+ * status event makes the whole displayed state a demonstration.
+ */
 export interface ProjectedDecision {
   readonly projection: DecisionProjection;
-  readonly provenance: RecordProvenance;
+  readonly provenance: DerivedProvenance;
 }
 
 function decisionIdOf(event: LedgerEntry): string | undefined {
@@ -149,32 +154,67 @@ export async function clearDerivedState(
   );
 }
 
-/** Derived decision state, each row labeled with the provenance that produced it. */
+/** How many decisions this tenant has derived state for, so a window can say so. */
+export async function countDecisionProjections(
+  db: SqlDb,
+  orgId: string,
+): Promise<number> {
+  const rows = await db.query<{ n: number | string }>(
+    "SELECT count(*) AS n FROM decision_state_projection WHERE org_id = $1",
+    [orgId],
+  );
+  return Number(rows.rows[0]?.n ?? 0);
+}
+
+/**
+ * Derived decision state, most recently active first, each row labeled with the
+ * provenance of every event folded into it. `limit` bounds a request-path read; the
+ * unbounded form is the replay/repair path. Ordering is total, so the online fold and
+ * a later rebuild return the same list in the same order.
+ */
 export async function listDecisionProjections(
   db: SqlDb,
   orgId: string,
+  limit?: number,
 ): Promise<ProjectedDecision[]> {
   const rows = await db.query<{
+    decision_id: string;
     state_json: string;
     prov_source: string;
     prov_asof: string;
     prov_confidence: string;
   }>(
-    `SELECT p.state_json, l.prov_source, l.prov_asof, l.prov_confidence
-       FROM decision_state_projection p
+    `WITH windowed AS (
+       SELECT decision_id, state_json, last_sequence
+         FROM decision_state_projection
+        WHERE org_id = $1
+        ORDER BY last_sequence DESC, decision_id ASC
+        LIMIT $2::bigint
+     )
+     SELECT w.decision_id, w.state_json,
+            l.prov_source, l.prov_asof, l.prov_confidence
+       FROM windowed w
        JOIN decision_ledger l
-         ON l.org_id = p.org_id AND l.decision_id = p.decision_id
-        AND l.event_type = 'DecisionRecorded'
-      WHERE p.org_id = $1
-      ORDER BY p.decision_id ASC`,
-    [orgId],
+         ON l.org_id = $1 AND l.decision_id = w.decision_id
+      ORDER BY w.last_sequence DESC, w.decision_id ASC, l.sequence ASC`,
+    [orgId, limit ?? null],
   );
-  return rows.rows.map((row) => ({
-    projection: JSON.parse(row.state_json) as DecisionProjection,
-    provenance: {
-      source: row.prov_source as RecordProvenance["source"],
+  const folded = new Map<string, { state: string; inputs: RecordProvenance[] }>();
+  for (const row of rows.rows) {
+    const entry = folded.get(row.decision_id) ?? { state: row.state_json, inputs: [] };
+    entry.inputs.push({
+      source: row.prov_source as SourceSystem,
       asOf: row.prov_asof,
-      confidence: row.prov_confidence as RecordProvenance["confidence"],
-    },
+      confidence: row.prov_confidence as Confidence,
+    });
+    folded.set(row.decision_id, entry);
+  }
+  return [...folded.values()].map(({ state, inputs }) => ({
+    projection: JSON.parse(state) as DecisionProjection,
+    provenance: deriveArtifactProvenance(
+      inputs,
+      inputs.reduce((latest, input) =>
+        input.asOf > latest ? input.asOf : latest, inputs[0]!.asOf),
+    ),
   }));
 }

@@ -41,6 +41,8 @@ export interface LedgerRegisterViewModel {
     readonly levels: readonly LedgerLevelView[];
   };
   readonly total: number;
+  /** Decisions with derived state for this tenant; larger than `decisions` when windowed. */
+  readonly decisionsTotal: number;
   readonly decisions: readonly DecisionStateView[];
   readonly entries: readonly LedgerEntryView[];
 }

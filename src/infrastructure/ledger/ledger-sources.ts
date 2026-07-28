@@ -44,7 +44,8 @@ async function reuseStoredBytes(
   return true;
 }
 
-async function insertEvidence(
+/** Evidence recorded with a decision, or gathered later and cited by a status event. */
+export async function insertEvidenceSnapshots(
   tx: SqlQueryable,
   snapshots: readonly EvidenceSnapshotRef[],
   recordedAt: string,
@@ -117,7 +118,7 @@ export async function insertDecisionSources(
   record: DecisionRecord,
   recordedAt: string,
 ): Promise<void> {
-  await insertEvidence(tx, snapshots, recordedAt);
+  await insertEvidenceSnapshots(tx, snapshots, recordedAt);
   await insertBundle(tx, bundle, recordedAt);
   const recordBytes = canonical(record, "decision record");
   if (!recordBytes.ok) throw recordBytes.error;

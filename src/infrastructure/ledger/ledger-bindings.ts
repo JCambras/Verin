@@ -26,6 +26,15 @@ export async function assertLedgerSourceBindings(
     }
     return;
   }
+  if (event.type === "StatusObserved" && event.evidenceSnapshotRef) {
+    const cited = await tx.query<{ id: string }>(
+      "SELECT id FROM evidence_snapshots WHERE org_id = $1 AND id = $2",
+      [event.firmId, event.evidenceSnapshotRef.id],
+    );
+    if (!cited.rows[0]) {
+      throw appError("STORE_CONSTRAINT", "cited evidence snapshot is not stored");
+    }
+  }
   const ref = "decisionRef" in event
     ? event.decisionRef
     : "priorDecisionRef" in event
