@@ -14,6 +14,8 @@ import {
   inMemoryProject,
   moduleReferences,
   REPO_ROOT,
+  structuralPiiExposures,
+  structuralPiiSignatureExposures,
   typeKey,
 } from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
@@ -215,73 +217,14 @@ function inlinePIIExposures(
   includeMarked = false,
   escapes: ReadonlySet<string> = ESCAPE_SET,
 ): string[] {
-  if (isTokenized(type) || isSecretValue(type)) return [];
-  if (isPIIBearingType(type)) return includeMarked ? [path] : [];
-  if (isLeafType(type)) return [];
-  const key = typeKey(type);
-  if (seen.has(key)) return [];
-  const nextSeen = new Set(seen).add(key);
-  const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
-  if (composite.length) {
-    return composite.flatMap((member) =>
-      inlinePIIExposures(member, path, nextSeen, location, includeMarked, escapes)
-    );
-  }
-  const typeArguments = [
-    ...type.getAliasTypeArguments(),
-    ...type.getTypeArguments(),
-  ];
-  const nestedArguments = typeArguments.flatMap((argument) =>
-    inlinePIIExposures(argument, path, nextSeen, location, includeMarked, escapes)
-  );
-  const symbol = type.getAliasSymbol() ?? type.getSymbol();
-  const inspectNestedProperties = !symbol || symbol.getDeclarations().some((declaration) =>
-    Node.isTypeLiteral(declaration) ||
-    normalizePath(declaration.getSourceFile()).startsWith("src/")
-  );
-  const inspectResolvedProperties = inspectNestedProperties ||
-    ["Record", "Pick", "Omit", "Partial", "Required", "Readonly"].includes(
-      type.getAliasSymbol()?.getName() ?? "",
-    );
-  const properties = inspectResolvedProperties
-    ? type.getProperties().flatMap((property) => {
-      const declaration = property.getValueDeclaration() ??
-        property.getDeclarations()[0] ??
-        location;
-      if (!declaration) return [];
-      const propertyType = property.getTypeAtLocation(declaration);
-      const propertyPath = `${path}.${property.getName()}`;
-      if (
-        isPIIField(property.getName()) &&
-        !isTokenized(propertyType) &&
-        !isSecretValue(propertyType) &&
-        !propertyIsEscaped(propertyPath, declaration, escapes)
-      ) {
-        return [propertyPath];
-      }
-      if (!inspectNestedProperties) return [];
-      return inlinePIIExposures(
-        propertyType,
-        propertyPath,
-        nextSeen,
-        declaration,
-        includeMarked,
-        escapes,
-      );
-    })
-    : [];
-  if (!inspectNestedProperties) return [...nestedArguments, ...properties];
-  const nestedCalls = type.getCallSignatures().flatMap((signature) =>
-    signaturePIIExposures(
-      signature,
-      `${path}.<call>`,
-      nextSeen,
-      includeMarked,
-      true,
-      escapes,
-    )
-  );
-  return [...nestedArguments, ...properties, ...nestedCalls];
+  return structuralPiiExposures(type, {
+    path,
+    seen,
+    location,
+    includeMarked,
+    isEscaped: (propertyPath, declaration) =>
+      propertyIsEscaped(propertyPath, declaration, escapes),
+  });
 }
 
 function signaturePIIExposures(
@@ -292,40 +235,14 @@ function signaturePIIExposures(
   checkParameterNames = true,
   escapes: ReadonlySet<string> = ESCAPE_SET,
 ): string[] {
-  const parameters = signature.getParameters().flatMap((parameter) => {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (!declaration) return [];
-    const parameterType = parameter.getTypeAtLocation(declaration);
-    const parameterPath = `${path}(${parameter.getName()})`;
-    if (
-      checkParameterNames &&
-      isPIIField(parameter.getName()) &&
-      !isTokenized(parameterType) &&
-      !isSecretValue(parameterType)
-    ) {
-      return [parameterPath];
-    }
-    return inlinePIIExposures(
-      parameterType,
-      parameterPath,
-      seen,
-      declaration,
-      includeMarked,
-      escapes,
-    );
+  return structuralPiiSignatureExposures(signature, {
+    path,
+    seen,
+    includeMarked,
+    checkParameterNames,
+    isEscaped: (propertyPath, declaration) =>
+      propertyIsEscaped(propertyPath, declaration, escapes),
   });
-  return [
-    ...parameters,
-    ...inlinePIIExposures(
-      signature.getReturnType(),
-      `${path}.return`,
-      seen,
-      signature.getDeclaration(),
-      includeMarked,
-      escapes,
-    ),
-  ];
 }
 
 function callablePIIExposures(

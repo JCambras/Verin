@@ -1899,3 +1899,36 @@ how the text key was confirmed equivalent); raising the contracts ceiling to fit
 **Revert path:** revert this changeset. Migration 3 returns to its NULLing UPDATE
 and nine constraints, the `pii.view` inference goes back to requiring a tenant
 parameter, the four bypasses reopen, and the fence suite stops finishing.
+
+---
+
+## D-054 - Exact projection trust and preflight-before-mutation upgrades
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-053, v3 §15.1/§15.2/§15.3,
+charter #3/#4/#5/#7/#13
+
+Leading title-case projection text now fails closed unless an exact identity span
+binds it to a declared slot or a narrow static-template factory mints the exact safe
+span. The identity path masks the span; the static-template path may leave only its
+registered text visible. Caller booleans, caller-provided safe strings, forged spans,
+and stale spans carry no authority.
+
+The shared module-reference and structural PII walkers now supply sealed-factory,
+secret, LLM, and governed-sink checks. Contextual callable returns are inspected for
+sealed authority, and resolved structural SQL calls classify repository modules even
+without a database-adapter import.
+
+Every pending migration preflight runs before the first mutation in an existing
+store. A virgin store applies the baseline alone, then re-enters the same upgrade
+path so later preflights can query the schema. Migration failures expose only the
+migration identity and the existing PII-safe error category.
+
+**Alternatives:** a caller safe-text boolean and a harmless-word vocabulary were
+rejected because neither binds authority to an exact span and provenance. Per-file
+loader and PII scans were rejected because they drift from the shared semantic
+walkers. Per-migration preflight was rejected because a later refusal could follow
+an earlier committed schema mutation.
+
+**Revert path:** revert this changeset to restore positional leading-token trust,
+direct-loader-only scans, marker-only PII sinks, adapter-import-only repository
+discovery, and per-migration preflight ordering.

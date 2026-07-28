@@ -21,7 +21,9 @@ import {
   hasUnresolvedProjectionText,
   isPlainProjectionData,
   resolveCompleteSensitiveEntities,
+  type IdentitySpan,
   type ResolvedSensitiveEntity,
+  type TrustedSafeTextSpan,
 } from "@domain/pii/projection-resolution";
 import { tokenizeText, tokenizeRecord } from "./tokenize";
 
@@ -30,6 +32,8 @@ export interface EvidenceProjectionInput extends PIIBearing {
   readonly requestText: string;
   readonly slots: readonly SlotPlaceholder[];
   readonly evidence: Readonly<Record<string, unknown>>;
+  readonly identitySpans?: readonly IdentitySpan[];
+  readonly trustedSafeText?: readonly TrustedSafeTextSpan[];
 }
 
 interface SensitiveMask extends PIIBearing {
@@ -116,7 +120,14 @@ function resolveCompleteBindings(input: EvidenceProjectionInput): readonly Resol
     typeof input !== "object" ||
     input === null ||
     Object.keys(input).some((key) =>
-      !["evidence", "purpose", "requestText", "slots"].includes(key)
+      ![
+        "evidence",
+        "identitySpans",
+        "purpose",
+        "requestText",
+        "slots",
+        "trustedSafeText",
+      ].includes(key)
     ) ||
     typeof input.requestText !== "string" ||
     typeof input.evidence !== "object" ||
@@ -161,7 +172,7 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
     const tokenizedText = tokenizeText(maskedText);
     const tokenizedEvidence = tokenizeRecord(maskedEvidence);
     if (
-      hasUnresolvedProjectionText(tokenizedText.value) ||
+      hasUnresolvedProjectionText(tokenizedText.value, input.trustedSafeText) ||
       hasUnresolvedProjectionEvidence(tokenizedEvidence.value)
     ) {
       throw appError("PII_VIOLATION", "Unresolved sensitive entity remained after masking.");

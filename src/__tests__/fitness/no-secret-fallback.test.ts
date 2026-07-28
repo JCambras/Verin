@@ -13,6 +13,7 @@ import {
 import {
   REPO_ROOT,
   inMemoryProject,
+  moduleReferences,
   realSemanticProject,
   normalizedPath,
   walk,
@@ -336,19 +337,20 @@ function secretAccesses(project: Project): SecretAccess[] {
       if (revealSecretCall(call)) {
         add(file, call.getStartLineNumber(), call);
       }
-      const expression = call.getExpression();
-      const isModuleLoad = expression.getKind() === SyntaxKind.ImportKeyword ||
-        expression.getText() === "require";
-      if (!isModuleLoad) continue;
-      const argument = call.getArguments()[0];
+    }
+    for (const reference of moduleReferences(sf)) {
+      if (![
+        "create-require",
+        "dynamic-import",
+        "import-equals",
+        "require",
+        "require-reference",
+      ].includes(reference.kind)) continue;
       if (
-        !argument ||
-        !Node.isStringLiteral(argument) ||
-        resolvedModulePath(project, sf, argument.getLiteralValue()) ===
+        reference.specifier === null ||
+        resolvedModulePath(project, sf, reference.specifier) ===
           "src/contracts/secret.ts"
-      ) {
-        add(file, call.getStartLineNumber(), null);
-      }
+      ) add(file, reference.line, null);
     }
     for (const reference of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
       const parent = reference.getParent();
@@ -694,6 +696,21 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
       expect(detectUnsanctionedReveal(project)).toEqual([
         "src/infrastructure/crm/evil.ts:2",
       ]);
+    });
+    it("catches createRequire and aliased require before they can expose revealSecret", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/app/evil.ts": `
+          import { createRequire } from "node:module";
+          const created = createRequire(import.meta.url);
+          created("../contracts/secret");
+          const aliased = require;
+          aliased("../contracts/secret");
+        `,
+      });
+      const hits = detectUnsanctionedReveal(project);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:2"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:5"))).toBe(true);
     });
     it("catches computed and destructured access if a raw accessor is reintroduced", () => {
       const project = inMemoryProject({

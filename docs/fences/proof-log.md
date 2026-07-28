@@ -3614,3 +3614,57 @@ green: 54 files, 851 tests. `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
 `next build` all pass.
 
 **Date:** 2026-07-28 (fourteenth review-fix round on v3 build-sequence prompt 6).
+
+---
+
+### PF-084 leading projection text requires exact trusted classification
+
+The unit companion plants single-token and multi-token leading names with no
+classification and proves projection refuses both. It also plants an exact identity
+span, a reviewed static-template span, forged and stale safe spans, and lowercase
+ordinary prose. Only the exact identity span is masked and only the factory-minted
+static span remains visible.
+
+### PF-085 indirect loaders and contextual returns cannot mint authority
+
+The `tokenized-factory-only` and `no-secret-fallback` companions plant
+`createRequire`, an aliased ambient `require`, and an expression-bodied
+`() => TenantContext` that returns `JSON.parse`. The shared module-reference analysis
+reports both loaders, and the contextual call signature reports the sealed return.
+
+### PF-086 structural PII return shapes derive governed sinks
+
+The governed-actions companion returns `Promise<Array<{ email: string }>>` without a
+`PIIBearing` marker. The shared structural PII walker derives `pii.view` and reports
+the missing grant. Existing indexed, mapped, class-field, and marked returns remain
+covered, while library prototype callables remain outside the shipped surface.
+
+### PF-087 structural SQL executors are repository behavior
+
+The tenant-context companion plants an infrastructure module whose only database
+dependency is a structural `{ query(sql: string) }` parameter. One exported callable
+has no tenant parameter and another has a typed but unasserted `TenantContext`; the
+detector reports both exact failures without any database-adapter import.
+
+### PF-088 pending migration preflights are atomic and diagnostics are safe
+
+The migration integration companion rewinds a real PGlite store to version 1, plants
+a version-3 tenant orphan, and snapshots the migration ledger, indexes, and planted
+row. The version-3 preflight refuses the upgrade before version 2 creates its index,
+and every snapshot remains byte-for-byte equal. A driver error containing an email is
+returned only as the allowlisted `driver-error:23505` category.
+
+```
+pnpm exec vitest run src/__tests__/unit/llm-boundary.test.ts \
+  src/__tests__/integration/migration-preflight.test.ts \
+  src/__tests__/integration/pii-observability.test.ts \
+  src/__tests__/fitness/line-budget.test.ts \
+  src/__tests__/fitness/tokenized-factory-only.test.ts \
+  src/__tests__/fitness/no-secret-fallback.test.ts \
+  src/__tests__/fitness/llm-pii-boundary.test.ts \
+  src/__tests__/fitness/governed-actions.test.ts \
+  src/__tests__/fitness/tenant-context-required.test.ts
+# 9 files, 272 tests passed
+```
+
+**Date:** 2026-07-28 (fifteenth review-fix round on v3 build-sequence prompt 6).

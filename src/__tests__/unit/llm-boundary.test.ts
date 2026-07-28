@@ -7,6 +7,7 @@ import { projectForLlm } from "@infra/pii/llm-projection";
 import {
   hasUnresolvedProjectionEvidence,
   hasUnresolvedProjectionText,
+  trustedStaticProjectionText,
 } from "@domain/pii/projection-resolution";
 
 /**
@@ -22,6 +23,10 @@ const RAW = {
 };
 const SLOT_1 = "slot_0001";
 const SLOT_2 = "slot_0002";
+const identitySpan = (requestText: string, rawText: string, slotId = SLOT_1) => {
+  const start = requestText.indexOf(rawText);
+  return { slotId, start, end: start + rawText.length };
+};
 
 describe("the Tokenized factory scrubs by construction", () => {
   it("tokenizeText redacts PII-shaped values and seals the result", () => {
@@ -113,6 +118,81 @@ describe("the LLM adapter ingress gate (parseMaskedLlmRequest)", () => {
 });
 
 describe("the evidence-to-LLM projection scrubs at the boundary", () => {
+  it("refuses an unclassified leading title-case token", () => {
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Alice requested a transfer",
+      slots: [],
+      evidence: {},
+    }).ok).toBe(false);
+  });
+  it("refuses an unclassified multi-token leading name", () => {
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "Alice Morgan requested a transfer",
+      slots: [],
+      evidence: {},
+    }).ok).toBe(false);
+  });
+  it("masks a leading identity only when its exact span binds a declared slot", () => {
+    const requestText = "Alice requested a transfer";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, "Alice")],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("{{slot_0001}} requested a transfer");
+    }
+  });
+  it("keeps an exact trusted static-template span visible", () => {
+    const template = trustedStaticProjectionText("review-transaction-request");
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      ...template,
+      slots: [],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe(template.requestText);
+    }
+  });
+  it("refuses forged and stale trusted safe-text spans", () => {
+    const template = trustedStaticProjectionText("review-transaction-request");
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: template.requestText,
+      trustedSafeText: [{
+        source: "static-template",
+        sourceId: "review-transaction-request",
+        text: "Review",
+        start: 0,
+        end: 6,
+      }],
+      slots: [],
+      evidence: {},
+    } as never).ok).toBe(false);
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: `${template.requestText} today`,
+      trustedSafeText: template.trustedSafeText,
+      slots: [],
+      evidence: {},
+    }).ok).toBe(false);
+  });
+  it("accepts ordinary lowercase non-PII prose without metadata", () => {
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "please review the requested transfer",
+      slots: [],
+      evidence: {},
+    }).ok).toBe(true);
+  });
+
   it("rejects malformed projection input", () => {
     const base = {
       purpose: "intent-shaping" as const,
@@ -133,7 +213,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("derives sensitive entities into slot placeholders and scrubs the rest (v3 §15.1 stage 1)", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
-      requestText: `Wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
+      requestText: `wire $12,000 from ${RAW.name}'s IRA — reach her at ${RAW.email} / ${RAW.phone}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }, { slotId: SLOT_2, slotType: "amount" }],
       evidence: { household: { name: RAW.name }, ssn: RAW.ssn, plannedWithdrawals: 12000 },
     });
@@ -222,8 +302,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       purpose: "intent-shaping" as const,
       requestText: "Alice wants account",
       slots: [{ slotId: SLOT_1, slotType: "subject" as const }],
-      // A leading capital is sentence grammar, so the name is bound from the
-      // evidence key that DECLARES it as identity data.
+      identitySpans: [identitySpan("Alice wants account", "Alice")],
       evidence: { firstName: "Alice" },
     };
     expect(projectForLlm({
@@ -293,21 +372,21 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("accepts realistic non-fixture prose once its sensitive spans are tokenized", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Please transfer funds to the client's Roth",
+      requestText: "please transfer funds to the client's Roth",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: { requestKind: "withdrawal", plannedWithdrawals: 4200 },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.maskedText.value).toBe(
-      "Please transfer funds to the client's {{slot_0001}}",
+      "please transfer funds to the client's {{slot_0001}}",
     );
     expect(JSON.stringify(result.value.context.value)).toContain("4200");
   });
   it("resolution is a STRUCTURAL rule, not an enumerated vocabulary", () => {
     // Prose the closed word list refused; nothing here is on any allowlist.
     for (const resolved of [
-      "Please transfer funds to the client's {{slot_0001}}",
+      "please transfer funds to the client's {{slot_0001}}",
       "reconcile the quarterly custodial statement and note any variance",
       "escalate before the 2026 filing deadline",
     ]) {
@@ -333,35 +412,32 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
     expect(hasUnresolvedProjectionEvidence({ Bennett: REDACTED })).toBe(true);
     expect(hasUnresolvedProjectionEvidence({ reference: 941000517334 })).toBe(true);
   });
-  it("refuses an innocuous subject binding that leaves a leading name unresolved", () => {
+  it("refuses a leading name without exact identity metadata", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
       requestText: "Alice uses account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: {},
     });
-    // Refused because the lone leading word is grammar, so nothing binds the
-    // slot — assert the reason, not just the refusal (the earlier version of
-    // this test passed on the count mismatch alone).
     expect(result.ok).toBe(false);
-    expect(hasUnresolvedProjectionText("Alice uses account")).toBe(false);
+    expect(hasUnresolvedProjectionText("Alice uses account")).toBe(true);
     const bound = projectForLlm({
       purpose: "intent-shaping",
       requestText: "Alice uses account",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan("Alice uses account", "Alice")],
       evidence: { firstName: "Alice" },
     });
     expect(bound.ok).toBe(true);
     if (bound.ok) expect(bound.value.maskedText.value).toBe("{{slot_0001}} uses account");
   });
-  it("binds a MULTI-word name that OPENS the prose whole, never just its surname", () => {
-    // A lone capitalized opener is sentence grammar; a multi-word title-case run
-    // is the person-name shape wherever it sits. Dropping only its first word
-    // left the given name raw in the text the model would see.
+  it("binds an exact multi-word leading identity span whole", () => {
+    const requestText = `${RAW.name} wants to open an account`;
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: `${RAW.name} wants to open an account`,
+      requestText,
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, RAW.name)],
       evidence: {},
     });
     expect(result.ok).toBe(true);
@@ -436,7 +512,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("masks resolved entity values retained in evidence keys", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Please review Alice",
+      requestText: "please review Alice",
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: { Alice: "requested review" },
     });
@@ -448,7 +524,7 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("masks known entities in untyped evidence values before tokenization", () => {
     const r = projectForLlm({
       purpose: "intent-shaping",
-      requestText: `Please review ${RAW.name}`,
+      requestText: `please review ${RAW.name}`,
       slots: [{ slotId: SLOT_1, slotType: "subject" }],
       evidence: { note: `${RAW.name} requested a review` },
     });
@@ -461,13 +537,13 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
   it("derives account references from the complete payload", () => {
     const result = projectForLlm({
       purpose: "intent-shaping",
-      requestText: "Review account 941000517334",
+      requestText: "review account 941000517334",
       slots: [{ slotId: SLOT_1, slotType: "account-ref" }],
       evidence: {},
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.maskedText.value).toBe("Review account {{slot_0001}}");
+      expect(result.value.maskedText.value).toBe("review account {{slot_0001}}");
     }
   });
 });

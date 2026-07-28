@@ -12,6 +12,7 @@ import {
 } from "ts-morph";
 import {
   inMemoryProject,
+  moduleReferences,
   realSemanticProject,
   REPO_ROOT,
   typeKey,
@@ -297,27 +298,29 @@ function detectPrivilegedFactoryModuleAccess(project: Project): string[] {
         );
       }
     }
-    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const expression = call.getExpression();
-      const isModuleLoad = expression.getKind() === SyntaxKind.ImportKeyword ||
-        expression.getText() === "require";
-      if (!isModuleLoad) continue;
-      const argument = call.getArguments()[0];
-      if (!argument || !Node.isStringLiteral(argument)) {
+    for (const reference of moduleReferences(sf)) {
+      if (![
+        "create-require",
+        "dynamic-import",
+        "import-equals",
+        "require",
+        "require-reference",
+      ].includes(reference.kind)) continue;
+      if (reference.specifier === null) {
         out.push(
-          `${normalized}:${call.getStartLineNumber()} - unverifiable module load could expose a privileged factory`,
+          `${normalized}:${reference.line} - unverifiable module load could expose a privileged factory`,
         );
         continue;
       }
       const targetPath = resolvedModulePath(
         project,
         sf,
-        argument.getLiteralValue(),
+        reference.specifier,
       );
       const names = targetPath ? privilegedModules.get(targetPath) : undefined;
       if (names && targetPath !== normalized) {
         out.push(
-          `${normalized}:${call.getStartLineNumber()} - dynamic factory module access exposes ${names.join(", ")}`,
+          `${normalized}:${reference.line} - dynamic factory module access exposes ${names.join(", ")}`,
         );
       }
     }
@@ -453,17 +456,28 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
     SyntaxKind.GetAccessor,
   ] as const) {
     for (const fn of sf.getDescendantsOfKind(kind)) {
-      const typeNode = fn.getReturnTypeNode();
       const body = fn.getBody();
-      if (!typeNode || !body) continue;
+      if (!body) continue;
+      const annotatedReturns = fn.getReturnTypeNode()
+        ? [fn.getReturnTypeNode()!.getType()]
+        : Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)
+        ? (fn.getContextualType()?.getCallSignatures() ?? []).map((signature) =>
+          signature.getReturnType()
+        )
+        : [];
+      if (annotatedReturns.length === 0) continue;
       if (!Node.isBlock(body)) {
-        check(typeNode.getType(), body, body.getStartLineNumber());
+        for (const returnType of annotatedReturns) {
+          check(returnType, body, body.getStartLineNumber());
+        }
         continue;
       }
       for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
         // Only THIS function's returns — a nested closure has its own contract.
         if (statement.getFirstAncestor(isFunctionLike) !== fn) continue;
-        check(typeNode.getType(), statement.getExpression(), statement.getStartLineNumber());
+        for (const returnType of annotatedReturns) {
+          check(returnType, statement.getExpression(), statement.getStartLineNumber());
+        }
       }
     }
   }
@@ -1096,6 +1110,23 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(hits.some((hit) => hit.includes("ActionGrant"))).toBe(true);
     });
 
+    it("catches an unchecked expression-bodied return under a contextual callable annotation", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const raw: string;
+          const revive: () => TenantContext = () => JSON.parse(raw);
+          void revive;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") &&
+        hit.includes("unchecked value") &&
+        hit.includes("TenantContext")
+      )).toBe(true);
+    });
+
     it("catches a coercion helper whose sealed type argument is INFERRED, not written", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -1347,6 +1378,23 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
         hit.includes("systemTenant")
       )).toBe(true);
+    });
+
+    it("catches createRequire and aliased require before they can expose factory modules", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import { createRequire } from "node:module";
+          const created = createRequire(import.meta.url);
+          created("../contracts/tenant");
+          const aliased = require;
+          aliased("../contracts/tenant");
+        `,
+      );
+      const hits = detectUntrustedFactoryCalls(project)
+        .filter((hit) => hit.includes("unverifiable module load"));
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:2"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:5"))).toBe(true);
     });
 
     it("catches system tenant and system write factories outside reviewed boundaries", () => {

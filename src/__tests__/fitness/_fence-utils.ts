@@ -5,10 +5,11 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Node, Project, SyntaxKind, ts, type CallExpression, type CompilerOptions, type SourceFile, type Type, type VariableDeclaration } from "ts-morph";
+import { Node, Project, SyntaxKind, ts, type CallExpression, type CompilerOptions, type Signature, type SourceFile, type Type, type VariableDeclaration } from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isPIIField } from "@contracts/pii";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 export const SRC_ROOT = join(REPO_ROOT, "src");
@@ -855,6 +856,167 @@ export function inMemoryProject(files: Record<string, string>): Project {
 export function normalizedPath(path: string): string {
   const rel = relative(REPO_ROOT, path).replace(/\\/g, "/");
   return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
+}
+
+interface StructuralPiiOptions {
+  readonly path: string;
+  readonly seen?: ReadonlySet<string>;
+  readonly location?: Node;
+  readonly includeMarked?: boolean;
+  readonly checkParameterNames?: boolean;
+  readonly isEscaped?: (path: string, declaration: Node) => boolean;
+}
+
+function typeDeclaredAs(type: Type, file: string, name: string): boolean {
+  const queue = [type];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const key = typeKey(current);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
+      if (
+        symbol?.getName() === name &&
+        symbol.getDeclarations().some((declaration) =>
+          normalizedPath(declaration.getSourceFile().getFilePath()) === file
+        )
+      ) return true;
+    }
+    queue.push(
+      ...current.getUnionTypes(),
+      ...current.getIntersectionTypes(),
+      ...current.getBaseTypes(),
+      ...current.getAliasTypeArguments(),
+      ...current.getTypeArguments(),
+    );
+  }
+  return false;
+}
+
+function isPiiLeaf(type: Type): boolean {
+  return type.isAny() ||
+    type.isUnknown() ||
+    type.isNever() ||
+    type.isString() ||
+    type.isStringLiteral() ||
+    type.isNumber() ||
+    type.isNumberLiteral() ||
+    type.isBoolean() ||
+    type.isBooleanLiteral() ||
+    type.isNull() ||
+    type.isUndefined() ||
+    type.isVoid();
+}
+
+export function structuralPiiSignatureExposures(
+  signature: Signature,
+  options: StructuralPiiOptions,
+): string[] {
+  const seen = options.seen ?? new Set<string>();
+  const parameters = signature.getParameters().flatMap((parameter) => {
+    const declaration = parameter.getValueDeclaration() ??
+      parameter.getDeclarations()[0];
+    if (!declaration) return [];
+    const parameterType = parameter.getTypeAtLocation(declaration);
+    const path = `${options.path}(${parameter.getName()})`;
+    if (
+      options.checkParameterNames !== false &&
+      isPIIField(parameter.getName()) &&
+      !typeDeclaredAs(parameterType, "src/contracts/tokenized.ts", "Tokenized") &&
+      !typeDeclaredAs(parameterType, "src/contracts/secret.ts", "SecretValue")
+    ) return [path];
+    return structuralPiiExposures(parameterType, {
+      ...options,
+      path,
+      seen,
+      location: declaration,
+    });
+  });
+  return [
+    ...parameters,
+    ...structuralPiiExposures(signature.getReturnType(), {
+      ...options,
+      path: `${options.path}.return`,
+      seen,
+      location: signature.getDeclaration(),
+    }),
+  ];
+}
+
+export function structuralPiiExposures(
+  type: Type,
+  options: StructuralPiiOptions,
+): string[] {
+  if (
+    typeDeclaredAs(type, "src/contracts/tokenized.ts", "Tokenized") ||
+    typeDeclaredAs(type, "src/contracts/secret.ts", "SecretValue")
+  ) return [];
+  if (typeDeclaredAs(type, "src/contracts/pii.ts", "PIIBearing")) {
+    return options.includeMarked ? [options.path] : [];
+  }
+  if (isPiiLeaf(type)) return [];
+  const key = typeKey(type);
+  const seen = options.seen ?? new Set<string>();
+  if (seen.has(key)) return [];
+  const nextSeen = new Set(seen).add(key);
+  const composite = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  if (composite.length > 0) {
+    return composite.flatMap((member) =>
+      structuralPiiExposures(member, { ...options, seen: nextSeen })
+    );
+  }
+  const nestedArguments = [
+    ...type.getAliasTypeArguments(),
+    ...type.getTypeArguments(),
+    ...[type.getStringIndexType(), type.getNumberIndexType()].filter(
+      (candidate): candidate is Type => candidate !== undefined,
+    ),
+  ].flatMap((argument) =>
+    structuralPiiExposures(argument, { ...options, seen: nextSeen })
+  );
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const inspectNested = !symbol || symbol.getDeclarations().some((declaration) =>
+    Node.isTypeLiteral(declaration) ||
+    normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+  );
+  const inspectResolved = inspectNested ||
+    ["Record", "Pick", "Omit", "Partial", "Required", "Readonly"].includes(
+      type.getAliasSymbol()?.getName() ?? "",
+    );
+  const properties = inspectResolved
+    ? type.getProperties().flatMap((property) => {
+      const declaration = property.getValueDeclaration() ??
+        property.getDeclarations()[0] ??
+        options.location;
+      if (!declaration) return [];
+      const propertyType = property.getTypeAtLocation(declaration);
+      const path = `${options.path}.${property.getName()}`;
+      if (
+        isPIIField(property.getName()) &&
+        !typeDeclaredAs(propertyType, "src/contracts/tokenized.ts", "Tokenized") &&
+        !typeDeclaredAs(propertyType, "src/contracts/secret.ts", "SecretValue") &&
+        !options.isEscaped?.(path, declaration)
+      ) return [path];
+      return inspectNested
+        ? structuralPiiExposures(propertyType, {
+          ...options,
+          path,
+          seen: nextSeen,
+          location: declaration,
+        })
+        : [];
+    })
+    : [];
+  if (!inspectNested) return [...nestedArguments, ...properties];
+  const calls = type.getCallSignatures().flatMap((signature) =>
+    structuralPiiSignatureExposures(signature, {
+      ...options,
+      path: `${options.path}.<call>`,
+      seen: nextSeen,
+    })
+  );
+  return [...nestedArguments, ...properties, ...calls];
 }
 
 const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);

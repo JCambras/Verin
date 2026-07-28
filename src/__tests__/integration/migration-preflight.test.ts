@@ -66,9 +66,21 @@ async function rewindToVersion2(db: SqlDb): Promise<void> {
   await db.query("DELETE FROM schema_migrations WHERE version = 3");
 }
 
+async function rewindToVersion1(db: SqlDb): Promise<void> {
+  await db.exec("DROP INDEX sessions_expires;");
+  await db.query("DELETE FROM schema_migrations WHERE version = 2");
+}
+
 const appliedVersions = async (db: SqlDb): Promise<number[]> => {
   const r = await db.query<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version ASC");
   return r.rows.map((row) => Number(row.version));
+};
+
+const schemaIndexes = async (db: SqlDb): Promise<unknown[]> => {
+  const result = await db.query(
+    "SELECT schemaname, tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' ORDER BY tablename, indexname",
+  );
+  return result.rows;
 };
 
 /** Every planted orphan class, each keyed to the ONE relationship it must trip. */
@@ -158,6 +170,27 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
     )).rejects.toThrow(/foreign key|violates|constraint/i);
   });
 
+  it("runs all pending preflights before the first pending schema mutation", async () => {
+    await rewindToVersion1(db);
+    await ORPHANS[0]!.plant(db);
+    const indexesBefore = await schemaIndexes(db);
+    const rowBefore = await db.query<{ org_id: string }>(
+      "SELECT org_id FROM sessions WHERE id = 's-legacy'",
+    );
+
+    const message = await runMigrations(db).then(
+      () => "",
+      (error: { message?: string }) => error.message ?? "",
+    );
+
+    expect(message).toContain("migration 3 (tenant-qualified-relationships) cannot be applied");
+    expect(await appliedVersions(db)).toEqual([1]);
+    expect(await schemaIndexes(db)).toEqual(indexesBefore);
+    expect(await db.query<{ org_id: string }>(
+      "SELECT org_id FROM sessions WHERE id = 's-legacy'",
+    )).toEqual(rowBefore);
+  });
+
   for (const orphan of ORPHANS) {
     it(`refuses the upgrade and preserves the row when ${orphan.relationship} is violated`, async () => {
       await orphan.plant(db);
@@ -203,20 +236,31 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
 });
 
 describe("migration failure diagnostics", () => {
-  it("names the failing migration instead of surfacing a bare driver error", async () => {
+  it("names the failing migration without surfacing driver text", async () => {
     const stub: SqlDb = {
       query: async (sql: string) => ({ rows: sql.includes("schema_migrations") ? [] : [{ orphans: 0 }] }) as never,
       exec: async () => undefined,
       transaction: async () => {
-        throw new Error("duplicate key value violates unique constraint");
+        throw Object.assign(
+          new Error("duplicate key value includes alice@example.com"),
+          { code: "23505" },
+        );
       },
       dump: async () => new Blob(),
       close: async () => undefined,
     };
     const failure = await runMigrations(stub).then(() => null, (e: unknown) => e as { code: string; message: string; context?: Record<string, unknown> });
-    expect(failure).toMatchObject({ code: "INTERNAL", context: { version: 1, name: "baseline" } });
+    expect(failure).toMatchObject({
+      code: "INTERNAL",
+      context: {
+        version: 1,
+        name: "baseline",
+        category: "driver-error:23505",
+      },
+    });
     expect(failure!.message).toContain("migration 1 (baseline) failed and was rolled back");
-    // The driver's own text is kept — the wrapper ADDS the missing fact, it does not replace it.
-    expect(failure!.message).toContain("duplicate key value violates unique constraint");
+    expect(failure!.message).toContain("driver-error:23505");
+    expect(failure!.message).not.toContain("duplicate key");
+    expect(failure!.message).not.toContain("alice@example.com");
   });
 });

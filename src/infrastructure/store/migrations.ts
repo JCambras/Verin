@@ -23,6 +23,7 @@
  * `claimed_at < $2` foot-gun in `audit-store.ts`.
  */
 import { appError } from "@contracts/errors";
+import { safeReason } from "@infra/observability/safe-reason";
 import type { SqlDb } from "./db";
 
 export interface Migration {
@@ -389,19 +390,14 @@ async function assertPreflightClean(db: SqlDb, m: Migration): Promise<void> {
   }
 }
 
-/**
- * Apply every not-yet-recorded migration version in order. Idempotent: an already
- * up-to-date store runs no DDL. Each version's DDL and its `schema_migrations` record
- * commit in ONE transaction, so the applied set and the actual schema never diverge.
- */
 export async function runMigrations(db: SqlDb): Promise<void> {
-  // Bootstrap the ledger so a virgin store can be queried for its applied versions.
   await db.exec(SCHEMA_MIGRATIONS_DDL);
   const recorded = await db.query<{ version: number }>("SELECT version FROM schema_migrations");
   const applied = new Set(recorded.rows.map((r) => Number(r.version)));
-  for (const m of MIGRATIONS) {
-    if (applied.has(m.version)) continue;
-    await assertPreflightClean(db, m);
+  const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
+  const batch = applied.size === 0 ? pending.slice(0, 1) : pending;
+  for (const m of batch) await assertPreflightClean(db, m);
+  for (const m of batch) {
     // The migration's DDL and its ledger record commit as ONE transaction: a crash
     // mid-migration leaves neither a half-applied schema nor a recorded-but-unapplied
     // version, so re-running always resumes cleanly (safe even for a future
@@ -413,9 +409,9 @@ export async function runMigrations(db: SqlDb): Promise<void> {
         await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
       });
     } catch (cause) {
-      // Which migration failed is the one fact the driver's error does not carry, and
-      // without it a constraint abort is indistinguishable from a dataDir lock at boot.
-      throw appError("INTERNAL", `migration ${m.version} (${m.name}) failed and was rolled back: ${cause instanceof Error ? cause.message : String(cause)}`, { version: m.version, name: m.name });
+      const category = safeReason(cause);
+      throw appError("INTERNAL", `migration ${m.version} (${m.name}) failed and was rolled back (${category})`, { version: m.version, name: m.name, category });
     }
   }
+  if (batch.length < pending.length) await runMigrations(db);
 }

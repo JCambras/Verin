@@ -13,6 +13,7 @@ import {
   realSemanticProject,
   inMemoryProject,
   detectAppLayerSqlAccess,
+  isSqlExecutorCall,
   REPO_ROOT,
   typeKey,
 } from "./_fence-utils";
@@ -57,6 +58,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/pii/projection-resolution.ts :: hasUnresolvedProjectionText.<call>",
   "src/domain/pii/projection-resolution.ts :: isPlainProjectionData.<call>",
   "src/domain/pii/projection-resolution.ts :: resolveCompleteSensitiveEntities.<call>",
+  "src/domain/pii/projection-resolution.ts :: trustedStaticProjectionText.<call>",
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
   "src/domain/schema/golden-record.ts :: resolveConflict.<call>",
@@ -456,6 +458,9 @@ function sqlBackedInfrastructureModules(project: Project): Set<string> {
       const importsSqlAdapter = sf.getImportDeclarations().some((declaration) =>
         isSqlAdapter(declaration.getModuleSpecifierValue())
       );
+      const executesSql = sf
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .some(isSqlExecutorCall);
       const dynamicTargets: string[] = [];
       let loadsSqlAdapter = false;
       let unverifiableModuleLoad = false;
@@ -480,7 +485,8 @@ function sqlBackedInfrastructureModules(project: Project): Set<string> {
         ).resolvedModule?.resolvedFileName;
         if (resolved) dynamicTargets.push(normalizedPath(resolved));
       }
-      const reachesSql = importsSqlAdapter ||
+      const reachesSql = executesSql ||
+        importsSqlAdapter ||
         loadsSqlAdapter ||
         unverifiableModuleLoad ||
         [...staticTargets, ...dynamicTargets].some((target) =>
@@ -764,6 +770,51 @@ describe("tenant-context-required fence", () => {
         export const listAll: Read = (db) => db.query("SELECT 1");
       `);
       expect(detectMissingTenantParams(project, ESCAPE_SET)).toHaveLength(1);
+    });
+
+    it("flags a structural SQL executor without an adapter import", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/new-adapter/repository.ts": `
+          interface Executor {
+            query(sql: string, params?: unknown[]): Promise<unknown>;
+          }
+          export function listAll(db: Executor) {
+            return db.query("SELECT 1");
+          }
+        `,
+      });
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/new-adapter/repository.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it("requires runtime tenant proof for a structural SQL executor", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function assertTenantContext(
+            value: unknown,
+          ): asserts value is TenantContext {}
+        `,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Executor {
+            query(sql: string, params?: unknown[]): Promise<unknown>;
+          }
+          export function listAll(db: Executor, tenant: TenantContext) {
+            return db.query("SELECT 1", [tenant.orgId]);
+          }
+        `,
+      });
+      expect(detectMissingTenantParams(project, ESCAPE_SET)).toEqual([
+        {
+          ref: "src/infrastructure/new-adapter/repository.ts :: listAll",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
     });
 
     it("flags an exported repository function that obtains its database internally", () => {

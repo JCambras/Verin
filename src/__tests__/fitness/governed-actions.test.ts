@@ -15,6 +15,8 @@ import {
   detectAppLayerSqlAccess,
   isSqlExecutorCall,
   normalizedPath,
+  REPO_ROOT,
+  structuralPiiExposures,
   typeKey,
 } from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
@@ -225,45 +227,6 @@ function actionGrantParameter(
     : null;
   return Boolean(actionType?.isStringLiteral() &&
     actionType.getLiteralValue() === action);
-}
-
-function containsDeclaredType(
-  type: Type,
-  file: string,
-  name: string,
-): boolean {
-  const queue = [type];
-  const seen = new Set<string>();
-  while (queue.length) {
-    const current = queue.shift()!;
-    const key = typeKey(current);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (declaredAs(current, file, name)) return true;
-    queue.push(
-      ...current.getTypeArguments(),
-      // An ALIAS's arguments and a container's INDEX types carry the payload just
-      // as literally: `Promise<Record<string, ClientRecord>>` and `{ [k: string]:
-      // ClientRecord }` hand out the same PII as `Promise<ClientRecord[]>`.
-      ...current.getAliasTypeArguments(),
-      ...[current.getStringIndexType(), current.getNumberIndexType()]
-        .filter((indexed): indexed is Type => Boolean(indexed)),
-      ...current.getUnionTypes(),
-      ...current.getIntersectionTypes(),
-      ...current.getBaseTypes(),
-    );
-    const symbol = current.getAliasSymbol() ?? current.getSymbol();
-    const projectType = symbol?.getDeclarations().some((declaration) =>
-      normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
-    );
-    if (!projectType) continue;
-    for (const property of current.getProperties()) {
-      const declaration = property.getValueDeclaration() ??
-        property.getDeclarations()[0];
-      if (declaration) queue.push(property.getTypeAtLocation(declaration));
-    }
-  }
-  return false;
 }
 
 function governedOutputAction(type: Type): string | null {
@@ -507,7 +470,10 @@ function semanticCallables(
   for (const property of type.getProperties()) {
     const declaration = property.getValueDeclaration() ??
       property.getDeclarations()[0];
-    if (!declaration) continue;
+    if (
+      !declaration ||
+      !normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+    ) continue;
     for (const signature of property.getTypeAtLocation(declaration).getCallSignatures()) {
       const signatureDeclaration = signature.getDeclaration();
       callables.push({
@@ -519,6 +485,21 @@ function semanticCallables(
     }
   }
   return callables;
+}
+
+const GOVERNED_NON_PII_FIELDS = new Set([
+  "src/infrastructure/observability/tracer.ts :: RecordedSpan.name",
+]);
+
+function isGovernedNonPiiField(_path: string, declaration: Node): boolean {
+  if (!Node.isPropertyNamed(declaration)) return false;
+  const owner = declaration.getFirstAncestorByKind(
+    SyntaxKind.InterfaceDeclaration,
+  )?.getName();
+  if (!owner) return false;
+  return GOVERNED_NON_PII_FIELDS.has(
+    `${normalizedPath(declaration.getSourceFile().getFilePath())} :: ${owner}.${declaration.getName()}`,
+  );
 }
 
 function exportedCallables(sf: SourceFile): ExportedCallable[] {
@@ -591,11 +572,14 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
     for (const callable of exportedCallables(sf)) {
       const grantAction = actionGrantAction(callable.signature);
       const outputAction = governedOutputAction(callable.signature.getReturnType());
-      const returnsPii = containsDeclaredType(
+      const returnsPii = structuralPiiExposures(
         callable.signature.getReturnType(),
-        "src/contracts/pii.ts",
-        "PIIBearing",
-      );
+        {
+          path: `${callable.name}.return`,
+          includeMarked: true,
+          isEscaped: isGovernedNonPiiField,
+        },
+      ).length > 0;
       const inferredAction = outputAction ??
         (returnsPii &&
           hasTenantBoundaryParameter(callable.signature) &&
@@ -668,11 +652,14 @@ export function unboundedPiiReads(project: Project): string[] {
         governedOutputAction(callable.signature.getReturnType()) ||
         hasTenantBoundaryParameter(callable.signature) ||
         mutatesPersistence(callable.declaration) ||
-        !containsDeclaredType(
+        structuralPiiExposures(
           callable.signature.getReturnType(),
-          "src/contracts/pii.ts",
-          "PIIBearing",
-        )
+          {
+            path: `${callable.name}.return`,
+            includeMarked: true,
+            isEscaped: isGovernedNonPiiField,
+          },
+        ).length === 0
       ) continue;
       out.push(`${file} :: ${callable.name}`);
     }
@@ -1441,6 +1428,20 @@ describe("governed-actions fence (v3 §15.3)", () => {
       .toEqual(unboundedPiiReads(project).sort());
   });
 
+  it("enforces: structural non-PII field escapes are exact and load-bearing", () => {
+    const project = realSemanticProject();
+    const recordedSpan = project.getSourceFileOrThrow(
+      `${REPO_ROOT}src/infrastructure/observability/tracer.ts`,
+    ).getInterfaceOrThrow("RecordedSpan");
+    expect(structuralPiiExposures(recordedSpan.getType(), {
+      path: "RecordedSpan",
+    })).toContain("RecordedSpan.name");
+    expect(structuralPiiExposures(recordedSpan.getType(), {
+      path: "RecordedSpan",
+      isEscaped: isGovernedNonPiiField,
+    })).not.toContain("RecordedSpan.name");
+  });
+
   it("enforces: governed sinks validate action-scoped grants at their execution boundaries", () => {
     const violations = detectUnguardedGovernedSinks(realSemanticProject());
     expect(
@@ -1800,6 +1801,24 @@ describe("governed-actions fence (v3 §15.3)", () => {
       });
       expect(detectUnguardedGovernedSinks(project)).toEqual([
         `src/infrastructure/new-adapter/repository.ts :: clientRepo.listClients: boundary must require ActionGrant<"pii.view">`,
+      ]);
+    });
+    it("derives PII sinks from inline return shapes", () => {
+      const project = inMemoryProject({
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+        `,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { TenantContext } from "../../contracts/tenant";
+          export async function listClients(
+            tenant: TenantContext,
+          ): Promise<Array<{ email: string }>> {
+            return [{ email: tenant.orgId }];
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        `src/infrastructure/new-adapter/repository.ts :: listClients: boundary must require ActionGrant<"pii.view">`,
       ]);
     });
     it("derives audit-export sinks from governed output markers", () => {
