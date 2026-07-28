@@ -82,6 +82,22 @@ function requireRetainedToken(value: string): void {
   }
 }
 
+function requireLedgerCodes(event: LedgerEntry): void {
+  const pending: unknown[] = [event];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (value === null || typeof value !== "object") continue;
+    for (const [key, nested] of Object.entries(value)) {
+      if (key === "reasonCode" || key === "failureCode") {
+        if (typeof nested !== "string") refuse();
+        requireRetainedToken(nested);
+      } else {
+        pending.push(nested);
+      }
+    }
+  }
+}
+
 function requireExplanationCodes(
   nodes: DecisionRecord["explanationTrace"],
 ): void {
@@ -143,6 +159,7 @@ export function assertReplaySourcePiiBoundary(
 }
 
 export function assertLedgerEventPiiBoundary(event: LedgerEntry): void {
+  requireLedgerCodes(event);
   if (event.type === "ApprovalRecorded" && event.structuredReason !== undefined) {
     requireRetainedToken(event.structuredReason);
   }

@@ -389,6 +389,7 @@ export async function appendDecisionEvents(
   provenance: RecordProvenance,
   evidenceSnapshots: readonly EvidenceSnapshotRef[] = [],
 ): Promise<AppendedLedgerEntry[]> {
+  if (inputs.length === 0 && evidenceSnapshots.length === 0) return [];
   if (!isSqlTransaction(tx)) {
     throw appError("VALIDATION", "decision events require an active transaction");
   }
@@ -398,10 +399,7 @@ export async function appendDecisionEvents(
   }
   const prepared = prepareEvents(inputs, orgId);
   if (!prepared.ok) throw prepared.error;
-  if (
-    prepared.value.length === 0 ||
-    prepared.value.some(({ event }) => event.type === "DecisionRecorded")
-  ) {
+  if (prepared.value.some(({ event }) => event.type === "DecisionRecorded")) {
     throw appError("VALIDATION", "recording a decision requires recordDecision");
   }
   const parsed = evidenceSnapshots.map((value) => EvidenceSnapshotRefSchema.safeParse(value));

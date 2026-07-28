@@ -27,7 +27,10 @@ import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
 import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
-import { isVersionIdentifier } from "@infra/ledger/ledger-pii";
+import {
+  isVersionIdentifier,
+  retainedTextReference,
+} from "@infra/ledger/ledger-pii";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
@@ -547,6 +550,58 @@ describe("decision ledger storage and L1-L4 verification", () => {
       code: "PII_VIOLATION",
     });
     expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
+  it("requires every ledger reason and failure code to be registered or opaque", async () => {
+    const coded = allLedgerEventSamples().filter(
+      (event) => "reasonCode" in event || "failureCode" in event,
+    );
+    expect(coded.length).toBeGreaterThan(0);
+    for (const event of coded) {
+      const key = "reasonCode" in event ? "reasonCode" : "failureCode";
+      const unsafe = LedgerEntrySchema.parse({
+        ...event,
+        [key]: "unregistered-ledger-code",
+      });
+      await expect(append(db, [unsafe])).rejects.toMatchObject({
+        code: "PII_VIOLATION",
+      });
+    }
+    expect(await listDecisionLedger(db, LEDGER_ORG)).toHaveLength(0);
+
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const expired = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const opaque = LedgerEntrySchema.parse({
+      ...expired,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+      reasonCode: retainedTextReference("2".repeat(64)),
+    });
+    await expect(append(db, [opaque])).resolves.toHaveLength(1);
+  });
+
+  it("returns an empty append before consulting or mutating a transaction", async () => {
+    let consulted = false;
+    const inaccessible = new Proxy({} as SqlTx, {
+      get() {
+        consulted = true;
+        throw new Error("empty append consulted its transaction");
+      },
+      has() {
+        consulted = true;
+        throw new Error("empty append inspected its transaction");
+      },
+    });
+    await expect(appendDecisionEvents(
+      inaccessible,
+      LEDGER_ORG,
+      [],
+      LEDGER_PROVENANCE,
+    )).resolves.toEqual([]);
+    expect(consulted).toBe(false);
+    expect(await listDecisionLedger(db, LEDGER_ORG)).toHaveLength(0);
   });
 
   it("classifies bundle versions by lexical form, so a real release still records", async () => {

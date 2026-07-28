@@ -5642,3 +5642,64 @@ query does not create a broad exemption.
 register, rebuild, anti-fork, tenant, typecheck, and line-budget suites pass.
 
 **Date:** 2026-07-28 (review corrections H1-H6, ADR-0033, D-107).
+
+## Frozen schema families, closed ledger codes, truthful no-op, and replay index (D-108)
+
+**Invariants:** retained schemas and codecs have no runtime path to current
+contract or timezone modules; ledger schema 1.0 rejects the 1.1-only bundle hash;
+every ledger reason and failure code is registered or an opaque retained-text
+reference; an empty append consults no transaction and mutates nothing; replay
+coverage has the tenant-scoped partial index matching its query.
+
+The retained evidence schema's frozen timezone import was changed from
+`./time-zone` to the current `../../time-zone` module:
+
+```text
+× enforces: retained codecs import only explicit versioned behavior
+  expected [ 'evidence.ts:34:../../time-zone' ] to deeply equal []
+  src/__tests__/fitness/ledger-schema-registry.test.ts:253
+```
+
+The ledger 1.0 bundle-hash refusal was disabled:
+
+```text
+× ledger 1.0 rejects the 1.1-only bundle hash and 1.1 requires it
+  expected true to be false
+  src/__tests__/fitness/ledger-schema-registry.test.ts:410
+```
+
+The single call that checks every `reasonCode` and `failureCode` was removed from
+the immutable-text boundary. The integration companion then reached a later store
+constraint instead of refusing the unregistered code:
+
+```text
+× requires every ledger reason and failure code to be registered or opaque
+  Expected code: PII_VIOLATION
+  Received code: STORE_CONSTRAINT
+  src/__tests__/integration/decision-ledger.test.ts:566
+```
+
+The empty-return guard was disabled. A proxy transaction that throws on any
+inspection proved the append touched transaction state:
+
+```text
+× returns an empty append before consulting or mutating a transaction
+  promise rejected "Error: empty append inspected its transaction"
+  src/infrastructure/store/db.ts:51
+```
+
+Finally, `sequence` was removed from the replay-coverage index:
+
+```text
+× creates the tenant-scoped partial replay-coverage index
+  Expected: (org_id, evidence_snapshot_id, sequence)
+  Received: (org_id, evidence_snapshot_id)
+  src/__tests__/integration/store-schema.test.ts:156
+```
+
+**Revert:** every planted violation was restored. Fixed historical fixtures still
+reproduce their exact bytes and hashes, the retained bundle companion still
+normalizes reference order and timezone casing through its frozen authorities,
+opaque reason references remain accepted, and the focused suites pass.
+
+**Date:** 2026-07-28 (review corrections I1-I5, ADR-0033, D-108).

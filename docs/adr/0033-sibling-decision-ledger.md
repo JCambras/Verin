@@ -97,8 +97,8 @@ settle now.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
-- Amend ADR-0018 ceilings from contracts 3500 to 4100 and infrastructure 2500 to
-  5100. Measured final state is contracts 4062 and infrastructure 5064. Domain
+- Amend ADR-0018 ceilings from contracts 3500 to 4300 and infrastructure 2500 to
+  5200. Measured final state is contracts 4185 and infrastructure 5115. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
@@ -116,8 +116,11 @@ lists every ledger schema version this build can decode and grows only by append
 `ledger-source-registry.ts` (evidence, bundle, decision codecs) - key on explicit
 version literals, never on the current-version constants. Each entry owns its frozen
 schema, canonical serializer, and hash or chain-preimage function; replay-source
-entries also own their upcast. Recorded versions select reads; current constants
-select writes only. `decision_ledger` and every immutable source table refuse DELETE,
+entries also own their upcast. The retained ledger family lives under `ledger-v1/`;
+the retained decision-core graph lives under `v1-7/` and imports its exact timezone
+data, normalizers, and serializer without passing through current wrappers. Recorded
+versions select reads; current constants select writes only. `decision_ledger` and
+every immutable source table refuse DELETE,
 so dropping or redirecting a key would leave committed rows permanently
 unverifiable with no repair path. The
 `ledger-schema-registry` fence uses fixed recorded ledger and replay-source fixtures

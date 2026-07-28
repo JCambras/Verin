@@ -1,18 +1,26 @@
+import { createHash } from "node:crypto";
 import type { z } from "zod";
 import {
   DecisionInputBundleV1_7_0Schema,
   EvidenceSnapshotRefV1_7_0Schema,
-  type DecisionInputBundle,
-  type EvidenceSnapshotRef,
+  type DecisionInputBundleV1_7_0,
+  type EvidenceSnapshotRefV1_7_0,
+} from "@contracts/decision-core/v1-7/evidence";
+import type {
+  DecisionInputBundle,
+  EvidenceSnapshotRef,
 } from "@contracts/decision-core/evidence";
-import { DecisionRecordV1_7_0Schema, type DecisionRecord } from "@contracts/decision-core/decision";
+import {
+  DecisionRecordV1_7_0Schema,
+  type DecisionRecordV1_7_0,
+} from "@contracts/decision-core/v1-7/decision";
+import type { DecisionRecord } from "@contracts/decision-core/decision";
 import {
   bundleHashPreimageV1_7_0,
   canonicalJsonV1_0_0,
   decisionHashPreimageV1_7_0,
   type JsonValue,
-} from "@contracts/decision-core/serialization";
-import { digestCanonicalBytes } from "./ledger-canonical";
+} from "@contracts/decision-core/v1-7/serialization";
 import { isVersionIdentifier } from "./ledger-pii";
 
 interface ReplaySourceTypes {
@@ -21,11 +29,11 @@ interface ReplaySourceTypes {
   readonly decision: DecisionRecord;
 }
 
-interface ReplaySourceCodec<T> {
-  readonly parseRecorded: (value: unknown) => unknown | undefined;
+interface ReplaySourceCodec<TRecorded, TCurrent> {
+  readonly parseRecorded: (value: unknown) => TRecorded | undefined;
   readonly canonicalizeRecorded: (value: unknown) => string | undefined;
   readonly hashRecorded: (value: unknown) => string | undefined;
-  readonly upcast: (value: unknown) => T | undefined;
+  readonly upcast: (value: TRecorded) => TCurrent | undefined;
 }
 
 type ParseResult<T> =
@@ -40,10 +48,14 @@ const safeEncoding = (schemaVersion: string, serializerVersion: string): string 
     ? `${schemaVersion}/${serializerVersion}`
     : "unrecognized";
 
-function codecV1_7_0<T>(
-  schema: z.ZodType<T>,
-  hashValue: (value: T) => unknown,
-): ReplaySourceCodec<T> {
+const digestV1_0_0 = (bytes: string): string =>
+  createHash("sha256").update(bytes, "utf8").digest("hex");
+
+function codecV1_7_0<TRecorded, TCurrent>(
+  schema: z.ZodType<TRecorded>,
+  hashValue: (value: TRecorded) => unknown,
+  upcast: (value: TRecorded) => TCurrent,
+): ReplaySourceCodec<TRecorded, TCurrent> {
   return {
     parseRecorded(value) {
       const parsed = schema.safeParse(value);
@@ -59,24 +71,33 @@ function codecV1_7_0<T>(
       const serialized = canonicalJsonV1_0_0(
         hashValue(parsed.data) as JsonValue,
       );
-      return serialized.ok ? digestCanonicalBytes(serialized.value) : undefined;
+      return serialized.ok ? digestV1_0_0(serialized.value) : undefined;
     },
-    upcast(value) {
-      const parsed = schema.safeParse(value);
-      return parsed.success ? parsed.data : undefined;
-    },
+    upcast,
   };
 }
 
 const REGISTRIES = {
-  evidence: new Map<string, ReplaySourceCodec<EvidenceSnapshotRef>>([
-    ["1.7.0|1.0.0", codecV1_7_0(EvidenceSnapshotRefV1_7_0Schema, (value) => value)],
+  evidence: new Map<string, ReplaySourceCodec<EvidenceSnapshotRefV1_7_0, EvidenceSnapshotRef>>([
+    ["1.7.0|1.0.0", codecV1_7_0(
+      EvidenceSnapshotRefV1_7_0Schema,
+      (value) => value,
+      (value) => value,
+    )],
   ]),
-  bundle: new Map<string, ReplaySourceCodec<DecisionInputBundle>>([
-    ["1.7.0|1.0.0", codecV1_7_0(DecisionInputBundleV1_7_0Schema, bundleHashPreimageV1_7_0)],
+  bundle: new Map<string, ReplaySourceCodec<DecisionInputBundleV1_7_0, DecisionInputBundle>>([
+    ["1.7.0|1.0.0", codecV1_7_0(
+      DecisionInputBundleV1_7_0Schema,
+      bundleHashPreimageV1_7_0,
+      (value) => value,
+    )],
   ]),
-  decision: new Map<string, ReplaySourceCodec<DecisionRecord>>([
-    ["1.7.0|1.0.0", codecV1_7_0(DecisionRecordV1_7_0Schema, decisionHashPreimageV1_7_0)],
+  decision: new Map<string, ReplaySourceCodec<DecisionRecordV1_7_0, DecisionRecord>>([
+    ["1.7.0|1.0.0", codecV1_7_0(
+      DecisionRecordV1_7_0Schema,
+      decisionHashPreimageV1_7_0,
+      (value) => value,
+    )],
   ]),
 };
 
@@ -93,7 +114,7 @@ export function parseRecordedReplaySource<
   value: unknown,
 ): ParseResult<ReplaySourceTypes[K]> {
   const codec = REGISTRIES[kind].get(key(schemaVersion, serializerVersion)) as
-    | ReplaySourceCodec<ReplaySourceTypes[K]>
+    | ReplaySourceCodec<unknown, ReplaySourceTypes[K]>
     | undefined;
   if (!codec) {
     return {

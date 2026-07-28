@@ -266,3 +266,9 @@ CREATE UNIQUE INDEX decision_reservation_one_active
   ON decision_reservation_index(org_id, reservation_id)
   WHERE status = 'active';
 `;
+
+export const DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS decision_ledger_evidence_recorded
+  ON decision_ledger(org_id, evidence_snapshot_id, sequence)
+  WHERE event_type = 'EvidenceSnapshotRecorded';
+`;

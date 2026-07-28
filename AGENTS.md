@@ -98,8 +98,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   decision event can commit atomically, and both require the producer's `RecordProvenance` -
   surfaces classify a row from the stored `prov_source`, never from an actor name. Ledger hashes
   cover a versioned envelope of stored `payload_json` bytes plus producer provenance. Never rewrite
-  old bytes; raw inserts into an immutable
-  source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
+  old bytes. Retained codecs live under `decision-core/ledger-v1/` and
+  `decision-core/v1-7/`; registries import those paths directly, while public modules are current
+  wrappers that switch to a new version family instead of changing retained behavior. Raw inserts
+  into an immutable source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
   evidence/bundle/record rows, reusable when the bytes match). Derived state lives in
   `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts`. Reservation reuse is
   generation-bound: a release cites its reservation ref, owning decision, and creation ledger entry,

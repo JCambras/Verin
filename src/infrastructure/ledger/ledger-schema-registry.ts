@@ -2,8 +2,11 @@ import {
   LedgerEntryV1_0_0Schema,
   LedgerEntryV1_1_0Schema,
   type LedgerEntry,
-} from "@contracts/decision-core/ledger";
-import { canonicalJsonV1_0_0, type JsonValue } from "@contracts/decision-core/serialization";
+} from "@contracts/decision-core/ledger-v1/ledger";
+import {
+  canonicalJsonV1_0_0,
+  type JsonValue,
+} from "@contracts/decision-core/v1-7/serialization";
 import type { RecordProvenance } from "@contracts/provenance";
 
 type ParseResult =

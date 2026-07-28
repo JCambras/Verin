@@ -3321,3 +3321,33 @@ check.
 **Revert path:** none while Prompt 7 promises additive recorded codecs, fail-closed
 verified reads, repairable derived state, exact insert ownership, and structural
 tenant isolation.
+
+### D-108 · 2026-07-28 · reversible · Retained codec ownership and ledger boundaries are complete
+
+The existing decision-core 1.7 implementation is now an explicit frozen module
+family under `decision-core/v1-7/`, and ledger schemas 1.0 and 1.1 live under
+`decision-core/ledger-v1/`. Current public modules are wrappers, so a later current
+version can switch without changing the code historical rows dispatch through.
+The replay registry binds directly to the frozen schemas, timezone data,
+normalizers, serializer, hash projections, SHA-256 implementation, and identity
+upcasts. Ledger 1.0 rejects the 1.1-only bundle hash.
+
+The immutable-text boundary walks every ledger `reasonCode` and `failureCode` and
+accepts only a registered code or opaque retained-text reference. A truly empty
+later-event append returns an empty result before inspecting its transaction or
+touching locks, savepoints, chain state, or projections.
+
+Migration 6 adds the partial tenant-scoped
+`decision_ledger(org_id, evidence_snapshot_id, sequence)` index used by replay
+coverage, limited to `EvidenceSnapshotRecorded` rows. Prior migrations and
+immutable history remain unchanged.
+
+The composed implementation measures contracts at 4793 lines and infrastructure
+at 6390 lines. ADR-0033 amends ADR-0018 ceilings to 4900 and 6500 respectively,
+preserving the 500-line file cap.
+
+**Why:** version labels do not preserve history when old schemas still depend on
+current modules, and free-form codes, rejected no-ops, or unindexed bounded reads
+all violate the accepted Prompt 7 contract.
+**Revert path:** none while retained history, fail-closed text, truthful empty
+appends, and bounded replay coverage remain supported.

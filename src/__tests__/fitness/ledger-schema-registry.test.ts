@@ -86,11 +86,61 @@ const LIVE_CODEC_DEPENDENCIES = new Set([
   "CANONICAL_SERIALIZER_VERSION",
   "DECISION_CORE_SCHEMA_VERSION",
 ]);
+const FROZEN_CODEC_FILES = [
+  "src/contracts/decision-core/ledger-v1/ledger.ts",
+  "src/contracts/decision-core/v1-7/actor.ts",
+  "src/contracts/decision-core/v1-7/authority.ts",
+  "src/contracts/decision-core/v1-7/decision.ts",
+  "src/contracts/decision-core/v1-7/evidence.ts",
+  "src/contracts/decision-core/v1-7/execution.ts",
+  "src/contracts/decision-core/v1-7/explanation.ts",
+  "src/contracts/decision-core/v1-7/ids.ts",
+  "src/contracts/decision-core/v1-7/normalization.ts",
+  "src/contracts/decision-core/v1-7/serialization.ts",
+  "src/contracts/decision-core/v1-7/time-zone.ts",
+  "src/contracts/decision-core/v1-7/trigger.ts",
+] as const;
 
 function liveCodecDependencies(source: SourceFile): string[] {
   return source.getImportDeclarations().flatMap((declaration) =>
     declaration.getNamedImports().map((item) => item.getName()))
     .filter((name) => LIVE_CODEC_DEPENDENCIES.has(name));
+}
+
+function unversionedRuntimeImports(source: SourceFile): string[] {
+  return source.getImportDeclarations().flatMap((declaration) => {
+    const clause = declaration.getImportClause();
+    const runtime =
+      clause === undefined ||
+      (!clause.isTypeOnly() &&
+        (clause.getDefaultImport() !== undefined ||
+          clause.getNamespaceImport() !== undefined ||
+          clause.getNamedImports().some((item) => !item.isTypeOnly())));
+    const specifier = declaration.getModuleSpecifierValue();
+    return runtime &&
+      specifier.startsWith("@contracts/decision-core/") &&
+      !specifier.includes("/v1-7/") &&
+      !specifier.includes("/ledger-v1/")
+      ? [`${source.getBaseName()}:${declaration.getStartLineNumber()}:${specifier}`]
+      : [];
+  });
+}
+
+function frozenDependencyViolations(source: SourceFile): string[] {
+  const ledger = source.getFilePath().includes("/ledger-v1/");
+  return source.getImportDeclarations().flatMap((declaration) => {
+    const specifier = declaration.getModuleSpecifierValue();
+    const allowed = specifier === "zod" ||
+      (ledger
+        ? specifier.startsWith("../v1-7/")
+        : specifier.startsWith("./") ||
+          specifier === "../../result" ||
+          specifier === "../../errors" ||
+          specifier.startsWith("../../iana-time-zone"));
+    return allowed
+      ? []
+      : [`${source.getBaseName()}:${declaration.getStartLineNumber()}:${specifier}`];
+  });
 }
 
 async function storeRecordedRow(
@@ -193,6 +243,14 @@ describe("decision-ledger schema registry fence", () => {
       expect(liveCodecDependencies(project.getSourceFileOrThrow(file))).toEqual(
         [],
       );
+      expect(
+        unversionedRuntimeImports(project.getSourceFileOrThrow(file)),
+      ).toEqual([]);
+    }
+    for (const file of FROZEN_CODEC_FILES) {
+      expect(
+        frozenDependencyViolations(project.getSourceFileOrThrow(file)),
+      ).toEqual([]);
     }
   });
 
@@ -237,6 +295,30 @@ describe("decision-ledger schema registry fence", () => {
     }
   });
 
+  it("enforces: the retained bundle codec owns its canonical ordering and timezone normalization", () => {
+    const source = REPLAY_FIXTURE.sources.find(
+      (candidate) => candidate.kind === "bundle",
+    )!;
+    const value = JSON.parse(source.canonical) as {
+      timeZone: string;
+      evidenceSnapshotRefs: unknown[];
+      householdInstructionVersionRefs: unknown[];
+    };
+    value.timeZone = value.timeZone.toLowerCase();
+    value.evidenceSnapshotRefs.reverse();
+    value.householdInstructionVersionRefs.reverse();
+    const parsed = parseRecordedReplaySource(
+      "bundle",
+      REPLAY_FIXTURE.schemaVersion,
+      REPLAY_FIXTURE.serializerVersion,
+      value,
+    );
+    expect(parsed.ok ? parsed.canonicalBytes : parsed.reason).toBe(
+      source.canonical,
+    );
+    expect(parsed.ok ? parsed.recordedHash : "").toBe(source.hash);
+  });
+
   it.each([...LEDGER_SCHEMA_VERSIONS])(
     "enforces: a ledger row stored at schema %s verifies L1-L4 through the real verifier",
     async (schemaVersion) => {
@@ -266,6 +348,18 @@ describe("decision-ledger schema registry fence", () => {
       expect(liveCodecDependencies(project.getSourceFiles()[0]!)).toEqual([
         "LedgerEntrySchema",
         "canonicalJson",
+      ]);
+      expect(unversionedRuntimeImports(project.getSourceFiles()[0]!)).toHaveLength(2);
+    });
+
+    it("detects a frozen schema that reaches a current registry", () => {
+      const project = inMemoryProject({
+        "/src/contracts/decision-core/v1-7/probe.ts":
+          `import { TimeZoneSchema } from "../../time-zone";\n` +
+          "export const probe = TimeZoneSchema;",
+      });
+      expect(frozenDependencyViolations(project.getSourceFiles()[0]!)).toEqual([
+        "probe.ts:1:../../time-zone",
       ]);
     });
 
@@ -300,8 +394,26 @@ describe("decision-ledger schema registry fence", () => {
           LEDGER_SCHEMA_VERSION,
           FIXTURE.serializerVersion,
           JSON.parse(older.payloadJson),
-        ).ok,
+      ).ok,
       ).toBe(false);
+    });
+
+    it("ledger 1.0 rejects the 1.1-only bundle hash and 1.1 requires it", () => {
+      const older = JSON.parse(
+        FIXTURE.versions["1.0.0"]!.DecisionRecorded!.payloadJson,
+      ) as Record<string, unknown>;
+      expect(parseRecordedLedgerEvent(
+        "DecisionRecorded",
+        "1.0.0",
+        FIXTURE.serializerVersion,
+        { ...older, bundleHash: "a".repeat(64) },
+      ).ok).toBe(false);
+      expect(parseRecordedLedgerEvent(
+        "DecisionRecorded",
+        "1.1.0",
+        FIXTURE.serializerVersion,
+        { ...older, schemaVersion: "1.1.0" },
+      ).ok).toBe(false);
     });
 
     it("a ledger row whose recorded version is unregistered fails L1 with a reason", async () => {

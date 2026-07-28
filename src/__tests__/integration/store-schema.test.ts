@@ -163,6 +163,19 @@ describe("store schema hardening (integration)", () => {
       );
       expect(new Set(idx.rows.map((r) => r.indexname))).toEqual(new Set(["contacts_household", "financial_accounts_household", "sessions_user"]));
     });
+
+    it("creates the tenant-scoped partial replay-coverage index", async () => {
+      const idx = await db.query<{ indexdef: string }>(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'decision_ledger_evidence_recorded'",
+      );
+      expect(idx.rows).toHaveLength(1);
+      expect(idx.rows[0]!.indexdef).toContain(
+        "(org_id, evidence_snapshot_id, sequence)",
+      );
+      expect(idx.rows[0]!.indexdef).toContain(
+        "WHERE (event_type = 'EvidenceSnapshotRecorded'::text)",
+      );
+    });
   });
 });
 

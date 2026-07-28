@@ -27,6 +27,7 @@ import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
+  DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
   DECISION_LEDGER_SQL,
 } from "./decision-ledger-migration";
 
@@ -356,6 +357,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 5,
     name: "decision-ledger-reservation-generations",
     sql: DECISION_LEDGER_GENERATIONS_SQL,
+  },
+  {
+    version: 6,
+    name: "decision-ledger-replay-coverage-index",
+    sql: DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
   },
 ];
 
