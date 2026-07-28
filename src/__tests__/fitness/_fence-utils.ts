@@ -62,7 +62,7 @@ export function walk(dir: string, filter: (f: string) => boolean): string[] {
 }
 
 export function isShippedSourceFilePath(filePath: string): boolean {
-  if (!/\.(ts|tsx)$/.test(filePath)) return false;
+  if (!/\.(?:[cm]?ts|tsx)$/.test(filePath)) return false;
   const pathFromRootTests = relative(join(SRC_ROOT, "__tests__"), resolve(filePath));
   return (
     pathFromRootTests === ".." ||
@@ -141,13 +141,17 @@ function configuredPathTargets(specifier: string, compilerOptions: CompilerOptio
   );
 }
 
-function classifySpecifier(
+/**
+ * Every file a specifier can name, through TypeScript resolution first and the
+ * configured `paths` aliases second. ONE authority: a fence that instead tests
+ * the specifier TEXT (`startsWith(".")`) calls every aliased spelling external,
+ * and whatever it guards silently stops applying to `@contracts/…`.
+ */
+function specifierTargets(
   project: Project,
   fromFile: string,
   specifier: string,
-): SpecifierClassification {
-  const sourceRoot = sourceRootOf(fromFile);
-  if (sourceRoot === null) return { kind: "external" };
+): { targets: string[]; external: boolean } {
   const compilerOptions = project.getCompilerOptions();
   const resolvedModule = ts.resolveModuleName(
     specifier,
@@ -157,38 +161,52 @@ function classifySpecifier(
   ).resolvedModule;
   if (resolvedModule) {
     const target = resolve(resolvedModule.resolvedFileName);
-    const layer =
-      layerWithinSourceRoot(target, sourceRoot) ??
-      layerWithinSourceRoot(target, SRC_ROOT) ??
-      layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT);
-    if (layer !== null) return { kind: "layer", layer };
     const segments = target.split(/[/\\]/);
-    if (resolvedModule.isExternalLibraryImport || segments.includes("node_modules")) {
-      return { kind: "external" };
-    }
-    return { kind: "local-unclassified" };
+    return {
+      targets: [target],
+      external:
+        resolvedModule.isExternalLibraryImport === true ||
+        segments.includes("node_modules"),
+    };
   }
   const targets = specifier.startsWith(".") || isAbsolute(specifier)
     ? [resolve(dirname(fromFile), specifier)]
     : configuredPathTargets(specifier, compilerOptions);
-  if (targets.length === 0) return { kind: "external" };
+  return { targets, external: targets.length === 0 };
+}
+
+/** The project-local files a specifier names; an external package names none. */
+export function localSpecifierTargets(
+  project: Project,
+  fromFile: string,
+  specifier: string,
+): string[] {
+  const { targets, external } = specifierTargets(project, fromFile, specifier);
+  return external ? [] : targets;
+}
+
+function classifySpecifier(
+  project: Project,
+  fromFile: string,
+  specifier: string,
+): SpecifierClassification {
+  const sourceRoot = sourceRootOf(fromFile);
+  if (sourceRoot === null) return { kind: "external" };
+  const { targets, external } = specifierTargets(project, fromFile, specifier);
+  const layerOfTarget = (target: string): Layer | null =>
+    layerWithinSourceRoot(target, sourceRoot) ??
+    layerWithinSourceRoot(target, SRC_ROOT) ??
+    layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT);
   const layers = new Set(
     targets.flatMap((target) => {
-      const layer =
-        layerWithinSourceRoot(target, sourceRoot) ??
-        layerWithinSourceRoot(target, SRC_ROOT) ??
-        layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT);
+      const layer = layerOfTarget(target);
       return layer === null ? [] : [layer];
     }),
   );
-  if (layers.size === 1 && targets.every((target) =>
-    layerWithinSourceRoot(target, sourceRoot) !== null ||
-    layerWithinSourceRoot(target, SRC_ROOT) !== null ||
-    layerWithinSourceRoot(target, IN_MEMORY_SRC_ROOT) !== null
-  )) {
+  if (layers.size === 1 && targets.every((target) => layerOfTarget(target) !== null)) {
     return { kind: "layer", layer: [...layers][0]! };
   }
-  return { kind: "local-unclassified" };
+  return external ? { kind: "external" } : { kind: "local-unclassified" };
 }
 
 export interface ModuleReference {
@@ -206,61 +224,300 @@ export interface ModuleReference {
     | "reference-lib"
     | "require-reference"
     | "create-require"
+    | "get-builtin-module"
     | "implicit-jsx-runtime";
 }
 
-/** Every module reference, including non-literal dynamic import/require calls. */
-export function moduleReferences(sf: SourceFile): ModuleReference[] {
-  const refs: ModuleReference[] = [];
-  const isDeclaredLocally = (node: Node): boolean =>
-    node.getSymbol()?.getDeclarations().some(
-      (declaration) => declaration.getSourceFile() === sf,
-    ) ?? false;
-  /**
-   * An identifier spelled `require` only names a loader in VALUE position. A member
-   * name (`cfg.require`), an object key, a declared member, or a destructuring
-   * property name is an ordinary property that merely shares the spelling - and it
-   * resolves into whichever module declares that property, so a "declared in THIS
-   * file?" test reports every cross-module one as a CommonJS loader.
-   */
-  const isMemberNamePosition = (identifier: Node): boolean => {
-    const parent = identifier.getParent();
-    if (parent === undefined || Node.isShorthandPropertyAssignment(parent)) return false;
-    if (Node.isQualifiedName(parent)) return parent.getRight() === identifier;
-    if (Node.isBindingElement(parent)) {
-      return parent.getPropertyNameNode() === identifier || parent.getNameNode() === identifier;
-    }
-    if (Node.isPropertyAccessExpression(parent)) return parent.getNameNode() === identifier;
-    return Node.isPropertyNamed(parent) && parent.getNameNode() === identifier;
-  };
-  const unwrapExpression = (node: Node | undefined): Node | undefined => {
-    let expression = node;
-    while (
-      Node.isParenthesizedExpression(expression) ||
-      Node.isAsExpression(expression) ||
-      Node.isSatisfiesExpression(expression) ||
-      Node.isNonNullExpression(expression) ||
-      Node.isTypeAssertion(expression) ||
-      Node.isAwaitExpression(expression)
-    ) {
-      expression = expression.getExpression();
-    }
+const unwrapExpression = (node: Node | undefined): Node | undefined => {
+  let expression = node;
+  while (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isNonNullExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isAwaitExpression(expression)
+  ) {
+    expression = expression.getExpression();
+  }
+  return expression;
+};
+
+const expressionProvenanceIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+  seen: Set<Node> = new Set(),
+): Node | undefined => {
+  const expression = unwrapExpression(node);
+  if (!Node.isIdentifier(expression) || seen.has(expression)) {
     return expression;
-  };
-  const propertyName = (
-    node: Node | undefined,
-    fallback: string,
-  ): string | null => {
-    if (node === undefined) return fallback;
-    if (Node.isIdentifier(node)) return node.getText();
+  }
+  seen.add(expression);
+  const declaration = expression
+    .getSymbol()
+    ?.getDeclarations()
+    .find(Node.isVariableDeclaration);
+  const assignment = sf
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < expression.getStart() &&
+        Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
+        unwrapExpression(candidate.getLeft())?.getSymbol() ===
+          expression.getSymbol(),
+    )
+    .sort((left, right) => right.getStart() - left.getStart())[0];
+  const source = assignment?.getRight() ?? declaration?.getInitializer();
+  return source === undefined
+    ? expression
+    : expressionProvenanceIn(sf, source, seen);
+};
+
+type PropertyKeyCandidates = {
+  readonly names: ReadonlySet<string>;
+  readonly unresolved: boolean;
+};
+
+const propertyKeyCandidatesIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+  seen: ReadonlySet<MorphSymbol> = new Set(),
+): PropertyKeyCandidates => {
+  const expression = unwrapExpression(node);
+  if (
+    Node.isStringLiteral(expression) ||
+    Node.isNoSubstitutionTemplateLiteral(expression)
+  ) {
+    return {
+      names: new Set([expression.getLiteralText()]),
+      unresolved: false,
+    };
+  }
+  if (Node.isConditionalExpression(expression)) {
+    const left = propertyKeyCandidatesIn(sf, expression.getWhenTrue(), seen);
+    const right = propertyKeyCandidatesIn(sf, expression.getWhenFalse(), seen);
+    return {
+      names: new Set([...left.names, ...right.names]),
+      unresolved: left.unresolved || right.unresolved,
+    };
+  }
+  if (
+    Node.isBinaryExpression(expression) &&
+    PROVENANCE_CHOICE_OPERATORS.has(
+      expression.getOperatorToken().getKind(),
+    )
+  ) {
+    const left = propertyKeyCandidatesIn(sf, expression.getLeft(), seen);
+    const right = propertyKeyCandidatesIn(sf, expression.getRight(), seen);
+    return {
+      names: new Set([...left.names, ...right.names]),
+      unresolved: left.unresolved || right.unresolved,
+    };
+  }
+  if (!Node.isIdentifier(expression)) {
+    return { names: new Set(), unresolved: true };
+  }
+  const symbol = expression.getSymbol();
+  if (symbol === undefined || seen.has(symbol)) {
+    return { names: new Set(), unresolved: true };
+  }
+  const sources: Node[] = [];
+  let unresolved = false;
+  for (const declaration of symbol.getDeclarations()) {
     if (
-      Node.isStringLiteral(node) ||
-      Node.isNoSubstitutionTemplateLiteral(node)
+      Node.isVariableDeclaration(declaration) ||
+      Node.isParameterDeclaration(declaration)
     ) {
-      return node.getLiteralText();
+      const initializer = declaration.getInitializer();
+      if (initializer === undefined) {
+        unresolved = true;
+      } else {
+        sources.push(initializer);
+      }
+    } else {
+      unresolved = true;
     }
-    if (Node.isComputedPropertyName(node)) {
-      return literalPropertyKey(node.getExpression());
+  }
+  for (const assignment of sf.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (
+      !PROVENANCE_ASSIGNMENT_OPERATORS.has(
+        assignment.getOperatorToken().getKind(),
+      )
+    ) {
+      continue;
+    }
+    const left = unwrapExpression(assignment.getLeft());
+    if (Node.isIdentifier(left) && left.getSymbol() === symbol) {
+      sources.push(assignment.getRight());
+    }
+  }
+  if (sources.length === 0) {
+    return { names: new Set(), unresolved: true };
+  }
+  const nextSeen = new Set(seen).add(symbol);
+  const names = new Set<string>();
+  for (const source of sources) {
+    const candidates = propertyKeyCandidatesIn(sf, source, nextSeen);
+    for (const name of candidates.names) names.add(name);
+    unresolved ||= candidates.unresolved;
+  }
+  return { names, unresolved };
+};
+
+const literalPropertyKeyIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+): string | null => {
+  const candidates = propertyKeyCandidatesIn(sf, node);
+  return !candidates.unresolved && candidates.names.size === 1
+    ? [...candidates.names][0]!
+    : null;
+};
+
+const memberNameCandidatesIn = (
+  sf: SourceFile,
+  access: Node,
+): PropertyKeyCandidates => {
+  if (Node.isPropertyAccessExpression(access)) {
+    return {
+      names: new Set([access.getName()]),
+      unresolved: false,
+    };
+  }
+  return Node.isElementAccessExpression(access)
+    ? propertyKeyCandidatesIn(sf, access.getArgumentExpression())
+    : { names: new Set(), unresolved: true };
+};
+
+type AmbientAliasSource = {
+  readonly at: number;
+  readonly receiver: Node;
+  readonly selectors: readonly ProvenanceSelector[];
+  readonly uncertain?: boolean;
+};
+
+type ProvenanceSelector =
+  | { readonly kind: "property"; readonly name: string | null }
+  | { readonly kind: "index"; readonly index: number };
+
+const UNKNOWN_AMBIENT_GLOBAL = "<unknown-ambient-global>";
+const PROVENANCE_ASSIGNMENT_OPERATORS = new Set([
+  SyntaxKind.EqualsToken,
+  SyntaxKind.AmpersandAmpersandEqualsToken,
+  SyntaxKind.BarBarEqualsToken,
+  SyntaxKind.QuestionQuestionEqualsToken,
+]);
+const PROVENANCE_CHOICE_OPERATORS = new Set([
+  SyntaxKind.AmpersandAmpersandToken,
+  SyntaxKind.BarBarToken,
+  SyntaxKind.QuestionQuestionToken,
+]);
+const AMBIENT_ALIAS_SOURCE_CACHE = new WeakMap<
+  SourceFile,
+  Map<MorphSymbol, AmbientAliasSource[]>
+>();
+
+const functionSymbolIn = (
+  declaration: Node,
+): MorphSymbol | undefined => {
+  if (
+    Node.isFunctionDeclaration(declaration) ||
+    Node.isMethodDeclaration(declaration) ||
+    Node.isGetAccessorDeclaration(declaration) ||
+    Node.isSetAccessorDeclaration(declaration)
+  ) {
+    return declaration.getNameNode()?.getSymbol();
+  }
+  if (
+    Node.isArrowFunction(declaration) ||
+    Node.isFunctionExpression(declaration)
+  ) {
+    const owner = declaration.getParent();
+    if (Node.isVariableDeclaration(owner)) {
+      return owner.getNameNode().getSymbol();
+    }
+  }
+  return undefined;
+};
+
+const parameterArgumentSourcesIn = (
+  sf: SourceFile,
+  parameter: Node,
+): { readonly sources: AmbientAliasSource[]; readonly unresolved: boolean } => {
+  if (!Node.isParameterDeclaration(parameter)) {
+    return { sources: [], unresolved: true };
+  }
+  const declaration = parameter.getFirstAncestor(
+    Node.isFunctionLikeDeclaration,
+  );
+  if (declaration === undefined) {
+    return { sources: [], unresolved: true };
+  }
+  const parameters = declaration.getParameters();
+  const index = parameters.findIndex(
+    (candidate) => candidate.compilerNode === parameter.compilerNode,
+  );
+  if (index < 0 || parameter.isRestParameter()) {
+    return { sources: [], unresolved: true };
+  }
+  const symbol = functionSymbolIn(declaration);
+  const calls = sf.getDescendantsOfKind(SyntaxKind.CallExpression).filter(
+    (call) => {
+      const callee = unwrapExpression(call.getExpression());
+      if (callee?.compilerNode === declaration.compilerNode) return true;
+      return (
+        symbol !== undefined &&
+        Node.isIdentifier(callee) &&
+        callee.getSymbol() === symbol
+      );
+    },
+  );
+  const directCallStarts = new Set(
+    calls
+      .map((call) => unwrapExpression(call.getExpression()))
+      .filter(Node.isIdentifier)
+      .map((callee) => callee.getStart()),
+  );
+  const declarationNameStarts = new Set<number>();
+  for (const candidate of symbol?.getDeclarations() ?? []) {
+    if (
+      Node.isFunctionDeclaration(candidate) ||
+      Node.isMethodDeclaration(candidate) ||
+      Node.isGetAccessorDeclaration(candidate) ||
+      Node.isSetAccessorDeclaration(candidate)
+    ) {
+      const name = candidate.getNameNode();
+      if (name !== undefined) declarationNameStarts.add(name.getStart());
+    } else if (Node.isVariableDeclaration(candidate)) {
+      declarationNameStarts.add(candidate.getNameNode().getStart());
+    }
+  }
+  const variableOwner = declaration.getFirstAncestorByKind(
+    SyntaxKind.VariableStatement,
+  );
+  const externallyVisible =
+    (Node.isFunctionDeclaration(declaration) &&
+      declaration.isExported()) ||
+    variableOwner?.isExported() === true;
+  const escapes =
+    externallyVisible ||
+    symbol === undefined ||
+    sf.getDescendantsOfKind(SyntaxKind.Identifier).some(
+      (identifier) =>
+        identifier.getSymbol() === symbol &&
+        !directCallStarts.has(identifier.getStart()) &&
+        !declarationNameStarts.has(identifier.getStart()),
+    );
+  let unresolved = escapes;
+  const sources: AmbientAliasSource[] = [];
+  for (const call of calls) {
+    const argument = call.getArguments()[index];
+    if (argument === undefined) {
+      unresolved ||= parameter.getInitializer() === undefined;
+      continue;
     }
     return null;
   };
@@ -295,27 +552,856 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           line: element.getStartLineNumber(),
         });
       }
+      return sources;
     }
-    for (const assignment of sf.getDescendantsOfKind(
-      SyntaxKind.BinaryExpression,
-    )) {
+    if (!Node.isBindingElement(owner)) {
+      sources.push({
+        at,
+        receiver: current,
+        selectors: [],
+        uncertain: true,
+      });
+      return sources;
+    }
+    current = owner;
+  }
+  return sources;
+};
+
+const ambientAliasSourcesIn = (
+  sf: SourceFile,
+  symbol: MorphSymbol,
+): AmbientAliasSource[] => {
+  let sourceFileCache = AMBIENT_ALIAS_SOURCE_CACHE.get(sf);
+  if (sourceFileCache === undefined) {
+    sourceFileCache = new Map();
+    AMBIENT_ALIAS_SOURCE_CACHE.set(sf, sourceFileCache);
+  }
+  const cached = sourceFileCache.get(symbol);
+  if (cached !== undefined) return cached;
+  const sources: AmbientAliasSource[] = [];
+  for (const declaration of symbol.getDeclarations()) {
+    if (
+      Node.isVariableDeclaration(declaration) ||
+      Node.isParameterDeclaration(declaration)
+    ) {
+      const receiver = declaration.getInitializer();
+      if (receiver !== undefined) {
+        sources.push({
+          at: declaration.getStart(),
+          receiver,
+          selectors: [],
+        });
+      }
+      if (Node.isParameterDeclaration(declaration)) {
+        const arguments_ = parameterArgumentSourcesIn(sf, declaration);
+        sources.push(...arguments_.sources);
+        if (arguments_.unresolved) {
+          sources.push({
+            at: declaration.getStart(),
+            receiver: declaration,
+            selectors: [],
+            uncertain: true,
+          });
+        }
+      }
+      continue;
+    }
+    if (Node.isBindingElement(declaration)) {
+      sources.push(
+        ...bindingElementSourcesIn(
+          sf,
+          declaration,
+          declaration.getStart(),
+        ),
+      );
+    }
+  }
+  const collectAssignmentTarget = (
+    targetNode: Node,
+    source: AmbientAliasSource,
+  ): void => {
+    const target = unwrapExpression(targetNode);
+    if (Node.isBinaryExpression(target)) {
+      if (target.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
+        collectAssignmentTarget(target.getLeft(), {
+          ...source,
+          uncertain: true,
+        });
+        return;
+      }
+      collectAssignmentTarget(target.getLeft(), source);
+      collectAssignmentTarget(target.getLeft(), {
+        at: source.at,
+        receiver: target.getRight(),
+        selectors: [],
+      });
+      return;
+    }
+    if (Node.isIdentifier(target)) {
+      if (target.getSymbol() === symbol) sources.push(source);
+      return;
+    }
+    if (Node.isObjectLiteralExpression(target)) {
+      for (const property of target.getProperties()) {
+        if (Node.isPropertyAssignment(property)) {
+          const name = propertyNameIn(
+            sf,
+            property.getNameNode(),
+            property.getName(),
+          );
+          const initializer = property.getInitializer();
+          if (initializer === undefined) continue;
+          collectAssignmentTarget(initializer, {
+            ...source,
+            selectors: [
+              ...source.selectors,
+              { kind: "property", name },
+            ],
+            uncertain: source.uncertain === true || name === null,
+          });
+        } else if (Node.isShorthandPropertyAssignment(property)) {
+          const name = propertyNameIn(
+            sf,
+            property.getNameNode(),
+            property.getName(),
+          );
+          if (property.getValueSymbol() === symbol) {
+            sources.push({
+              ...source,
+              selectors: [
+                ...source.selectors,
+                { kind: "property", name },
+              ],
+              uncertain: source.uncertain === true || name === null,
+            });
+            const fallback = property.getObjectAssignmentInitializer();
+            if (fallback !== undefined) {
+              sources.push({
+                at: source.at,
+                receiver: fallback,
+                selectors: [],
+              });
+            }
+          }
+        } else if (Node.isSpreadAssignment(property)) {
+          collectAssignmentTarget(property.getExpression(), {
+            ...source,
+            uncertain: true,
+          });
+        }
+      }
+      return;
+    }
+    if (Node.isArrayLiteralExpression(target)) {
+      for (const [index, element] of target.getElements().entries()) {
+        if (Node.isOmittedExpression(element)) continue;
+        if (Node.isSpreadElement(element)) {
+          collectAssignmentTarget(element.getExpression(), {
+            ...source,
+            uncertain: true,
+          });
+          continue;
+        }
+        collectAssignmentTarget(element, {
+          ...source,
+          selectors: [
+            ...source.selectors,
+            { kind: "index", index },
+          ],
+        });
+      }
+    }
+  };
+  for (const assignment of sf.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    const operator = assignment.getOperatorToken().getKind();
+    if (!PROVENANCE_ASSIGNMENT_OPERATORS.has(operator)) continue;
+    if (operator === SyntaxKind.EqualsToken) {
+      collectAssignmentTarget(assignment.getLeft(), {
+        at: assignment.getStart(),
+        receiver: assignment.getRight(),
+        selectors: [],
+      });
+      continue;
+    }
+    const left = unwrapExpression(assignment.getLeft());
+    if (Node.isIdentifier(left) && left.getSymbol() === symbol) {
+      sources.push({
+        at: assignment.getStart(),
+        receiver: assignment.getRight(),
+        selectors: [],
+      });
+    }
+  }
+  const sorted = sources.sort((left, right) => left.at - right.at);
+  sourceFileCache.set(symbol, sorted);
+  return sorted;
+};
+
+const selectorCandidatesForAccessIn = (
+  sf: SourceFile,
+  access: Node,
+): {
+  readonly selectors: readonly ProvenanceSelector[];
+  readonly unresolved: boolean;
+} => {
+  if (Node.isPropertyAccessExpression(access)) {
+    return {
+      selectors: [{ kind: "property", name: access.getName() }],
+      unresolved: false,
+    };
+  }
+  if (!Node.isElementAccessExpression(access)) {
+    return { selectors: [], unresolved: true };
+  }
+  const argument = unwrapExpression(access.getArgumentExpression());
+  if (Node.isNumericLiteral(argument)) {
+    const index = Number(argument.getLiteralText());
+    return Number.isSafeInteger(index) && index >= 0
+      ? { selectors: [{ kind: "index", index }], unresolved: false }
+      : { selectors: [], unresolved: true };
+  }
+  const names = propertyKeyCandidatesIn(sf, argument);
+  return {
+    selectors: [...names.names].map((name) => ({
+      kind: "property" as const,
+      name,
+    })),
+    unresolved: names.unresolved,
+  };
+};
+
+const assignmentPathsForSymbolIn = (
+  sf: SourceFile,
+  targetNode: Node,
+  symbol: MorphSymbol,
+): {
+  readonly paths: readonly (readonly ProvenanceSelector[])[];
+  readonly unresolved: boolean;
+} => {
+  let target = unwrapExpression(targetNode);
+  let paths: ProvenanceSelector[][] = [[]];
+  let unresolved = false;
+  while (
+    Node.isPropertyAccessExpression(target) ||
+    Node.isElementAccessExpression(target)
+  ) {
+    const candidates = selectorCandidatesForAccessIn(sf, target);
+    if (candidates.selectors.length === 0) unresolved = true;
+    paths = paths.flatMap((path) =>
+      candidates.selectors.map((selector) => [selector, ...path]),
+    );
+    unresolved ||= candidates.unresolved;
+    target = unwrapExpression(target.getExpression());
+  }
+  return Node.isIdentifier(target) && target.getSymbol() === symbol
+    ? { paths, unresolved }
+    : { paths: [], unresolved: false };
+};
+
+const selectorsEqual = (
+  left: ProvenanceSelector,
+  right: ProvenanceSelector,
+): boolean => {
+  if (left.kind !== right.kind) return false;
+  return left.kind === "property"
+    ? left.name === (
+        right as Extract<ProvenanceSelector, { kind: "property" }>
+      ).name
+    : left.index === (
+        right as Extract<ProvenanceSelector, { kind: "index" }>
+      ).index;
+};
+
+const assignedContainerNamesAtPathIn = (
+  sf: SourceFile,
+  symbol: MorphSymbol,
+  path: readonly ProvenanceSelector[],
+  seen: Set<MorphSymbol>,
+): ReadonlySet<string> => {
+  if (path.length === 0) return new Set();
+  const names = new Set<string>();
+  for (const assignment of sf.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (
+      !PROVENANCE_ASSIGNMENT_OPERATORS.has(
+        assignment.getOperatorToken().getKind(),
+      )
+    ) {
+      continue;
+    }
+    const targets = assignmentPathsForSymbolIn(
+      sf,
+      assignment.getLeft(),
+      symbol,
+    );
+    if (targets.unresolved) names.add(UNKNOWN_AMBIENT_GLOBAL);
+    for (const targetPath of targets.paths) {
       if (
-        assignment.getOperatorToken().getKind() !==
-        SyntaxKind.EqualsToken
+        targetPath.length > path.length ||
+        !targetPath.every((selector, index) =>
+          selectorsEqual(selector, path[index]!),
+        )
       ) {
         continue;
       }
-      const binding = unwrapExpression(assignment.getLeft());
-      if (!Node.isObjectLiteralExpression(binding)) continue;
-      for (const property of binding.getProperties()) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        sf,
+        assignment.getRight(),
+        path.slice(targetPath.length),
+        seen,
+      )) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+};
+
+/**
+ * The ambient global an expression denotes - a bare name this project never
+ * declares (`process`, `Date`), or that SAME global reached through the
+ * `globalThis` namespace (`globalThis.process`, `globalThis["Date"]`). One
+ * authority for both spellings: two scanners that each resolve their own drift
+ * apart, and the spelling one forgot is a capability it stops refusing.
+ */
+const ambientNamesForSymbolAtPathIn = (
+  sf: SourceFile,
+  symbol: MorphSymbol,
+  path: readonly ProvenanceSelector[],
+  seen: Set<MorphSymbol>,
+): ReadonlySet<string> => {
+  if (seen.has(symbol)) return new Set();
+  const sources = ambientAliasSourcesIn(sf, symbol);
+  if (sources.length > 0) {
+    const nextSeen = new Set(seen).add(symbol);
+    const names = new Set<string>();
+    for (const source of sources) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        sf,
+        source.receiver,
+        [...source.selectors, ...path],
+        nextSeen,
+        source.uncertain === true,
+      )) {
+        names.add(name);
+      }
+    }
+    for (const name of assignedContainerNamesAtPathIn(
+      sf,
+      symbol,
+      path,
+      nextSeen,
+    )) {
+      names.add(name);
+    }
+    return names;
+  }
+  const declarations = symbol.getDeclarations();
+  const isAmbient = declarations.every((declaration) =>
+    declaration.getSourceFile().isDeclarationFile()
+  );
+  if (!isAmbient) return new Set();
+  if (path.length === 0) return new Set([symbol.getName()]);
+  const selector = path[0];
+  if (selector === undefined) return new Set([symbol.getName()]);
+  const remaining = path.slice(1);
+  return symbol.getName() === "globalThis" &&
+      selector.kind === "property" &&
+      remaining.length === 0
+    ? new Set([selector.name ?? UNKNOWN_AMBIENT_GLOBAL])
+    : new Set([UNKNOWN_AMBIENT_GLOBAL]);
+};
+
+const ambientGlobalNamesAtPathIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+  path: readonly ProvenanceSelector[],
+  seen: Set<MorphSymbol>,
+  uncertain = false,
+): ReadonlySet<string> => {
+  if (uncertain) return new Set([UNKNOWN_AMBIENT_GLOBAL]);
+  if (path.length === 0) return ambientGlobalNamesIn(sf, node, seen);
+  const expression = unwrapExpression(node);
+  if (Node.isConditionalExpression(expression)) {
+    return new Set([
+      ...ambientGlobalNamesAtPathIn(
+        sf,
+        expression.getWhenTrue(),
+        path,
+        seen,
+      ),
+      ...ambientGlobalNamesAtPathIn(
+        sf,
+        expression.getWhenFalse(),
+        path,
+        seen,
+      ),
+    ]);
+  }
+  if (
+    Node.isBinaryExpression(expression) &&
+    PROVENANCE_CHOICE_OPERATORS.has(
+      expression.getOperatorToken().getKind(),
+    )
+  ) {
+    return new Set([
+      ...ambientGlobalNamesAtPathIn(sf, expression.getLeft(), path, seen),
+      ...ambientGlobalNamesAtPathIn(sf, expression.getRight(), path, seen),
+    ]);
+  }
+  if (Node.isIdentifier(expression)) {
+    const symbol = expression.getSymbol();
+    if (symbol !== undefined) {
+      return ambientNamesForSymbolAtPathIn(sf, symbol, path, seen);
+    }
+  }
+  const selector = path[0];
+  if (selector === undefined) return ambientGlobalNamesIn(sf, node, seen);
+  const remaining = path.slice(1);
+  if (
+    selector.kind === "property" &&
+    Node.isObjectLiteralExpression(expression)
+  ) {
+    if (selector.name === null) {
+      return new Set([UNKNOWN_AMBIENT_GLOBAL]);
+    }
+    const names = new Set<string>();
+    let uncertainProperty = false;
+    for (const property of expression.getProperties()) {
+      if (Node.isSpreadAssignment(property)) {
+        uncertainProperty = true;
+        continue;
+      }
+      const name = Node.isShorthandPropertyAssignment(property)
+        ? property.getName()
+        : Node.isPropertyNamed(property)
+          ? propertyNameIn(
+              sf,
+              property.getNameNode(),
+              property.getName(),
+            )
+          : null;
+      if (name === null) {
+        uncertainProperty = true;
+        continue;
+      }
+      if (name !== selector.name) continue;
+      if (Node.isShorthandPropertyAssignment(property)) {
+        const valueSymbol =
+          property.getValueSymbol() ??
+          property.getNameNode().getSymbol();
+        if (valueSymbol === undefined) {
+          names.add(UNKNOWN_AMBIENT_GLOBAL);
+        } else {
+          for (const ambientName of ambientNamesForSymbolAtPathIn(
+            sf,
+            valueSymbol,
+            remaining,
+            seen,
+          )) {
+            names.add(ambientName);
+          }
+        }
+      } else if (Node.isPropertyAssignment(property)) {
+        for (const ambientName of ambientGlobalNamesAtPathIn(
+          sf,
+          property.getInitializer(),
+          remaining,
+          seen,
+        )) {
+          names.add(ambientName);
+        }
+      }
+    }
+    if (uncertainProperty) names.add(UNKNOWN_AMBIENT_GLOBAL);
+    return names;
+  }
+  if (
+    selector.kind === "index" &&
+    Node.isArrayLiteralExpression(expression)
+  ) {
+    const elements = expression.getElements();
+    if (
+      selector.index < 0 ||
+      elements
+        .slice(0, selector.index + 1)
+        .some(Node.isSpreadElement)
+    ) {
+      return new Set([UNKNOWN_AMBIENT_GLOBAL]);
+    }
+    const selected = elements[selector.index];
+    return selected === undefined || Node.isOmittedExpression(selected)
+      ? new Set()
+      : ambientGlobalNamesAtPathIn(sf, selected, remaining, seen);
+  }
+  const receivers = ambientGlobalNamesIn(sf, expression, seen);
+  if (selector.kind === "property") {
+    if (
+      receivers.has("globalThis") ||
+      receivers.has(UNKNOWN_AMBIENT_GLOBAL)
+    ) {
+      return new Set([
+        selector.name ?? UNKNOWN_AMBIENT_GLOBAL,
+      ]);
+    }
+    const type = expression?.getType();
+    if (type?.isAny() || type?.isUnknown()) {
+      return new Set([UNKNOWN_AMBIENT_GLOBAL]);
+    }
+  }
+  return new Set();
+};
+
+const functionReturnSourcesIn = (
+  call: Node,
+): {
+  readonly sources: readonly AmbientAliasSource[];
+  readonly unresolved: boolean;
+} => {
+  if (!Node.isCallExpression(call)) {
+    return { sources: [], unresolved: true };
+  }
+  const callee = unwrapExpression(call.getExpression());
+  const declarations: Node[] = [];
+  if (Node.isFunctionLikeDeclaration(callee)) {
+    declarations.push(callee);
+  } else if (Node.isIdentifier(callee)) {
+    for (const declaration of callee.getSymbol()?.getDeclarations() ?? []) {
+      if (Node.isFunctionLikeDeclaration(declaration)) {
+        declarations.push(declaration);
+      } else if (Node.isVariableDeclaration(declaration)) {
+        const initializer = unwrapExpression(declaration.getInitializer());
+        if (Node.isFunctionLikeDeclaration(initializer)) {
+          declarations.push(initializer);
+        }
+      }
+    }
+  }
+  if (declarations.length === 0) {
+    return { sources: [], unresolved: true };
+  }
+  const sources: AmbientAliasSource[] = [];
+  let unresolved = false;
+  for (const declaration of declarations) {
+    if (!Node.isFunctionLikeDeclaration(declaration)) {
+      unresolved = true;
+      continue;
+    }
+    const body = Node.isBodyable(declaration)
+      ? declaration.getBody()
+      : Node.isBodied(declaration)
+        ? declaration.getBody()
+        : undefined;
+    if (body === undefined) {
+      unresolved = true;
+      continue;
+    }
+    if (!Node.isBlock(body)) {
+      sources.push({
+        at: body.getStart(),
+        receiver: body,
+        selectors: [],
+      });
+      continue;
+    }
+    const returns = body
+      .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+      .filter(
+        (statement) =>
+          statement.getFirstAncestor(Node.isFunctionLikeDeclaration)
+            ?.compilerNode === declaration.compilerNode,
+      );
+    for (const statement of returns) {
+      const expression = statement.getExpression();
+      if (expression === undefined) {
+        unresolved = true;
+      } else {
+        sources.push({
+          at: statement.getStart(),
+          receiver: expression,
+          selectors: [],
+        });
+      }
+    }
+    const statements = body.getStatements();
+    unresolved ||=
+      returns.length === 0 ||
+      !Node.isReturnStatement(statements[statements.length - 1]);
+  }
+  return { sources, unresolved };
+};
+
+function ambientGlobalNamesIn(
+  sf: SourceFile,
+  node: Node | undefined,
+  seen: Set<MorphSymbol> = new Set(),
+): ReadonlySet<string> {
+  const expression = unwrapExpression(node);
+  if (Node.isConditionalExpression(expression)) {
+    return new Set([
+      ...ambientGlobalNamesIn(sf, expression.getWhenTrue(), seen),
+      ...ambientGlobalNamesIn(sf, expression.getWhenFalse(), seen),
+    ]);
+  }
+  if (
+    Node.isBinaryExpression(expression) &&
+    PROVENANCE_CHOICE_OPERATORS.has(
+      expression.getOperatorToken().getKind(),
+    )
+  ) {
+    return new Set([
+      ...ambientGlobalNamesIn(sf, expression.getLeft(), seen),
+      ...ambientGlobalNamesIn(sf, expression.getRight(), seen),
+    ]);
+  }
+  if (
+    Node.isPropertyAccessExpression(expression) ||
+    Node.isElementAccessExpression(expression)
+  ) {
+    const candidates = selectorCandidatesForAccessIn(sf, expression);
+    const names = new Set<string>();
+    for (const selector of candidates.selectors) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        sf,
+        expression.getExpression(),
+        [selector],
+        seen,
+      )) {
+        names.add(name);
+      }
+    }
+    if (candidates.unresolved) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        sf,
+        expression.getExpression(),
+        [{ kind: "property", name: null }],
+        seen,
+      )) {
+        names.add(name);
+      }
+    }
+    return names;
+  }
+  if (Node.isCallExpression(expression)) {
+    const callee = unwrapExpression(expression.getExpression());
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      callee.getName() === "assign" &&
+      ambientGlobalNamesIn(sf, callee.getExpression(), seen).has("Object")
+    ) {
+      return new Set(
+        expression.getArguments().flatMap((argument) => [
+          ...ambientGlobalNamesIn(sf, argument, seen),
+        ]),
+      );
+    }
+    const returns = functionReturnSourcesIn(expression);
+    const names = new Set<string>();
+    for (const source of returns.sources) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        sf,
+        source.receiver,
+        source.selectors,
+        seen,
+        source.uncertain === true,
+      )) {
+        names.add(name);
+      }
+    }
+    if (returns.unresolved) names.add(UNKNOWN_AMBIENT_GLOBAL);
+    return names;
+  }
+  if (!Node.isIdentifier(expression)) return new Set();
+  const symbol = expression.getSymbol();
+  return symbol === undefined
+    ? new Set([expression.getText()])
+    : ambientNamesForSymbolAtPathIn(sf, symbol, [], seen);
+}
+
+const propertyNameIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+  fallback: string,
+): string | null => {
+  if (node === undefined) return fallback;
+  if (Node.isIdentifier(node)) return node.getText();
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return node.getLiteralText();
+  }
+  if (Node.isComputedPropertyName(node)) {
+    return literalPropertyKeyIn(sf, node.getExpression());
+  }
+  return null;
+};
+
+interface DestructuredMember {
+  readonly name: string | null;
+  /**
+   * The node declaring the member, for a "declared by project source?" test.
+   * Resolved lazily - type resolution is the expensive half, and only a handful
+   * of member names ever ask.
+   */
+  readonly member: () => Node | undefined;
+  readonly ambientReceiverNames: ReadonlySet<string>;
+  readonly receiver: Node;
+  readonly line: number;
+}
+
+/**
+ * The node that DECLARES a destructured member. A shorthand binding
+ * (`const { constructor } = fn`) spells no property name at all: its only name
+ * node declares the new LOCAL, which is by definition project source, so reading
+ * it reports every ambient member as project-declared and suppresses the finding.
+ * The source property comes from the receiver's type instead.
+ */
+const declaredMemberNode = (
+  spelled: Node | undefined,
+  receiver: Node,
+  name: string,
+): (() => Node | undefined) => () =>
+  spelled ?? receiver.getType().getProperty(name)?.getDeclarations()[0];
+
+const destructuredPropertyNamesIn = (
+  sf: SourceFile,
+  node: Node | undefined,
+  fallback: string,
+): PropertyKeyCandidates => {
+  if (node === undefined) {
+    return { names: new Set([fallback]), unresolved: false };
+  }
+  if (Node.isComputedPropertyName(node)) {
+    return propertyKeyCandidatesIn(sf, node.getExpression());
+  }
+  const name = propertyNameIn(sf, node, fallback);
+  return name === null
+    ? { names: new Set(), unresolved: true }
+    : { names: new Set([name]), unresolved: false };
+};
+
+const ambientNamesForSourcesIn = (
+  sf: SourceFile,
+  sources: readonly AmbientAliasSource[],
+): ReadonlySet<string> => {
+  const names = new Set<string>();
+  for (const source of sources) {
+    const sourceNames = ambientGlobalNamesAtPathIn(
+      sf,
+      source.receiver,
+      source.selectors,
+      new Set(),
+      source.uncertain === true,
+    );
+    for (const name of sourceNames) {
+      names.add(name);
+    }
+  }
+  return names;
+};
+
+/**
+ * Every `{ member }` / `{ member: alias }` / `{ ["member"]: alias }` binding, from
+ * BOTH declaration patterns and `=` assignment patterns. The member name resolves
+ * through the same provenance authority a computed or aliased key needs - reading
+ * the key node's TEXT would spell a computed key `[member]` and never match.
+ */
+const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
+  const members: DestructuredMember[] = [];
+  for (const binding of sf.getDescendantsOfKind(
+    SyntaxKind.ObjectBindingPattern,
+  )) {
+    for (const element of binding.getElements()) {
+      const propertyNameNode = element.getPropertyNameNode();
+      const names = destructuredPropertyNamesIn(
+        sf,
+        propertyNameNode,
+        element.getName(),
+      );
+      const valueSources = bindingElementSourcesIn(
+        sf,
+        element,
+        element.getStart(),
+      );
+      const receiverSources = valueSources.flatMap((source) =>
+        source.selectors.length === 0
+          ? []
+          : [{
+              ...source,
+              selectors: source.selectors.slice(0, -1),
+            }],
+      );
+      const receiver = receiverSources[0]?.receiver;
+      if (receiver === undefined) continue;
+      const ambientReceiverNames = ambientNamesForSourcesIn(
+        sf,
+        receiverSources,
+      );
+      for (const name of names.names) {
+        members.push({
+          name,
+          member: declaredMemberNode(propertyNameNode, receiver, name),
+          ambientReceiverNames,
+          receiver,
+          line: element.getStartLineNumber(),
+        });
+      }
+      if (names.unresolved) {
+        members.push({
+          name: null,
+          member: () => undefined,
+          ambientReceiverNames,
+          receiver,
+          line: element.getStartLineNumber(),
+        });
+      }
+    }
+  }
+  for (const assignment of sf.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
+      continue;
+    }
+    const binding = unwrapExpression(assignment.getLeft());
+    if (!Node.isObjectLiteralExpression(binding)) continue;
+    const collect = (
+      pattern: Node,
+      receiverSources: readonly AmbientAliasSource[],
+    ): void => {
+      const current = unwrapExpression(pattern);
+      if (Node.isBinaryExpression(current)) {
+        if (current.getOperatorToken().getKind() === SyntaxKind.EqualsToken) {
+          collect(current.getLeft(), receiverSources);
+          collect(current.getLeft(), [{
+            at: current.getStart(),
+            receiver: current.getRight(),
+            selectors: [],
+          }]);
+        }
+        return;
+      }
+      if (!Node.isObjectLiteralExpression(current)) return;
+      const ambientReceiverNames = ambientNamesForSourcesIn(
+        sf,
+        receiverSources,
+      );
+      for (const property of current.getProperties()) {
         if (
           !Node.isPropertyAssignment(property) &&
           !Node.isShorthandPropertyAssignment(property)
         ) {
           continue;
         }
-        const name = propertyName(
-          property.getNameNode(),
+        const nameNode = property.getNameNode();
+        const names = destructuredPropertyNamesIn(
+          sf,
+          nameNode,
           property.getName(),
         );
         members.push({
@@ -521,13 +1607,25 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const keys = literalPropertyKeys(node);
     return keys === null || keys.includes(expected);
   };
-  /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
-  const isAmbientGlobalReference = (node: Node | undefined): boolean => {
-    const expression = expressionProvenance(node);
-    if (!Node.isIdentifier(expression)) return false;
-    return (expression.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
-      declaration.getSourceFile().isDeclarationFile(),
-    );
+  const destructuredMembers = (): DestructuredMember[] =>
+    destructuredMembersIn(sf);
+  const propertyKeyCandidates = (
+    node: Node | undefined,
+  ): PropertyKeyCandidates => propertyKeyCandidatesIn(sf, node);
+  /**
+   * A name this project never declares - `module`, `globalThis`, an ambient
+   * global - reached as a bare name OR through the `globalThis` namespace. Shared
+   * with the contracts capability scan so the two cannot disagree on a spelling.
+   */
+  const isAmbientGlobalReference = (node: Node | undefined): boolean =>
+    ambientGlobalNamesIn(sf, node).size > 0;
+  const hasAmbientGlobalName = (
+    node: Node | undefined,
+    name: string,
+    knownNames?: ReadonlySet<string>,
+  ): boolean => {
+    const names = knownNames ?? ambientGlobalNamesIn(sf, node);
+    return names.has(name) || names.has(UNKNOWN_AMBIENT_GLOBAL);
   };
   /**
    * A `require` MEMBER is the CommonJS loader only when it hangs off an ambient
@@ -535,9 +1633,19 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
    * m.require(…)`). A member declared by project source - or none at all, which is
    * every access through a receiver typed `any` - is somebody's own property.
    */
-  const isAmbientRequireMember = (receiver: Node | undefined, member: Node | undefined): boolean => {
-    if (isAmbientGlobalReference(receiver)) return true;
-    const declarations = member?.getSymbol()?.getDeclarations() ?? [];
+  const isAmbientRequireMember = (
+    receiver: Node | undefined,
+    member: () => Node | undefined,
+    ambientReceiverNames?: ReadonlySet<string>,
+  ): boolean => {
+    if (
+      ambientReceiverNames?.size !== undefined
+        ? ambientReceiverNames.size > 0
+        : isAmbientGlobalReference(receiver)
+    ) {
+      return true;
+    }
+    const declarations = member()?.getSymbol()?.getDeclarations() ?? [];
     return (
       declarations.length > 0 &&
       declarations.every((declaration) => declaration.getSourceFile().isDeclarationFile())
@@ -998,26 +2106,46 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       createRequireNamespaces.add(name.getText());
     }
   }
-  for (const member of destructuredMembers()) {
+  /**
+   * ONE loader-member table, shared by property access, element access and
+   * destructuring, so a loader cannot be acquired through whichever spelling a
+   * single scan's own copy of the table forgot.
+   */
+  const loaderMemberKind = (
+    name: string | null,
+    receiver: Node | undefined,
+    member: () => Node | undefined,
+    ambientReceiverNames?: ReadonlySet<string>,
+  ): ModuleReference["kind"] | null => {
     if (
       (member.name === null || member.name === "createRequire") &&
       isCreateRequireNamespace(member.receiver)
     ) {
-      refs.push({
-        specifier: null,
-        line: member.line,
-        kind: "create-require",
-      });
+      return "get-builtin-module";
     }
     if (
       (member.name === null || member.name === "require") &&
       isAmbientGlobalReference(member.receiver)
     ) {
-      refs.push({
-        specifier: null,
-        line: member.line,
-        kind: "require-reference",
-      });
+      return "create-require";
+    }
+    if (
+      name === "require" &&
+      isAmbientRequireMember(receiver, member, ambientReceiverNames)
+    ) {
+      return "require-reference";
+    }
+    return null;
+  };
+  for (const member of destructuredMembers()) {
+    const kind = loaderMemberKind(
+      member.name,
+      member.receiver,
+      member.member,
+      member.ambientReceiverNames,
+    );
+    if (kind !== null) {
+      refs.push({ specifier: null, line: member.line, kind });
     }
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -1124,23 +2252,13 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
   }
   for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
-    const expression = access.getExpression();
-    if (
-      access.getName() === "createRequire" &&
-      isCreateRequireNamespace(expression)
-    ) {
-      refs.push({
-        specifier: null,
-        line: access.getStartLineNumber(),
-        kind: "create-require",
-      });
-    }
-    if (access.getName() === "require" && isAmbientRequireMember(expression, access.getNameNode())) {
-      refs.push({
-        specifier: null,
-        line: access.getStartLineNumber(),
-        kind: "require-reference",
-      });
+    const kind = loaderMemberKind(
+      access.getName(),
+      access.getExpression(),
+      () => access.getNameNode(),
+    );
+    if (kind !== null) {
+      refs.push({ specifier: null, line: access.getStartLineNumber(), kind });
     }
   }
   for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
@@ -1176,7 +2294,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       refs.push({
         specifier: null,
         line: access.getStartLineNumber(),
-        kind: "require-reference",
+        kind: "create-require",
       });
     }
   }
@@ -1307,6 +2425,566 @@ function ambientContractDeclarations(sf: SourceFile): Array<{ line: number; name
   return declarations;
 }
 
+type ContractCapabilityReference = {
+  readonly line: number;
+  readonly specifier:
+    | "<dynamic-code capability>"
+    | "<nondeterministic platform-global>";
+};
+
+function contractCapabilityReferences(
+  sf: SourceFile,
+): ContractCapabilityReference[] {
+  const expressionProvenance = (
+    node: Node | undefined,
+    seen: Set<Node> = new Set(),
+  ): Node | undefined => expressionProvenanceIn(sf, node, seen);
+  const memberNameCandidates = (
+    access: Node,
+  ): PropertyKeyCandidates => memberNameCandidatesIn(sf, access);
+  /**
+   * A platform global this project never declares, reached EITHER as a bare name
+   * (`Date`) or through the `globalThis` namespace (`globalThis.Date`,
+   * `globalThis["Date"]`) - the two spellings must not disagree, so both the
+   * loader scan and this one ask the SAME authority.
+   */
+  const isAmbientGlobal = (node: Node | undefined, name: string): boolean =>
+    ambientGlobalNamesIn(sf, node).has(name) ||
+    ambientGlobalNamesIn(sf, node).has(UNKNOWN_AMBIENT_GLOBAL);
+  const isKnownAmbientGlobal = (
+    node: Node | undefined,
+    name: string,
+  ): boolean => ambientGlobalNamesIn(sf, node).has(name);
+  const hasAmbientName = (
+    node: Node | undefined,
+    name: string,
+    knownNames?: ReadonlySet<string>,
+  ): boolean =>
+    knownNames === undefined
+      ? isAmbientGlobal(node, name)
+      : knownNames.has(name) || knownNames.has(UNKNOWN_AMBIENT_GLOBAL);
+  /**
+   * The member node, resolved through the SAME provenance authority that named it -
+   * an aliased computed key (`obj[key]` where `const key = "constructor"`) otherwise
+   * resolves to the project-declared alias and silently suppresses the record.
+   */
+  const memberNodeOf = (access: Node): Node | undefined =>
+    Node.isPropertyAccessExpression(access)
+      ? access.getNameNode()
+      : Node.isElementAccessExpression(access)
+        ? expressionProvenance(access.getArgumentExpression())
+        : undefined;
+  const isProjectDeclaredMember = (member: () => Node | undefined): boolean =>
+    member()?.getSymbol()?.getDeclarations().some((declaration) =>
+      !declaration.getSourceFile().isDeclarationFile(),
+    ) ?? false;
+  const isFunctionLike = (node: Node | undefined): boolean => {
+    const expression = expressionProvenance(node);
+    if (
+      Node.isArrowFunction(expression) ||
+      Node.isFunctionExpression(expression) ||
+      Node.isClassExpression(expression)
+    ) {
+      return true;
+    }
+    const type = expression?.getType();
+    return (
+      (type?.getCallSignatures().length ?? 0) > 0 ||
+      (type?.getConstructSignatures().length ?? 0) > 0
+    );
+  };
+  const hasUnprovableReceiverType = (node: Node | undefined): boolean => {
+    const expression = expressionProvenance(node);
+    const type = expression?.getType();
+    return type === undefined || type.isAny() || type.isUnknown();
+  };
+  const isPinnedDateConstruction = (
+    arguments_: readonly Node[],
+  ): boolean => {
+    const argument = arguments_[0];
+    if (
+      arguments_.length !== 1 ||
+      argument === undefined ||
+      Node.isSpreadElement(argument)
+    ) {
+      return false;
+    }
+    const type = argument.getType();
+    const candidates = type.isUnion() ? type.getUnionTypes() : [type];
+    return candidates.length > 0 && candidates.every((candidate) => {
+      if (candidate.isNumber() || candidate.isNumberLiteral()) return true;
+      if (!candidate.isStringLiteral()) return false;
+      const literal = candidate.getLiteralValue();
+      return typeof literal === "string" &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+          literal,
+        );
+    });
+  };
+  const isAmbientDateCandidate = (node: Node | undefined): boolean => {
+    const ambientNames = ambientGlobalNamesIn(sf, node);
+    if (ambientNames.has("Date")) return true;
+    if (!ambientNames.has(UNKNOWN_AMBIENT_GLOBAL)) return false;
+    const type = unwrapExpression(node)?.getType();
+    if (type === undefined) return false;
+    const candidates = type.isUnion() ? type.getUnionTypes() : [type];
+    return candidates.some(
+      (candidate) =>
+        candidate.getCallSignatures().length > 0 &&
+        candidate.getConstructSignatures().some((signature) => {
+          const result = signature.getReturnType();
+          return (
+            result.getSymbol()?.getName() === "Date" &&
+            (result.getSymbol()?.getDeclarations() ?? []).every(
+              (declaration) =>
+                declaration.getSourceFile().isDeclarationFile(),
+            )
+          );
+        }),
+    );
+  };
+  const isAmbientDateTimeFormatConstructor = (
+    node: Node | undefined,
+    seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
+  ): boolean => {
+    const expression = unwrapExpression(node);
+    if (
+      Node.isPropertyAccessExpression(expression) ||
+      Node.isElementAccessExpression(expression)
+    ) {
+      const members = memberNameCandidates(expression);
+      return (
+        members.names.has("DateTimeFormat") &&
+        isAmbientGlobal(expression.getExpression(), "Intl")
+      );
+    }
+    if (Node.isConditionalExpression(expression)) {
+      return (
+        isAmbientDateTimeFormatConstructor(
+          expression.getWhenTrue(),
+          seenSymbols,
+        ) ||
+        isAmbientDateTimeFormatConstructor(
+          expression.getWhenFalse(),
+          seenSymbols,
+        )
+      );
+    }
+    if (!Node.isIdentifier(expression)) return false;
+    const symbol = expression.getSymbol();
+    if (symbol === undefined || seenSymbols.has(symbol)) return false;
+    const nextSeen = new Set(seenSymbols).add(symbol);
+    return ambientAliasSourcesIn(sf, symbol).some((source) => {
+      if (source.uncertain === true) return true;
+      if (
+        source.selectors.length === 1 &&
+        source.selectors[0]?.kind === "property" &&
+        source.selectors[0].name === "DateTimeFormat" &&
+        isAmbientGlobal(source.receiver, "Intl")
+      ) {
+        return true;
+      }
+      return (
+        source.selectors.length === 0 &&
+        isAmbientDateTimeFormatConstructor(source.receiver, nextSeen)
+      );
+    });
+  };
+  const isAmbientDateTimeFormatInstance = (
+    node: Node | undefined,
+    seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
+  ): boolean => {
+    const expression = unwrapExpression(node);
+    if (
+      Node.isNewExpression(expression) ||
+      Node.isCallExpression(expression)
+    ) {
+      return isAmbientDateTimeFormatConstructor(
+        expression.getExpression(),
+        seenSymbols,
+      );
+    }
+    if (Node.isConditionalExpression(expression)) {
+      return (
+        isAmbientDateTimeFormatInstance(
+          expression.getWhenTrue(),
+          seenSymbols,
+        ) ||
+        isAmbientDateTimeFormatInstance(
+          expression.getWhenFalse(),
+          seenSymbols,
+        )
+      );
+    }
+    if (!Node.isIdentifier(expression)) return false;
+    const symbol = expression.getSymbol();
+    if (symbol === undefined || seenSymbols.has(symbol)) return false;
+    const nextSeen = new Set(seenSymbols).add(symbol);
+    return ambientAliasSourcesIn(sf, symbol).some(
+      (source) =>
+        source.uncertain === true ||
+        (source.selectors.length === 0 &&
+          isAmbientDateTimeFormatInstance(source.receiver, nextSeen)),
+    );
+  };
+  const hasExplicitIntlInstant = (
+    arguments_: readonly Node[],
+  ): boolean => {
+    const argument = arguments_[0];
+    if (
+      arguments_.length !== 1 ||
+      argument === undefined ||
+      Node.isSpreadElement(argument)
+    ) {
+      return false;
+    }
+    const type = argument.getType();
+    const candidates = type.isUnion() ? type.getUnionTypes() : [type];
+    return candidates.length > 0 && candidates.every(
+      (candidate) =>
+        !candidate.isAny() &&
+        !candidate.isUnknown() &&
+        !candidate.isUndefined() &&
+        !candidate.isVoid(),
+    );
+  };
+  const references: ContractCapabilityReference[] = [];
+  const seen = new Set<string>();
+  const record = (
+    line: number,
+    specifier: ContractCapabilityReference["specifier"],
+  ): void => {
+    const key = `${line}:${specifier}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    references.push({ line, specifier });
+  };
+  /**
+   * ONE rule table, shared by member access and destructuring, so a capability
+   * cannot be acquired through whichever spelling a single scan forgot.
+   */
+  const capabilityOf = (
+    name: string | null,
+    receiver: Node | undefined,
+    member: () => Node | undefined,
+    ambientReceiverNames?: ReadonlySet<string>,
+  ): ContractCapabilityReference["specifier"] | null => {
+    if (name === null) {
+      if (
+        (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+          .has("Date") ||
+        (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+          .has("Math")
+      ) {
+        return "<nondeterministic platform-global>";
+      }
+      if (
+        (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+          .has("Reflect") ||
+        (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+          .has("globalThis")
+      ) {
+        return "<dynamic-code capability>";
+      }
+      return null;
+    }
+    if (
+      (name === "now" &&
+        hasAmbientName(receiver, "Date", ambientReceiverNames)) ||
+      (name === "random" &&
+        hasAmbientName(receiver, "Math", ambientReceiverNames))
+    ) {
+      return "<nondeterministic platform-global>";
+    }
+    if (
+      name === "get" &&
+      hasAmbientName(receiver, "Reflect", ambientReceiverNames)
+    ) {
+      return "<dynamic-code capability>";
+    }
+    if (
+      (name === "Function" || name === "eval") &&
+      hasAmbientName(receiver, "globalThis", ambientReceiverNames)
+    ) {
+      return "<dynamic-code capability>";
+    }
+    if (
+      name === "constructor" &&
+      !isProjectDeclaredMember(member) &&
+      (isFunctionLike(receiver) || hasUnprovableReceiverType(receiver))
+    ) {
+      return "<dynamic-code capability>";
+    }
+    return null;
+  };
+  const inspectMember = (access: Node, receiver: Node): void => {
+    const members = memberNameCandidates(access);
+    for (const name of members.names) {
+      const capability = capabilityOf(
+        name,
+        receiver,
+        () => memberNodeOf(access),
+      );
+      if (capability !== null) {
+        record(access.getStartLineNumber(), capability);
+      }
+    }
+    if (members.unresolved) {
+      const capability = capabilityOf(
+        null,
+        receiver,
+        () => memberNodeOf(access),
+      );
+      if (capability !== null) {
+        record(access.getStartLineNumber(), capability);
+      }
+    }
+  };
+  for (const access of sf.getDescendantsOfKind(
+    SyntaxKind.PropertyAccessExpression,
+  )) {
+    inspectMember(access, access.getExpression());
+  }
+  for (const access of sf.getDescendantsOfKind(
+    SyntaxKind.ElementAccessExpression,
+  )) {
+    inspectMember(access, access.getExpression());
+  }
+  for (const member of destructuredMembersIn(sf)) {
+    const capability = capabilityOf(
+      member.name,
+      member.receiver,
+      member.member,
+      member.ambientReceiverNames,
+    );
+    if (capability !== null) record(member.line, capability);
+  }
+  const isValueIdentifier = (identifier: Node): boolean => {
+    if (identifier.getAncestors().some(Node.isTypeNode)) return false;
+    const parent = identifier.getParent();
+    if (parent === undefined) return false;
+    if (Node.isShorthandPropertyAssignment(parent)) return true;
+    if (
+      Node.isPropertyAccessExpression(parent) &&
+      parent.getNameNode() === identifier
+    ) {
+      return false;
+    }
+    return !(
+      (Node.isNamed(parent) ||
+        Node.isBindingNamed(parent) ||
+        Node.isPropertyNamed(parent) ||
+        Node.isModuleNamed(parent)) &&
+      parent.getNameNode() === identifier
+    );
+  };
+  for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+    if (
+      isValueIdentifier(identifier) &&
+      (isKnownAmbientGlobal(identifier, "Function") ||
+        isKnownAmbientGlobal(identifier, "eval"))
+    ) {
+      record(identifier.getStartLineNumber(), "<dynamic-code capability>");
+    }
+  }
+  const inspectCall = (
+    callee: Node,
+    arguments_: readonly Node[],
+    line: number,
+    construction: boolean,
+  ): void => {
+    if (
+      isKnownAmbientGlobal(callee, "Function") ||
+      isKnownAmbientGlobal(callee, "eval")
+    ) {
+      record(line, "<dynamic-code capability>");
+    }
+    if (
+      (!construction || !isPinnedDateConstruction(arguments_)) &&
+      isAmbientDateCandidate(callee)
+    ) {
+      record(line, "<nondeterministic platform-global>");
+    }
+  };
+  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const callee = unwrapExpression(call.getExpression());
+    if (
+      Node.isPropertyAccessExpression(callee) ||
+      Node.isElementAccessExpression(callee)
+    ) {
+      const members = memberNameCandidates(callee);
+      const receiver = callee.getExpression();
+      const descriptorKey = propertyKeyCandidatesIn(
+        sf,
+        call.getArguments()[1],
+      );
+      if (
+        (members.names.has("getOwnPropertyDescriptor") &&
+          (isKnownAmbientGlobal(receiver, "Object") ||
+            isKnownAmbientGlobal(receiver, "Reflect")) &&
+          (descriptorKey.names.has("constructor") ||
+            descriptorKey.unresolved)) ||
+        (members.names.has("getOwnPropertyDescriptors") &&
+          isKnownAmbientGlobal(receiver, "Object"))
+      ) {
+        record(
+          call.getStartLineNumber(),
+          "<dynamic-code capability>",
+        );
+      }
+      if (
+        (members.names.has("format") ||
+          members.names.has("formatToParts")) &&
+        isAmbientDateTimeFormatInstance(receiver) &&
+        !hasExplicitIntlInstant(call.getArguments())
+      ) {
+        record(
+          call.getStartLineNumber(),
+          "<nondeterministic platform-global>",
+        );
+      }
+    }
+    inspectCall(
+      call.getExpression(),
+      call.getArguments(),
+      call.getStartLineNumber(),
+      false,
+    );
+  }
+  for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
+    inspectCall(
+      call.getExpression(),
+      call.getArguments(),
+      call.getStartLineNumber(),
+      true,
+    );
+  }
+  return references;
+}
+
+let esOnlyGlobalNamesCache: ReadonlySet<string> | undefined;
+let platformGlobalNamesCache: ReadonlySet<string> | undefined;
+
+const esOnlyGlobalNames = (): ReadonlySet<string> => {
+  if (esOnlyGlobalNamesCache !== undefined) return esOnlyGlobalNamesCache;
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      lib: ["lib.es2022.d.ts"],
+      types: [],
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    },
+  });
+  const sourceFile = project.createSourceFile("/scope.ts", "export {};");
+  const symbols = project
+    .getTypeChecker()
+    .compilerObject.getSymbolsInScope(
+      sourceFile.compilerNode,
+      ts.SymbolFlags.Value |
+        ts.SymbolFlags.Type |
+        ts.SymbolFlags.Namespace,
+    );
+  esOnlyGlobalNamesCache = new Set(symbols.map((symbol) => symbol.getName()));
+  return esOnlyGlobalNamesCache;
+};
+
+const platformGlobalNames = (): ReadonlySet<string> => {
+  if (platformGlobalNamesCache !== undefined) {
+    return platformGlobalNamesCache;
+  }
+  const project = new Project({
+    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+    skipAddingFilesFromTsConfig: true,
+  });
+  project.addSourceFileAtPath(join(REPO_ROOT, "next-env.d.ts"));
+  const sourceFile = project.createSourceFile(
+    join(REPO_ROOT, ".platform-scope.ts"),
+    "export {};",
+  );
+  const esNames = esOnlyGlobalNames();
+  platformGlobalNamesCache = new Set(
+    project
+      .getTypeChecker()
+      .compilerObject.getSymbolsInScope(
+        sourceFile.compilerNode,
+        ts.SymbolFlags.Value |
+          ts.SymbolFlags.Type |
+          ts.SymbolFlags.Namespace,
+      )
+      .filter((symbol) => {
+        const declarations = symbol.getDeclarations() ?? [];
+        return (
+          !esNames.has(symbol.getName()) &&
+          declarations.length > 0 &&
+          declarations.every(
+            (declaration) =>
+              declaration.getSourceFile().isDeclarationFile,
+          )
+        );
+      })
+      .map((symbol) => symbol.getName()),
+  );
+  return platformGlobalNamesCache;
+};
+
+const nonEsPlatformGlobalReferences = (
+  sf: SourceFile,
+): Array<{ readonly line: number; readonly name: string }> => {
+  const platformNames = platformGlobalNames();
+  const references = new Map<string, { line: number; name: string }>();
+  const inspect = (node: Node): void => {
+    for (const name of ambientGlobalNamesIn(sf, node)) {
+      if (
+        name === UNKNOWN_AMBIENT_GLOBAL ||
+        name === "globalThis" ||
+        !platformNames.has(name)
+      ) {
+        continue;
+      }
+      references.set(`${node.getStartLineNumber()}:${name}`, {
+        line: node.getStartLineNumber(),
+        name,
+      });
+    }
+  };
+  for (const identifier of sf.getDescendantsOfKind(
+    SyntaxKind.Identifier,
+  )) {
+    const parent = identifier.getParent();
+    if (parent === undefined) continue;
+    if (
+      (Node.isPropertyAccessExpression(parent) &&
+        parent.getNameNode() === identifier) ||
+      (Node.isQualifiedName(parent) &&
+        parent.getRight() === identifier) ||
+      (!Node.isShorthandPropertyAssignment(parent) &&
+        (Node.isNamed(parent) ||
+          Node.isBindingNamed(parent) ||
+          Node.isPropertyNamed(parent) ||
+          Node.isModuleNamed(parent)) &&
+        parent.getNameNode() === identifier)
+    ) {
+      continue;
+    }
+    inspect(identifier);
+  }
+  for (const access of [
+    ...sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+    ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+  ]) {
+    if (
+      ambientGlobalNamesIn(sf, access.getExpression()).has(
+        "globalThis",
+      )
+    ) {
+      inspect(access);
+    }
+  }
+  return [...references.values()];
+};
+
 /** ADR-0029 allows contracts to import only Zod among external packages. */
 export function detectContractsExternalImportViolations(project: Project): ContractsExternalImportViolation[] {
   const violations: ContractsExternalImportViolation[] = [];
@@ -1333,6 +3011,20 @@ export function detectContractsExternalImportViolations(project: Project): Contr
         file: relative(REPO_ROOT, filePath),
         line: declaration.line,
         specifier: `<ambient-declaration ${declaration.name}>`,
+      });
+    }
+    for (const reference of contractCapabilityReferences(sf)) {
+      violations.push({
+        file: relative(REPO_ROOT, filePath),
+        line: reference.line,
+        specifier: reference.specifier,
+      });
+    }
+    for (const reference of nonEsPlatformGlobalReferences(sf)) {
+      violations.push({
+        file: relative(REPO_ROOT, filePath),
+        line: reference.line,
+        specifier: `<platform-global ${reference.name}>`,
       });
     }
   }
@@ -1364,7 +3056,14 @@ export function detectContractsExternalImportViolations(project: Project): Contr
       specifier: `<platform-global ${name}>`,
     });
   }
-  return violations;
+  return [
+    ...new Map(
+      violations.map((violation) => [
+        `${violation.file}:${violation.line}:${violation.specifier}`,
+        violation,
+      ]),
+    ).values(),
+  ];
 }
 
 /** A ts-morph Project loaded from the real src/ tree (no type-checking, fast). */

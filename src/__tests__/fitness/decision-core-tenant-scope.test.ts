@@ -177,6 +177,62 @@ const schemaContainsScopedReferenceCollection = (
   return false;
 };
 
+const OPAQUE_SCHEMA_TYPES = new Set([
+  "any",
+  "unknown",
+  "custom",
+  "transform",
+]);
+
+const opaqueSchemaNodes = (
+  schema: z.ZodType,
+): ReadonlySet<z.ZodType> => {
+  const opaque = new Set<z.ZodType>();
+  const pending = [schema];
+  const seen = new Set<z.ZodType>();
+  while (pending.length > 0) {
+    const current = unwrapSchema(pending.pop()!);
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (OPAQUE_SCHEMA_TYPES.has(schemaDefinition(current).type)) {
+      opaque.add(current);
+    }
+    pending.push(...schemaEdges(current).map((edge) => edge.schema));
+  }
+  return opaque;
+};
+
+/*
+ * These exact internal nodes have behavior that JSON Schema cannot express:
+ * TokenizedPayload deep-freezes already-validated JSON, ExplanationNode validates
+ * its z.unknown recursion iteratively in a superRefine, and DecisionInputBundle
+ * canonicalizes a time-zone spelling before its enum check. Identity-based
+ * allowance does not bless a new transform or a wrapper that introduces one.
+ */
+const ALLOWED_OPAQUE_SCHEMA_NODES = new Set<z.ZodType>([
+  ...opaqueSchemaNodes(actorSchemas.TokenizedPayloadSchema),
+  ...opaqueSchemaNodes(explanationSchemas.ExplanationNodeSchema),
+  ...opaqueSchemaNodes(evidenceSchemas.DecisionInputBundleSchema),
+]);
+
+const unsafeOpaqueSchemaBoundaries = (
+  modules: readonly SchemaModule[],
+  allowed: ReadonlySet<z.ZodType>,
+): string[] => {
+  const unsafe: string[] = [];
+  for (const [file, exports] of modules) {
+    for (const [exportName, value] of Object.entries(exports)) {
+      if (
+        isSchema(value) &&
+        [...opaqueSchemaNodes(value)].some((node) => !allowed.has(node))
+      ) {
+        unsafe.push(`${file}:${exportName}`);
+      }
+    }
+  }
+  return unsafe.sort();
+};
+
 const discoveredScopedReferenceBoundaries = (
   modules: readonly SchemaModule[],
 ): Map<string, z.ZodType> => {
@@ -478,10 +534,13 @@ const mixedTenantProbe = (legal: unknown): unknown => {
 const tenantBoundaryAudit = (
   modules: readonly SchemaModule[],
   probes: Readonly<Record<string, unknown>>,
+  allowedOpaqueNodes: ReadonlySet<z.ZodType> =
+    ALLOWED_OPAQUE_SCHEMA_NODES,
 ): {
   readonly missing: string[];
   readonly stale: string[];
   readonly failed: string[];
+  readonly unsafe: string[];
 } => {
   const boundaries = discoveredScopedReferenceBoundaries(modules);
   const boundaryNames = [...boundaries.keys()].sort();
@@ -497,7 +556,11 @@ const tenantBoundaryAudit = (
       schema.safeParse(mixedTenantProbe(legal)).success
     );
   });
-  return { missing, stale, failed };
+  const unsafe = unsafeOpaqueSchemaBoundaries(
+    modules,
+    allowedOpaqueNodes,
+  );
+  return { missing, stale, failed, unsafe };
 };
 
 describe("decision-core tenant-scope fence", () => {
@@ -512,7 +575,7 @@ describe("decision-core tenant-scope fence", () => {
     expect(tenantBoundaryAudit(
       DECISION_CORE_SCHEMA_MODULES,
       SCOPED_REFERENCE_BOUNDARY_PROBES,
-    )).toEqual({ missing: [], stale: [], failed: [] });
+    )).toEqual({ missing: [], stale: [], failed: [], unsafe: [] });
   });
 
   it("detects an exported boundary without a Schema suffix", () => {
@@ -525,6 +588,49 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { Added }]],
       {},
     ).missing).toEqual(["probe.ts:Added"]);
+  });
+
+  it("fails closed on an exported type-changing opaque tenant schema", () => {
+    const OpaqueOwner = z
+      .any()
+      .transform((value): ScopedRef => value as ScopedRef);
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { OpaqueOwner }]],
+      {},
+    );
+    expect(audit.missing).toEqual([]);
+    expect(audit.unsafe).toEqual(["probe.ts:OpaqueOwner"]);
+  });
+
+  it("requires an exact node allowlist for intentional opaque behavior", () => {
+    const FrozenPayload = z.strictObject({
+      value: z.json().transform(Object.freeze),
+    });
+    const modules: readonly SchemaModule[] = [[
+      "probe.ts",
+      { FrozenPayload },
+    ]];
+    expect(tenantBoundaryAudit(
+      modules,
+      {},
+      new Set(),
+    ).unsafe).toEqual(["probe.ts:FrozenPayload"]);
+    expect(tenantBoundaryAudit(
+      modules,
+      {},
+      opaqueSchemaNodes(FrozenPayload),
+    ).unsafe).toEqual([]);
+  });
+
+  it("does not confuse a type-preserving overwrite with an opaque transform", () => {
+    const CanonicalOwner = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    }).overwrite((value) => value);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { CanonicalOwner }]],
+      {},
+    ).unsafe).toEqual([]);
   });
 
   it("detects an unconstrained wrapper that reuses a registered collection", () => {

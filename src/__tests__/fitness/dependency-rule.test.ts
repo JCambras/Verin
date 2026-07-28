@@ -303,6 +303,50 @@ describe("dependency-rule fence", () => {
       );
     });
 
+    it.each([
+      [
+        "bind",
+        [
+          "const get = process.getBuiltinModule.bind(process);",
+          `const load = get("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "call",
+        [
+          `const namespace = process.getBuiltinModule.call(process, "node:module");`,
+          `const load = namespace.createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+    ])("ambient getBuiltinModule cannot bypass the layer fence through %s", (_name, source) => {
+      const v = detectLayerViolations(
+        inMemoryProject({ "src/domain/evil.ts": source }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<non-literal get-builtin-module>",
+      );
+    });
+
+    it("a local getBuiltinModule-shaped value remains an allowed lookalike", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/ok.ts": [
+            "const process = {",
+            "  getBuiltinModule: {",
+            "    bind: () => () => ({ createRequire: () => (value: string) => value }),",
+            "    call: () => ({ createRequire: () => (value: string) => value }),",
+            "  },",
+            "};",
+            "export const bound = process.getBuiltinModule.bind(process);",
+            `export const called = process.getBuiltinModule.call(process, "local");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
     it("clean inner->inner imports do NOT trip the fence", () => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/ok.ts": `import { Result } from "@contracts/result";\nexport const r: Result<number> | null = null;` }),
@@ -391,8 +435,7 @@ describe("dependency-rule fence", () => {
             "src/contracts/evil.ts": `export const forbidden = ${expression};`,
           }),
         );
-        expect(v).toHaveLength(1);
-        expect(v[0]?.line).toBe(1);
+        expect(v.some((violation) => violation.line === 1)).toBe(true);
       },
     );
 
@@ -477,6 +520,78 @@ describe("dependency-rule fence", () => {
             "const Buffer = { from: (value: string) => value };",
             "const process = { getBuiltinModule: (value: string) => value };",
             "export const values = [fetch('x'), Buffer.from('x'), process.getBuiltinModule('x')];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it.each([
+      [
+        "aliased Reflect.get",
+        [
+          "const get = Reflect.get;",
+          `const Ctor = get(() => undefined, "constructor");`,
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "construct-only receiver",
+        `export const value = (class {}).constructor("return 1")();`,
+      ],
+      [
+        "aliased ambient Function",
+        `const Ctor = Function;\nexport const value = new Ctor("return 1")();`,
+      ],
+      [
+        "globalThis member",
+        `export const value = globalThis["Function"]("return 1")();`,
+      ],
+    ])("dynamic Function recovery through %s is rejected", (_name, source) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": source }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<dynamic-code capability>",
+      );
+    });
+
+    it.each([
+      ["direct clock", "export const value = Date.now();"],
+      ["direct randomness", "export const value = Math.random();"],
+      [
+        "destructured clock",
+        "const { now } = Date;\nexport const value = now();",
+      ],
+      [
+        "aliased randomness",
+        "const random = Math.random;\nexport const value = random();",
+      ],
+    ])("ambient nondeterminism is rejected: %s", (_name, source) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({ "src/contracts/evil.ts": source }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("local dynamic-code and nondeterminism lookalikes remain allowed", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "const Reflect = { get: (_value: unknown, key: string) => key };",
+            "const Date = { now: () => 1 };",
+            "const Math = { random: () => 0.5 };",
+            "const Function = (value: string) => () => value;",
+            "const model = { constructor: () => 7 };",
+            "export const values = [",
+            `  Reflect.get({}, "constructor"),`,
+            "  Date.now(),",
+            "  Math.random(),",
+            `  Function("safe")(),`,
+            "  model.constructor(),",
+            "];",
           ].join("\n"),
         }),
       );
