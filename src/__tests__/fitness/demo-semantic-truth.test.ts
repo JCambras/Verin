@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
+  APPROVAL_CLOCKS,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_NOW,
@@ -13,6 +14,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
+  decisionConfigurationFor,
   decisionIdentityFor,
   firmById,
   resolveFirmId,
@@ -20,16 +22,20 @@ import {
   scenarioById,
 } from "@app/demo/data";
 import { headroomMinor } from "@app/demo/build-decision";
-import { RESERVE_FLOOR_INPUTS, derivedMetric } from "@app/demo/provenance";
+import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric } from "@app/demo/provenance";
 import { getJourney } from "@app/demo/journey";
 import {
   activateMoneyMovementSetup,
   buildActivatedRecord,
 } from "@app/demo/setup-evaluator";
-import type {
-  SetupActivatedSnapshotVM,
-  SetupFirmId,
-  SetupSelections,
+import {
+  POSTURE_CONFIGURATION_LABEL,
+  configurationPosture,
+  type SetupActivatedSnapshotVM,
+  type SetupAuthorityPosture,
+  type SetupFirmId,
+  type SetupSelections,
+  type SetupTruthLabel,
 } from "@app/demo/setup-model";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type { DisplayMetric } from "@contracts/metric";
@@ -127,6 +133,9 @@ export interface DemoSemanticFacts {
   >;
 }
 
+/** file:line of the implementation a violation OWNS. A needle that no longer matches
+ * means the fence went stale and would point every failure at line 1, so it throws
+ * instead: a report that cannot name its owner is not a report (charter #4). */
 function sourceRef(relativePath: string, needle: string, occurrence = 0): string {
   const lines = readFileSync(join(REPO_ROOT, relativePath), "utf8").split("\n");
   let seen = 0;
@@ -135,7 +144,9 @@ function sourceRef(relativePath: string, needle: string, occurrence = 0): string
     if (seen === occurrence) return `${relativePath}:${index + 1}`;
     seen += 1;
   }
-  return `${relativePath}:1`;
+  throw new Error(
+    `fence went stale: ${relativePath} no longer contains occurrence ${occurrence} of "${needle}" - update the needle so violations still name their owner`,
+  );
 }
 
 function loadGolden(name: string): GoldenCase {
@@ -274,16 +285,24 @@ interface StaleImpactAssignment {
   readonly effect: string;
 }
 
+/** Days between two ISO dates - the ONE place the fence computes an age, so it can
+ * never agree with drifted prose by carrying the same hardcoded number. */
+function ageDaysBetween(observedAt: string, now: string): number {
+  return (Date.parse(now) - Date.parse(observedAt)) / 86_400_000;
+}
+
 export function staleImpactViolations(
   actual: StaleImpactAssignment,
   plannedWithdrawalsAsOf: string,
   availableCashAsOf: string,
+  now: string,
 ): string[] {
   const where = sourceRef(
     "src/app/demo/build-setup.ts",
     'id: "stale-withdrawals"',
   );
-  const expectedFacts = `Planned-withdrawal evidence observed ${plannedWithdrawalsAsOf} · 47 days old`;
+  const ageDays = ageDaysBetween(plannedWithdrawalsAsOf, now);
+  const expectedFacts = `Planned-withdrawal evidence observed ${plannedWithdrawalsAsOf} · ${ageDays} days old`;
   const expectedEffect = `Available cash remains fresh as of ${availableCashAsOf}. Refresh the planned-withdrawal snapshot before reevaluation.`;
   const violations: string[] = [];
   if (actual.facts !== expectedFacts) {
@@ -294,6 +313,82 @@ export function staleImpactViolations(
   if (actual.effect !== expectedEffect) {
     violations.push(
       `${where} :: GC-09 impact effect does not preserve fresh available cash as of ${availableCashAsOf} and the planned-withdrawal refresh path`,
+    );
+  }
+  return violations;
+}
+
+/**
+ * Every place the GC-09 staleness is SPOKEN. The age and the policy allowance are
+ * derived from the signed observation and the configured freshness window, so moving
+ * the demo clock re-derives all of them together instead of leaving a hand-typed "47
+ * days old" beside a date that is now further back.
+ */
+interface StaleAgeAssignment {
+  readonly impactFacts: string;
+  readonly blocker: string;
+}
+
+export function staleAgeViolations(
+  actual: StaleAgeAssignment,
+  plannedWithdrawalsAsOf: string,
+  now: string,
+  freshnessDays: number,
+): string[] {
+  const ageDays = ageDaysBetween(plannedWithdrawalsAsOf, now);
+  const violations: string[] = [];
+  const impactWhere = sourceRef(
+    "src/app/demo/build-setup.ts",
+    'id: "stale-withdrawals"',
+  );
+  if (!actual.impactFacts.includes(`${ageDays} days old`)) {
+    violations.push(
+      `${impactWhere} :: the GC-09 impact card reads "${actual.impactFacts}" instead of the ${ageDays} days derived from ${plannedWithdrawalsAsOf}`,
+    );
+  }
+  const blockerWhere = sourceRef(
+    "src/app/demo/build-decision.ts",
+    "Planned-withdrawal evidence is",
+  );
+  if (!actual.blocker.includes(`${ageDays} days old`)) {
+    violations.push(
+      `${blockerWhere} :: the GC-09 blocker reads "${actual.blocker}" instead of the ${ageDays} days derived from ${plannedWithdrawalsAsOf}`,
+    );
+  }
+  if (!actual.blocker.includes(`policy allows ${freshnessDays}`)) {
+    violations.push(
+      `${blockerWhere} :: the GC-09 blocker does not name the configured ${freshnessDays}-day freshness window`,
+    );
+  }
+  return violations;
+}
+
+/**
+ * ONE datum, ONE observation date. The taxable account balance IS the signed
+ * available-cash figure, so if a screen renders the same dollars twice it must state
+ * the same "as of" both times - two dates on one number is a visible contradiction
+ * whatever the underlying wiring says.
+ */
+export function observationDateViolations(
+  surface: string,
+  displayed: readonly { readonly label: string; readonly metric: DisplayMetric }[],
+): string[] {
+  const where = sourceRef("src/app/demo/build-context.ts", "const availableCashAsOf");
+  const byValue = new Map<string, Map<string, string[]>>();
+  for (const { label, metric } of displayed) {
+    const key = `${metric.format}:${String(metric.value)}`;
+    const dates = byValue.get(key) ?? new Map<string, string[]>();
+    dates.set(metric.provenance.asOf, [...(dates.get(metric.provenance.asOf) ?? []), label]);
+    byValue.set(key, dates);
+  }
+  const violations: string[] = [];
+  for (const [key, dates] of byValue) {
+    if (dates.size < 2) continue;
+    const rendered = [...dates]
+      .map(([asOf, labels]) => `${labels.join(" / ")} as of ${asOf}`)
+      .join("; ");
+    violations.push(
+      `${where} :: ${surface} renders ${key} under ${dates.size} observation dates - ${rendered}`,
     );
   }
   return violations;
@@ -329,7 +424,7 @@ export function reserveHorizonViolations(
 ): string[] {
   const where = sourceRef(
     "src/app/demo/build-decision.ts",
-    "months of planned withdrawals in cash",
+    "export function reserveHorizonPhrase",
   );
   const violations: string[] = [];
   if (
@@ -366,6 +461,49 @@ export function reserveHorizonViolations(
     violations.push(
       `${where} :: the printed headroom ${actual.headroomMinor} does not follow the activated ${actual.reserveMonths}-month floor`,
     );
+  }
+  return violations;
+}
+
+/**
+ * A configuration's authority claim measured against the COMPLETE truth-label set of
+ * the options it selected. A configuration containing any non-signed choice may not
+ * render or export a captain-signed provenance claim: the exported claim must never be
+ * stronger than the screen that produced it.
+ */
+interface ConfigurationClaim {
+  readonly firmId: string;
+  readonly truthLabels: readonly SetupTruthLabel[];
+  readonly posture: SetupAuthorityPosture;
+  readonly provenance: string;
+}
+
+export function configurationPostureViolations(
+  claims: readonly ConfigurationClaim[],
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/setup-evaluator.ts",
+    "configurationProvenance: POSTURE_CONFIGURATION_LABEL",
+  );
+  const violations: string[] = [];
+  for (const claim of claims) {
+    const expected = configurationPosture(claim.truthLabels);
+    if (claim.posture !== expected) {
+      violations.push(
+        `${where} :: ${claim.firmId} claims posture "${claim.posture}" for truth labels [${claim.truthLabels.join(", ")}], which are "${expected}"`,
+      );
+    }
+    if (claim.provenance !== POSTURE_CONFIGURATION_LABEL[claim.posture]) {
+      violations.push(
+        `${where} :: ${claim.firmId} renders "${claim.provenance}" for posture "${claim.posture}"`,
+      );
+    }
+    const unsigned = claim.truthLabels.filter((label) => label !== "Signed");
+    if (unsigned.length > 0 && claim.provenance === POSTURE_CONFIGURATION_LABEL.signed) {
+      violations.push(
+        `${where} :: ${claim.firmId} exports a captain-signed claim while ${unsigned.length} of its choices are only [${unsigned.join(", ")}]`,
+      );
+    }
   }
   return violations;
 }
@@ -683,7 +821,9 @@ export function demoSemanticFacts(): DemoSemanticFacts {
     },
     lowHeadroomBasis: LOW_HEADROOM_LIQUIDITY,
     lowHeadroomFacts: lowHeadroomImpact.facts,
-    lowHeadroomFirmBStatus: initialOptionOf(lowHeadroomGroup, "firm-b").signedCaseEffect.status.status,
+    lowHeadroomFirmBStatus:
+      initialOptionOf(lowHeadroomGroup, "firm-b").signedCaseEffect?.status.status ??
+      "(the low-headroom group carries no signed-case effect)",
     firms: { "firm-a": firm("firm-a"), "firm-b": firm("firm-b") },
   };
 }
@@ -1058,9 +1198,13 @@ describe("demo semantic-truth fence", () => {
     expect(second.snapshot.snapshotHash).not.toBe(first.snapshot.snapshotHash);
     expect(second.snapshot.firms[0].policyVersion).not.toBe(priorPolicyVersion);
     expect(second.snapshot.firms[0].policyVersion).not.toBe("FA-4.2");
+    // A mutated combination never retains a captain-signed badge (F1): the 9-month
+    // horizon is a supported house default, not a signed one.
+    expect(second.snapshot.firms[0].configurationPosture).toBe("house-default");
     expect(second.snapshot.firms[0].configurationProvenance).toBe(
-      "Demonstration-only configuration",
+      POSTURE_CONFIGURATION_LABEL["house-default"],
     );
+    expect(second.snapshot.firms[0].configurationProvenance).not.toContain("Captain-signed");
     expect(first.snapshot.firms[0].disposition).toEqual(priorDisposition);
     expect({
       decisionId: first.snapshot.firms[0].decisionId,
@@ -1180,10 +1324,41 @@ describe("demo semantic-truth fence", () => {
     const blocker = journey.recommendation.disposition.blockers?.find(
       (candidate) => candidate.condition.includes("Planned-withdrawal"),
     );
-    expect(blocker?.condition).toContain("47 days");
     expect(blocker?.affordanceLabel).toBe(
       "Refresh planned-withdrawal evidence",
     );
+    // The spoken age and the policy allowance are DERIVED - not two hand-typed numbers
+    // that keep asserting "47 days old" once the demo clock moves.
+    const ageViolations = staleAgeViolations(
+      {
+        impactFacts: buildMoneyMovementSetup().impacts.find(
+          (candidate) => candidate.id === "stale-withdrawals",
+        )!.facts,
+        blocker: blocker?.condition ?? "",
+      },
+      truth.plannedWithdrawalsAsOf,
+      DEMO_NOW,
+      decisionConfigurationFor(firmById("firm-a")).freshnessDays,
+    );
+    expect(ageViolations, ageViolations.join("\n")).toEqual([]);
+  });
+
+  it("detects: a hand-typed staleness age or policy allowance cannot pass", () => {
+    const violations = staleAgeViolations(
+      {
+        impactFacts: "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
+        blocker: "Planned-withdrawal evidence is 47 days old; policy allows 30",
+      },
+      "2026-06-09",
+      // The same screenshot refresh the finding describes: move the demo clock and the
+      // hand-typed 47 stops being true while the date beside it stays put.
+      "2026-08-10",
+      14,
+    );
+    expect(violations).toHaveLength(3);
+    expect(violations[0]).toContain("build-setup.ts:");
+    expect(violations[1]).toContain("build-decision.ts:");
+    expect(violations[2]).toContain("14-day freshness window");
   });
 
   it("enforces: GC-09 impact renders the exact signed planned-withdrawal fact", () => {
@@ -1207,6 +1382,7 @@ describe("demo semantic-truth fence", () => {
         actual,
         planned.observedAt.slice(0, 10),
         available.observedAt.slice(0, 10),
+        DEMO_NOW,
       ),
     ).toEqual([]);
   });
@@ -1220,17 +1396,15 @@ describe("demo semantic-truth fence", () => {
       const reserveRow = record.precedence.find((row) =>
         row.rule.startsWith("Cash-reserve floor"),
       );
-      const headroom = record.disposition.figures?.find((figure) =>
-        figure.label.includes("reserve"),
-      );
       expect(reserveRow, "the record lost its cash-reserve precedence row").toBeDefined();
-      expect(headroom, "the record lost its post-reserve headroom figure").toBeDefined();
+      // Floor and headroom are read off the EXPORTED artifact (record.reserve), the
+      // same object src/app/demo/surfaces/record.tsx renders through <Metric>.
       const violations = reserveHorizonViolations(
         {
           reserveMonths: months,
           precedenceReason: reserveRow?.why?.reason ?? "",
-          reserveFloorMinor: Number(snapshot.firms[0].reserveMetric.value),
-          headroomMinor: Number(headroom?.metric.value),
+          reserveFloorMinor: Number(record.reserve.floor.value),
+          headroomMinor: Number(record.reserve.headroom.value),
         },
         SUPPORTED_RESERVE_MONTHS,
         SMITHS_LIQUIDITY,
@@ -1240,7 +1414,196 @@ describe("demo semantic-truth fence", () => {
         violations,
         `activated ${months}-month horizon drift:\n${violations.join("\n")}`,
       ).toEqual([]);
+      // The horizon prose the record prints and the floor the setup step showed must
+      // be the same activated number, not two independently-correct figures.
+      expect(record.reserve.horizon).toBe(`${months} months of planned withdrawals`);
+      expect(Number(record.reserve.floor.value)).toBe(
+        Number(snapshot.firms[0].reserveMetric.value),
+      );
     }
+  });
+
+  it("enforces: the record's reserve floor and headroom declare every leaf they stand on", () => {
+    const snapshot = activatedSnapshot();
+    const activated = buildActivatedRecord(snapshot, "firm-a");
+    const journey = getJourney("recent-bank-change-block", "firm-a").record;
+    for (const [label, record] of [
+      ["the activated record", activated],
+      ["the fixture-journey record", journey],
+    ] as const) {
+      const floor = metricTraceOf(record.reserve.floor);
+      const headroom = metricTraceOf(record.reserve.headroom);
+      expect(floor.demonstration, `${label} floor must be a demonstration`).toBe(true);
+      expect(headroom.demonstration, `${label} headroom must be a demonstration`).toBe(true);
+      // A derived figure may never claim a NARROWER lineage than one of its own
+      // inputs: the headroom is computed from the floor (ADR-0022's flattening rule).
+      for (const leaf of floor.derivedFrom) {
+        expect(
+          headroom.derivedFrom,
+          `${label} headroom traces to [${headroom.derivedFrom.join(", ")}] but its reserve floor traces to [${floor.derivedFrom.join(", ")}]`,
+        ).toContain(leaf);
+      }
+      // The request being decided is a demo entry on BOTH paths, so the headroom that
+      // subtracts it always reaches the user-input leaf.
+      expect(headroom.derivedFrom).toContain("user-input");
+    }
+    // The activated horizon is administrator-entered; the journey horizon is a FIRMS
+    // fixture. Same arithmetic, honestly different leaves.
+    expect(metricTraceOf(activated.reserve.floor).derivedFrom).toContain("user-input");
+    expect(metricTraceOf(journey.reserve.floor).derivedFrom).toEqual(["fixture"]);
+  });
+
+  it("enforces: a configuration may claim only the authority its complete truth-label set carries", () => {
+    const vm = buildMoneyMovementSetup();
+    const labelsOf = (firmId: SetupFirmId, selections: SetupSelections) =>
+      vm.policyGroups.map(
+        (group) =>
+          group.firms
+            .find((firm) => firm.firmId === firmId)!
+            .options.find((option) => option.id === selections[firmId][group.id])!
+            .truthLabel,
+      );
+    const cases: { readonly name: string; readonly mutate?: (s: SetupSelections) => void }[] = [
+      { name: "untouched defaults" },
+      { name: "a supported reserve horizon", mutate: (s) => { s["firm-a"].reserve = "9-months"; } },
+      { name: "a recommended expiry clock", mutate: (s) => { s["firm-a"].expiry = "1d-3d"; s["firm-b"].expiry = "1d-3d"; } },
+    ];
+    for (const { name, mutate } of cases) {
+      const selections = setupSelections();
+      mutate?.(selections);
+      const snapshot = activatedSnapshot(mutate);
+      const claims = snapshot.firms.map((firm) => ({
+        firmId: firm.firmId,
+        truthLabels: labelsOf(firm.firmId, selections),
+        posture: firm.configurationPosture,
+        provenance: firm.configurationProvenance,
+      }));
+      const violations = configurationPostureViolations(claims);
+      expect(violations, `${name}:\n${violations.join("\n")}`).toEqual([]);
+      // The exported record repeats the claim the screen made, never a stronger one.
+      for (const firm of snapshot.firms) {
+        expect(
+          buildActivatedRecord(snapshot, firm.firmId).activatedConfiguration
+            ?.configurationProvenance,
+        ).toBe(firm.configurationProvenance);
+      }
+    }
+    // Firm B's untouched profile keeps its FB-2.1 identity but is NOT captain-signed:
+    // two of its five defaults are only recommended.
+    const untouched = activatedSnapshot();
+    expect(untouched.firms[1].policyVersion).toBe("FB-2.1");
+    expect(untouched.firms[1].configurationPosture).toBe("recommended");
+    expect(untouched.firms[1].configurationProvenance).not.toContain("Captain-signed");
+    expect(untouched.firms[0].configurationPosture).toBe("signed");
+  });
+
+  it("detects: a captain-signed claim over a merely recommended choice cannot pass", () => {
+    const violations = configurationPostureViolations([
+      {
+        firmId: "firm-b",
+        truthLabels: ["Signed", "Recommended", "Signed", "Signed", "Recommended"],
+        posture: "signed",
+        provenance: POSTURE_CONFIGURATION_LABEL.signed,
+      },
+    ]);
+    expect(violations.some((violation) => violation.includes('are "recommended"'))).toBe(true);
+    expect(
+      violations.some((violation) => violation.includes("exports a captain-signed claim")),
+    ).toBe(true);
+  });
+
+  it("enforces: one datum renders one observation date on a screen", () => {
+    for (const scenarioId of ["stale-evidence", "recent-bank-change-block", "safe-proceed"]) {
+      const journey = getJourney(scenarioId, "firm-a");
+      const workspace = [
+        ...journey.workspace.accounts.map((account) => ({
+          label: `account ${account.name}`,
+          metric: account.balance,
+        })),
+        { label: "available liquidity", metric: journey.workspace.liquidity },
+        {
+          label: "planned monthly withdrawal",
+          metric: journey.workspace.plannedMonthlyWithdrawal,
+        },
+      ];
+      const evidence = journey.evidence.rows.flatMap((row) =>
+        row.kind === "metric" ? [{ label: row.label, metric: row.metric }] : [],
+      );
+      const violations = [
+        ...observationDateViolations(`${scenarioId} workspace`, workspace),
+        ...observationDateViolations(`${scenarioId} evidence`, evidence),
+      ];
+      expect(violations, violations.join("\n")).toEqual([]);
+    }
+  });
+
+  it("detects: one datum stamped with two observation dates cannot pass", () => {
+    const violations = observationDateViolations("workspace", [
+      {
+        label: "Smith Family Taxable",
+        metric: fixtureMetric(42_000_000, "currency-minor", "synthetic-fixture", "2026-07-24"),
+      },
+      {
+        label: "available liquidity",
+        metric: fixtureMetric(42_000_000, "currency-minor", "synthetic-fixture", "2026-07-26"),
+      },
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("2 observation dates");
+    expect(violations[0]).toContain("build-context.ts:");
+  });
+
+  it("enforces: no closed choice carries a signed-case effect no impact card can reach", () => {
+    const vm = buildMoneyMovementSetup();
+    const compared = new Set(
+      vm.impacts.flatMap((impact) => (impact.groupId ? [impact.groupId] : [])),
+    );
+    expect(compared.size).toBeGreaterThan(0);
+    // Both owners are resolved on the GREEN path, so a renamed anchor fails loudly
+    // instead of waiting for a violation to discover the fence went stale.
+    const cardsWhere = sourceRef("src/app/demo/build-setup.ts", "impacts: [");
+    const effectWhere = sourceRef("src/app/demo/build-setup.ts", "signedCaseEffect");
+    const violations: string[] = [];
+    for (const group of vm.policyGroups) {
+      for (const firm of group.firms) {
+        for (const option of firm.options) {
+          const reachable = compared.has(group.id);
+          if (reachable && !option.signedCaseEffect) {
+            violations.push(
+              `${cardsWhere} :: a signed-impact card compares "${group.id}" but ${firm.firmId}:${option.id} carries no signed-case effect`,
+            );
+          }
+          if (!reachable && option.signedCaseEffect) {
+            violations.push(
+              `${effectWhere} :: ${firm.firmId}:${group.id}:${option.id} carries a signed-case effect no impact card renders - ship it or delete it (charter #5)`,
+            );
+          }
+        }
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("enforces: the dual-approval promise is derived from the signed request amount", () => {
+    const vm = buildMoneyMovementSetup();
+    const threshold = vm.policyGroups.find((group) => group.id === "threshold")!;
+    for (const firm of threshold.firms) {
+      for (const option of firm.options) {
+        const above = CANONICAL_REQUEST.amountMinor > Number(option.id) * 100;
+        expect(
+          option.smithsEffect.summary.includes("Two distinct operations approvers"),
+          `${firm.firmId}:${option.id} promises dual approval ${option.smithsEffect.summary} for a ${CANONICAL_REQUEST.amountMinor} request`,
+        ).toBe(above);
+      }
+    }
+  });
+
+  it("enforces: the journey approval clock is the shared catalog entry its id hashes", () => {
+    const clock = APPROVAL_CLOCKS[decisionConfigurationFor(firmById("firm-a")).approvalClockId];
+    expect(clock, "the hashed approval-clock id has no catalog entry").toBeDefined();
+    const stage = getJourney("safe-proceed", "firm-a").approvals?.stages[0];
+    expect(stage?.escalation).toBe(clock!.escalation);
+    expect(stage?.expiry).toBe(clock!.expiry);
   });
 
   it("enforces: the reserve floor carries ONE derivation trace on the setup step and the snapshot", () => {
@@ -1381,6 +1744,7 @@ describe("demo semantic-truth fence", () => {
       },
       "2026-06-09",
       "2026-07-26",
+      DEMO_NOW,
     );
     expect(violations).toHaveLength(2);
     expect(violations.join("\n")).toContain("planned-withdrawal");
@@ -1646,6 +2010,35 @@ describe("demo semantic-truth fence", () => {
         violation.includes("build-setup.ts:") &&
         violation.includes("displayed reserve"),
       )).toBe(true);
+    });
+
+    it("flags drifted firm configuration and names the owning data.ts line, never line 1", () => {
+      const actual = demoSemanticFacts();
+      const violations = semanticTruthViolations(
+        {
+          ...actual,
+          firms: {
+            ...actual.firms,
+            "firm-a": {
+              ...actual.firms["firm-a"],
+              reserveMonths: 7,
+              thresholdMinor: 1,
+              bankChangeHandling: "block-until-independently-verified",
+            },
+          },
+        },
+        goldenSemanticTruth(),
+      );
+      for (const needle of [
+        "reserve horizon 7",
+        "approval threshold 1 ",
+        "bank-change handling",
+      ]) {
+        const violation = violations.find((candidate) => candidate.includes(needle));
+        expect(violation, `no violation named "${needle}"`).toBeDefined();
+        expect(violation).toMatch(/src\/app\/demo\/data\.ts:\d+ ::/);
+        expect(violation).not.toContain("data.ts:1 ::");
+      }
     });
 
     it("flags a winning-firm rewrite of the signed Firm B block", () => {

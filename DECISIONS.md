@@ -3262,3 +3262,42 @@ a record that no longer proves the action the operator approved.
 **Revert path:** remove the response guard and frozen plan together only if setup
 activation becomes synchronous and non-interactive; restore independent evidence
 dates only with a new captain-signed golden case.
+
+### D-066 · 2026-07-28 · reversible · Authority posture is three-valued, and the record prints the arithmetic it claims
+
+A closed setup choice carries one of three authority postures - captain-signed,
+recommended-but-not-signed, or supported house default - and a configuration takes the
+weakest posture of the options it selected. Firm B's untouched profile keeps its FB-2.1
+identity, but two of its five defaults are house recommendations the captain never
+signed, so it now reads "Recommended configuration · pending captain signoff" on the
+option card, in the activation review, on the outcome card, in the proof trail, and on
+the exported record. Signedness is no longer inferred from "did the operator touch the
+defaults", which answers a different question.
+
+The decision record now prints the derived reserve floor and the resulting post-reserve
+headroom beside its horizon prose, both through `Metric` from the one signed
+`projectReserve` source, so an examiner can check the words against the numbers on the
+artifact itself. Derived figures declare every leaf they stand on: the headroom can never
+trace narrower than the reserve floor it is computed from, and the reserve horizon's leaf
+class is passed in because it is a FIRMS fixture on the journey and an administrator
+entry after activation.
+
+Four same-class corrections travel with them. The GC-09 staleness age and the policy
+allowance are derived from the signed observation and the configured window. The
+dual-approval promise on step 4 is derived from the canonical request amount exactly as
+the evaluator derives it. One approval-clock catalog lives in `data.ts`, so a printed
+clock can never disagree with the id the bundle hash says both configurations name. And
+no demo surface spells a firm display name - `firmLabel` is the single source, fenced by
+RULE D.
+
+The option card's radio now names only its choice and its authority badge; the expanded
+detail is attached with `aria-describedby`, so arrow-keying a group no longer announces
+sixty words of derived figures and watermarks as the control's NAME.
+
+**Why:** an exported provenance claim that is stronger than the screen that produced it
+is the one failure a governance demo cannot survive, and a horizon asserted in prose with
+no printed arithmetic beside it is a claim an examiner cannot check.
+
+**Revert path:** collapse the three postures back to a binary only alongside a captain
+ruling that a recommended default IS captain-signed; drop the record's reserve block only
+if the same figures land on a ledger-derived export that carries them instead.

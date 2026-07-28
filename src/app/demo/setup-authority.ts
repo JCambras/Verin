@@ -1,5 +1,4 @@
-import type { ApprovalClock } from "./build-decision";
-import { CAST, type FirmData } from "./data";
+import { CAST, type ApprovalClock, type FirmData } from "./data";
 import type { SetupProofFirmVM } from "./setup-model";
 
 export function evaluateAuthorityPlan(

@@ -58,7 +58,15 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
       id: a.id,
       name: a.name,
       kind: a.kind,
-      balance: fixtureMetric(a.balanceMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+      // The taxable account's balance IS the signed available-cash datum, so it wears
+      // the SAME observation date as the liquidity block below. One datum, one "as of":
+      // the two rendered $420,000 figures can never disagree about when it was seen.
+      balance: fixtureMetric(
+        a.balanceMinor,
+        "currency-minor",
+        "synthetic-fixture",
+        a.id === SMITHS_LIQUIDITY.availableAccountId ? availableCashAsOf : OBSERVED_RECENT,
+      ),
       custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
     })),

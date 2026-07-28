@@ -171,6 +171,51 @@ test("every primary setup step passes responsive, overflow, target, axe, and scr
   }
 });
 
+/** The export is the artifact an examiner opens, often not on a desktop. Its identity
+ * header, provenance claim, and reserve arithmetic must survive every width. */
+test("the exported decision record stays clean at every width and at 200 percent text", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/setup");
+  for (const step of STEPS.slice(0, 5)) {
+    await page.getByRole("button", { name: step.action }).click();
+  }
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: STEPS[5].action }).click();
+  await page.getByRole("button", { name: STEPS[6].action }).click();
+  await page.getByRole("button", { name: STEPS[7].action }).click();
+  await page.getByTestId("export-choice").getByRole("radio", { name: /Firm B/ }).check();
+  await page.getByRole("button", { name: STEPS[8].action }).click();
+  await expect(page.getByRole("heading", { name: "Decision record" })).toBeVisible();
+  const recordUrl = page.url();
+
+  for (const viewport of WIDTHS) {
+    await page.setViewportSize(viewport);
+    await page.goto(recordUrl);
+    await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
+      "Recommended configuration · pending captain signoff",
+    );
+    await expect(page.getByTestId("record-reserve-floor")).toContainText("$96,000.00");
+    await expect(page.getByTestId("record-reserve-headroom")).toContainText("$249,000.00");
+    await assertNoPageOverflow(page);
+    await assertAxe(page, `${viewport.width}-record`);
+    mkdirSync(`demo-screens/record/${viewport.width}`, { recursive: true });
+    await settle(page);
+    await page.screenshot({
+      path: `demo-screens/record/${viewport.width}/record-firm-b.png`,
+      fullPage: true,
+    });
+  }
+
+  await page.setViewportSize(WIDTHS[0]);
+  await page.goto(recordUrl);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await expect(page.getByTestId("record-reserve-headroom")).toBeVisible();
+  await assertNoPageOverflow(page);
+  await expect(page.getByRole("button", { name: "Print this record" })).toBeVisible();
+});
+
 test("the full setup journey is keyboard operable and announces activation errors", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/demo/setup");

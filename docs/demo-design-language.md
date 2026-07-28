@@ -548,11 +548,28 @@ What is deleted is the desktop table abstraction, not the doctrine.
   against a mutable outcome; if the operator's live selection diverges from the signed option the
   card gains a `Varied from signed selection` badge and the affected firm card is labeled a
   projection (`ImpactFirmCard`). A mutated outcome never retains a captain-signed badge.
+- **Three authority postures, never a signed/not-signed binary.** Every closed choice carries one of
+  three states, and each renders as its own badge so they cannot be read as one another:
+  `Captain-signed` (§5 done/green), `Recommended · not signed` (amber - a house recommendation the
+  captain has not signed), and `Supported house default` (slate/pending). A CONFIGURATION takes the
+  WEAKEST posture of the options it selected, so a profile whose defaults include a merely
+  recommended choice reads `Recommended configuration · pending captain signoff` - on the option
+  card, in the activation review, on the outcome card, in the proof trail, and on the exported
+  record. The exported provenance claim is never stronger than the screen that produced it.
 - **Proof identity before export.** Each firm's trail ends in its own identity block projected
   from the SAME decision-record view model the export target renders. Scenario, firm, decision id,
   the shared firm-neutral request/evidence input hash, decision hash, and the firm-specific
   policy-bearing bundle hash render in full on both sides and compare byte for byte. The export
   names one firm explicitly; two outcomes never funnel into one firm's record.
+- **Checkable reserve arithmetic on the record.** The precedence trace states a horizon in prose
+  ("preserves 6 months of planned withdrawals"); directly beneath it the record prints the derived
+  reserve floor and the resulting post-reserve headroom through `Metric`, from the one signed
+  projection the setup and decision surfaces read. An examiner checks the words against the numbers
+  without leaving the page, and no surface recomputes either figure.
+- **One name per profile.** A surface never spells a firm's display name or derives one from
+  `firmId`. `SetupProfileVM.firmLabel` / `FirmChoiceVM.firmLabel` / `SetupProofFirmVM.firmLabel` are
+  the single source, including the roles table, the choice-group legends, the impact headings, and
+  the outcome framing, so renaming a profile can never leave one wizard carrying two names.
 
 ---
 

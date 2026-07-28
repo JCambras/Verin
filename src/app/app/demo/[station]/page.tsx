@@ -5,10 +5,8 @@
  * to the surface component. Surfaces never see the contract data or the service -
  * only view models (Gate 0: the UI does not invent decisions).
  */
-import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { getDb } from "@infra/store/db";
-import { resolveSession, SESSION_COOKIE } from "@infra/identity/session";
+import { currentSession } from "@app/_server/session";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
 import { activatedSetupSnapshot } from "@app/demo/setup-activation-store";
@@ -61,13 +59,11 @@ export default async function DemoStationPage({
   const activation = first(sp.activation);
   if (station === "record" && activation) {
     // Read-only identity: a Server Component cannot set the rotated cookie
-    // requirePrincipal writes, so the activation scope is resolved through
-    // resolveSession (ADR-0008, D-030). A snapshot is readable only by the
-    // principal that activated it.
-    const session = await resolveSession(
-      await getDb(),
-      (await cookies()).get(SESSION_COOKIE)?.value,
-    );
+    // requirePrincipal writes, so the activation scope is resolved through the
+    // request-memoized resolveSession the /app layout already ran (ADR-0008, D-030) -
+    // one lookup, not a second serialized round-trip that could disagree with it.
+    // A snapshot is readable only by the principal that activated it.
+    const session = await currentSession();
     const snapshot = session.ok
       ? activatedSetupSnapshot(
           { orgId: session.value.orgId, userId: session.value.userId },

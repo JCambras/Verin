@@ -3,15 +3,18 @@
  * comparison and query-string policy activation builders were deleted when the
  * bounded setup-first replacement became the demo's primary journey.
  */
+import type { RecordProvenance } from "@contracts/provenance";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
 import type { ApprovalStageVM, DispositionVM, RecordVM } from "./model";
-import { prov, recordProvenance } from "./provenance";
+import { FIXTURE_RESERVE_HORIZON, prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
   buildDisposition,
   buildPolicyTrace,
   buildStages,
-  type ApprovalClock,
+  headroomMetric,
+  reserveFloorMetric,
+  reserveHorizonPhrase,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import {
@@ -27,9 +30,12 @@ import {
 export interface RecordBuildOptions {
   readonly identity?: DecisionIdentity;
   readonly disposition?: DispositionVM;
-  readonly approvalClock?: ApprovalClock;
   readonly approvalStages?: readonly ApprovalStageVM[] | null;
   readonly activatedConfiguration?: RecordVM["activatedConfiguration"];
+  /** Where the reserve horizon came from - a FIRMS fixture on the journey, the
+   * administrator's activated choice after setup. It changes the ADR-0022 leaf
+   * classes behind the printed floor and headroom, never the arithmetic. */
+  readonly reserveHorizon?: RecordProvenance;
 }
 
 export function buildRecord(
@@ -43,7 +49,9 @@ export function buildRecord(
     [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
     DEMO_NOW,
   );
-  const disposition = options.disposition ?? buildDisposition(scenario, firm);
+  const reserveHorizon = options.reserveHorizon ?? FIXTURE_RESERVE_HORIZON;
+  const disposition =
+    options.disposition ?? buildDisposition(scenario, firm, undefined, reserveHorizon);
   const identity =
     options.identity ??
     decisionIdentityFor(scenario, firm, {
@@ -73,11 +81,19 @@ export function buildRecord(
     evidence: buildEvidence(scenario).rows,
     disposition,
     precedence: buildPolicyTrace(scenario, firm, disposition.kind).rows,
+    // The two numbers an examiner looks for beside "preserves N months". Both come off
+    // the SAME projection the setup and decision surfaces read - no second constant,
+    // and never recomputed in a surface.
+    reserve: {
+      horizon: reserveHorizonPhrase(firm),
+      floor: reserveFloorMetric(firm, reserveHorizon),
+      headroom: headroomMetric(firm, reserveHorizon),
+    },
     approvalStages:
       options.approvalStages !== undefined
         ? options.approvalStages
         : reached.authority
-          ? buildStages(scenario, firm, "final", options.approvalClock)
+          ? buildStages(scenario, firm, "final")
           : null,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario).rows : null,

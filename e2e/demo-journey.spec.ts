@@ -119,6 +119,19 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByText("$48,000.00").first()).toBeVisible();
   await expect(page.getByText("$96,000.00").first()).toBeVisible();
   await expect(page.getByTestId("requester-awaiting-decision")).toBeVisible();
+  // Arrow-keying a radio group must announce the CHOICE, not the whole expanded card.
+  // The detail block is attached with aria-describedby, so it is a description - the
+  // accessible NAME stays the option label plus its authority badge.
+  const selectedReserve = page
+    .getByTestId("choice-reserve-firm-a")
+    .getByRole("radio", { name: /6 months/ });
+  await expect(selectedReserve).toBeChecked();
+  await expect(selectedReserve).toHaveAccessibleName("6 months Captain-signed");
+  await expect(selectedReserve).toHaveAccessibleDescription(/Reserve dollars are derived/);
+  // Firm B's freshness default is only recommended: it must not read as signed.
+  await expect(
+    page.getByTestId("choice-freshness-firm-b").getByRole("radio", { name: /30 calendar days/ }),
+  ).toHaveAccessibleName("30 calendar days Recommended · not signed");
   await checkAxe(page, "setup-choices");
   await snap(page, 4, "setup-choices");
 
@@ -166,6 +179,14 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByTestId("outcome-firm-a")).toContainText("Submitted · not verified");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("Blocked decision recorded");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("No authority");
+  // The untouched profiles carry DIFFERENT authority: every Firm A default is signed,
+  // while two of Firm B's five are only house recommendations.
+  await expect(
+    page.getByTestId("outcome-firm-a-configuration-provenance"),
+  ).toHaveText("Captain-signed configuration");
+  await expect(
+    page.getByTestId("outcome-firm-b-configuration-provenance"),
+  ).toHaveText("Recommended configuration · pending captain signoff");
   await checkAxe(page, "setup-outcomes");
   await snap(page, 8, "setup-outcomes");
 
@@ -185,7 +206,7 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
 test("each firm's export lands on the record whose identifiers the proof step showed", async ({ page }) => {
   await login(page, PRINCIPAL);
 
-  for (const firmId of ["firm-a", "firm-b"] as const) {
+  for (const [index, firmId] of (["firm-a", "firm-b"] as const).entries()) {
     await page.goto("/app/demo/setup");
     for (const label of [
       "Continue with both firms",
@@ -221,6 +242,23 @@ test("each firm's export lands on the record whose identifiers the proof step sh
     // Byte-for-byte: the frozen version, configuration, outcome, and all identity
     // hashes survive the export boundary.
     await expectRecordIdentity(page, shown);
+    // The export never makes a stronger provenance claim than the screen that produced
+    // it: an untouched Firm B is recommended-pending-signoff, not captain-signed.
+    await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
+      firmId === "firm-a"
+        ? "Captain-signed configuration"
+        : "Recommended configuration · pending captain signoff",
+    );
+    // The numbers an examiner checks the horizon prose against, on the artifact itself.
+    await expect(page.getByTestId("record-reserve-horizon")).toHaveText(
+      firmId === "firm-a" ? "6 months of planned withdrawals" : "12 months of planned withdrawals",
+    );
+    await expect(page.getByTestId("record-reserve-floor")).toContainText(
+      firmId === "firm-a" ? "$48,000.00" : "$96,000.00",
+    );
+    await expect(page.getByTestId("record-reserve-headroom")).toContainText(
+      firmId === "firm-a" ? "$297,000.00" : "$249,000.00",
+    );
     if (firmId === "firm-a") {
       await expect(
         page
@@ -231,6 +269,8 @@ test("each firm's export lands on the record whose identifiers the proof step sh
         "Stage 2 - Dual operations approval",
       ]);
     }
+    await checkAxe(page, `record-${firmId}`);
+    await snap(page, 10 + index, `record-${firmId}`);
   }
 });
 
@@ -357,6 +397,17 @@ test("a changed selection freezes, exports, and requires reactivation after anot
   await expect(reserveRow).toContainText("9 months of planned withdrawals");
   await expect(reserveRow).not.toContainText("twelve");
   await expect(reserveRow).not.toContainText("six");
+  // The prose is checkable on the artifact: the record prints the derived floor and
+  // the post-reserve headroom the activated nine-month horizon produces.
+  await expect(page.getByTestId("record-reserve-horizon")).toHaveText(
+    "9 months of planned withdrawals",
+  );
+  await expect(page.getByTestId("record-reserve-floor")).toContainText("$72,000.00");
+  await expect(page.getByTestId("record-reserve-headroom")).toContainText("$273,000.00");
+  // A supported horizon is a house default, never a captain-signed configuration.
+  await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
+    "House-default demonstration configuration",
+  );
 });
 
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {
@@ -366,6 +417,15 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(
     page.getByText("Available cash", { exact: true }).locator(".."),
   ).toContainText("as of 2026-07-26");
+  // The taxable account balance IS the available-cash datum, so the accounts row and
+  // the liquidity block state ONE observation date - the same $420,000 can never
+  // appear twice on one screen under two different "as of" days.
+  await expect(
+    page.getByText("Smith Family Taxable", { exact: true }).locator("xpath=ancestor::li[1]"),
+  ).toContainText("as of 2026-07-26");
+  await expect(
+    page.getByText("Joint Taxable", { exact: true }).locator("xpath=ancestor::li[1]"),
+  ).toContainText("as of 2026-07-24");
   await expect(
     page
       .getByText("Planned monthly withdrawal", { exact: true })

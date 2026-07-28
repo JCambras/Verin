@@ -5,13 +5,17 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { Metric } from "@app/presentation/metric";
 import { Button, StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT } from "../model";
-import type {
-  MoneyMovementSetupVM,
-  SetupChoiceOptionVM,
-  SetupFirmId,
-  SetupPolicyGroupVM,
-  SetupSelections,
-  SetupStepVM,
+import {
+  POSTURE_OPTION_LABEL,
+  POSTURE_STATUS,
+  optionPosture,
+  type MoneyMovementSetupVM,
+  type SetupChoiceOptionVM,
+  type SetupFirmId,
+  type SetupPolicyGroupVM,
+  type SetupSelections,
+  type SetupStepVM,
+  type SetupTruthLabel,
 } from "../setup-model";
 
 export function selectedOption(
@@ -122,6 +126,20 @@ export function DemoNotice({ vm, text }: { vm: MoneyMovementSetupVM; text: strin
   );
 }
 
+/** The authority a single closed choice carries - three distinct states, never a
+ * signed-or-not binary: a house recommendation the captain has not signed must not
+ * read like one that was. */
+export function TruthBadge({ truthLabel }: { truthLabel: SetupTruthLabel }) {
+  const posture = optionPosture(truthLabel);
+  return <StatusBadge status={POSTURE_STATUS[posture]} label={POSTURE_OPTION_LABEL[posture]} />;
+}
+
+/**
+ * The radio's accessible NAME is only the option label and its authority badge. The
+ * expanded detail sits OUTSIDE the <label> and is attached with aria-describedby, so
+ * arrow-keying through a group announces the choice - not sixty words of derived
+ * figures, watermarks, and effect prose, as a name.
+ */
 function OptionCard({
   group,
   firmId,
@@ -136,50 +154,53 @@ function OptionCard({
   onSelect: (optionId: string) => void;
 }) {
   const inputId = `${group.id}-${firmId}-${option.id}`;
+  const detailId = `${inputId}-detail`;
   const effect = option.smithsEffect;
   return (
-    <label
-      htmlFor={inputId}
-      className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-md border p-3 ${
+    <div
+      className={`min-w-0 rounded-md border p-3 ${
         selected ? "border-slate-900 bg-surface" : "border-slate-200 bg-white"
       }`}
     >
-      <input
-        id={inputId}
-        type="radio"
-        name={`${group.id}-${firmId}`}
-        value={option.id}
-        checked={selected}
-        onChange={() => onSelect(option.id)}
-        className="mt-1 size-4 shrink-0 accent-slate-900"
-      />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
+      <label htmlFor={inputId} className="flex min-h-11 cursor-pointer items-start gap-3">
+        <input
+          id={inputId}
+          type="radio"
+          name={`${group.id}-${firmId}`}
+          value={option.id}
+          checked={selected}
+          onChange={() => onSelect(option.id)}
+          {...(selected ? { "aria-describedby": detailId } : {})}
+          className="mt-1 size-4 shrink-0 accent-slate-900"
+        />
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
           {option.label}
-          <StatusBadge status={option.truthLabel === "Signed" ? "done" : "pending"} label={option.truthLabel} />
+          <TruthBadge truthLabel={option.truthLabel} />
         </span>
-        {selected && option.detail ? <span className="mt-1 block text-xs text-slate-600">{option.detail}</span> : null}
-        {selected && option.reserveMetric ? (
-          <span className="mt-2 block">
-            <Metric metric={option.reserveMetric} />
-          </span>
-        ) : null}
-        {selected ? (
-          <span className="mt-2 block rounded-md border border-slate-200 bg-white p-2">
-            <span className="flex flex-wrap items-center gap-2">
+      </label>
+      {selected ? (
+        <div id={detailId} className="mt-2 min-w-0 sm:pl-7">
+          {option.detail ? <p className="text-xs text-slate-600">{option.detail}</p> : null}
+          {option.reserveMetric ? (
+            <p className="mt-2">
+              <Metric metric={option.reserveMetric} />
+            </p>
+          ) : null}
+          <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+            <p className="flex flex-wrap items-center gap-2">
               <StatusBadge status={effect.status.status} label={effect.status.label} />
               <span className="text-xs font-medium text-slate-800">{effect.summary}</span>
-            </span>
-            <span className="mt-1 block text-xs text-slate-600">{effect.detail}</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-600">{effect.detail}</p>
             {effect.reachesAuthority === undefined ? null : (
-              <span className="mt-1 block text-xs text-slate-700">
+              <p className="mt-1 text-xs text-slate-700">
                 {effect.reachesAuthority ? "Reaches authority" : "Stops before authority"}
-              </span>
+              </p>
             )}
-          </span>
-        ) : null}
-      </span>
-    </label>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -247,20 +268,17 @@ export function PolicyChoiceGroup({
         <p className="mt-1 text-xs text-slate-600">{group.rationale}</p>
       </div>
       <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-        {group.firms.map((firm) => {
-          const profile = firm.firmId === "firm-a" ? "Firm A" : "Firm B";
-          return (
-            <FirmOptions
-              key={firm.firmId}
-              group={group}
-              firmId={firm.firmId}
-              firmLabel={profile}
-              options={firm.options}
-              selectedId={selections[firm.firmId][group.id]}
-              onSelect={(optionId) => onSelect(firm.firmId, group.id, optionId)}
-            />
-          );
-        })}
+        {group.firms.map((firm) => (
+          <FirmOptions
+            key={firm.firmId}
+            group={group}
+            firmId={firm.firmId}
+            firmLabel={firm.firmLabel}
+            options={firm.options}
+            selectedId={selections[firm.firmId][group.id]}
+            onSelect={(optionId) => onSelect(firm.firmId, group.id, optionId)}
+          />
+        ))}
       </div>
     </section>
   );

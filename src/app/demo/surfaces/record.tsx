@@ -119,7 +119,7 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Decision id</dt>
-                    <dd className="font-mono text-xs text-slate-800" data-testid="record-identity-decision-id">
+                    <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-decision-id">
                       {vm.identity.decisionId}
                     </dd>
                   </div>
@@ -147,17 +147,17 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Policy version</dt>
-                    <dd className="font-mono text-xs text-slate-800" data-testid="record-identity-policy-version">
+                    <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-policy-version">
                       {vm.hashes.policyVersion}
                     </dd>
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Household instructions</dt>
-                    <dd className="font-mono text-xs text-slate-800">{vm.hashes.instructionVersion}</dd>
+                    <dd className="break-all font-mono text-xs text-slate-800">{vm.hashes.instructionVersion}</dd>
                   </div>
                   <div className="flex flex-col sm:col-span-2">
                     <dt className="text-xs text-slate-600">Audit-chain position</dt>
-                    <dd className="font-mono text-xs text-slate-800">{vm.hashes.auditPosition}</dd>
+                    <dd className="break-all font-mono text-xs text-slate-800">{vm.hashes.auditPosition}</dd>
                   </div>
                   {vm.activatedConfiguration ? (
                     <>
@@ -169,8 +169,17 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                       </div>
                       <div className="flex flex-col">
                         <dt className="text-xs text-slate-600">Configuration provenance</dt>
-                        <dd className="text-xs text-slate-800" data-testid="record-identity-configuration-provenance">
-                          {vm.activatedConfiguration.configurationProvenance}
+                        {/* Three postures read as three distinct states, so an export
+                            can never look captain-signed when its constituent choices
+                            are not - the badge carries the state, the line the claim. */}
+                        <dd className="flex flex-col items-start gap-1 text-xs text-slate-800">
+                          <StatusBadge
+                            status={vm.activatedConfiguration.configurationPostureStatus}
+                            label={vm.activatedConfiguration.configurationPostureLabel}
+                          />
+                          <span data-testid="record-identity-configuration-provenance">
+                            {vm.activatedConfiguration.configurationProvenance}
+                          </span>
                         </dd>
                       </div>
                       <div className="flex flex-col sm:col-span-2">
@@ -255,6 +264,29 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     </li>
                   ))}
                 </ol>
+                {/* The two figures the horizon prose above must survive: both come off
+                    the one signed projection, so an examiner can check the words against
+                    the arithmetic without leaving the page. */}
+                <dl className="mt-1 grid gap-x-8 gap-y-1 border-t border-slate-100 pt-2 sm:grid-cols-2 print-avoid-break">
+                  <div className="flex min-w-0 flex-col">
+                    <dt className="text-xs text-slate-600">Reserve horizon</dt>
+                    <dd className="text-sm text-slate-800" data-testid="record-reserve-horizon">
+                      {vm.reserve.horizon}
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 flex-col">
+                    <dt className="text-xs text-slate-600">Reserve floor</dt>
+                    <dd className="text-sm text-slate-800" data-testid="record-reserve-floor">
+                      <Metric metric={vm.reserve.floor} />
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 flex-col sm:col-span-2">
+                    <dt className="text-xs text-slate-600">Available after this request and reserve</dt>
+                    <dd className="text-sm text-slate-800" data-testid="record-reserve-headroom">
+                      <Metric metric={vm.reserve.headroom} />
+                    </dd>
+                  </div>
+                </dl>
               </DocSection>
 
               <DocSection n={5} title="Authority and approvals">
@@ -366,7 +398,7 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
               <DocSection n={9} title="Provenance appendix">
                 <p className="text-sm text-slate-700">
                   This artifact derives from the following leaf sources (ADR-0022 flattened trace):{" "}
-                  <span className="font-mono text-xs text-slate-800">{vm.provenanceAppendix.join(", ")}</span>
+                  <span className="break-all font-mono text-xs text-slate-800">{vm.provenanceAppendix.join(", ")}</span>
                 </p>
                 <p className="text-sm text-slate-600">
                   Every input is currently synthetic or demo-entered, so this record is a demonstration and is excluded from the real

@@ -4,6 +4,7 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT } from "../model";
 import type {
+  ChoiceEffectVM,
   MoneyMovementSetupVM,
   SetupFirmId,
   SetupPolicyGroupVM,
@@ -13,6 +14,7 @@ import {
   CategoryLabel,
   DemoNotice,
   PolicyChoiceGroup,
+  TruthBadge,
   selectedOption,
 } from "./setup-shared";
 
@@ -69,18 +71,15 @@ export function ChoicesBody({
 
 function ImpactFirmCard({
   firmId,
-  summary,
-  detail,
-  status,
+  firmLabel,
+  effect,
   signed,
 }: {
   firmId: SetupFirmId;
-  summary: string;
-  detail: string;
-  status: { status: string; label: string };
+  firmLabel: string;
+  effect: ChoiceEffectVM;
   signed: boolean;
 }) {
-  const firmLabel = firmId === "firm-a" ? "Firm A" : "Firm B";
   return (
     <article
       className="min-w-0 rounded-lg border border-slate-200 bg-white p-4"
@@ -88,10 +87,10 @@ function ImpactFirmCard({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900">{firmLabel}</h3>
-        <StatusBadge status={status.status} label={status.label} />
+        <StatusBadge status={effect.status.status} label={effect.status.label} />
       </div>
-      <p className="mt-2 text-sm font-medium text-slate-900">{summary}</p>
-      <p className="mt-1 text-xs text-slate-600">{detail}</p>
+      <p className="mt-2 text-sm font-medium text-slate-900">{effect.summary}</p>
+      <p className="mt-1 text-xs text-slate-600">{effect.detail}</p>
       {signed ? null : (
         <p className="mt-2 text-xs text-slate-800" data-testid={`impact-${firmId}-varied`}>
           Projected under the current selection. This outcome is not the one the signed case records.
@@ -116,11 +115,14 @@ export function ImpactBody({
       />
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         {vm.impacts.map((impact) => {
-          const a = impact.groupId
-            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-a")
+          const group = impact.groupId
+            ? vm.policyGroups.find((candidate) => candidate.id === impact.groupId)
+            : undefined;
+          const a = group
+            ? selectedOption(vm.policyGroups, selections, group.id, "firm-a")
             : null;
-          const b = impact.groupId
-            ? selectedOption(vm.policyGroups, selections, impact.groupId, "firm-b")
+          const b = group
+            ? selectedOption(vm.policyGroups, selections, group.id, "firm-b")
             : null;
           const varied = (a !== null && a.truthLabel !== "Signed") || (b !== null && b.truthLabel !== "Signed");
           return (
@@ -139,22 +141,20 @@ export function ImpactBody({
                 {impact.title}
               </h2>
               <p className="mt-1 text-xs text-slate-600">{impact.facts}</p>
-              {a && b ? (
+              {group && a?.signedCaseEffect && b?.signedCaseEffect ? (
                 <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-                  <ImpactFirmCard
-                    firmId="firm-a"
-                    summary={a.signedCaseEffect.summary}
-                    detail={a.signedCaseEffect.detail}
-                    status={a.signedCaseEffect.status}
-                    signed={a.truthLabel === "Signed"}
-                  />
-                  <ImpactFirmCard
-                    firmId="firm-b"
-                    summary={b.signedCaseEffect.summary}
-                    detail={b.signedCaseEffect.detail}
-                    status={b.signedCaseEffect.status}
-                    signed={b.truthLabel === "Signed"}
-                  />
+                  {group.firms.map((firm) => {
+                    const option = firm.firmId === "firm-a" ? a : b;
+                    return (
+                      <ImpactFirmCard
+                        key={firm.firmId}
+                        firmId={firm.firmId}
+                        firmLabel={firm.firmLabel}
+                        effect={option.signedCaseEffect!}
+                        signed={option.truthLabel === "Signed"}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
@@ -209,7 +209,10 @@ export function ActivationBody({
                 return (
                   <div key={group.id}>
                     <dt className="text-xs text-slate-600">{group.title}</dt>
-                    <dd className="text-slate-900">{option.label}</dd>
+                    <dd className="flex flex-wrap items-center gap-2 text-slate-900">
+                      {option.label}
+                      <TruthBadge truthLabel={option.truthLabel} />
+                    </dd>
                   </div>
                 );
               })}

@@ -25,6 +25,7 @@ import {
   OBSERVED_GC09_BALANCE,
   OBSERVED_STALE,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
   type SignedLiquidityCase,
 } from "./data";
@@ -34,6 +35,14 @@ import {
 function usd(minor: number): string {
   return `$${(minor / 100).toLocaleString("en-US")}`;
 }
+
+/** ONE display name per profile. Every step - the roles table, the choice legends,
+ * the impact headings, the outcome framing - reads it from here, so a profile can
+ * never carry two names inside one wizard. */
+const FIRM_LABELS: Readonly<Record<SetupFirmId, string>> = {
+  "firm-a": "Firm A",
+  "firm-b": "Firm B",
+};
 
 function factsLine(liquidity: SignedLiquidityCase): string {
   return `${usd(liquidity.availableMinor)} available · ${usd(liquidity.pendingMinor)} pending · same ${usd(liquidity.requestMinor)} request`;
@@ -99,6 +108,9 @@ function reserveOption(
   };
 }
 
+/** No `signedCaseEffect`: no signed-impact card compares the freshness group, so a
+ * second copy of the GC-09 wording here would be unreachable and free to drift from
+ * the `stale-withdrawals` card that owns it. */
 function freshnessOption(days: number, truthLabel: SetupChoiceOptionVM["truthLabel"]): SetupChoiceOptionVM {
   return {
     id: `${days}-days`,
@@ -110,12 +122,6 @@ function freshnessOption(days: number, truthLabel: SetupChoiceOptionVM["truthLab
       "Fresh",
       "The Smiths reserve evidence is fresh under this window.",
       "The observation is recent and remains pinned to the input bundle.",
-    ),
-    signedCaseEffect: effect(
-      "blocked",
-      "Blocked",
-      `Planned-withdrawal evidence observed ${OBSERVED_STALE} is 47 days old.`,
-      `GC-09 requires a fresh planned-withdrawal snapshot before reevaluation. Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}.`,
     ),
   };
 }
@@ -167,9 +173,12 @@ function bankOption(
 
 function thresholdOption(
   amountUsd: number,
-  requiresDualApproval: boolean,
   truthLabel: SetupChoiceOptionVM["truthLabel"],
 ): SetupChoiceOptionVM {
+  // Derived, never hand-encoded: the evaluator answers the same question the same way
+  // (CANONICAL_REQUEST vs the threshold), so step 4's promise cannot outlive a change
+  // to the signed request amount while step 8 quietly disagrees.
+  const requiresDualApproval = CANONICAL_REQUEST.amountMinor > amountUsd * 100;
   return {
     id: `${amountUsd}`,
     label: `Above $${amountUsd.toLocaleString("en-US")}`,
@@ -204,6 +213,8 @@ function thresholdOption(
   };
 }
 
+/** No `signedCaseEffect` for the same reason as `freshnessOption`: no impact card
+ * compares the expiry group. */
 function expiryOption(
   id: string,
   label: string,
@@ -220,12 +231,6 @@ function expiryOption(
       label,
       "The operations stage records both escalation and expiry.",
     ),
-    signedCaseEffect: effect(
-      "suspended",
-      "Expired and escalated",
-      "The unactioned stage expires and creates escalation work",
-      "GC-16 records both events and no automatic approval.",
-    ),
   };
 }
 
@@ -234,7 +239,7 @@ function firmChoices(
   initialOptionId: string,
   options: readonly SetupChoiceOptionVM[],
 ): FirmChoiceVM {
-  return { firmId, initialOptionId, options };
+  return { firmId, firmLabel: FIRM_LABELS[firmId], initialOptionId, options };
 }
 
 function group(
@@ -255,8 +260,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
   const freshB = [freshnessOption(7, "Supported"), freshnessOption(14, "Supported"), freshnessOption(30, "Recommended")];
   const bankA = [bankOption("specialist", "Signed"), bankOption("block", "Supported")];
   const bankB = [bankOption("specialist", "Supported"), bankOption("block", "Signed")];
-  const thresholdA = [thresholdOption(25_000, true, "Signed"), thresholdOption(50_000, true, "Supported"), thresholdOption(100_000, false, "Supported")];
-  const thresholdB = [thresholdOption(25_000, true, "Supported"), thresholdOption(50_000, true, "Supported"), thresholdOption(100_000, false, "Signed")];
+  const thresholdA = [thresholdOption(25_000, "Signed"), thresholdOption(50_000, "Supported"), thresholdOption(100_000, "Supported")];
+  const thresholdB = [thresholdOption(25_000, "Supported"), thresholdOption(50_000, "Supported"), thresholdOption(100_000, "Signed")];
   const expiryA = [
     expiryOption("4h-2d", "Escalate after 4 hours · expire after 2 days", "Supported"),
     expiryOption("1d-3d", "Escalate after 1 day · expire after 3 days", "Signed"),
@@ -281,8 +286,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "proof", shortLabel: "Proof", kicker: "Step 9 · Complete trace", title: "Every outcome has a proof trail", description: "Evidence, policy, disposition, authority, execution reachability, and proof limits remain visible through export.", primaryLabel: "Export decision record" },
     ],
     profiles: [
-      { firmId: "firm-a", firmLabel: "Firm A", name: "Northstar Wealth demonstration profile", draftVersion: "FA-MM-DEMO-1.0", activeVersion: "FA-4.2", lastApproval: "May 1, 2026 · synthetic history", description: "Starts from the same conservative posture, then adopts the signed Firm A reserve, threshold, and recent-change handling.", fakeClass: "synthetic-fixture" },
-      { firmId: "firm-b", firmLabel: "Firm B", name: "Harbor Ridge demonstration profile", draftVersion: "FB-MM-DEMO-1.0", activeVersion: "FB-2.1", lastApproval: "Jun 18, 2026 · synthetic history", description: "Uses the same required safety controls while expressing a different reserve and evidence posture.", fakeClass: "synthetic-fixture" },
+      { firmId: "firm-a", firmLabel: FIRM_LABELS["firm-a"], name: "Northstar Wealth demonstration profile", draftVersion: "FA-MM-DEMO-1.0", activeVersion: "FA-4.2", lastApproval: "May 1, 2026 · synthetic history", description: "Starts from the same conservative posture, then adopts the signed Firm A reserve, threshold, and recent-change handling.", fakeClass: "synthetic-fixture" },
+      { firmId: "firm-b", firmLabel: FIRM_LABELS["firm-b"], name: "Harbor Ridge demonstration profile", draftVersion: "FB-MM-DEMO-1.0", activeVersion: "FB-2.1", lastApproval: "Jun 18, 2026 · synthetic history", description: "Uses the same required safety controls while expressing a different reserve and evidence posture.", fakeClass: "synthetic-fixture" },
     ],
     controls: [
       { id: "pinned-inputs", title: "Pinned policy and evidence", description: "Every decision binds to an immutable policy version and evidence snapshot.", proof: "Version references and input hash" },
@@ -313,7 +318,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     ],
     impacts: [
       { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: `Same request · changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · independent verification absent`, groupId: "bank-change" },
-      { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · 47 days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
+      { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
       { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
       { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
       { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: "A new evidence snapshot changes the input hash", groupId: null, universalEffect: "Prior authority is voided for both firms. Evidence, validation, policy, disposition, and authority rerun against the new bundle." },
@@ -343,6 +348,10 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
         { label: "Execution capability", value: "ACH through labeled fake adapter only", category: "Adapter fact", provenance: prov("fake-adapter-response", DEMO_NOW), fakeClass: "fake-adapter-response" },
         { label: "Authority invariant", value: "Blocked and prohibited decisions carry no approval authority", category: "Regulatory or product constraint", provenance: prov("deterministic-engine-output", DEMO_NOW), fakeClass: "deterministic-engine-output" },
       ],
+    },
+    comparison: {
+      question: "What does each active profile require for the same recent, unverified bank instruction?",
+      fairness: `${FIRM_LABELS["firm-a"]} is not the winner and ${FIRM_LABELS["firm-b"]} is not wrong. Both outcomes honor the same safety contract.`,
     },
     proof: {
       engineLabel: "Labeled deterministic presentation builder · not production evaluator output",

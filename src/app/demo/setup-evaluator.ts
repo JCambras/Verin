@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
-import { buildDisposition, type ApprovalClock } from "./build-decision";
+import { buildDisposition } from "./build-decision";
 import { buildMoneyMovementSetup } from "./build-setup";
 import { buildRecord } from "./build-summary";
 import {
+  APPROVAL_CLOCKS,
   CANONICAL_REQUEST,
   DEMO_NOW,
   FIRMS,
@@ -15,10 +16,15 @@ import {
   type DecisionConfiguration,
   type FirmData,
 } from "./data";
-import { RESERVE_FLOOR_INPUTS, derivedMetric } from "./provenance";
+import { ACTIVATED_RESERVE_HORIZON, RESERVE_FLOOR_INPUTS, derivedMetric } from "./provenance";
 import {
+  POSTURE_CONFIGURATION_LABEL,
+  POSTURE_OPTION_LABEL,
+  POSTURE_STATUS,
   SETUP_FIRM_IDS,
   SETUP_POLICY_GROUP_IDS,
+  configurationPosture,
+  optionPosture,
   type MoneyMovementSetupVM,
   type SetupActivatedSnapshotVM,
   type SetupActivationResult,
@@ -26,6 +32,7 @@ import {
   type SetupPolicyGroupId,
   type SetupProofFirmVM,
   type SetupSelections,
+  type SetupTruthLabel,
 } from "./setup-model";
 import type { RecordVM } from "./model";
 import { evaluateAuthorityPlan } from "./setup-authority";
@@ -50,25 +57,6 @@ const THRESHOLD_MINOR: Readonly<Record<string, number>> = {
   "50000": 5_000_000,
   "100000": 10_000_000,
 };
-type SetupApprovalClock = ApprovalClock & { readonly id: string };
-const APPROVAL_CLOCKS: Readonly<Record<string, SetupApprovalClock>> = {
-  "4h-2d": {
-    id: "4h-2d",
-    escalation: "Escalates after 4 hours",
-    expiry: "Expires after 2 days",
-  },
-  "1d-3d": {
-    id: "1d-3d",
-    escalation: "Escalates after 1 day",
-    expiry: "Expires after 3 days",
-  },
-  "2d-5d": {
-    id: "2d-5d",
-    escalation: "Escalates after 2 days",
-    expiry: "Expires after 5 days",
-  },
-} as const;
-
 function digest(value: readonly unknown[]): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -177,7 +165,11 @@ function validateSelections(
   return null;
 }
 
-function matchesSignedProfile(
+/** Whether every selected option is still the firm's ACTIVE-profile value. This decides
+ * policy VERSION identity (an untouched profile keeps FA-4.2 / FB-2.1); it deliberately
+ * does NOT decide signoff - a firm's default can be a house recommendation the captain
+ * never signed, which is exactly why the two questions have separate answers. */
+function matchesActiveProfile(
   vm: MoneyMovementSetupVM,
   firmId: SetupFirmId,
   selections: SetupSelections,
@@ -186,6 +178,17 @@ function matchesSignedProfile(
     const firm = group.firms.find((candidate) => candidate.firmId === firmId);
     return firm?.initialOptionId === selections[firmId][group.id];
   });
+}
+
+/** The truth label of each selected option, in group order. */
+function selectedTruthLabels(
+  vm: MoneyMovementSetupVM,
+  firmId: SetupFirmId,
+  selections: SetupSelections,
+): readonly SetupTruthLabel[] {
+  return SETUP_POLICY_GROUP_IDS.map(
+    (groupId) => optionFor(vm, firmId, groupId, selections[firmId][groupId])!.truthLabel,
+  );
 }
 
 function runtimeFirm(
@@ -230,7 +233,8 @@ function evaluateFirm(
   snapshotHash: string,
 ): Omit<SetupProofFirmVM, "exportHref"> {
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
-  const signed = matchesSignedProfile(vm, firmId, selections);
+  const activeProfile = matchesActiveProfile(vm, firmId, selections);
+  const posture = configurationPosture(selectedTruthLabels(vm, firmId, selections));
   const configurationHash = digest([
     "verin-demo-profile-configuration-v1",
     firmId,
@@ -239,7 +243,7 @@ function evaluateFirm(
       selections[firmId][groupId],
     ]),
   ]);
-  const policyVersion = signed
+  const policyVersion = activeProfile
     ? profile.activeVersion
     : `${firmId === "firm-a" ? "FA" : "FB"}-MM-DEMO-${configurationHash
         .slice(0, 12)
@@ -263,7 +267,7 @@ function evaluateFirm(
       ? "proceed"
       : "blocked";
   const scenario = scenarioById(SETUP_SCENARIO_ID);
-  const disposition = buildDisposition(scenario, firm, kind);
+  const disposition = buildDisposition(scenario, firm, kind, ACTIVATED_RESERVE_HORIZON);
   const identity = decisionIdentityFor(scenario, firm, {
     configuration,
     disposition: disposition.kind,
@@ -278,10 +282,15 @@ function evaluateFirm(
     dualApproval,
     approvalClock,
   );
-  const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => ({
-    groupId,
-    label: optionFor(vm, firmId, groupId, selections[firmId][groupId])!.label,
-  }));
+  const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
+    const option = optionFor(vm, firmId, groupId, selections[firmId][groupId])!;
+    return {
+      groupId,
+      groupTitle: vm.policyGroups.find((group) => group.id === groupId)!.title,
+      label: option.label,
+      posture: optionPosture(option.truthLabel),
+    };
+  });
   return {
     firmId,
     firmLabel: profile.firmLabel,
@@ -293,9 +302,8 @@ function evaluateFirm(
     bundleHash: identity.bundleHash,
     policyVersion,
     configurationHash,
-    configurationProvenance: signed
-      ? "Captain-signed configuration"
-      : "Demonstration-only configuration",
+    configurationPosture: posture,
+    configurationProvenance: POSTURE_CONFIGURATION_LABEL[posture],
     disposition,
     authorityPlan: evaluatedAuthority,
     reserveMetric: derivedMetric(
@@ -419,8 +427,11 @@ export function buildActivatedRecord(
         snapshotVersion: snapshot.snapshotVersion,
         snapshotHash: snapshot.snapshotHash,
         configurationHash: evaluated.configurationHash,
+        configurationPostureStatus: POSTURE_STATUS[evaluated.configurationPosture],
+        configurationPostureLabel: POSTURE_OPTION_LABEL[evaluated.configurationPosture],
         configurationProvenance: evaluated.configurationProvenance,
       },
+      reserveHorizon: ACTIVATED_RESERVE_HORIZON,
     },
   );
 }

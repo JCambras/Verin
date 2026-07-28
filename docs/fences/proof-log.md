@@ -5717,8 +5717,12 @@ activated `reserveMonths`, so an examiner-grade artifact can never contradict it
 
 **Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` activates each supported
 horizon, exports the Firm A record, and runs `reserveHorizonViolations` over the rendered
-prose, the snapshot's reserve figure, and the record's headroom figure - re-deriving the
-expected floor and headroom from the domain projection rather than from the builder.
+prose and over the record's OWN `reserve.floor` and `reserve.headroom` - the exact
+`DisplayMetric` objects `src/app/demo/surfaces/record.tsx` renders through `<Metric>` -
+re-deriving the expected floor and headroom from the domain projection rather than from
+the builder. All three claims are on the exported artifact (extended 2026-07-28; see
+PF-setup-22: the floor and headroom were added to the record so this title is literally
+true rather than partly aspirational).
 
 **Adversarial proof:** the prose was temporarily returned to its 6-vs-12 ternary and then
 to a nine-month-prints-"twelve" variant. Both failed with the owning source line:
@@ -5828,3 +5832,200 @@ TTL comparison offset by a day → "expires entries…" failed: expected {…} t
 ```
 
 Each injection was reverted; the suite then passed all five tests.
+
+## PF-setup-20 · a configuration claims only the authority its choices carry
+
+**Date:** 2026-07-28.
+
+**Invariant:** a closed choice carries one of THREE authority postures - captain-signed,
+recommended-but-not-signed, or supported house default - and a whole configuration takes
+the WEAKEST posture of the options it selected. The untouched Firm B profile keeps its
+FB-2.1 identity, but two of its five defaults are only recommended, so it may not render
+or export a captain-signed provenance claim. The exported claim is never stronger than
+the screen that produced it.
+
+**Fence:** `configurationPostureViolations` in
+`src/__tests__/fitness/demo-semantic-truth.test.ts` re-derives each firm's posture from
+the COMPLETE truth-label set of its selected options and compares it against what the
+snapshot claims and what `buildActivatedRecord` exports.
+
+**Adversarial proof:** the evaluator was temporarily returned to deciding signedness from
+`initialOptionId` equality. The production check failed with the owning source line:
+
+```text
+src/app/demo/setup-evaluator.ts:306 :: firm-b renders "Captain-signed configuration" for posture "recommended"
+src/app/demo/setup-evaluator.ts:306 :: firm-b exports a captain-signed claim while 2 of its choices are only [Recommended, Recommended]
+```
+
+The injection was reverted. A planted companion feeds the detector a signed claim over a
+label set containing `Recommended`. E2E asserts the three distinct states on the option
+cards (accessible names `6 months Captain-signed` vs
+`30 calendar days Recommended · not signed`), on the outcome cards, and on the exported
+record.
+
+## PF-setup-21 · one datum renders one observation date
+
+**Date:** 2026-07-28.
+
+**Invariant:** `SMITHS_LIQUIDITY.availableMinor` IS `ACCOUNTS[0].balanceMinor`, so the
+accounts row and the liquidity block are the same dollars and must state the same
+observation date. F3 stands - available cash is FRESH on GC-09 - and the accounts row is
+brought along with it rather than left on the older stamp. The as-of and freshness
+concepts stay separate; only the observation date for one identical datum is unified.
+
+**Fence:** `observationDateViolations` in
+`src/__tests__/fitness/demo-semantic-truth.test.ts` groups every displayed metric on the
+workspace and evidence screens by value and fails when one value carries more than one
+`asOf`, across the stale-evidence, recent-bank-change, and safe-proceed branches.
+
+**Adversarial proof:** the accounts row was temporarily returned to the unconditional
+`OBSERVED_RECENT` stamp. The production check failed with the owning source line:
+
+```text
+src/app/demo/build-context.ts:44 :: stale-evidence workspace renders currency-minor:42000000 under 2 observation dates - account Smith Family Taxable as of 2026-07-24; available liquidity as of 2026-07-26
+```
+
+The injection was reverted. A planted companion feeds the detector one value under two
+dates, and the e2e asserts the taxable account reads 2026-07-26 while the unrelated Joint
+Taxable balance stays on 2026-07-24.
+
+## PF-setup-22 · the record prints the arithmetic its horizon prose claims
+
+**Date:** 2026-07-28.
+
+**Invariant:** the decision record states a reserve horizon in prose AND prints the
+derived reserve floor and post-reserve headroom beside it, both through `<Metric>` with
+full ADR-0022 provenance and both from the one signed `projectReserve` source the setup
+and decision surfaces read. PF-setup-15's claim is now literally true: the prose, the
+floor, and the headroom are all ON the exported artifact.
+
+**Fence:** `reserveHorizonViolations` now reads `record.reserve.floor` and
+`record.reserve.headroom` - the exact objects `src/app/demo/surfaces/record.tsx` renders -
+for every supported horizon, and re-derives both from the domain projection. A companion
+check asserts the record's floor equals the setup step's frozen figure.
+
+**Adversarial proof:** the record's floor was temporarily computed from a fixed
+twelve-month firm. The production check failed with the owning source line:
+
+```text
+src/app/demo/build-decision.ts:78 :: the printed reserve floor 9600000 is not 6 months of the signed 800000 schedule
+```
+
+The injection was reverted. E2E asserts $48,000 / $297,000 for Firm A, $96,000 / $249,000
+for Firm B, and $72,000 / $273,000 under a nine-month activation, and walks the exported
+record at 390, 768, 1024, and 1440 CSS pixels plus 200 percent text with overflow and axe
+checks. That responsive pass caught and fixed a real pre-existing defect: the record's
+mono identifiers lacked `break-all` and overflowed the viewport at 200 percent text.
+
+## PF-setup-23 · derived figures declare every leaf they stand on
+
+**Date:** 2026-07-28.
+
+**Invariant:** the post-reserve headroom is computed FROM the reserve floor, so it may
+never trace to a narrower set of leaf sources than the floor does (ADR-0022's flattening
+rule). The reserve horizon is a FIRMS fixture on the journey and an administrator entry
+after activation, so its leaf class is passed in rather than assumed.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares the flattened
+`derivedFrom` of `record.reserve.floor` and `record.reserve.headroom` on BOTH the
+activated record and the fixture-journey record, and asserts the activated floor reaches
+`user-input` while the journey floor does not.
+
+**Adversarial proof:** the record's floor was temporarily built with the default fixture
+horizon while the snapshot stayed administrator-activated. The production check failed:
+
+```text
+AssertionError: expected [ 'fixture' ] to include 'user-input'
+```
+
+The injection was reverted.
+
+## PF-setup-24 · derived staleness, derived thresholds, one clock, one name
+
+**Date:** 2026-07-28. Four same-class corrections, each fenced and each proven.
+
+**Invariants and proofs:**
+
+1. *The GC-09 age and policy allowance are derived.* `PLANNED_WITHDRAWAL_STALE_AGE_DAYS`
+   comes from `OBSERVED_STALE`/`DEMO_NOW` and the allowance from
+   `decisionConfigurationFor(...).freshnessDays`. `staleAgeViolations` covers the impact
+   card AND the blocker. Injection: the literal "47 days old" restored while the demo
+   clock moved to 2026-08-10 -
+
+   ```text
+   src/app/demo/build-setup.ts:321 :: the GC-09 impact card reads "Planned-withdrawal evidence observed 2026-06-09 · 47 days old" instead of the 62 days derived from 2026-06-09
+   ```
+
+2. *The dual-approval promise is derived.* `thresholdOption` computes it from
+   `CANONICAL_REQUEST.amountMinor` exactly as the evaluator does. Injection: a
+   hand-encoded `amountUsd >= 25_000` -
+
+   ```text
+   firm-a:100000 promises dual approval Two distinct operations approvers are required for a 7500000 request: expected true to be false
+   ```
+
+3. *One approval-clock catalog.* `APPROVAL_CLOCKS` moved to `data.ts`; the journey default
+   IS `APPROVAL_CLOCKS["1d-3d"]`, the same entry `decisionConfigurationFor` hashes.
+   Injection: the duplicated literal restored in `buildStages` and the catalog entry's
+   expiry changed -
+
+   ```text
+   expect(stage?.expiry).toBe(clock!.expiry) → Expected: "Expires after 72 hours"  Received: "Expires after 3 days"
+   ```
+
+4. *One name per profile (RULE D).* No demo surface may spell a firm display name.
+   Injection: `{vm.profiles[0].firmLabel}` replaced with the literal `Firm A` -
+
+   ```text
+   src/app/demo/surfaces/setup-governance.tsx:99 :: "Firm A" spells a firm display name - render firmLabel from the view model instead (one profile, one name)
+   ```
+
+Every injection was reverted. Planted companions cover all four: a hand-typed age with a
+shifted clock, a hand-encoded threshold flag, a diverging clock, and a firmId ternary plus
+a bare JSX heading (two files, three violations, each with its own file:line).
+
+## PF-setup-25 · unreachable signed-case copy cannot sit in the builder
+
+**Date:** 2026-07-28.
+
+**Invariant:** `signedCaseEffect` exists only on the groups a signed-impact card actually
+compares (`reserve`, `bank-change`, `threshold`). The freshness and expiry groups carried
+one no surface could reach - and the freshness copy was a second, driftable statement of
+the GC-09 wording the `stale-withdrawals` card owns (charter #5).
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` derives the set of compared
+groups from `vm.impacts` and fails BOTH ways: a compared group whose options lack the
+effect, and an uncompared group whose options carry one.
+
+**Adversarial proof:** the deleted GC-09 copy was temporarily restored on
+`freshnessOption`. The production check failed with the owning source line, once per
+unreachable option:
+
+```text
+src/app/demo/build-setup.ts:98 :: firm-a:freshness:7-days carries a signed-case effect no impact card renders - ship it or delete it (charter #5)
+src/app/demo/build-setup.ts:98 :: firm-a:freshness:14-days carries a signed-case effect no impact card renders - ship it or delete it (charter #5)
+...
+```
+
+The injection was reverted. `RecordBuildOptions.approvalClock` and `buildApprovals`'
+unreachable fourth parameter were deleted in the same change; `buildStages` now reads the
+shared catalog directly and the evaluator-owned frozen stages (F9) are untouched.
+
+## PF-setup-26 · a fence that cannot name its owner fails loudly
+
+**Date:** 2026-07-28.
+
+**Invariant:** `sourceRef` resolves the implementation line a violation OWNS. It used to
+fall back to `:1` when its needle went stale, which silently degrades every message in
+that detector into an unactionable pointer (charter #4: detection is not verification).
+
+**Fence:** `sourceRef` now THROWS when the needle no longer matches, and the two detectors
+whose anchors were only resolved on the violation path now resolve them on the green path.
+A new companion drifts three firm-configuration fields and asserts each violation names a
+real `src/app/demo/data.ts:<line>` and never `data.ts:1`.
+
+**Adversarial proof:** the prose rewrite in this same change made the old
+`"months of planned withdrawals in cash"` needle stale, and the reserve-horizon injection
+above printed `src/app/demo/build-decision.ts:1` before the anchor was corrected to
+`export function reserveHorizonPhrase`. With `sourceRef` hardened, the same staleness now
+fails the suite outright instead of reporting line 1.

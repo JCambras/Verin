@@ -19,8 +19,14 @@ export const RETRIEVED_AT = "Jul 26, 09:14";
 export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
 export const OBSERVED_BANK_INSTRUCTION_CHANGED = "2026-07-22";
 export const OBSERVED_GC09_BALANCE = "2026-07-26";
-export const OBSERVED_STALE = "2026-06-09"; // 47 days old: visibly receded, over policy age
+export const OBSERVED_STALE = "2026-06-09"; // visibly receded, over policy age
 export const DEADLINE = "August 15, 2026";
+
+/** How old the GC-09 planned-withdrawal snapshot is at the demo clock. DERIVED from
+ * the signed observation, never typed beside it: a hand-written age drifts silently
+ * the moment either date moves. */
+export const PLANNED_WITHDRAWAL_STALE_AGE_DAYS =
+  (Date.parse(DEMO_NOW) - Date.parse(OBSERVED_STALE)) / 86_400_000;
 
 // ── The Smiths household (contract §2; scenarios.yaml household.required_shape) ──────
 export const HOUSEHOLD = {
@@ -122,6 +128,11 @@ export const CANONICAL_REQUEST = {
  */
 export interface SignedLiquidityCase {
   readonly caseRef: string;
+  /** The account row whose displayed balance IS this basis's available cash, or null
+   * when the case states a basis no account fixture renders. Naming it keeps ONE
+   * observation date on one datum: the account row and the liquidity block are the
+   * same dollars, so they can never be stamped "as of" two different days. */
+  readonly availableAccountId: string | null;
   readonly availableMinor: number;
   readonly pendingMinor: number;
   readonly requestMinor: number;
@@ -131,6 +142,7 @@ export interface SignedLiquidityCase {
  * balance is read from the account fixture rather than restated. */
 export const SMITHS_LIQUIDITY: SignedLiquidityCase = {
   caseRef: "GC-01 / GC-02",
+  availableAccountId: ACCOUNTS[0]!.id,
   availableMinor: ACCOUNTS[0]!.balanceMinor,
   pendingMinor: 0,
   requestMinor: CANONICAL_REQUEST.amountMinor,
@@ -140,6 +152,7 @@ export const SMITHS_LIQUIDITY: SignedLiquidityCase = {
  * disposition, so the setup's low-headroom card reads it instead of restating it. */
 export const LOW_HEADROOM_LIQUIDITY: SignedLiquidityCase = {
   caseRef: "GC-05",
+  availableAccountId: null,
   availableMinor: 16_000_000,
   pendingMinor: 2_000_000,
   requestMinor: CANONICAL_REQUEST.amountMinor,
@@ -151,6 +164,24 @@ export interface DecisionIdentity {
   readonly decisionHash: string;
   readonly bundleHash: string;
 }
+
+/**
+ * The closed catalog of normal-approval clocks. ONE source, because the clock id is
+ * what the configuration hashes: a second copy of the strings would let a printed
+ * clock disagree with the id the bundle hash says both configurations name.
+ */
+export interface ApprovalClock {
+  readonly id: string;
+  readonly escalation: string;
+  readonly expiry: string;
+}
+export const APPROVAL_CLOCKS: Readonly<Record<string, ApprovalClock>> = {
+  "4h-2d": { id: "4h-2d", escalation: "Escalates after 4 hours", expiry: "Expires after 2 days" },
+  "1d-3d": { id: "1d-3d", escalation: "Escalates after 1 day", expiry: "Expires after 3 days" },
+  "2d-5d": { id: "2d-5d", escalation: "Escalates after 2 days", expiry: "Expires after 5 days" },
+} as const;
+/** The clock the fixture journey runs under, and the id its configuration hashes. */
+export const DEFAULT_APPROVAL_CLOCK: ApprovalClock = APPROVAL_CLOCKS["1d-3d"]!;
 
 export interface DecisionConfiguration {
   readonly policyVersion: string;
@@ -255,7 +286,7 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
     approvalsRequired: firm.approvalsRequired,
     eligibleRole: firm.eligibleRole,
     requesterConstraint: firm.requesterConstraint,
-    approvalClockId: "1d-3d",
+    approvalClockId: DEFAULT_APPROVAL_CLOCK.id,
     activatedSnapshotHash: null,
   };
 }

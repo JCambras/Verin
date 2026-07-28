@@ -90,18 +90,81 @@ export interface ChoiceEffectVM {
   readonly reachesAuthority?: boolean;
 }
 
+/**
+ * What a closed choice ACTUALLY carries. Three states, never two: "Recommended" is a
+ * house recommendation the captain has not signed, and describing it as captain-signed
+ * makes the exported provenance claim stronger than the screen that produced it.
+ */
+export type SetupTruthLabel = "Signed" | "Recommended" | "Supported";
+export type SetupAuthorityPosture = "signed" | "recommended" | "house-default";
+
+const POSTURE_OF_LABEL: Record<SetupTruthLabel, SetupAuthorityPosture> = {
+  Signed: "signed",
+  Recommended: "recommended",
+  Supported: "house-default",
+};
+
+/** The weakest posture in a set governs the whole: one unsigned choice means the
+ * configuration is not captain-signed, whichever other four are. */
+const POSTURE_STRENGTH: Record<SetupAuthorityPosture, number> = {
+  signed: 2,
+  recommended: 1,
+  "house-default": 0,
+};
+
+export function optionPosture(truthLabel: SetupTruthLabel): SetupAuthorityPosture {
+  return POSTURE_OF_LABEL[truthLabel];
+}
+
+/** Derived from the COMPLETE truth-label set of the selected options - never from
+ * "did the operator touch the defaults", which says nothing about signoff. */
+export function configurationPosture(
+  truthLabels: readonly SetupTruthLabel[],
+): SetupAuthorityPosture {
+  return truthLabels.reduce<SetupAuthorityPosture>((weakest, label) => {
+    const posture = optionPosture(label);
+    return POSTURE_STRENGTH[posture] < POSTURE_STRENGTH[weakest] ? posture : weakest;
+  }, "signed");
+}
+
+/** The StatusBadge key each posture renders under, so the three states are visually
+ * distinct and not just differently worded. */
+export const POSTURE_STATUS: Record<SetupAuthorityPosture, string> = {
+  signed: "done",
+  recommended: "suspended",
+  "house-default": "pending",
+};
+
+/** The badge beside one option. */
+export const POSTURE_OPTION_LABEL: Record<SetupAuthorityPosture, string> = {
+  signed: "Captain-signed",
+  recommended: "Recommended · not signed",
+  "house-default": "Supported house default",
+};
+
+/** The provenance claim a whole configuration may make, on screen and on export. */
+export const POSTURE_CONFIGURATION_LABEL: Record<SetupAuthorityPosture, string> = {
+  signed: "Captain-signed configuration",
+  recommended: "Recommended configuration · pending captain signoff",
+  "house-default": "House-default demonstration configuration",
+};
+
 export interface SetupChoiceOptionVM {
   readonly id: string;
   readonly label: string;
   readonly detail?: string;
-  readonly truthLabel: "Signed" | "Recommended" | "Supported";
+  readonly truthLabel: SetupTruthLabel;
   readonly reserveMetric?: DisplayMetric;
   readonly smithsEffect: ChoiceEffectVM;
-  readonly signedCaseEffect: ChoiceEffectVM;
+  /** Present only for the groups a signed-impact card actually compares. A group no
+   * card reaches carries none, so an unreachable second copy of signed-case copy
+   * cannot sit here and drift from the card that owns it (charter #5). */
+  readonly signedCaseEffect?: ChoiceEffectVM;
 }
 
 export interface FirmChoiceVM {
   readonly firmId: SetupFirmId;
+  readonly firmLabel: string;
   readonly initialOptionId: string;
   readonly options: readonly SetupChoiceOptionVM[];
 }
@@ -172,6 +235,10 @@ export interface SetupProofFirmVM {
   readonly bundleHash: string;
   readonly policyVersion: string;
   readonly configurationHash: string;
+  /** The authority this exact configuration carries, derived from every selected
+   * option's truth label. Rendered as a distinct badge so the screen and the export
+   * make the same claim. */
+  readonly configurationPosture: SetupAuthorityPosture;
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
   readonly authorityPlan: {
@@ -189,7 +256,9 @@ export interface SetupProofFirmVM {
   readonly strongestProofDetail: string;
   readonly selectedOptions: readonly {
     readonly groupId: SetupPolicyGroupId;
+    readonly groupTitle: string;
     readonly label: string;
+    readonly posture: SetupAuthorityPosture;
   }[];
   readonly approvalClock: {
     readonly id: string;
@@ -205,6 +274,13 @@ export interface SetupProofVM {
   readonly exportQuestion: string;
   readonly exportHint: string;
   readonly exportError: string;
+}
+
+/** The outcome-step framing. It names both firms, so it is BUILT from the profile
+ * labels rather than typed into the surface - one profile can never carry two names. */
+export interface SetupComparisonVM {
+  readonly question: string;
+  readonly fairness: string;
 }
 
 export interface SetupActivatedSnapshotVM {
@@ -230,6 +306,7 @@ export interface MoneyMovementSetupVM {
   readonly impacts: readonly SignedImpactVM[];
   readonly activation: SetupActivationVM;
   readonly request: SetupRequestVM;
+  readonly comparison: SetupComparisonVM;
   readonly proof: SetupProofVM;
   readonly fakeClass: FakeClass;
 }

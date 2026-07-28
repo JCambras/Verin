@@ -13,7 +13,8 @@ import type {
 } from "../setup-model";
 import { ActivationBody, ChoicesBody, ImpactBody } from "./setup-choices";
 import { ControlsBody, PostureBody, ProfilesBody } from "./setup-governance";
-import { OutcomesBody, ProofBody, RequestBody } from "./setup-run";
+import { ProofBody } from "./setup-proof";
+import { OutcomesBody, RequestBody } from "./setup-run";
 import {
   SetupActionRow,
   SetupHeading,

@@ -51,18 +51,41 @@ export function derivedMetric(value: number, format: MetricFormat, inputs: reado
   return metric(value, format, deriveArtifactProvenance(inputs, asOf));
 }
 
+/** The leaves every reserve figure stands on. Named so a caller cannot quietly drop
+ * one: an omitted leaf is exactly how a derived figure claims a narrower lineage than
+ * the inputs it was computed from (ADR-0022's flattening rule). */
+const SIGNED_BALANCE = prov("synthetic-fixture", OBSERVED_RECENT);
+const SIGNED_PENDING = prov("synthetic-fixture", OBSERVED_RECENT);
+const SIGNED_SCHEDULE = prov("synthetic-fixture", OBSERVED_RECENT);
+const DEMO_REQUEST_AMOUNT = prov("user-entered-demo-input", DEMO_NOW);
+
+/** Where the reserve HORIZON came from. It is a FIRMS fixture on the journey and an
+ * administrator's closed choice after setup activation - the same arithmetic, a
+ * genuinely different leaf, so it is passed in rather than assumed. */
+export const FIXTURE_RESERVE_HORIZON: RecordProvenance = prov("synthetic-fixture", OBSERVED_RECENT);
+export const ACTIVATED_RESERVE_HORIZON: RecordProvenance = prov("user-entered-demo-input", DEMO_NOW);
+
+/** The reserve FLOOR is months x the signed monthly schedule. */
+export function reserveFloorInputs(horizon: RecordProvenance): readonly RecordProvenance[] {
+  return [SIGNED_BALANCE, SIGNED_SCHEDULE, horizon];
+}
+
+/** The post-reserve HEADROOM is the whole signed basis minus the floor, so it declares
+ * every leaf the floor declares PLUS the pending term and the request being decided.
+ * A headroom that traced narrower than its own reserve floor is the exact inversion
+ * ADR-0022 exists to prevent. */
+export function headroomInputs(horizon: RecordProvenance): readonly RecordProvenance[] {
+  return [SIGNED_BALANCE, SIGNED_PENDING, SIGNED_SCHEDULE, DEMO_REQUEST_AMOUNT, horizon];
+}
+
 /**
- * The ONE derivation trace behind every displayed reserve floor (ADR-0022). The floor
- * is months x the signed monthly schedule, so its leaf sources are the signed balance
- * and schedule fixtures PLUS the administrator-chosen horizon - the same $48,000 or
- * $96,000 figure must never carry a different trace depending on which step drew it,
- * so the setup step and the activated snapshot read this list instead of restating it.
+ * The ONE derivation trace behind every displayed reserve floor the ADMINISTRATOR's
+ * horizon produces (ADR-0022): the same $48,000 or $96,000 figure must never carry a
+ * different trace depending on which step drew it, so the setup step and the activated
+ * snapshot read this list instead of restating it.
  */
-export const RESERVE_FLOOR_INPUTS: readonly RecordProvenance[] = [
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("user-entered-demo-input", DEMO_NOW),
-];
+export const RESERVE_FLOOR_INPUTS: readonly RecordProvenance[] =
+  reserveFloorInputs(ACTIVATED_RESERVE_HORIZON);
 
 /** The demonstration provenance for the whole decision record (§9 watermark rules). */
 export function recordProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {

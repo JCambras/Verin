@@ -8,20 +8,30 @@
  * design language specifies (§5 disposition treatments, §7 authority surfaces).
  */
 import { metric } from "@contracts/metric";
+import type { RecordProvenance } from "@contracts/provenance";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
-import { derivedMetric, fact, prov } from "./provenance";
+import {
+  FIXTURE_RESERVE_HORIZON,
+  derivedMetric,
+  fact,
+  headroomInputs,
+  prov,
+  reserveFloorInputs,
+} from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
 import {
   CANONICAL_REQUEST,
   BANK_INSTRUCTION,
   CAST,
+  DEFAULT_APPROVAL_CLOCK,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
-  OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
+  decisionConfigurationFor,
   decisionIdentityFor,
   dispositionFor,
   type DecisionIdentity,
@@ -29,26 +39,44 @@ import {
   type ScenarioData,
 } from "./data";
 
-/** Reserve floor and post-reserve headroom under a firm's policy - DERIVED figures
- * (ADR-0022): computed from synthetic inputs, so they render as watermarked
- * demonstrations. The inputs list is the provenance trace, not a calculation cache.
- * The projection is fed the WHOLE signed basis - available, pending, and the request
- * being decided - so the journey and the setup cannot model one request two ways. */
-const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synthetic-fixture", OBSERVED_RECENT)];
-export function headroomMinor(firm: FirmData): number {
+/** The ONE reserve projection behind every displayed floor and headroom for a firm -
+ * DERIVED figures (ADR-0022): computed from synthetic inputs, so they render as
+ * watermarked demonstrations. The projection is fed the WHOLE signed basis -
+ * available, pending, and the request being decided - so the journey and the setup
+ * cannot model one request two ways. */
+function reserveProjectionFor(firm: FirmData) {
   return projectReserve({
     availableMinor: SMITHS_LIQUIDITY.availableMinor,
     pendingMinor: SMITHS_LIQUIDITY.pendingMinor,
     requestMinor: SMITHS_LIQUIDITY.requestMinor,
     plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
     reserveMonths: firm.reserveMonths,
-  }).headroomMinor;
+  });
 }
-export function headroomMetric(firm: FirmData) {
-  return derivedMetric(headroomMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
+export function headroomMinor(firm: FirmData): number {
+  return reserveProjectionFor(firm).headroomMinor;
+}
+/** `horizon` names where `firm.reserveMonths` came from: the FIRMS fixture on the
+ * journey, the administrator's closed choice after activation. */
+export function headroomMetric(firm: FirmData, horizon: RecordProvenance = FIXTURE_RESERVE_HORIZON) {
+  return derivedMetric(headroomMinor(firm), "currency-minor", headroomInputs(horizon), DEMO_NOW);
+}
+export function reserveFloorMetric(firm: FirmData, horizon: RecordProvenance = FIXTURE_RESERVE_HORIZON) {
+  return derivedMetric(
+    reserveProjectionFor(firm).requiredReserveMinor,
+    "currency-minor",
+    reserveFloorInputs(horizon),
+    DEMO_NOW,
+  );
 }
 export function amountMetric() {
   return metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
+}
+
+/** The horizon prose the record and the setup both print. Derived from the activated
+ * number so the words, the floor, and the headroom cannot disagree. */
+export function reserveHorizonPhrase(firm: FirmData): string {
+  return `${firm.reserveMonths} months of planned withdrawals`;
 }
 
 /** The §5 spine state-slot per disposition. */
@@ -69,7 +97,7 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   }
   if (spec.stalePlannedWithdrawals) {
     out.push({
-      condition: "Planned-withdrawal evidence is 47 days old; policy allows 30",
+      condition: `Planned-withdrawal evidence is ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old; policy allows ${decisionConfigurationFor(firm).freshnessDays}`,
       affordanceLabel: "Refresh planned-withdrawal evidence",
     });
   }
@@ -96,6 +124,7 @@ export function buildDisposition(
   scenario: ScenarioData,
   firm: FirmData,
   kind: DispositionKind = dispositionFor(scenario, firm.id),
+  horizon: RecordProvenance = FIXTURE_RESERVE_HORIZON,
 ): DispositionVM {
   if (kind === "prohibited") {
     return {
@@ -137,7 +166,7 @@ export function buildDisposition(
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
     figures: [
       { label: "Amount", metric: amountMetric() },
-      { label: "Available after this request and reserve", metric: headroomMetric(firm) },
+      { label: "Available after this request and reserve", metric: headroomMetric(firm, horizon) },
     ],
     authoritySummary,
     why: proceedWhy(firm, scenario.spec.bankChanged),
@@ -202,7 +231,7 @@ export function buildPolicyTrace(
         ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
         : "Satisfied after this movement",
       version: reserveCite,
-      why: { reason: `${firm.name} preserves ${firm.reserveMonths} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
+      why: { reason: `${firm.name} preserves ${reserveHorizonPhrase(firm)} in cash.`, regulation: `Firm policy ${reserveCite}` },
     },
     {
       order: 3,
@@ -234,23 +263,17 @@ export function buildPolicyTrace(
 }
 
 /** Approval stages. `phase` selects the recorded moment the surface shows: "gate"
- * (the authority surface mid-journey) or "final" (what the printable record shows). */
-export interface ApprovalClock {
-  readonly escalation: string;
-  readonly expiry: string;
-}
-
-const DEFAULT_APPROVAL_CLOCK: ApprovalClock = {
-  escalation: "Escalates after 1 day",
-  expiry: "Expires after 3 days",
-};
-
+ * (the authority surface mid-journey) or "final" (what the printable record shows).
+ * The clock is the SHARED catalog entry the fixture configuration hashes, so the
+ * printed escalation and expiry can never disagree with the hashed clock id. The
+ * setup-activated path never reaches here: its stages are evaluator-owned and frozen
+ * in the snapshot (F9). */
 export function buildStages(
   scenario: ScenarioData,
   firm: FirmData,
   phase: "gate" | "final",
-  approvalClock: ApprovalClock = DEFAULT_APPROVAL_CLOCK,
 ): ApprovalStageVM[] {
+  const approvalClock = DEFAULT_APPROVAL_CLOCK;
   const spec = scenario.spec;
   const stages: ApprovalStageVM[] = [];
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
@@ -334,11 +357,10 @@ export function buildApprovals(
   scenario: ScenarioData,
   firm: FirmData,
   identity: DecisionIdentity = decisionIdentityFor(scenario, firm),
-  approvalClock: ApprovalClock = DEFAULT_APPROVAL_CLOCK,
 ): ApprovalVM {
   return {
     spine: buildSpine("Authority"),
-    stages: buildStages(scenario, firm, "gate", approvalClock),
+    stages: buildStages(scenario, firm, "gate"),
     binding: { decisionHash: identity.decisionHash, bundleHash: identity.bundleHash },
     gate: {
       restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,

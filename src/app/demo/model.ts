@@ -295,7 +295,21 @@ export interface ActivatedConfigurationRecordVM {
   readonly snapshotVersion: string;
   readonly snapshotHash: string;
   readonly configurationHash: string;
+  /** The StatusBadge key and short wording for the authority this configuration
+   * actually carries, so the exported claim reads as one of three distinct states
+   * rather than signed-or-not. */
+  readonly configurationPostureStatus: string;
+  readonly configurationPostureLabel: string;
   readonly configurationProvenance: string;
+}
+
+/** The reserve arithmetic the record prints beside its horizon prose. Both figures
+ * come from the one signed projection - the record states the numbers an examiner
+ * checks the prose against, instead of asserting a horizon with nothing to verify. */
+export interface RecordReserveVM {
+  readonly horizon: string;
+  readonly floor: DisplayMetric;
+  readonly headroom: DisplayMetric;
 }
 
 export interface RecordVM {
@@ -314,6 +328,7 @@ export interface RecordVM {
   readonly evidence: readonly EvidenceRowVM[];
   readonly disposition: DispositionVM;
   readonly precedence: readonly PrecedenceRowVM[];
+  readonly reserve: RecordReserveVM;
   /** Sections the record never reached print as an explicit "not reached" line -
    * the paper record is as honest as the screen (§9). */
   readonly approvalStages: readonly ApprovalStageVM[] | null;

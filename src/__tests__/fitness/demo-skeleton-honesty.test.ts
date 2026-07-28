@@ -43,7 +43,13 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    `RecordVM.header`, `readonly {...}[]` elements): a top-level-only walk let a dead
  *    field hide one level down inside a shipped view model.
  *
- * All three detectors are pure functions so the companions can feed violating inputs
+ *  RULE D - ONE NAME PER PROFILE. A surface may not spell a firm's display name. The
+ *    view models carry `firmLabel`; a surface that writes "Firm A" - directly or via a
+ *    `firmId === "firm-a" ? … : …` ternary - re-derives a name the builder owns, so
+ *    renaming a profile updates some steps and not others. Any literal naming a firm
+ *    inside src/app/demo/surfaces fails the build with file:line.
+ *
+ * All four detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
  */
 
@@ -349,6 +355,36 @@ export function deadFieldViolations(fields: readonly DeclaredField[], reads: rea
     );
 }
 
+// ── RULE D: one name per profile ────────────────────────────────────────────────────
+/** A firm display name as a surface would spell it. Kept deliberately broad: "Firm A",
+ * "Firm B", and any future "Firm C" all belong to the builder, never a component. */
+const FIRM_NAME_PATTERN = /\bFirm [A-Z]\b/;
+
+/** Every literal a surface RENDERS or compares - string literals, template chunks, and
+ * JSX text. A ternary on `firmId` always lands one of its branches here. */
+export function firmNameLiteralViolations(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const path = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
+    const literals: Node[] = [
+      ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
+      ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
+      ...sf.getDescendantsOfKind(SyntaxKind.TemplateHead),
+      ...sf.getDescendantsOfKind(SyntaxKind.TemplateMiddle),
+      ...sf.getDescendantsOfKind(SyntaxKind.TemplateTail),
+      ...sf.getDescendantsOfKind(SyntaxKind.JsxText),
+    ];
+    for (const literal of literals) {
+      const text = literal.getText();
+      if (!FIRM_NAME_PATTERN.test(text)) continue;
+      out.push(
+        `${path}:${literal.getStartLineNumber()} :: "${text.trim().slice(0, 60)}" spells a firm display name - render firmLabel from the view model instead (one profile, one name)`,
+      );
+    }
+  }
+  return out;
+}
+
 /** Loaded through the repo tsconfig so `@app/...` aliases and imported view-model
  * types resolve: RULE C's owner test is only as good as the checker behind it. */
 function projectOf(relativePaths: readonly string[], isDir: boolean): Project {
@@ -393,6 +429,16 @@ describe("demo-skeleton-honesty fence", () => {
     expect(fields.length, "no view-model fields found - the fence went stale (charter #4)").toBeGreaterThan(0);
     const violations = deadFieldViolations(fields, readProperties(projectOf(CONSUMER_DIRS, true)));
     expect(violations, `dead view-model fields:\n${violations.join("\n")}`).toEqual([]);
+  });
+
+  it("RULE D enforces: no demo surface spells a firm's display name", () => {
+    const project = surfacesProject();
+    expect(
+      project.getSourceFiles().length,
+      "no surface files found - the fence went stale (charter #4)",
+    ).toBeGreaterThan(0);
+    const violations = firmNameLiteralViolations(project);
+    expect(violations, `re-derived firm display names:\n${violations.join("\n")}`).toEqual([]);
   });
 
   it("RULE C is not vacuous: consumer reads resolve to named view-model owners", () => {
@@ -526,6 +572,26 @@ describe("demo-skeleton-honesty fence", () => {
       );
       expect(violations).toHaveLength(2);
       expect(violations.some((violation) => violation.includes("ProofVM.title"))).toBe(true);
+    });
+
+    it("RULE D flags a firm name re-derived from firmId, in a ternary or JSX text", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/legend.tsx": `export function Legend({ firmId }: { firmId: string }) {\n  const label = firmId === "firm-a" ? "Firm A" : "Firm B";\n  return <p>{label}</p>;\n}`,
+        "/src/app/demo/surfaces/heading.tsx": `export function Heading() { return <dt>Firm B</dt>; }`,
+      });
+      const violations = firmNameLiteralViolations(project);
+      expect(violations).toHaveLength(3);
+      // Both ternary branches and the bare JSX heading, each with its own file:line.
+      expect(violations.filter((v) => v.includes("legend.tsx:2"))).toHaveLength(2);
+      expect(violations.some((v) => v.includes("heading.tsx:1"))).toBe(true);
+      expect(violations.every((v) => v.includes("one profile, one name"))).toBe(true);
+    });
+
+    it("RULE D passes a surface that renders firmLabel from the view model", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/legend.tsx": `export function Legend({ firmLabel }: { firmLabel: string }) { return <p>{firmLabel}</p>; }`,
+      });
+      expect(firmNameLiteralViolations(project)).toEqual([]);
     });
 
     it("RULE A flags a skeleton scenario the contract does not know", () => {

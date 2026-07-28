@@ -1,7 +1,5 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getDb } from "@infra/store/db";
-import { resolveSession, SESSION_COOKIE } from "@infra/identity/session";
+import { currentSession } from "@app/_server/session";
 import { AppNav } from "./nav";
 
 export const runtime = "nodejs";
@@ -13,9 +11,7 @@ export const dynamic = "force-dynamic";
  * /login. Identity is never client-trusted.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const db = await getDb();
-  const principal = await resolveSession(db, cookieStore.get(SESSION_COOKIE)?.value);
+  const principal = await currentSession();
   if (!principal.ok) redirect("/login");
 
   return (

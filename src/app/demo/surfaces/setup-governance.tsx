@@ -95,11 +95,12 @@ export function ControlsBody({ vm }: { vm: MoneyMovementSetupVM }) {
               <h3 className="text-sm font-semibold text-slate-900">{role.responsibility}</h3>
               <dl className="mt-3 grid gap-2 text-sm">
                 <div>
-                  <dt className="text-xs font-medium text-slate-600">Firm A</dt>
+                  {/* One profile, one name: the heading is the profile's own label. */}
+                  <dt className="text-xs font-medium text-slate-600">{vm.profiles[0].firmLabel}</dt>
                   <dd className="text-slate-800">{role.firmA}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-medium text-slate-600">Firm B</dt>
+                  <dt className="text-xs font-medium text-slate-600">{vm.profiles[1].firmLabel}</dt>
                   <dd className="text-slate-800">{role.firmB}</dd>
                 </div>
               </dl>
