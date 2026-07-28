@@ -155,10 +155,8 @@ export function realDerivedCaseProblems(
   if (attestation.scrubbedBy === attestation.reviewedBy) {
     problems.push(`${where}: scrubAttestation.reviewedBy must differ from scrubbedBy - review is a second pair of eyes`);
   }
-  if (!defectClassIds.has(parsed.data.label.kind === "defect" ? parsed.data.label.defectClassId : "")) {
-    if (parsed.data.label.kind === "defect") {
-      problems.push(`${where}: label.defectClassId "${parsed.data.label.defectClassId}" is not in the closed defect taxonomy`);
-    }
+  if (parsed.data.label.kind === "defect" && !defectClassIds.has(parsed.data.label.defectClassId)) {
+    problems.push(`${where}: label.defectClassId "${parsed.data.label.defectClassId}" is not in the closed defect taxonomy`);
   }
   return problems;
 }

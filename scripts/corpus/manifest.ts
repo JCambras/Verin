@@ -99,21 +99,28 @@ export const REAL_DERIVED_DEFERRAL = {
   procedure: "docs/corpus-scrub-procedure.md",
 } as const;
 
+/**
+ * The manifest. `inventory` is injectable so the validator can hash the SAME
+ * array instance it hands here - the manifest's `corpusDigest` and the digest the
+ * validator recomputes are then provably over one object, not two coincidentally
+ * equal recomputations.
+ */
 export function buildManifest(
   spec: LoadedSpec,
   files: readonly GeneratedFile[],
   seed: string = CORPUS_SEED,
+  inventory: readonly CaseInventoryEntry[] = buildInventory(files),
 ): GeneratedFile {
-  const inventory = buildInventory(files);
   const defects = inventory.filter((entry) => entry.labelKind === "defect");
   const controls = inventory.filter((entry) => entry.labelKind === "clean-control");
+  const generator = generatorDigest(seed, spec.rawBytes);
   const value: JsonValue = {
     __generated: {
       generator: "scripts/corpus-generate.ts",
       command: "pnpm corpus:generate",
       handOwnedInput: SPEC_FILES.map((name) => `fixtures/corpus/spec/${name}`),
       seed,
-      generatorDigest: generatorDigest(seed, spec.rawBytes),
+      generatorDigest: generator,
       corpusVersion: spec.world.corpusVersion,
     },
     corpusVersion: spec.world.corpusVersion,
@@ -122,7 +129,7 @@ export function buildManifest(
     timeZone: spec.world.clock.timeZone,
     timeZoneDataVersion: spec.world.clock.timeZoneDataVersion,
     corpusDigest: corpusDigest(spec.world.corpusVersion, seed, inventory),
-    generatorDigest: generatorDigest(seed, spec.rawBytes),
+    generatorDigest: generator,
     signoffRef: {
       file: "fixtures/corpus/spec/SIGNOFF.md",
       boundTo: "corpusDigest",

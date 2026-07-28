@@ -24,6 +24,16 @@ const Instant = z.iso.datetime({ precision: 3 });
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
 const Money = z.int().nonnegative();
 
+/**
+ * WHEN THE EVIDENCE SOURCE OBSERVED THIS RECORD - never when the underlying fact
+ * became true (D-078). Conflating the two makes a long-standing fact necessarily
+ * STALE, which silently plants `evidence-staleness-unnoticed` in any case citing
+ * it; the clean controls are the cases that rule made unusable. Every record kind
+ * therefore carries its own observation instant, the way `balanceObservedAt`
+ * always did, and staleness becomes a deliberate per-record property.
+ */
+const ObservedAt = Instant;
+
 const TimingSchema = z.strictObject({
   minRetrievalLagSeconds: z.int().positive(),
   maxRetrievalLagSeconds: z.int().positive(),
@@ -80,6 +90,7 @@ const SignerSchema = z.strictObject({
   authorityScope: Slug,
   effectiveFrom: Instant,
   effectiveTo: Instant.nullable(),
+  observedAt: ObservedAt,
 });
 
 const BankInstructionSchema = z.strictObject({
@@ -91,12 +102,14 @@ const BankInstructionSchema = z.strictObject({
   verifiedAt: Instant.nullable(),
   changedAt: Instant.nullable(),
   accountRefs: z.array(Slug).min(1),
+  observedAt: ObservedAt,
 });
 
 const PlannedWithdrawalSchema = z.strictObject({
   key: Slug,
   householdRef: Slug,
   recordedAt: Instant,
+  observedAt: ObservedAt,
   segments: z
     .array(z.strictObject({ fromMonth: z.string().regex(/^\d{4}-\d{2}$/), monthlyMinor: Money }))
     .min(1),
@@ -106,8 +119,9 @@ const RestrictionSchema = z.strictObject({
   key: Slug,
   /** When the restriction entered the record. Distinct from `effectiveFrom` on
    * purpose: a future-dated restriction is RECORDED now and IN FORCE later, and
-   * conflating the two is assumption AS-13. Evidence observes the recording. */
+   * conflating the two is assumption AS-13. */
   recordedAt: Instant,
+  observedAt: ObservedAt,
   scope: z.enum(["household", "account", "position", "party"]),
   subjectRef: Slug,
   kind: Slug,
@@ -120,7 +134,9 @@ const RecentChangeSchema = z.strictObject({
   key: Slug,
   subjectRef: z.string().min(1),
   changeKind: Slug,
-  observedAt: Instant,
+  /** When the change happened. The record of it is observed separately. */
+  changedAt: Instant,
+  observedAt: ObservedAt,
   priorValueRef: z.string().min(1),
 });
 
@@ -129,6 +145,7 @@ const ModelAssignmentSchema = z.strictObject({
   accountRef: Slug,
   modelId: Slug,
   assignedAt: Instant,
+  observedAt: ObservedAt,
   pendingRebalance: z.boolean(),
 });
 
@@ -140,14 +157,19 @@ const PendingActionSchema = z.strictObject({
   amountMinor: Money,
   state: z.enum(["pending", "blocked", "settling"]),
   createdAt: Instant,
+  observedAt: ObservedAt,
   expectedSettleAt: Instant,
 });
 
 const LegalHoldSchema = z.strictObject({
   key: Slug,
+  /** STRUCTURED: `account:<accountKey>` or `position:<accountKey>:<positionId>`.
+   * Parsed by `legalHoldSubject`, never substring-matched - `smiths-west` must
+   * not leak into `smiths` (D-078). */
   subjectRef: z.string().min(1),
   scope: z.enum(["account", "position"]),
   recordedAt: Instant,
+  observedAt: ObservedAt,
   releasedAt: Instant.nullable(),
 });
 
@@ -171,6 +193,42 @@ export const WorldSpecSchema = z.strictObject({
   legalHolds: z.array(LegalHoldSchema).min(1),
 });
 export type WorldSpec = z.infer<typeof WorldSpecSchema>;
+export type LegalHoldSpec = WorldSpec["legalHolds"][number];
+
+export interface LegalHoldSubject {
+  readonly accountKey: string;
+  readonly positionId: string | null;
+}
+
+/**
+ * The account a legal hold attaches to, parsed out of its structured subjectRef
+ * by EXACT segment equality. `subjectRef.includes(key)` would match any key that
+ * merely extends an existing one (`position:smiths-west-acct:X` matching
+ * `smiths`), leaking a hold into a foreign household's subgraph and breaking the
+ * "adding a household changes only that household's bytes" property. `null` when
+ * the ref does not match its own declared scope's form.
+ */
+export function legalHoldSubject(hold: LegalHoldSpec): LegalHoldSubject | null {
+  const [scope, accountKey, positionId, ...extra] = hold.subjectRef.split(":");
+  if (scope !== hold.scope || accountKey === undefined || accountKey === "" || extra.length > 0) return null;
+  if (hold.scope === "account") {
+    return positionId === undefined ? { accountKey, positionId: null } : null;
+  }
+  return positionId !== undefined && positionId !== "" ? { accountKey, positionId } : null;
+}
+
+/** The same parse where a malformed ref is a generator abort rather than a
+ * filtered-away record. `loadSpec` rejects these by path first. */
+export function requireLegalHoldSubject(hold: LegalHoldSpec): LegalHoldSubject {
+  const subject = legalHoldSubject(hold);
+  if (subject === null) {
+    throw new Error(
+      `corpus: legalHolds[${hold.key}].subjectRef "${hold.subjectRef}" is not the ${hold.scope}-scoped form ` +
+        `("account:<accountKey>" or "position:<accountKey>:<positionId>")`,
+    );
+  }
+  return subject;
+}
 
 const LabelSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("defect"), defectClassId: Slug }),
@@ -292,6 +350,48 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   }
   for (const assignment of world.modelAssignments) {
     need(accounts, assignment.accountRef, `modelAssignments[${assignment.key}].accountRef`);
+  }
+  const householdMembers = new Set(world.households.flatMap((household) => household.memberRefs));
+  for (const restriction of world.restrictions) {
+    const where = `restrictions[${restriction.key}].subjectRef`;
+    switch (restriction.scope) {
+      case "household":
+        need(households, restriction.subjectRef, where);
+        break;
+      case "party":
+        need(parties, restriction.subjectRef, where);
+        // A household subgraph collects party-scoped restrictions through its
+        // MEMBER list, so one naming a party who is nobody's member (an advisor,
+        // an account signer from elsewhere) would resolve here and then appear in
+        // no subgraph at all - the silent drop, one scope over.
+        if (parties.has(restriction.subjectRef) && !householdMembers.has(restriction.subjectRef)) {
+          problems.push(
+            `${where}: party "${restriction.subjectRef}" is a member of no household, so this restriction would reach no household subgraph`,
+          );
+        }
+        break;
+      case "account":
+        need(accounts, restriction.subjectRef, where);
+        break;
+      case "position":
+        // Refused, not dropped: a position subject has no modeled form here, and
+        // silently omitting the record from every subgraph would leave a case
+        // whose evidence points at a record absent from its own graph.
+        problems.push(
+          `${where}: scope "position" has no modeled subject form - use a position-scoped legal hold, or extend the spec and the household subgraph together`,
+        );
+        break;
+    }
+  }
+  for (const hold of world.legalHolds) {
+    const subject = legalHoldSubject(hold);
+    if (subject === null) {
+      problems.push(
+        `legalHolds[${hold.key}].subjectRef -> "${hold.subjectRef}" is not the ${hold.scope}-scoped form ("account:<accountKey>" or "position:<accountKey>:<positionId>")`,
+      );
+      continue;
+    }
+    need(accounts, subject.accountKey, `legalHolds[${hold.key}].subjectRef`);
   }
 
   const collections: Record<string, Set<string>> = {

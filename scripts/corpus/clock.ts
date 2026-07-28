@@ -17,8 +17,11 @@
 
 /** Per-evidence-kind observation/retrieval realism, committed as data. */
 export interface EvidenceKindTiming {
-  /** Minimum seconds between `observedAt` and `retrievedAt`. Zero latency is the
-   * "all timestamps are the same second" tell of an invented fixture. */
+  /** Minimum seconds between `trigger.asOf` and `retrievedAt` - the band is
+   * measured from the DECISION instant, not from `observedAt`, because retrieval
+   * is what the evaluation does and observation is what the source already did.
+   * Zero latency is the "all timestamps are the same second" tell of an invented
+   * fixture. */
   readonly minRetrievalLagSeconds: number;
   readonly maxRetrievalLagSeconds: number;
   /** Freshness window in whole days: `asOf - observedAt` beyond it is `stale`. */

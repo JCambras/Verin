@@ -4518,9 +4518,68 @@ merge the two.
 
 Per captain ruling `corpus-signoff-and-measurement`: every coverage figure ships beside a false-positive
 rate computed from labeled clean controls, and a coverage figure without one is `interpretable: false`.
-A corpus with no clean controls FAILS validation. Five of the twenty-six shipped cases are controls.
+A corpus with no clean controls FAILS validation. Five of the twenty-seven shipped cases are controls.
 The standing companion proves a detector that flags everything scores 1.0 coverage **and** 1.0 false
 positives, so blocking everything cannot read as success.
 
 **Why:** a detection rate without a false-positive rate is not a metric.
 **Revert path:** none without reopening the captain ruling.
+
+### D-078 · 2026-07-28 · reversible · Corpus records carry an observation instant distinct from their business dates
+
+Review finding `clean-controls-carry-stale-evidence`: `observedAtOf` derived an evidence item's
+`observedAt` from a business date (authority → `effectiveFrom`, restriction → `recordedAt`, bank
+instruction → `changedAt`, …). Only `balance` had a real observation instant. That conflation makes a
+long-standing fact NECESSARILY stale, so four of the five labeled clean controls emitted
+`freshness: "stale"` - planting `evidence-staleness-unnoticed` in the very cases that form the
+false-positive denominator, on a corpus whose reason for existing is to make coverage interpretable.
+
+Every record kind now carries its own `observedAt` in the hand-owned spec, the way `balanceObservedAt`
+always did. The business dates stay, as separate fields carried into the emitted subgraph, and each
+evidence item emits three instants with three jobs: `recordChangedAt` (when the fact changed → the
+recent-change window), `observedAt` (when the source observed it → freshness), `retrievedAt` (when this
+evaluation retrieved it → the per-kind band, measured from `trigger.asOf`). A long-standing authority,
+an in-force instruction, a single-owner account and a verified destination are all OLD IN BUSINESS AGE
+and FRESHLY OBSERVED; all five controls are now semantically clean, with their business facts unchanged.
+Staleness is a deliberate per-record property, never an artifact of the model.
+
+Two rules keep it honest, both fenced with live companions in `corpus-provenance-split`:
+`cleanControlProblems` refuses a control carrying any defect signature (stale, lapsed, out-of-force,
+unverified, last-four-colliding, dangling, infeasible, or structure-asserting), driven by relabeling
+real defect cases as controls; and `taxonomyExerciseProblems` mirrors the spec loader's
+unexercised-assumption rule for defect classes.
+
+**Why:** a clean control that contains the defect being measured makes the false-positive rate it exists
+to produce meaningless.
+**Revert path:** collapse `observedAt` back into the business dates, and delete both rules with the case
+and assumption below.
+
+### D-079 · 2026-07-28 · reversible · AS-21 and one focused case exercise `evidence-staleness-unnoticed`
+
+`evidence-staleness-unnoticed` was the one class in the closed taxonomy that no case carried - visible
+only because D-078 added the reverse completeness check. Rather than relabel a control to satisfy a
+count, the corpus gains ONE focused case: `CS-stale-model-assignment-evidence` (AS-21), an IRA model
+assignment last observed twelve weeks ago against a seven-day freshness window, treated as the account's
+current allocation. It is deliberately benign in content (`pendingRebalance: false`) so the case is about
+the staleness and nothing else. Counts move to twenty-one awkward structures and twenty-seven cases
+(22 defect + 5 controls); `corpusDigest` changes, which is correct - the corpus is `pending-captain`, so
+no signature is invalidated, and agents never sign.
+
+**Why:** an unexercised class inflates the taxonomy relative to what the corpus actually exercises.
+**Revert path:** delete AS-21 and the case, and the completeness check fails until the class is removed.
+
+### D-080 · 2026-07-28 · reversible · Cross-record references resolve by structured parse, never by substring or input order
+
+Two determinism leaks found in review, fixed at the same root: an identifier is resolved by parsing it,
+not by scanning for it. Legal holds resolve through `legalHoldSubject` (exact `account:<key>` /
+`position:<key>:<id>` segments) instead of `subjectRef.includes(":" + householdKey)`, which matched any
+key extending an existing one and leaked a foreign household's hold into `smiths`; the determinism
+fence's inserted household is now keyed `smiths-west` with its own hold, so the prefix collision is
+actually proven rather than assumed. Conflict scope reads the case's evidence AFTER sorting, so a
+semantically neutral reorder in `cases.json` can no longer move a conflict key, a case's bytes or
+`corpusDigest`. `loadSpec` additionally resolves every restriction and legal-hold subject by path, and
+an unmodeled position-scoped RESTRICTION is refused rather than silently dropped from every subgraph.
+
+**Why:** "adding a household changes only that household's bytes" is the property the whole corpus rests
+on; substring matching and input-order sensitivity both break it invisibly.
+**Revert path:** none worth taking - both replaced strictly weaker checks.

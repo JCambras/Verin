@@ -25,7 +25,11 @@ import { timestampProblems, validateCorpus } from "../../../scripts/corpus/valid
  *     per-kind window and compared to what was emitted. `EvidenceFreshness`
  *     RECORDS freshness because the contracts layer has no threshold policy; the
  *     corpus has one, so it never trusts the label;
- *  5. RECENT-CHANGE WINDOW - membership is recomputed against the firm window;
+ *  5. RECENT-CHANGE WINDOW - membership is recomputed against the firm window,
+ *     from `recordChangedAt` (when the FACT changed) rather than `observedAt`
+ *     (when the source looked). Deriving one from the other is what made every
+ *     long-standing fact stale before D-078, and `recordChangedAt` may never
+ *     postdate the observation that reports it;
  *  6. BUSINESS-DAY AND DST REALISM - "two business days later" lands on a real
  *     weekday in the firm's zone, and local renderings come from pinned tz
  *     transitions.
@@ -85,15 +89,23 @@ describe("corpus-timestamps fence", () => {
     for (const item of real.cases) {
       check(item.trigger.asOf, item.trigger.asOfLocal, `${item.caseId}.trigger`);
       for (const evidence of item.evidence) {
-        check(evidence.observedAt, evidence.observedAtLocal, `${item.caseId}/${evidence.id}`);
+        const at = `${item.caseId}/${evidence.id}`;
+        check(evidence.recordChangedAt, evidence.recordChangedAtLocal, `${at}.recordChangedAt`);
+        check(evidence.observedAt, evidence.observedAtLocal, `${at}.observedAt`);
+        check(evidence.retrievedAt, evidence.retrievedAtLocal, `${at}.retrievedAt`);
       }
     }
     expect(mismatches, `local renderings drifted from the tz database:\n${mismatches.join("\n")}`).toEqual([]);
   });
 
   it("enforces: the corpus actually straddles a DST boundary (both offsets appear)", () => {
+    // The BUSINESS instants are what reach back across a transition: observation
+    // instants are all recent by construction (a freshly synced record is the
+    // normal case), so a straddle asserted over them alone would be vacuous.
     const offsets = new Set(
-      real.cases.flatMap((item) => item.evidence.map((e) => e.observedAtLocal.slice(23))),
+      real.cases.flatMap((item) =>
+        item.evidence.flatMap((e) => [e.recordChangedAtLocal.slice(23), e.observedAtLocal.slice(23)]),
+      ),
     );
     expect(offsets, `a corpus rendered entirely at one offset cannot falsify a fixed-offset generator`).toContain("-05:00");
     expect(offsets).toContain("-04:00");
@@ -175,12 +187,27 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     const broken = clone();
     const winter = broken
       .flatMap((item) => item.evidence)
-      .find((evidence) => evidence.observedAtLocal.endsWith("-05:00"));
-    expect(winter, "the corpus must contain a standard-time observation").toBeDefined();
-    winter!.observedAtLocal = `${winter!.observedAtLocal.slice(0, 23)}-04:00`;
+      .find((evidence) => evidence.recordChangedAtLocal.endsWith("-05:00"));
+    expect(winter, "the corpus must contain a standard-time business instant").toBeDefined();
+    winter!.recordChangedAtLocal = `${winter!.recordChangedAtLocal.slice(0, 23)}-04:00`;
     expect(
-      timestampProblems(broken, real.spec).some((p) => p.includes("observedAtLocal does not match")),
+      timestampProblems(broken, real.spec).some((p) => p.includes("recordChangedAtLocal does not match")),
     ).toBe(true);
+  });
+
+  it("flags an observation instant BACKDATED to its record's business date (the staleness artifact)", () => {
+    // The pre-D-078 model derived `observedAt` from a business date, which made
+    // every long-standing fact stale. Rewinding one observation is that model in
+    // one line - and it is refused, because retrieval lag is measured from the
+    // trigger while freshness is measured from the observation.
+    const broken = clone();
+    const evidence = broken
+      .flatMap((item) => item.evidence)
+      .find((e) => e.recordChangedAt !== e.observedAt);
+    expect(evidence, "the corpus must separate at least one business date from its observation").toBeDefined();
+    evidence!.observedAt = evidence!.recordChangedAt;
+    const problems = timestampProblems(broken, real.spec);
+    expect(problems.some((p) => p.includes("observedAtLocal does not match") || p.includes('freshness "'))).toBe(true);
   });
 
   it("flags a settlement horizon landing on a weekend", () => {

@@ -15,7 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { REPO_ROOT, SPEC_DIR } from "./world";
+import { REPO_ROOT, SPEC_DIR, type CasesSpec } from "./world";
 
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
 
@@ -74,3 +74,22 @@ export function loadTaxonomy(dir: string = SPEC_DIR, repoRoot: string = REPO_ROO
 
 export const defectClassIds = (taxonomy: Taxonomy): Set<string> =>
   new Set(taxonomy.defectClasses.map((entry) => entry.id));
+
+/**
+ * The REVERSE completeness rule, mirroring `specReferenceProblems`'s assumption
+ * check: every class in the closed taxonomy must be carried by at least one
+ * labeled defect case. Without it a class nobody attacks ships silently and
+ * inflates the taxonomy relative to what the corpus actually exercises - an
+ * unexercised class is decoration, exactly as an unexercised structure is.
+ */
+export function taxonomyExerciseProblems(taxonomy: Taxonomy, cases: CasesSpec): string[] {
+  const exercised = new Set(
+    cases.cases.flatMap((entry) => (entry.label.kind === "defect" ? [entry.label.defectClassId] : [])),
+  );
+  return taxonomy.defectClasses
+    .filter((entry) => !exercised.has(entry.id))
+    .map(
+      (entry) =>
+        `defectClasses[${entry.id}] is carried by no labeled defect case - an unexercised class is decoration`,
+    );
+}

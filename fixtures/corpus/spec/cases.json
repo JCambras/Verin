@@ -1,6 +1,6 @@
 {
-  "specVersion": "1.0.0",
-  "note": "HAND-OWNED. Twenty deliberately awkward structures, each stating the assumption it falsifies, plus the cases that attack them and the labeled clean controls that make a false-positive rate reportable. Every case is SYNTHETIC and author-invented: it proves a structure exists that a naive engine mishandles, never that the mishandling has occurred in production.",
+  "specVersion": "1.1.0",
+  "note": "HAND-OWNED. Twenty-one deliberately awkward structures, each stating the assumption it falsifies, plus the cases that attack them and the labeled clean controls that make a false-positive rate reportable. Every case is SYNTHETIC and author-invented: it proves a structure exists that a naive engine mishandles, never that the mishandling has occurred in production. A clean control carries NO awkward structure and NO defect signature: its evidence is fresh, its restrictions are in force, its destination is verified, and its deadline is feasible - the `corpus-provenance-split` fence refuses a control that quietly carries the defect being measured.",
   "assumptions": [
     { "id": "AS-01", "structure": "Two households share the surname Smith and a trust name contains it.", "falsifies": "Name resolution is unique." },
     { "id": "AS-02", "structure": "Mira Smith heads her own household and is an authorized signer on her parents' joint account.", "falsifies": "One person belongs to one household." },
@@ -17,11 +17,12 @@
     { "id": "AS-13", "structure": "The household carries one expired-but-recorded restriction and one future-dated restriction.", "falsifies": "Recorded implies in force." },
     { "id": "AS-14", "structure": "A legal hold covers one position, not the whole account.", "falsifies": "Holds are account-scoped." },
     { "id": "AS-15", "structure": "One pending action is itself blocked.", "falsifies": "All pending activity reduces effective liquidity equally." },
-    { "id": "AS-16", "structure": "Observations straddle both 2026 US daylight-saving transitions.", "falsifies": "A fixed -04:00 offset is safe." },
+    { "id": "AS-16", "structure": "The account's change history straddles a US daylight-saving fall-back and the following spring-forward.", "falsifies": "A fixed -04:00 offset is safe." },
     { "id": "AS-17", "structure": "A roster name carries a composed non-ASCII character requiring NFC normalization.", "falsifies": "Identity is ASCII, and canonical bytes are spelling-independent." },
     { "id": "AS-18", "structure": "Request amounts land on the exact authority thresholds, 25,000 USD and 100,000 USD.", "falsifies": "'Above' and 'at or above' are interchangeable." },
     { "id": "AS-19", "structure": "A request's deadline precedes the decision instant.", "falsifies": "Deadlines are always in the future." },
-    { "id": "AS-20", "structure": "The only account with sufficient liquidity is a retirement account.", "falsifies": "A liquidity check is source-agnostic." }
+    { "id": "AS-20", "structure": "The only account with sufficient liquidity is a retirement account.", "falsifies": "A liquidity check is source-agnostic." },
+    { "id": "AS-21", "structure": "The IRA's model assignment was last observed twelve weeks ago - far beyond its seven-day freshness window - while its business date says nothing about when it was last checked.", "falsifies": "A record in the system is a record observed now." }
   ],
   "cases": [
     { "key": "identity-trust-name-collision", "title": "Distribution request naming 'Smith' with two Smith households and a Smith trust in scope", "firmId": "firm-a", "householdRef": "smiths", "assumptionIds": ["AS-01"], "label": { "kind": "defect", "defectClassId": "identity-resolution-ambiguity" },
@@ -87,6 +88,9 @@
     { "key": "retirement-only-sufficient-source", "title": "The only sufficient funding source is a retirement account", "firmId": "firm-b", "householdRef": "smith-mira", "assumptionIds": ["AS-20", "AS-12"], "label": { "kind": "defect", "defectClassId": "tax-consequence-blindness" },
       "request": { "sourceAccountRef": "mira-roth", "destinationRef": "mira-primary", "amountMinor": 8500000, "discriminator": "85000-2026-08-29", "deadline": "2026-08-29T13:00:00.000Z" },
       "evidence": ["balance/mira-roth", "bank-instruction/mira-primary"], "conflictFamilies": ["liquidity"] },
+    { "key": "stale-model-assignment-evidence", "title": "Twelve-week-old model-assignment snapshot treated as the account's current allocation", "firmId": "firm-b", "householdRef": "smiths", "assumptionIds": ["AS-21"], "label": { "kind": "defect", "defectClassId": "evidence-staleness-unnoticed" },
+      "request": { "sourceAccountRef": "smiths-ira", "destinationRef": "smiths-primary", "amountMinor": 2800000, "discriminator": "28000-2026-09-08", "deadline": "2026-09-08T13:00:00.000Z" },
+      "evidence": ["model-assignment/smiths-ira-model", "balance/smiths-ira"], "conflictFamilies": ["model-rebalance"] },
     { "key": "clean-verified-destination", "title": "Clean control: verified destination, unchanged for six weeks", "firmId": "firm-a", "householdRef": "okonkwo", "assumptionIds": [], "label": { "kind": "clean-control", "controlRationale": "Every structure a defect case attacks is absent: one household, one instruction, a verified destination outside the recent-change window." },
       "request": { "sourceAccountRef": "okonkwo-taxable", "destinationRef": "okonkwo-primary", "amountMinor": 1200000, "discriminator": "12000-2026-08-30", "deadline": "2026-08-30T13:00:00.000Z" },
       "evidence": ["bank-instruction/okonkwo-primary", "recent-change/okonkwo-bank-change", "balance/okonkwo-taxable"], "conflictFamilies": ["bank-instruction"] },

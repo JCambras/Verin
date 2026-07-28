@@ -35,7 +35,7 @@ import {
   subjectId,
 } from "./entities";
 import { CORPUS_SEED, deriveIntInRange, deriveToken } from "./seed";
-import type { CaseSpec, LoadedSpec, WorldSpec } from "./world";
+import { requireLegalHoldSubject, type CaseSpec, type LoadedSpec, type WorldSpec } from "./world";
 
 /** Business days a custodian instruction needs before it can settle. */
 const SETTLEMENT_BUSINESS_DAYS = 2;
@@ -61,10 +61,19 @@ const evidenceRef = (ref: string): { kind: string; recordKey: string } => {
   return { kind, recordKey };
 };
 
-/** Where a family's contention actually lives (design §4.5). */
-function conflictScope(family: string, corpusCase: CaseSpec, scopeSlug: string): string {
+/** Where a family's contention actually lives (design §4.5).
+ *
+ * `evidence` MUST arrive already sorted: scanning raw spec order would make a
+ * semantically neutral reorder in `cases.json` change the conflict key, the case
+ * bytes and `corpusDigest` - and every other consumer normalizes that order away. */
+function conflictScope(
+  family: string,
+  corpusCase: CaseSpec,
+  evidence: readonly string[],
+  scopeSlug: string,
+): string {
   const firstEvidence = (kinds: readonly string[]): string | null => {
-    for (const ref of corpusCase.evidence) {
+    for (const ref of evidence) {
       const { kind, recordKey } = evidenceRef(ref);
       if (kinds.includes(kind)) return recordKey;
     }
@@ -90,19 +99,65 @@ function conflictScope(family: string, corpusCase: CaseSpec, scopeSlug: string):
   }
 }
 
-/** The `observedAt` a record contributes to evidence of a given kind. */
+const findRecord = <T extends { key: string }>(
+  rows: readonly T[],
+  kind: string,
+  recordKey: string,
+): T => {
+  const row = byKey(rows).get(recordKey);
+  if (row === undefined) throw new Error(`corpus generate: ${kind}/${recordKey} does not resolve`);
+  return row;
+};
+
+/**
+ * WHEN THE EVIDENCE SOURCE OBSERVED the record - the instant freshness is
+ * measured from. Read straight off the record's own committed observation
+ * instant, never inferred from a business date: a long-standing authority, an
+ * in-force instruction and a verified destination are all OLD IN BUSINESS AGE and
+ * FRESHLY OBSERVED, and inferring one from the other planted
+ * `evidence-staleness-unnoticed` in four of the five clean controls (D-078).
+ */
 function observedAtOf(world: WorldSpec, kind: string, recordKey: string): string {
-  const find = <T extends { key: string }>(rows: readonly T[]): T => {
-    const row = byKey(rows).get(recordKey);
-    if (row === undefined) throw new Error(`corpus generate: ${kind}/${recordKey} does not resolve`);
-    return row;
-  };
+  const find = <T extends { key: string }>(rows: readonly T[]): T => findRecord(rows, kind, recordKey);
+  switch (kind) {
+    case "balance":
+      return find(world.accounts).balanceObservedAt;
+    case "bank-instruction":
+      return find(world.bankInstructions).observedAt;
+    case "household-instruction":
+    case "restriction":
+      return find(world.restrictions).observedAt;
+    case "planned-withdrawals":
+      return find(world.plannedWithdrawals).observedAt;
+    case "pending-actions":
+      return find(world.pendingActions).observedAt;
+    case "authority":
+      return find(world.authorizedSigners).observedAt;
+    case "model-assignment":
+      return find(world.modelAssignments).observedAt;
+    case "legal-hold":
+      return find(world.legalHolds).observedAt;
+    case "recent-change":
+      return find(world.recentChanges).observedAt;
+    default:
+      throw new Error(`corpus generate: unknown evidence kind "${kind}"`);
+  }
+}
+
+/**
+ * WHEN THE UNDERLYING FACT last changed or was recorded - the business instant.
+ * Distinct from `observedAt` and used only for recent-change-window membership:
+ * "this destination was changed four days ago" is a fact about the record, not
+ * about when we looked at it.
+ */
+function recordChangedAtOf(world: WorldSpec, kind: string, recordKey: string): string {
+  const find = <T extends { key: string }>(rows: readonly T[]): T => findRecord(rows, kind, recordKey);
   switch (kind) {
     case "balance":
       return find(world.accounts).balanceObservedAt;
     case "bank-instruction": {
       const instruction = find(world.bankInstructions);
-      return instruction.changedAt ?? instruction.verifiedAt ?? world.clock.asOf;
+      return instruction.changedAt ?? instruction.verifiedAt ?? instruction.observedAt;
     }
     case "household-instruction":
     case "restriction":
@@ -118,7 +173,7 @@ function observedAtOf(world: WorldSpec, kind: string, recordKey: string): string
     case "legal-hold":
       return find(world.legalHolds).recordedAt;
     case "recent-change":
-      return find(world.recentChanges).observedAt;
+      return find(world.recentChanges).changedAt;
     default:
       throw new Error(`corpus generate: unknown evidence kind "${kind}"`);
   }
@@ -171,6 +226,23 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
     (party) => party.key,
   );
   const schedule = world.plannedWithdrawals.find((row) => row.householdRef === householdKey) ?? null;
+  /** Fail-closed: an unmodeled restriction scope aborts generation rather than
+   * dropping the record, which would leave a case whose evidence points at a
+   * record absent from its own subgraph. `loadSpec` refuses it by path first. */
+  const restrictionInScope = (row: WorldSpec["restrictions"][number]): boolean => {
+    switch (row.scope) {
+      case "household":
+        return row.subjectRef === householdKey;
+      case "party":
+        return memberKeys.has(row.subjectRef);
+      case "account":
+        return accountKeys.has(row.subjectRef);
+      case "position":
+        throw new Error(
+          `corpus generate: restriction "${row.key}" is position-scoped, which has no modeled subject form - use a position-scoped legal hold, or extend the spec and this subgraph together`,
+        );
+    }
+  };
   return {
     household: {
       id: subjectId(household.key),
@@ -213,6 +285,7 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
       authorityScope: row.authorityScope,
       effectiveFrom: row.effectiveFrom,
       effectiveTo: row.effectiveTo,
+      observedAt: row.observedAt,
     })),
     bankInstructions: sortedBy(
       world.bankInstructions.filter((row) => row.householdRef === householdKey),
@@ -224,6 +297,7 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
       lastFour: row.lastFour,
       verifiedAt: row.verifiedAt,
       changedAt: row.changedAt,
+      observedAt: row.observedAt,
       accountRefs: sortedBy(row.accountRefs, (key) => key).map(subjectId),
     })),
     plannedWithdrawal:
@@ -231,24 +305,18 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
         ? null
         : {
             recordedAt: schedule.recordedAt,
+            observedAt: schedule.observedAt,
             segments: schedule.segments.map((segment) => ({
               fromMonth: segment.fromMonth,
               monthlyMinor: segment.monthlyMinor,
             })),
           },
-    restrictions: sortedBy(
-      world.restrictions.filter(
-        (row) =>
-          (row.scope === "household" && row.subjectRef === householdKey) ||
-          (row.scope === "party" && memberKeys.has(row.subjectRef)) ||
-          (row.scope === "account" && accountKeys.has(row.subjectRef)),
-      ),
-      (row) => row.key,
-    ).map((row) => ({
+    restrictions: sortedBy(world.restrictions.filter(restrictionInScope), (row) => row.key).map((row) => ({
       id: restrictionId(row.key),
       scope: row.scope,
       kind: row.kind,
       recordedAt: row.recordedAt,
+      observedAt: row.observedAt,
       effectiveFrom: row.effectiveFrom,
       effectiveTo: row.effectiveTo,
       sourceRef: row.sourceRef,
@@ -263,6 +331,7 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
       accountRef: subjectId(row.accountRef),
       modelId: row.modelId,
       assignedAt: row.assignedAt,
+      observedAt: row.observedAt,
       pendingRebalance: row.pendingRebalance,
     })),
     pendingActions: sortedBy(
@@ -275,21 +344,20 @@ function householdSubgraph(world: WorldSpec, householdKey: string): JsonValue {
       amountMinor: row.amountMinor,
       state: row.state,
       createdAt: row.createdAt,
+      observedAt: row.observedAt,
       expectedSettleAt: row.expectedSettleAt,
       /** A BLOCKED action does not reduce effective liquidity (assumption AS-15). */
       reducesEffectiveLiquidity: row.state !== "blocked",
     })),
     legalHolds: sortedBy(
-      world.legalHolds.filter(
-        (row) => accountKeys.has(row.subjectRef) || row.subjectRef.includes(`:${householdKey}`) ||
-          accounts.some((account) => row.subjectRef.includes(`:${account.key}:`)),
-      ),
+      world.legalHolds.filter((row) => accountKeys.has(requireLegalHoldSubject(row).accountKey)),
       (row) => row.key,
     ).map((row) => ({
       id: legalHoldId(row.key),
       subjectRef: row.subjectRef,
       scope: row.scope,
       recordedAt: row.recordedAt,
+      observedAt: row.observedAt,
       releasedAt: row.releasedAt,
     })),
   } as JsonValue;
@@ -303,10 +371,12 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
   const casePath = `case/${caseId}`;
   const settlementEarliest = addBusinessDays(clock.asOf, SETTLEMENT_BUSINESS_DAYS, clock.transitions);
 
-  const evidence = sortedBy(corpusCase.evidence, (ref) => ref).map((ref) => {
+  const evidenceRefs = sortedBy(corpusCase.evidence, (ref) => ref);
+  const evidence = evidenceRefs.map((ref) => {
     const { kind, recordKey } = evidenceRef(ref);
     const timing = timingOf(world, kind);
     const observedAt = observedAtOf(world, kind, recordKey);
+    const recordChangedAt = recordChangedAtOf(world, kind, recordKey);
     const lagSeconds = deriveIntInRange(
       seed,
       `${casePath}/evidence/${kind}/${recordKey}`,
@@ -319,6 +389,11 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
       id: evidenceSnapshotId(caseId, `${kind}:${recordKey}`),
       kind,
       subjectRef: subjectRefOf(kind, recordKey),
+      /** The business instant: when the observed fact last changed or was
+       * recorded. Recent-change-window membership is about THIS, never about
+       * when the source happened to look. */
+      recordChangedAt,
+      recordChangedAtLocal: renderLocal(recordChangedAt, clock.transitions),
       observedAt,
       observedAtLocal: renderLocal(observedAt, clock.transitions),
       retrievedAt,
@@ -328,7 +403,7 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
       freshnessWindowDays: timing.freshnessWindowDays,
       withinRecentChangeWindow: isWithinRecentChangeWindow(
         clock.asOf,
-        observedAt,
+        recordChangedAt,
         clock.recentChangeWindowDays,
       ),
       provenance: { ...corpusProvenance(clock.asOf, "high") },
@@ -343,7 +418,7 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
       family,
       reservationId: reservationKey(caseId, family),
       firmId: corpusCase.firmId,
-      conflictKey: conflictKey(conflictScope(family, corpusCase, household.scopeSlug), family),
+      conflictKey: conflictKey(conflictScope(family, corpusCase, evidenceRefs, household.scopeSlug), family),
     };
   });
 

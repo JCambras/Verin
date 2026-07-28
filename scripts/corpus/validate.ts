@@ -15,7 +15,13 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadGoldenCases, loadScenarioRefs } from "../golden-cases.lib";
 import { deriveFreshness, diffSeconds, epochMs, isLocalWeekend, isWithinRecentChangeWindow, renderLocal } from "./clock";
-import { CLEAN_CONTROL_ID, defectClassIds, loadTaxonomy, type Taxonomy } from "./defects";
+import {
+  CLEAN_CONTROL_ID,
+  defectClassIds,
+  loadTaxonomy,
+  taxonomyExerciseProblems,
+  type Taxonomy,
+} from "./defects";
 import { generateSyntheticCases, type GeneratedFile } from "./generate";
 import { buildInventory, corpusDigest, buildManifest, generatorDigest } from "./manifest";
 import { CORPUS_SEED } from "./seed";
@@ -76,12 +82,24 @@ export function committedBytesProblems(
 interface EmittedEvidence {
   id: string;
   kind: string;
+  subjectRef: string;
+  /** The business instant the observed fact last changed or was recorded. */
+  recordChangedAt: string;
+  recordChangedAtLocal: string;
   observedAt: string;
   retrievedAt: string;
   observedAtLocal: string;
+  retrievedAtLocal: string;
   retrievalLagSeconds: number;
   freshness: string;
   withinRecentChangeWindow: boolean;
+}
+
+/** Only the subgraph rows the clean-control rules interrogate. */
+interface EmittedRecords {
+  authorizedSigners: Array<{ id: string; effectiveFrom: string; effectiveTo: string | null }>;
+  restrictions: Array<{ id: string; inForceAtAsOf: boolean }>;
+  bankInstructions: Array<{ id: string; bank: string; lastFour: string; verifiedAt: string | null }>;
 }
 
 interface EmittedCase {
@@ -89,9 +107,11 @@ interface EmittedCase {
   provenance: string;
   partition: string;
   label: { kind: string; defectClassId?: string };
+  assumptions: Array<{ id: string }>;
   trigger: { asOf: string; timeZone: string; timeZoneDataVersion: string; asOfLocal: string };
   request: { settlementEarliest: string; deadline: string; deadlineFeasible: boolean; idempotencyKey: string };
   reservations: Array<{ family: string; conflictKey: string; firmId: string; reservationId: string }>;
+  records: EmittedRecords;
   evidence: EmittedEvidence[];
 }
 
@@ -169,6 +189,14 @@ export function timestampProblems(cases: readonly EmittedCase[], spec: LoadedSpe
       if (epochMs(evidence.observedAt) > epochMs(item.trigger.asOf)) {
         problems.push(`${where}/${evidence.id}: observedAt "${evidence.observedAt}" postdates the trigger - evidence cannot observe the future`);
       }
+      if (epochMs(evidence.recordChangedAt) > epochMs(item.trigger.asOf)) {
+        problems.push(`${where}/${evidence.id}: recordChangedAt "${evidence.recordChangedAt}" postdates the trigger`);
+      }
+      if (epochMs(evidence.recordChangedAt) > epochMs(evidence.observedAt)) {
+        problems.push(
+          `${where}/${evidence.id}: recordChangedAt "${evidence.recordChangedAt}" postdates observedAt "${evidence.observedAt}" - a source cannot observe a record before its content exists`,
+        );
+      }
       const lag = diffSeconds(evidence.retrievedAt, evidence.observedAt);
       if (lag <= 0) {
         problems.push(`${where}/${evidence.id}: retrievedAt does not follow observedAt (lag ${lag}s)`);
@@ -188,12 +216,110 @@ export function timestampProblems(cases: readonly EmittedCase[], spec: LoadedSpe
           `${where}/${evidence.id}: freshness "${evidence.freshness}" but the ${timing.freshnessWindowDays}-day window computes "${expectedFreshness}"`,
         );
       }
-      const expectedRecent = isWithinRecentChangeWindow(item.trigger.asOf, evidence.observedAt, clock.recentChangeWindowDays);
+      // Recent-change membership is a fact about the RECORD, not about when the
+      // source last looked at it: "changed four days ago" must not become "we
+      // synced this morning".
+      const expectedRecent = isWithinRecentChangeWindow(item.trigger.asOf, evidence.recordChangedAt, clock.recentChangeWindowDays);
       if (evidence.withinRecentChangeWindow !== expectedRecent) {
         problems.push(`${where}/${evidence.id}: withinRecentChangeWindow disagrees with the ${clock.recentChangeWindowDays}-day window`);
       }
-      if (evidence.observedAtLocal !== renderLocal(evidence.observedAt, clock.transitions)) {
-        problems.push(`${where}/${evidence.id}: observedAtLocal does not match the pinned time-zone transitions`);
+      for (const [label, instant, rendered] of [
+        ["recordChangedAtLocal", evidence.recordChangedAt, evidence.recordChangedAtLocal],
+        ["observedAtLocal", evidence.observedAt, evidence.observedAtLocal],
+        ["retrievedAtLocal", evidence.retrievedAt, evidence.retrievedAtLocal],
+      ] as const) {
+        // A detector over injected data REPORTS; only the generator may abort.
+        // An instant outside the pinned table is a finding, not a crash.
+        let expectedLocal: string;
+        try {
+          expectedLocal = renderLocal(instant, clock.transitions);
+        } catch (error) {
+          problems.push(`${where}/${evidence.id}: ${label} cannot be checked - ${(error as Error).message}`);
+          continue;
+        }
+        if (rendered !== expectedLocal) {
+          problems.push(`${where}/${evidence.id}: ${label} does not match the pinned time-zone transitions`);
+        }
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * (3b) A CLEAN CONTROL MUST NOT CARRY THE DEFECT BEING MEASURED.
+ *
+ * Controls are the false-positive DENOMINATOR: a control that quietly carries a
+ * defect signature makes the very rate it exists to produce uninterpretable, and
+ * a correct detector flagging it would read as a false positive. Each rule below
+ * is the mechanical signature of one taxonomy class, read off the case's OWN
+ * emitted bytes - so the check is over what ships, not over the generator's
+ * intent.
+ */
+export function cleanControlProblems(cases: readonly EmittedCase[]): string[] {
+  const problems: string[] = [];
+  for (const item of cases) {
+    if (item.label.kind !== CLEAN_CONTROL_ID) continue;
+    const where = item.caseId;
+    if (item.evidence.length === 0) {
+      problems.push(`${where}: a clean control with no evidence measures nothing`);
+    }
+    if (item.assumptions.length > 0) {
+      problems.push(
+        `${where}: a clean control asserts awkward structure(s) ${item.assumptions.map((a) => a.id).join(", ")} - a control carries none by definition`,
+      );
+    }
+    if (!item.request.deadlineFeasible) {
+      problems.push(`${where}: the request's deadline is infeasible - that is deadline-feasibility-error, not a control`);
+    }
+    const signers = new Map(item.records.authorizedSigners.map((row) => [row.id, row]));
+    const restrictions = new Map(item.records.restrictions.map((row) => [row.id, row]));
+    const instructions = new Map(item.records.bankInstructions.map((row) => [row.id, row]));
+    const absent = (at: string, evidence: EmittedEvidence): string =>
+      `${at}: ${evidence.kind} evidence points at "${evidence.subjectRef}", which is absent from the case's own subgraph`;
+    for (const evidence of item.evidence) {
+      const at = `${where}/${evidence.id}`;
+      if (evidence.freshness !== "fresh") {
+        problems.push(`${at}: evidence is "${evidence.freshness}" - a control cannot carry evidence-staleness-unnoticed`);
+      }
+      if (evidence.kind === "authority") {
+        const signer = signers.get(evidence.subjectRef);
+        if (signer === undefined) problems.push(absent(at, evidence));
+        else if (signer.effectiveTo !== null && epochMs(signer.effectiveTo) <= epochMs(evidence.retrievedAt)) {
+          problems.push(
+            `${at}: the cited authority lapses at ${signer.effectiveTo}, inside the evidence interval - that is evidence-interval-collapse`,
+          );
+        } else if (epochMs(signer.effectiveFrom) > epochMs(item.trigger.asOf)) {
+          problems.push(`${at}: the cited authority is not yet effective at the trigger - that is authority-scope-error`);
+        }
+      }
+      if (evidence.kind === "restriction" || evidence.kind === "household-instruction") {
+        const restriction = restrictions.get(evidence.subjectRef);
+        if (restriction === undefined) problems.push(absent(at, evidence));
+        else if (!restriction.inForceAtAsOf) {
+          problems.push(
+            `${at}: the cited restriction is recorded but NOT in force at the trigger - that is restriction-lifecycle-error`,
+          );
+        }
+      }
+      if (evidence.kind === "bank-instruction") {
+        const instruction = instructions.get(evidence.subjectRef);
+        if (instruction === undefined) {
+          problems.push(absent(at, evidence));
+          continue;
+        }
+        if (instruction.verifiedAt === null) {
+          problems.push(`${at}: the cited destination is unverified - that is destination-integrity-defect`);
+        }
+        const twin = item.records.bankInstructions.find(
+          (row) =>
+            row.id !== instruction.id && row.bank === instruction.bank && row.lastFour === instruction.lastFour,
+        );
+        if (twin !== undefined) {
+          problems.push(
+            `${at}: the cited destination shares bank+lastFour with "${twin.id}" - that is destination-integrity-defect`,
+          );
+        }
       }
     }
   }
@@ -236,19 +362,24 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   const spec = loadSpec(join(root, "spec"));
   const taxonomy = loadTaxonomy(join(root, "spec"));
   const generated = generateSyntheticCases(spec, seed);
-  const manifest = buildManifest(spec, generated, seed);
+  // ONE inventory: the manifest's corpusDigest and the digest recomputed here are
+  // then provably over the same object, not two equal-by-coincidence rebuilds.
+  const inventory = buildInventory(generated);
+  const manifest = buildManifest(spec, generated, seed, inventory);
   const committed = readCommittedCorpus(root);
   const cases = generated.map((file) => file.value as unknown as EmittedCase);
   const refs = loadScenarioRefs();
   const goldenCaseIds = new Set(
     loadGoldenCases().map((entry) => String((entry.data as Record<string, unknown>).caseId)),
   );
-  const digest = corpusDigest(spec.world.corpusVersion, seed, buildInventory(generated));
+  const digest = corpusDigest(spec.world.corpusVersion, seed, inventory);
   const signoff = loadSignoff(join(root, "spec"));
   const problems = [
     ...committedBytesProblems([...generated, manifest], committed),
     ...labelProblems(cases, taxonomy, refs.provenanceLabels, goldenCaseIds),
+    ...taxonomyExerciseProblems(taxonomy, spec.cases),
     ...timestampProblems(cases, spec),
+    ...cleanControlProblems(cases),
     ...nfcProblems(committed),
     ...realDerivedProblems(taxonomy, join(root, "real-derived")),
     ...signoffProblems(signoff, spec.world.corpusVersion, digest),

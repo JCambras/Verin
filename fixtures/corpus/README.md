@@ -28,7 +28,17 @@ signposts; the byte comparison is the mechanism.
 Values are derived path-keyed - `SHA-256(seed ‖ path ‖ field)` - not from a stream PRNG, so **adding one
 household changes only that household's cases**. The `corpus-determinism` fence proves this directly, along
 with byte-identity across runs and time zones, seed sensitivity, and the ban on clocks, randomness, and
-locale APIs inside `scripts/corpus/`.
+locale APIs inside `scripts/corpus/`. Every cross-record reference is resolved by structured parse against
+exact identifiers rather than substring, and anything read positionally out of the spec is sorted first, so
+neither a prefix-colliding household key nor a neutral reorder can move a digest.
+
+## Every record says when it was OBSERVED
+
+`observedAt` on a spec record is when the evidence source observed it - never when the underlying fact
+became true. The business dates (`effectiveFrom`, `changedAt`, `recordedAt`, `assignedAt`, `createdAt`)
+live beside it and are carried into the emitted subgraph. A fact may be years old and freshly observed;
+deriving one from the other makes every long-standing fact stale, which is a defect class in its own
+right (D-078). A control that carries any defect signature fails validation.
 
 ## Honesty
 

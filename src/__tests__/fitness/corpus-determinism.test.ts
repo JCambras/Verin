@@ -114,69 +114,87 @@ export function seedSensitivityProblems(underA: Map<string, string>, underB: Map
     : [];
 }
 
-/** A NEW household inserted in the MIDDLE of every spec collection, so a
- * position-sensitive generator reshuffles and a path-keyed one does not. */
+/**
+ * A NEW household inserted in the MIDDLE of every spec collection, so a
+ * position-sensitive generator reshuffles and a path-keyed one does not.
+ *
+ * Its key is `smiths-west`: a deliberate PREFIX COLLISION with the existing
+ * `smiths` household, carrying its own position-scoped legal hold. A subgraph
+ * that resolved holds by substring (`subjectRef.includes(":smiths")`) would leak
+ * this hold into `smiths` and change a foreign household's committed bytes - the
+ * exact break a neutrally-keyed `inserted` household cannot detect.
+ */
 function specWithInsertedHousehold(spec: LoadedSpec): LoadedSpec {
   const middle = <T>(rows: readonly T[], row: T): T[] => {
     const at = Math.floor(rows.length / 2);
     return [...rows.slice(0, at), row, ...rows.slice(at)];
   };
   const world = spec.world;
+  const observedAt = world.accounts[0]!.balanceObservedAt;
   return {
     ...spec,
     world: {
       ...world,
       parties: middle(world.parties, {
-        key: "inserted-party",
+        key: "smiths-west-party",
         kind: "natural-person",
         rosterName: "Inserted Fixture Person",
         roles: ["client"],
       }),
       households: middle(world.households, {
-        key: "inserted",
-        scopeSlug: "inserted",
+        key: "smiths-west",
+        scopeSlug: "smiths-west",
         displayName: "Inserted Fixture Household",
-        memberRefs: ["inserted-party"],
+        memberRefs: ["smiths-west-party"],
         advisorRef: world.households[0]!.advisorRef,
       }),
       accounts: middle(world.accounts, {
-        key: "inserted-taxable",
-        householdRef: "inserted",
+        key: "smiths-west-taxable",
+        householdRef: "smiths-west",
         registration: "individual",
-        ownerRefs: ["inserted-party"],
+        ownerRefs: ["smiths-west-party"],
         custodian: world.accounts[0]!.custodian,
         balanceMinor: 1_000_000,
-        balanceObservedAt: world.accounts[0]!.balanceObservedAt,
+        balanceObservedAt: observedAt,
         taxClass: "taxable",
       }),
       bankInstructions: middle(world.bankInstructions, {
-        key: "inserted-primary",
-        householdRef: "inserted",
-        titledTo: "inserted-party",
+        key: "smiths-west-primary",
+        householdRef: "smiths-west",
+        titledTo: "smiths-west-party",
         bank: "Inserted Bank",
         lastFour: "0000",
         verifiedAt: world.bankInstructions[0]!.verifiedAt,
         changedAt: null,
-        accountRefs: ["inserted-taxable"],
+        accountRefs: ["smiths-west-taxable"],
+        observedAt,
+      }),
+      legalHolds: middle(world.legalHolds, {
+        key: "smiths-west-position-hold",
+        subjectRef: "position:smiths-west-taxable:NBRD-2031",
+        scope: "position",
+        recordedAt: observedAt,
+        observedAt,
+        releasedAt: null,
       }),
     },
     cases: {
       ...spec.cases,
       cases: middle(spec.cases.cases, {
-        key: "inserted-control",
+        key: "smiths-west-control",
         title: "Inserted clean control",
         firmId: "firm-a",
-        householdRef: "inserted",
+        householdRef: "smiths-west",
         assumptionIds: [],
         label: { kind: "clean-control", controlRationale: "Inserted to prove order independence." },
         request: {
-          sourceAccountRef: "inserted-taxable",
-          destinationRef: "inserted-primary",
+          sourceAccountRef: "smiths-west-taxable",
+          destinationRef: "smiths-west-primary",
           amountMinor: 100_000,
           discriminator: "1000-2026-09-10",
           deadline: "2026-09-10T13:00:00.000Z",
         },
-        evidence: ["balance/inserted-taxable", "bank-instruction/inserted-primary"],
+        evidence: ["balance/smiths-west-taxable", "bank-instruction/smiths-west-primary"],
         conflictFamilies: ["liquidity"],
       }),
     },
@@ -205,10 +223,10 @@ describe("corpus-determinism fence", () => {
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
-  it("(c) enforces: inserting a household mid-spec changes ONLY that household's cases", () => {
+  it("(c) enforces: inserting a PREFIX-COLLIDING household mid-spec changes ONLY that household's cases", () => {
     const before = bytesByPath(realSpec, CORPUS_SEED);
     const after = bytesByPath(specWithInsertedHousehold(realSpec), CORPUS_SEED);
-    expect(changedPaths(before, after)).toEqual(["synthetic/CS-inserted-control.json"]);
+    expect(changedPaths(before, after)).toEqual(["synthetic/CS-smiths-west-control.json"]);
   });
 
   it("(d) enforces: no clock, randomness, locale API, or env read under scripts/corpus/", () => {

@@ -57,6 +57,24 @@ explicitly sorted; local time is rendered from **time-zone transition instants c
 and checked against the platform tz database by the fence as an independent oracle - never from a
 hardcoded offset and never from `Intl` inside the generator.
 
+Order-independence and reference resolution are part of the same property (D-080). Every cross-record
+reference resolves by **structured parse against exact identifiers**, never by substring - a household
+keyed `smiths-west` must not leak a legal hold into `smiths`, and the determinism fence's inserted
+household is keyed for exactly that collision. Anything read positionally out of the hand-owned spec is
+sorted first, so a semantically neutral reorder in `cases.json` cannot move a conflict key or a digest.
+
+### 2b. Evidence carries three instants, not one (D-078)
+
+`recordChangedAt` is when the underlying FACT changed or was recorded; `observedAt` is when the evidence
+SOURCE observed the record; `retrievedAt` is when this evaluation retrieved it. They drive three
+different rules - the recent-change window, freshness, and the per-kind retrieval band (measured from
+`trigger.asOf`) - and **deriving one from another is itself a defect class**. An earlier revision
+inferred `observedAt` from a business date, which makes every long-standing fact necessarily stale and
+planted `evidence-staleness-unnoticed` in four of the five labeled clean controls: the false-positive
+denominator carried the defect it exists to measure. Every record therefore carries its own `observedAt`
+in the hand-owned spec, the way `balanceObservedAt` always did, and staleness is a deliberate per-record
+property.
+
 ### 3. The provenance split is structural, not editorial
 
 - **No aggregate type exists.** There is no `overall`, no index signature, no accessor that reduces

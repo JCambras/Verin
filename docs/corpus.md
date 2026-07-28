@@ -31,7 +31,7 @@ construction (`CS-` vs `GC-` ids) and the `corpus-provenance-split` fence assert
 ```
 fixtures/corpus/
   spec/world.json            hand-owned  world clock, roster, households, accounts, instructions
-  spec/cases.json            hand-owned  the 20 awkward structures + every case
+  spec/cases.json            hand-owned  the 21 awkward structures + every case
   spec/defect-taxonomy.json  hand-owned  the closed defect vocabulary
   spec/SIGNOFF.md            hand-owned  captain-only; agents never write it
   manifest.json              GENERATED   version, seed, digests, per-partition counts
@@ -63,27 +63,38 @@ each directory's README names its owning command.
 
 **Derivation is path-keyed**, `SHA-256(seed ‖ path ‖ field)` - not a stream PRNG. Adding a household
 therefore changes **only that household's cases**, which the determinism fence asserts by inserting one
-mid-spec and requiring exactly one changed file.
+mid-spec and requiring exactly one changed file. The inserted household is keyed `smiths-west`, a
+deliberate **prefix collision** with the existing `smiths`: every cross-record reference resolves by
+exact structured parse (`legalHoldSubject`), never by substring, so a neighbouring key cannot leak into
+a foreign subgraph. Rule 5 covers the same ground for input ORDER: a case's conflict scope is read off
+its evidence *after* sorting, so a semantically neutral reorder in `cases.json` cannot move a conflict
+key, a case's bytes, or `corpusDigest`.
 
 Seed: `verin-corpus/2026.07.0`. World clock: `2026-07-26T13:30:00.000Z`, `America/New_York`,
 `iana-tzdb/2026b`.
 
 ---
 
-## 4. The twenty awkward structures
+## 4. The twenty-one awkward structures
 
 Each structure exists to falsify a specific assumption, and is labeled with it in `spec/cases.json` so a
-later engine failure names the structure that broke it. `AS-01`…`AS-20` cover: surname and trust-name
+later engine failure names the structure that broke it. `AS-01`…`AS-21` cover: surname and trust-name
 collision; one party in two households; a trust that both owns and inherits; an LLC signer outside the
 household; conflicting owner instructions on one joint account; a shared bank instruction; duplicate
 last-four destinations; a beneficiary contradicting a destination restriction; authority lapsing inside
 the evidence interval; a pending rebalance during evaluation; a **segmented** withdrawal schedule; an
 **absent** schedule; expired-and-future restrictions; a position-scoped legal hold; a **blocked** pending
-action; observations straddling both DST transitions; a non-ASCII roster name; requests at the exact
-thresholds; a deadline before the decision instant; and liquidity available only in a retirement account.
+action; change history straddling both DST transitions; a non-ASCII roster name; requests at the exact
+thresholds; a deadline before the decision instant; liquidity available only in a retirement account;
+and a record whose **last observation** is twelve weeks old while its business date says nothing about
+when it was last checked.
 
-Every assumption must be attacked by at least one case - an unexercised structure is decoration, and the
-spec loader refuses it.
+Two completeness rules run in both directions, and both fail the build:
+
+- Every assumption must be attacked by at least one case (the spec loader refuses an unexercised one).
+- Every defect class in the closed taxonomy must be carried by at least one labeled defect case. An
+  unexercised class inflates the taxonomy relative to what the corpus actually exercises - it is
+  decoration for exactly the same reason.
 
 ---
 
@@ -103,18 +114,42 @@ false-positive rate is not a measurement: a detector that blocks everything woul
 corpus with no clean controls fails validation, and coverage computed without controls is reported
 `interpretable: false`.
 
+**A clean control may not carry the defect being measured.** Controls are the false-positive
+*denominator*, so one that quietly carries a defect signature makes the very rate it exists to produce
+meaningless - a correct detector flagging it would read as a false positive. Every control is checked
+against the mechanical signature of each taxonomy class over its own emitted bytes: no stale evidence,
+no authority lapsing inside the evidence interval, no restriction recorded but out of force, no
+unverified or last-four-colliding destination, no evidence pointing at a record absent from its own
+subgraph, no infeasible deadline, and no asserted awkward structure. The companion drives the rule by
+relabeling real defect cases as controls and requiring each to be caught.
+
 ---
 
 ## 6. Timestamp realism, given machine meaning
 
-1. `observedAt` strictly precedes `retrievedAt`; nothing is observed after the trigger.
-2. Retrieval follows the trigger, inside the committed per-kind latency band.
+Three instants are kept apart, because collapsing them is itself a defect class (D-078):
+
+| Field | Meaning | Drives |
+|---|---|---|
+| `recordChangedAt` | when the underlying FACT changed or was recorded | recent-change window membership |
+| `observedAt` | when the evidence SOURCE observed the record | freshness |
+| `retrievedAt` | when THIS evaluation retrieved it | the per-kind retrieval band |
+
+Deriving `observedAt` from a business date makes every long-standing fact necessarily stale, which
+plants `evidence-staleness-unnoticed` in any case citing it. Every record therefore carries its own
+`observedAt` in the hand-owned spec, the way `balanceObservedAt` always did, and staleness is a
+deliberate per-record property.
+
+1. `observedAt` strictly precedes `retrievedAt`; nothing is observed after the trigger; and
+   `recordChangedAt` never postdates the observation reporting it.
+2. Retrieval follows the trigger, inside the committed per-kind latency band - the band is measured from
+   `trigger.asOf`, not from `observedAt`.
 3. A zero or out-of-band lag fails - the "every timestamp is the same second" tell.
 4. **Freshness is recomputed**, never trusted: `(asOf - observedAt)` against the per-kind window.
-5. Recent-change window membership is recomputed against the firm window.
-6. "Two business days later" lands on a real weekday in `America/New_York`, and local renderings come
-   from pinned tz transitions - checked against the **platform time-zone database** by the fence, so a
-   hardcoded `-04:00` cannot survive.
+5. Recent-change window membership is recomputed against the firm window from `recordChangedAt`.
+6. "Two business days later" lands on a real weekday in `America/New_York`, and every local rendering
+   comes from pinned tz transitions - checked against the **platform time-zone database** by the fence,
+   so a hardcoded `-04:00` cannot survive.
 
 ---
 
@@ -186,4 +221,4 @@ pnpm corpus:report     # provenance-split measurement; refuses to blend
 ```
 
 Fences: `corpus-determinism`, `corpus-provenance-split`, `corpus-timestamps`, `conflict-key-families`
-(adversarial proofs PF-090…PF-093 in [`docs/fences/proof-log.md`](./fences/proof-log.md)).
+(adversarial proofs PF-090…PF-095 in [`docs/fences/proof-log.md`](./fences/proof-log.md)).

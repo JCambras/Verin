@@ -6823,3 +6823,105 @@ derivation yields one key per case.
 (`Tests 14 passed`).
 
 **Date:** 2026-07-28 (v3 prompt 11, PR-11a).
+
+---
+
+## PF-094 · corpus-provenance-split (clean-control honesty + taxonomy completeness) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-078/D-079, ADR-0034 §2b/§6):** a labeled clean control is the false-positive DENOMINATOR,
+so it may not carry the defect being measured - not through a stale observation, an authority lapsing
+inside the evidence interval, a restriction recorded but out of force, an unverified or
+last-four-colliding destination, an evidence item pointing at a record absent from its own subgraph, an
+infeasible deadline, or an asserted awkward structure. And every class in the closed taxonomy must be
+carried by at least one labeled defect case, mirroring the spec loader's unexercised-assumption rule.
+
+**Injection 1 - the pre-D-078 evidence model.** Restored one line of `observedAtOf`
+(`scripts/corpus/generate.ts`) to infer an authority's observation from its business date
+(`find(world.authorizedSigners).effectiveFrom`) - the shape the whole generator had before this change,
+and the shape that makes a long-standing fact necessarily stale.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (e) enforces: no clean control carries a defect implicitly (stale, lapsed, expired, or unverified evidence)
+AssertionError: clean controls carrying the defect being measured:
+CS-clean-fresh-authority/evs:CS-clean-fresh-authority:authority:daniel-on-okonkwo: evidence is "stale" - a control cannot carry evidence-staleness-unnoticed: expected [ Array(1) ] to deeply equal []
+```
+`CS-clean-fresh-authority` is titled "long-standing, unexpired authority" and its rationale says "no
+interval question arises" - and it was shipping `freshness: "stale"`. Four of the five controls did.
+
+**Injection 2 - the unexercised class.** Deleted `AS-21` and `CS-stale-model-assignment-evidence` from
+`fixtures/corpus/spec/cases.json`, returning the corpus to the state where one taxonomy class was
+carried by no case at all.
+
+**Observed failure (verbatim):**
+```
+✗ defectClasses[evidence-staleness-unnoticed] is carried by no labeled defect case - an unexercised class is decoration
+corpus: 3 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+**Injection 3 - a drifted un-defer trigger.** Rewrote `corpus_deferral.un_defer_trigger` in
+`config/demo/scenarios.yaml` to a DIFFERENT 166-character sentence naming a different authorized source.
+The previous assertion was `String(...).length > 40`, which this passes.
+
+**Observed failure (verbatim, abridged):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (d) enforces: the scenario matrix records the same deferral, with the same trigger
+AssertionError: expected 'The captain authorizes a scrubbed sou…' to be 'The captain authorizes a scrubbed sou…' // Object.is equality
+Expected: "…real NIGO returns, custodian rejections, or operational exceptions…"
+Received: "…real operational exception history…"
+```
+
+**Standing companions:** five real defect cases relabeled as clean controls, one per mechanical defect
+signature (staleness, interval collapse, restriction lifecycle, destination integrity, deadline
+feasibility), each required to be caught; a control that still asserts an awkward structure; a control
+whose evidence points at a record stripped from its own subgraph; and a taxonomy class dropped from the
+case set.
+
+**Revert:** `scripts/corpus/generate.ts`, `fixtures/corpus/spec/cases.json` and
+`config/demo/scenarios.yaml` restored and byte-compared; `pnpm corpus:validate` reports "regenerated
+byte-identical; every rule holds"; fences green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 1).
+
+---
+
+## PF-095 · corpus-determinism (prefix-colliding household + input-order neutrality) · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-080):** "adding a household changes only that household's bytes" must survive a new
+household whose key EXTENDS an existing one, and a semantically neutral reorder of a case's evidence
+array must not move a conflict key, a case's bytes, or `corpusDigest`.
+
+**Injection 1 - substring subject resolution.** Restored the unanchored legal-hold filter in
+`householdSubgraph` (`row.subjectRef.includes(":" + householdKey)`) in place of the structured
+`requireLegalHoldSubject` parse. The fence's inserted household is now keyed `smiths-west` and carries
+its own hold `position:smiths-west-taxable:NBRD-2031`.
+
+**Observed failure (verbatim, abridged):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (c) enforces: inserting a PREFIX-COLLIDING household mid-spec changes ONLY that household's cases
+AssertionError: expected [ …(17) ] to deeply equal [ Array(1) ]
++   "synthetic/CS-authority-lapse-inside-retrieval.json",
++   "synthetic/CS-beneficiary-versus-destination-restriction.json",
+    … 17 files, all of them `smiths` cases …
+```
+Seventeen foreign cases changed because one new household's hold leaked into `smiths`. The previous
+fence inserted a household keyed `inserted`, which collides with nothing and could not detect this.
+
+**Injection 2 - raw-order conflict scope.** Made `conflictScope` scan `corpusCase.evidence` in spec
+order again instead of the sorted list.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (a) enforces: the COMMITTED corpus equals a fresh regeneration (no hand edits)
+AssertionError: synthetic/CS-joint-owners-conflicting-instructions.json: committed bytes differ from regeneration (9788 vs 9791 bytes) - generated files are never hand-edited
+```
+Exactly the one case whose conflict scope is chosen from its evidence list.
+
+**Positive control:** with the fix in place, swapping that case's evidence array into a different order
+in `fixtures/corpus/spec/cases.json` leaves the whole fence green (`Tests 14 passed`) - the reorder is
+byte-neutral, which is the property itself rather than the absence of a symptom.
+
+**Revert:** `scripts/corpus/generate.ts` and `fixtures/corpus/spec/cases.json` restored and
+byte-compared; fence green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 1).

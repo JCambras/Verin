@@ -5,10 +5,15 @@ import { parseDocument } from "yaml";
 import { Node, Project, SyntaxKind } from "ts-morph";
 import { REPO_ROOT, inMemoryProject, walk } from "./_fence-utils";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
-import { defectClassIds } from "../../../scripts/corpus/defects";
+import { defectClassIds, taxonomyExerciseProblems } from "../../../scripts/corpus/defects";
 import { buildCorpusReport, type CaseOutcome } from "../../../scripts/corpus/report";
 import { realDerivedCaseProblems } from "../../../scripts/corpus/scrub-contract";
-import { labelProblems, realDerivedProblems, validateCorpus } from "../../../scripts/corpus/validate";
+import {
+  cleanControlProblems,
+  labelProblems,
+  realDerivedProblems,
+  validateCorpus,
+} from "../../../scripts/corpus/validate";
 
 /**
  * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0034; charter #3/#4;
@@ -32,8 +37,13 @@ import { labelProblems, realDerivedProblems, validateCorpus } from "../../../scr
  *      `detectionRate: null` with `reasonCode: "real-derived-corpus-absent"` and
  *      never substitutes the synthetic figure. The companion populates the
  *      partition and gets a NUMBER, proving `null` is a real branch, not a stub;
- *  (e) FALSE POSITIVES BESIDE COVERAGE - clean controls exist, and a detector
- *      that flags everything scores 1.0 coverage AND 1.0 false positives;
+ *  (e) FALSE POSITIVES BESIDE COVERAGE - clean controls exist; a detector that
+ *      flags everything scores 1.0 coverage AND 1.0 false positives; no control
+ *      carries the defect being measured (stale, lapsed, expired, unverified or
+ *      dangling evidence, or an infeasible deadline), because a polluted
+ *      denominator makes the false-positive rate meaningless; and every class in
+ *      the closed taxonomy is exercised by at least one labeled defect case -
+ *      the mirror of the spec loader's unexercised-assumption rule;
  *  (f) FAIL-CLOSED INTAKE + AGENTS NEVER SIGN - the real-derived contract rejects
  *      an unattested or free-text-bearing case, and no code path under
  *      `scripts/` can originate a `signedBy` value.
@@ -236,12 +246,30 @@ describe("corpus-provenance-split fence", () => {
     expect(matrix.corpus_deferral?.deferred_elements).toEqual(["replay-corpus"]);
     for (const id of matrix.corpus_deferral?.deferred_elements ?? []) expect(elementIds.has(id)).toBe(true);
     expect(existsSync(join(REPO_ROOT, String(matrix.corpus_deferral?.adr)))).toBe(true);
-    expect(String(matrix.corpus_deferral?.un_defer_trigger).length).toBeGreaterThan(40);
+    // BYTE equality, not a length floor: two un-defer triggers that merely happen
+    // to be long can say entirely different things about when this partition may
+    // be populated.
+    expect(matrix.corpus_deferral?.un_defer_trigger).toBe(
+      manifest.partitions.realDerived.deferral.unDeferTrigger,
+    );
   });
 
   it("(e) enforces: the signed corpus carries labeled clean controls", () => {
     const controls = real.cases.filter((item) => item.label.kind === "clean-control");
     expect(controls.length, "no clean controls means no false-positive rate is computable").toBeGreaterThan(0);
+  });
+
+  it("(e) enforces: no clean control carries a defect implicitly (stale, lapsed, expired, or unverified evidence)", () => {
+    const problems = cleanControlProblems(real.cases);
+    expect(problems, `clean controls carrying the defect being measured:\n${problems.join("\n")}`).toEqual([]);
+    // Non-vacuity: the rules must actually have controls to run over.
+    expect(real.cases.filter((item) => item.label.kind === "clean-control").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("(e) enforces: every class in the closed taxonomy is exercised by a labeled defect case", () => {
+    const problems = taxonomyExerciseProblems(real.taxonomy, real.spec.cases);
+    expect(problems, `unexercised defect classes:\n${problems.join("\n")}`).toEqual([]);
+    expect(real.taxonomy.defectClasses.length).toBeGreaterThanOrEqual(16);
   });
 
   it("(f) enforces: no corpus code path originates a signature", () => {
@@ -282,6 +310,53 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ] as typeof real.cases;
     const problems = labelProblems(collided, real.taxonomy, refs.provenanceLabels, goldenIds);
     expect(problems.some((p) => p.includes("collides with a signed golden case id"))).toBe(true);
+  });
+
+  /** One REAL defect case, relabeled as a control. Its defect signature is
+   * unchanged, so whatever the rule fails to notice ships as a control. */
+  const relabeledAsControl = (caseId: string): typeof real.cases => {
+    const found = real.cases.find((item) => item.caseId === caseId);
+    expect(found, `${caseId} must exist for the companion to drive the rule`).toBeDefined();
+    return [
+      { ...(JSON.parse(JSON.stringify(found)) as (typeof real.cases)[number]), label: { kind: "clean-control" } },
+    ];
+  };
+
+  it.each([
+    ["CS-stale-model-assignment-evidence", "cannot carry evidence-staleness-unnoticed"],
+    ["CS-authority-lapse-inside-retrieval", "that is evidence-interval-collapse"],
+    ["CS-expired-and-future-restrictions", "that is restriction-lifecycle-error"],
+    ["CS-duplicate-last-four-destinations", "that is destination-integrity-defect"],
+    ["CS-deadline-precedes-decision", "that is deadline-feasibility-error"],
+  ])("a defect case relabeled as a clean control is caught: %s", (caseId, expected) => {
+    const problems = cleanControlProblems(relabeledAsControl(caseId));
+    expect(problems.join("\n"), `${caseId} passed as a control`).toContain(expected);
+  });
+
+  it("a control that still asserts an awkward structure, or cites a record absent from its own subgraph, is flagged", () => {
+    const asserting = cleanControlProblems(relabeledAsControl("CS-position-scoped-legal-hold"));
+    expect(asserting.some((p) => p.includes("a control carries none by definition"))).toBe(true);
+
+    const control = JSON.parse(JSON.stringify(real.cases.find((c) => c.caseId === "CS-clean-fresh-authority"))) as
+      (typeof real.cases)[number];
+    expect(cleanControlProblems([control])).toEqual([]);
+    control.records.authorizedSigners = [];
+    expect(
+      cleanControlProblems([control]).some((p) => p.includes("absent from the case's own subgraph")),
+    ).toBe(true);
+  });
+
+  it("a defect class carried by NO case is flagged (an unexercised class is decoration)", () => {
+    const orphaned = real.taxonomy.defectClasses[0]!.id;
+    const withoutIt = {
+      ...real.spec.cases,
+      cases: real.spec.cases.cases.filter(
+        (entry) => entry.label.kind !== "defect" || entry.label.defectClassId !== orphaned,
+      ),
+    };
+    const problems = taxonomyExerciseProblems(real.taxonomy, withoutIt);
+    expect(problems.some((p) => p.includes(orphaned) && p.includes("unexercised class is decoration"))).toBe(true);
+    expect(taxonomyExerciseProblems(real.taxonomy, real.spec.cases)).toEqual([]);
   });
 
   it("a corpus with NO clean controls is flagged (coverage without false positives is not a measurement)", () => {
