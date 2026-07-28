@@ -225,6 +225,22 @@ jobs:
       - name: golden-case validation (every required field populated; vocabulary aligned; signoff honest)
         run: pnpm golden:validate
 
+  corpus:
+    name: corpus (prompt-11 replay-corpus regeneration + provenance split)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: corpus validation (regenerate + byte-compare; labels, timestamps, intake, signoff)
+        run: pnpm corpus:validate
+      - name: corpus measurement report (split by provenance; refuses to blend)
+        run: pnpm corpus:report
+
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)
     runs-on: ubuntu-latest

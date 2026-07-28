@@ -1,0 +1,12 @@
+# Generated trees. `linguist-generated` collapses them in review diffs and marks
+# their ownership visibly; the ENFORCEMENT is `pnpm corpus:validate`, which
+# regenerates and byte-compares in the blocking `corpus` CI job (ADR-0034).
+# The hand-owned inputs under fixtures/corpus/spec/ are deliberately NOT marked.
+fixtures/corpus/manifest.json linguist-generated=true
+fixtures/corpus/synthetic/** linguist-generated=true
+
+# Canonical bytes are LF, everywhere, forever: the corpus digest is a hash over
+# committed bytes, so a CRLF checkout would break every signature.
+fixtures/corpus/** text eol=lf
+fixtures/decision-core/** text eol=lf
+fixtures/golden/** text eol=lf

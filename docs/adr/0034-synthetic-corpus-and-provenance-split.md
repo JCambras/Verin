@@ -1,0 +1,155 @@
+# ADR-0034: The replay corpus is a deterministic synthetic substrate with a fenced provenance split, an honestly empty real-derived partition, and digest-bound per-version signoff
+
+**Status:** Accepted
+**Date:** 2026-07-28
+**Deciders:** Founding architect, executing captain rulings `corpus-real-derived-provenance` and
+`corpus-signoff-and-measurement` (both 2026-07-28)
+**Relates to:** Charter non-negotiables #1, #2, #3, #4, #5; ADR-0018 (line budgets), ADR-0024
+(the deferral precedent this ADR mirrors), ADR-0029 (canonical serializer reused here), D-034 (demo
+contract as data), D-035 (golden-case truth set)
+**Informed by:** `docs/v3/verin-architecture-v3.md` §2.4, `docs/demo-contract.md` §7,
+`docs/v3/verin-prompt-sequence-v3.md` (prompt 11)
+
+## Context
+
+Prompt 11 exists to produce the labeled defect corpus behind the demo's headline measured claim.
+Three facts constrain it, and each has been quietly ignored in prior builds:
+
+1. **A synthetic-only rate is circular.** Architecture §2.4 requires the metric to be split by
+   provenance and never blended; demo contract §7 adds that a rate measured on author-invented
+   defects is *synthetic-defect coverage*, not detection. `config/demo/scenarios.yaml` records
+   `replay-corpus` with `reality_at_phase1: real-derived-fixture`. **There is no scrubbed real defect
+   history in this repository**, no owner, and no delivery date.
+2. **A corpus that is not byte-stable is not replay input.** The corpus feeds later replay and
+   regression work. A generator whose output churns when the spec is reordered makes every downstream
+   digest meaningless.
+3. **The line budget has no room in any platform layer.** `contracts` measures close to its ceiling
+   and two in-flight branches already exceed it. A corpus generator does not belong in `src/`.
+
+## Decision
+
+### 1. Two artifacts, never conflated
+
+The sixteen captain-signed golden cases (`fixtures/golden/`) answer *"what is the correct outcome?"*.
+The replay corpus (`fixtures/corpus/`) answers *"does Verin catch this defect before execution?"*.
+They are **disjoint by construction** and the `corpus-provenance-split` fence asserts it. **The golden
+sixteen are never counted in a corpus denominator** - they were authored to be caught, so scoring
+against them is exactly the circularity §2.4 warns about.
+
+### 2. Generation is build-time tooling, path-keyed and deterministic
+
+The generator lives in `scripts/corpus/`, beside `golden-cases.lib.ts`, `v3-invariants.ts` and
+`load-smoke.ts`. **Prompt 11 adds zero lines to `contracts`, `domain`, `infrastructure` or
+`presentation`**; a corpus type enters `src/` only when a runtime surface consumes it (charter #5).
+That move is honest only because it is measured: this PR adds the `tooling` bucket to the line-budget
+fence and extends the per-file ceiling to walk `scripts/**` (see ADR-0018 amendment below).
+
+Derivation is **path-keyed**, `SHA-256(seed ‖ path ‖ field)`, not a stream PRNG. A stream makes the
+corpus order-fragile: inserting one household reshuffles every subsequent value. Path-keying makes
+each value a pure function of its own address, so **adding a household changes exactly that
+household's bytes** - fenced directly, along with byte identity across runs and time zones, seed
+sensitivity, and an AST ban on clocks, randomness, locale APIs and environment reads inside
+`scripts/corpus/`.
+
+Bytes come from the landed `canonicalJson` (ADR-0029) plus one trailing newline. Money is integer
+minor units; percentages are basis points; every string is NFC-normalized; every collection is
+explicitly sorted; local time is rendered from **time-zone transition instants carried in the spec**
+and checked against the platform tz database by the fence as an independent oracle - never from a
+hardcoded offset and never from `Intl` inside the generator.
+
+### 3. The provenance split is structural, not editorial
+
+- **No aggregate type exists.** There is no `overall`, no index signature, no accessor that reduces
+  across provenance classes, and an AST rule fails the build on any expression that combines the two
+  partitions arithmetically.
+- **The labels are different words.** `syntheticDefectCoverage` for the synthetic partition;
+  `detectionRate` may name only the real-derived one. Enforced by structural key identity.
+- **Honest empty.** With `realDerived.total === 0` the reporter emits `detectionRate: null` with
+  `reasonCode: "real-derived-corpus-absent"` and refuses to substitute the synthetic figure. The
+  companion populates the partition and a number appears, so the `null` is a real branch, not a stub.
+
+### 4. The real-derived partition ships EMPTY, with its intake pipeline (captain ruling)
+
+Population is **formally deferred** pending an authorized scrubbed source, an accountable owner for
+extraction and de-identification, and an agreed delivery date and review path. This is recorded
+through the same mechanism as the Salesforce deferral (ADR-0024 + a `deferral` record in the scenario
+matrix): `config/demo/scenarios.yaml` now carries a `corpus_deferral` section with the un-defer
+trigger, cross-checked against `fixtures/corpus/manifest.json` by the fence.
+
+Until the partition is populated and reviewed: **Phase 1 is not complete, no investor-facing
+detection-rate claim is permitted, and synthetic coverage stays labeled synthetic.**
+
+What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, who extracted,
+scrubbed and reviewed, when, records before and after, method, with review by a second party) and a
+**closed-vocabulary-only** rule - a real-derived case may contain no free text at all, so a scrubbing
+miss has nowhere to live. The contract is **fail-closed**: an unanticipated string is rejected rather
+than waved through. It runs over the empty partition in the blocking `corpus` CI job, and its
+companions drive it with unattested, free-text-bearing, self-reviewed and mislabeled cases, which is
+what makes a shipped-but-unpopulated capability charter-#5-legal.
+
+**This ADR invents no defect history.** Every defect class in the taxonomy cites a requirement or a
+signed case that already exists in this repository, and the cited file's existence is validated.
+
+### 5. Signoff is per corpus version, bound to `corpusDigest` (captain ruling)
+
+The captain signs a **corpus version**, not each case, and the signature is bound to the canonical
+`corpusDigest`. Any regeneration that changes the digest invalidates the signature and requires
+re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
+this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
+signed is the **labels**, because they are the denominator of every figure the corpus can report.
+
+**Agents never sign.** No generated file carries a signature: the manifest holds a `signoffRef`
+pointer, not a signature block, and a fence proves no code path under `scripts/` originates a
+`signedBy`/`signedAt`/`signedDigest` literal and that the generator can emit only into `synthetic/`.
+
+### 6. Labeled clean controls and a false-positive rate are mandatory (captain ruling)
+
+Every coverage figure ships with a **false-positive rate computed from labeled clean controls**, and a
+coverage figure without one is marked `interpretable: false`. A detector that blocks everything scores
+1.0 coverage *and* 1.0 false positives and cannot claim success. A corpus with no clean controls fails
+validation.
+
+### 7. ADR-0018 amendment: the `tooling` envelope
+
+`scripts/**` was invisible to both budget fences. This PR adds a measured `tooling` bucket with its
+own ceiling and extends the per-file 500-line ceiling to walk `scripts/**`. The bucket carries the
+same zero-total staleness guard as every other, so a renamed path fails loudly instead of silently
+dropping its envelope. **Ratchet-down point:** after the corpus generator's first post-prompt-19
+simplification pass, once replay has shown which generator surface is actually load-bearing.
+
+## What this PR explicitly does NOT claim
+
+- **Not Gate B.** Gate B requires money movement *and account opening* expressible as data - prompt
+  10's deliverable - plus a stable corpus. This delivers the second half only.
+- **Zero v3 invariants are activated.** No `activatesWhen` in `v3-invariants.json` names prompt 11.
+- **No detection rate, and no number of any kind today.** The corpus is unsigned and no detector
+  exists, so every figure is `null` with a reason code.
+- **Not "the labeled replay corpus" of demo contract §7.** It is the synthetic half of it.
+- **No signed golden fixture, `docs/golden-cases.md`, or golden validator is modified.** Signed-case
+  materialization and `signoff.signedDigest` are a later, separate PR.
+
+## Consequences
+
+- The corpus is regenerable and byte-verifiable; a hand edit to a generated file fails CI.
+- The demo's weakest number is now *structurally* prevented from being overstated, at the cost of
+  reporting nothing until the captain signs and a detector exists. That is the intended trade.
+- Adding a defect class or an awkward structure is a spec edit plus a regeneration plus a re-signoff.
+
+## Alternatives considered
+
+- **A stream PRNG.** Simpler, and order-fragile. Rejected: it would make every spec insertion churn
+  the whole corpus and its digests.
+- **Corpus entities added to `DATA_DICTIONARY`.** Rejected: charter #2 forbids speculative modeling.
+  They graduate when a real evidence source port needs them (prompt 14).
+- **Seeding the corpus into the house-CRM store.** Rejected: keeps `org-id-required`, the audit chain
+  and the PII boundary out of prompt 11's blast radius. The corpus is a fixture-plane asset.
+- **Per-case corpus signoff** (extending `docs/golden-cases.md`'s rule unchanged). Rejected by the
+  captain: the ceremony does not scale to a generated corpus, and digest binding is stronger.
+- **Amending Phase 1 so a synthetic-only corpus suffices.** Rejected: it permanently forfeits the
+  demo's primary proof metric.
+
+## Revert path
+
+Delete `fixtures/corpus/`, `scripts/corpus*`, the four fences, the `corpus` CI job, the three package
+scripts, the `corpus_deferral` matrix section with its `PINNED_IDS` entry, and the `tooling` budget
+bucket. Nothing in `src/` depends on any of it.

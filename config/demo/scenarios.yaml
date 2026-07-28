@@ -330,3 +330,28 @@ deferral:
   gating_rule: >-
     The demo runs end to end on labeled fakes, but Phase 1 is never declared complete
     on fakes (demo contract §8; build-sequence orchestrator rule 6).
+
+# --------------------------------------------------------------------------
+# The replay-corpus real-derived deferral, as data (captain ruling, 2026-07-28;
+# ADR-0034). A SECOND, independent deferral recorded through the same mechanism
+# as the Salesforce one. It is a separate section on purpose: the element-level
+# `deferral:` marking above is defined against `deferral.status`, so marking
+# replay-corpus there would claim it is deferred pending a Salesforce sandbox.
+# Cross-checked against fixtures/corpus/manifest.json by the
+# corpus-provenance-split fence.
+# --------------------------------------------------------------------------
+corpus_deferral:
+  id: replay-corpus-real-derived
+  status: deferred-pending-authorized-source
+  un_defer_trigger: >-
+    The captain authorizes a scrubbed source of real NIGO returns, custodian rejections, or
+    operational exceptions, names an accountable owner for extraction and de-identification,
+    and agrees a delivery date and review path.
+  decided_by: captain ruling, 2026-07-28
+  deferred_elements: [replay-corpus]
+  adr: docs/adr/0034-synthetic-corpus-and-provenance-split.md
+  gating_rule: >-
+    Prompt 11 ships the split-capable corpus, the scrub-intake contract, and an honestly
+    empty real-derived partition. Until that partition is populated and reviewed, Phase 1
+    is not complete, no investor-facing detection-rate claim is permitted, and synthetic
+    coverage stays labeled synthetic - it can never stand in for real-derived performance.

@@ -36,6 +36,16 @@ plus `fixtures/golden/` (D-035): captain-signoff-gated (agents never sign; the c
 on 2026-07-26, making their expected outcomes binding product truth), validated by `pnpm golden:validate`
 (CI job `golden-cases`) and the `golden-cases` fence.
 
+The replay corpus (v3 prompt 11, ADR-0034) is a SEPARATE artifact from the signed 16 and disjoint from
+them by construction: [`docs/corpus.md`](./docs/corpus.md) is normative, hand-owned input lives in
+`fixtures/corpus/spec/`, and `fixtures/corpus/{manifest.json,synthetic/}` are GENERATED - never hand-edit
+them, `pnpm corpus:validate` regenerates and byte-compares (CI job `corpus`). Derivation is path-keyed
+(`SHA-256(seed‖path‖field)`), so adding a household changes only that household's bytes. The real-derived
+partition ships EMPTY behind a fail-closed intake contract ([`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md));
+`detectionRate` is `null` with a reason code and is NEVER substituted by the synthetic figure, whose name
+is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest` - regeneration
+invalidates it, and agents never sign.
+
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
@@ -85,7 +95,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
 (Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
-`pnpm golden:validate` (16-case golden truth set). All gates
+`pnpm golden:validate` (16-case golden truth set) ·
+`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
@@ -236,6 +247,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
   surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
   saying which prompt lands its caller - knip cannot see this, since every export has a test.
+- **`scripts/**` is budgeted now (ADR-0034).** Both budget fences used to walk `src/` only, so moving code
+  to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket and `max-file-size` walks
+  `scripts/**` under the same 500-line per-file ceiling. Build-time tooling is a legitimate home for
+  generators — it is not an unmeasured one.
 
 ## Maintaining this file
 

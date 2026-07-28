@@ -1,0 +1,112 @@
+{
+  "specVersion": "1.0.0",
+  "corpusVersion": "2026.07.0",
+  "rosterNote": "EVERY personal, trust, entity, bank, and custodian name in this file is INVENTED for this corpus. No name is drawn from a real household, client, institution, or public record, and no name generator was used - the roster is a fixed, committed list so a reviewer can see exactly what exists. Names deliberately collide (two Smith households plus a Smith trust) and deliberately carry non-ASCII characters, because both are structures a real book of business contains and a naive engine assumes away.",
+  "clock": {
+    "asOf": "2026-07-26T13:30:00.000Z",
+    "timeZone": "America/New_York",
+    "timeZoneDataVersion": "iana-tzdb/2026b",
+    "recentChangeWindowDays": 7,
+    "transitions": [
+      { "at": "2024-03-10T07:00:00.000Z", "offsetMinutes": -240 },
+      { "at": "2024-11-03T06:00:00.000Z", "offsetMinutes": -300 },
+      { "at": "2025-03-09T07:00:00.000Z", "offsetMinutes": -240 },
+      { "at": "2025-11-02T06:00:00.000Z", "offsetMinutes": -300 },
+      { "at": "2026-03-08T07:00:00.000Z", "offsetMinutes": -240 },
+      { "at": "2026-11-01T06:00:00.000Z", "offsetMinutes": -300 },
+      { "at": "2027-03-14T07:00:00.000Z", "offsetMinutes": -240 }
+    ]
+  },
+  "evidenceKinds": {
+    "balance": { "minRetrievalLagSeconds": 2, "maxRetrievalLagSeconds": 9, "freshnessWindowDays": 1 },
+    "bank-instruction": { "minRetrievalLagSeconds": 3, "maxRetrievalLagSeconds": 11, "freshnessWindowDays": 30 },
+    "household-instruction": { "minRetrievalLagSeconds": 4, "maxRetrievalLagSeconds": 13, "freshnessWindowDays": 90 },
+    "planned-withdrawals": { "minRetrievalLagSeconds": 5, "maxRetrievalLagSeconds": 15, "freshnessWindowDays": 30 },
+    "pending-actions": { "minRetrievalLagSeconds": 2, "maxRetrievalLagSeconds": 8, "freshnessWindowDays": 1 },
+    "restriction": { "minRetrievalLagSeconds": 3, "maxRetrievalLagSeconds": 10, "freshnessWindowDays": 90 },
+    "authority": { "minRetrievalLagSeconds": 4, "maxRetrievalLagSeconds": 12, "freshnessWindowDays": 90 },
+    "model-assignment": { "minRetrievalLagSeconds": 3, "maxRetrievalLagSeconds": 9, "freshnessWindowDays": 7 },
+    "legal-hold": { "minRetrievalLagSeconds": 2, "maxRetrievalLagSeconds": 7, "freshnessWindowDays": 365 },
+    "recent-change": { "minRetrievalLagSeconds": 3, "maxRetrievalLagSeconds": 10, "freshnessWindowDays": 7 }
+  },
+  "parties": [
+    { "key": "robert-smith", "kind": "natural-person", "rosterName": "Robert Smith", "roles": ["client", "grantor"] },
+    { "key": "ana-smith", "kind": "natural-person", "rosterName": "Aña Smith", "roles": ["client", "grantor"] },
+    { "key": "mira-smith", "kind": "natural-person", "rosterName": "Mira Smith", "roles": ["client", "signer", "beneficiary"] },
+    { "key": "smith-family-trust", "kind": "trust", "rosterName": "Smith Family Trust", "roles": ["client", "beneficiary"] },
+    { "key": "harborline-holdings-llc", "kind": "entity", "rosterName": "Harborline Holdings LLC", "roles": ["client"] },
+    { "key": "kessa-varn", "kind": "natural-person", "rosterName": "Kessa Varn", "roles": ["signer"] },
+    { "key": "tobias-varn", "kind": "natural-person", "rosterName": "Tobias Varn", "roles": ["client"] },
+    { "key": "daniel-okonkwo", "kind": "natural-person", "rosterName": "Daniel Okonkwo", "roles": ["client"] },
+    { "key": "priya-okonkwo", "kind": "natural-person", "rosterName": "Priya Okonkwo", "roles": ["client", "beneficiary"] },
+    { "key": "renna-alcott", "kind": "natural-person", "rosterName": "Renna Alcott, CFP", "roles": ["advisor"] }
+  ],
+  "households": [
+    { "key": "smiths", "scopeSlug": "smiths", "displayName": "Robert & Aña Smith", "memberRefs": ["robert-smith", "ana-smith", "smith-family-trust"], "advisorRef": "renna-alcott" },
+    { "key": "smith-mira", "scopeSlug": "smith-mira", "displayName": "Mira Smith", "memberRefs": ["mira-smith"], "advisorRef": "renna-alcott" },
+    { "key": "varn", "scopeSlug": "varn", "displayName": "Tobias & Kessa Varn", "memberRefs": ["tobias-varn", "kessa-varn", "harborline-holdings-llc"], "advisorRef": "renna-alcott" },
+    { "key": "okonkwo", "scopeSlug": "okonkwo", "displayName": "Daniel & Priya Okonkwo", "memberRefs": ["daniel-okonkwo", "priya-okonkwo"], "advisorRef": "renna-alcott" }
+  ],
+  "accounts": [
+    { "key": "smiths-joint-taxable", "householdRef": "smiths", "registration": "joint-tenants-wros", "ownerRefs": ["robert-smith", "ana-smith"], "custodian": "custodian-northbridge", "balanceMinor": 42000000, "balanceObservedAt": "2026-07-26T01:00:00.000Z", "taxClass": "taxable" },
+    { "key": "smiths-ira", "householdRef": "smiths", "registration": "traditional-ira", "ownerRefs": ["robert-smith"], "custodian": "custodian-northbridge", "balanceMinor": 61000000, "balanceObservedAt": "2026-07-26T01:00:00.000Z", "taxClass": "retirement" },
+    { "key": "smiths-trust-taxable", "householdRef": "smiths", "registration": "revocable-trust", "ownerRefs": ["smith-family-trust"], "custodian": "custodian-northbridge", "balanceMinor": 18000000, "balanceObservedAt": "2026-07-26T01:00:00.000Z", "taxClass": "trust" },
+    { "key": "mira-roth", "householdRef": "smith-mira", "registration": "roth-ira", "ownerRefs": ["mira-smith"], "custodian": "custodian-northbridge", "balanceMinor": 9500000, "balanceObservedAt": "2026-07-26T01:00:00.000Z", "taxClass": "retirement" },
+    { "key": "harborline-operating", "householdRef": "varn", "registration": "llc-operating", "ownerRefs": ["harborline-holdings-llc"], "custodian": "custodian-southgate", "balanceMinor": 27000000, "balanceObservedAt": "2026-07-26T01:30:00.000Z", "taxClass": "entity" },
+    { "key": "varn-taxable", "householdRef": "varn", "registration": "individual", "ownerRefs": ["tobias-varn"], "custodian": "custodian-southgate", "balanceMinor": 12000000, "balanceObservedAt": "2026-07-26T01:30:00.000Z", "taxClass": "taxable" },
+    { "key": "okonkwo-taxable", "householdRef": "okonkwo", "registration": "joint-tenants-wros", "ownerRefs": ["daniel-okonkwo", "priya-okonkwo"], "custodian": "custodian-southgate", "balanceMinor": 31000000, "balanceObservedAt": "2026-07-26T01:30:00.000Z", "taxClass": "taxable" }
+  ],
+  "beneficiaries": [
+    { "accountRef": "mira-roth", "partyRef": "smith-family-trust", "sharePercentBps": 10000, "tier": "primary" },
+    { "accountRef": "smiths-joint-taxable", "partyRef": "mira-smith", "sharePercentBps": 5000, "tier": "primary" },
+    { "accountRef": "smiths-joint-taxable", "partyRef": "smith-family-trust", "sharePercentBps": 5000, "tier": "primary" },
+    { "accountRef": "smiths-ira", "partyRef": "ana-smith", "sharePercentBps": 10000, "tier": "primary" },
+    { "accountRef": "smiths-trust-taxable", "partyRef": "mira-smith", "sharePercentBps": 10000, "tier": "contingent" },
+    { "accountRef": "okonkwo-taxable", "partyRef": "priya-okonkwo", "sharePercentBps": 10000, "tier": "primary" }
+  ],
+  "authorizedSigners": [
+    { "key": "mira-on-smiths-joint", "accountRef": "smiths-joint-taxable", "partyRef": "mira-smith", "authorityScope": "distribution-request", "effectiveFrom": "2025-09-01T13:00:00.000Z", "effectiveTo": null },
+    { "key": "kessa-on-harborline", "accountRef": "harborline-operating", "partyRef": "kessa-varn", "authorityScope": "full", "effectiveFrom": "2025-04-15T13:00:00.000Z", "effectiveTo": null },
+    { "key": "mira-on-smiths-trust", "accountRef": "smiths-trust-taxable", "partyRef": "mira-smith", "authorityScope": "distribution-request", "effectiveFrom": "2026-07-26T13:29:58.000Z", "effectiveTo": "2026-07-26T13:30:02.000Z" },
+    { "key": "daniel-on-okonkwo", "accountRef": "okonkwo-taxable", "partyRef": "daniel-okonkwo", "authorityScope": "full", "effectiveFrom": "2024-11-04T14:00:00.000Z", "effectiveTo": null }
+  ],
+  "bankInstructions": [
+    { "key": "smiths-primary", "householdRef": "smiths", "titledTo": "robert-smith", "bank": "Northbridge Bank", "lastFour": "4417", "verifiedAt": "2026-07-24T15:40:00.000Z", "changedAt": "2026-07-22T18:12:00.000Z", "accountRefs": ["smiths-joint-taxable", "smiths-ira"] },
+    { "key": "smiths-trust-alt", "householdRef": "smiths", "titledTo": "smith-family-trust", "bank": "Northbridge Bank", "lastFour": "4417", "verifiedAt": null, "changedAt": "2026-06-30T17:05:00.000Z", "accountRefs": ["smiths-trust-taxable"] },
+    { "key": "mira-primary", "householdRef": "smith-mira", "titledTo": "mira-smith", "bank": "Northbridge Bank", "lastFour": "8802", "verifiedAt": "2026-05-02T14:20:00.000Z", "changedAt": null, "accountRefs": ["mira-roth"] },
+    { "key": "varn-primary", "householdRef": "varn", "titledTo": "harborline-holdings-llc", "bank": "Southgate Trust", "lastFour": "7725", "verifiedAt": "2026-03-20T13:45:00.000Z", "changedAt": null, "accountRefs": ["harborline-operating", "varn-taxable"] },
+    { "key": "okonkwo-primary", "householdRef": "okonkwo", "titledTo": "daniel-okonkwo", "bank": "Southgate Trust", "lastFour": "3190", "verifiedAt": "2026-06-12T14:00:00.000Z", "changedAt": "2026-06-10T16:30:00.000Z", "accountRefs": ["okonkwo-taxable"] }
+  ],
+  "plannedWithdrawals": [
+    { "key": "smiths", "householdRef": "smiths", "recordedAt": "2026-06-30T13:00:00.000Z", "segments": [{ "fromMonth": "2026-08", "monthlyMinor": 800000 }, { "fromMonth": "2027-02", "monthlyMinor": 1200000 }] },
+    { "key": "varn", "householdRef": "varn", "recordedAt": "2026-06-09T13:00:00.000Z", "segments": [{ "fromMonth": "2026-08", "monthlyMinor": 300000 }] },
+    { "key": "okonkwo", "householdRef": "okonkwo", "recordedAt": "2026-07-20T13:00:00.000Z", "segments": [{ "fromMonth": "2026-08", "monthlyMinor": 450000 }] }
+  ],
+  "restrictions": [
+    { "key": "smiths-destination", "recordedAt": "2025-06-01T13:00:00.000Z", "scope": "household", "subjectRef": "smiths", "kind": "destination-restriction", "effectiveFrom": "2025-06-01T13:00:00.000Z", "effectiveTo": null, "sourceRef": "household-instruction:smiths-2025-06" },
+    { "key": "smiths-expired-cap", "recordedAt": "2025-01-15T14:00:00.000Z", "scope": "household", "subjectRef": "smiths", "kind": "distribution-cap", "effectiveFrom": "2025-01-15T14:00:00.000Z", "effectiveTo": "2026-01-14T14:00:00.000Z", "sourceRef": "household-instruction:smiths-2025-01" },
+    { "key": "smiths-future-cap", "recordedAt": "2026-07-10T13:00:00.000Z", "scope": "household", "subjectRef": "smiths", "kind": "distribution-cap", "effectiveFrom": "2026-12-01T14:00:00.000Z", "effectiveTo": null, "sourceRef": "household-instruction:smiths-2026-12" },
+    { "key": "smiths-robert-instruction", "recordedAt": "2026-02-10T14:00:00.000Z", "scope": "party", "subjectRef": "robert-smith", "kind": "distribution-instruction", "effectiveFrom": "2026-02-10T14:00:00.000Z", "effectiveTo": null, "sourceRef": "household-instruction:smiths-robert" },
+    { "key": "smiths-ana-instruction", "recordedAt": "2026-03-18T13:00:00.000Z", "scope": "party", "subjectRef": "ana-smith", "kind": "distribution-instruction", "effectiveFrom": "2026-03-18T13:00:00.000Z", "effectiveTo": null, "sourceRef": "household-instruction:smiths-ana" },
+    { "key": "okonkwo-standing-instruction", "recordedAt": "2025-08-04T13:00:00.000Z", "scope": "household", "subjectRef": "okonkwo", "kind": "distribution-instruction", "effectiveFrom": "2025-08-04T13:00:00.000Z", "effectiveTo": null, "sourceRef": "household-instruction:okonkwo-2025-08" }
+  ],
+  "recentChanges": [
+    { "key": "smiths-bank-change", "subjectRef": "bank-instruction:smiths-primary", "changeKind": "bank-instruction-changed", "observedAt": "2026-07-22T18:12:00.000Z", "priorValueRef": "bank-instruction:smiths-primary@2026-05-02" },
+    { "key": "okonkwo-bank-change", "subjectRef": "bank-instruction:okonkwo-primary", "changeKind": "bank-instruction-changed", "observedAt": "2026-06-10T16:30:00.000Z", "priorValueRef": "bank-instruction:okonkwo-primary@2025-12-01" },
+    { "key": "smiths-review-edt", "subjectRef": "subject:smiths-joint-taxable", "changeKind": "registration-reviewed", "observedAt": "2026-03-08T12:00:00.000Z", "priorValueRef": "subject:smiths-joint-taxable@2025-09-01" },
+    { "key": "smiths-review-est", "subjectRef": "subject:smiths-joint-taxable", "changeKind": "registration-reviewed", "observedAt": "2025-11-02T09:00:00.000Z", "priorValueRef": "subject:smiths-joint-taxable@2025-06-01" },
+    { "key": "mira-signer-added", "subjectRef": "subject:smiths-joint-taxable", "changeKind": "authorized-signer-added", "observedAt": "2025-09-01T13:00:00.000Z", "priorValueRef": "subject:smiths-joint-taxable@2025-08-01" }
+  ],
+  "modelAssignments": [
+    { "key": "smiths-joint-model", "accountRef": "smiths-joint-taxable", "modelId": "model-balanced-60-40", "assignedAt": "2026-07-22T13:30:00.000Z", "pendingRebalance": true },
+    { "key": "okonkwo-model", "accountRef": "okonkwo-taxable", "modelId": "model-conservative-40-60", "assignedAt": "2026-07-24T13:30:00.000Z", "pendingRebalance": false }
+  ],
+  "pendingActions": [
+    { "key": "smiths-transfer", "householdRef": "smiths", "accountRef": "smiths-joint-taxable", "kind": "outgoing-distribution", "amountMinor": 2000000, "state": "pending", "createdAt": "2026-07-26T05:05:00.000Z", "expectedSettleAt": "2026-07-29T14:00:00.000Z" },
+    { "key": "smiths-blocked-transfer", "householdRef": "smiths", "accountRef": "smiths-joint-taxable", "kind": "outgoing-distribution", "amountMinor": 1500000, "state": "blocked", "createdAt": "2026-07-26T03:20:00.000Z", "expectedSettleAt": "2026-08-05T14:00:00.000Z" },
+    { "key": "okonkwo-incoming", "householdRef": "okonkwo", "accountRef": "okonkwo-taxable", "kind": "incoming-transfer", "amountMinor": 500000, "state": "settling", "createdAt": "2026-07-26T04:00:00.000Z", "expectedSettleAt": "2026-07-28T14:00:00.000Z" }
+  ],
+  "legalHolds": [
+    { "key": "smiths-position-hold", "subjectRef": "position:smiths-joint-taxable:NBRD-2031", "scope": "position", "recordedAt": "2026-07-01T13:00:00.000Z", "releasedAt": null }
+  ]
+}

@@ -1,0 +1,49 @@
+# Real-derived partition - deliberately EMPTY
+
+`provenance: real-derived-fixture` · status `deferred-pending-authorized-source`
+
+This directory holds **anonymized real defect history**: NIGO returns, custodian rejections, and
+operational exceptions that actually happened, scrubbed of PII before entering fixtures. It contains **zero
+cases today, and that is the honest state**, not an oversight.
+
+## Why it is empty
+
+There is no authorized scrubbed source of real defect history in this repository, no accountable owner for
+extraction and de-identification, and no agreed delivery date. Writing cases here from imagination would be
+inventing defect history - forbidden, and exactly the circularity the provenance split exists to prevent
+(architecture v3 §2.4; demo contract §7).
+
+Captain ruling `corpus-real-derived-provenance` (2026-07-28) formally defers population, recorded through
+the same ADR mechanism the Salesforce deferral uses (ADR-0024 → ADR-0034).
+
+## What is blocked while it is empty
+
+- **`detectionRate` is never emitted.** `pnpm corpus:report` returns `null` with
+  `reasonCode: "real-derived-corpus-absent"` and refuses to substitute the synthetic figure. The synthetic
+  partition's figure is called `syntheticDefectCoverage` - a different word, deliberately.
+- **Phase 1 is not complete.** Synthetic coverage cannot stand in for real-derived performance.
+- **No investor-facing detection-rate claim is permitted.**
+
+## Un-defer trigger
+
+The captain supplies:
+
+1. an authorized scrubbed source of real NIGO returns, custodian rejections, or operational exceptions;
+2. an accountable owner for extraction and de-identification;
+3. an agreed delivery date and review path.
+
+## What a case here must satisfy
+
+The intake pipeline is already shipped and already runs over this (empty) directory in the `corpus` CI job -
+see `docs/corpus-scrub-procedure.md` for the procedure and `scripts/corpus/scrub-contract.ts` for the
+enforced contract. In short, every case must carry:
+
+- a complete **`scrubAttestation`** (source-system class, who extracted/scrubbed/reviewed and when, records
+  before and after, scrubbing method), with review by someone other than the scrubber;
+- **closed-vocabulary values only**. No free text at all: every string is a canonical instant, an opaque
+  `tok:<16 hex>` token, a derived id built from tokens, or a member of a declared vocabulary. An
+  unanticipated string is REJECTED, so a scrubbing miss has nowhere to live;
+- a `caseId` of the form `RD-<16 hex>`, disjoint from `CS-` corpus ids and `GC-` signed golden ids.
+
+Files here are **hand-delivered under the procedure, never generated**. `pnpm corpus:generate` does not
+write to this directory.

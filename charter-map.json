@@ -52,6 +52,10 @@
           "ref": "docs/adr/0022-derived-compliance-artifacts-demonstration.md"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-split.test.ts"
+        },
+        {
           "type": "ci-gate",
           "ref": "provenance-trace"
         }
@@ -487,6 +491,46 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "replay-corpus-substrate",
+      "title": "Replay corpus is deterministic, provenance-split, honestly empty where it has no real data, and signed per version against its corpusDigest (v3 prompt 11, ADR-0034)",
+      "status": "enforced",
+      "phase": "v3-p11",
+      "mechanisms": [
+        {
+          "type": "adr",
+          "ref": "docs/adr/0034-synthetic-corpus-and-provenance-split.md"
+        },
+        {
+          "type": "file",
+          "ref": "docs/corpus.md"
+        },
+        {
+          "type": "procedure",
+          "ref": "docs/corpus-scrub-procedure.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-determinism.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-split.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-timestamps.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/conflict-key-families.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "corpus"
         }
       ]
     },

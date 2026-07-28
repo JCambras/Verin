@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { shippedSourceFiles, REPO_ROOT } from "./_fence-utils";
-import { relative } from "node:path";
+import { shippedSourceFiles, REPO_ROOT, walk } from "./_fence-utils";
+import { join, relative } from "node:path";
 
 /**
  * LINE-BUDGET FENCE (ADR-0018, charter #1/#10). PER-LAYER ratchet-down ceilings on
@@ -46,6 +46,14 @@ const CEILINGS = {
   domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
+  // BUILD-TIME TOOLING under scripts/** (ADR-0034 amendment to ADR-0018). Until
+  // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
+  // corpus generator out of src/ would have been evasion rather than
+  // discipline. Measured 3636 at introduction; ceiling set at actual + ~10%
+  // headroom, ratcheting down after the corpus generator's first post-prompt-19
+  // simplification pass. Tooling is REPORTED SEPARATELY, never averaged into a
+  // platform layer.
+  tooling: 4000,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
@@ -56,12 +64,18 @@ function bucket(file: string): Bucket {
   if (r.startsWith("src/contracts/")) return "contracts";
   if (r.startsWith("src/domain/")) return "domain";
   if (r.startsWith("src/infrastructure/")) return "infrastructure";
+  if (r.startsWith("scripts/")) return "tooling";
   return "other";
 }
 
+/** Build-time tooling files - the tree the platform fences never walked. */
+export function toolingFiles(): string[] {
+  return walk(join(REPO_ROOT, "scripts"), (f) => f.endsWith(".ts"));
+}
+
 export function measureBudgets(): Record<keyof typeof CEILINGS, number> {
-  const totals = { contracts: 0, domain: 0, infrastructure: 0, presentation: 0 };
-  for (const f of shippedSourceFiles()) {
+  const totals = { contracts: 0, domain: 0, infrastructure: 0, presentation: 0, tooling: 0 };
+  for (const f of [...shippedSourceFiles(), ...toolingFiles()]) {
     const b = bucket(f);
     if (b !== "other") totals[b] += readFileSync(f, "utf8").split("\n").length;
   }
@@ -103,6 +117,17 @@ describe("line-budget fence (per-layer)", () => {
     it("presentation growth is charged only to presentation, never the platform layers", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");
       expect(bucket(`${REPO_ROOT}src/domain/x.ts`)).toBe("domain");
+    });
+    it("build-time tooling is charged to `tooling`, never to a platform layer (ADR-0034)", () => {
+      expect(bucket(`${REPO_ROOT}scripts/corpus/generate.ts`)).toBe("tooling");
+      expect(bucket(`${REPO_ROOT}scripts/db-seed.ts`)).toBe("tooling");
+      expect(bucket(`${REPO_ROOT}src/contracts/x.ts`)).toBe("contracts");
+    });
+    it("the tooling bucket measures a NON-EMPTY tree, so moving code to scripts/ cannot hide it", () => {
+      expect(toolingFiles().length).toBeGreaterThanOrEqual(10);
+      expect(totals.tooling).toBeGreaterThan(0);
+      const v = budgetViolations({ ...totals, tooling: 0 });
+      expect(v.some((m) => m.startsWith("tooling:") && m.includes("stale"))).toBe(true);
     });
   });
 });

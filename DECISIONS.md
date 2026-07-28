@@ -4411,3 +4411,116 @@ the same reason the clock is pinned non-UTC), and a timeout is a verdict about t
 about correctness - 60s still catches a hang, which is the only thing the budget is for.
 **Relates to:** D-127; charter #4, #8.
 **Revert path:** two numbers in `vitest.config.ts`.
+
+### D-102 · 2026-07-28 · reversible · Replay corpus lands as build-time tooling with a measured `tooling` budget
+
+The corpus generator lives in `scripts/corpus/`, beside `golden-cases.lib.ts`, `v3-invariants.ts` and
+`load-smoke.ts`. **Prompt 11 adds zero lines to `contracts`, `domain`, `infrastructure` or
+`presentation`** - no corpus type enters `src/` until a runtime surface consumes it (charter #5).
+
+That move would be evasion rather than discipline if `scripts/**` stayed unmeasured, which it was: both
+budget fences walked `SRC_ROOT` only. The same PR adds a `tooling` bucket to `line-budget.test.ts`
+(measured **3636** at introduction, ceiling **4000**) and extends `max-file-size.test.ts` to walk
+`scripts/**` under the same 500-line per-file ceiling. Tooling is reported as its own bucket, never
+averaged into a platform layer; the existing zero-total staleness guard covers it.
+
+Numbering: ADR **0034** remains unchanged. These decisions were authored as D-070..D-077 and their
+proofs as PF-090..PF-093, but upstream assigned those ranges before integration. The canonical merged
+IDs continue the journal at **D-102..D-109** and the proof log at **PF-188..PF-191**. Earlier corpus
+references to the topic-branch IDs mean these canonical entries.
+
+**Why:** the line ceilings are only meaningful if code cannot escape them by moving directory.
+**Revert path:** move the generator under `src/domain` plus an ADR-0018 amendment, and drop the bucket.
+**Ratchet-down point:** after the corpus generator's first post-prompt-19 simplification pass.
+
+### D-103 · 2026-07-28 · reversible · Corpus derivation is path-keyed, not a stream PRNG
+
+Every generated value is `SHA-256(seed ‖ path ‖ field)` keyed by its own address. A stateful stream
+makes the corpus order-fragile: inserting one household at position 3 reshuffles every subsequent value
+and churns every downstream digest. The `corpus-determinism` fence proves the property directly by
+inserting a household mid-spec and requiring exactly one changed file, and PF-188's second injection
+shows a fully deterministic ordinal-keyed generator still failing it.
+
+**Why:** a corpus whose bytes churn on an unrelated edit cannot anchor replay.
+**Revert path:** a different `derive()` plus one full regeneration and a captain re-signoff.
+
+### D-104 · 2026-07-28 · reversible · Corpus entities stay corpus-plane; the corpus is never seeded into the store
+
+Eight of prompt 11's twelve entity kinds have no canonical entity, dictionary row or table. They are NOT
+added to `DATA_DICTIONARY`: charter #2 forbids speculative modeling, and a fixture generator is not a
+declared day-one flow. They graduate when a real evidence source port needs them (prompt 14), under the
+existing `provenance-required` fence. The corpus is a fixture-plane asset and is never written to the
+house-CRM store, which keeps `org-id-required`, the audit chain and the PII boundary out of scope.
+
+Each corpus record carries `RecordProvenance` structurally, imported from `src/contracts/provenance.ts`
+rather than redeclared, so the corpus and the product share one provenance vocabulary.
+
+**Why:** charter #2 and #5; a fixture plane needs no schema commitment.
+**Revert path:** promote the types into `domain/schema` with dictionary rows and a migration.
+
+### D-105 · 2026-07-28 · reversible · `conflictKey(scope, family) = "conflict:<scope>-<family>"`, read OUT of signed truth
+
+The derivation is defined to reproduce the signed literals (`conflict:smiths-liquidity`,
+`res:GC-01:liquidity`, `idem:GC-01:smiths-75000-2026-08-15`) EXACTLY, so no signed fixture changes and
+no re-signoff is triggered. Seven families ship; `external-submission` is deliberately excluded because
+idempotency and conflict control are different mechanisms - giving a retry a conflict key would make it
+contend with itself.
+
+**Correction to the design report:** the report predicted a facts-only idempotency key would collide
+GC-10 with GC-11. Measured against the live signed set, GC-11 carries `idempotencyKey: null` (it is
+blocked), so that pair cannot collide. The real collision is larger and better evidence: **seven** of the
+eight signed idempotency literals (GC-01, GC-02, GC-03, GC-12, GC-13, GC-14, GC-15) share the facts
+`smiths-75000-2026-08-15`, so a facts-only derivation collapses seven distinct decisions onto one key.
+The fence proves the collision on that live set instead of on the predicted pair.
+
+**Why:** deriving from signed literals rather than imposing on them keeps signed truth untouched.
+**Revert path:** a different derivation plus a captain re-attestation of the affected literals.
+
+### D-106 · 2026-07-28 · reversible · The manifest carries a signoff POINTER, not a signature
+
+The design sketched a `signoff` block inside the generated manifest. Shipped instead: the manifest
+carries `signoffRef` (file + `boundTo: "corpusDigest"`), and the signature itself lives only in the
+hand-owned `spec/SIGNOFF.md`. This makes "agents never sign" structural rather than procedural - **no
+generated file can contain a signature**, and the fence proves no corpus code path originates a
+`signedBy`/`signedAt`/`signedDigest` literal and that the generator can emit only into `synthetic/`.
+
+**Why:** a generated file holding a signature would make regeneration a signing act.
+**Revert path:** mirror the parsed signoff into the manifest and re-fence the mirror.
+
+### D-107 · 2026-07-28 · reversible · Restrictions carry `recordedAt` distinct from `effectiveFrom`
+
+Awkward structure AS-13 (an expired-but-recorded restriction and a future-dated one) exposed that
+evidence over a restriction observes its RECORDING, not its effectivity. Modelling those as one field
+produced evidence observing the future, which the timestamp rules correctly refused. Household
+instructions are modelled as restrictions scoped to a party rather than as a thirteenth record type.
+
+**Why:** "recorded" and "in force" are different facts, which is the assumption AS-13 exists to falsify.
+**Revert path:** collapse the fields and drop AS-13.
+
+### D-108 · 2026-07-28 · reversible · The corpus deferral is recorded in the scenario matrix as its own section
+
+Captain ruling `corpus-real-derived-provenance` requires the deferral to be recorded "through the same
+ADR and scenario-matrix mechanism used for Salesforce". `config/demo/scenarios.yaml` gains a
+`corpus_deferral` section (a purely additive append, with its id appended to the demo-scenarios fence's
+`PINNED_IDS` as that fence's ratchet demands).
+
+It is a SEPARATE section rather than an entry in the existing `deferral` block because the element-level
+`deferral:` marking is defined against `deferral.status` - marking `replay-corpus` there would claim it
+is deferred pending a *Salesforce sandbox*, which is false. The new section is not decorative: the
+`corpus-provenance-split` fence cross-checks its id, status, `deferred_elements`, ADR path and un-defer
+trigger against `fixtures/corpus/manifest.json`.
+
+**Why:** two independent deferrals with different triggers must not share one status field.
+**Revert path:** generalize the fence's deferral cross-reference to iterate deferral-shaped sections and
+merge the two.
+
+### D-109 · 2026-07-28 · reversible · Labeled clean controls and a false-positive rate are part of the corpus contract
+
+Per captain ruling `corpus-signoff-and-measurement`: every coverage figure ships beside a false-positive
+rate computed from labeled clean controls, and a coverage figure without one is `interpretable: false`.
+A corpus with no clean controls FAILS validation. Five of the twenty-six shipped cases are controls.
+The standing companion proves a detector that flags everything scores 1.0 coverage **and** 1.0 false
+positives, so blocking everything cannot read as success.
+
+**Why:** a detection rate without a false-positive rate is not a metric.
+**Revert path:** none without reopening the captain ruling.
