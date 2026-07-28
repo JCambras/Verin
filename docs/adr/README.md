@@ -54,6 +54,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0036](./0036-line-budget-infrastructure-provenance-snapshots.md) | Infrastructure ceiling 3,400 to 3,450 for provenance and failure snapshots | Accepted (amends ADR-0034) |
 | [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
+| [0033](./0033-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage; ceilings 3900/3400 | Accepted (amends ADR-0007/0018/0019) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

@@ -62,9 +62,10 @@ first live demo of the trail.
   lock every user out. DEFERRED: make the auth operation itself fail when its audit write fails.
   **Trigger:** the SOC 2 Type II evidence-collection window opens (a Type II auditor requires
   complete session-lifecycle records), or the first regulated customer's security review.
-- **Externalize the audit anchor / HMAC-sign the chain.** The `audit_anchor` table lives in the same
-  database as the chain and the entry hash is unkeyed SHA-256, so an adversary WITH DB write access
-  can rewrite entries, recompute hashes, and update the anchor — the anchor detects accidental
+- **Externalize both audit-class anchors / HMAC-sign both chains.** The
+  `audit_anchor` and `decision_ledger_anchor` tables live in the same database as
+  their chains and the entry hashes are unkeyed SHA-256, so an adversary WITH DB write access
+  can rewrite entries, recompute hashes, and update an anchor - the anchors detect accidental
   truncation, bad restores, and naive edits, not that adversary. DEFERRED: export each org's anchor
   head to an external witness (object storage / signed log) or HMAC the chain with a KMS-held
   secret. **Trigger:** production deploy (the same milestone as the managed-Postgres adapter,

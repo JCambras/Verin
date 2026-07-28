@@ -1,10 +1,12 @@
 # Decision-core canonical-serialization fixtures (ADR-0029, D-040)
 
 Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
-displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle` and
+displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle`,
 three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
 `src/contracts/decision-core/serialization.ts`, schema version 1.7.0 and serializer version
-1.0.0): keys sorted at every depth, no insignificant whitespace, one trailing newline.
+1.0.0), and one digest lock for the canonical bytes of every prompt-7 ledger event
+shape. The record and bundle keys are sorted at every depth with no insignificant
+whitespace and one trailing newline.
 
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
 its schema and re-serializes byte-identically. It also hashes the canonical, domain-separated

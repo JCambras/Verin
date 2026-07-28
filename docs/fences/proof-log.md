@@ -5337,3 +5337,29 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+### PF-188 · decision-ledger append-only anti-fork and database protection
+
+**Invariant:** the sibling decision ledger and its evidence, bundle, membership,
+and decision source rows are immutable. Raw ledger inserts exist only in the sole
+repository and the forward migration; the repository exports no immutable
+update/delete surface.
+
+**Injection:** added
+`src/infrastructure/ledger/ledger-violation-probe.ts` with a raw
+`INSERT INTO decision_ledger`, then ran:
+
+```text
+pnpm vitest run src/__tests__/fitness/ledger-append-only.test.ts --reporter=verbose
+× anti-fork: only the ledger repository and migration contain raw ledger INSERTs
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-violation-probe.ts:2
+```
+
+The production-path integration companions also execute UPDATE, DELETE, and
+TRUNCATE against every immutable table in real PGlite, and L1-L4 tampering tests
+independently alter stored bytes, canonical form, promoted columns, and the
+anchor. Each attack is rejected or detected at its claimed layer.
+
+**Revert:** removed the planted source file. The fence and all companions pass.
+
+**Date:** 2026-07-28 (v3 prompt 7, ADR-0033, D-098).

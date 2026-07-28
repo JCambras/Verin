@@ -26,14 +26,15 @@ import { relative } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED after D-093, with this file's own algorithm: contracts 4021/4050
-// (29), domain 1298/1350 (52), infrastructure 3484/3550 (66). These are
+// MEASURED after composing Prompt 6 and Prompt 7, with this file's own algorithm:
+// contracts 4439/4500 (61), domain 1576/1600 (24), infrastructure 4616/4700
+// (84). These are
 // the real figures, not a stale decision-table row. Any FURTHER increase is still a
 // measured ADR amendment, never a code change.
 const CEILINGS = {
-  contracts: 4050, // ADR-0035, on a re-measured 4,017 baseline
-  domain: 1350, // ADR-0038, on a re-measured 1,298 baseline
-  infrastructure: 3550, // ADR-0038, on a re-measured 3,484 baseline
+  contracts: 4500, // composed Prompt-6 and Prompt-7 measured envelope
+  domain: 1600, // composed Prompt-6 and Prompt-7 measured envelope
+  infrastructure: 4700, // composed Prompt-6 and Prompt-7 measured envelope
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

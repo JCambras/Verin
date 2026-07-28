@@ -23,29 +23,14 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
+import { LEDGER_EVENT_TYPES } from "../src/contracts/decision-core/ledger";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
-/** The 14 LedgerEntry.type values (docs/v3/verin-core-contracts.ts). */
-export const LEDGER_EVENT_TYPES = [
-  "DecisionRecorded",
-  "EvidenceSnapshotRecorded",
-  "ApprovalRecorded",
-  "ApprovalInvalidated",
-  "ReservationCreated",
-  "ReservationReleased",
-  "ExecutionStarted",
-  "ExecutionSucceeded",
-  "ExecutionPartiallySucceeded",
-  "ExecutionFailed",
-  "StatusObserved",
-  "VerificationClosed",
-  "VerificationStuck",
-  "ExceptionDecisionRequested",
-] as const;
+export { LEDGER_EVENT_TYPES };
 
 /** AuthorityRequirement.mode, plus the "none" sentinel a golden case uses to
  * state, positively, that a non-proceed disposition carries NO authority

@@ -91,6 +91,13 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
+- **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
+  `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0033).
+  `recordDecision` commits source rows and recording events together;
+  `appendDecisionEvents` runs inside its CALLER'S transaction so CRM audit-outbox intent and a
+  decision event can commit atomically. Ledger hashes always cover stored `payload_json` bytes.
+  Never rewrite old bytes or add a raw insert outside `ledger-store.ts`; L1-L4 verification and
+  the `ledger-append-only` fence enforce both assumptions.
 - **Prod guards key on `APP_ENV`, never `NODE_ENV`:** `next build`/`next start` force `NODE_ENV=production`
   even in dev/CI, so the config fail-closed guards and the secure-cookie flag use `APP_ENV` (real
   deployment env). Same for the e2e webserver.
