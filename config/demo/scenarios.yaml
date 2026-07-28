@@ -212,7 +212,18 @@ scenarios:
 
   - id: competing-liquidity
     description: Two simultaneous, individually valid requests compete for the same liquidity; reservations prevent a joint violation.
-    disposition: proceed
+    # The branch runs on the constrained pool the signed golden cases state
+    # (GC-10/GC-11: $160,000 available), which is what makes two $75,000 requests
+    # jointly invalid. Under Firm A's six-month reserve ($48,000) the first request
+    # is individually valid and proceeds; under Firm B's twelve-month reserve
+    # ($96,000) the SAME single request already breaches the floor, which is the
+    # arithmetic GC-05 signs for firm-b on the same pool. The split is recorded
+    # here rather than left implicit so the demo cannot render a proceed decision
+    # its own liquidity evidence contradicts (D-063).
+    disposition:
+      per_firm:
+        firm-a: proceed # 160,000 - 75,000 = 85,000 >= the 48,000 six-month reserve
+        firm-b: blocked # 85,000 < the 96,000 twelve-month reserve (GC-05 arithmetic)
     outcome_class: one proceeds, one blocked by reservation
     exercises: [proceed, blocked]
 

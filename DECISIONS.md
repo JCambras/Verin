@@ -3294,3 +3294,76 @@ one helper; removing the block and restoring prose parsing is a single-file chan
 `ApprovalStageEscalated`/`ApprovalStageExpired` extension of the ratified `LedgerEntry` union that
 D-102 signed into GC-16, with the prompt-7 collapse trigger and a fence against the pinned reference
 - previously carried only as a code comment.
+
+### D-063 · 2026-07-28 · reversible · Demo liquidity is per-branch signed evidence, not a global assumption
+
+Review of D-062 found the demo still carrying two global constants — `AVAILABLE_CASH_MINOR`
+($200,000) and `PENDING_DISTRIBUTION_MINOR` ($40,000) — applied to every scenario branch under both
+firms. With the signed schedule corrected to $8,000/month, Firm B's twelve-month floor rose to
+$96,000 and the happy path began contradicting itself on screen: `Amount $75,000.00` printed beside
+`Available after reserve $64,000.00`, under a `proceed` badge and the sentence "available liquidity
+covers the amount". Surface 11's Firm A simulation drifted the same way. The globals were also
+unsigned: GC-01 and GC-02 state $420,000 of available taxable liquidity and positively observe NO
+pending activity, so the demo was inventing both figures.
+
+The globals are gone. Each branch now carries a `liquidity` record naming the signed golden case it
+mirrors (`sourceCaseId`, available cash, pending activity, and whether that pending activity was
+observed or observed-absent), and every visible liquidity figure, headroom, blocker, policy-trace
+row, comparison column, and simulation delta derives from it through the shared arithmetic
+(`headroomMinor` in `@contracts/money-movement`). The happy paths run on GC-01/GC-02's $420,000 with
+no pending activity; approval-invalidation runs on GC-15's $300,000 against a $15,000 pending
+distribution; competing-liquidity keeps GC-10's constrained $160,000 pool, which is what makes two
+$75,000 requests jointly invalid.
+
+That constrained pool forced one contract question. Under Firm A's $48,000 six-month reserve the
+first request is individually valid and proceeds (GC-10, signed). Under Firm B's $96,000
+twelve-month reserve the SAME single request already breaches the floor — $160,000 − $75,000 =
+$85,000 — which is precisely the arithmetic GC-05 signs for firm-b. `config/demo/scenarios.yaml`
+therefore records `competing-liquidity` as `per_firm: {firm-a: proceed, firm-b: blocked}`, the same
+shape two other branches already use, and the demo grows a reserve-shortfall blocker with its
+resolving affordance. No signed fixture, disposition, or amount was changed to make this fit.
+
+Two fences make the class of defect unrepeatable rather than the instance:
+
+- **Signed side.** A `proceed` golden case must leave its request covered: available − pending −
+  reserve floor ≥ the request amount. Available liquidity and pending activity are structured
+  `signedMoney` fields tied to the evidence rows that observed them (`observedAbsent: true` requires
+  `pendingLiquidityUsd: 0`; stating liquidity without stating the pending activity beside it is
+  rejected). Every stated reserve floor is now derived — a case that omits the schedule derives it
+  from the household's canonical signed schedule, and if no case anywhere states one the validator
+  fails with a missing-authority diagnostic instead of skipping the arithmetic.
+- **Rendered side.** The snapshot projects EVERY decision the demo displays. A displayed headroom
+  that is not `available − pending − floor`, liquidity that does not match the case the branch
+  names, or a `proceed` (or simulated `proceed`) beside a headroom smaller than the request fails
+  the build with the branch and firm named.
+
+**Why:** the demo's own figures are product truth in front of an investor; a `proceed` beside a
+number that contradicts it is the exact dishonesty the charter's provenance rules exist to prevent.
+**Revert path:** the branch liquidity is inert data on `ScenarioData` read through one accessor;
+restoring a single global is a one-line change plus deleting the two fence halves.
+
+### D-064 · 2026-07-28 · reversible · Rendered money is inverted with integer arithmetic; the status vocabulary is one document set
+
+Two smaller review findings from the same pass:
+
+- **The renderer inversion produced false failures.** Recovering the divisor by floating-point
+  division (`minor / major`) and comparing with `!==` meant any value that is not a whole number of
+  dollars failed the build — `7_500_010 / 75000.1` is `99.99999999999999` — and the digit-stripping
+  regex dropped the minus sign, so a negative headroom (reachable now that liquidity is per-branch)
+  failed too. The fence now decomposes the rendered string into an exact decimal and compares
+  `minor × 10^scale === majorUnits × MINOR_UNITS_PER_MAJOR`: whole dollars, fractional cents, and
+  negatives all pass or fail on their own merits, sub-cent precision is reported rather than rounded
+  into agreement, and a changed divisor still cannot pass.
+- **The normative contract had not been amended.** `scenarios.yaml` cited a captain annotation for
+  canonical status planes that `docs/demo-contract.md` did not carry, while the design language had
+  already been amended to say there is no canonical `settled` state. `demo-contract.md` now carries
+  annotation 3 (captain, 2026-07-28) stating the three planes by name — six observed statuses,
+  `stuck` as a verification projection, `duplicate-suppressed` as an execution receipt — and the
+  acceptance checklist restates the honesty rule status-neutrally: submitted is not final execution
+  completion. A new fence half reads all three normative documents and fails if any drops a status,
+  names a plane member without saying which plane it belongs to, or reinstates a canonical `settled`.
+
+**Why:** a fence that fires on correct input trains people to ignore it, and a normative document
+that cites an annotation it does not contain is not normative.
+**Revert path:** both are pure functions in `scripts/golden-demo-semantics.lib.ts` with injected
+inputs; deleting either leaves the rest of the gate intact.

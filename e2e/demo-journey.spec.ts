@@ -160,6 +160,25 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/execution?scenario=recent-bank-change-block&firm=firm-b");
   await expect(page.getByText("Execution not reached")).toBeVisible();
 
+  // Competing liquidity: the constrained $160,000 pool leaves $112,000 after Firm A's
+  // six-month reserve (the request proceeds) but only $64,000 after Firm B's
+  // twelve-month reserve, so the recorded per-firm split blocks there. No surface
+  // ever shows a proceed beside a figure smaller than the amount requested.
+  await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-a");
+  await expect(page.getByTestId("disposition-proceed")).toBeVisible();
+  await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
+  await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-b");
+  await expect(page.getByTestId("disposition-blocked")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Reduce the amount or free additional liquidity" }),
+  ).toBeVisible();
+  await expect(page.getByText("twelve-month cash reserve")).toBeVisible();
+  await checkAxe(page, "decision-blocked-reserve");
+  await snap(page, 18, "decision-blocked-reserve-firm-b");
+  await page.goto("/app/demo/comparison?scenario=competing-liquidity&firm=firm-a");
+  await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$64,000.00", { exact: true })).toBeVisible();
+
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
   await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
   const card = page.getByTestId("disposition-prohibited");

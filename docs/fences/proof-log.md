@@ -5435,3 +5435,85 @@ than the wording.
 suites pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-062).
+
+## F102 · golden-cases: displayed decisions, signed liquidity, exact money rendering, status-vocabulary docs
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` (`validateDisplayedDecisions` and
+`validateStatusVocabularyDocs` in `scripts/golden-demo-semantics.lib.ts`; `validateSignedLiquidity`
+and the canonical-schedule derivation in `scripts/golden-cases.lib.ts`), also run by the blocking
+`golden-cases` CI job. **Invariant:** every liquidity figure the demo displays traces to the signed
+golden case its branch names, is the shared arithmetic over that evidence, and never shows a
+`proceed` beside a headroom smaller than the request; every signed case that states a floor derives
+it; and the three normative documents state one status vocabulary.
+
+**Displayed-decision fence (adversarial production injection).** The pre-fix globals were restored
+in `src/app/demo/data.ts` (`availableCashMinor: 20_000_000`, `pendingActivityMinor: 4_000_000` — the
+$200,000 / $40,000 assumptions the review flagged) and `pnpm golden:validate` failed with the exact
+defect, branch and firm named:
+
+```text
+✗ safe-proceed/firm-a: available-liquidity drift, GC-01-firm-a-happy-path=42000000, demo=20000000
+✗ safe-proceed/firm-b: renders proceed beside 6400000 available after reserve, which does not cover the 7500000 request
+✗ safe-proceed/firm-b: the policy-draft simulation renders proceed beside 6400000 available after the drafted reserve, which does not cover the 7500000 request
+```
+
+Twenty further drift lines named every other branch. Before this fence the same state was green:
+`DemoSemanticSnapshot` projected amounts, horizons, floors, units, and statuses — never the liquidity
+the contradiction lived in.
+
+**Shared arithmetic (adversarial production injection).** `headroomMinor` in `build-decision.ts` was
+changed to ignore pending activity (`calculateHeadroomMinor(availableCashMinor, 0, floor)`) and the
+gate failed on the one branch that observes pending activity:
+
+```text
+✗ approval-invalidation/firm-a: displayed headroom 25200000 is not available - pending - reserve (23700000)
+✗ approval-invalidation/firm-b: displayed headroom 20400000 is not available - pending - reserve (18900000)
+```
+
+**Signed side (adversarial fixture injection).** GC-14's `signedMoney.availableLiquidityUsd` was cut
+to `100000` (with its account-balance summary reworded to match, so the prose cross-check could not
+be what caught it):
+
+```text
+✗ GC-14-delayed-nigo
+    └ a proceed case must leave the request covered: available 100000 - pending 0 - reserve 96000 does not cover 75000
+✗ delayed-nigo/firm-a: available-liquidity drift, GC-14-delayed-nigo=10000000, demo=42000000
+```
+
+**Reserve-floor derivation.** The companion nulls `plannedWithdrawalMonthlyUsd` on every fixture and
+must see both `no golden case states signedMoney.plannedWithdrawalMonthlyUsd` and the per-case
+`no signed monthly-withdrawal authority exists to derive it from` — the missing-authority
+diagnostic, not a silent skip. It separately edits GC-03's floor (a case that states no schedule of
+its own) to $42,000 AND rewords its prose to agree, and the canonical household schedule still
+catches it: `is not 8000 x 6 months`. A second case stating `9000` produces
+`conflicting planned-withdrawal schedules`.
+
+**Money rendering (regression, not just detection).** The pre-fix inversion divided in floating
+point. Reproduced on the exact renderer path:
+
+```text
+$75,000.10 -> 99.99999999999999      (a whole-cent value FAILED the build)
+-$64,000.00 -> -100                  (the sign was stripped, so a negative headroom FAILED too)
+```
+
+The integer comparison (`minor x 10^scale === majorUnits x MINOR_UNITS_PER_MAJOR`) accepts both and
+still rejects a changed divisor (`$7,500.00` for `7_500_000`) and sub-cent precision
+(`$75,000.105`); the companion asserts all six cases.
+
+**Status-vocabulary documents (adversarial production injection).** Annotation 3's sentence in
+`docs/demo-contract.md` was rewritten to reinstate a canonical `settled`, and separately every
+"verification projection" in that file was replaced with "observed status":
+
+```text
+✗ docs/demo-contract.md: must state that there is no canonical `settled` status (demo-contract.md annotation 3)
+✗ docs/demo-contract.md: names `stuck` without stating that it is a verification projection, not an observed status
+```
+
+The companion runs the same three injections across all three documents plus the empty-document and
+empty-list cases, so the fence cannot pass vacuously.
+
+**Revert:** every production and fixture injection above was removed; `pnpm golden:validate`,
+`pnpm typecheck`, `pnpm lint`, `pnpm knip`, the focused fitness suites, and `pnpm test:e2e` (17
+specs, axe included) pass on the corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-063/D-064).

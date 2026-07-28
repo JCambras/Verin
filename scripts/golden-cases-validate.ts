@@ -21,11 +21,12 @@ import {
   V3_CORE_CONTRACTS,
   loadGoldenCases,
   loadScenarioRefs,
+  loadStatusVocabularyDocs,
   validateGoldenCases,
   validateLedgerVocabulary,
 } from "./golden-cases.lib";
 import { loadDemoSemanticSnapshot } from "./golden-demo-snapshot";
-import { validateGoldenDemoSemantics } from "./golden-demo-semantics.lib";
+import { validateGoldenDemoSemantics, validateStatusVocabularyDocs } from "./golden-demo-semantics.lib";
 
 const useColor = process.env.NO_COLOR === undefined;
 const paint = (code: string, s: string) => (useColor ? `\u001b[${code}m${s}\u001b[0m` : s);
@@ -46,6 +47,7 @@ const problems = [
   ...validateGoldenCases(cases, refs, docText),
   ...validateGoldenDemoSemantics(cases, refs, loadDemoSemanticSnapshot()),
   ...validateLedgerVocabulary(existsSync(V3_CORE_CONTRACTS) ? readFileSync(V3_CORE_CONTRACTS, "utf8") : ""),
+  ...validateStatusVocabularyDocs(loadStatusVocabularyDocs()),
 ];
 
 console.log(bold(`\nGOLDEN CASES - the prompt-2 truth set (${cases.length} case(s))`));

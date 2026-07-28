@@ -9,9 +9,12 @@
  * ADR-0022 - every input here is synthetic, so it is a watermarked demonstration.
  */
 import type { DisplayMetric } from "@contracts/metric";
-import { reserveFloorMinor as calculateReserveFloorMinor } from "@contracts/money-movement";
+import {
+  headroomMinor as calculateHeadroomMinor,
+  reserveFloorMinor as calculateReserveFloorMinor,
+} from "@contracts/money-movement";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
-import type { ComparisonRowVM, ComparisonVM, PolicyAuthoringVM, RecordVM } from "./model";
+import type { ComparisonRowVM, ComparisonVM, DispositionKind, PolicyAuthoringVM, RecordVM } from "./model";
 import { derivedMetric, prov, recordProvenance } from "./provenance";
 import { buildSpine } from "./spine";
 import { buildEvidence, buildIntent } from "./build-context";
@@ -21,13 +24,12 @@ import {
   buildPolicyTrace,
   buildStages,
   headroomMetric,
-  headroomMinor,
   reserveFloorMetric,
-  reserveFloorMinor,
   DISPOSITION_BADGES,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import {
+  CANONICAL_REQUEST,
   DEMO_NOW,
   FIRMS,
   IDS,
@@ -63,8 +65,8 @@ export function buildComparison(scenario: ScenarioData): ComparisonVM {
     },
     {
       dimension: "Available after reserve",
-      a: { metric: headroomMetric(a) },
-      b: { metric: headroomMetric(b) },
+      a: { metric: headroomMetric(scenario, a) },
+      b: { metric: headroomMetric(scenario, b) },
       differs: true,
       why: { reason: "Same liquidity evidence, different reserve floors - the difference is the reserve rule, not the data." },
     },
@@ -113,8 +115,17 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
   const isFirmA = firm.id === "firm-a";
   const twelveMonthFloor = calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, DRAFT_RESERVE_MONTHS);
   const liquidityInputs = [prov("synthetic-fixture", OBSERVED_RECENT)];
-  const newHeadroom = headroomMinor(firm) - (twelveMonthFloor - reserveFloorMinor(firm));
+  const newHeadroom = calculateHeadroomMinor(
+    scenario.liquidity.availableCashMinor,
+    scenario.liquidity.pendingActivityMinor,
+    twelveMonthFloor,
+  );
   const disp = dispositionFor(scenario, firm.id);
+  // The simulation's own arithmetic decides whether the request survives the drafted
+  // floor. Asserting "still proceeds" as fixed copy is how surface 11 would come to
+  // contradict the figure printed directly above it.
+  const simulatedDisp: DispositionKind =
+    disp === "proceed" && newHeadroom < CANONICAL_REQUEST.amountMinor ? "blocked" : disp;
   return {
     spine: buildSpine("Decision", { status: "pending", label: "Draft simulation" }),
     sentence: "Always preserve twelve months of planned withdrawals in cash.",
@@ -139,13 +150,13 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
           },
           {
             label: "Available after reserve",
-            before: { metric: headroomMetric(firm) },
+            before: { metric: headroomMetric(scenario, firm) },
             after: { metric: derivedMetric(newHeadroom, "currency-minor", liquidityInputs, DEMO_NOW) },
           },
           {
             label: "This request",
             before: { badge: DISPOSITION_BADGES[disp] },
-            after: { badge: DISPOSITION_BADGES[disp] },
+            after: { badge: DISPOSITION_BADGES[simulatedDisp] },
           },
           {
             label: "Demo-corpus households newly below the floor",
@@ -170,9 +181,12 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
     changedRerunResult: isFirmA
       ? {
           proceed: "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor.",
-          blocked: "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
+          blocked:
+            disp === "proceed"
+              ? "Re-run under FA-4.3: the Smith request no longer proceeds - twelve months of planned withdrawals leave less than this movement needs."
+              : "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
           prohibited: "Re-run under FA-4.3: the Smith request remains prohibited - the destination restriction is not resolvable by a reserve-policy change.",
-        }[disp]
+        }[simulatedDisp]
       : {
           proceed: "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
           blocked: "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the named conditions still block this request.",

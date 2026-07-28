@@ -133,10 +133,14 @@ Backing: `ExecutionStarted` (idempotency key), then exactly one of `ExecutionSuc
 
 Surface: **9 Verification state**.
 
-- [ ] `submitted` is never presented as `settled`.
+- [ ] `submitted` is never presented as final execution completion (contract annotation 3): the
+      observed statuses are `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`,
+      and only `completed` - with a status source that proves it - may be presented as done. There
+      is no canonical `settled` status.
 - [ ] Next poll or external-status expectation shown.
 - [ ] Delayed NIGO can be ingested (and visibly lands when the scenario fires).
-- [ ] Stuck-state rules shown.
+- [ ] Stuck-state rules shown - `stuck` is a verification projection, never an observed status, and
+      `duplicate-suppressed` is an execution receipt, never one either.
 
 Backing: `StatusObserved` per observation (honest `ObservedStatus` mapping), `VerificationClosed`
 when a rule proves a state, `VerificationStuck` when the stuck rule fires,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MINOR_UNITS_PER_MAJOR,
+  headroomMinor,
   isMoneyQuantity,
   minorFromMajor,
   reserveFloorMinor,
@@ -33,6 +34,24 @@ describe("money-movement arithmetic", () => {
     expect(minorFromMajor(null)).toBeNull();
     expect(minorFromMajor("8000")).toBeNull();
     expect(minorFromMajor(8_000.5)).toBeNull();
+  });
+
+  it("derives headroom from available liquidity, pending activity, and the floor", () => {
+    // GC-02: $420,000 available, no pending activity, twelve-month floor $96,000.
+    expect(headroomMinor(42_000_000, 0, reserveFloorMinor(800_000, 12))).toBe(32_400_000);
+    // GC-10's $160,000 pool: clears Firm A's floor, not Firm B's, at a $75,000 request.
+    expect(headroomMinor(16_000_000, 0, reserveFloorMinor(800_000, 6))).toBeGreaterThanOrEqual(7_500_000);
+    expect(headroomMinor(16_000_000, 0, reserveFloorMinor(800_000, 12))).toBeLessThan(7_500_000);
+    // A breach is a negative figure, not a thrown error - it is a real thing to display.
+    expect(headroomMinor(4_000_000, 0, 9_600_000)).toBe(-5_600_000);
+  });
+
+  it("refuses headroom inputs that are not money quantities", () => {
+    for (const bad of [undefined, null, "0", -1, 1.5, Number.NaN]) {
+      expect(() => headroomMinor(42_000_000, bad as number, 4_800_000)).toThrow(/non-negative safe integers/);
+      expect(() => headroomMinor(bad as number, 0, 4_800_000)).toThrow(/non-negative safe integers/);
+      expect(() => headroomMinor(42_000_000, 0, bad as number)).toThrow(/non-negative safe integers/);
+    }
   });
 
   it("renders money through the same divisor the arithmetic counts in", () => {

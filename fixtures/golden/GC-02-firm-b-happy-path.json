@@ -27,7 +27,9 @@
     "cadence": "month",
     "requestAmountUsd": 75000,
     "plannedWithdrawalMonthlyUsd": 8000,
-    "reserveFloorUsd": 96000
+    "reserveFloorUsd": 96000,
+    "availableLiquidityUsd": 420000,
+    "pendingLiquidityUsd": 0
   },
   "firmConfiguration": {
     "firmId": "firm-b",

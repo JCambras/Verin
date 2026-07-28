@@ -61,6 +61,12 @@ Notes on the two structural choices in the matrix mapping:
   case, while the scenario matrix's `competing-liquidity` is the two-request variant (GC-10/GC-11).
   The matrix stays untouched (its ids are append-only, and adding a branch is a captain-approved
   demo-contract change); the fixture records the reason in `scenarioRefNote`.
+- **The `competing-liquidity` branch is firm-split** in the matrix (D-063). Both signed cases are
+  firm-a and run on a $160,000 pool: either $75,000 request alone clears Firm A's $48,000 six-month
+  reserve, both together do not. Under Firm B's $96,000 twelve-month reserve the SAME single request
+  already breaches the floor - $160,000 - $75,000 = $85,000 - which is exactly the arithmetic GC-05
+  signs for firm-b. The matrix records `per_firm: {firm-a: proceed, firm-b: blocked}` so the demo
+  cannot render a proceed beside liquidity evidence that contradicts it.
 - **The prompt-2 twelve** map to 14 fixtures because two spec cases are inherently two-sided:
   "recent bank change" diverges per firm (GC-03/GC-04 - the same facts, config-only divergence),
   and "two simultaneous distributions" has a winner and a loser (GC-10/GC-11). GC-15 and GC-16
@@ -78,7 +84,7 @@ Notes on the two structural choices in the matrix mapping:
 | ambiguous-instruction | GC-08 |
 | dual-approval | exercised by GC-01, GC-03, GC-10, GC-12, GC-13, GC-15 (Firm A stage structure at $75k) |
 | approval-invalidation | GC-15 |
-| competing-liquidity | GC-10, GC-11 |
+| competing-liquidity | GC-10, GC-11 (firm-a arms); the firm-b arm blocks on GC-05's arithmetic |
 | duplicate-retry | GC-12 |
 | partial-salesforce-success | GC-13 |
 | delayed-nigo | GC-14 |
@@ -133,12 +139,23 @@ Every case - in this document and in its fixture - states all of:
     vocabulary), the settled-claim rule, note;
 13. **signoff** - §1;
 14. **signed money** - `signedMoney`: currency, cadence, the request amount, and (where the case's
-    signed text states them, else null) the monthly planned withdrawal and the reserve floor, as
-    STRUCTURED whole-dollar fields. These fields ARE the signed numbers - the prose summaries
-    restate them, never the reverse. The validator derives the floor through the shared money
-    arithmetic (`src/contracts/money-movement.ts`) and requires each figure to still appear in the
-    case's own trigger / planned-withdrawals summaries, so structure and prose can neither diverge
-    nor be regexed apart.
+    signed text states them, else null) the monthly planned withdrawal, the reserve floor, the
+    available liquidity, and the pending liquidity activity counted against it, as STRUCTURED
+    whole-dollar fields. These fields ARE the signed numbers - the prose summaries restate them,
+    never the reverse. The validator derives the floor through the shared money arithmetic
+    (`src/contracts/money-movement.ts`) and requires each figure to still appear in the case's own
+    trigger / planned-withdrawals / account-balance / pending-actions summaries, so structure and
+    prose can neither diverge nor be regexed apart. Three rules make the derivation total rather
+    than opt-in:
+    - a case that states a reserve floor WITHOUT restating the schedule derives it from the
+      household's canonical signed schedule (the one value the schedule-stating cases agree on);
+      if no case anywhere states a schedule, the validator fails with a missing-authority
+      diagnostic instead of skipping the arithmetic;
+    - `pendingLiquidityUsd: 0` is the observed-absent reading and is REQUIRED wherever a
+      pending-actions snapshot records `observedAbsent: true`; stating available liquidity without
+      stating the pending activity beside it is rejected (silence is recorded, never inferred);
+    - a `proceed` case must actually leave the request covered: available - pending - reserve floor
+      must be at least the request amount. A case cannot sign an outcome its own numbers contradict.
 
 Structural consistency is validated, not assumed: a blocked or prohibited case cannot carry
 authority stages, execution eligibility, or a reached verification state (v3 invariants 8/9); a

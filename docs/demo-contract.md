@@ -14,8 +14,8 @@ end-to-end journey.
 ## How to read this document
 
 The body below is the captain-authored v1 contract, adopted in full; its substance is unchanged
-(formatting normalized to house style). Two captain directives dated 2026-07-26 are integrated as
-annotations. Nothing else is altered:
+(formatting normalized to house style). Three captain directives - two dated 2026-07-26 and one
+dated 2026-07-28 - are integrated as annotations. Nothing else is altered:
 
 1. **Salesforce deferral (captain ruling, 2026-07-26).** Sandbox access does not yet exist. Every
    step, surface item, or completion-test item that requires the REAL managed-Salesforce invocation
@@ -33,6 +33,21 @@ annotations. Nothing else is altered:
    Decision Spine as persistent orientation, the distinct proceed / blocked / prohibited treatments
    (blocked shows resolving affordances; prohibited shows the stamp and zero affordances), and the
    approval-invalidation moment. UI work is blocked until that document lands.
+3. **Canonical status planes (captain ruling, 2026-07-28).** The contract's prose uses "settled" as
+   the ordinary English word for proven completion. There is no canonical `settled` status. The
+   canonical **observed external statuses** are exactly `submitted`, `in-flight`, `completed`,
+   `rejected`, `nigo`, and `unknown` (`config/demo/scenarios.yaml` `state_vocabulary`, class
+   `execution`; the type is `ObservedStatus` in
+   [`docs/v3/verin-core-contracts.ts`](./v3/verin-core-contracts.ts)). Two further ids belong to
+   their own planes and are never presented as observed statuses: `stuck` is a **verification
+   projection** (a rule firing over the absence of a status), and `duplicate-suppressed` is an
+   **execution receipt** (proof that a retry produced no second instruction). Read every
+   "`submitted` is not `settled`" line below in those terms: **`submitted` is not final execution
+   completion**; only `completed`, with a status source that proves it, may be presented as done.
+   The three planes are enumerated in `src/contracts/execution-status.ts`, and the
+   `demo-status-vocabulary` half of the golden-cases fence fails the build if this document, the
+   acceptance checklist, the design language, the scenario matrix, or the demo's rendered statuses
+   drift apart.
 
 This contract is amended only by captain decision, recorded in the PR that changes it.
 
@@ -173,6 +188,10 @@ Show what the returned status proves and what remains unresolved.
 > delayed-NIGO ingestion, and stuck-state rules are all exercised now against fake `StatusSource`
 > responses (labeled `fake-adapter-response`). Only the REAL returned status feeding this surface is
 > `[deferred-pending-sandbox]`.
+
+> **Status-plane annotation (annotation 3).** In canonical terms: `submitted` is not final execution
+> completion. The observed statuses are `submitted`, `in-flight`, `completed`, `rejected`, `nigo`,
+> `unknown`; `stuck` is a verification projection, not an observed status.
 
 Visible proof:
 

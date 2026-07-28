@@ -5,9 +5,11 @@ import { REPO_ROOT } from "./_fence-utils";
 import {
   GOLDEN_DOC,
   REQUIRED_SPEC_NAMES,
+  STATUS_VOCABULARY_DOCS,
   V3_CORE_CONTRACTS,
   loadGoldenCases,
   loadScenarioRefs,
+  loadStatusVocabularyDocs,
   validateGoldenCases,
   validateLedgerVocabulary,
   type LoadedCase,
@@ -15,7 +17,10 @@ import {
 } from "../../../scripts/golden-cases.lib";
 import { loadDemoSemanticSnapshot } from "../../../scripts/golden-demo-snapshot";
 import {
+  readRenderedMajor,
+  rendersAtCanonicalScale,
   validateGoldenDemoSemantics,
+  validateStatusVocabularyDocs,
   type DemoSemanticSnapshot,
 } from "../../../scripts/golden-demo-semantics.lib";
 
@@ -52,6 +57,7 @@ const realRefs = loadScenarioRefs();
 const realDoc = readFileSync(GOLDEN_DOC, "utf8");
 const realDemo = loadDemoSemanticSnapshot();
 const realContracts = readFileSync(V3_CORE_CONTRACTS, "utf8");
+const realStatusDocs = loadStatusVocabularyDocs();
 
 describe("golden-cases fence", () => {
   it("enforces: every golden case is complete, aligned, consistent, and signoff-gated", () => {
@@ -59,8 +65,14 @@ describe("golden-cases fence", () => {
       ...validateGoldenCases(realCases, realRefs, realDoc),
       ...validateGoldenDemoSemantics(realCases, realRefs, realDemo),
       ...validateLedgerVocabulary(realContracts),
+      ...validateStatusVocabularyDocs(realStatusDocs),
     ];
     expect(problems, `golden-case problems:\n${problems.join("\n")}`).toEqual([]);
+  });
+
+  it("enforces: the normative documents are actually on disk and stating the vocabulary", () => {
+    expect(realStatusDocs.map((d) => d.path)).toEqual([...STATUS_VOCABULARY_DOCS]);
+    for (const doc of realStatusDocs) expect(doc.text.length, doc.path).toBeGreaterThan(0);
   });
 
   it("enforces: the truth set covers all twelve spec-enumerated cases with at least twelve fixtures", () => {
@@ -240,15 +252,15 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     const unitDrift = demoClone();
-    unitDrift.minorUnitsPerMajor = [1_000];
+    unitDrift.moneyRenders = [{ minor: 7_500_000, rendered: "$7,500.00" }];
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, unitDrift).some((p) => p.includes("1000 minor units per major")),
+      validateGoldenDemoSemantics(clone(), realRefs, unitDrift).some((p) => p.includes("not at 100 minor units per major")),
     ).toBe(true);
 
     const unreadable = demoClone();
-    unreadable.minorUnitsPerMajor = [null];
+    unreadable.moneyRenders = [{ minor: 7_500_000, rendered: "seventy-five thousand" }];
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, unreadable).some((p) => p.includes("an unreadable minor units per major")),
+      validateGoldenDemoSemantics(clone(), realRefs, unreadable).some((p) => p.includes("not a readable 100-per-major amount")),
     ).toBe(true);
 
     const formatDrift = demoClone();
@@ -259,7 +271,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
     const noMoney = demoClone();
     noMoney.moneyUnits = [];
-    noMoney.minorUnitsPerMajor = [];
+    noMoney.moneyRenders = [];
     const vacuous = validateGoldenDemoSemantics(clone(), realRefs, noMoney);
     expect(vacuous.some((p) => p.includes("emits no money metrics"))).toBe(true);
     expect(vacuous.some((p) => p.includes("renders no money value"))).toBe(true);
@@ -268,6 +280,168 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     floorDrift.firms[1]!.reserveFloorMinor = 9_500_000;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, floorDrift).some((p) => p.includes("derived reserve floor drift")),
+    ).toBe(true);
+  });
+
+  it("reads a rendered money value EXACTLY: whole dollars, fractional cents, and negatives", () => {
+    // The false-failure this replaces: 7500010 / 75000.1 is 99.99999999999999 in
+    // floating point, so a value that is not a whole number of dollars used to fail
+    // the build. Integer arithmetic accepts it, and keeps the sign.
+    for (const money of [
+      { minor: 7_500_000, rendered: "$75,000.00" },
+      { minor: 7_500_010, rendered: "$75,000.10" },
+      { minor: -6_400_000, rendered: "-$64,000.00" },
+      { minor: 0, rendered: "$0.00" },
+    ]) {
+      expect(rendersAtCanonicalScale(money), JSON.stringify(money)).toBe(true);
+    }
+    // A divisor changed anywhere on the display path still cannot pass.
+    expect(rendersAtCanonicalScale({ minor: 7_500_000, rendered: "$7,500.00" })).toBe(false);
+    expect(rendersAtCanonicalScale({ minor: -6_400_000, rendered: "$64,000.00" })).toBe(false);
+    // Sub-cent precision is reported, never rounded into agreement.
+    expect(rendersAtCanonicalScale({ minor: 7_500_010, rendered: "$75,000.105" })).toBe(false);
+    expect(rendersAtCanonicalScale({ minor: 7_500_000, rendered: "seventy-five thousand" })).toBe(null);
+    expect(rendersAtCanonicalScale({ minor: 7_500_000, rendered: "$1-2" })).toBe(null);
+    expect(readRenderedMajor("-$64,000.00")).toEqual({ units: -6_400_000, scale: 2 });
+
+    const fractional = demoClone();
+    fractional.moneyRenders = [{ minor: 7_500_010, rendered: "$75,000.10" }];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, fractional).some((p) => p.includes("minor units per major")),
+    ).toBe(false);
+  });
+
+  it("flags a displayed proceed whose own liquidity does not cover the request", () => {
+    const drained = demoClone();
+    const decision = drained.decisions.find((d) => d.disposition === "proceed")!;
+    decision.availableCashMinor = 10_000_000;
+    decision.headroomMinor = 10_000_000 - decision.pendingActivityMinor - decision.reserveFloorMinor;
+    const problems = validateGoldenDemoSemantics(clone(), realRefs, drained);
+    expect(problems.some((p) => p.includes("available-liquidity drift"))).toBe(true);
+
+    const contradicted = demoClone();
+    for (const d of contradicted.decisions) {
+      if (d.disposition !== "proceed") continue;
+      d.headroomMinor = contradicted.requestAmountMinor - 1;
+    }
+    const contradictions = validateGoldenDemoSemantics(clone(), realRefs, contradicted);
+    expect(contradictions.some((p) => p.includes("renders proceed beside"))).toBe(true);
+    expect(contradictions.some((p) => p.includes("is not available - pending - reserve"))).toBe(true);
+  });
+
+  it("flags a simulated proceed the drafted reserve no longer supports", () => {
+    const simulated = demoClone();
+    for (const d of simulated.decisions) {
+      if (d.simulatedDisposition !== "proceed") continue;
+      d.simulatedFloorMinor = d.reserveFloorMinor + 1;
+      d.simulatedHeadroomMinor = null;
+    }
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, simulated).some((p) =>
+        p.includes("policy-draft simulation renders proceed beside no available"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a branch whose liquidity does not trace to a signed case", () => {
+    const unsourced = demoClone();
+    unsourced.decisions[0]!.sourceCaseId = "GC-99-invented";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, unsourced).some((p) => p.includes("GC-99-invented")),
+    ).toBe(true);
+
+    const figureless = demoClone();
+    figureless.decisions[0]!.sourceCaseId = "GC-08-ambiguous-household";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, figureless).some((p) => p.includes("states no liquidity for the branch")),
+    ).toBe(true);
+
+    const inventedPending = demoClone();
+    inventedPending.decisions[0]!.pendingActivityMinor = 4_000_000;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, inventedPending).some((p) => p.includes("pending-activity drift")),
+    ).toBe(true);
+
+    // A malformed figure is REPORTED, not thrown: a crash would discard every
+    // diagnostic already collected (the D-062 lesson, applied to this fence too).
+    const malformed = demoClone();
+    malformed.decisions[0]!.availableCashMinor = Number.NaN;
+    const malformedProblems = validateGoldenDemoSemantics(clone(), realRefs, malformed);
+    expect(malformedProblems.some((p) => p.includes("must each be a whole non-negative amount"))).toBe(true);
+    expect(malformedProblems.some((p) => p.includes("available-liquidity drift"))).toBe(true);
+  });
+
+  it("flags GC-02's rendered arithmetic drifting from its own signed fixture", () => {
+    const drifted = demoClone();
+    for (const d of drifted.decisions) {
+      if (d.scenarioId !== "safe-proceed") continue;
+      d.availableCashMinor = 20_000_000;
+      d.headroomMinor = 20_000_000 - d.pendingActivityMinor - d.reserveFloorMinor;
+    }
+    const problems = validateGoldenDemoSemantics(clone(), realRefs, drifted);
+    expect(problems.some((p) => p.includes("GC-02") && p.includes("rendered liquidity drift"))).toBe(true);
+    expect(problems.some((p) => p.includes("GC-02") && p.includes("rendered headroom drift"))).toBe(true);
+
+    const flipped = demoClone();
+    for (const d of flipped.decisions) {
+      if (d.scenarioId === "safe-proceed" && d.firmId === "firm-b") d.disposition = "blocked";
+    }
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, flipped).some((p) => p.includes("GC-02") && p.includes("rendered disposition drift")),
+    ).toBe(true);
+  });
+
+  it("flags a reserve floor stated with no signed monthly-withdrawal authority anywhere", () => {
+    const cases = clone();
+    for (const { data } of cases) {
+      (data as { signedMoney: Record<string, unknown> }).signedMoney.plannedWithdrawalMonthlyUsd = null;
+    }
+    const problems = run(cases);
+    expect(problems.some((p) => p.includes("no golden case states signedMoney.plannedWithdrawalMonthlyUsd"))).toBe(true);
+    expect(problems.some((p) => p.includes("no signed monthly-withdrawal authority exists to derive it from"))).toBe(true);
+  });
+
+  it("derives a schedule-less case's floor from the canonical household schedule", () => {
+    // GC-03 states reserveFloorUsd with plannedWithdrawalMonthlyUsd null: the floor
+    // is still checked through the shared arithmetic, so an edited floor cannot pass
+    // by rewording its prose to match.
+    const cases = clone();
+    const gc03 = caseById(cases, "GC-03-recent-bank-change-firm-a");
+    (gc03.signedMoney as Record<string, unknown>).reserveFloorUsd = 42_000;
+    const schedule = (gc03.householdEvidence as Array<Record<string, unknown>>).find(
+      (row) => row.evidenceKind === "planned-withdrawals",
+    )!;
+    schedule.summary = "Six-month reserve (42000 USD) remains satisfied after the movement.";
+    expect(run(cases).some((p) => p.includes("GC-03") && p.includes("is not 8000 x 6 months"))).toBe(true);
+
+    const conflicting = clone();
+    (caseById(conflicting, "GC-14-delayed-nigo").signedMoney as Record<string, unknown>).plannedWithdrawalMonthlyUsd = 9_000;
+    expect(
+      run(conflicting).some((p) => p.includes("conflicting planned-withdrawal schedules")),
+    ).toBe(true);
+  });
+
+  it("flags signed liquidity carried only in prose, inferred, or contradicting the disposition", () => {
+    const unstated = clone();
+    (caseById(unstated, "GC-02-firm-b-happy-path").signedMoney as Record<string, unknown>).availableLiquidityUsd = 999_000;
+    expect(
+      run(unstated).some((p) => p.includes("availableLiquidityUsd 999000 is not stated by any account-balance")),
+    ).toBe(true);
+
+    const inferred = clone();
+    (caseById(inferred, "GC-01-firm-a-happy-path").signedMoney as Record<string, unknown>).pendingLiquidityUsd = null;
+    const inferredProblems = run(inferred);
+    expect(inferredProblems.some((p) => p.includes("leaves pendingLiquidityUsd null"))).toBe(true);
+    expect(inferredProblems.some((p) => p.includes("observed ABSENT must state signedMoney.pendingLiquidityUsd 0"))).toBe(true);
+
+    const overdrawn = clone();
+    (caseById(overdrawn, "GC-02-firm-b-happy-path").signedMoney as Record<string, unknown>).availableLiquidityUsd = 160_000;
+    const balance = (caseById(overdrawn, "GC-02-firm-b-happy-path").householdEvidence as Array<Record<string, unknown>>).find(
+      (row) => row.evidenceKind === "account-balance",
+    )!;
+    balance.summary = "Joint taxable brokerage available balance 160000 USD.";
+    expect(
+      run(overdrawn).some((p) => p.includes("a proceed case must leave the request covered")),
     ).toBe(true);
   });
 
@@ -313,6 +487,40 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const problems = validateGoldenDemoSemantics(clone(), realRefs, demo);
     expect(problems.some((p) => p.includes('"stuck" is neither an observed outcome nor an execution receipt'))).toBe(true);
     expect(problems.some((p) => p.includes('"duplicate-suppressed" is neither an observed outcome nor a verification projection'))).toBe(true);
+  });
+
+  it("flags normative status-vocabulary drift across the contract, checklist, and design language", () => {
+    for (const target of STATUS_VOCABULARY_DOCS) {
+      const dropped = realStatusDocs.map((doc) =>
+        doc.path === target ? { ...doc, text: doc.text.replaceAll("`completed`", "`settled`") } : doc,
+      );
+      expect(
+        validateStatusVocabularyDocs(dropped).some((p) => p.startsWith(`${target}:`) && p.includes("`completed`")),
+        target,
+      ).toBe(true);
+    }
+
+    const resurrected = realStatusDocs.map((doc) => ({
+      ...doc,
+      text: doc.text.replace(/no (separate )?canonical `settled` (status|state)/gi, "the canonical settled state"),
+    }));
+    const resurrectedProblems = validateStatusVocabularyDocs(resurrected);
+    for (const target of STATUS_VOCABULARY_DOCS) {
+      expect(resurrectedProblems.some((p) => p.startsWith(`${target}:`) && p.includes("no canonical")), target).toBe(true);
+    }
+
+    const planeless = realStatusDocs.map((doc) => ({
+      ...doc,
+      text: doc.text.replace(/[Vv]erification projection/g, "external status"),
+    }));
+    expect(
+      validateStatusVocabularyDocs(planeless).some((p) => p.includes("`stuck`") && p.includes("verification projection")),
+    ).toBe(true);
+
+    expect(validateStatusVocabularyDocs([]).some((p) => p.includes("went vacuous"))).toBe(true);
+    expect(
+      validateStatusVocabularyDocs([{ path: "docs/demo-contract.md", text: "" }]).some((p) => p.includes("missing or empty")),
+    ).toBe(true);
   });
 
   it("flags an incomplete or misordered GC-16 authority-lapse event sequence", () => {

@@ -8,20 +8,21 @@
  * design language specifies (§5 disposition treatments, §7 authority surfaces).
  */
 import { metric } from "@contracts/metric";
-import { reserveFloorMinor as calculateReserveFloorMinor } from "@contracts/money-movement";
+import {
+  headroomMinor as calculateHeadroomMinor,
+  reserveFloorMinor as calculateReserveFloorMinor,
+} from "@contracts/money-movement";
 import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
 import {
-  AVAILABLE_CASH_MINOR,
   CANONICAL_REQUEST,
   CAST,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
   IDS,
   OBSERVED_RECENT,
-  PENDING_DISTRIBUTION_MINOR,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
   type FirmData,
@@ -30,22 +31,35 @@ import {
 
 /** Reserve floor and post-reserve headroom under a firm's policy - DERIVED figures
  * (ADR-0022): computed from synthetic inputs, so they render as watermarked
- * demonstrations. The inputs list is the provenance trace, not a calculation cache. */
+ * demonstrations. The inputs list is the provenance trace, not a calculation cache.
+ * Headroom reads the BRANCH's signed liquidity evidence, never a global assumption,
+ * so the figure beside "Amount" is the one that branch's golden case states. */
 const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synthetic-fixture", OBSERVED_RECENT)];
 export function reserveFloorMinor(firm: FirmData): number {
   return calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, firm.reserveMonths);
 }
-export function headroomMinor(firm: FirmData): number {
-  return AVAILABLE_CASH_MINOR - reserveFloorMinor(firm) - PENDING_DISTRIBUTION_MINOR;
+export function headroomMinor(scenario: ScenarioData, firm: FirmData): number {
+  const { availableCashMinor, pendingActivityMinor } = scenario.liquidity;
+  return calculateHeadroomMinor(availableCashMinor, pendingActivityMinor, reserveFloorMinor(firm));
+}
+/** Whether the branch's signed liquidity covers the canonical request under this
+ * firm's reserve floor - the one comparison every proceed claim on screen rests on. */
+export function reserveHolds(scenario: ScenarioData, firm: FirmData): boolean {
+  return headroomMinor(scenario, firm) >= CANONICAL_REQUEST.amountMinor;
 }
 export function reserveFloorMetric(firm: FirmData) {
   return derivedMetric(reserveFloorMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
-export function headroomMetric(firm: FirmData) {
-  return derivedMetric(headroomMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
+export function headroomMetric(scenario: ScenarioData, firm: FirmData) {
+  return derivedMetric(headroomMinor(scenario, firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
 export function amountMetric() {
   return metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
+}
+
+/** Reserve horizons read as words in demo copy, matching the policy-trace voice. */
+function reserveHorizonWord(firm: FirmData): string {
+  return firm.reserveMonths === 6 ? "six" : "twelve";
 }
 
 /** The §5 spine state-slot per disposition. */
@@ -73,6 +87,12 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
     out.push({
       condition: "Two household instructions give conflicting funding guidance for this request",
       affordanceLabel: "Choose the governing value",
+    });
+  }
+  if (!spec.staleLiquidity && !reserveHolds(scenario, firm)) {
+    out.push({
+      condition: `This movement would leave the household below ${firm.name}'s ${reserveHorizonWord(firm)}-month cash reserve`,
+      affordanceLabel: "Reduce the amount or free additional liquidity",
     });
   }
   return out;
@@ -130,7 +150,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
     figures: [
       { label: "Amount", metric: amountMetric() },
-      { label: "Available after reserve", metric: headroomMetric(firm) },
+      { label: "Available after reserve", metric: headroomMetric(scenario, firm) },
     ],
     authoritySummary,
     why: proceedWhy(firm, scenario.spec.bankChanged),
@@ -187,9 +207,13 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
     {
       order: 2,
       rule: "Cash-reserve floor (months of planned withdrawals)",
-      result: spec.staleLiquidity ? "Cannot evaluate - liquidity evidence is older than policy allows" : "Satisfied after this movement",
+      result: spec.staleLiquidity
+        ? "Cannot evaluate - liquidity evidence is older than policy allows"
+        : reserveHolds(scenario, firm)
+          ? "Satisfied after this movement"
+          : "Breached - this movement would leave the household below the floor",
       version: reserveCite,
-      why: { reason: `${firm.name} preserves ${firm.reserveMonths === 6 ? "six" : "twelve"} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
+      why: { reason: `${firm.name} preserves ${reserveHorizonWord(firm)} months of planned withdrawals in cash.`, regulation: `Firm policy ${reserveCite}` },
     },
     {
       order: 3,

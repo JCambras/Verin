@@ -39,10 +39,46 @@ export const ACCOUNTS: readonly AccountData[] = [
   { id: "acct-trad", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
 ];
 
-// Signed inputs clear both reserves: Firm A headroom $112k; Firm B headroom $64k.
-export const AVAILABLE_CASH_MINOR = 20_000_000; // $200,000 available cash
 export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 800_000; // $8,000 / month, signed golden truth
-export const PENDING_DISTRIBUTION_MINOR = 4_000_000; // $40,000 approved, not yet settled
+
+/**
+ * The liquidity evidence ONE branch renders, mirrored from the signed golden case
+ * named by `sourceCaseId` (`fixtures/golden/`). There is no global liquidity
+ * assumption: a branch whose own signed case states no figure carries the
+ * household's canonical signed liquidity (GC-01/GC-02), and every branch that does
+ * state one carries exactly that one, so each branch tells a single signed story.
+ * A zero `pendingActivityMinor` is the signed observed-absent reading (a positive
+ * observation that no pending activity exists), never an unobserved silence -
+ * `pendingNote` is the sentence that says so on screen.
+ */
+export interface LiquidityData {
+  readonly sourceCaseId: string;
+  readonly availableCashMinor: number;
+  readonly pendingActivityMinor: number;
+  readonly pendingNote: string;
+}
+const NO_PENDING_ACTIVITY = "No pending or reserved liquidity activity was observed at evaluation time";
+/** GC-01/GC-02: $420,000 of available taxable liquidity, no pending activity. */
+const CANONICAL_LIQUIDITY: LiquidityData = {
+  sourceCaseId: "GC-01-firm-a-happy-path",
+  availableCashMinor: 42_000_000,
+  pendingActivityMinor: 0,
+  pendingNote: NO_PENDING_ACTIVITY,
+};
+const liquidityFrom = (sourceCaseId: string, availableCashMinor: number): LiquidityData => ({
+  ...CANONICAL_LIQUIDITY,
+  sourceCaseId,
+  availableCashMinor,
+});
+/** GC-15: $300,000 available against a $15,000 approved distribution that posts
+ * around this decision - the signed case states its reserve arithmetic on the
+ * resulting $285,000 effective liquidity. */
+const INVALIDATION_LIQUIDITY: LiquidityData = {
+  sourceCaseId: "GC-15-approval-invalidation",
+  availableCashMinor: 30_000_000,
+  pendingActivityMinor: 1_500_000,
+  pendingNote: "One approved distribution has not yet settled and reduces the liquidity available to this request until it lands",
+};
 
 // Bank instructions (required shape: a recently changed bank instruction).
 export const BANK_INSTRUCTION = {
@@ -147,20 +183,21 @@ export interface ScenarioData {
   readonly disposition: DispositionKind;
   readonly perFirm?: Record<string, DispositionKind>;
   readonly spec: ScenarioSpec;
+  readonly liquidity: LiquidityData;
 }
 export const SCENARIOS: readonly ScenarioData[] = [
-  { id: "safe-proceed", title: "Safe proceed", description: "No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.", outcomeClass: "governed submission", disposition: "proceed", spec: {} },
-  { id: "recent-bank-change-block", title: "Recent bank change", description: "The recently changed bank instruction triggers each firm's configured handling for the same facts.", outcomeClass: "resolvable block", disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true } },
-  { id: "permanent-prohibition", title: "Permanent prohibition", description: "The requested movement violates the household-specific destination restriction; no approval can waive it.", outcomeClass: "permanent prohibition", disposition: "prohibited", spec: { thirdPartyDestination: true } },
-  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { staleLiquidity: true } },
-  { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true } },
-  { id: "dual-approval", title: "Dual approval", description: "The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.", outcomeClass: "quorum approval", disposition: "proceed", spec: {} },
-  { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true } },
-  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous, individually valid requests compete for the same liquidity; reservations prevent a joint violation.", outcomeClass: "one proceeds, one blocked by reservation", disposition: "proceed", spec: { competing: true } },
-  { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true } },
-  { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true } },
-  { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true } },
-  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "A specialist-review stage expires without action and escalates along the configured escalation path.", outcomeClass: "escalated", disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true, specialistExpired: true } },
+  { id: "safe-proceed", title: "Safe proceed", description: "No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.", outcomeClass: "governed submission", disposition: "proceed", spec: {}, liquidity: CANONICAL_LIQUIDITY },
+  { id: "recent-bank-change-block", title: "Recent bank change", description: "The recently changed bank instruction triggers each firm's configured handling for the same facts.", outcomeClass: "resolvable block", disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true }, liquidity: liquidityFrom("GC-03-recent-bank-change-firm-a", 42_000_000) },
+  { id: "permanent-prohibition", title: "Permanent prohibition", description: "The requested movement violates the household-specific destination restriction; no approval can waive it.", outcomeClass: "permanent prohibition", disposition: "prohibited", spec: { thirdPartyDestination: true }, liquidity: CANONICAL_LIQUIDITY },
+  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { staleLiquidity: true }, liquidity: CANONICAL_LIQUIDITY },
+  { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true }, liquidity: CANONICAL_LIQUIDITY },
+  { id: "dual-approval", title: "Dual approval", description: "The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.", outcomeClass: "quorum approval", disposition: "proceed", spec: {}, liquidity: CANONICAL_LIQUIDITY },
+  { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true }, liquidity: INVALIDATION_LIQUIDITY },
+  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous, individually valid requests compete for the same liquidity; reservations prevent a joint violation.", outcomeClass: "one proceeds, one blocked by reservation", disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { competing: true }, liquidity: liquidityFrom("GC-10-simultaneous-distributions-first", 16_000_000) },
+  { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true }, liquidity: liquidityFrom("GC-12-duplicate-retry", 42_000_000) },
+  { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true }, liquidity: CANONICAL_LIQUIDITY },
+  { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true }, liquidity: liquidityFrom("GC-14-delayed-nigo", 42_000_000) },
+  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "A specialist-review stage expires without action and escalates along the configured escalation path.", outcomeClass: "escalated", disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true, specialistExpired: true }, liquidity: CANONICAL_LIQUIDITY },
 ];
 const DEFAULT_SCENARIO = "safe-proceed";
 

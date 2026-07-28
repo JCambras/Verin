@@ -36,6 +36,17 @@ export function reserveFloorMinor(monthlyWithdrawalMinor: number, reserveMonths:
   return floor;
 }
 
+/** Liquidity left for a movement after pending activity and the reserve floor. The
+ * single authority for "available after reserve": a movement may proceed only when
+ * its amount does not exceed this figure. Malformed quantities are refused here
+ * rather than rendered as NaN. */
+export function headroomMinor(availableMinor: number, pendingMinor: number, floorMinor: number): number {
+  for (const quantity of [availableMinor, pendingMinor, floorMinor]) {
+    if (!isMoneyQuantity(quantity)) throw new RangeError("headroom inputs must be non-negative safe integers");
+  }
+  return availableMinor - pendingMinor - floorMinor;
+}
+
 /** Convert a whole major-unit amount (dollars) to minor units, or null when the
  * input is not a quantity this vocabulary can express. */
 export function minorFromMajor(amountMajor: unknown): number | null {

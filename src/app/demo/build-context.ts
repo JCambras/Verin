@@ -14,7 +14,6 @@ import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import {
   ACCOUNTS,
-  AVAILABLE_CASH_MINOR,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_NOW,
@@ -22,7 +21,6 @@ import {
   HOUSEHOLD,
   OBSERVED_RECENT,
   OBSERVED_STALE,
-  PENDING_DISTRIBUTION_MINOR,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
   THIRD_PARTY_DESTINATION,
@@ -52,9 +50,9 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
       custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
     })),
-    liquidity: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
+    liquidity: fixtureMetric(scenario.liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
     plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-    pendingActivity: fact("One approved distribution settles Aug 1 and reduces available liquidity until then", "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+    pendingActivity: fact(scenario.liquidity.pendingNote, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
     onRamp: {
       title: "What do the Smiths need?",
       description: "Ask Verin in plain language. It gathers the evidence, determines the governed action, and routes the authority to approve it.",
@@ -87,11 +85,12 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
 export function buildEvidence(scenario: ScenarioData): EvidenceVM {
   const spec = scenario.spec;
   const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
+  const liquidity = scenario.liquidity;
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
       label: "Available cash across household accounts",
-      metric: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
+      metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
@@ -102,14 +101,25 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
-    {
-      kind: "metric",
-      label: "Pending approved distribution (settles Aug 1)",
-      metric: fixtureMetric(PENDING_DISTRIBUTION_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-      retrievedAt: RETRIEVED_AT,
-      fakeClass: "synthetic-fixture",
-      why: { reason: "Approved on Jul 18 and not yet settled, so it reduces the liquidity available to this request until it lands." },
-    },
+    // Pending liquidity activity is stated positively either way: an observed
+    // amount, or the signed observed-absent reading. An absent row would read as
+    // "not looked at", which is the inference the golden cases forbid.
+    liquidity.pendingActivityMinor > 0
+      ? {
+          kind: "metric",
+          label: "Pending approved distribution (not yet settled)",
+          metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+          retrievedAt: RETRIEVED_AT,
+          fakeClass: "synthetic-fixture",
+          why: { reason: `${liquidity.pendingNote}.` },
+        }
+      : {
+          kind: "fact",
+          label: "Pending or reserved liquidity activity",
+          fact: fact(`${liquidity.pendingNote}.`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+          fakeClass: "synthetic-fixture",
+          why: { reason: "Absence here is an observation, not a gap: the pending-activity source was read and returned nothing against this household." },
+        },
     spec.bankChanged
       ? {
           kind: "fact",

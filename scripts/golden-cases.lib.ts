@@ -25,7 +25,7 @@ import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { TimestampSchema } from "@contracts/decision-core/ids";
 import { OBSERVED_STATUS_IDS } from "@contracts/execution-status";
-import { isMoneyQuantity, minorFromMajor, reserveFloorMinor } from "@contracts/money-movement";
+import { headroomMinor, isMoneyQuantity, minorFromMajor, reserveFloorMinor } from "@contracts/money-movement";
 import { validateEvidenceCompleteness } from "./golden-evidence.lib";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
@@ -33,6 +33,24 @@ export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
 export const V3_CORE_CONTRACTS = join(REPO_ROOT, "docs/v3/verin-core-contracts.ts");
+
+/** The normative documents that state the execution-status vocabulary. All three
+ * must state the SAME planes as `@contracts/execution-status`, or the status half
+ * of the demo fence fails (demo-contract.md annotation 3). */
+export const STATUS_VOCABULARY_DOCS = [
+  "docs/demo-contract.md",
+  "docs/demo-contract-checklist.md",
+  "docs/demo-design-language.md",
+] as const;
+
+/** Read those documents as `{path, text}` pairs; text may be injected by the fence
+ * companion so a drifted document can be proven to fail. */
+export function loadStatusVocabularyDocs(root = REPO_ROOT): { path: string; text: string }[] {
+  return STATUS_VOCABULARY_DOCS.map((path) => ({
+    path,
+    text: existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : "",
+  }));
+}
 
 /** The ratified v3 `LedgerEntry` union, transcribed from the SHA-256-pinned
  * docs/v3/verin-core-contracts.ts and kept honest by `validateLedgerVocabulary`. */
@@ -222,6 +240,11 @@ export interface SignedMoney {
   plannedWithdrawalMonthlyUsd: number | null;
   /** null when the case's signed text states no reserve floor. */
   reserveFloorUsd: number | null;
+  /** Liquidity available to the movement, null when the case states no figure. */
+  availableLiquidityUsd: number | null;
+  /** Pending or reserved activity counted against it. 0 is the observed-absent
+   * reading (a positive observation); null is "this case states no figure". */
+  pendingLiquidityUsd: number | null;
 }
 
 const optionalAmount = (v: unknown): number | null | undefined =>
@@ -233,15 +256,37 @@ export function readSignedMoney(c: Record<string, unknown>): SignedMoney | null 
   if (!isObj(m)) return null;
   const monthly = optionalAmount(m.plannedWithdrawalMonthlyUsd);
   const floor = optionalAmount(m.reserveFloorUsd);
+  const available = optionalAmount(m.availableLiquidityUsd);
+  const pending = optionalAmount(m.pendingLiquidityUsd);
   if (!isNonEmptyString(m.currency) || !isNonEmptyString(m.cadence)) return null;
   if (!isMoneyQuantity(m.requestAmountUsd) || monthly === undefined || floor === undefined) return null;
+  if (available === undefined || pending === undefined) return null;
   return {
     currency: m.currency,
     cadence: m.cadence,
     requestAmountUsd: m.requestAmountUsd,
     plannedWithdrawalMonthlyUsd: monthly,
     reserveFloorUsd: floor,
+    availableLiquidityUsd: available,
+    pendingLiquidityUsd: pending,
   };
+}
+
+/**
+ * The household's signed planned-withdrawal schedule, projected from the cases that
+ * state one. All sixteen cases describe the SAME household, so a case that states a
+ * reserve floor without restating the schedule still derives that floor from signed
+ * structured authority instead of escaping the arithmetic. Returns every distinct
+ * stated value so a split schedule is reported rather than silently averaged away.
+ */
+export function signedMonthlyWithdrawalsUsd(cases: LoadedCase[]): number[] {
+  const stated = new Set<number>();
+  for (const { data } of cases) {
+    if (!isObj(data)) continue;
+    const signed = readSignedMoney(data);
+    if (signed && signed.plannedWithdrawalMonthlyUsd !== null) stated.add(signed.plannedWithdrawalMonthlyUsd);
+  }
+  return [...stated].sort((a, b) => a - b);
 }
 
 /** Whether signed prose still states a figure, tolerant of `8000`, `8,000`, `$8,000.00`. */
@@ -250,21 +295,42 @@ function mentionsAmount(text: string, amountUsd: number): boolean {
   return new RegExp(`(?<![\\d.])${amountUsd}(?!\\d)`).test(normalized);
 }
 
-/** The signed money block: well-typed, internally consistent, and still stated in prose. */
-function validateSignedMoney(c: Record<string, unknown>, P: (msg: string) => void): void {
+const evidenceRows = (c: Record<string, unknown>): Record<string, unknown>[] =>
+  (Array.isArray(c.householdEvidence) ? c.householdEvidence : []).filter(isObj);
+const summariesOfKind = (c: Record<string, unknown>, kind: string): string =>
+  evidenceRows(c)
+    .filter((row) => row.evidenceKind === kind)
+    .map((row) => (isNonEmptyString(row.summary) ? row.summary : ""))
+    .join(" ");
+
+/**
+ * The signed money block: well-typed, derived through the shared arithmetic, and
+ * still stated in prose. `canonicalMonthlyUsd` is the household schedule projected
+ * from the whole truth set; a case that states a floor without any signed monthly
+ * authority anywhere fails with a missing-authority diagnostic rather than skipping
+ * the derivation.
+ */
+function validateSignedMoney(
+  c: Record<string, unknown>,
+  canonicalMonthlyUsd: number | null,
+  P: (msg: string) => void,
+): void {
   const signed = readSignedMoney(c);
   if (!signed) {
-    P("signedMoney must state currency, cadence, requestAmountUsd, and (whole-dollar or null) plannedWithdrawalMonthlyUsd and reserveFloorUsd");
+    P("signedMoney must state currency, cadence, requestAmountUsd, and (whole-dollar or null) plannedWithdrawalMonthlyUsd, reserveFloorUsd, availableLiquidityUsd, and pendingLiquidityUsd");
     return;
   }
   const months = isObj(c.firmConfiguration) ? c.firmConfiguration.cashReserveMonths : undefined;
-  const monthlyMinor = minorFromMajor(signed.plannedWithdrawalMonthlyUsd);
+  const derivedFromUsd = signed.plannedWithdrawalMonthlyUsd ?? canonicalMonthlyUsd;
+  const monthlyMinor = minorFromMajor(derivedFromUsd);
   const floorMinor = minorFromMajor(signed.reserveFloorUsd);
-  if (monthlyMinor !== null && floorMinor !== null) {
-    if (!isMoneyQuantity(months)) {
+  if (floorMinor !== null) {
+    if (monthlyMinor === null) {
+      P("signedMoney states a reserve floor but no signed monthly-withdrawal authority exists to derive it from (state plannedWithdrawalMonthlyUsd here or in the canonical cases)");
+    } else if (!isMoneyQuantity(months)) {
       P("signedMoney states a reserve floor but firmConfiguration.cashReserveMonths is not a whole reserve horizon");
     } else if (reserveFloorMinor(monthlyMinor, months) !== floorMinor) {
-      P(`signedMoney.reserveFloorUsd ${signed.reserveFloorUsd} is not ${signed.plannedWithdrawalMonthlyUsd} x ${months} months`);
+      P(`signedMoney.reserveFloorUsd ${signed.reserveFloorUsd} is not ${derivedFromUsd} x ${months} months`);
     }
   }
   const trigger = c.trigger;
@@ -272,11 +338,7 @@ function validateSignedMoney(c: Record<string, unknown>, P: (msg: string) => voi
   if (!mentionsAmount(requestSummary, signed.requestAmountUsd)) {
     P(`trigger.maskedRequestSummary no longer states the signed request amount ${signed.requestAmountUsd}`);
   }
-  const scheduleSummary = (Array.isArray(c.householdEvidence) ? c.householdEvidence : [])
-    .filter(isObj)
-    .filter((row) => row.evidenceKind === "planned-withdrawals")
-    .map((row) => (isNonEmptyString(row.summary) ? row.summary : ""))
-    .join(" ");
+  const scheduleSummary = summariesOfKind(c, "planned-withdrawals");
   for (const [field, amount] of [
     ["plannedWithdrawalMonthlyUsd", signed.plannedWithdrawalMonthlyUsd],
     ["reserveFloorUsd", signed.reserveFloorUsd],
@@ -284,6 +346,49 @@ function validateSignedMoney(c: Record<string, unknown>, P: (msg: string) => voi
     if (amount !== null && !mentionsAmount(scheduleSummary, amount)) {
       P(`signedMoney.${field} ${amount} is not stated by any planned-withdrawals evidence summary`);
     }
+  }
+  validateSignedLiquidity(c, signed, floorMinor, P);
+}
+
+/**
+ * The liquidity half: available cash and pending activity are STRUCTURED signed
+ * figures tied to the evidence rows that observed them, and a `proceed` case must
+ * actually leave the request covered under its own firm's reserve floor. This is
+ * the signed-side twin of the demo fence - the same arithmetic, run over the
+ * fixtures, so a case cannot sign an outcome its own numbers contradict.
+ */
+function validateSignedLiquidity(
+  c: Record<string, unknown>,
+  signed: SignedMoney,
+  floorMinor: number | null,
+  P: (msg: string) => void,
+): void {
+  const { availableLiquidityUsd: available, pendingLiquidityUsd: pending } = signed;
+  const pendingRows = evidenceRows(c).filter((row) => row.evidenceKind === "pending-actions");
+  const observedAbsent = pendingRows.some((row) => row.observedAbsent === true);
+  if (available !== null && !mentionsAmount(summariesOfKind(c, "account-balance"), available)) {
+    P(`signedMoney.availableLiquidityUsd ${available} is not stated by any account-balance evidence summary`);
+  }
+  if (available !== null && pending === null) {
+    P("signedMoney states availableLiquidityUsd but leaves pendingLiquidityUsd null - the activity counted against it is recorded, never inferred");
+  }
+  if (pending !== null && pendingRows.length === 0) {
+    P("signedMoney states pendingLiquidityUsd but no pending-actions evidence row observed it");
+  }
+  if (observedAbsent && pending !== 0) {
+    P(`a pending-actions snapshot observed ABSENT must state signedMoney.pendingLiquidityUsd 0, got ${JSON.stringify(pending)}`);
+  }
+  if (pending !== null && pending > 0 && !mentionsAmount(summariesOfKind(c, "pending-actions"), pending)) {
+    P(`signedMoney.pendingLiquidityUsd ${pending} is not stated by any pending-actions evidence summary`);
+  }
+  const availableMinor = minorFromMajor(available);
+  const pendingMinor = minorFromMajor(pending);
+  const requestMinor = minorFromMajor(signed.requestAmountUsd);
+  if (c.expectedDisposition !== "proceed") return;
+  if (availableMinor === null || pendingMinor === null || floorMinor === null || requestMinor === null) return;
+  const headroom = headroomMinor(availableMinor, pendingMinor, floorMinor);
+  if (headroom < requestMinor) {
+    P(`a proceed case must leave the request covered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
   }
 }
 
@@ -300,6 +405,17 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
   if (cases.length < 12) {
     problems.push(`only ${cases.length} golden case(s) found; the spec requires at least twelve`);
   }
+
+  // One household, one signed schedule: derive it once so every stated reserve
+  // floor is checked through the shared arithmetic, including the cases that state
+  // a floor without restating the schedule.
+  const monthlySchedules = signedMonthlyWithdrawalsUsd(cases);
+  if (monthlySchedules.length === 0) {
+    problems.push("no golden case states signedMoney.plannedWithdrawalMonthlyUsd: every stated reserve floor would be unverifiable (missing signed authority)");
+  } else if (monthlySchedules.length > 1) {
+    problems.push(`the truth set states conflicting planned-withdrawal schedules for one household (${monthlySchedules.join(", ")} USD/month)`);
+  }
+  const canonicalMonthlyUsd = monthlySchedules.length === 1 ? monthlySchedules[0]! : null;
 
   for (const { rel, data } of cases) {
     const P = (msg: string) => problems.push(`${rel} :: ${msg}`);
@@ -408,7 +524,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       });
     }
     for (const problem of validateEvidenceCompleteness(c)) P(problem);
-    validateSignedMoney(c, P);
+    validateSignedMoney(c, canonicalMonthlyUsd, P);
 
     // policy versions. Household-instruction versions may be EMPTY only when the
     // case records why (householdInstructionsNote) - e.g. the ambiguous-household

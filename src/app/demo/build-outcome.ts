@@ -23,7 +23,14 @@ export function buildSafety(scenario: ScenarioData): SafetyVM {
   const spec = scenario.spec;
   const checks = [
     { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
-    { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
+    scenario.liquidity.pendingActivityMinor > 0
+      ? {
+          label: "Pending actions re-checked against this household",
+          status: "done",
+          statusLabel: "Re-read",
+          detail: `${scenario.liquidity.pendingNote}. It was already counted against the decision's liquidity, and the reserve floor still holds after this movement.`,
+        }
+      : { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
   ];
   if (spec.invalidation) {
     checks.push({
