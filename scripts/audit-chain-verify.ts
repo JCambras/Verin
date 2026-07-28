@@ -10,7 +10,7 @@ import { createDb } from "../src/infrastructure/store/db";
 import { verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemTenant } from "../src/contracts/tenant";
 import { errorMessage } from "./error-message";
-import { verifyDecisionLedger } from "../src/infrastructure/ledger/ledger-verification";
+import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -32,11 +32,11 @@ async function main(): Promise<void> {
     process.stdout.write(`${line}\n`);
     if (!v.ok) broken += 1;
     entriesTotal += v.entriesChecked;
-    const decision = await verifyDecisionLedger(db, id);
-    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.entriesChecked} entries)`;
+    const decision = await verifyDecisionLedgerIntegrity(db, id);
+    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources)`;
     process.stdout.write(`${decisionLine}\n`);
     if (!decision.ok) broken += 1;
-    decisionEntriesTotal += decision.entriesChecked;
+    decisionEntriesTotal += decision.ledger.entriesChecked;
   }
   await db.close();
   if (broken > 0) {

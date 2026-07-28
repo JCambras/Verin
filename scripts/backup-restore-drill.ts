@@ -11,7 +11,7 @@ import { systemWriteActor } from "../src/contracts/principal";
 import { errorMessage } from "./error-message";
 import {
   listDecisionLedger,
-  verifyDecisionLedger,
+  verifyDecisionLedgerIntegrity,
 } from "../src/infrastructure/ledger/ledger-verification";
 import { seedDecisionLedger } from "./seed-decision-ledger";
 
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   const beforeChain = await verifyOrgChain(src, tenant);
   const beforeAudit = await countOrgChain(src, tenant);
   const beforeDecision = (await listDecisionLedger(src, "org")).length;
-  const beforeDecisionChain = await verifyDecisionLedger(src, "org");
+  const beforeDecisionChain = await verifyDecisionLedgerIntegrity(src, "org");
   if (!beforeChain.ok || !beforeDecisionChain.ok) {
     throw new Error("pre-backup audit-class chain invalid");
   }
@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   const afterAudit = await countOrgChain(restored, tenant);
   const afterChain = await verifyOrgChain(restored, tenant);
   const afterDecision = (await listDecisionLedger(restored, "org")).length;
-  const afterDecisionChain = await verifyDecisionLedger(restored, "org");
+  const afterDecisionChain = await verifyDecisionLedgerIntegrity(restored, "org");
   await restored.close();
 
   const ok =
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
       `audit entries: ${beforeAudit} -> ${afterAudit}`,
       `audit chain after restore: ${afterChain.ok ? "VERIFIED" : "BROKEN — " + afterChain.reason}`,
       `decision entries: ${beforeDecision} -> ${afterDecision}`,
-      `decision chain after restore: ${afterDecisionChain.ok ? "L1-L4 VERIFIED" : "BROKEN"}`,
+      `decision chain after restore: ${afterDecisionChain.ok ? `L1-L4 + ${afterDecisionChain.replaySourcesChecked} SOURCES VERIFIED` : "BROKEN"}`,
       `backup: ${backupMs.toFixed(0)}ms | restore: ${restoreMs.toFixed(0)}ms | total drill: ${(performance.now() - t0).toFixed(0)}ms`,
       `RESULT: ${ok ? "PASS" : "FAIL"}`,
     ].join("\n") + "\n",

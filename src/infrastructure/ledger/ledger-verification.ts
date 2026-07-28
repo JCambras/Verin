@@ -3,7 +3,8 @@
  * the recorded schema and serializer and checks canonical round-trip, L3 checks
  * promoted columns, and L4 checks the independently maintained anchor.
  */
-import type { SqlDb, SqlQueryable } from "@infra/store/db";
+import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
+import { appError } from "@contracts/errors";
 import { type LedgerEntry } from "@contracts/decision-core/ledger";
 import {
   canonicalJson,
@@ -18,6 +19,8 @@ import {
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
 } from "./ledger-schema-registry";
+import { lockDecisionLedgerTenant } from "./ledger-lock";
+import { verifyReplaySources } from "./ledger-sources";
 
 export interface DecisionLedgerRow {
   readonly orgId: string;
@@ -34,6 +37,7 @@ export interface DecisionLedgerRow {
   readonly decisionId: string | null;
   readonly evidenceSnapshotId: string | null;
   readonly triggeringEntryId: string | null;
+  readonly reservationCreationId: string | null;
   readonly payloadJson: string;
   readonly prevHash: string;
   readonly entryHash: string;
@@ -54,6 +58,13 @@ export interface LedgerVerification {
   readonly levels: readonly LedgerVerificationLevel[];
 }
 
+export interface DecisionLedgerIntegrityVerification {
+  readonly ok: boolean;
+  readonly ledger: LedgerVerification;
+  readonly replaySourcesChecked: number;
+  readonly replaySourceReason: string | null;
+}
+
 interface DbLedgerRow {
   org_id: string;
   id: string;
@@ -69,6 +80,7 @@ interface DbLedgerRow {
   decision_id: string | null;
   evidence_snapshot_id: string | null;
   triggering_entry_id: string | null;
+  reservation_creation_id: string | null;
   payload_json: string;
   prev_hash: string;
   entry_hash: string;
@@ -93,6 +105,7 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
     decisionId: row.decision_id,
     evidenceSnapshotId: row.evidence_snapshot_id,
     triggeringEntryId: row.triggering_entry_id,
+    reservationCreationId: row.reservation_creation_id,
     payloadJson: row.payload_json,
     prevHash: row.prev_hash,
     entryHash: row.entry_hash,
@@ -160,6 +173,12 @@ function promotedTriggeringEntryId(event: LedgerEntry): string | null {
     : null;
 }
 
+function promotedReservationCreationId(event: LedgerEntry): string | null {
+  return event.type === "ReservationReleased"
+    ? event.reservationCreationRef.id
+    : null;
+}
+
 function verifyL2(
   rows: readonly DecisionLedgerRow[],
 ): { verdict: LedgerVerificationLevel; events: LedgerEntry[] } {
@@ -220,7 +239,8 @@ function verifyL3(
       (event.causationRef?.id ?? null) === row.causationId &&
       promotedDecisionId(event) === row.decisionId &&
       promotedEvidenceId(event) === row.evidenceSnapshotId &&
-      promotedTriggeringEntryId(event) === row.triggeringEntryId;
+      promotedTriggeringEntryId(event) === row.triggeringEntryId &&
+      promotedReservationCreationId(event) === row.reservationCreationId;
     if (!matches) {
       return level("L3", false, index, row.sequence, "promoted column differs from canonical payload");
     }
@@ -336,29 +356,45 @@ export async function verifyAndListDecisionLedger(
   orgId: string,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  const snapshot = await db.transaction(async (tx) => {
-    const totals = await tx.query<{ n: number | string; head: number | string | null }>(
-      "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
-      [orgId],
-    );
-    const stored = Number(totals.rows[0]?.n ?? 0);
-    const headRaw = totals.rows[0]?.head;
-    const headSequence = headRaw === null || headRaw === undefined ? null : Number(headRaw);
-    const anchor = await tx.query<AnchorRow>(
-      "SELECT max_sequence, entry_count, head_hash FROM decision_ledger_anchor WHERE org_id = $1",
-      [orgId],
-    );
-    const base = { anchor: anchor.rows[0], stored, headSequence };
-    if (window === undefined || window < 1 || stored <= window) {
-      return { ...base, rows: await listDecisionLedger(tx, orgId), start: undefined };
-    }
+  return db.transaction((tx) =>
+    verifyDecisionLedgerTransaction(tx, orgId, window));
+}
+
+export async function verifyDecisionLedgerTransaction(
+  tx: SqlTx,
+  orgId: string,
+  window?: number,
+): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
+  await lockDecisionLedgerTenant(tx, orgId);
+  const totals = await tx.query<{ n: number | string; head: number | string | null }>(
+    "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
+    [orgId],
+  );
+  const stored = Number(totals.rows[0]?.n ?? 0);
+  const headRaw = totals.rows[0]?.head;
+  const headSequence = headRaw === null || headRaw === undefined
+    ? null
+    : Number(headRaw);
+  const anchor = await tx.query<AnchorRow>(
+    "SELECT max_sequence, entry_count, head_hash FROM decision_ledger_anchor WHERE org_id = $1",
+    [orgId],
+  );
+  const base = { anchor: anchor.rows[0], stored, headSequence };
+  let snapshot: LedgerSnapshot;
+  if (window === undefined || window < 1 || stored <= window) {
+    snapshot = {
+      ...base,
+      rows: await listDecisionLedger(tx, orgId),
+      start: undefined,
+    };
+  } else {
     const rows = await listDecisionLedger(tx, orgId, window);
     const first = rows[0]!;
     const predecessor = await tx.query<{ entry_hash: string }>(
       "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
       [orgId, first.sequence - 1],
     );
-    return {
+    snapshot = {
       ...base,
       rows,
       start: {
@@ -366,8 +402,11 @@ export async function verifyAndListDecisionLedger(
         prevHash: predecessor.rows[0]?.entry_hash ?? "",
       },
     };
-  });
-  return { verification: verifyRows(snapshot), rows: snapshot.rows };
+  }
+  return {
+    verification: verifyRows(snapshot),
+    rows: snapshot.rows,
+  };
 }
 
 export async function verifyDecisionLedger(
@@ -375,4 +414,51 @@ export async function verifyDecisionLedger(
   orgId: string,
 ): Promise<LedgerVerification> {
   return (await verifyAndListDecisionLedger(db, orgId)).verification;
+}
+
+export async function verifyDecisionLedgerIntegrity(
+  db: SqlDb,
+  orgId: string,
+): Promise<DecisionLedgerIntegrityVerification> {
+  return db.transaction(async (tx) => {
+    const checked = await verifyDecisionLedgerTransaction(tx, orgId);
+    if (!checked.verification.ok) {
+      return {
+        ok: false,
+        ledger: checked.verification,
+        replaySourcesChecked: 0,
+        replaySourceReason: "decision ledger chain does not verify",
+      };
+    }
+    const events: LedgerEntry[] = [];
+    try {
+      for (const row of checked.rows) {
+        const value = JSON.parse(row.payloadJson) as unknown;
+        const parsed = parseRecordedLedgerEvent(
+          row.eventType,
+          row.schemaVersion,
+          row.serializerVersion,
+          value,
+        );
+        if (!parsed.ok) {
+          throw appError("STORE_CONSTRAINT", parsed.reason);
+        }
+        events.push(parsed.event);
+      }
+      const sources = await verifyReplaySources(tx, orgId, events);
+      return {
+        ok: true,
+        ledger: checked.verification,
+        replaySourcesChecked: sources.sourcesChecked,
+        replaySourceReason: null,
+      };
+    } catch {
+      return {
+        ok: false,
+        ledger: checked.verification,
+        replaySourcesChecked: 0,
+        replaySourceReason: "immutable replay source verification failed",
+      };
+    }
+  });
 }

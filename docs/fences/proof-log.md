@@ -5407,6 +5407,9 @@ reproduces the online fold byte-identically.
 
 ## A swallowed mid-batch refusal leaves a verifiable anchor (D-100)
 
+**Superseded by D-066:** later appends are now savepoint-atomic, so a caught refusal
+commits no prefix. Per-entry anchors remain as defense in depth.
+
 **Invariant:** the ledger anchor covers exactly the entries that committed, even when a
 caller catches the abort and commits its own transaction anyway.
 
@@ -5440,3 +5443,40 @@ AssertionError: expected false to be true
 **Revert:** restored the join over every contributing row.
 
 **Date:** 2026-07-28 (review follow-up to D-099, ADR-0033, D-100).
+
+## Decision-ledger residual review corrections (D-103)
+
+**Invariants:** later appends require a real transaction and commit no partial
+source/event prefix; rebuild refuses any L1-L4 or replay-source corruption before
+clearing projections; verification reads under the tenant lock; retained immutable
+text is an explicit code/reference projection; reservation reuse is generation-bound;
+execution placeholders reconcile by handle.
+
+Before the implementation changes, the focused adversarial suite failed six
+production paths:
+
+```text
+× repairs corrupted derived state but refuses a truncated ledger
+  promise resolved instead of rejecting
+× does not let a delayed release affect a reused reservation identifier
+  expected active, received released
+× replaces an observed execution placeholder when the real step arrives
+  duplicate observed and real step remained
+× refuses retained names and unformatted account numbers without rewriting bytes
+  expected false, received true
+× rolls back every event when a producer catches a mid-batch refusal
+  expected 5 entries, received 6
+× rejects a direct database handle where a transaction capability is required
+  direct SqlDb reached the append path
+```
+
+The completed companions additionally prove that an unsupported immutable-source
+codec fails full integrity while L1-L4 alone remains intact, the first verification
+query locks the tenant, evidence collisions are preflighted before any source insert,
+cross-owner and unknown-generation releases fail, and a delayed duplicate release
+cannot affect a reused reservation.
+
+**Revert:** no planted source remains. The focused typecheck, ledger contract,
+integration, and projection suites pass.
+
+**Date:** 2026-07-28 (review corrections F1-F9, ADR-0033, D-103).

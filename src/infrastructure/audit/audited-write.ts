@@ -9,7 +9,7 @@
  *
  * enqueueAudit is called ONLY from here (anti-fork fence: no hand-rolled audits).
  */
-import type { SqlDb, SqlQueryable } from "@infra/store/db";
+import type { SqlDb, SqlTx } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
@@ -37,7 +37,7 @@ export interface AuditedWriteOpts<T> {
   buildBefore?: () => unknown;
   buildAfter?: (result: T) => unknown;
   detail: string;
-  perform: (tx: SqlQueryable) => Promise<T>;
+  perform: (tx: SqlTx) => Promise<T>;
 }
 
 async function cachedResult<T>(db: SqlDb, orgId: string, key: string): Promise<T | undefined> {

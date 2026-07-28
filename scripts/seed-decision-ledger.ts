@@ -38,6 +38,30 @@ function fixture(name: string, firmId: string): Record<string, unknown> {
   return retenant(parsed, firmId) as Record<string, unknown>;
 }
 
+function retainedTextProjection(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(retainedTextProjection);
+  if (value === null || typeof value !== "object") return value;
+  const projected = Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      retainedTextProjection(nested),
+    ]),
+  );
+  if (typeof projected.code === "string") {
+    if ("summary" in projected) projected.summary = projected.code;
+    if ("messageTemplate" in projected) {
+      projected.messageTemplate = projected.code;
+    }
+  }
+  if (
+    typeof projected.reasonCode === "string" &&
+    "explanation" in projected
+  ) {
+    projected.explanation = projected.reasonCode;
+  }
+  return projected;
+}
+
 function hash(value: unknown): string {
   return createHash("sha256")
     .update(unwrap(canonicalJson(value as never)), "utf8")
@@ -64,7 +88,9 @@ export async function seedDecisionLedger(
     bundleHash: hash(bundleHashPreimage(bundleCandidate)),
   });
   const recordCandidate = DecisionRecordSchema.parse({
-    ...fixture("decision-record-proceed", firmId),
+    ...(retainedTextProjection(
+      fixture("decision-record-proceed", firmId),
+    ) as Record<string, unknown>),
     decisionHash: "0".repeat(64),
   });
   const decisionRecord = DecisionRecordSchema.parse({
@@ -80,7 +106,7 @@ export async function seedDecisionLedger(
       subjectRef: { firmId, id: `subject:synthetic:${index}` },
       observedAt: inputBundle.asOf,
       retrievedAt: inputBundle.asOf,
-      attribution: "synthetic decision-ledger seed fixture",
+      attribution: "source:synthetic-seed",
       schemaVersion: "evidence/1.0.0",
       encryptedStorageRef: { firmId, id: `blob:synthetic:${index}` },
       contentHash: String(index + 1).repeat(64),

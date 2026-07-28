@@ -1,6 +1,17 @@
 import { createHash } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createMemoryDb, type SqlDb } from "@infra/store/db";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  expectTypeOf,
+  it,
+} from "vitest";
+import {
+  createMemoryDb,
+  type SqlDb,
+  type SqlTx,
+} from "@infra/store/db";
 import {
   appendDecisionEvents,
   rebuildDecisionProjections,
@@ -8,6 +19,7 @@ import {
 } from "@infra/ledger/ledger-store";
 import {
   verifyAndListDecisionLedger,
+  verifyDecisionLedgerIntegrity,
   verifyDecisionLedger,
   listDecisionLedger,
 } from "@infra/ledger/ledger-verification";
@@ -279,6 +291,27 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L1");
   });
 
+  it("holds the tenant lock before reading any verification snapshot", async () => {
+    await recordFixture(db);
+    const statements: string[] = [];
+    const measured: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(sql: string, params?: unknown[]) {
+            statements.push(sql);
+            return tx.query<U>(sql, params);
+          },
+        }));
+      },
+    };
+    expect((await verifyDecisionLedger(measured, LEDGER_ORG)).ok).toBe(true);
+    expect(statements[0]).toMatch(
+      /SELECT id FROM orgs WHERE id = \$1 FOR UPDATE/,
+    );
+  });
+
   it("L4 detects tail deletion and anchor drift", async () => {
     await recordFixture(db);
     await db.query(
@@ -342,7 +375,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await recordFixture(db);
     await seedOrg(db, LEDGER_OTHER_ORG);
     const raw = allLedgerEventSamples().find(
-      (event) => event.type === "ReservationReleased",
+      (event) => event.type === "ReservationCreated",
     )!;
     const event = LedgerEntrySchema.parse({
       ...raw,
@@ -350,6 +383,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       id: "firm-b:event",
       actor: { firmId: LEDGER_OTHER_ORG, systemId: "ledger-test" },
       reservationRef: { firmId: LEDGER_OTHER_ORG, id: "reservation:b" },
+      decisionRef: { firmId: LEDGER_OTHER_ORG, id: "decision:b" },
       causationRef: { firmId: LEDGER_OTHER_ORG, id: "ledger:decision:0" },
     });
     const payload = canonicalJson(event as unknown as JsonValue);
@@ -420,7 +454,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
   });
 
-  it("scrubs structured reasons and fails closed on PII elsewhere in a ledger event", async () => {
+  it("rejects PII in ledger text without rewriting the submitted bytes", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
     const samples = allLedgerEventSamples();
@@ -430,10 +464,9 @@ describe("decision ledger storage and L1-L4 verification", () => {
       inputBundleHash: input.inputBundle.bundleHash,
       structuredReason: "Reviewed by analyst@firm.test.",
     });
-    await expect(append(db, [approval])).resolves.toHaveLength(1);
-    const appended = (await listDecisionLedger(db, LEDGER_ORG)).at(-1)!;
-    expect(appended.payloadJson).not.toContain("analyst@firm.test");
-    expect(appended.payloadJson).toContain("[REDACTED]");
+    await expect(append(db, [approval])).rejects.toMatchObject({
+      code: "PII_VIOLATION",
+    });
 
     const unsafeStatus = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ExecutionFailed")!,
@@ -442,7 +475,14 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(append(db, [unsafeStatus])).rejects.toMatchObject({
       code: "PII_VIOLATION",
     });
-    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(6);
+    const unformattedAccount = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ExecutionFailed")!,
+      sourceStatus: "123456789012",
+    });
+    await expect(append(db, [unformattedAccount])).rejects.toMatchObject({
+      code: "PII_VIOLATION",
+    });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
   });
 
   it("refuses PII in every immutable replay source", async () => {
@@ -504,6 +544,32 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
     expect(recordResult.ok).toBe(false);
     expect(recordResult.ok ? null : recordResult.error.code).toBe("PII_VIOLATION");
+    expect(await sourceCounts(db)).toEqual({
+      evidence_snapshots: 0,
+      decision_input_bundles: 0,
+      decision_input_bundle_evidence: 0,
+      decision_records: 0,
+      decision_ledger: 0,
+    });
+  });
+
+  it("refuses retained names and unformatted account numbers without rewriting bytes", async () => {
+    const input = decisionRecordingInput();
+    const snapshot = {
+      ...input.evidenceSnapshots[0]!,
+      attribution: "Robert Smith account 123456789012",
+    };
+    const evidenceEvent = LedgerEntrySchema.parse({
+      ...input.events[0]!,
+      snapshotHash: hashPreimage(snapshot),
+    });
+    const result = await recordDecision(db, {
+      ...input,
+      evidenceSnapshots: [snapshot, ...input.evidenceSnapshots.slice(1)],
+      events: [evidenceEvent, ...input.events.slice(1)],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("PII_VIOLATION");
     expect(await sourceCounts(db)).toEqual({
       evidence_snapshots: 0,
       decision_input_bundles: 0,
@@ -590,6 +656,32 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
       code: "STORE_CONSTRAINT",
     });
+  });
+
+  it("integrity verification dispatches immutable sources by recorded version", async () => {
+    await recordFixture(db);
+    const intact = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(intact.ok).toBe(true);
+    expect(intact.replaySourcesChecked).toBe(10);
+
+    await db.exec(
+      "ALTER TABLE evidence_snapshots DISABLE TRIGGER evidence_snapshots_no_update",
+    );
+    await db.query(
+      `UPDATE evidence_snapshots
+          SET contract_schema_version = '9.0.0'
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "evs:GC-01:balance"],
+    );
+    await db.exec(
+      "ALTER TABLE evidence_snapshots ENABLE TRIGGER evidence_snapshots_no_update",
+    );
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+    const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(broken.ok).toBe(false);
+    expect(broken.replaySourceReason).toBe(
+      "immutable replay source verification failed",
+    );
   });
 
   it("refuses replay after immutable bundle membership is changed", async () => {
@@ -696,7 +788,41 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ))).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
-  it("keeps the anchor verifiable when a producer swallows a mid-batch refusal", async () => {
+  it("preflights every later evidence source before inserting any of them", async () => {
+    await recordFixture(db);
+    const later = laterEvidenceRecording("evidence:atomic-refusal");
+    const input = decisionRecordingInput();
+    const collision = {
+      ...input.evidenceSnapshots[0]!,
+      freshness: "stale" as const,
+    };
+    const collisionEvent = LedgerEntrySchema.parse({
+      ...input.events[0]!,
+      id: "ledger:evidence:collision",
+      snapshotHash: hashPreimage(collision),
+    });
+    await db.transaction(async (tx) => {
+      try {
+        await appendDecisionEvents(
+          tx,
+          LEDGER_ORG,
+          [later.event, collisionEvent],
+          LEDGER_PROVENANCE,
+          [later.snapshot, collision],
+        );
+      } catch {
+        return;
+      }
+    });
+    const snapshot = await db.query<{ n: number | string }>(
+      "SELECT count(*) AS n FROM evidence_snapshots WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, later.snapshot.id],
+    );
+    expect(Number(snapshot.rows[0]!.n)).toBe(0);
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
+  it("rolls back every event when a producer catches a mid-batch refusal", async () => {
     await recordFixture(db);
     const samples = allLedgerEventSamples();
     const accepted = LedgerEntrySchema.parse({
@@ -722,7 +848,29 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
     const verdict = await verifyDecisionLedger(db, LEDGER_ORG);
     expect(verdict.ok, verdict.levels.at(-1)?.reason ?? "").toBe(true);
-    expect(verdict.entriesChecked).toBe(6);
+    expect(verdict.entriesChecked).toBe(5);
+  });
+
+  it("rejects a direct database handle where a transaction capability is required", async () => {
+    expectTypeOf<SqlDb>().not.toMatchTypeOf<
+      Parameters<typeof appendDecisionEvents>[0]
+    >();
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (sample) => sample.type === "ApprovalStageExpired",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(appendDecisionEvents(
+      db as unknown as Parameters<typeof appendDecisionEvents>[0],
+      LEDGER_ORG,
+      [event],
+      LEDGER_PROVENANCE,
+    )).rejects.toMatchObject({ code: "VALIDATION" });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
   });
 
   it("composes CRM mutation, operational audit intent, and ledger append in one transaction", async () => {

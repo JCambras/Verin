@@ -39,6 +39,30 @@ const fixture = (name: string): unknown =>
     "utf8",
   ));
 
+function retainedTextProjection(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(retainedTextProjection);
+  if (value === null || typeof value !== "object") return value;
+  const projected = Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      retainedTextProjection(nested),
+    ]),
+  );
+  if (typeof projected.code === "string") {
+    if ("summary" in projected) projected.summary = projected.code;
+    if ("messageTemplate" in projected) {
+      projected.messageTemplate = projected.code;
+    }
+  }
+  if (
+    typeof projected.reasonCode === "string" &&
+    "explanation" in projected
+  ) {
+    projected.explanation = projected.reasonCode;
+  }
+  return projected;
+}
+
 const actor = { firmId: LEDGER_ORG, systemId: "ledger-test" };
 const decisionRef = { firmId: LEDGER_ORG, id: "dec:GC-01:0001" };
 const base = (id: string, occurredAt = LEDGER_TIME) => ({
@@ -61,9 +85,21 @@ export function decisionRecordingInput(): RecordDecisionInput {
   const inputBundle = DecisionInputBundleSchema.parse(
     fixture("decision-input-bundle"),
   );
-  const decisionRecord = DecisionRecordSchema.parse(
-    fixture("decision-record-proceed"),
-  );
+  const candidate = DecisionRecordSchema.parse({
+    ...(retainedTextProjection(
+      fixture("decision-record-proceed"),
+    ) as Record<string, unknown>),
+    decisionHash: "0".repeat(64),
+  });
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...candidate,
+    decisionHash: createHash("sha256")
+      .update(
+        unwrap(canonicalJson(decisionHashPreimage(candidate) as never)),
+        "utf8",
+      )
+      .digest("hex"),
+  });
   const evidenceSnapshots = inputBundle.evidenceSnapshotRefs.map((ref, index) =>
     EvidenceSnapshotRefSchema.parse({
       firmId: ref.firmId,
@@ -73,7 +109,7 @@ export function decisionRecordingInput(): RecordDecisionInput {
       subjectRef: { firmId: ref.firmId, id: `subject:test:${index}` },
       observedAt: LEDGER_TIME,
       retrievedAt: LEDGER_TIME,
-      attribution: "synthetic decision-ledger fixture",
+      attribution: "source:test",
       schemaVersion: "evidence/1.0.0",
       encryptedStorageRef: { firmId: ref.firmId, id: `blob:test:${index}` },
       contentHash: String(index + 1).repeat(64),
@@ -154,7 +190,7 @@ export function laterEvidenceRecording(id: string): {
     subjectRef: { firmId: LEDGER_ORG, id: "subject:test:status" },
     observedAt: LEDGER_LATER,
     retrievedAt: LEDGER_LATER,
-    attribution: "synthetic decision-ledger fixture",
+    attribution: "source:test",
     schemaVersion: "evidence/1.0.0",
     encryptedStorageRef: { firmId: LEDGER_ORG, id: "blob:test:status" },
     contentHash: "9".repeat(64),
@@ -202,7 +238,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       approver,
       outcome: "approved",
       reasonCode: "approved-after-review",
-      structuredReason: "Reviewed against the recorded evidence.",
+      structuredReason: "approved-after-review",
     },
     {
       ...base("sample:approval-invalidated"),
@@ -246,6 +282,11 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       ...base("sample:reservation-released"),
       type: "ReservationReleased",
       reservationRef: { firmId: LEDGER_ORG, id: "reservation:1" },
+      decisionRef,
+      reservationCreationRef: {
+        firmId: LEDGER_ORG,
+        id: "sample:reservation-created",
+      },
       reasonCode: "decision-closed",
     },
     {

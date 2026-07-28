@@ -38,12 +38,18 @@ settle now.
   events, the chain anchor, and derived projection state in one transaction.
   Later facts use `appendDecisionEvents`. Both lock the tenant row before reading
   the chain head, which serializes sequence assignment on Postgres and PGlite
-  without a failed-transaction retry fork. No decision-ledger outbox exists.
+  without a failed-transaction retry fork. Later appends require a nominal
+  transaction capability and use a savepoint, so a caller that catches an append
+  error cannot commit a prefix. No decision-ledger outbox exists.
 - Composite `(org_id, id)` foreign keys make decision, evidence, membership,
   causation, and exception-triggering links structurally same-tenant. Every
   reference an event can name is a promoted column L3 re-derives from the payload.
   Repository boundaries validate the canonical source hashes named by recording and
   approval events.
+- Retained free text is a PII-free projection: attribution is a source reference,
+  decision explanations and summaries are recorded codes/template references, and
+  external statuses and structured reasons are code-shaped. The storage boundary
+  rejects unclassified text and never rewrites submitted immutable bytes.
 - Every ledger row stores the provenance of the producer that appended it
   (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
   an unregistered source, the chain binds all three fields, and surfaces classify a
@@ -60,16 +66,18 @@ settle now.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
-  state is never located by physical row order: a released reservation resolves its
-  owning decision through the keyed `decision_reservation_index`, and a create that
-  names a reservation another decision has ever owned is refused. The projection
-  persists its derived provenance summary, so a bounded decision read never joins
-  every contributing ledger row.
+  state is never located by physical row order. A reservation generation is keyed by
+  reservation reference, owning decision reference, and its creation ledger-entry
+  identity. A release cites that exact generation. Reuse is allowed after release
+  only through a new creation identity, and a delayed old-generation release cannot
+  affect the new generation. The projection persists its derived provenance summary,
+  so a bounded decision read never joins every contributing ledger row.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
   sequence, and head hash with the anchor. The existing CI chain gate verifies
-  both audit-class stores unbounded and refuses a zero-entry pass for either.
+  both audit-class stores unbounded, dispatches immutable evidence, bundle, and
+  decision rows through recorded source codecs, and refuses a zero-entry pass.
 - A request path may verify a bounded window: the most recent entries, anchored to
   the stored hash of the row preceding them, with L4 still compared against tenant
   totals. Full-chain verification is O(entries) under one connection, so the register
@@ -84,7 +92,7 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4000 and infrastructure 2500 to
-  4300. Measured post-review state is contracts 3875 and infrastructure 4187. Domain
+  4800. Measured final state is contracts 3884 and infrastructure 4736. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
