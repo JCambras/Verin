@@ -3351,3 +3351,28 @@ current modules, and free-form codes, rejected no-ops, or unindexed bounded read
 all violate the accepted Prompt 7 contract.
 **Revert path:** none while retained history, fail-closed text, truthful empty
 appends, and bounded replay coverage remain supported.
+
+### D-109 · 2026-07-28 · reversible · Bounded ledger replay trusts only exact-window evidence
+
+The retained-text boundary now walks every `reasonCode` and `failureCode` in both
+decision records and ledger events, so nested authority escalation and compensating
+action codes cannot bypass the registered-code or opaque-reference rule.
+
+Register replay verifies cited status evidence before folding it, excludes a decision
+when that recording fact is outside the exact verified window, and fails closed when
+an in-window immutable source is corrupt. Reused bundle evidence binds to the latest
+matching recording at or before its `DecisionRecorded` sequence within that window.
+
+The bounded request path derives totals and head metadata from the tenant anchor and
+never scans the full ledger with `count(*)` or `max(sequence)`. Examiner-grade
+verification retains the exact full-ledger aggregate. The anti-fork evaluator now
+resolves deterministic array `join` and string `concat` composition in addition to
+templates and `+`.
+
+The composed implementation measures contracts at 4793 lines and infrastructure at
+6436 lines, within ADR-0033's 4900 and 6500 ceilings.
+
+**Why:** a bounded verified projection cannot trust evidence it did not verify, and
+request work must remain bounded as tenant history grows.
+**Revert path:** none while Prompt 7 promises PII-safe immutable history, exact-window
+verified register state, bounded request reads, and exact immutable insert ownership.

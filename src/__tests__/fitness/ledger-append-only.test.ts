@@ -35,6 +35,80 @@ interface Violation {
   readonly line: number;
 }
 
+function staticStringArray(node: Node, seen: Set<Node>): string[] | null {
+  if (seen.has(node)) return null;
+  seen.add(node);
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return staticStringArray(node.getExpression(), seen);
+  }
+  if (Node.isArrayLiteralExpression(node)) {
+    const values: string[] = [];
+    for (const element of node.getElements()) {
+      if (Node.isSpreadElement(element)) {
+        const spread = staticStringArray(
+          element.getExpression(),
+          new Set(seen),
+        );
+        if (spread === null) return null;
+        values.push(...spread);
+      } else {
+        const value = staticString(element, new Set(seen));
+        if (value === null) return null;
+        values.push(value);
+      }
+    }
+    return values;
+  }
+  if (
+    Node.isIdentifier(node) ||
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    const values = (resolved?.getDeclarations() ?? []).flatMap(
+      (declaration) => {
+        const initializer =
+          Node.isVariableDeclaration(declaration) ||
+          Node.isPropertyAssignment(declaration)
+            ? declaration.getInitializer()
+            : undefined;
+        const value = initializer
+          ? staticStringArray(initializer, new Set(seen))
+          : null;
+        return value === null ? [] : [value];
+      },
+    );
+    return values.length > 0 &&
+      values.every((value) =>
+        value.length === values[0]!.length &&
+        value.every((item, index) => item === values[0]![index]))
+      ? values[0]!
+      : null;
+  }
+  return null;
+}
+
+function callTarget(node: Node): { receiver: Node; name: string } | null {
+  if (Node.isPropertyAccessExpression(node)) {
+    return { receiver: node.getExpression(), name: node.getName() };
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    const name = argument ? staticString(argument) : null;
+    return name === null
+      ? null
+      : { receiver: node.getExpression(), name };
+  }
+  return null;
+}
+
 function staticString(node: Node, seen = new Set<Node>()): string | null {
   if (seen.has(node)) return null;
   seen.add(node);
@@ -69,6 +143,31 @@ function staticString(node: Node, seen = new Set<Node>()): string | null {
       value += expression + span.getLiteral().getLiteralText();
     }
     return value;
+  }
+  if (Node.isCallExpression(node)) {
+    const target = callTarget(node.getExpression());
+    if (!target) return null;
+    if (target.name === "concat") {
+      const receiver = staticString(target.receiver, new Set(seen));
+      if (receiver === null) return null;
+      let value = receiver;
+      for (const argument of node.getArguments()) {
+        const next = staticString(argument, new Set(seen));
+        if (next === null) return null;
+        value += next;
+      }
+      return value;
+    }
+    if (target.name === "join" && node.getArguments().length <= 1) {
+      const values = staticStringArray(target.receiver, new Set(seen));
+      if (values === null) return null;
+      const argument = node.getArguments()[0];
+      const separator = argument === undefined
+        ? ","
+        : staticString(argument, new Set(seen));
+      return separator === null ? null : values.join(separator);
+    }
+    return null;
   }
   if (
     Node.isIdentifier(node) ||
@@ -114,6 +213,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       ...file.getDescendantsOfKind(SyntaxKind.Identifier),
       ...file.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
       ...file.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+      ...file.getDescendantsOfKind(SyntaxKind.CallExpression),
     ]) {
       const value = staticString(expression);
       if (value === null) continue;
@@ -207,6 +307,23 @@ describe("decision-ledger append-only fence", () => {
       const planted = ledgerInsertViolations(project.getSourceFiles());
       expect(planted).toHaveLength(1);
       expect(planted[0]?.file).toMatch(/scripts\/evil\.ts$/);
+    });
+
+    it("detects deterministic join and concat composition", () => {
+      const project = inMemoryProject({
+        "/scripts/join.ts":
+          `const parts = ["INSERT", " INTO ", "decision_ledger"];\n` +
+          `const method = "join";\n` +
+          `export const sql = parts[method]("");`,
+        "/scripts/concat.ts":
+          `export const sql = "INSERT INTO ".concat("decision_records");`,
+      });
+      const planted = ledgerInsertViolations(project.getSourceFiles());
+      expect(planted).toHaveLength(2);
+      expect(planted.some(({ file }) => file.endsWith("scripts/concat.ts")))
+        .toBe(true);
+      expect(planted.some(({ file }) => file.endsWith("scripts/join.ts")))
+        .toBe(true);
     });
 
     it("detects a planted insert into any immutable source table, not just the chain", () => {

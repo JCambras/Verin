@@ -246,16 +246,22 @@ function verifyL4(
 ): LedgerVerificationLevel {
   const { anchor, rows, stored, headSequence } = snapshot;
   if (stored === 0) {
-    return anchor
-      ? level("L4", false, 0, null, "anchor exists for an empty ledger")
-      : level("L4", true, 0, null, null);
+    if (anchor) {
+      return level("L4", false, 0, null, "anchor exists for an empty ledger");
+    }
+    return rows.length === 0
+      ? level("L4", true, 0, null, null)
+      : level("L4", false, 0, null, "ledger rows exist without an anchor");
   }
   if (!anchor) return level("L4", false, checked, null, "ledger anchor is missing");
   const head = rows.at(-1);
   const matches =
     Number(anchor.entry_count) === stored &&
     Number(anchor.max_sequence) === headSequence &&
-    (!head || anchor.head_hash === head.entryHash);
+    headSequence !== null &&
+    stored === headSequence + 1 &&
+    head?.sequence === headSequence &&
+    anchor.head_hash === head.entryHash;
   return matches
     ? level("L4", true, checked, null, null)
     : level("L4", false, checked, headSequence, "ledger anchor count, sequence, or head hash differs");
@@ -343,41 +349,53 @@ export async function verifyDecisionLedgerTransaction(
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
   await lockDecisionLedgerTenant(tx, orgId, "verify");
-  const totals = await tx.query<{ n: number | string; head: number | string | null }>(
-    "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
-    [orgId],
-  );
-  const stored = Number(totals.rows[0]?.n ?? 0);
-  const headRaw = totals.rows[0]?.head;
-  const headSequence = headRaw === null || headRaw === undefined
-    ? null
-    : Number(headRaw);
   const anchor = await tx.query<AnchorRow>(
     "SELECT max_sequence, entry_count, head_hash FROM decision_ledger_anchor WHERE org_id = $1",
     [orgId],
   );
-  const base = { anchor: anchor.rows[0], stored, headSequence };
+  const anchorRow = anchor.rows[0];
+  const bounded = window !== undefined && Number.isInteger(window) && window > 0;
   let snapshot: LedgerSnapshot;
-  if (window === undefined || window < 1 || stored <= window) {
+  if (!bounded) {
+    const totals = await tx.query<{
+      n: number | string;
+      head: number | string | null;
+    }>(
+      "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
+      [orgId],
+    );
+    const headRaw = totals.rows[0]?.head;
     snapshot = {
-      ...base,
+      anchor: anchorRow,
+      stored: Number(totals.rows[0]?.n ?? 0),
+      headSequence: headRaw === null || headRaw === undefined
+        ? null
+        : Number(headRaw),
       rows: await listDecisionLedger(tx, orgId),
       start: undefined,
     };
   } else {
     const rows = await listDecisionLedger(tx, orgId, window);
     const first = rows[0]!;
-    const predecessor = await tx.query<{ entry_hash: string }>(
-      "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
-      [orgId, first.sequence - 1],
-    );
+    const predecessor = first && first.sequence > 0
+      ? await tx.query<{ entry_hash: string }>(
+          "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
+          [orgId, first.sequence - 1],
+        )
+      : undefined;
     snapshot = {
-      ...base,
+      anchor: anchorRow,
+      stored: Number(anchorRow?.entry_count ?? 0),
+      headSequence: anchorRow === undefined
+        ? null
+        : Number(anchorRow.max_sequence),
       rows,
-      start: {
-        sequence: first.sequence,
-        prevHash: predecessor.rows[0]?.entry_hash ?? "",
-      },
+      start: predecessor === undefined
+        ? undefined
+        : {
+            sequence: first.sequence,
+            prevHash: predecessor.rows[0]?.entry_hash ?? "",
+          },
     };
   }
   return {

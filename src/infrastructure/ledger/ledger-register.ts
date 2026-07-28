@@ -62,26 +62,42 @@ async function replayRegisterWindow(
   readonly decisionsTotal: number;
 }> {
   const verifiedEvidence = new Set<string>();
+  const incompleteDecisions = new Set<string>();
   const decisions = new Map<string, VerifiedRegisterDecision>();
+  const windowStart = rows[0]?.sequence ?? 0;
   for (const row of rows) {
     const event = parseEvent(row);
     if (event.type === "EvidenceSnapshotRecorded") {
       verifiedEvidence.add(await verifyReplayEvidence(tx, event));
       continue;
     }
+    const id = promotedDecisionId(event);
+    if (
+      event.type === "StatusObserved" &&
+      event.evidenceSnapshotRef !== undefined &&
+      !verifiedEvidence.has(event.evidenceSnapshotRef.id)
+    ) {
+      if (id) {
+        decisions.delete(id);
+        incompleteDecisions.add(id);
+      }
+      continue;
+    }
     let decisionRecord;
     if (event.type === "DecisionRecorded") {
-      const coverage = await listReplayDecisionEvidenceCoverage(tx, event);
-      if (coverage.some((item) => item.recordedSequence === null)) {
+      const coverage = await listReplayDecisionEvidenceCoverage(
+        tx,
+        event,
+        windowStart,
+        row.sequence,
+      );
+      if (coverage.some((item) => !item.hasPrecedingRecording)) {
         throw appError(
           "STORE_CONSTRAINT",
           "decision evidence has no recording ledger fact",
         );
       }
-      if (
-        coverage.some((item) =>
-          item.recordedSequence! < (rows[0]?.sequence ?? 0))
-      ) {
+      if (coverage.some((item) => item.recordedSequence === null)) {
         continue;
       }
       if (coverage.some((item) => !verifiedEvidence.has(item.id))) {
@@ -96,8 +112,8 @@ async function replayRegisterWindow(
         verifiedEvidence,
       );
     }
-    const id = promotedDecisionId(event);
     if (!id) continue;
+    if (incompleteDecisions.has(id)) continue;
     const current = decisions.get(id);
     const projection = foldDecisionProjection({
       ...(current ? { current: current.projection } : {}),

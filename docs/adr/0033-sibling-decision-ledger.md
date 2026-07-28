@@ -98,7 +98,7 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4300 and infrastructure 2500 to
-  5200. Measured final state is contracts 4185 and infrastructure 5115. Domain
+  5200. Measured final state is contracts 4185 and infrastructure 5161. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and

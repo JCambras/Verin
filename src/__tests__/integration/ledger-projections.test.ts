@@ -10,6 +10,7 @@ import {
   rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
+import { insertEvidenceSnapshots } from "@infra/ledger/ledger-sources";
 import {
   countDecisionProjections,
   listDecisionProjectionMetadata,
@@ -32,6 +33,7 @@ import {
   LEDGER_TIME,
   allLedgerEventSamples,
   decisionRecordingInput,
+  laterEvidenceRecording,
   reusedBundleRecordingInput,
 } from "../helpers/ledger-fixtures";
 
@@ -472,6 +474,122 @@ describe("deterministic decision-ledger projections", () => {
     expect(
       statements.some((sql) => sql.includes("decision_state_projection")),
     ).toBe(false);
+    expect(
+      statements.some((sql) =>
+        /count\(\*\).*max\(sequence\).*decision_ledger/is.test(sql)),
+    ).toBe(false);
+  });
+
+  it("uses the latest in-window evidence recording for a reused bundle", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const rerecorded = input.events.slice(0, -1).map((event, index) =>
+      LedgerEntrySchema.parse({
+        ...event,
+        id: `projection:rerecorded-evidence:${index}`,
+      }));
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      rerecorded,
+      LEDGER_PROVENANCE,
+      input.evidenceSnapshots,
+    ))).resolves.toHaveLength(rerecorded.length);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      rerecorded.length + 1,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions.map(({ projection }) =>
+      projection.decisionId)).toEqual(["dec:GC-01:0002"]);
+  });
+
+  it("excludes a status whose cited evidence has no verified recording fact", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const later = laterEvidenceRecording("evidence:orphan-status");
+    await db.transaction((tx) =>
+      insertEvidenceSnapshots(tx, [later.snapshot], LEDGER_TIME));
+    const observed = allLedgerEventSamples().find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    const status = LedgerEntrySchema.parse({
+      ...observed,
+      id: "projection:orphan-status",
+      evidenceSnapshotRef: {
+        firmId: LEDGER_ORG,
+        id: later.snapshot.id,
+      },
+    });
+    await expect(append(db, [status])).resolves.toHaveLength(1);
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsTotal).toBe(0);
+  });
+
+  it("excludes status evidence recorded before the exact verified window", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const later = laterEvidenceRecording("evidence:outside-window");
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [later.event],
+      LEDGER_PROVENANCE,
+      [later.snapshot],
+    ))).resolves.toHaveLength(1);
+    const rerecorded = input.events.slice(0, -1).map((event, index) =>
+      LedgerEntrySchema.parse({
+        ...event,
+        id: `projection:window-evidence:${index}`,
+      }));
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      rerecorded,
+      LEDGER_PROVENANCE,
+      input.evidenceSnapshots,
+    ))).resolves.toHaveLength(rerecorded.length);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const observed = allLedgerEventSamples().find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    const status = LedgerEntrySchema.parse({
+      ...observed,
+      id: "projection:outside-window-status",
+      decisionRef: {
+        firmId: LEDGER_ORG,
+        id: second.decisionRecord.id,
+      },
+      evidenceSnapshotRef: {
+        firmId: LEDGER_ORG,
+        id: later.snapshot.id,
+      },
+    });
+    await expect(append(db, [status])).resolves.toHaveLength(1);
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      rerecorded.length + 2,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsTotal).toBe(0);
   });
 
   it("returns a failed bounded register with no trusted decisions when replay sources fail", async () => {

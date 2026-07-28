@@ -338,6 +338,10 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(
       verifyStatements.filter((sql) => sql.includes("FOR UPDATE")),
     ).toEqual([]);
+    expect(
+      verifyStatements.some((sql) =>
+        /count\(\*\).*max\(sequence\).*decision_ledger/is.test(sql)),
+    ).toBe(true);
 
     const rebuildStatements = await measureStatements(db, async (target) => {
       await rebuildDecisionProjections(target, LEDGER_ORG);
@@ -580,6 +584,96 @@ describe("decision ledger storage and L1-L4 verification", () => {
       reasonCode: retainedTextReference("2".repeat(64)),
     });
     await expect(append(db, [opaque])).resolves.toHaveLength(1);
+  });
+
+  it.each([
+    {
+      name: "authority escalation",
+      mutate(record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) {
+        if (record.result.kind !== "proceed") throw new Error("expected proceed decision");
+        const authority = record.result.authority;
+        if (authority.mode === "automatic") throw new Error("expected staged authority");
+        return {
+          ...record,
+          result: {
+            ...record.result,
+            authority: {
+              ...authority,
+              stages: authority.stages.map((stage, stageIndex) => ({
+                ...stage,
+                escalationPath: stage.escalationPath.map((step, stepIndex) => ({
+                  ...step,
+                  reasonCode:
+                    stageIndex === 0 && stepIndex === 0
+                      ? "analyst-at-firm.test"
+                      : step.reasonCode,
+                })),
+              })),
+            },
+          },
+        };
+      },
+    },
+    {
+      name: "compensating action",
+      mutate(record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) {
+        if (record.result.kind !== "proceed") throw new Error("expected proceed decision");
+        return {
+          ...record,
+          result: {
+            ...record.result,
+            executionPlan: {
+              ...record.result.executionPlan,
+              steps: record.result.executionPlan.steps.map((step, index) => ({
+                ...step,
+                ...(index === 0
+                  ? {
+                      compensatingAction: {
+                        targetRef: step.targetRef,
+                        command: step.command,
+                        idempotencyKey: `${step.idempotencyKey}:compensate`,
+                        conflictKeys: step.conflictKeys,
+                        reservationRefs: step.reservationRefs,
+                        preconditions: step.preconditions,
+                        verificationRuleRef: step.verificationRuleRef,
+                        reasonCode: "analyst-at-firm.test",
+                      },
+                    }
+                  : {}),
+              })),
+            },
+          },
+        };
+      },
+    },
+  ])("rejects unclassified reason codes in $name records", async ({ mutate }) => {
+    const input = decisionRecordingInput();
+    const candidate = DecisionRecordSchema.parse({
+      ...mutate(input.decisionRecord),
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...candidate,
+      decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...input.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+    });
+    const result = await recordDecision(db, {
+      ...input,
+      decisionRecord,
+      events: [...input.events.slice(0, -1), decisionEvent],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("PII_VIOLATION");
+    expect(result.ok ? "" : result.error.message).not.toContain(
+      "analyst-at-firm.test",
+    );
+    expect(result.ok ? "" : result.error.message).toBe(
+      "decision replay source contains prohibited PII",
+    );
+    expect(await listDecisionLedger(db, LEDGER_ORG)).toHaveLength(0);
   });
 
   it("returns an empty append before consulting or mutating a transaction", async () => {

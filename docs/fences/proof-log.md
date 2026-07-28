@@ -5703,3 +5703,76 @@ normalizes reference order and timezone casing through its frozen authorities,
 opaque reason references remain accepted, and the focused suites pass.
 
 **Date:** 2026-07-28 (review corrections I1-I5, ADR-0033, D-108).
+
+## Exact-window ledger trust and bounded verification (D-109)
+
+**Invariants:** every retained decision and event reason or failure code crosses one
+registered-code or opaque-reference boundary; a status projection trusts only cited
+evidence recorded and verified inside the exact register window; reusable evidence
+binds to its latest preceding in-window recording; deterministic static SQL
+composition cannot fork immutable inserts; bounded request verification does not
+aggregate the full tenant ledger.
+
+The regression companions were added before the production corrections. Both nested
+decision code paths were accepted and persisted:
+
+```text
+× rejects unclassified reason codes in 'authority escalation' records
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:664
+× rejects unclassified reason codes in 'compensating action' records
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:664
+```
+
+An immutable status source was stored without an in-window recording fact. The
+register folded it into trusted state instead of excluding the incomplete decision:
+
+```text
+× excludes a status whose cited evidence has no verified recording fact
+  expected [ { projection: { ... } } ] to deeply equal []
+  src/__tests__/integration/ledger-projections.test.ts:538
+```
+
+The exact-window companion also records the status evidence immediately before the
+window, re-records every decision-bundle evidence source inside it, and proves the
+otherwise complete decision remains excluded.
+
+The same evidence snapshots were recorded once outside and once inside a bounded
+window before a reused decision. Selecting the earliest recording skipped that
+complete decision:
+
+```text
+× uses the latest in-window evidence recording for a reused bundle
+  expected [] to deeply equal [ 'dec:GC-01:0002' ]
+  src/__tests__/integration/ledger-projections.test.ts:509
+```
+
+The bounded path statement capture exposed the tenant-wide aggregate:
+
+```text
+× reads the verified register under one tenant lock without trusting projection rows
+  expected true to be false
+  src/__tests__/integration/ledger-projections.test.ts:480
+```
+
+The companion now refuses any bounded `count(*)` plus `max(sequence)` ledger query,
+while the examiner-grade path separately proves that exact aggregate remains.
+
+Finally, deterministic call composition bypassed the exact insert-owner fence:
+
+```text
+× detects deterministic join and concat composition
+  expected [] to have a length of 2 but got 0
+  src/__tests__/fitness/ledger-append-only.test.ts:220
+```
+
+The planted strings use both `["INSERT", " INTO ", "decision_ledger"].join("")`
+and `"INSERT INTO ".concat("decision_records")`; both now resolve statically and
+report their operator-script files.
+
+**Revert:** the target defects were replaced by the shared boundaries. The focused
+fitness, integration, typecheck, lint, codec, migration, rebuild, and line-budget
+suites pass.
+
+**Date:** 2026-07-28 (review corrections J1-J5, ADR-0033, D-109).

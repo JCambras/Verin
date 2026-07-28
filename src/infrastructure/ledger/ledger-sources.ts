@@ -372,15 +372,25 @@ export async function loadVerifiedReplayDecision(
 export async function listReplayDecisionEvidenceCoverage(
   tx: SqlQueryable,
   event: DecisionRecorded,
+  windowStart: number,
+  decisionSequence: number,
 ): Promise<Array<{
   readonly id: string;
   readonly recordedSequence: number | null;
+  readonly hasPrecedingRecording: boolean;
 }>> {
   const result = await tx.query<{
     evidence_snapshot_id: string;
     recorded_sequence: number | string | null;
+    preceding_recordings: number | string;
   }>(
-    `SELECT m.evidence_snapshot_id, min(l.sequence) AS recorded_sequence
+    `SELECT m.evidence_snapshot_id,
+            max(l.sequence) FILTER (
+              WHERE l.sequence >= $3 AND l.sequence <= $4
+            ) AS recorded_sequence,
+            count(l.sequence) FILTER (
+              WHERE l.sequence <= $4
+            ) AS preceding_recordings
        FROM decision_records r
        JOIN decision_input_bundle_evidence m
          ON m.org_id = r.org_id AND m.bundle_id = r.input_bundle_id
@@ -391,13 +401,14 @@ export async function listReplayDecisionEvidenceCoverage(
       WHERE r.org_id = $1 AND r.id = $2
       GROUP BY m.ordinal, m.evidence_snapshot_id
       ORDER BY m.ordinal ASC`,
-    [event.firmId, event.decisionRef.id],
+    [event.firmId, event.decisionRef.id, windowStart, decisionSequence],
   );
   return result.rows.map((row) => ({
     id: row.evidence_snapshot_id,
     recordedSequence: row.recorded_sequence === null
       ? null
       : Number(row.recorded_sequence),
+    hasPrecedingRecording: Number(row.preceding_recordings) > 0,
   }));
 }
 
