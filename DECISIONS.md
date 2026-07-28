@@ -6210,6 +6210,20 @@ because it needs BOTH prompt 15's bundle and prompt 16's evaluator - a requireme
 Gate-B-requires-16 instruction conflict, ADR-0030 records that the specific instruction governs and the
 general rule is enforced in its provable form (proof point at or before the referencing gate's close).
 
+Review round `gatea-review-3` (2026-07-28) amended ADR-0030 in place a third time, on the two halves of
+"a job NAME is not evidence" that the second round's hand-rolled line scanner still left open: **(1)**
+`parseCiJobs` now uses the real YAML parser (`yaml`, already a declared dependency) and walks
+`jobs.<key>.steps[].run`, because the scanner read a column-0 comment as leaving the `jobs:` block -
+silently dropping four jobs including the blocking `v3-invariants` one - and matched a step's `env:`
+value by indentation; **(2)** YAML alone is insufficient, since inside a `|` block scalar a `#` is
+literal script text, so each `run` script is additionally split into the commands it EXECUTES with shell
+comments stripped (quote-aware) and `\` continuations rejoined - otherwise
+`# pnpm audit:chain temporarily disabled` kept proving the blocking gate it had just switched off, with
+invariant 5 still reading `active-pass`; **(3)** a gate's `awaiting:` line now lists every requirement
+holding it back, undecidable ones included, so gate C names its `evidence` clause instead of printing
+only `#1 · #11`. The gate state machine is unchanged: green still requires zero unmet AND zero
+undecidable requirements, and no gate reads green.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

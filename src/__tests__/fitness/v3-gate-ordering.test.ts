@@ -384,6 +384,101 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRuns(ciJobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
     });
 
+    it("refuses a command that survives only as a SHELL comment inside a block scalar", () => {
+      // A `#` inside `run: |` is literal script text, not YAML syntax, so the YAML
+      // parser hands the whole line over - the shell is what disables it. Counting it
+      // would let a PR switch a blocking gate off and keep its invariant reading green.
+      const jobs = parseCiJobs(
+        [
+          "name: ci",
+          "jobs:",
+          "  audit-chain-verify:",
+          "    steps:",
+          "      - run: |",
+          "          # pnpm audit:chain temporarily disabled while we debug",
+          "          echo skip",
+          "",
+        ].join("\n"),
+      );
+      expect(jobs.get("audit-chain-verify")).toEqual(["echo skip"]);
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
+      // but a `#` that is not a comment - quoted, or mid-word - stays part of the command
+      const quoted = parseCiJobs(
+        ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: |", "          echo '# start' && pnpm audit:chain", ""].join("\n"),
+      );
+      expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+    });
+
+    it("keeps every job declared after a column-0 comment inside the jobs block", () => {
+      const jobs = parseCiJobs(
+        [
+          "name: ci",
+          "jobs:",
+          "  quality:",
+          "    steps:",
+          "      - run: pnpm lint",
+          "# ---- verification gates ----",
+          "  audit-chain-verify:",
+          "    steps:",
+          "      - run: pnpm audit:chain",
+          "",
+        ].join("\n"),
+      );
+      expect([...jobs.keys()]).toEqual(["quality", "audit-chain-verify"]);
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+    });
+
+    it("refuses a command that appears only in a step name, an env value, or a path", () => {
+      const jobs = parseCiJobs(
+        [
+          "name: ci",
+          "jobs:",
+          "  audit-chain-verify:",
+          "    steps:",
+          "      - name: pnpm audit:chain",
+          "        run: echo hello",
+          "      - run: echo goodbye",
+          "        env:",
+          "          FALLBACK: pnpm audit:chain",
+          "      - uses: ./.github/actions/pnpm-audit-chain",
+          "",
+        ].join("\n"),
+      );
+      expect(jobs.get("audit-chain-verify")).toEqual(["echo hello", "echo goodbye"]);
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
+    });
+
+    it("reads a multi-line and a folded run script as the commands it actually executes", () => {
+      const jobs = parseCiJobs(
+        [
+          "name: ci",
+          "jobs:",
+          "  audit-chain-verify:",
+          "    steps:",
+          "      - run: |",
+          "          pnpm db:seed",
+          "          pnpm audit:chain --strict",
+          "  sast:",
+          "    steps:",
+          "      - run: >-",
+          "          semgrep scan",
+          "          --error",
+          "",
+        ].join("\n"),
+      );
+      expect(jobs.get("audit-chain-verify")).toEqual(["pnpm db:seed", "pnpm audit:chain --strict"]);
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+      // folding must not let a match span two unrelated commands of the same script
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm db:seed pnpm audit:chain")).toBe(false);
+      expect(ciJobRuns(jobs, "sast", "semgrep scan --error")).toBe(true);
+    });
+
+    it("yields no jobs from a workflow it cannot parse, so every ci-gate reads unmet", () => {
+      const jobs = parseCiJobs(["jobs:", "  quality:", "    steps: [unbalanced", ""].join("\n"));
+      expect(jobs.size).toBe(0);
+      expect(ciJobRuns(jobs, "quality", "pnpm lint")).toBe(false);
+    });
+
     it("flags an invariant pushed to another gate, or a gate quietly dropping a ruled requirement", () => {
       const moved = clone(registry);
       moved.invariants.find((i) => i.id === 6)!.gate = "E";
@@ -414,6 +509,17 @@ describe("v3 gate-ordering fence", () => {
         const view = gateReadiness(reg, deps).find((v) => v.key === "A")!;
         expect(view.state).toBe("not-yet-verifiable");
         expect(view.blocking).toEqual(["a reviewer agrees"]);
+        expect(view.undecidable).toEqual(["a reviewer agrees"]);
+      });
+      it("never understates what a gate awaits: an unmet requirement does not hide the undecidable ones", () => {
+        // The evidence clause holds the gate below green AFTER #1 goes green, so a
+        // reader planning the wave has to be told about it while #1 is still unmet.
+        const reg = base();
+        reg.gates.A!.requires = [inv(1), { kind: "evidence", ref: "a reviewer agrees", prompt: 7 }];
+        const view = gateReadiness(reg, { ...deps, invariantState: () => "not-yet-active" }).find((v) => v.key === "A")!;
+        expect(view.state).toBe("not-yet-green");
+        expect(view.blocking).toEqual(["#1", "a reviewer agrees"]);
+        expect(view.undecidable).toEqual(["a reviewer agrees"]);
       });
       it("renders a gate green only when every typed requirement is met and decidable", () => {
         const reg = base();

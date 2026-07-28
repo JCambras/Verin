@@ -20,7 +20,9 @@ set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and 
 rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
 `ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A requires 1/2/4/5;
-invariant 3 is required at Gate B because its prerequisite is prompt 10). Two ratchets in the fence pin
+invariant 3 is required at Gate B because its prerequisite is prompt 10). `ci-gate` evidence is a real
+YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a shell-comment strip: a command in a comment,
+a step `name:`, an `env:` value, or a commented-out block-scalar line proves nothing. Two ratchets in the fence pin
 the 30-invariant gate-assignment map and every gate's invariant requirement set: moving one is an
 ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the

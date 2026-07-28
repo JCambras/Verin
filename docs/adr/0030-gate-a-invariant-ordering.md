@@ -107,7 +107,25 @@ Gate-D-owned invariant 7 - and it stays correct when invariant 16 activates.
 **A CI job NAME is not evidence** (same ruling). `ci-gate` requirements and `ci-gate` invariant
 mechanisms previously matched by substring, so a three-character token like `e2e` stayed "met" off a
 comment or a file path after the blocking job was deleted. The workflow is now parsed structurally into
-`job -> run scripts`, and every `ci-gate` must name the `command` its job actually runs.
+`job -> the commands its steps run`, and every `ci-gate` must name the `command` its job actually runs.
+
+**That parse is a real YAML parse, and a shell parse on top of it** (ruling `gatea-review-3`). The first
+structural cut was a hand-rolled line scanner, which is the same class of defect one level down: it read
+a column-0 comment as leaving the `jobs:` block, silently dropping every job declared after it - including
+the blocking `v3-invariants` job itself - and it collected block-scalar lines indiscriminately, so a
+commented-out command still proved its own gate. `parseCiJobs` now uses the `yaml` package and walks
+`jobs.<key>.steps[].run`. YAML alone is NOT enough: inside a `|` block scalar a `#` is literal script
+text, so the parser correctly hands over `# pnpm audit:chain temporarily disabled` and only the SHELL
+treats it as disabled. Each `run` script is therefore split into its executable command lines with shell
+comments stripped (quote-aware) and `\` continuations rejoined. A workflow that cannot be parsed yields
+no jobs, so every `ci-gate` reads unmet - the honest answer when the evidence cannot be read at all.
+
+**A gate's `awaiting:` line names everything holding it back** (same ruling). The report previously
+listed the unmet requirements OR, only when there were none, the undecidable ones - so gate C printed
+`awaiting: #1 · #11` and stayed silent about the `evidence` clause that will hold it below green after
+those two go green. `GateView.blocking` is now the full set, with the undecidable subset exposed
+separately so the report can name it as such. The state machine is unchanged: green still requires zero
+unmet AND zero undecidable requirements.
 
 **One rule set, two callers.** The rules live in `scripts/v3-gates.lib.ts` (the same split as
 `scripts/golden-cases.lib.ts`). `src/__tests__/fitness/v3-gate-ordering.test.ts` owns the adversarial
@@ -141,6 +159,9 @@ or deferred without a trigger - it is required, in full, at Gate B.
 | Keep deciding the ordering rule from `status: "active"` (treat an active invariant as needing no future prompt) | The verdict then flips when an invariant activates - a reference legal today becomes illegal at the moment the work lands - and the reference DIRECTION is undecidable in the meantime, so a gate could read green on an invariant a later gate owns. |
 | Move invariant 16 to Gate B and invariant 11 to Gate C so "reference only earlier-owned invariants" holds literally | That changes ACTIVATION OWNERSHIP, which the ruling forbids: Gate E must still be the gate that proves invariant 16 over the policy lifecycle it builds. Ownership and requirement are separate relations precisely so this trade is not necessary. |
 | Prove a `ci-gate` by searching ci.yml for the job name | A three-character token like `e2e` matches a comment, a path, or a `pnpm test:e2e` invocation in an unrelated job, so the requirement keeps reading "met" after the blocking job is deleted - the weak/tautological check charter #4 calls worse than no check. |
+| Keep the hand-rolled line scanner and patch the two reported holes | A regex scanner pretending to understand YAML has an open-ended tail of holes, and this one is load-bearing for both gate readiness and invariant mechanisms. Two were confirmed by repro (a column-0 comment dropping four jobs; a block-scalar comment proving its own disabled command) and a third was reachable by indentation alone. `yaml` is already a declared dependency used by three other fences. |
+| Parse the workflow with YAML and stop there | Inside a `\|` block scalar a `#` is script text, not YAML syntax, so a correct YAML parse still returns `# pnpm audit:chain temporarily disabled` as the run value. Counting it would let one PR switch a blocking gate off and keep its invariant reading `active-pass` (proved: injection 17). |
+| Leave `awaiting:` listing only the unmet requirements | A gate's `evidence` clauses hold it below green after everything else goes green, so omitting them tells a reader planning the wave less than the gate actually needs - understating an obligation in the report the honesty ruling binds. |
 | Pin only Gate A and Gate B in the fence and trust review for the rest | Gate assignment decides which gate can never go green without an invariant. Moving one to a later gate while updating both `requires` lists passes every structural rule (proved: injection 14), so nothing would surface it. |
 
 ## Trade-offs and Costs
@@ -171,7 +192,13 @@ or deferred without a trigger - it is required, in full, at Gate B.
   activation-ownership map, and every gate's invariant requirement set. Changing either fails CI until
   the ratchet, this ADR, ADR-0023 where applicable, and the proof evidence are amended together.
 - Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
-  blocking job runs, checked against a structural parse of `.github/workflows/ci.yml`.
+  blocking job runs, checked against a real YAML parse of `.github/workflows/ci.yml` plus a shell-comment
+  strip of each `run` script. A comment, a step `name:`, an `env:` value, a `uses:` path, and a
+  commented-out command are all rejected; an unparseable workflow yields no jobs, so every `ci-gate`
+  reads unmet rather than passing on a file nothing could read.
+- A gate's `awaiting:` line lists EVERY requirement holding it back, undecidable ones included, with a
+  second `no mechanism decides:` line naming the subset nothing here can close. The report can no longer
+  understate what a gate needs.
 - Registering a gate cannot make it green. Today gate 0 reads `not-yet-verifiable` (no mechanism decides
   completeness against the demo contract's §4 required-surface list - the skeleton-honesty fence proves
   contract parity and the surface import boundary, and the e2e walkthrough screenshots a hard-coded
@@ -212,3 +239,7 @@ or deferred without a trigger - it is required, in full, at Gate B.
   extension named in the first bullet above rather than a dropped field.
 - A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
   PR. The structural check reads the workflow, so a stale pair fails rather than silently matching.
+- The blocking workflow moves off a single `.github/workflows/ci.yml`, or a `ci-gate` command has to be
+  proven inside a composite action or a reusable workflow: `parseCiJobs` reads one file and only that
+  file's `jobs.<key>.steps[].run`, so a job that delegates its command to `uses:` reads unmet. Extend the
+  parse to follow the reference - do NOT relax the match back toward substring presence.

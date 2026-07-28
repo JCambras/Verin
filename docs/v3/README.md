@@ -72,9 +72,12 @@ set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
 fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
 declares no machine-checkable requirement (an empty set would read green merely by being registered), or
-if a `ci-gate` does not name the command its blocking job actually runs. Two ratchets in the fence pin
-the complete 30-invariant gate-assignment map and every gate's invariant requirement set, so neither
-moves by a registry edit alone. Per
+if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
+parse of `.github/workflows/ci.yml` plus a shell-comment strip of each `run` script, so a command named
+only in a comment, a step `name:`, an `env:` value, or a commented-out line proves nothing. A gate's
+`awaiting:` line names every requirement holding it back, undecidable ones included. Two ratchets in the
+fence pin the complete 30-invariant gate-assignment map and every gate's invariant requirement set, so
+neither moves by a registry edit alone. Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
 4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account

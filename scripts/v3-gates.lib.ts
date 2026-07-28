@@ -34,6 +34,7 @@
  * at prompt 0" is what previously let a gate reference an invariant a LATER gate
  * owns and still pass (ruling `gatea-fix-review-2`).
  */
+import { parse as parseYaml } from "yaml";
 
 /** The v3 build sequence is exactly 30 prompts (docs/v3/verin-prompt-sequence-v3.md). */
 export const LAST_PROMPT = 30;
@@ -113,61 +114,98 @@ export function gatesNamedInProse(prose: string): string[] {
   return [...new Set([...prose.matchAll(/\bgate\s+([0-9a-z](?:\/[0-9a-z])*)\b/gi)].map((m) => m[1]!.toUpperCase()))];
 }
 
+const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+/**
+ * One script line with its trailing shell comment removed, quote-aware so a `#`
+ * inside `'...'` or `"..."` stays part of the command. A `#` only opens a comment
+ * at the start of a word, so `foo#bar` and `--color=#fff` are untouched.
+ */
+function stripShellComment(line: string): string {
+  let quote: string | undefined;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]!;
+    if (ch === "\\" && quote !== "'") i += 1;
+    else if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "#" && (i === 0 || /\s/.test(line[i - 1]!))) return line.slice(0, i);
+  }
+  return line;
+}
+
+/**
+ * The commands a `run:` script actually EXECUTES: one entry per logical shell
+ * line, comments dropped and `\` continuations rejoined. Splitting per line
+ * rather than concatenating the script keeps a match from spanning two unrelated
+ * commands.
+ */
+function shellCommandLines(script: string): string[] {
+  const commands: string[] = [];
+  let pending = "";
+  for (const raw of script.split("\n")) {
+    const stripped = stripShellComment(raw).trim();
+    if (stripped.endsWith("\\")) {
+      pending += `${stripped.slice(0, -1)} `;
+      continue;
+    }
+    const command = collapse(pending + stripped);
+    if (command !== "") commands.push(command);
+    pending = "";
+  }
+  const trailing = collapse(pending);
+  if (trailing !== "") commands.push(trailing);
+  return commands;
+}
+
 /**
  * A ci-gate requirement is only evidence if the named job EXISTS in the blocking
  * workflow and RUNS the required command. A bare substring match is satisfied by
  * a comment, a path, or an unrelated step - the tautological shape charter #4
- * rejects - so the workflow is parsed structurally into `job key -> run scripts`.
- * Every `run:` value is captured, including `|` and `>-` block scalars, with
- * whitespace collapsed so a folded command still matches.
+ * rejects - so the workflow is parsed into `job key -> the commands its steps run`.
+ *
+ * Structure comes from the real YAML parser, not a line scanner. A scanner cannot
+ * tell a command from a sibling `env:` value or a step `name:`, and it loses every
+ * job declared after a column-0 comment; both are evasions in a check that is
+ * load-bearing for gate readiness (charter: fences parse, they do not
+ * pattern-match). The parser drops YAML comments for free and yields the `run`
+ * VALUE of each step.
+ *
+ * YAML is not sufficient on its own: inside a `|` block scalar a `#` is literal
+ * script text, so a commented-out command is genuinely part of the run value and
+ * only the SHELL treats it as disabled. `shellCommandLines` therefore strips shell
+ * comments too - otherwise "# pnpm audit:chain temporarily disabled" would keep
+ * proving the gate it just switched off.
+ *
+ * A workflow this cannot parse yields NO jobs, so every ci-gate reads unmet - the
+ * honest answer when the evidence cannot be read at all.
  */
 export function parseCiJobs(yamlText: string): Map<string, string[]> {
-  const lines = yamlText.split("\n");
   const jobs = new Map<string, string[]>();
-  let inJobs = false;
-  let current: string | undefined;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i]!;
-    if (/^\S/.test(line)) {
-      inJobs = /^jobs:\s*$/.test(line);
-      current = undefined;
-      continue;
-    }
-    if (!inJobs) continue;
-    const jobKey = /^ {2}([A-Za-z0-9_.-]+):\s*$/.exec(line);
-    if (jobKey) {
-      current = jobKey[1]!;
-      jobs.set(current, []);
-      continue;
-    }
-    if (current === undefined) continue;
-    const run = /^(\s*)-?\s*run:\s*(.*)$/.exec(line);
-    if (!run) continue;
-    const indent = run[1]!.length;
-    let value = run[2]!.trim();
-    if (/^[|>][-+0-9]*$/.test(value)) {
-      const block: string[] = [];
-      let j = i + 1;
-      for (; j < lines.length; j += 1) {
-        const next = lines[j]!;
-        if (next.trim() === "") continue;
-        if (next.length - next.trimStart().length <= indent) break;
-        block.push(next.trim());
-      }
-      value = block.join(" ");
-      // Consume the block so a `run:`-looking line INSIDE a shell script is not
-      // read as another step (an outer scan would over-collect run text).
-      i = j - 1;
-    }
-    jobs.get(current)!.push(value.replace(/\s+/g, " ").trim());
+  let doc: unknown;
+  try {
+    doc = parseYaml(yamlText);
+  } catch {
+    return jobs;
+  }
+  const declared = (doc as { jobs?: unknown } | null)?.jobs;
+  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
+  for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
+    const steps = (job as { steps?: unknown } | null)?.steps;
+    const commands = (Array.isArray(steps) ? steps : [])
+      .map((step) => (step as { run?: unknown } | null)?.run)
+      .filter((run): run is string => typeof run === "string")
+      .flatMap(shellCommandLines);
+    jobs.set(key, commands);
   }
   return jobs;
 }
 
 /** True only when `ref` is a declared job that runs `command` in one of its steps. */
 export function ciJobRuns(jobs: Map<string, string[]>, ref: string, command: string): boolean {
-  if (command.trim() === "") return false;
-  return (jobs.get(ref) ?? []).some((r) => r.includes(command.trim()));
+  const needle = collapse(command);
+  if (needle === "") return false;
+  return (jobs.get(ref) ?? []).some((r) => r.includes(needle));
 }
 
 /** The invariant ids a gate requires green, in registry order (the captain's ruled sets). */
@@ -380,8 +418,15 @@ export interface GateView {
   gate: Gate;
   requirements: RequirementView[];
   state: GateState;
-  /** The labels holding the gate back: unmet requirements, else the unverifiable ones. */
+  /**
+   * EVERY label holding the gate back - the unmet requirements AND the ones no
+   * mechanism decides. Reporting only the unmet ones understated what a gate is
+   * waiting on: its `evidence` clauses hold it below green after the rest go
+   * green, so a reader planning the wave has to see them from the start.
+   */
   blocking: string[];
+  /** The `blocking` subset nothing here can decide, so the report can name them as such. */
+  undecidable: string[];
 }
 
 export interface ReadinessDeps {
@@ -427,7 +472,8 @@ export function gateReadiness(reg: Registry, deps: ReadinessDeps): GateView[] {
     let state: GateState = "green";
     if (unmet.length > 0 && decidable) state = "not-yet-green";
     else if (!decidable || unverifiable.length > 0) state = "not-yet-verifiable";
-    const blocking = (unmet.length > 0 ? unmet : unverifiable).map((r) => r.label);
-    return { key, gate, requirements, state, blocking };
+    const blocking = [...unmet, ...unverifiable].map((r) => r.label);
+    const undecidable = unverifiable.map((r) => r.label);
+    return { key, gate, requirements, state, blocking, undecidable };
   });
 }

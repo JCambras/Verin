@@ -240,6 +240,11 @@ for (const view of gateReadiness(registry, {
   if (view.state === "green") console.log(`    ${green(gateTag("✓ green"))} ${label}`);
   else if (view.state === "not-yet-green") console.log(dim(`    ${gateTag("○ not yet green")} ${label}\n${gateIndent}└ awaiting: ${view.blocking.join(" · ")}`));
   else console.log(dim(`    ${gateTag("○ not-yet-verifiable")} ${label}\n${gateIndent}└ no mechanism decides: ${view.blocking.join(" · ")}`));
+  // `awaiting` already lists these, but a reader planning the wave has to know WHICH of
+  // them no mechanism can close - they hold the gate below green after the rest go green.
+  if (view.state === "not-yet-green" && view.undecidable.length > 0) {
+    console.log(dim(`${gateIndent}└ no mechanism decides: ${view.undecidable.join(" · ")}`));
+  }
   console.log(dim(`${gateIndent}└ wave may begin when: ${gate.entryCondition}`));
 }
 

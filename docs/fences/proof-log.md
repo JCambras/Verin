@@ -9596,3 +9596,134 @@ every injection and verified byte-identical with `diff -q`; `git status` clean o
 (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-2`).
+
+### PF-018 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
+
+**SUPERSESSION CROSS-REFERENCE (read before re-running injections 10, 11 and 19).** Injections 10 and 11
+above are preserved verbatim as what actually ran against the hand-rolled line scanner of that round.
+Their VERDICTS still hold under the current implementation (a job named only in a comment, and a job
+whose command was swapped out, both fail), but the mechanism they exercised is gone: `parseCiJobs` no
+longer scans lines at all. Injection 11's scenario is re-run under the current implementation as
+**injection 19** below, and injection 17 covers the case the scanner could not see.
+
+**What changed.** `parseCiJobs` now parses `.github/workflows/ci.yml` with the real YAML parser
+(`yaml`, already a declared dependency) and walks `jobs.<key>.steps[].run` structurally, instead of
+matching indented lines with regexes. Two confirmed evasions of the scanner are closed by that, and a
+third - which YAML alone does NOT close - by stripping SHELL comments from each `run` script: inside a
+`|` block scalar a `#` is literal script text, so the YAML parser correctly hands over a commented-out
+command and only the shell treats it as disabled. Separately, `GateView.blocking` now lists EVERY label
+holding a gate back rather than the unmet ones alone, with the undecidable subset exposed as
+`GateView.undecidable`, so a gate's `awaiting:` line can never understate what it is waiting on.
+
+**Injection 17 - a blocking command disabled by a SHELL comment (the reported hole).** Replaced
+`audit-chain-verify`'s step with a block scalar whose command is commented out:
+```yaml
+      - name: seed + verify org audit chains
+        run: |
+          # pnpm db:seed && pnpm audit:chain temporarily disabled while we debug
+          echo skip
+```
+Under the previous parser every non-blank line of the block was collected as run text, so
+`ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")` returned `true` and invariant 5 kept reading
+`active-pass` with its blocking gate switched off.
+
+**Observed failure (verbatim), the registry fence:**
+```
+ FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently (blocking CI job `v3-invariants`, exit 1):
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+
+  summary: 4 active-pass · 1 active-fail · 25 not-yet-active (30 total)
+
+v3-invariants: ACTIVE invariants failing:
+  - #5 Ledger records are append-only
+```
+
+**Injection 18 - a column-0 comment inside the `jobs:` block (a FALSE-NEGATIVE proof, recorded as such).**
+Inserted `# ---- verification gates ----` at column 0 immediately above the `audit-chain-verify:` job
+key. This injection is the inverse of the others: the previous scanner treated any column-0 line as
+leaving the `jobs:` block, so it FAILED on a workflow that is entirely correct, blaming a job that
+plainly exists and runs its command. The proof is therefore that the check now stays green here while
+the old code did not.
+
+**Observed, the previous line scanner transcribed verbatim and run over the injected file:**
+```
+jobs: quality, test, knip, e2e, secret-scan, sast, dependency-audit, provenance-trace
+has audit-chain-verify: false
+```
+(four jobs silently lost: `audit-chain-verify`, `v3-invariants`, `golden-cases`, `load-smoke` - including
+the blocking job this very report runs in.)
+
+**Observed, the current parser over the same injected file:**
+```
+quality, test, knip, e2e, secret-scan, sast, dependency-audit, provenance-trace, audit-chain-verify, v3-invariants, golden-cases, load-smoke
+audit-chain-verify runs pnpm audit:chain: true
+```
+with `vitest run src/__tests__/fitness/v3-invariants.test.ts src/__tests__/fitness/v3-gate-ordering.test.ts`
+→ `Tests 48 passed (48)`.
+
+**Injection 19 - the command surviving only as a step `name:` and an `env:` value.** Replaced
+`audit-chain-verify`'s real step with one that mentions the command twice without running it:
+```yaml
+      - name: pnpm db:seed && pnpm audit:chain
+        env:
+          RESTORE_ME: pnpm db:seed && pnpm audit:chain
+        run: echo skip
+```
+
+**Observed failure (verbatim), the registry fence:**
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently:
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+```
+
+**Injection 20 - the under-reported `awaiting:` line.** Reverted `GateView.blocking` to
+`unmet.length > 0 ? unmet : unverifiable` and removed the runner's second line, then re-ran
+`pnpm v3:invariants`. Gate C's evidence clause vanished from the report even though it will hold the
+gate below green after #1 and #11 go green.
+
+**Observed, pre-fix (verbatim):**
+```
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ awaiting: #1 · #11
+                         └ wave may begin when: Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).
+```
+
+**Observed, current (verbatim) - the clause is named, and named again as undecidable:**
+```
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ awaiting: #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ no mechanism decides: the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ wave may begin when: Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).
+```
+Gate I gained the same completion (`awaiting: docs/reviews/phase-1-adversarial-audit.md · no unresolved
+critical finding; …`). The state machine is unchanged: green still requires zero unmet AND zero
+undecidable requirements, and no gate reads green.
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a command surviving
+only as a shell comment inside a `|` block scalar, paired with a quoted `#` that must still count; a
+column-0 comment between two job keys, asserting BOTH jobs survive; a command present only in a step
+`name:`, an `env:` value, and a `uses:` path; a multi-line `|` script read as separate commands (so a
+match cannot span two unrelated ones) and a folded `>-` script read as one; an unparseable workflow
+yielding no jobs, so every `ci-gate` reads unmet rather than passing on a broken file; and a readiness
+case asserting an unmet requirement does not hide the undecidable ones from `blocking`.
+
+**Revert:** `.github/workflows/ci.yml` restored from a pre-injection copy after each of injections 17-19
+and verified byte-identical with `diff -q` (`git status` clean of the file); `scripts/v3-gates.lib.ts`
+and `scripts/v3-invariants.ts` restored the same way after injection 20.
+
+**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-review-3`).
