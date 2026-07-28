@@ -6,6 +6,7 @@ import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
+import { SOURCE_SYSTEMS, type RecordProvenance } from "@contracts/provenance";
 import {
   EvidenceSnapshotRefSchema,
   DecisionInputBundleSchema,
@@ -21,24 +22,26 @@ import {
   type LedgerEntry,
 } from "@contracts/decision-core/ledger";
 import {
-  CANONICAL_SERIALIZER_VERSION,
   bundleHashPreimage,
-  canonicalJson,
   decisionHashPreimage,
-  type JsonValue,
 } from "@contracts/decision-core/serialization";
-import {
-  foldDecisionProjection,
-  type DecisionProjection,
-} from "@domain/ledger/projections";
 import { listDecisionLedger } from "./ledger-verification";
 import { assertLedgerSourceBindings } from "./ledger-bindings";
+import { canonical, insertDecisionSources } from "./ledger-sources";
+import {
+  applyProjection,
+  clearDerivedState,
+  listDecisionProjections,
+  type ProjectedDecision,
+} from "./ledger-projection-store";
 
 export interface RecordDecisionInput {
   readonly evidenceSnapshots: readonly EvidenceSnapshotRef[];
   readonly inputBundle: DecisionInputBundle;
   readonly decisionRecord: DecisionRecord;
   readonly events: readonly LedgerEntry[];
+  /** Provenance of the producer appending these facts (charter #4). */
+  readonly provenance: RecordProvenance;
 }
 export interface AppendedLedgerEntry {
   readonly id: string;
@@ -49,13 +52,6 @@ interface PreparedEvent {
   readonly event: LedgerEntry;
   readonly payloadJson: string;
   readonly actorJson: string;
-}
-
-function canonical(value: unknown, label: string): Result<string, AppError> {
-  const serialized = canonicalJson(value as JsonValue);
-  return serialized.ok
-    ? serialized
-    : err(appError("VALIDATION", `${label} is not canonically serializable`));
 }
 
 function hashCanonical(value: unknown, label: string): Result<string, AppError> {
@@ -100,6 +96,17 @@ function evidenceId(event: LedgerEntry): string | null {
   return null;
 }
 
+function triggeringEntryId(event: LedgerEntry): string | null {
+  return event.type === "ExceptionDecisionRequested"
+    ? event.triggeringEntryRef.id
+    : null;
+}
+
+function validProvenance(provenance: RecordProvenance): boolean {
+  return SOURCE_SYSTEMS.includes(provenance.source) &&
+    !Number.isNaN(Date.parse(provenance.asOf));
+}
+
 function storeFailure(error: unknown): AppError {
   return isAppError(error)
     ? error
@@ -116,66 +123,11 @@ async function lockTenant(tx: SqlQueryable, orgId: string): Promise<void> {
   }
 }
 
-async function loadProjection(
-  tx: SqlQueryable,
-  orgId: string,
-  event: LedgerEntry,
-): Promise<DecisionProjection | undefined> {
-  const id = decisionId(event);
-  if (id) {
-    const row = await tx.query<{ state_json: string }>(
-      "SELECT state_json FROM decision_state_projection WHERE org_id = $1 AND decision_id = $2",
-      [orgId, id],
-    );
-    return row.rows[0]
-      ? JSON.parse(row.rows[0].state_json) as DecisionProjection
-      : undefined;
-  }
-  if (event.type !== "ReservationReleased") return undefined;
-  const rows = await tx.query<{ state_json: string }>(
-    "SELECT state_json FROM decision_state_projection WHERE org_id = $1",
-    [orgId],
-  );
-  return rows.rows
-    .map((row) => JSON.parse(row.state_json) as DecisionProjection)
-    .find((state) =>
-      state.reservations.some(
-        (reservation) => reservation.reservationId === event.reservationRef.id,
-      ));
-}
-
-async function applyProjection(
-  tx: SqlQueryable,
-  event: LedgerEntry,
-  sequence: number,
-  record?: DecisionRecord,
-): Promise<void> {
-  const current = await loadProjection(tx, event.firmId, event);
-  const next = foldDecisionProjection({
-    ...(current ? { current } : {}),
-    event,
-    sequence,
-    ...(record ? { decisionRecord: record } : {}),
-  });
-  if (!next) return;
-  const stateJson = canonical(next, "decision projection");
-  if (!stateJson.ok) throw stateJson.error;
-  await tx.query(
-    `INSERT INTO decision_state_projection
-      (org_id, decision_id, state_json, last_sequence, updated_at)
-     VALUES ($1,$2,$3,$4,$5)
-     ON CONFLICT (org_id, decision_id) DO UPDATE
-       SET state_json = EXCLUDED.state_json,
-           last_sequence = EXCLUDED.last_sequence,
-           updated_at = EXCLUDED.updated_at`,
-    [event.firmId, next.decisionId, stateJson.value, sequence, event.recordedAt],
-  );
-}
-
 async function appendPrepared(
   tx: SqlQueryable,
   orgId: string,
   events: readonly PreparedEvent[],
+  provenance: RecordProvenance,
   decisionRecord?: DecisionRecord,
 ): Promise<AppendedLedgerEntry[]> {
   const head = await tx.query<{ sequence: number | string; entry_hash: string }>(
@@ -193,13 +145,16 @@ async function appendPrepared(
       `INSERT INTO decision_ledger
         (org_id,id,sequence,event_type,schema_version,serializer_version,
          occurred_at,recorded_at,actor_json,correlation_id,causation_id,
-         decision_id,evidence_snapshot_id,payload_json,prev_hash,entry_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
+         prev_hash,entry_hash,prov_source,prov_asof,prov_confidence)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+               $18,$19,$20)`,
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
         event.correlationId, event.causationRef?.id ?? null, decisionId(event),
-        evidenceId(event), payloadJson, prevHash, entryHash,
+        evidenceId(event), triggeringEntryId(event), payloadJson, prevHash,
+        entryHash, provenance.source, provenance.asOf, provenance.confidence,
       ],
     );
     await applyProjection(
@@ -252,63 +207,6 @@ function prepareEvents(
   return ok(prepared);
 }
 
-async function insertDecisionSources(
-  tx: SqlQueryable,
-  snapshots: readonly EvidenceSnapshotRef[],
-  bundle: DecisionInputBundle,
-  record: DecisionRecord,
-  recordedAt: string,
-): Promise<void> {
-  for (const snapshot of snapshots) {
-    const bytes = canonical(snapshot, "evidence snapshot");
-    if (!bytes.ok) throw bytes.error;
-    await tx.query(
-      `INSERT INTO evidence_snapshots
-        (org_id,id,canonical_json,schema_version,serializer_version,
-         content_hash,recorded_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [
-        snapshot.firmId, snapshot.id, bytes.value, snapshot.schemaVersion,
-        CANONICAL_SERIALIZER_VERSION, snapshot.contentHash, recordedAt,
-      ],
-    );
-  }
-  const bundleBytes = canonical(bundle, "decision input bundle");
-  if (!bundleBytes.ok) throw bundleBytes.error;
-  await tx.query(
-    `INSERT INTO decision_input_bundles
-      (org_id,id,canonical_json,schema_version,serializer_version,engine_version,
-       primitive_set_version,time_zone_data_version,bundle_hash,recorded_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      bundle.firmId, bundle.id, bundleBytes.value, bundle.schemaVersion,
-      bundle.canonicalSerializerVersion, bundle.engineVersion,
-      bundle.primitiveSetVersion, bundle.timeZoneDataVersion, bundle.bundleHash,
-      recordedAt,
-    ],
-  );
-  for (const [ordinal, ref] of bundle.evidenceSnapshotRefs.entries()) {
-    await tx.query(
-      `INSERT INTO decision_input_bundle_evidence
-        (org_id,bundle_id,evidence_snapshot_id,ordinal) VALUES ($1,$2,$3,$4)`,
-      [bundle.firmId, bundle.id, ref.id, ordinal],
-    );
-  }
-  const recordBytes = canonical(record, "decision record");
-  if (!recordBytes.ok) throw recordBytes.error;
-  await tx.query(
-    `INSERT INTO decision_records
-      (org_id,id,input_bundle_id,canonical_json,schema_version,
-       serializer_version,decision_hash,created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [
-      record.firmId, record.id, record.inputBundleRef.id, recordBytes.value,
-      bundle.schemaVersion, bundle.canonicalSerializerVersion,
-      record.decisionHash, record.createdAt,
-    ],
-  );
-}
-
 function validateDecisionInput(
   input: RecordDecisionInput,
 ): Result<{
@@ -317,6 +215,9 @@ function validateDecisionInput(
   record: DecisionRecord;
   events: PreparedEvent[];
 }, AppError> {
+  if (!validProvenance(input.provenance)) {
+    return err(appError("VALIDATION", "decision ledger provenance is invalid"));
+  }
   const snapshots = input.evidenceSnapshots.map((value) =>
     EvidenceSnapshotRefSchema.safeParse(value));
   if (snapshots.some((parsed) => !parsed.success)) {
@@ -406,6 +307,7 @@ export async function recordDecision(
         tx,
         prepared.value.record.firmId,
         prepared.value.events,
+        input.provenance,
         prepared.value.record,
       );
     });
@@ -425,7 +327,11 @@ export async function appendDecisionEvents(
   tx: SqlQueryable,
   orgId: string,
   inputs: readonly LedgerEntry[],
+  provenance: RecordProvenance,
 ): Promise<AppendedLedgerEntry[]> {
+  if (!validProvenance(provenance)) {
+    throw appError("VALIDATION", "decision ledger provenance is invalid");
+  }
   const prepared = prepareEvents(inputs, orgId);
   if (!prepared.ok) throw prepared.error;
   if (
@@ -437,35 +343,17 @@ export async function appendDecisionEvents(
     throw appError("VALIDATION", "source-recording events require recordDecision");
   }
   await lockTenant(tx, orgId);
-  return appendPrepared(tx, orgId, prepared.value);
-}
-
-export async function listDecisionProjections(
-  db: SqlDb,
-  orgId: string,
-): Promise<DecisionProjection[]> {
-  const rows = await db.query<{ state_json: string }>(
-    "SELECT state_json FROM decision_state_projection WHERE org_id = $1 ORDER BY decision_id ASC",
-    [orgId],
-  );
-  return rows.rows.map((row) => JSON.parse(row.state_json) as DecisionProjection);
+  return appendPrepared(tx, orgId, prepared.value, provenance);
 }
 
 /** Delete only derived state, then replay immutable rows in sequence order. */
 export async function rebuildDecisionProjections(
   db: SqlDb,
   orgId: string,
-): Promise<DecisionProjection[]> {
+): Promise<ProjectedDecision[]> {
   await db.transaction(async (tx) => {
     await lockTenant(tx, orgId);
-    await tx.query(
-      "DELETE FROM decision_state_projection WHERE org_id = $1",
-      [orgId],
-    );
-    await tx.query(
-      "DELETE FROM decision_projection_checkpoint WHERE org_id = $1",
-      [orgId],
-    );
+    await clearDerivedState(tx, orgId);
     const rows = await listDecisionLedger(tx, orgId);
     for (const row of rows) {
       const parsed = LedgerEntrySchema.safeParse(JSON.parse(row.payloadJson));

@@ -56,7 +56,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0039](./0039-primitive-vocabulary.md) | Decision-primitive vocabulary (v3 prompt 8): six-primitive catalog in `contracts/primitives`, versioned + provisional + falsification-tested | Accepted |
 | [0040](./0040-line-budget-primitive-vocabulary.md) | Contracts ceiling 4,050 to 5,460 for the primitive catalog | Accepted (amends ADR-0035) |
-| [0041](./0041-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage (v3 prompt 7); contracts and infrastructure ceilings re-measured | Accepted (amends ADR-0007/0018/0019) |
+| [0041](./0041-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage (v3 prompt 7); ceiling amendments compose with the prompt-8 catalog | Accepted (amends ADR-0007/0018/0019) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

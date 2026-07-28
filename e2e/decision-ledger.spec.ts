@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { ADVISOR, PRINCIPAL, login } from "./helpers";
+import { DEV_BADGE_TEXT } from "../src/contracts/provenance";
 
 test("principal can inspect the seeded decision ledger and its L1-L4 verdict", async ({ page }) => {
   await login(page, PRINCIPAL);
@@ -12,7 +13,10 @@ test("principal can inspect the seeded decision ledger and its L1-L4 verdict", a
   }
   await expect(page.getByRole("cell", { name: "DecisionRecorded" })).toBeVisible();
   await expect(page.getByTestId("dev-provenance-badge").first()).toHaveText(
-    "Synthetic fixture",
+    DEV_BADGE_TEXT["synthetic-fixture"],
+  );
+  await expect(page.getByTestId("ledger-decision-state")).toContainText(
+    "dec:GC-01:0001",
   );
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])

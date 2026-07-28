@@ -3414,3 +3414,48 @@ status histories remain because this prompt lands no real producers. They become
 deletion/switchover candidates only with the later decision, approval, and
 execution prompts. ADR-0041 records the topology, retention extension, forward-only
 migration, and ADR-0018 ceiling amendments.
+
+## D-106 - Ledger provenance, reservation ownership, and register verification scope
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, ADR-0041, charter #4/#5
+
+Review of D-105 surfaced four storage-level gaps, all fixed in the same forward-only
+migration rather than a follow-up one.
+
+**Provenance is stored, not inferred.** Every `decision_ledger` row carries
+`prov_source`/`prov_asof`/`prov_confidence` supplied by the producer, and both write
+paths refuse an unknown source. The register derives its badge from the stored source
+through `isSyntheticSource`, so renaming the seed actor - or adding any other synthetic
+producer - can no longer render fixture history as real (charter #4). The badge text now
+comes from the single `DEV_BADGE_TEXT` taxonomy, which moved to `contracts/provenance.ts`
+because real surfaces label unlanded paths from it too, not only the demo skeleton.
+
+**Reservation ownership is indexed, not searched.** A release names no decision, so the
+owner was previously found by scanning every projection in physical row order - a choice
+the online fold and a later rebuild could disagree on. `decision_reservation_index` maps
+`(org_id, reservation_id) -> decision_id` with a status, making the lookup a single keyed
+read and a rebuild linear. A `ReservationCreated` that names a reservation another decision
+holds live is refused rather than resolved arbitrarily.
+
+**Immutable sources are reusable.** Evidence snapshots and input bundles are
+content-addressed, so a second decision over the same inputs (the natural shape of an
+exception re-decision) reuses the stored bytes. Reuse requires byte equality; a
+same-id/different-bytes collision, or identical content already stored under another
+bundle id, is refused with a legible error instead of an opaque constraint violation.
+
+**Verification scope is honest.** `verifyAndListDecisionLedger` accepts a window, and the
+register verifies its most recent 200 entries against the stored hash of their predecessor
+instead of re-running L1-L4 over the whole chain on every page load under the store's single
+connection. The unbounded form remains the examiner-grade check the `audit-chain-verify`
+gate runs, and the UI states which scope it is showing.
+
+`ExceptionDecisionRequested.triggeringEntryRef` is now a promoted, foreign-keyed column
+checked by L3, so a causal link to a nonexistent entry cannot be stored. The register also
+renders replayed decision state, making the projection fold reachable from the UI in the
+PR that lands it (charter #5). `appendDecisionEvents` stays dormant until Wave D/F
+producers land; it is exercised by integration tests, not by a fake producer.
+
+**Why:** derived state that depends on physical row order is not deterministic, and a label
+derived from a magic actor string is not provenance.
+**Revert path:** the added columns and derived table are additive; the window argument is
+optional and defaults to the full chain.

@@ -29,14 +29,14 @@ import { relative } from "node:path";
 // documentation deletions.
 //
 // MEASURED after composing the prompt-8 primitive catalog (D-102) with prompt 7's
-// decision ledger (D-105), using this file's own algorithm: contracts 5851/5900
-// (49), domain 1576/1600 (24), infrastructure 4608/4650 (42). These are the real
-// figures, not a stale decision-table row. Any FURTHER increase is still a measured
-// ADR amendment, never a code change.
+// decision ledger and its review hardening (D-105/D-106), using this file's own
+// algorithm: contracts 5875/5900 (25), domain 1576/1600 (24), infrastructure
+// 4899/5000 (101). These are the real figures, not a stale decision-table row. Any
+// FURTHER increase is still a measured ADR amendment, never a code change.
 const CEILINGS = {
-  contracts: 5900, // ADR-0041, on ADR-0040's 5,433 catalog baseline plus the typed ledger contracts
+  contracts: 5900, // ADR-0041, on ADR-0040's catalog baseline plus the typed ledger contracts
   domain: 1600, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
-  infrastructure: 4650, // ADR-0041, on ADR-0038's baseline plus the ledger store and verifier
+  infrastructure: 5000, // ADR-0041, on ADR-0038's baseline plus the ledger store, sources, projections, and verifier
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

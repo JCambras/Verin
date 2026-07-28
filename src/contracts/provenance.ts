@@ -117,6 +117,30 @@ export function isDemonstration(p: RecordProvenance | DerivedProvenance): boolea
   return "demonstration" in p && p.demonstration === true;
 }
 
+// ── Fake-class taxonomy (demo contract §6 / design language §11.1-11.2) ──────────
+// The single vocabulary for "what is backing this element". It lives here, beside the
+// SourceSystem vocabulary, because every surface - demo skeleton or real - labels its
+// unlanded paths from the SAME taxonomy; a surface-local literal forks it.
+// `real-salesforce-sandbox-response` is deferred-pending-sandbox and cannot be
+// produced now, so it is deliberately absent from this union.
+export type FakeClass =
+  | "synthetic-fixture"
+  | "real-derived-fixture"
+  | "fake-adapter-response"
+  | "user-entered-demo-input"
+  | "deterministic-engine-output"
+  | "llm-proposed-draft";
+
+/** The DevProvenanceBadge text per class - lowercase and plain (design §11.2). */
+export const DEV_BADGE_TEXT: Record<FakeClass, string> = {
+  "synthetic-fixture": "synthetic fixture",
+  "real-derived-fixture": "sample data · anonymized history",
+  "fake-adapter-response": "fake adapter",
+  "user-entered-demo-input": "demo input",
+  "deterministic-engine-output": "engine output · fake",
+  "llm-proposed-draft": "llm draft",
+};
+
 /** A short, human-visible source/asOf label for the UI (charter #3). */
 export function provenanceLabel(p: RecordProvenance): string {
   const labels: Record<SourceSystem, string> = {

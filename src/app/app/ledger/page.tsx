@@ -85,6 +85,65 @@ export default function DecisionLedgerPage() {
             </ul>
           </section>
 
+          {model.decisions.length > 0 ? (
+            <section
+              aria-labelledby="ledger-state-heading"
+              data-testid="ledger-decision-state"
+              className="rounded-lg border border-slate-200 bg-white p-4"
+            >
+              <h2
+                id="ledger-state-heading"
+                className="text-sm font-semibold text-slate-900"
+              >
+                Replayed decision state
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Folded from the events above in recorded order. Nothing here is
+                evaluated or inferred.
+              </p>
+              <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                {model.decisions.map((decision) => (
+                  <li
+                    key={decision.decisionId}
+                    className="rounded border border-slate-200 px-3 py-2"
+                  >
+                    <p className="font-mono text-xs text-slate-800">
+                      {decision.decisionId}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-900">
+                      {decision.disposition} · {decision.approvalMode}
+                    </p>
+                    <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs text-slate-700">
+                      <dt>Approval stages</dt>
+                      <dd>
+                        {decision.approvalStages.length === 0
+                          ? "none"
+                          : decision.approvalStages
+                              .map((stage) => `${stage.stageId}: ${stage.status}`)
+                              .join(", ")}
+                      </dd>
+                      <dt>Active reservations</dt>
+                      <dd>{decision.activeReservations}</dd>
+                      <dt>Execution steps</dt>
+                      <dd>{decision.executionSteps}</dd>
+                      <dt>Exception requested</dt>
+                      <dd>{decision.exceptionRequested ? "yes" : "no"}</dd>
+                      <dt>Last event</dt>
+                      <dd className="font-mono">
+                        {decision.lastEventType} (#{decision.lastSequence})
+                      </dd>
+                    </dl>
+                    {decision.provenanceLabel ? (
+                      <span className="mt-2 inline-block">
+                        <DevProvenanceBadge label={decision.provenanceLabel} />
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           {model.entries.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600">
               No decision events have been recorded for this firm.
@@ -149,7 +208,9 @@ export default function DecisionLedgerPage() {
           {model.total > model.entries.length ? (
             <p className="text-sm text-slate-600">
               Showing the latest {model.entries.length} of {model.total} events.
-              Verification covers the full chain.
+              {model.verification.entriesChecked < model.verification.entriesStored
+                ? ` Integrity above covers the latest ${model.verification.entriesChecked} entries and their link to the preceding stored hash; the full chain is verified by the audit-chain-verify gate.`
+                : " Verification covers the full chain."}
             </p>
           ) : null}
         </>
