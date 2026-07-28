@@ -97,10 +97,11 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `appendDecisionEvents` runs inside its CALLER'S transaction so CRM audit-outbox intent and a
   decision event can commit atomically, and both require the producer's `RecordProvenance` -
   surfaces classify a row from the stored `prov_source`, never from an actor name. Ledger hashes
-  always cover stored `payload_json` bytes. Never rewrite old bytes; raw inserts into an immutable
+  cover a versioned envelope of stored `payload_json` bytes plus producer provenance. Never rewrite
+  old bytes; raw inserts into an immutable
   source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
   evidence/bundle/record rows, reusable when the bytes match). Derived state lives in
-  `ledger-projection-store.ts` and is rebuilt by replay - a released reservation finds its decision
+  `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts` - a released reservation finds its decision
   through `decision_reservation_index`, never a projection scan. L1-L4 verification and the
   `ledger-append-only` fence enforce these assumptions; the register verifies a bounded window
   while `audit-chain-verify` verifies both chains whole.

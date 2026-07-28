@@ -17,11 +17,19 @@ export async function assertLedgerSourceBindings(
   event: LedgerEntry,
 ): Promise<void> {
   if (event.type === "EvidenceSnapshotRecorded") {
-    const snapshot = await tx.query<{ content_hash: string }>(
-      "SELECT content_hash FROM evidence_snapshots WHERE org_id = $1 AND id = $2",
+    const snapshot = await tx.query<{
+      content_hash: string;
+      snapshot_hash: string;
+    }>(
+      `SELECT content_hash, snapshot_hash
+         FROM evidence_snapshots
+        WHERE org_id = $1 AND id = $2`,
       [event.firmId, event.evidenceSnapshotRef.id],
     );
-    if (snapshot.rows[0]?.content_hash !== event.contentHash) {
+    if (
+      snapshot.rows[0]?.content_hash !== event.contentHash ||
+      snapshot.rows[0]?.snapshot_hash !== event.snapshotHash
+    ) {
       throw appError("STORE_CONSTRAINT", "ledger evidence hash does not match immutable snapshot");
     }
     return;

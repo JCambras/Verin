@@ -103,6 +103,7 @@ export async function seedDecisionLedger(
         type: "EvidenceSnapshotRecorded",
         evidenceSnapshotRef: { firmId, id: snapshot.id },
         contentHash: snapshot.contentHash,
+        snapshotHash: hash(snapshot),
       })),
     LedgerEntrySchema.parse({
       ...eventBase("seed:ledger:decision"),

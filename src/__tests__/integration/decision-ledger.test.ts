@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import {
   appendDecisionEvents,
+  rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
 import {
@@ -12,11 +14,16 @@ import {
 import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
+import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import {
+  bundleHashPreimage,
   canonicalJson,
+  decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
+import { DecisionInputBundleSchema } from "@contracts/decision-core/evidence";
+import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
   LEDGER_LATER,
   LEDGER_ORG,
@@ -28,6 +35,12 @@ import {
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
+
+function hashPreimage(value: unknown): string {
+  const canonical = canonicalJson(value as JsonValue);
+  if (!canonical.ok) throw canonical.error;
+  return createHash("sha256").update(canonical.value, "utf8").digest("hex");
+}
 
 async function seedOrg(db: SqlDb, id: string): Promise<void> {
   await db.query(
@@ -183,12 +196,32 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const row = await db.query<{
       payload_json: string;
       prev_hash: string;
+      schema_version: string;
+      serializer_version: string;
+      prov_source: string;
+      prov_asof: string;
+      prov_confidence: string;
     }>(
-      "SELECT payload_json, prev_hash FROM decision_ledger WHERE org_id = $1 AND sequence = 4",
+      `SELECT payload_json, prev_hash, schema_version, serializer_version,
+              prov_source, prov_asof, prov_confidence
+         FROM decision_ledger
+        WHERE org_id = $1 AND sequence = 4`,
       [LEDGER_ORG],
     );
     const payload = `${row.rows[0]!.payload_json} `;
-    const hash = computeChainHash(payload, row.rows[0]!.prev_hash);
+    const preimage = decisionLedgerChainPreimage(
+      row.rows[0]!.schema_version,
+      row.rows[0]!.serializer_version,
+      payload,
+      {
+        source: row.rows[0]!.prov_source as "fixture",
+        asOf: row.rows[0]!.prov_asof,
+        confidence: row.rows[0]!.prov_confidence as "high",
+      },
+    );
+    expect(preimage).not.toBeNull();
+    if (!preimage) return;
+    const hash = computeChainHash(preimage, row.rows[0]!.prev_hash);
     await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
     await db.query(
       "UPDATE decision_ledger SET payload_json = $2, entry_hash = $3 WHERE org_id = $1 AND sequence = 4",
@@ -204,7 +237,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L2");
   });
 
-  it("L2 refuses an unregistered recorded schema or serializer version", async () => {
+  it("refuses an unregistered recorded schema or serializer version", async () => {
     await recordFixture(db);
     await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
     await db.query(
@@ -215,8 +248,8 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const result = await verifyDecisionLedger(db, LEDGER_ORG);
     expect(result.ok).toBe(false);
     expect(result.levels.at(-1)).toMatchObject({
-      level: "L2",
-      reason: "unsupported ledger encoding 1.0.0/9.0.0",
+      level: "L1",
+      reason: "ledger chain preimage or provenance is unsupported",
     });
   });
 
@@ -231,6 +264,19 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const result = await verifyDecisionLedger(db, LEDGER_ORG);
     expect(result.ok).toBe(false);
     expect(result.levels.at(-1)?.level).toBe("L3");
+  });
+
+  it("binds stored provenance into ledger integrity verification", async () => {
+    await recordFixture(db);
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET prov_source = 'verin-crm' WHERE org_id = $1 AND sequence = 4",
+      [LEDGER_ORG],
+    );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    const result = await verifyDecisionLedger(db, LEDGER_ORG);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L1");
   });
 
   it("L4 detects tail deletion and anchor drift", async () => {
@@ -310,6 +356,19 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const actor = canonicalJson(event.actor as unknown as JsonValue);
     expect(payload.ok && actor.ok).toBe(true);
     if (!payload.ok || !actor.ok) return;
+    const provenance = {
+      source: "fixture",
+      asOf: event.occurredAt,
+      confidence: "high",
+    } as const;
+    const preimage = decisionLedgerChainPreimage(
+      event.schemaVersion,
+      event.serializerVersion,
+      payload.value,
+      provenance,
+    );
+    expect(preimage).not.toBeNull();
+    if (!preimage) return;
     await expect(db.query(
       `INSERT INTO decision_ledger
         (org_id,id,sequence,event_type,schema_version,serializer_version,
@@ -322,7 +381,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
         LEDGER_OTHER_ORG, event.id, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actor.value,
         event.correlationId, event.causationRef?.id, payload.value, GENESIS_HASH,
-        computeChainHash(payload.value, GENESIS_HASH),
+        computeChainHash(preimage, GENESIS_HASH),
       ],
     )).rejects.toThrow(/foreign key/i);
     await expect(db.query(
@@ -384,6 +443,184 @@ describe("decision ledger storage and L1-L4 verification", () => {
       code: "PII_VIOLATION",
     });
     expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(6);
+  });
+
+  it("refuses PII in every immutable replay source", async () => {
+    const snapshotInput = decisionRecordingInput();
+    const snapshotResult = await recordDecision(db, {
+      ...snapshotInput,
+      evidenceSnapshots: snapshotInput.evidenceSnapshots.map((snapshot, index) =>
+        index === 0
+          ? { ...snapshot, attribution: "captured by analyst@firm.test" }
+          : snapshot),
+    });
+    expect(snapshotResult.ok).toBe(false);
+    expect(snapshotResult.ok ? null : snapshotResult.error.code).toBe("PII_VIOLATION");
+
+    const bundleInput = decisionRecordingInput();
+    const bundleCandidate = DecisionInputBundleSchema.parse({
+      ...bundleInput.inputBundle,
+      engineVersion: "analyst@firm.test",
+      bundleHash: "0".repeat(64),
+    });
+    const bundle = DecisionInputBundleSchema.parse({
+      ...bundleCandidate,
+      bundleHash: hashPreimage(bundleHashPreimage(bundleCandidate)),
+    });
+    const bundleResult = await recordDecision(db, {
+      ...bundleInput,
+      inputBundle: bundle,
+    });
+    expect(bundleResult.ok).toBe(false);
+    expect(bundleResult.ok ? null : bundleResult.error.code).toBe("PII_VIOLATION");
+
+    const recordInput = decisionRecordingInput();
+    if (recordInput.decisionRecord.result.kind !== "proceed") {
+      throw new Error("expected proceed decision fixture");
+    }
+    const recordCandidate = DecisionRecordSchema.parse({
+      ...recordInput.decisionRecord,
+      result: {
+        ...recordInput.decisionRecord.result,
+        recommendation: {
+          ...recordInput.decisionRecord.result.recommendation,
+          summary: "reviewed by analyst@firm.test",
+        },
+      },
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...recordCandidate,
+      decisionHash: hashPreimage(decisionHashPreimage(recordCandidate)),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...recordInput.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+    });
+    const recordResult = await recordDecision(db, {
+      ...recordInput,
+      decisionRecord,
+      events: [...recordInput.events.slice(0, -1), decisionEvent],
+    });
+    expect(recordResult.ok).toBe(false);
+    expect(recordResult.ok ? null : recordResult.error.code).toBe("PII_VIOLATION");
+    expect(await sourceCounts(db)).toEqual({
+      evidence_snapshots: 0,
+      decision_input_bundles: 0,
+      decision_input_bundle_evidence: 0,
+      decision_records: 0,
+      decision_ledger: 0,
+    });
+  });
+
+  it("refuses replay after immutable decision bytes are changed", async () => {
+    await recordFixture(db);
+    const stored = await db.query<{ canonical_json: string }>(
+      "SELECT canonical_json FROM decision_records WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "dec:GC-01:0001"],
+    );
+    const record = JSON.parse(stored.rows[0]!.canonical_json) as Record<string, unknown>;
+    record.result = {
+      kind: "prohibited",
+      prohibition: {
+        source: {
+          sourceType: "firm_policy",
+          sourceRef: { firmId: LEDGER_ORG, id: "policy:tampered" },
+          versionRef: { firmId: LEDGER_ORG, id: "policy:tampered@1" },
+        },
+        scopeRef: { firmId: LEDGER_ORG, id: "scope:tampered" },
+        reasonCode: "tampered-disposition",
+        explanation: "A trigger-bypassing edit changed the stored disposition.",
+      },
+    };
+    record.reevaluateWhen = [];
+    const canonical = canonicalJson(record as JsonValue);
+    expect(canonical.ok).toBe(true);
+    if (!canonical.ok) return;
+    await db.exec("ALTER TABLE decision_records DISABLE TRIGGER decision_records_no_update");
+    await db.query(
+      "UPDATE decision_records SET canonical_json = $3 WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "dec:GC-01:0001", canonical.value],
+    );
+    await db.exec("ALTER TABLE decision_records ENABLE TRIGGER decision_records_no_update");
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("refuses replay after immutable bundle bytes are changed", async () => {
+    await recordFixture(db);
+    const stored = await db.query<{ canonical_json: string }>(
+      "SELECT canonical_json FROM decision_input_bundles WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "bundle:GC-01:0001"],
+    );
+    const bundle = JSON.parse(stored.rows[0]!.canonical_json) as Record<string, unknown>;
+    bundle.engineVersion = "tampered-engine";
+    const canonical = canonicalJson(bundle as JsonValue);
+    expect(canonical.ok).toBe(true);
+    if (!canonical.ok) return;
+    await db.exec("ALTER TABLE decision_input_bundles DISABLE TRIGGER decision_input_bundles_no_update");
+    await db.query(
+      "UPDATE decision_input_bundles SET canonical_json = $3 WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "bundle:GC-01:0001", canonical.value],
+    );
+    await db.exec("ALTER TABLE decision_input_bundles ENABLE TRIGGER decision_input_bundles_no_update");
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("refuses replay after immutable evidence bytes are changed", async () => {
+    await recordFixture(db);
+    const stored = await db.query<{ canonical_json: string }>(
+      "SELECT canonical_json FROM evidence_snapshots WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "evs:GC-01:balance"],
+    );
+    const snapshot = JSON.parse(stored.rows[0]!.canonical_json) as Record<string, unknown>;
+    snapshot.attribution = "tampered attribution";
+    const canonical = canonicalJson(snapshot as JsonValue);
+    expect(canonical.ok).toBe(true);
+    if (!canonical.ok) return;
+    await db.exec("ALTER TABLE evidence_snapshots DISABLE TRIGGER evidence_snapshots_no_update");
+    await db.query(
+      "UPDATE evidence_snapshots SET canonical_json = $3 WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, "evs:GC-01:balance", canonical.value],
+    );
+    await db.exec("ALTER TABLE evidence_snapshots ENABLE TRIGGER evidence_snapshots_no_update");
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("refuses replay after immutable bundle membership is changed", async () => {
+    await recordFixture(db);
+    await db.exec(
+      "ALTER TABLE decision_input_bundle_evidence DISABLE TRIGGER decision_input_bundle_evidence_no_delete",
+    );
+    await db.query(
+      `DELETE FROM decision_input_bundle_evidence
+        WHERE org_id = $1 AND bundle_id = $2 AND ordinal = 0`,
+      [LEDGER_ORG, "bundle:GC-01:0001"],
+    );
+    await db.exec(
+      "ALTER TABLE decision_input_bundle_evidence ENABLE TRIGGER decision_input_bundle_evidence_no_delete",
+    );
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("routes replay through the recorded ledger version registry", async () => {
+    await recordFixture(db);
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET schema_version = '9.0.0' WHERE org_id = $1 AND sequence = 4",
+      [LEDGER_ORG],
+    );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
   });
 
   it("produces identical sequence and hash streams from identical recorded inputs", async () => {

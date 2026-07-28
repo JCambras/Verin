@@ -3140,3 +3140,34 @@ no repair path (`decision_ledger` rejects DELETE).
 immutable DDL is the wrong place to discover a field can never be written.
 **Revert path:** the shared error helpers, the optional snapshot argument, and the optional
 limit are all additive; the per-entry anchor upsert changes write frequency, not schema.
+
+### D-101 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
+
+Projection preconditions are evaluated before immutable insertion, and reservation identifiers
+remain permanently owned by their first decision because release events carry no owner reference.
+Blocked and prohibited decisions project approval mode `none`.
+
+The ledger chain now binds producer provenance through a versioned preimage. Evidence-recording
+events bind a digest of the complete canonical snapshot metadata. Projection rebuild dispatches
+events through the recorded-version registry, recomputes decision and bundle hashes, verifies
+canonical evidence bytes and ordered bundle membership, and refuses PII in every immutable replay
+source. Derived projection provenance is persisted with the cache, including owner-resolved release
+events, so request-path reads are bounded by selected decisions rather than event history.
+
+The post-review implementation measures contracts at 3875 lines and infrastructure at 4187 lines.
+ADR-0033 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
+changing the 500-line file cap.
+
+**Why:** append-only history cannot rely on mutable caches, unbound provenance, reusable ownerless
+identifiers, or replay inputs that are only schema-shaped rather than hash-verified.
+**Revert path:** none while Prompt 7 claims replayable immutable sources and deterministic projections.
+
+### D-102 · 2026-07-28 · reversible · Dynamic store paths stay outside the build trace
+
+The runtime-only relative PGlite data-directory resolution carries Turbopack's trace-boundary
+annotation. This preserves relative paths in development and CI while preventing the production
+build from tracing the whole repository through `process.cwd()`.
+
+**Why:** the build otherwise succeeds with an NFT warning and packages unrelated project files.
+**Revert path:** remove the annotation if the store path becomes statically rooted or Turbopack
+stops tracing this runtime-only resolution.

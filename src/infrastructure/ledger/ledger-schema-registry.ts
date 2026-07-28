@@ -7,6 +7,7 @@ import {
 import {
   CANONICAL_SERIALIZER_VERSION,
 } from "@contracts/decision-core/serialization";
+import type { RecordProvenance } from "@contracts/provenance";
 
 type ParseResult =
   | { readonly ok: true; readonly event: LedgerEntry }
@@ -32,6 +33,29 @@ const LEDGER_SCHEMA_REGISTRY = new Map(
     LedgerEntrySchema,
   ]),
 );
+
+const DECISION_LEDGER_CHAIN_PREIMAGE_VERSION = "1.0.0";
+
+export function decisionLedgerChainPreimage(
+  schemaVersion: string,
+  serializerVersion: string,
+  payloadJson: string,
+  provenance: RecordProvenance,
+): string | null {
+  if (
+    schemaVersion !== LEDGER_SCHEMA_VERSION ||
+    serializerVersion !== CANONICAL_SERIALIZER_VERSION
+  ) {
+    return null;
+  }
+  return JSON.stringify([
+    DECISION_LEDGER_CHAIN_PREIMAGE_VERSION,
+    payloadJson,
+    provenance.source,
+    provenance.asOf,
+    provenance.confidence,
+  ]);
+}
 
 export function parseRecordedLedgerEvent(
   eventType: string,

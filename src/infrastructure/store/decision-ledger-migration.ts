@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS evidence_snapshots (
   schema_version text NOT NULL,
   serializer_version text NOT NULL,
   content_hash text NOT NULL,
+  snapshot_hash text NOT NULL,
   recorded_at timestamptz NOT NULL,
   PRIMARY KEY (org_id, id)
 );
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS decision_state_projection (
   org_id text NOT NULL REFERENCES orgs(id),
   decision_id text NOT NULL,
   state_json text NOT NULL,
+  provenance_json text NOT NULL,
   last_sequence bigint NOT NULL,
   updated_at timestamptz NOT NULL,
   PRIMARY KEY (org_id, decision_id),

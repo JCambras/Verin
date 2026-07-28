@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createMemoryDb, type SqlDb } from "@infra/store/db";
+import { createMemoryDb, type SqlDb, type SqlResult } from "@infra/store/db";
 import {
   appendDecisionEvents,
   rebuildDecisionProjections,
@@ -9,8 +9,16 @@ import {
   countDecisionProjections,
   listDecisionProjections,
 } from "@infra/ledger/ledger-projection-store";
+import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
+import { DecisionRecordSchema } from "@contracts/decision-core/decision";
+import {
+  canonicalJson,
+  decisionHashPreimage,
+  type JsonValue,
+} from "@contracts/decision-core/serialization";
 import { canFeedComplianceDecision } from "@contracts/provenance";
+import { createHash } from "node:crypto";
 import {
   LEDGER_ORG,
   LEDGER_PROVENANCE,
@@ -21,6 +29,47 @@ import {
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
+
+function blockedRecordingInput() {
+  const input = decisionRecordingInput();
+  const candidate = DecisionRecordSchema.parse({
+    ...input.decisionRecord,
+    result: {
+      kind: "blocked",
+      blockers: [{
+        code: "additional-evidence-required",
+        explanation: "The recorded evidence is incomplete.",
+        resolvingEvidence: [{
+          evidenceKind: "account-balance",
+          subjectRef: { firmId: LEDGER_ORG, id: "subject:test:0" },
+          suppliableBy: ["external"],
+        }],
+      }],
+    },
+    decisionHash: "0".repeat(64),
+  });
+  const preimage = canonicalJson(
+    decisionHashPreimage(candidate) as unknown as JsonValue,
+  );
+  if (!preimage.ok) throw preimage.error;
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...candidate,
+    decisionHash: createHash("sha256")
+      .update(preimage.value, "utf8")
+      .digest("hex"),
+  });
+  return {
+    ...input,
+    decisionRecord,
+    events: [
+      ...input.events.slice(0, -1),
+      LedgerEntrySchema.parse({
+        ...input.events.at(-1)!,
+        decisionHash: decisionRecord.decisionHash,
+      }),
+    ],
+  };
+}
 
 async function seed(db: SqlDb): Promise<void> {
   await db.query(
@@ -163,6 +212,77 @@ describe("deterministic decision-ledger projections", () => {
     );
   });
 
+  it("does not insert a conflicting reservation event before projection validation", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, first)).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const created = allLedgerEventSamples().find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    await expect(append(db, [created])).resolves.toHaveLength(1);
+    const competing = LedgerEntrySchema.parse({
+      ...created,
+      id: "projection:conflict-swallowed",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+    });
+    await db.transaction(async (tx) => {
+      try {
+        await appendDecisionEvents(
+          tx,
+          LEDGER_ORG,
+          [competing],
+          LEDGER_PROVENANCE,
+        );
+      } catch {
+        return;
+      }
+    });
+    const rows = await db.query<{ n: number | string }>(
+      "SELECT count(*) AS n FROM decision_ledger WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, competing.id],
+    );
+    expect(Number(rows.rows[0]!.n)).toBe(0);
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+  });
+
+  it("keeps reservation ownership permanent after release", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, first)).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const created = samples.find((event) => event.type === "ReservationCreated")!;
+    const released = samples.find((event) => event.type === "ReservationReleased")!;
+    await expect(append(db, [created, released])).resolves.toHaveLength(2);
+    const reassigned = LedgerEntrySchema.parse({
+      ...created,
+      id: "projection:reservation-reassigned",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+    });
+    await expect(append(db, [reassigned])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const delayedRelease = LedgerEntrySchema.parse({
+      ...released,
+      id: "projection:delayed-release",
+    });
+    await expect(append(db, [delayedRelease])).resolves.toHaveLength(1);
+    const projections = await listDecisionProjections(db, LEDGER_ORG);
+    expect(projections.find(({ projection }) =>
+      projection.decisionId === second.decisionRecord.id
+    )?.projection.reservations).toEqual([]);
+  });
+
+  it("represents blocked decisions with no authority mode", async () => {
+    const input = blockedRecordingInput();
+    const recorded = await recordDecision(db, input);
+    expect(recorded.ok, recorded.ok ? "" : recorded.error.message).toBe(true);
+    const state = (await listDecisionProjections(db, LEDGER_ORG))[0]!.projection;
+    expect(state.disposition).toBe("blocked");
+    expect(state.approvalMode).toBe("none");
+  });
+
   it("labels replayed state by its least trustworthy event, not by the recording one", async () => {
     const recorded = decisionRecordingInput();
     const real = await recordDecision(db, {
@@ -199,6 +319,35 @@ describe("deterministic decision-ledger projections", () => {
       "dec:GC-01:0002",
     ]);
     expect(await listDecisionProjections(db, LEDGER_ORG)).toHaveLength(2);
+  });
+
+  it("bounds projection provenance reads by selected decisions, not their event count", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const events = Array.from({ length: 80 }, (_, index) =>
+      LedgerEntrySchema.parse({
+        ...sample,
+        id: `projection:bounded:${index}`,
+        priorDecisionHash: input.decisionRecord.decisionHash,
+      }));
+    await expect(append(db, events)).resolves.toHaveLength(events.length);
+    let largestResult = 0;
+    const measured: SqlDb = {
+      ...db,
+      async query<T>(
+        sql: string,
+        params?: unknown[],
+      ): Promise<SqlResult<T>> {
+        const result = await db.query<T>(sql, params);
+        largestResult = Math.max(largestResult, result.rows.length);
+        return result;
+      },
+    };
+    expect(await listDecisionProjections(measured, LEDGER_ORG, 1)).toHaveLength(1);
+    expect(largestResult).toBe(1);
   });
 
   it("records expiry then escalation in ledger order, not timestamp order", async () => {

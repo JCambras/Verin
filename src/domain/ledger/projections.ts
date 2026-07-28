@@ -41,7 +41,7 @@ export interface DecisionProjection {
     | "automatic"
     | "approval"
     | "specialist_review"
-    | "prohibited";
+    | "none";
   readonly approvalStages: readonly ProjectedApprovalStage[];
   readonly reservations: readonly {
     reservationId: string;
@@ -83,7 +83,7 @@ function initialize(
     decisionId: record.id,
     decisionHash: event.decisionHash,
     disposition: record.result.kind,
-    approvalMode: authority?.mode ?? "prohibited",
+    approvalMode: authority?.mode ?? "none",
     approvalStages: authority && authority.mode !== "automatic"
       ? authority.stages.map((stage) => ({
           stageId: stage.stageId,

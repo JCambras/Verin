@@ -20,7 +20,8 @@ export type SourceSystem = (typeof SOURCE_SYSTEMS)[number];
 
 export const SYNTHETIC_SOURCES: readonly SourceSystem[] = ["estimate", "default", "fixture"];
 
-export type Confidence = "high" | "medium" | "low";
+export const CONFIDENCES = ["high", "medium", "low"] as const;
+export type Confidence = (typeof CONFIDENCES)[number];
 
 export const SURVIVORSHIP_RULES = [
   "source-precedence", // a fixed source ranking wins
@@ -35,6 +36,24 @@ export interface RecordProvenance {
   readonly source: SourceSystem;
   readonly asOf: string; // ISO-8601
   readonly confidence: Confidence;
+}
+
+export function parseRecordProvenance(value: unknown): RecordProvenance | null {
+  if (value === null || typeof value !== "object") return null;
+  const candidate = value as Partial<RecordProvenance>;
+  if (
+    !SOURCE_SYSTEMS.some((source) => source === candidate.source) ||
+    !CONFIDENCES.some((confidence) => confidence === candidate.confidence) ||
+    typeof candidate.asOf !== "string" ||
+    Number.isNaN(Date.parse(candidate.asOf))
+  ) {
+    return null;
+  }
+  return {
+    source: candidate.source!,
+    asOf: new Date(candidate.asOf).toISOString(),
+    confidence: candidate.confidence!,
+  };
 }
 
 /** A value bound to its provenance (used for displayed metrics — charter #3). */

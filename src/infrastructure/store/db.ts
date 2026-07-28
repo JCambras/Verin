@@ -118,7 +118,9 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
   const configured = opts && "dataDir" in opts ? opts.dataDir : cfg.store.dataDir;
   // Resolve relative dirs to an absolute path so every process (seed, server)
   // opens the SAME store regardless of its working directory.
-  const dataDir = configured && !isAbsolute(configured) ? resolve(process.cwd(), configured) : configured;
+  const dataDir = configured && !isAbsolute(configured)
+    ? resolve(/* turbopackIgnore: true */ process.cwd(), configured)
+    : configured;
   const pg = dataDir ? new PGlite(dataDir, { parsers: STORE_PARSERS }) : new PGlite({ parsers: STORE_PARSERS });
   const db = wrap(pg);
   await runMigrations(db);

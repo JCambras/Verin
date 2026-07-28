@@ -155,6 +155,7 @@ const EvidenceSnapshotRecordedSchema = z.strictObject({
   type: z.literal("EvidenceSnapshotRecorded"),
   evidenceSnapshotRef: EvidenceSnapshotIdRefSchema,
   contentHash: HashSchema,
+  snapshotHash: HashSchema,
 }).superRefine((event, ctx) => {
   requireBaseTenant(event, ctx);
   requireRefTenant(event, event.evidenceSnapshotRef, ["evidenceSnapshotRef", "firmId"], ctx);
