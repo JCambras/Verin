@@ -1,8 +1,10 @@
 /**
  * Prompt 7 storage foundation. This migration is additive and deliberately
  * separate from the operational audit schema. Immutable source rows are protected
- * against UPDATE, DELETE, and TRUNCATE in Postgres and PGlite. Projections and
- * anchors are derived integrity state, so they remain replaceable.
+ * against UPDATE, DELETE, and TRUNCATE in Postgres and PGlite. Projections, the
+ * reservation index, and anchors are derived integrity state, so they remain
+ * replaceable. Every ledger row carries the provenance of the producer that
+ * appended it, so no stored fact needs a name match to be classified.
  */
 export const DECISION_LEDGER_SQL = `
 CREATE TABLE IF NOT EXISTS evidence_snapshots (
@@ -80,15 +82,21 @@ CREATE TABLE IF NOT EXISTS decision_ledger (
   causation_id text,
   decision_id text,
   evidence_snapshot_id text,
+  triggering_entry_id text,
   payload_json text NOT NULL,
   prev_hash text NOT NULL,
   entry_hash text NOT NULL,
+  prov_source text NOT NULL,
+  prov_asof timestamptz NOT NULL,
+  prov_confidence text NOT NULL,
   PRIMARY KEY (org_id, id),
   UNIQUE (org_id, sequence),
   FOREIGN KEY (org_id, causation_id) REFERENCES decision_ledger(org_id, id),
   FOREIGN KEY (org_id, decision_id) REFERENCES decision_records(org_id, id),
   FOREIGN KEY (org_id, evidence_snapshot_id)
-    REFERENCES evidence_snapshots(org_id, id)
+    REFERENCES evidence_snapshots(org_id, id),
+  FOREIGN KEY (org_id, triggering_entry_id)
+    REFERENCES decision_ledger(org_id, id)
 );
 CREATE INDEX IF NOT EXISTS decision_ledger_decision
   ON decision_ledger(org_id, decision_id, sequence);
@@ -108,6 +116,15 @@ CREATE TABLE IF NOT EXISTS decision_state_projection (
   last_sequence bigint NOT NULL,
   updated_at timestamptz NOT NULL,
   PRIMARY KEY (org_id, decision_id),
+  FOREIGN KEY (org_id, decision_id) REFERENCES decision_records(org_id, id)
+);
+
+CREATE TABLE IF NOT EXISTS decision_reservation_index (
+  org_id text NOT NULL REFERENCES orgs(id),
+  reservation_id text NOT NULL,
+  decision_id text NOT NULL,
+  status text NOT NULL CHECK (status IN ('active', 'released')),
+  PRIMARY KEY (org_id, reservation_id),
   FOREIGN KEY (org_id, decision_id) REFERENCES decision_records(org_id, id)
 );
 

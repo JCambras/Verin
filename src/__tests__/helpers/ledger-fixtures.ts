@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -10,7 +11,13 @@ import {
   LEDGER_SCHEMA_VERSION,
   type LedgerEntry,
 } from "@contracts/decision-core/ledger";
-import { CANONICAL_SERIALIZER_VERSION } from "@contracts/decision-core/serialization";
+import {
+  CANONICAL_SERIALIZER_VERSION,
+  canonicalJson,
+  decisionHashPreimage,
+} from "@contracts/decision-core/serialization";
+import type { RecordProvenance } from "@contracts/provenance";
+import { unwrap } from "@contracts/result";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 
 export const LEDGER_ORG = "firm-a";
@@ -18,6 +25,11 @@ export const LEDGER_OTHER_ORG = "firm-b";
 export const LEDGER_TIME = "2026-07-26T13:30:00.000Z";
 export const LEDGER_LATER = "2026-07-27T13:30:00.000Z";
 export const LEDGER_HASH = "a".repeat(64);
+export const LEDGER_PROVENANCE: RecordProvenance = {
+  source: "fixture",
+  asOf: LEDGER_TIME,
+  confidence: "high",
+};
 
 const ROOT = join(import.meta.dirname, "../../..");
 const fixture = (name: string): unknown =>
@@ -76,7 +88,47 @@ export function decisionRecordingInput(): RecordDecisionInput {
       decisionHash: decisionRecord.decisionHash,
     }),
   ];
-  return { evidenceSnapshots, inputBundle, decisionRecord, events };
+  return {
+    evidenceSnapshots,
+    inputBundle,
+    decisionRecord,
+    events,
+    provenance: LEDGER_PROVENANCE,
+  };
+}
+
+/**
+ * A second decision over the SAME immutable input bundle - the shape an exception
+ * re-decision takes. The bundle bytes are reused, never re-inserted.
+ */
+export function reusedBundleRecordingInput(decisionId: string): RecordDecisionInput {
+  const first = decisionRecordingInput();
+  const candidate = DecisionRecordSchema.parse({
+    ...first.decisionRecord,
+    id: decisionId,
+    decisionHash: "0".repeat(64),
+  });
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...candidate,
+    decisionHash: createHash("sha256")
+      .update(
+        unwrap(canonicalJson(decisionHashPreimage(candidate) as never)),
+        "utf8",
+      )
+      .digest("hex"),
+  });
+  return {
+    evidenceSnapshots: [],
+    inputBundle: first.inputBundle,
+    decisionRecord,
+    events: [LedgerEntrySchema.parse({
+      ...base(`ledger:decision:${decisionId}`),
+      type: "DecisionRecorded",
+      decisionRef: { firmId: LEDGER_ORG, id: decisionId },
+      decisionHash: decisionRecord.decisionHash,
+    })],
+    provenance: LEDGER_PROVENANCE,
+  };
 }
 
 export function allLedgerEventSamples(): LedgerEntry[] {

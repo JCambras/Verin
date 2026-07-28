@@ -5363,3 +5363,44 @@ anchor. Each attack is rejected or detected at its claimed layer.
 **Revert:** removed the planted source file. The fence and all companions pass.
 
 **Date:** 2026-07-28 (v3 prompt 7, ADR-0033, D-098).
+
+## Decision-ledger anti-fork fence widened to every immutable source table (D-099)
+
+**Invariant:** the anti-fork rule covers ALL immutable source tables, not only the
+chain, so splitting the repository into a chain writer and a source writer cannot
+silently move `INSERT INTO decision_records` (or evidence/bundle/membership) into a
+third module.
+
+**Injection:** appended a raw `INSERT INTO decision_records` string to
+`src/infrastructure/ledger/ledger-bindings.ts`, then ran:
+
+```text
+pnpm vitest run src/__tests__/fitness/ledger-append-only.test.ts
+× anti-fork: only the ledger repository and migration contain raw immutable-source INSERTs
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-bindings.ts:66
+```
+
+**Revert:** `git checkout src/infrastructure/ledger/ledger-bindings.ts`. Fence green.
+
+## Reservation ownership is refused, not resolved arbitrarily (D-099)
+
+**Invariant:** one live reservation belongs to exactly one decision, and a release
+resolves its owner through the keyed index rather than physical row order.
+
+**Injection:** removed the `WHERE decision_reservation_index.decision_id =
+EXCLUDED.decision_id OR ... status = 'released'` guard from the claim upsert in
+`src/infrastructure/ledger/ledger-projection-store.ts`, then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/ledger-projections.test.ts
+× releases a reservation against its owning decision and refuses a competing live claim
+AssertionError: promise resolved "[ { …(3) } ]" instead of rejecting
+```
+
+The same test proves the release resolves through the index and that a rebuild
+reproduces the online fold byte-identically.
+
+**Revert:** restored the guard. All four projection companions pass.
+
+**Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0033, D-099).

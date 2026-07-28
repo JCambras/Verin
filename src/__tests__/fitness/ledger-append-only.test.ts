@@ -10,6 +10,7 @@ import { DECISION_LEDGER_SQL } from "@infra/store/decision-ledger-migration";
 
 const APPEND_PATHS = new Set([
   "src/infrastructure/ledger/ledger-store.ts",
+  "src/infrastructure/ledger/ledger-sources.ts",
   "src/infrastructure/store/decision-ledger-migration.ts",
 ]);
 const IMMUTABLE_TABLES = [
@@ -19,6 +20,10 @@ const IMMUTABLE_TABLES = [
   "decision_records",
   "decision_ledger",
 ] as const;
+const RAW_INSERT = new RegExp(
+  `\\bINSERT\\s+INTO\\s+(${IMMUTABLE_TABLES.join("|")})\\b`,
+  "i",
+);
 
 interface Violation {
   readonly file: string;
@@ -35,7 +40,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       ...file.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
       ...file.getDescendantsOfKind(SyntaxKind.TemplateExpression),
     ]) {
-      if (/\bINSERT\s+INTO\s+decision_ledger\b/i.test(literal.getText())) {
+      if (RAW_INSERT.test(literal.getText())) {
         violations.push({ file: rel, line: literal.getStartLineNumber() });
       }
     }
@@ -51,7 +56,7 @@ function exportedMutationNames(file: SourceFile): string[] {
 }
 
 describe("decision-ledger append-only fence", () => {
-  it("anti-fork: only the ledger repository and migration contain raw ledger INSERTs", () => {
+  it("anti-fork: only the ledger repository and migration contain raw immutable-source INSERTs", () => {
     const violations = ledgerInsertViolations(realProject().getSourceFiles());
     expect(
       violations,
@@ -94,6 +99,18 @@ describe("decision-ledger append-only fence", () => {
       expect(planted).toHaveLength(1);
       expect(planted[0]?.file).toMatch(/src\/infrastructure\/evil\.ts$/);
       expect(planted[0]?.line).toBe(2);
+    });
+
+    it("detects a planted insert into any immutable source table, not just the chain", () => {
+      const project = inMemoryProject(Object.fromEntries(
+        IMMUTABLE_TABLES.map((table) => [
+          `/src/infrastructure/forked-${table}.ts`,
+          `export const sql = "INSERT INTO ${table} (org_id) VALUES ($1)";`,
+        ]),
+      ));
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(
+        IMMUTABLE_TABLES.length,
+      );
     });
 
     it("detects a planted immutable mutation export", () => {

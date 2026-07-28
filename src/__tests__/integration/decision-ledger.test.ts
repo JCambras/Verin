@@ -5,6 +5,7 @@ import {
   recordDecision,
 } from "@infra/ledger/ledger-store";
 import {
+  verifyAndListDecisionLedger,
   verifyDecisionLedger,
   listDecisionLedger,
 } from "@infra/ledger/ledger-verification";
@@ -20,6 +21,7 @@ import {
   LEDGER_LATER,
   LEDGER_ORG,
   LEDGER_OTHER_ORG,
+  LEDGER_PROVENANCE,
   allLedgerEventSamples,
   decisionRecordingInput,
 } from "../helpers/ledger-fixtures";
@@ -43,7 +45,7 @@ async function recordFixture(db: SqlDb): Promise<void> {
 const append = (
   db: SqlDb,
   events: Parameters<typeof appendDecisionEvents>[2],
-) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_ORG, events));
+) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_ORG, events, LEDGER_PROVENANCE));
 
 async function sourceCounts(db: SqlDb): Promise<Record<string, number>> {
   const result: Record<string, number> = {};
@@ -241,6 +243,54 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L4");
   });
 
+  it("L3 detects a promoted exception-trigger link that drifts from the payload", async () => {
+    await recordFixture(db);
+    const samples = allLedgerEventSamples();
+    const stuck = samples.find((event) => event.type === "VerificationStuck")!;
+    const exception = samples.find(
+      (event) => event.type === "ExceptionDecisionRequested",
+    )!;
+    await expect(append(db, [stuck, exception])).resolves.toHaveLength(2);
+    const promoted = await db.query<{ triggering_entry_id: string | null }>(
+      "SELECT triggering_entry_id FROM decision_ledger WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, exception.id],
+    );
+    expect(promoted.rows[0]?.triggering_entry_id).toBe(stuck.id);
+
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET triggering_entry_id = NULL WHERE org_id = $1 AND id = $2",
+      [LEDGER_ORG, exception.id],
+    );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    const result = await verifyDecisionLedger(db, LEDGER_ORG);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L3");
+  });
+
+  it("a windowed verification checks its own entries and their link to the stored predecessor", async () => {
+    await recordFixture(db);
+    const windowed = await verifyAndListDecisionLedger(db, LEDGER_ORG, 2);
+    expect(windowed.verification.ok).toBe(true);
+    expect(windowed.verification.entriesChecked).toBe(2);
+    expect(windowed.verification.entriesStored).toBe(5);
+    expect(windowed.rows.map((row) => row.sequence)).toEqual([3, 4]);
+
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET entry_hash = $2 WHERE org_id = $1 AND sequence = 2",
+      [LEDGER_ORG, "f".repeat(64)],
+    );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    const broken = await verifyAndListDecisionLedger(db, LEDGER_ORG, 2);
+    expect(broken.verification.ok).toBe(false);
+    expect(broken.verification.levels.at(-1)).toMatchObject({
+      level: "L1",
+      reason: "prev_hash does not match preceding entry_hash",
+    });
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(false);
+  });
+
   it("structural foreign keys reject cross-tenant causation", async () => {
     await recordFixture(db);
     await seedOrg(db, LEDGER_OTHER_ORG);
@@ -263,15 +313,17 @@ describe("decision ledger storage and L1-L4 verification", () => {
       `INSERT INTO decision_ledger
         (org_id,id,sequence,event_type,schema_version,serializer_version,
          occurred_at,recorded_at,actor_json,correlation_id,causation_id,
-         decision_id,evidence_snapshot_id,payload_json,prev_hash,entry_hash)
-       VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,$9,$10,NULL,NULL,$11,$12,$13)`,
+         decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
+         prev_hash,entry_hash,prov_source,prov_asof,prov_confidence)
+       VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,$9,$10,NULL,NULL,NULL,$11,$12,$13,
+               'fixture',$6,'high')`,
       [
         LEDGER_OTHER_ORG, event.id, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actor.value,
         event.correlationId, event.causationRef?.id, payload.value, GENESIS_HASH,
         computeChainHash(payload.value, GENESIS_HASH),
       ],
-    )).rejects.toThrow(/foreign key|constraint/i);
+    )).rejects.toThrow(/foreign key/i);
     await expect(db.query(
       `INSERT INTO decision_input_bundle_evidence
         (org_id,bundle_id,evidence_snapshot_id,ordinal)
@@ -375,7 +427,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
                    $3,'synthetic-ledger-test',$3,'high')`,
           ["task-ledger-ok", LEDGER_ORG, TS],
         );
-        await appendDecisionEvents(tx, LEDGER_ORG, [started]);
+        await appendDecisionEvents(tx, LEDGER_ORG, [started], LEDGER_PROVENANCE);
         return { id: "task-ledger-ok" };
       },
     });
@@ -404,7 +456,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
                    $3,'synthetic-ledger-test',$3,'high')`,
           ["task-ledger-refused", LEDGER_ORG, TS],
         );
-        await appendDecisionEvents(tx, LEDGER_ORG, [unsafe]);
+        await appendDecisionEvents(tx, LEDGER_ORG, [unsafe], LEDGER_PROVENANCE);
         return { id: "task-ledger-refused" };
       },
     });

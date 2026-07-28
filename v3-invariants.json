@@ -114,15 +114,23 @@
           "ref": "src/__tests__/fitness/ledger-append-only.test.ts"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/audited-write-required.test.ts"
+        },
+        {
           "type": "ci-gate",
           "ref": "audit-chain-verify"
         },
         {
           "type": "file",
           "ref": "src/infrastructure/store/decision-ledger-migration.ts"
+        },
+        {
+          "type": "file",
+          "ref": "src/infrastructure/store/migrations.ts"
         }
       ],
-      "notes": "The sibling decision_ledger is synchronously appended with immutable evidence, input bundles, and decision records. All source tables reject UPDATE/DELETE/TRUNCATE; a ts-morph anti-fork fence permits raw inserts only in the repository and migration. L1-L4 verification covers stored bytes, schema/serializer dispatch, promoted columns, and the per-org anchor. The CI gate verifies both decision and operational audit chains non-vacuously."
+      "notes": "Both audit-class stores stay mapped. The operational audit_log keeps its append-only DDL (migrations.ts) and audited-write helper fence. The sibling decision_ledger is synchronously appended with immutable evidence, input bundles, and decision records. All source tables reject UPDATE/DELETE/TRUNCATE; a ts-morph anti-fork fence permits raw inserts only in the repository and migration. L1-L4 verification covers stored bytes, schema/serializer dispatch, promoted columns, and the per-org anchor. The CI gate verifies both decision and operational audit chains non-vacuously."
     },
     {
       "id": 6,

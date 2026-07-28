@@ -58,22 +58,31 @@ export interface StoredByteChainRow {
   readonly entryHash: string;
 }
 
-/** L1 verification for chains whose authoritative preimage is already persisted. */
-export function verifyStoredByteChain(rows: StoredByteChainRow[]): ChainVerdict {
-  let prev = GENESIS_HASH;
-  let expectedSequence = 0;
+/**
+ * L1 verification for chains whose authoritative preimage is already persisted.
+ * `start` verifies a suffix of a chain against the stored entry_hash of the row
+ * that precedes it; omitting it demands a complete GENESIS-rooted chain.
+ */
+export function verifyStoredByteChain(
+  rows: StoredByteChainRow[],
+  start?: { readonly sequence: number; readonly prevHash: string },
+): ChainVerdict {
+  let prev = start?.prevHash ?? GENESIS_HASH;
+  let expectedSequence = start?.sequence ?? 0;
+  let checked = 0;
   for (const row of rows) {
     if (row.sequence !== expectedSequence) {
-      return broken(row.sequence, expectedSequence, `sequence gap: expected ${expectedSequence}, got ${row.sequence}`);
+      return broken(row.sequence, checked, `sequence gap: expected ${expectedSequence}, got ${row.sequence}`);
     }
     if (row.prevHash !== prev) {
-      return broken(row.sequence, expectedSequence, "prev_hash does not match preceding entry_hash");
+      return broken(row.sequence, checked, "prev_hash does not match preceding entry_hash");
     }
     if (computeChainHash(row.canonicalBytes, prev) !== row.entryHash) {
-      return broken(row.sequence, expectedSequence, "entry_hash does not match stored canonical bytes");
+      return broken(row.sequence, checked, "entry_hash does not match stored canonical bytes");
     }
     prev = row.entryHash;
     expectedSequence += 1;
+    checked += 1;
   }
   return { ok: true, entriesChecked: rows.length, brokenAtSequence: null, reason: null };
 }

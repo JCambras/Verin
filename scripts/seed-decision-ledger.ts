@@ -116,6 +116,11 @@ export async function seedDecisionLedger(
     inputBundle,
     decisionRecord,
     events,
+    provenance: {
+      source: "fixture",
+      asOf: inputBundle.asOf,
+      confidence: "high",
+    },
   });
   if (!result.ok) {
     throw new Error(

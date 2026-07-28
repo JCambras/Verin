@@ -28,6 +28,7 @@ const DATA_TABLES = [
   "decision_records",
   "decision_ledger",
   "decision_state_projection",
+  "decision_reservation_index",
 ];
 // Reviewed NON-tenant tables (each with the reason it needs no org_id filter). The
 // derivation check below proves DATA_TABLES + NON_TENANT_TABLES = exactly the

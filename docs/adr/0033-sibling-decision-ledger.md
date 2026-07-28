@@ -38,30 +38,52 @@ settle now.
   Later facts use `appendDecisionEvents`. Both lock the tenant row before reading
   the chain head, which serializes sequence assignment on Postgres and PGlite
   without a failed-transaction retry fork. No decision-ledger outbox exists.
-- Composite `(org_id, id)` foreign keys make decision, evidence, membership, and
-  causation links structurally same-tenant. Repository boundaries validate the
-  canonical source hashes named by recording and approval events.
+- Composite `(org_id, id)` foreign keys make decision, evidence, membership,
+  causation, and exception-triggering links structurally same-tenant. Every
+  reference an event can name is a promoted column L3 re-derives from the payload.
+  Repository boundaries validate the canonical source hashes named by recording and
+  approval events.
+- Every ledger row stores the provenance of the producer that appended it
+  (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
+  an unregistered source, and surfaces classify a row from the stored value - never
+  from an actor name.
+- Evidence snapshots and input bundles are content-addressed and reusable: a later
+  decision over the same immutable inputs links the stored bytes. Reuse demands byte
+  equality, so an id collision with different bytes is refused, never overwritten.
 - All immutable source tables reject UPDATE, DELETE, and TRUNCATE through database
   triggers. A ts-morph anti-fork fence permits raw ledger INSERT text only in the
   sole repository and forward migration. Repository exports expose no immutable
   update or delete operation.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
-  quorum, eligibility, execution readiness, or any later-prompt decision.
+  quorum, eligibility, execution readiness, or any later-prompt decision. Derived
+  state is never located by physical row order: a released reservation resolves its
+  owning decision through the keyed `decision_reservation_index`, and a create that
+  names a reservation another decision holds live is refused.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
   sequence, and head hash with the anchor. The existing CI chain gate verifies
-  both audit-class stores and refuses a zero-entry pass for either.
-- The seeded `/app/ledger` register is read-only and uses typed view models. Seed
-  rows visibly say `Synthetic fixture`. No fake decision, status, or execution
-  history is presented as real.
+  both audit-class stores unbounded and refuses a zero-entry pass for either.
+- A request path may verify a bounded window: the most recent entries, anchored to
+  the stored hash of the row preceding them, with L4 still compared against tenant
+  totals. Full-chain verification is O(entries) under one connection, so the register
+  verifies its visible window and says which scope it is showing. Only the gate's
+  unbounded run is examiner-grade.
+- The seeded `/app/ledger` register is read-only, uses typed view models, and shows
+  both the raw event register and replayed decision state, so the projection fold is
+  reachable in the PR that lands it. Rows produced by a synthetic source carry the
+  shared `synthetic fixture` badge, derived from stored provenance. No fake decision,
+  status, or execution history is presented as real.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 3900 and infrastructure 2500 to
-  3400. Measured prompt-7 state is contracts 3831 and infrastructure 3352. Domain
-  remains below its 1200 ceiling and the per-file 500-line limit is unchanged.
+  3750. Measured prompt-7 state is contracts 3855 and infrastructure 3643. Domain
+  remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
+  repository is split into the chain writer (`ledger-store.ts`), the immutable
+  content-addressed source rows (`ledger-sources.ts`), and derived projection and
+  reservation state (`ledger-projection-store.ts`).
 
 ## Alternatives Rejected
 
