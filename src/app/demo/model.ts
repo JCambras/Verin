@@ -274,16 +274,31 @@ export interface VerificationVM {
 }
 
 // ── Surface 12: Printable examiner-grade decision artifact (§9) ──────────────────────
+export interface RecordIdentityVM {
+  readonly scenario: {
+    readonly id: string;
+    readonly label: string;
+  };
+  readonly firm: {
+    readonly id: string;
+    readonly label: string;
+  };
+  readonly decisionId: string;
+  /** Shared across firms because it binds only the firm-neutral request/evidence. */
+  readonly inputHash: string;
+  readonly decisionHash: string;
+  /** Firm-specific because the complete input bundle includes policy/configuration. */
+  readonly bundleHash: string;
+}
+
 export interface RecordVM {
+  readonly identity: RecordIdentityVM;
   readonly header: {
-    readonly decisionId: string;
     readonly createdAt: string;
     readonly provenance: DerivedProvenance;
     readonly watermark: string | null; // DEMO_WATERMARK when demonstration-derived
   };
   readonly hashes: {
-    readonly decisionHash: string;
-    readonly bundleHash: string;
     readonly policyVersion: string;
     readonly instructionVersion: string;
     readonly auditPosition: string;
@@ -306,7 +321,6 @@ export interface RecordVM {
 export interface DecisionJourneyVM {
   readonly scenarioId: string;
   readonly firmId: string;
-  readonly outcomeClass: string;
   readonly workspace: WorkspaceVM;
   readonly intent: IntentVM;
   readonly evidence: EvidenceVM;

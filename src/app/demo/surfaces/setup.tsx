@@ -37,6 +37,9 @@ function StepBody({
   attested,
   onAttested,
   activationError,
+  exportFirmId,
+  onExportFirm,
+  exportError,
 }: {
   vm: MoneyMovementSetupVM;
   step: SetupStepVM;
@@ -45,6 +48,9 @@ function StepBody({
   attested: boolean;
   onAttested: (value: boolean) => void;
   activationError: string | null;
+  exportFirmId: SetupFirmId | null;
+  onExportFirm: (firmId: SetupFirmId) => void;
+  exportError: string | null;
 }) {
   switch (step.id) {
     case "profiles":
@@ -72,7 +78,15 @@ function StepBody({
     case "outcomes":
       return <OutcomesBody vm={vm} selections={selections} />;
     case "proof":
-      return <ProofBody vm={vm} selections={selections} />;
+      return (
+        <ProofBody
+          vm={vm}
+          selections={selections}
+          exportFirmId={exportFirmId}
+          onExportFirm={onExportFirm}
+          exportError={exportError}
+        />
+      );
   }
 }
 
@@ -84,6 +98,8 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
   const [attested, setAttested] = useState(false);
   const [activated, setActivated] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [exportFirmId, setExportFirmId] = useState<SetupFirmId | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const step = vm.steps[stepIndex]!;
   const activationIndex = vm.steps.findIndex((candidate) => candidate.id === "activation");
 
@@ -100,6 +116,8 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
     setAttested(false);
     setActivated(false);
     setActivationError(null);
+    setExportFirmId(null);
+    setExportError(null);
   }
 
   function primary() {
@@ -114,7 +132,13 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
       return;
     }
     if (step.id === "proof") {
-      router.push(vm.proof.exportHref);
+      const target = vm.proof.firms.find((candidate) => candidate.firmId === exportFirmId);
+      if (!target) {
+        setExportError(vm.proof.exportError);
+        return;
+      }
+      setExportError(null);
+      router.push(target.exportHref);
       return;
     }
     move(stepIndex + 1);
@@ -145,6 +169,12 @@ export function MoneyMovementSetupSurface({ vm }: { vm: MoneyMovementSetupVM }) 
           setActivationError(null);
         }}
         activationError={activationError}
+        exportFirmId={exportFirmId}
+        onExportFirm={(firmId) => {
+          setExportFirmId(firmId);
+          setExportError(null);
+        }}
+        exportError={exportError}
       />
       <SetupActionRow
         primaryLabel={step.primaryLabel}

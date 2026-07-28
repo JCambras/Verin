@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
-import { Project, SyntaxKind } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
 import { SCENARIOS, FIRMS } from "@app/demo/data";
 
@@ -32,7 +32,14 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    must be read by a surface or a demo route. knip sees unreferenced EXPORTS,
  *    never unread object properties, so a builder can populate a field no screen
  *    renders - built-but-not-shipped inside a type (charter #5). Each unread field
- *    fails the build with the declaring file:line.
+ *    fails the build with the declaring file:line. The read is OWNER-AWARE: it
+ *    resolves each receiver's type through the checker, so an unrelated view model
+ *    that merely shares a property name (`ApprovalVM.stages` vs `SetupProofVM.stages`)
+ *    cannot stand in as proof - the exact way a bare-name match passed vacuously.
+ *    A receiver whose type is a structural projection of the view model (a
+ *    presentation primitive's `SpineStation` prop against `SpineStationVM`) DOES
+ *    count: that is the render path. A receiver with no project-declared type
+ *    (an inline prop shape, a `Record`) falls back to a name-only read.
  *
  * All three detectors are pure functions so the companions can feed violating inputs
  * (charter #4: detection is not verification).
@@ -197,37 +204,124 @@ export function declaredViewModelFields(project: Project): DeclaredField[] {
   return fields;
 }
 
-/** Every property name a consumer READS: `vm.foo`, `{ foo }` destructuring, and
- * `vm["foo"]`. A name reached any of those ways counts as rendered. */
-export function readPropertyNames(project: Project): Set<string> {
-  const names = new Set<string>();
+/** One property READ, with the receiver types it was read through. A receiver that
+ * resolves to no project-declared type (an inline `{ x: T }` prop, a `Record`, an
+ * `any`) carries no owners and counts as a name-only read. Owners are what close the
+ * collision hole: `vm.stages` on ApprovalVM can no longer stand in as proof that
+ * SetupProofVM.stages is rendered. */
+export interface ReadOwner {
+  readonly name: string;
+  /** Every property the receiver type declares - used for the structural test below. */
+  readonly properties: readonly string[];
+}
+export interface PropertyRead {
+  readonly name: string;
+  readonly owners: readonly ReadOwner[];
+}
+
+/** The project-declared types a receiver expression resolves to. Unions contribute
+ * every constituent, so `vm: ApprovalVM | null` still reports ApprovalVM; types whose
+ * only declarations are ambient (`Record`, `Array`) contribute nothing, because they
+ * say nothing about which view model is being rendered. */
+function ownersOf(node: Node | undefined): ReadOwner[] {
+  if (node === undefined) return [];
+  let type;
+  try {
+    type = node.getType();
+  } catch {
+    return [];
+  }
+  const constituents = type.isUnion() ? type.getUnionTypes() : [type];
+  const owners = new Map<string, ReadOwner>();
+  for (const constituent of constituents) {
+    const symbol = constituent.getAliasSymbol() ?? constituent.getSymbol();
+    const name = symbol?.getName();
+    if (!name || name === "__type" || name === "__object") continue;
+    const declarations = symbol?.getDeclarations() ?? [];
+    if (declarations.length === 0 || declarations.every((d) => d.getSourceFile().isDeclarationFile())) continue;
+    owners.set(name, { name, properties: constituent.getProperties().map((p) => p.getName()) });
+  }
+  return [...owners.values()];
+}
+
+/** The receiver a destructuring pattern reads from: `const { a } = expr`, or a
+ * parameter whose declared type names the owner. */
+function bindingReceiver(element: Node): Node | undefined {
+  const pattern = element.getParent();
+  const declaration = pattern?.getParent();
+  if (declaration === undefined) return undefined;
+  if (Node.isVariableDeclaration(declaration)) return declaration.getInitializer() ?? declaration;
+  if (Node.isParameterDeclaration(declaration)) return declaration;
+  return undefined;
+}
+
+/** Every property a consumer READS - `vm.foo`, `{ foo }` destructuring, `vm["foo"]` -
+ * keyed by the interface the receiver resolves to, so an unrelated property that
+ * merely SHARES a name cannot stand in as proof that a field is rendered. */
+export function readProperties(project: Project): PropertyRead[] {
+  const reads: PropertyRead[] = [];
   for (const sf of project.getSourceFiles()) {
     for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
-      names.add(access.getName());
+      reads.push({ name: access.getName(), owners: ownersOf(access.getExpression()) });
     }
     for (const element of sf.getDescendantsOfKind(SyntaxKind.BindingElement)) {
-      names.add((element.getPropertyNameNode() ?? element.getNameNode()).getText().replace(/^["']|["']$/g, ""));
+      reads.push({
+        name: (element.getPropertyNameNode() ?? element.getNameNode()).getText().replace(/^["']|["']$/g, ""),
+        owners: ownersOf(bindingReceiver(element)),
+      });
     }
     for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
       const argument = access.getArgumentExpression();
       const literal = argument?.asKind(SyntaxKind.StringLiteral) ?? argument?.asKind(SyntaxKind.NoSubstitutionTemplateLiteral);
-      if (literal) names.add(literal.getLiteralText());
+      if (literal) reads.push({ name: literal.getLiteralText(), owners: ownersOf(access.getExpression()) });
     }
   }
-  return names;
+  return reads;
 }
 
-export function deadFieldViolations(fields: readonly DeclaredField[], read: ReadonlySet<string>): string[] {
+/**
+ * A field is rendered when a consumer reads it through the DECLARING view model, or
+ * through a structural projection of it - a presentation primitive whose prop type
+ * (`SpineStation`) is a subset of the view model (`SpineStationVM`) IS the render
+ * path. A read on an unrelated type that merely shares the property name is not.
+ */
+export function deadFieldViolations(fields: readonly DeclaredField[], reads: readonly PropertyRead[]): string[] {
+  const declaredProperties = new Map<string, Set<string>>();
+  for (const field of fields) {
+    const set = declaredProperties.get(field.owner) ?? new Set<string>();
+    set.add(field.name);
+    declaredProperties.set(field.owner, set);
+  }
+  const byName = new Map<string, PropertyRead[]>();
+  for (const read of reads) byName.set(read.name, [...(byName.get(read.name) ?? []), read]);
+
+  const rendered = (field: DeclaredField): boolean => {
+    const own = declaredProperties.get(field.owner) ?? new Set<string>();
+    return (byName.get(field.name) ?? []).some((read) => {
+      if (read.owners.length === 0) return true; // receiver type unknown - name-only read
+      return read.owners.some(
+        (owner) =>
+          owner.name === field.owner ||
+          (owner.properties.length > 0 && owner.properties.every((property) => own.has(property))),
+      );
+    });
+  };
+
   return fields
-    .filter((field) => !read.has(field.name))
+    .filter((field) => !rendered(field))
     .map(
       (field) =>
         `${field.file}:${field.line} :: ${field.owner}.${field.name} is populated but never rendered - ship it or delete it (charter #5)`,
     );
 }
 
+/** Loaded through the repo tsconfig so `@app/...` aliases and imported view-model
+ * types resolve: RULE C's owner test is only as good as the checker behind it. */
 function projectOf(relativePaths: readonly string[], isDir: boolean): Project {
-  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+  const project = new Project({
+    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+    skipAddingFilesFromTsConfig: true,
+  });
   for (const rel of relativePaths) {
     const full = join(REPO_ROOT, rel);
     if (isDir) {
@@ -263,8 +357,15 @@ describe("demo-skeleton-honesty fence", () => {
   it("RULE C enforces: every demo view-model field is rendered by a surface or route", () => {
     const fields = declaredViewModelFields(projectOf(VIEW_MODEL_FILES, false));
     expect(fields.length, "no view-model fields found - the fence went stale (charter #4)").toBeGreaterThan(0);
-    const violations = deadFieldViolations(fields, readPropertyNames(projectOf(CONSUMER_DIRS, true)));
+    const violations = deadFieldViolations(fields, readProperties(projectOf(CONSUMER_DIRS, true)));
     expect(violations, `dead view-model fields:\n${violations.join("\n")}`).toEqual([]);
+  });
+
+  it("RULE C is not vacuous: consumer reads resolve to named view-model owners", () => {
+    const reads = readProperties(projectOf(CONSUMER_DIRS, true));
+    const owners = new Set(reads.flatMap((read) => read.owners.map((owner) => owner.name)));
+    expect(owners.has("MoneyMovementSetupVM"), "the checker no longer resolves view-model owners").toBe(true);
+    expect(owners.has("SetupProofFirmVM")).toBe(true);
   });
 
   describe("detects (companion): drifted or dishonest skeletons CANNOT pass", () => {
@@ -275,10 +376,35 @@ describe("demo-skeleton-honesty fence", () => {
       const consumers = inMemoryProject({
         "/src/app/demo/surfaces/proof.tsx": `export function Proof({ vm }: { vm: { inputHash: string } }) { return vm.inputHash; }`,
       });
-      const violations = deadFieldViolations(declaredViewModelFields(models), readPropertyNames(consumers));
+      const violations = deadFieldViolations(declaredViewModelFields(models), readProperties(consumers));
       expect(violations.length).toBe(1);
       expect(violations[0]).toContain("setup-model.ts:3");
       expect(violations[0]).toContain("ProofVM.ghostField");
+    });
+
+    it("RULE C is owner-aware: an unrelated property of the same name does NOT rescue a dead field", () => {
+      const models = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface SetupProofVM {\n  readonly engineLabel: string;\n  readonly stages: readonly string[];\n}`,
+      });
+      // `vm.stages` IS read here - on a different view model, exactly the collision
+      // that made the bare-name detector pass vacuously.
+      const consumers = inMemoryProject({
+        "/src/app/demo/surfaces/authority.tsx": `interface ApprovalVM { readonly stages: readonly string[]; readonly binding: string }\nexport function Authority({ vm }: { vm: ApprovalVM }) { return [vm.stages, vm.binding]; }`,
+        "/src/app/demo/surfaces/proof.tsx": `interface SetupProofVM { readonly engineLabel: string; readonly stages: readonly string[] }\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.engineLabel; }`,
+      });
+      const violations = deadFieldViolations(declaredViewModelFields(models), readProperties(consumers));
+      expect(violations.length).toBe(1);
+      expect(violations[0]).toContain("SetupProofVM.stages");
+    });
+
+    it("RULE C counts a read on the DECLARING owner as rendered", () => {
+      const models = inMemoryProject({
+        "/src/app/demo/setup-model.ts": `export interface SetupProofVM {\n  readonly stages: readonly string[];\n}`,
+      });
+      const consumers = inMemoryProject({
+        "/src/app/demo/surfaces/proof.tsx": `interface SetupProofVM { readonly stages: readonly string[] }\nexport function Proof({ vm }: { vm: SetupProofVM }) { return vm.stages; }`,
+      });
+      expect(deadFieldViolations(declaredViewModelFields(models), readProperties(consumers))).toEqual([]);
     });
 
     it("RULE C counts destructured and string-indexed reads as rendered", () => {
@@ -288,7 +414,7 @@ describe("demo-skeleton-honesty fence", () => {
       const consumers = inMemoryProject({
         "/src/app/demo/surfaces/step.tsx": `export function Step(vm: Record<string, string>) {\n  const { kicker } = vm;\n  return kicker + vm["title"];\n}`,
       });
-      expect(deadFieldViolations(declaredViewModelFields(models), readPropertyNames(consumers))).toEqual([]);
+      expect(deadFieldViolations(declaredViewModelFields(models), readProperties(consumers))).toEqual([]);
     });
 
     it("RULE A flags a skeleton scenario the contract does not know", () => {

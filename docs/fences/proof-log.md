@@ -5479,3 +5479,87 @@ NODE_ENV=production - see the CLAUDE.md sharp edge):
 
 Without it, `process.cwd()` makes the tracer pull the whole project into the standalone
 output file list. The comment was restored unchanged; the finding is not actioned.
+
+## PF-setup-07 · RULE C cannot be satisfied by a name collision
+
+**Date:** 2026-07-28.
+
+**Invariant:** a fence that emits PASS must prove what it claims (charter #4; the
+CLAUDE.md sharp edge "a weak/tautological fence is worse than none"). RULE C decided a
+view-model field was rendered by matching its BARE NAME against every property read in
+the consumer directories, so any field colliding with an unrelated property passed
+vacuously - including `SetupProofVM.stages`, one of the three dead fields PF-setup-04
+removed, because `vm.stages` is read on `ApprovalVM` at `authority.tsx:42`.
+
+**Fence:** `src/__tests__/fitness/demo-skeleton-honesty.test.ts` RULE C. Reads are now
+keyed by the receiver type the checker resolves (`readProperties`), and a field is
+rendered only by a read on its DECLARING owner or on a structural projection of it (a
+presentation primitive's `SpineStation` prop against `SpineStationVM`). A receiver with
+no project-declared type falls back to a name-only read.
+
+**Adversarial proof:** `SetupProofVM.stages` was re-declared and re-populated - the
+exact collision the old detector could not see. The production check failed with the
+declaring file:line:
+
+```text
+src/app/demo/setup-model.ts:164 :: SetupProofVM.stages is populated but never rendered - ship it or delete it (charter #5)
+```
+
+The injection was reverted. Enabling owner-awareness also caught one more pre-existing
+dead field, `DecisionJourneyVM.outcomeClass` (the `outcomeClass` reads in the demo
+launcher are on `ScenarioData`, not on the journey view model); it was deleted with its
+population site in `journey.ts`.
+
+## PF-setup-08 · a two-firm proof cannot export one firm's record
+
+**Date:** 2026-07-28.
+
+**Invariant:** the identity a surface shows immediately before export is the identity
+the export carries. The setup proof step claimed hash-bound identity with invented
+identifiers (`sha256:demo-7b15c2b2e2a7f0c9`, `decision-a-smiths-075-demo`) and then
+pushed a fixed `firm-a` record URL for both firms.
+
+**Fence:** `exportIdentityViolations` in
+`src/__tests__/fitness/demo-semantic-truth.test.ts`, plus the e2e proof in
+`e2e/demo-journey.spec.ts` that follows each export and compares the visible scenario,
+firm, decision id, shared firm-neutral input hash, decision hash, and firm-specific
+policy-bearing bundle hash on the exported record. All six values originate in
+`RecordVM.identity`; the proof card and export URL project that destination identity.
+The semantic fence additionally proves the two firms share one input hash while their
+bundle hashes and decision identities remain distinct.
+
+**Adversarial proof:** `proofFirm` was changed to emit `&firm=firm-a` for both firms.
+The production check failed with file:line:
+
+```text
+src/app/demo/build-setup.ts:256 :: firm-b exports to firm "firm-a" - a two-firm proof may not export one firm's record
+```
+
+The injection was reverted. Companions additionally prove an invented input hash, a
+shared policy-bearing bundle hash, and a shared decision identity are all rejected.
+
+## PF-setup-09 · a reserve projection cannot run on a partial liquidity basis
+
+**Date:** 2026-07-28.
+
+**Invariant:** one request is modeled one way. The journey deducted an unsigned $40,000
+pending distribution and omitted the $75,000 request; the setup did the opposite. Both
+figures were called "available after reserve" for the same Smiths request.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` now pins the WHOLE basis
+(available, pending, request) for the signed Smiths cases on both surfaces, pins the
+GC-05 low-headroom basis and its expected disposition to the signed fixture, and
+recomputes the journey's headroom from that basis.
+
+**Adversarial proof:** `SMITHS_LIQUIDITY.pendingMinor` was set to the old unsigned
+`4_000_000`. The production check failed with four file:line violations naming both
+surfaces and both firms:
+
+```text
+src/app/demo/data.ts:125 :: journey liquidity basis (available 42000000 · pending 4000000 · request 7500000) differs from captain-signed (available 42000000 · pending 0 · request 7500000)
+src/app/demo/build-setup.ts:369 :: setup liquidity basis (available 42000000 · pending 4000000 · request 7500000) differs from captain-signed (available 42000000 · pending 0 · request 7500000)
+src/app/demo/build-decision.ts:36 :: firm-a journey headroom 25700000 differs from the signed basis 29700000
+src/app/demo/build-decision.ts:36 :: firm-b journey headroom 20900000 differs from the signed basis 24900000
+```
+
+The injection was reverted.

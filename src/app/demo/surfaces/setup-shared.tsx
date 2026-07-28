@@ -77,13 +77,11 @@ export function SetupActionRow({
   primaryLabel,
   onPrimary,
   onBack,
-  primaryDisabled,
   children,
 }: {
   primaryLabel: string;
   onPrimary: () => void;
   onBack?: () => void;
-  primaryDisabled?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -99,7 +97,7 @@ export function SetupActionRow({
             Back
           </Button>
         ) : null}
-        <Button type="button" onClick={onPrimary} disabled={primaryDisabled}>
+        <Button type="button" onClick={onPrimary}>
           {primaryLabel}
         </Button>
       </div>

@@ -13,23 +13,29 @@ import {
   buildStages,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
-import { DEMO_NOW, IDS, OBSERVED_RECENT, type FirmData, type ScenarioData } from "./data";
+import { DEMO_NOW, IDS, OBSERVED_RECENT, decisionIdentityFor, type FirmData, type ScenarioData } from "./data";
 
 export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { authority: boolean; safety: boolean; execution: boolean }, stopNote: string | null): RecordVM {
   const provenance = recordProvenance(
     [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
     DEMO_NOW,
   );
+  const identity = decisionIdentityFor(firm.id);
   return {
+    identity: {
+      scenario: { id: scenario.id, label: scenario.title },
+      firm: { id: firm.id, label: firm.name },
+      decisionId: identity.decisionId,
+      inputHash: identity.inputHash,
+      decisionHash: identity.decisionHash,
+      bundleHash: identity.bundleHash,
+    },
     header: {
-      decisionId: "dec-smiths-renovation-2026-0726",
       createdAt: "Jul 26, 2026, 14:05",
       provenance,
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
     hashes: {
-      decisionHash: IDS.decisionHash,
-      bundleHash: IDS.bundleHash,
       policyVersion: firm.policyVersion,
       instructionVersion: "HH-INSTR-SMITH v3",
       auditPosition: IDS.auditPosition,

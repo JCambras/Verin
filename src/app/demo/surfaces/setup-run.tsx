@@ -229,13 +229,13 @@ function Trail({
   const bank = selectedOption(vm.policyGroups, selections, "bank-change", firmId);
   const threshold = selectedOption(vm.policyGroups, selections, "threshold", firmId);
   const reachesAuthority = bank.smithsEffect.reachesAuthority === true;
-  const decisionId = firmId === "firm-a" ? vm.proof.firmADecisionId : vm.proof.firmBDecisionId;
+  const identity = vm.proof.firms.find((candidate) => candidate.firmId === firmId)!;
   return (
     <article className="min-w-0 rounded-lg border border-slate-200 bg-white p-5" data-testid={`proof-${firmId}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-base font-semibold text-slate-900">{firm.firmLabel} trail</h2>
-          <p className="break-all font-mono text-xs text-slate-700">{decisionId}</p>
+          <p className="break-words font-mono text-xs text-slate-700">{identity.decisionId}</p>
         </div>
         <StatusBadge status={bank.smithsEffect.status.status} label={bank.smithsEffect.status.label} />
       </div>
@@ -269,6 +269,50 @@ function Trail({
           </p>
         </li>
       </ol>
+      <dl className="mt-4 grid min-w-0 gap-2 rounded-md border border-slate-200 bg-surface p-3" data-testid={`identity-${firmId}`}>
+        <div>
+          <dt className="text-xs text-slate-600">Scenario</dt>
+          <dd className="break-words text-sm text-slate-800" data-testid={`identity-${firmId}-scenario`}>
+            {`${identity.scenarioLabel} · ${identity.scenarioId}`}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Firm</dt>
+          <dd className="break-words text-sm text-slate-800" data-testid={`identity-${firmId}-firm`}>
+            {`${identity.firmLabel} · ${identity.firmId}`}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Decision id</dt>
+          <dd className="break-all font-mono text-xs text-slate-800" data-testid={`identity-${firmId}-decision-id`}>
+            {identity.decisionId}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Shared request/evidence input hash</dt>
+          <dd className="break-all font-mono text-xs text-slate-800" data-testid={`identity-${firmId}-input-hash`}>
+            {identity.inputHash}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Policy version</dt>
+          <dd className="break-all font-mono text-xs text-slate-800" data-testid={`identity-${firmId}-policy-version`}>
+            {identity.policyVersion}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Decision hash</dt>
+          <dd className="break-all font-mono text-xs text-slate-800" data-testid={`identity-${firmId}-decision-hash`}>
+            {identity.decisionHash}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Policy-bearing bundle hash</dt>
+          <dd className="break-all font-mono text-xs text-slate-800" data-testid={`identity-${firmId}-bundle-hash`}>
+            {identity.bundleHash}
+          </dd>
+        </div>
+      </dl>
     </article>
   );
 }
@@ -276,9 +320,15 @@ function Trail({
 export function ProofBody({
   vm,
   selections,
+  exportFirmId,
+  onExportFirm,
+  exportError,
 }: {
   vm: MoneyMovementSetupVM;
   selections: SetupSelections;
+  exportFirmId: SetupFirmId | null;
+  onExportFirm: (firmId: SetupFirmId) => void;
+  exportError: string | null;
 }) {
   return (
     <>
@@ -291,10 +341,6 @@ export function ProofBody({
           Immutable identifiers and provenance
         </h2>
         <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <dt className="text-xs text-slate-600">Input hash</dt>
-            <dd className="break-all font-mono text-xs text-slate-800">{vm.proof.inputHash}</dd>
-          </div>
           <div>
             <dt className="text-xs text-slate-600">Evaluation source</dt>
             <dd className="text-sm text-slate-800">{vm.proof.engineLabel}</dd>
@@ -309,6 +355,40 @@ export function ProofBody({
           </div>
         </dl>
       </section>
+      <fieldset className="rounded-lg border border-slate-200 bg-white p-4" data-testid="export-choice">
+        <legend className="px-1 text-base font-semibold text-slate-900">{vm.proof.exportQuestion}</legend>
+        <p className="text-sm text-slate-700">{vm.proof.exportHint}</p>
+        <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2">
+          {vm.proof.firms.map((firm) => (
+            <label
+              key={firm.firmId}
+              htmlFor={`export-${firm.firmId}`}
+              className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-md border p-3 ${
+                exportFirmId === firm.firmId ? "border-slate-900 bg-surface" : "border-slate-200 bg-white"
+              }`}
+            >
+              <input
+                id={`export-${firm.firmId}`}
+                type="radio"
+                name="export-firm"
+                value={firm.firmId}
+                checked={exportFirmId === firm.firmId}
+                onChange={() => onExportFirm(firm.firmId)}
+                className="mt-1 size-4 shrink-0 accent-slate-900"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-slate-900">{firm.exportLabel}</span>
+                <span className="mt-1 block break-words font-mono text-xs text-slate-700">{firm.decisionId}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {exportError ? (
+          <p role="alert" className="mt-2 text-sm text-destructive">
+            {exportError}
+          </p>
+        ) : null}
+      </fieldset>
       <DemoNotice
         vm={vm}
         text="The export remains watermarked demonstration evidence. It cannot enter the real examiner export or feed a compliance decision."

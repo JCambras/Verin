@@ -14,7 +14,6 @@ import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import {
   ACCOUNTS,
-  AVAILABLE_CASH_MINOR,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_NOW,
@@ -22,12 +21,17 @@ import {
   HOUSEHOLD,
   OBSERVED_RECENT,
   OBSERVED_STALE,
-  PENDING_DISTRIBUTION_MINOR,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
+  SMITHS_LIQUIDITY,
   THIRD_PARTY_DESTINATION,
   type ScenarioData,
 } from "./data";
+
+/** The signed cases behind this request record NO pending approved activity, so the
+ * evidence states that absence instead of deducting an unsigned amount from it. */
+const PENDING_ACTIVITY_STATEMENT =
+  "None recorded against this household at this evaluation";
 
 /** The destination the interpreted intent binds to for this branch. */
 export function destinationFor(scenario: ScenarioData): string {
@@ -52,9 +56,9 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
       custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
     })),
-    liquidity: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
+    liquidity: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
     plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-    pendingActivity: fact("One approved distribution settles Aug 1 and reduces available liquidity until then", "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+    pendingActivity: fact(`Pending approved activity: ${PENDING_ACTIVITY_STATEMENT.toLowerCase()}`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
     onRamp: {
       title: "What do the Smiths need?",
       description: "Ask Verin in plain language. It gathers the evidence, determines the governed action, and routes the authority to approve it.",
@@ -91,7 +95,7 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
     {
       kind: "metric",
       label: "Available cash in the taxable brokerage account",
-      metric: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
+      metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
@@ -103,12 +107,11 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       fakeClass: "synthetic-fixture",
     },
     {
-      kind: "metric",
-      label: "Pending approved distribution (settles Aug 1)",
-      metric: fixtureMetric(PENDING_DISTRIBUTION_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-      retrievedAt: RETRIEVED_AT,
+      kind: "fact",
+      label: "Pending approved activity",
+      fact: fact(PENDING_ACTIVITY_STATEMENT, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
-      why: { reason: "Approved on Jul 18 and not yet settled, so it reduces the liquidity available to this request until it lands." },
+      why: { reason: "An approved but unsettled distribution would reduce the liquidity available to this request until it lands. The signed cases behind this request record none, so nothing is deducted from the available balance." },
     },
     spec.bankChanged
       ? {

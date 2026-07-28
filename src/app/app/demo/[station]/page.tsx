@@ -38,11 +38,13 @@ export default async function DemoStationPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { station } = await params;
-  if (
-    !([...DEMO_SEQUENCE, ...LEGACY_SETUP_ALIASES] as readonly string[]).includes(
-      station,
-    )
-  ) {
+  // A legacy alias redirects BEFORE anything else is resolved: an old rehearsal link
+  // must reach setup even when its query string names a branch that no longer exists,
+  // and no journey is built for a station that never renders one.
+  if ((LEGACY_SETUP_ALIASES as readonly string[]).includes(station)) {
+    redirect("/app/demo/setup");
+  }
+  if (!(DEMO_SEQUENCE as readonly string[]).includes(station)) {
     notFound();
   }
   const sp = await searchParams;
@@ -71,10 +73,6 @@ export default async function DemoStationPage({
       return <ExecutionSurface vm={journey.execution} {...ids} stopNote={journey.stopNote} />;
     case "verification":
       return <VerificationSurface vm={journey.verification} {...ids} stopNote={journey.stopNote} />;
-    case "comparison":
-      return redirect("/app/demo/setup");
-    case "policy-authoring":
-      return redirect("/app/demo/setup");
     case "record":
       return <RecordSurface vm={journey.record} />;
   }

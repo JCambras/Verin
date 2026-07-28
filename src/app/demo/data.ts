@@ -39,15 +39,11 @@ export const ACCOUNTS: readonly AccountData[] = [
   { id: "acct-trad", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
 ];
 
-// Liquidity inputs. Both the taxable-brokerage balance and the monthly schedule are
-// captain-signed golden truth (GC-01/02/03: available balance $420,000; $8,000/month),
-// so Firm A reserve = 6 * $8,000 = $48,000 and Firm B = 12 * $8,000 = $96,000.
-// The available balance is READ from the account fixture rather than restated, so the
-// journey and the setup journey cannot show two liquidity figures for one request.
-// Reserve dollars are always derived and are never stored as separate constants.
-export const AVAILABLE_CASH_MINOR = ACCOUNTS[0]!.balanceMinor; // $420,000 taxable brokerage
+// The monthly withdrawal schedule is captain-signed golden truth (GC-01/02/03/05:
+// $8,000/month), so Firm A reserve = 6 * $8,000 = $48,000 and Firm B = 12 * $8,000 =
+// $96,000. Reserve dollars are always derived and are never stored as separate
+// constants.
 export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 800_000; // $8,000 / month
-export const PENDING_DISTRIBUTION_MINOR = 4_000_000; // $40,000 approved, not yet settled
 
 // Bank instructions (required shape: a recently changed bank instruction).
 export const BANK_INSTRUCTION = {
@@ -109,6 +105,68 @@ export const CANONICAL_REQUEST = {
   deadline: DEADLINE,
 } as const;
 
+/**
+ * SIGNED LIQUIDITY CASES. Every reserve projection in the demo names one of these,
+ * so no surface can model the same request with a different liquidity basis. Each
+ * field is captain-signed golden truth and the demo-semantic-truth fence pins all
+ * three terms (available, pending, request) against the fixture that states them.
+ * A projection is never given a partial basis: dropping the pending term or the
+ * request term silently overstates headroom.
+ */
+export interface SignedLiquidityCase {
+  readonly caseRef: string;
+  readonly availableMinor: number;
+  readonly pendingMinor: number;
+  readonly requestMinor: number;
+}
+/** GC-01 / GC-02 (and GC-03 / GC-04, which restate the same basis): $420,000
+ * available taxable liquidity, NO pending distribution, the $75,000 request. The
+ * balance is read from the account fixture rather than restated. */
+export const SMITHS_LIQUIDITY: SignedLiquidityCase = {
+  caseRef: "GC-01 / GC-02",
+  availableMinor: ACCOUNTS[0]!.balanceMinor,
+  pendingMinor: 0,
+  requestMinor: CANONICAL_REQUEST.amountMinor,
+};
+/** GC-05: $160,000 available, $20,000 pending and unsettled, the same $75,000
+ * request. This is the only signed basis on which a reserve horizon changes the
+ * disposition, so the setup's low-headroom card reads it instead of restating it. */
+export const LOW_HEADROOM_LIQUIDITY: SignedLiquidityCase = {
+  caseRef: "GC-05",
+  availableMinor: 16_000_000,
+  pendingMinor: 2_000_000,
+  requestMinor: CANONICAL_REQUEST.amountMinor,
+};
+
+/** Per-firm decision identity for the one canonical Smiths request. Two profiles
+ * evaluate the SAME firm-neutral request and evidence, so inputHash is shared. The
+ * complete decision input bundle also includes policy/configuration, so bundleHash is
+ * firm-specific. Every surface that shows or exports an identity reads this one map. */
+export interface DecisionIdentity {
+  readonly decisionId: string;
+  readonly inputHash: string;
+  readonly decisionHash: string;
+  readonly bundleHash: string;
+}
+const SHARED_INPUT_HASH = "5e21c9a6b3d84f07a5c1e92b64d38a7f0a3f9c2e41b7d5f08c6a92e13b48d70f";
+export const DECISION_IDENTITIES: Record<string, DecisionIdentity> = {
+  "firm-a": {
+    decisionId: "dec-smiths-renovation-2026-0726-firm-a",
+    inputHash: SHARED_INPUT_HASH,
+    decisionHash: "a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0",
+    bundleHash: "114daac26ffbec30d1bc147be68cd401146c1bdf089e3709ddfa47018bf2501e",
+  },
+  "firm-b": {
+    decisionId: "dec-smiths-renovation-2026-0726-firm-b",
+    inputHash: SHARED_INPUT_HASH,
+    decisionHash: "c8b40d7e29f61a35d0e74c92b18f5a63e07d2c94a5b31f68e2d90c47a6b1358f",
+    bundleHash: "de4aa9e12483df0a8340d9764c716bee0e5a036de925c8a57d2f5c2ff3d6ae5c",
+  },
+};
+export function decisionIdentityFor(firmId: string): DecisionIdentity {
+  return DECISION_IDENTITIES[firmId] ?? DECISION_IDENTITIES[DEFAULT_FIRM]!;
+}
+
 // The demo cast (synthetic personas, labeled like all fixture data).
 export const CAST = {
   requester: "Dana Ellison",
@@ -120,8 +178,6 @@ export const CAST = {
 
 // Stable fake identifiers (rendered font-mono; full values print on the record).
 export const IDS = {
-  decisionHash: "a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0",
-  bundleHash: "5e21c9a6b3d84f07a5c1e92b64d38a7f0a3f9c2e41b7d5f08c6a92e13b48d70f",
   idempotencyKey: "mm-smiths-renovation-aug15-4c7f",
   reservationId: "rsv-8f21-smiths-liquidity",
   conflictKeys: ["liquidity:smiths:2026-08", "bank-instruction:smiths:chase-4417"],

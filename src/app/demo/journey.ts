@@ -45,7 +45,6 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
   return {
     scenarioId: scenario.id,
     firmId: firm.id,
-    outcomeClass: scenario.outcomeClass,
     workspace: buildWorkspace(scenario),
     intent: buildIntent(scenario),
     evidence: buildEvidence(scenario),

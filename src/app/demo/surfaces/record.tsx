@@ -75,7 +75,7 @@ function ExecutionDocRow({ row }: { row: ExecutionRowVM }) {
 const NOT_REACHED = "Not reached - this record ends where the journey ended.";
 
 export function RecordSurface({ vm }: { vm: RecordVM }) {
-  const running = `${vm.header.watermark ? `${vm.header.watermark} · ` : ""}${vm.header.decisionId}`;
+  const running = `${vm.header.watermark ? `${vm.header.watermark} · ` : ""}${vm.identity.decisionId}`;
   return (
     /* ADR-0022: the running header and footer of EVERY printed page. thead/tfoot
        repeat on each page AND reserve their space (fixed strips overlap content),
@@ -106,20 +106,44 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                 </p>
                 <dl className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
                   <div className="flex flex-col">
+                    <dt className="text-xs text-slate-600">Scenario</dt>
+                    <dd className="text-slate-800" data-testid="record-identity-scenario">
+                      {`${vm.identity.scenario.label} · ${vm.identity.scenario.id}`}
+                    </dd>
+                  </div>
+                  <div className="flex flex-col">
+                    <dt className="text-xs text-slate-600">Firm</dt>
+                    <dd className="text-slate-800" data-testid="record-identity-firm">
+                      {`${vm.identity.firm.label} · ${vm.identity.firm.id}`}
+                    </dd>
+                  </div>
+                  <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Decision id</dt>
-                    <dd className="font-mono text-xs text-slate-800">{vm.header.decisionId}</dd>
+                    <dd className="font-mono text-xs text-slate-800" data-testid="record-identity-decision-id">
+                      {vm.identity.decisionId}
+                    </dd>
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Created</dt>
                     <dd className="text-slate-800">{vm.header.createdAt}</dd>
                   </div>
                   <div className="flex flex-col sm:col-span-2">
-                    <dt className="text-xs text-slate-600">Decision hash</dt>
-                    <dd className="font-mono text-xs break-all text-slate-800">{vm.hashes.decisionHash}</dd>
+                    <dt className="text-xs text-slate-600">Shared request/evidence input hash</dt>
+                    <dd className="font-mono text-xs break-all text-slate-800" data-testid="record-identity-input-hash">
+                      {vm.identity.inputHash}
+                    </dd>
                   </div>
                   <div className="flex flex-col sm:col-span-2">
-                    <dt className="text-xs text-slate-600">Input-bundle hash</dt>
-                    <dd className="font-mono text-xs break-all text-slate-800">{vm.hashes.bundleHash}</dd>
+                    <dt className="text-xs text-slate-600">Decision hash</dt>
+                    <dd className="font-mono text-xs break-all text-slate-800" data-testid="record-identity-decision-hash">
+                      {vm.identity.decisionHash}
+                    </dd>
+                  </div>
+                  <div className="flex flex-col sm:col-span-2">
+                    <dt className="text-xs text-slate-600">Policy-bearing bundle hash</dt>
+                    <dd className="font-mono text-xs break-all text-slate-800" data-testid="record-identity-bundle-hash">
+                      {vm.identity.bundleHash}
+                    </dd>
                   </div>
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Policy version</dt>

@@ -111,8 +111,8 @@ same grammar stretched across a pipeline. Every one of the twelve required surfa
 | 7 | Pre-execution safety check | Action → Outcome hinge | Check rows with `StatusBadge`, revalidation timestamp as a `FreshValue`-style label, reservation + conflict keys in `font-mono text-xs`; the invalidation moment (§7.3) lives here |
 | 8 | Execution timeline | Outcome | `ExecutionTimeline` (built, §8) in the register idiom; honest `StatusBadge` states; idempotency made visible in plain words |
 | 9 | Verification state | Outcome (honest) | "Proven / not yet proven" lists, next-poll label, NIGO and stuck rows first-class (§8) |
-| 10 | Firm A / Firm B comparison | Reasoning (policy difference) | `ComparisonColumns` (built, §10), difference-as-hierarchy, `WhyBubble` per differing row |
-| 11 | Policy draft and simulation impact | Recommendation + Action | Draft AST rendered as structured rows (never raw code as the primary view), LLM-drafted wording set apart (§6.5), simulation delta in the register idiom, human approval gate per §7 |
+| 10 | Firm A / Firm B comparison | Reasoning (policy difference) | Delivered inside the setup journey (§10): peer `OutcomeCard` firm cards under one shared comparison question, shared row labels, receded agreement, `StatusBadge` per disposition |
+| 11 | Policy draft and simulation impact | Recommendation + Action | Delivered inside the setup journey (§10): five closed choice groups, signed-case impact cards, distinct-human activation gate per §7. The free-text draft and its `llm-proposed-draft` treatment stay open pending the policy AST (demo contract §3 annotation, D-061) |
 | 12 | Printable examiner-grade decision artifact | Outcome (proof) | Document-styled surface (§9), all reasoning expanded, hashes in full, ADR-0022 watermark rules |
 
 Two standing rules across all twelve:
@@ -474,9 +474,10 @@ binder, with the same seriousness as the audit-chain surface it descends from.
 - **All reasoning prints expanded.** The WhyBubble is a screen affordance; on paper every
   explanation and citation renders in full as body text under its section. Nothing the screen
   can disclose is absent from the document.
-- **Immutable identifiers in full:** decision hash, input-bundle hash, policy and instruction
-  version refs, audit-chain position - `font-mono`, printed complete, never truncated (the
-  screen's `hash…` truncation idiom does not apply here; this is the artifact whose hashes an
+- **Immutable identifiers in full:** structured scenario and firm identity, decision id, shared
+  request/evidence input hash, decision hash, firm-specific policy-bearing bundle hash, policy and
+  instruction version refs, audit-chain position - `font-mono`, printed complete, never truncated
+  (the screen's `hash…` truncation idiom does not apply here; this is the artifact whose hashes an
   examiner checks).
 - **Print CSS posture:** an `@media print` stylesheet that hides app chrome, the DecisionSpine,
   and every interactive control; expands all disclosures; keeps rows unbroken across pages
@@ -499,33 +500,59 @@ binder, with the same seriousness as the audit-chain surface it descends from.
 
 ---
 
-## 10. Firm A / Firm B comparison
+## 10. Firm A / Firm B comparison, inside the setup journey (D-061 / D-063)
 
-Surface #10. The claim on stage: same household, same request, different approved policy,
-materially different outcome, zero code change. The design's job is to make the **difference**
-legible and its **cause** (policy-version provenance) inspectable.
+Surfaces #10 and #11. The claim on stage is unchanged: same household, same request, different
+approved policy, materially different outcome, zero code change. What changed is **where** it is
+made. The comparison is no longer a standalone screen reached at the end of the journey; it is the
+back half of the setup-first journey at `/app/demo/setup`, which establishes each firm's governed
+profile BEFORE the Smiths request and then runs that one signed request under both profiles. The
+standalone `ComparisonColumns` primitive and the `comparison` / `policy-authoring` routes were
+deleted with it; both route names survive only as redirects to setup.
 
-**`ComparisonColumns` (built, D-036):**
+The comparison principles below are **preserved verbatim in intent** and are what a review checks.
+What is deleted is the desktop table abstraction, not the doctrine.
 
-- **Layout:** `grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2`; stacks on narrow viewports.
-  Each column headed by the firm name (`text-base font-semibold text-slate-900`) and its **active
-  policy version** in `font-mono text-xs` with a `FreshValue`-style "active since" label - the
-  version provenance is the header, because it is the entire explanation of the columns.
-- **Row model:** aligned rows per compared dimension (cash-reserve requirement, approval
-  threshold, quorum, disposition, outcome), so the eye reads across.
-- **Difference as hierarchy, not highlighter** (the confidence-as-hierarchy doctrine applied to
-  diffing): rows where the firms agree render receded - `text-sm text-slate-500`, regular
-  weight. Rows where they differ render at full weight - `text-sm text-slate-900` - with a
-  `border-l-2 border-slate-900 pl-3` marker on each differing cell. No fills, no yellow, no
-  green/red judgment colors: neither firm is "right", they are differently governed, and the
-  palette must not editorialize.
-- **Cause on tap:** every differing row carries a `WhyBubble` citing, for each side, the policy
-  provision and version that produced its value ("Firm B reserve: 12 months of planned
-  withdrawals - policy FB-2.1 §3"). The difference is **driven by policy-version provenance**,
-  never by text-diffing rendered output.
-- Dispositions inside the comparison use the standard §5 badges; figures use `Metric` /
-  `FreshValue` as everywhere. Established tokens only - the comparison introduces a layout, not
-  a look.
+**Where each principle now lives** (`src/app/demo/surfaces/setup-run.tsx`,
+`src/app/demo/surfaces/setup-choices.tsx`, `src/app/demo/surfaces/setup-shared.tsx`):
+
+- **One shared question above both firms.** `OutcomesBody` opens with the comparison question in a
+  single `bg-surface` card, then renders two peer `OutcomeCard`s. Phone DOM order is
+  question → Firm A → Firm B, proven at 390px, so the narrow reading order still poses the
+  question before either answer.
+- **Layout:** `grid grid-cols-1 gap-4 lg:grid-cols-2`, stacking on narrow viewports - the same
+  responsive stacking rule the columns had, expressed as cards. Each card is headed by the firm
+  name (`text-base font-semibold text-slate-900`) with its **pinned demonstration policy version**
+  directly beneath in `font-mono text-xs`: the version provenance is still the header, because it
+  is still the entire explanation of the difference.
+- **Shared labels, read across.** Both cards carry the same labeled rows in the same order
+  (`Reserve proof`, `Evidence freshness`, `Authority path` / `Resolving condition`,
+  `Strongest honest proof`), so the eye reads across cards exactly as it read across columns.
+  Rows are `rounded-md border border-slate-200 bg-surface p-3` - the register idiom, not a table.
+- **Difference as hierarchy, not highlighter.** Where the firms agree, the row's secondary text
+  recedes to `text-xs text-slate-600`; where they differ, the deciding value stays at full weight
+  (`text-sm text-slate-800`/`900`) and the disposition is carried by the standard §5 `StatusBadge`.
+  No fills, no yellow, no green/red judgment colors: neither firm is "right", they are differently
+  governed, and the palette must not editorialize. The surface says so in words too ("Firm A is not
+  the winner and Firm B is not wrong").
+- **Cause, stated concisely, not hidden.** Each differing row carries its own one-line rationale
+  (`{effect}.detail`) naming the policy provision that produced it, and the policy-choice step
+  (`PolicyChoiceGroup`) shows each group's `rationale` and its golden `caseRef`. The difference is
+  driven by **policy-version provenance**, never by text-diffing rendered output. Reasoning stays
+  concise and adjacent rather than behind a per-row `WhyBubble`, because on a phone a bubble per row
+  is a wall of taps; the §1 rule that reasoning is never a wall of text first is what governs.
+- **No table, no carousel.** The e2e proof asserts zero `role="table"` on the outcomes step at all
+  four widths. Figures still go through `Metric` / `FreshValue`, dispositions through the standard
+  §5 badges. Established tokens only - the replacement introduces a layout, not a look.
+- **Signed-case authority.** An impact card carries `Captain-signed case` against the CASE, never
+  against a mutable outcome; if the operator's live selection diverges from the signed option the
+  card gains a `Varied from signed selection` badge and the affected firm card is labeled a
+  projection (`ImpactFirmCard`). A mutated outcome never retains a captain-signed badge.
+- **Proof identity before export.** Each firm's trail ends in its own identity block projected
+  from the SAME decision-record view model the export target renders. Scenario, firm, decision id,
+  the shared firm-neutral request/evidence input hash, decision hash, and the firm-specific
+  policy-bearing bundle hash render in full on both sides and compare byte for byte. The export
+  names one firm explicitly; two outcomes never funnel into one firm's record.
 
 ---
 
@@ -658,7 +685,7 @@ first needs it (§11.3).
 | `TapToVerify` | `WhyBubble` disclosure recipe (`why-bubble.tsx`): text trigger + `animate-slide-down` `bg-slate-50` panel; distinct from `WhyBubble` per PRODUCT-DIRECTION §7 | Surfaces 3, 7-9 (and the §11.3 collapse mode) | §6.6 |
 | `ApprovalStagePanel` | Card recipe, `ProgressSteps`, `StatusBadge`, `Field` hint idiom | Surface 6 | §7.2 |
 | `ExecutionTimeline` | Audit-page register idiom | Surfaces 7-9 | §8.1 |
-| `ComparisonColumns` | Grid layout; type scale; `WhyBubble` | Surface 10 | §10 |
+| Setup journey surfaces (`SetupProgress`, `PolicyChoiceGroup`, `OptionCard`, `ImpactFirmCard`, `OutcomeCard`, `Trail`, `SetupActionRow`) | Card recipe; `StatusBadge`; `Metric` / `FreshValue`; `Field` label idiom; `Button` primary/secondary recipes | Surfaces 10-11 | §10 |
 | `DevProvenanceBadge` | Watermark chip recipe (`metric.tsx`) + EmptyState dashed border | All fake-backed surfaces during build | §11.2 |
 | `DevProvenanceBadge` collapse mode | `DevProvenanceBadge` + the `TapToVerify` provenance detail | Final-presentation surfaces (demo contract §6) | §11.3 |
 | Print stylesheet for the decision artifact | `globals.css` tokens; audit-register idiom; `brand.tsx` | Surface 12 | §9 |

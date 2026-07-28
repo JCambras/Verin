@@ -14,15 +14,14 @@ import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
 import {
-  AVAILABLE_CASH_MINOR,
   CANONICAL_REQUEST,
   CAST,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
-  IDS,
   OBSERVED_RECENT,
-  PENDING_DISTRIBUTION_MINOR,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  SMITHS_LIQUIDITY,
+  decisionIdentityFor,
   dispositionFor,
   type FirmData,
   type ScenarioData,
@@ -30,13 +29,15 @@ import {
 
 /** Reserve floor and post-reserve headroom under a firm's policy - DERIVED figures
  * (ADR-0022): computed from synthetic inputs, so they render as watermarked
- * demonstrations. The inputs list is the provenance trace, not a calculation cache. */
+ * demonstrations. The inputs list is the provenance trace, not a calculation cache.
+ * The projection is fed the WHOLE signed basis - available, pending, and the request
+ * being decided - so the journey and the setup cannot model one request two ways. */
 const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synthetic-fixture", OBSERVED_RECENT)];
 export function headroomMinor(firm: FirmData): number {
   return projectReserve({
-    availableMinor: AVAILABLE_CASH_MINOR,
-    pendingMinor: PENDING_DISTRIBUTION_MINOR,
-    requestMinor: 0,
+    availableMinor: SMITHS_LIQUIDITY.availableMinor,
+    pendingMinor: SMITHS_LIQUIDITY.pendingMinor,
+    requestMinor: SMITHS_LIQUIDITY.requestMinor,
     plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
     reserveMonths: firm.reserveMonths,
   }).headroomMinor;
@@ -131,7 +132,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
     figures: [
       { label: "Amount", metric: amountMetric() },
-      { label: "Available after reserve", metric: headroomMetric(firm) },
+      { label: "Available after this request and reserve", metric: headroomMetric(firm) },
     ],
     authoritySummary,
     why: proceedWhy(firm, scenario.spec.bankChanged),
@@ -300,10 +301,11 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
 }
 
 export function buildApprovals(scenario: ScenarioData, firm: FirmData): ApprovalVM {
+  const identity = decisionIdentityFor(firm.id);
   return {
     spine: buildSpine("Authority"),
     stages: buildStages(scenario, firm, "gate"),
-    binding: { decisionHash: IDS.decisionHash, bundleHash: IDS.bundleHash },
+    binding: { decisionHash: identity.decisionHash, bundleHash: identity.bundleHash },
     gate: {
       restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
       figures: [{ label: "Amount", metric: amountMetric() }],

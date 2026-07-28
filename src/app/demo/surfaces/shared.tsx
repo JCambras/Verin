@@ -29,9 +29,9 @@ export const DEMO_SEQUENCE = [
   "record",
 ] as const;
 export const LEGACY_SETUP_ALIASES = ["comparison", "policy-authoring"] as const;
-export type DemoStation =
-  | (typeof DEMO_SEQUENCE)[number]
-  | (typeof LEGACY_SETUP_ALIASES)[number];
+/** Only REAL stations are addressable by name. The legacy aliases are deliberately
+ * outside this union, so a link back to a deleted station cannot typecheck. */
+export type DemoStation = (typeof DEMO_SEQUENCE)[number];
 
 export function demoHref(station: DemoStation, scenarioId: string, firmId: string, extra?: string): string {
   return `/app/demo/${station}?scenario=${scenarioId}&firm=${firmId}${extra ?? ""}`;

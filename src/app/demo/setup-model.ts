@@ -144,12 +144,30 @@ export interface SetupRequestVM {
   readonly requestRef: string;
 }
 
-export interface SetupProofVM {
-  readonly firmADecisionId: string;
-  readonly firmBDecisionId: string;
+/** One firm's export identity, projected from the SAME decision-record view model the
+ * export target renders. Everything shown immediately before export is what the
+ * exported record shows, so the proof step cannot assert a hash-bound identity it
+ * then breaks by navigating somewhere else. */
+export interface SetupProofFirmVM {
+  readonly firmId: SetupFirmId;
+  readonly firmLabel: string;
+  readonly scenarioId: string;
+  readonly scenarioLabel: string;
+  readonly decisionId: string;
   readonly inputHash: string;
-  readonly engineLabel: string;
+  readonly decisionHash: string;
+  readonly bundleHash: string;
+  readonly policyVersion: string;
   readonly exportHref: string;
+  readonly exportLabel: string;
+}
+
+export interface SetupProofVM {
+  readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
+  readonly engineLabel: string;
+  readonly exportQuestion: string;
+  readonly exportHint: string;
+  readonly exportError: string;
 }
 
 export interface MoneyMovementSetupVM {

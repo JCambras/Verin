@@ -131,6 +131,54 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await snap(page, 9, "setup-proof");
 });
 
+/** The proof step claims hash-bound identity. Following each export must land on a
+ * record carrying the SAME identifiers - and each firm must have its own export, so a
+ * two-firm proof cannot be funnelled into one firm's record. */
+test("each firm's export lands on the record whose identifiers the proof step showed", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  for (const firmId of ["firm-a", "firm-b"] as const) {
+    await page.goto("/app/demo/setup");
+    for (const label of [
+      "Continue with both firms",
+      "Confirm required controls",
+      "Use this starting posture",
+      "Review signed impact",
+      "Send for approval",
+    ]) {
+      await page.getByRole("button", { name: label }).click();
+    }
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Acknowledge and activate demonstration" }).click();
+    await page.getByRole("button", { name: "Run under both profiles" }).click();
+    await page.getByRole("button", { name: "View complete proof trail" }).click();
+
+    // Read all six canonical values shown immediately before export.
+    const shown = new Map<string, string>();
+    for (const field of ["scenario", "firm", "decision-id", "input-hash", "decision-hash", "bundle-hash"]) {
+      const value = (await page.getByTestId(`identity-${firmId}-${field}`).textContent())?.trim();
+      expect(value, `${firmId} ${field} must be shown before export`).toBeTruthy();
+      shown.set(field, value!);
+    }
+    expect(shown.get("decision-id")).toContain(firmId);
+
+    // Export without choosing a firm names the gap instead of guessing one.
+    await page.getByRole("button", { name: "Export decision record" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Choose which profile" })).toBeVisible();
+
+    const firmLabel = firmId === "firm-a" ? "Firm A" : "Firm B";
+    await page.getByTestId("export-choice").getByRole("radio", { name: new RegExp(firmLabel) }).check();
+    await page.getByRole("button", { name: "Export decision record" }).click();
+    await expect(page).toHaveURL(new RegExp(`/app/demo/record\\?scenario=recent-bank-change-block&firm=${firmId}$`));
+
+    // Byte-for-byte: scenario, firm, decision id, shared request/evidence input
+    // hash, decision hash, and firm-specific policy-bearing bundle hash survive.
+    for (const [field, value] of shown) {
+      await expect(page.getByTestId(`record-identity-${field}`)).toHaveText(value);
+    }
+  }
+});
+
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {
   await login(page, PRINCIPAL);
 
@@ -227,6 +275,12 @@ test("legacy comparison and query activation aliases redirect to setup without a
 
   await page.goto("/app/demo/comparison?scenario=recent-bank-change-block&firm=firm-a");
   await expect(page).toHaveURL(/\/app\/demo\/setup$/);
+
+  // A bookmarked alias reaches setup even when its query names a branch that no
+  // longer exists: the alias never resolves a scenario or builds a journey.
+  await page.goto("/app/demo/comparison?scenario=not-a-branch&firm=firm-c");
+  await expect(page).toHaveURL(/\/app\/demo\/setup$/);
+  await expect(page.getByRole("heading", { name: "Start with the policy, not the request" })).toBeVisible();
 });
 
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {

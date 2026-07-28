@@ -14,24 +14,39 @@ import type {
   SetupChoiceOptionVM,
   SetupFirmId,
   SetupPolicyGroupVM,
+  SetupProofFirmVM,
 } from "./setup-model";
 import { derivedMetric, fixtureMetric, prov } from "./provenance";
+import { getJourney } from "./journey";
 import {
-  ACCOUNTS,
   CANONICAL_REQUEST,
   DEMO_NOW,
+  LOW_HEADROOM_LIQUIDITY,
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  SMITHS_LIQUIDITY,
+  type SignedLiquidityCase,
 } from "./data";
 
-const CURRENT_BALANCE_MINOR = ACCOUNTS[0]!.balanceMinor;
-const LOW_HEADROOM_AVAILABLE_MINOR = 16_000_000;
-const LOW_HEADROOM_PENDING_MINOR = 2_000_000;
+/** The branch the setup's two outcomes are drawn from: one recent, unverified bank
+ * instruction, which is exactly where Firm A and Firm B diverge. Both the on-screen
+ * proof identity and each export target name it, so they cannot disagree. */
+const SETUP_SCENARIO_ID = "recent-bank-change-block";
 const DERIVED_INPUTS = [
   prov("synthetic-fixture", OBSERVED_RECENT),
   prov("synthetic-fixture", OBSERVED_RECENT),
   prov("user-entered-demo-input", DEMO_NOW),
 ];
+
+/** Whole dollars from integer minor units, for the one place a signed liquidity basis
+ * is stated as prose. The numbers are never restated by hand. */
+function usd(minor: number): string {
+  return `$${(minor / 100).toLocaleString("en-US")}`;
+}
+
+function factsLine(liquidity: SignedLiquidityCase): string {
+  return `${usd(liquidity.availableMinor)} available · ${usd(liquidity.pendingMinor)} pending · same ${usd(liquidity.requestMinor)} request`;
+}
 
 function effect(
   status: string,
@@ -48,24 +63,24 @@ function effect(
   };
 }
 
+/** One projection helper so no caller can supply a partial liquidity basis: the
+ * pending amount and the request being decided always travel with the balance. */
+function project(liquidity: SignedLiquidityCase, months: number) {
+  return projectReserve({
+    availableMinor: liquidity.availableMinor,
+    pendingMinor: liquidity.pendingMinor,
+    requestMinor: liquidity.requestMinor,
+    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+    reserveMonths: months,
+  });
+}
+
 function reserveOption(
   months: number,
   truthLabel: SetupChoiceOptionVM["truthLabel"],
 ): SetupChoiceOptionVM {
-  const smiths = projectReserve({
-    availableMinor: CURRENT_BALANCE_MINOR,
-    pendingMinor: 0,
-    requestMinor: CANONICAL_REQUEST.amountMinor,
-    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-    reserveMonths: months,
-  });
-  const lowHeadroom = projectReserve({
-    availableMinor: LOW_HEADROOM_AVAILABLE_MINOR,
-    pendingMinor: LOW_HEADROOM_PENDING_MINOR,
-    requestMinor: CANONICAL_REQUEST.amountMinor,
-    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-    reserveMonths: months,
-  });
+  const smiths = project(SMITHS_LIQUIDITY, months);
+  const lowHeadroom = project(LOW_HEADROOM_LIQUIDITY, months);
   return {
     id: `${months}-months`,
     label: `${months} months`,
@@ -231,6 +246,30 @@ function firmChoices(
   return { firmId, initialOptionId, options };
 }
 
+/**
+ * The export identity for one firm, READ from the decision-record view model the
+ * export target renders. Nothing here is restated: scenario, firm, decision id,
+ * input hash, decision hash, and policy-bearing bundle hash are the destination's
+ * own values, so the step that claims hash-bound identity cannot navigate away.
+ */
+function proofFirm(firmId: SetupFirmId): SetupProofFirmVM {
+  const record = getJourney(SETUP_SCENARIO_ID, firmId).record;
+  const identity = record.identity;
+  return {
+    firmId: identity.firm.id as SetupFirmId,
+    firmLabel: identity.firm.label,
+    scenarioId: identity.scenario.id,
+    scenarioLabel: identity.scenario.label,
+    decisionId: identity.decisionId,
+    inputHash: identity.inputHash,
+    decisionHash: identity.decisionHash,
+    bundleHash: identity.bundleHash,
+    policyVersion: record.hashes.policyVersion,
+    exportHref: `/app/demo/record?scenario=${identity.scenario.id}&firm=${identity.firm.id}`,
+    exportLabel: `${identity.firm.label} decision record`,
+  };
+}
+
 function group(
   id: SetupPolicyGroupVM["id"],
   title: string,
@@ -307,8 +346,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     ],
     impacts: [
       { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: "Same request · change 4 days ago · independent verification absent", groupId: "bank-change" },
-      { id: "verified-bank", title: "Verified bank instruction", caseRef: "GC-01 / GC-02", facts: "Same $75,000 request · bank instruction independently verified", groupId: "threshold" },
-      { id: "low-headroom", title: "Low headroom", caseRef: "GC-05", facts: "$160,000 available · $20,000 pending · same $75,000 request", groupId: "reserve" },
+      { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
+      { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
       { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: "A new evidence snapshot changes the input hash", groupId: null, universalEffect: "Prior authority is voided for both firms. Evidence, validation, policy, disposition, and authority rerun against the new bundle." },
     ],
     activation: {
@@ -322,13 +361,14 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       demonstrationNotice: "This local acknowledgment demonstrates the review contract only. It is not persisted, cannot govern a production request, and must be deleted when the real policy lifecycle lands.",
     },
     request: {
-      title: "$75,000 one-time ACH distribution",
+      title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
       summary: "Smith household · taxable account · household-titled destination · bank instruction changed 4 days ago",
       requestRef: "request:smiths-renovation@demo-2026-07-28",
       evidenceRef: "smiths-evidence@2026-07-26T14:00Z",
       facts: [
         { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "Synthetic fixture", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
-        { label: "Available balance", metric: fixtureMetric(CURRENT_BALANCE_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
+        { label: "Available balance", metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
+        { label: "Pending approved activity", metric: fixtureMetric(SMITHS_LIQUIDITY.pendingMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Planned monthly withdrawals", metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Household instruction", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Destination restriction", value: "Household-titled destinations only", category: "Household instruction", provenance: prov("synthetic-fixture", "2026-05-10"), fakeClass: "synthetic-fixture" },
         { label: "Bank instruction", value: "Changed 4 days ago · not independently verified", category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
@@ -337,11 +377,11 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       ],
     },
     proof: {
-      firmADecisionId: "decision-a-smiths-075-demo",
-      firmBDecisionId: "decision-b-smiths-075-demo",
-      inputHash: "sha256:demo-7b15c2b2e2a7f0c9",
+      firms: [proofFirm("firm-a"), proofFirm("firm-b")],
       engineLabel: "Labeled deterministic presentation builder · not production evaluator output",
-      exportHref: "/app/demo/record?scenario=recent-bank-change-block&firm=firm-a",
+      exportQuestion: "Which profile's decision record do you want to export?",
+      exportHint: "The setup produced two outcomes, so the export names one of them. The identifiers above are what the exported record carries.",
+      exportError: "Choose which profile's decision record to export.",
     },
     fakeClass: "deterministic-engine-output",
   };

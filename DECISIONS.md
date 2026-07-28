@@ -3119,3 +3119,76 @@ The premise (the magic comment only binds to a dynamic `import()` specifier) is 
 for Turbopack's file tracer, which honors it in exactly this argument position.
 Removing it reintroduces a build warning whose own remedy text prescribes that comment;
 `src/infrastructure/store/db.ts` is unchanged. Measurements are in proof log PF-setup-06.
+
+### D-063 · 2026-07-28 · reversible · One liquidity basis, one export identity, an owner-aware fence
+
+Second-round gate-review corrections to D-061/D-062, each fixed at its cause.
+
+**One signed liquidity basis, not one signed number.** D-062 aligned the available
+balance but left the other two terms of the same arithmetic unpinned, so the journey
+computed headroom as `420k − 40k pending − 0 request` while the setup computed
+`420k − 0 pending − 75k request` and both were labeled the same thing. `data.ts` now
+exports two whole `SignedLiquidityCase` values - `SMITHS_LIQUIDITY` (GC-01/GC-02:
+$420,000, no pending, the $75,000 request) and `LOW_HEADROOM_LIQUIDITY` (GC-05:
+$160,000, $20,000 pending, the same request) - and every projection takes all three
+terms. `AVAILABLE_CASH_MINOR` and `PENDING_DISTRIBUTION_MINOR` are gone. The GC-05
+literals and the prose that restated them a third time are replaced by the pinned
+basis and a generated `factsLine`. The fence pins all three terms on both surfaces,
+opens GC-05 for the first time, and recomputes the journey's headroom from the signed
+basis (PF-setup-09).
+
+The unsigned $40,000 pending deduction was removed from the branch rather than kept:
+GC-01 through GC-04 record no pending-actions evidence, and GC-15 states the absence
+in signed words ("No pending activity at first evaluation"). The evidence row now
+states that absence and explains what a pending amount would do, so the household's
+required pending-liquidity-activity shape stays modeled and visible without a number
+no signed case supports.
+
+**Export identity comes from the record it exports.** The proof step asserted
+hash-bound identity using identifiers nothing else carried, then pushed a fixed Firm A
+URL for both firms. `SetupProofVM` now holds one `SetupProofFirmVM` per firm, each
+projected from the decision-record view model its own export target renders, and the
+export requires an explicit firm choice (the same announced-error pattern the
+activation step already uses) rather than silently picking one. `DECISION_IDENTITIES`
+in `data.ts` is the single source for both surfaces. The shared full `inputHash`
+identifies the firm-neutral Smiths request and evidence. Each policy-bearing bundle
+has its own `bundleHash`, and each firm carries its own decision id and decision hash.
+`RecordVM.identity` also owns structured scenario and firm identity. The proof cards
+and export URL project all six values from that exact destination record, which
+renders them visibly; a fence plus an e2e proof that FOLLOWS each export compare
+scenario, firm, decision id, input hash, decision hash, and bundle hash byte for byte
+(PF-setup-08). The old short `sha256:demo-7b15c2b2e2a7f0c9` value is not restored.
+
+**RULE C is owner-aware.** It matched bare property names, so any dead field colliding
+with an unrelated property passed - demonstrably including `SetupProofVM.stages`, one
+of the three fields D-062 removed. Reads are now keyed by the receiver type the checker
+resolves; a structural projection of the view model (a presentation primitive's prop
+type) still counts, an unrelated view model does not. A planted-collision companion
+guards it, and enabling it caught one more pre-existing dead field,
+`DecisionJourneyVM.outcomeClass` (PF-setup-07).
+
+**The normative design language is amended, not left contradicting the product.** §10
+now specifies the shipped setup-first firm comparison and keeps every principle that
+survives - one shared question above peer firm cards, shared row labels read across,
+receded agreement, visible policy differences with no editorializing palette,
+responsive stacking, concise adjacent rationale, no table or carousel - while dropping
+the deleted `ComparisonColumns` layout. The surface inventory and the component
+derivation table point at the shipped setup components. The deleted comparison route
+and component are NOT restored.
+
+Smaller corrections: the two unreachable `ReserveProjection` fields and the unused
+`SetupActionRow.primaryDisabled` prop are deleted; the Playwright action count is
+hoisted out of its loop; legacy aliases redirect before any scenario resolution or
+journey construction, so a bookmarked `/app/demo/comparison?scenario=typo` reaches
+setup instead of 404-ing (proven in e2e); and `DemoStation` no longer unions the
+legacy aliases, so a link back to a deleted station cannot typecheck.
+
+**Why:** the same class as D-062 - a demo that models one request two ways, or claims
+an identity its own export breaks, is not a truth-telling demo, and a fence that cannot
+generalize is a green check that measures nothing.
+**Revert path:** each fence is independently removable; reverting the liquidity work
+means restoring two free-standing constants and deleting the whole-basis assertions.
+
+`inert-turbopack-comment` remains resolved as an evidence-backed rejection, not a
+no-op-by-omission: `src/infrastructure/store/db.ts` is unchanged and PF-setup-06 records
+the build measurements showing the comment is load-bearing for Turbopack's file tracer.

@@ -22,7 +22,7 @@ const STEPS = [
   { id: "activation", heading: "A different human acknowledges immutable versions", action: "Acknowledge and activate demonstration", choiceInputs: true },
   { id: "request", heading: "Run the Smiths request under both profiles", action: "Run under both profiles", choiceInputs: false },
   { id: "outcomes", heading: "Identical facts, different correct outcomes", action: "View complete proof trail", choiceInputs: false },
-  { id: "proof", heading: "Every outcome has a proof trail", action: "Export decision record", choiceInputs: false },
+  { id: "proof", heading: "Every outcome has a proof trail", action: "Export decision record", choiceInputs: true },
 ] as const;
 
 async function settle(page: Page) {
@@ -50,7 +50,8 @@ async function assertNoPageOverflow(page: Page) {
 
 async function assertReachableTargets(page: Page, expectChoiceInputs: boolean) {
   const actions = page.locator("a[href], button");
-  for (let index = 0; index < await actions.count(); index += 1) {
+  const actionCount = await actions.count();
+  for (let index = 0; index < actionCount; index += 1) {
     const action = actions.nth(index);
     if (!(await action.isVisible())) continue;
     const box = await action.boundingBox();
@@ -195,7 +196,16 @@ test("the full setup journey is keyboard operable and announces activation error
   await expect(page.getByRole("heading", { name: STEPS[8].heading })).toBeVisible();
   const exportButton = page.getByRole("button", { name: STEPS[8].action });
   await exportButton.focus();
-  await expect(exportButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("alert").filter({ hasText: "Choose which profile" })).toBeVisible();
+
+  const firmBExport = page.getByTestId("export-choice").getByRole("radio", { name: /Firm B/ });
+  await firmBExport.focus();
+  await page.keyboard.press("Space");
+  await expect(firmBExport).toBeChecked();
+  await exportButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/app\/demo\/record\?scenario=recent-bank-change-block&firm=firm-b$/);
 });
 
 test("200 percent text, reduced motion, and software-keyboard posture stay safe", async ({ page }) => {

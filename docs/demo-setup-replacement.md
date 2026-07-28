@@ -19,13 +19,13 @@ different measures, so they are not presented as one time series.
 
 | Scope | Delivery parent | After replacement | Change |
 |---|---:|---:|---:|
-| Runtime, `src` excluding `src/__tests__` | 11,304 | 12,612 | +1,308 |
-| Tests, `src/__tests__` plus `e2e` | 10,257 | 11,063 | +806 |
-| Fake runtime, `src/app/demo` | 2,824 | 4,156 | +1,332 |
-| Setup presentation only | 0 | 1,182 | +1,182 |
-| Total presentation scope | 2,306 | 3,265 | +959 |
+| Runtime, `src` excluding `src/__tests__` | 11,304 | 12,807 | +1,503 |
+| Tests, `src/__tests__` plus `e2e` | 10,257 | 11,603 | +1,346 |
+| Fake runtime, `src/app/demo` | 2,824 | 4,357 | +1,533 |
+| Setup presentation only | 0 | 1,270 | +1,270 |
+| Total presentation scope | 2,306 | 3,351 | +1,045 |
 | Contracts | 3,394 | 3,394 | 0 |
-| Domain | 714 | 748 | +34 |
+| Domain | 714 | 744 | +30 |
 | Infrastructure | 2,210 | 2,212 | +2 |
 | `DevProvenanceBadge` call sites | 14 | 16 | +2 |
 
@@ -41,12 +41,14 @@ the 6,000-line ceiling.
 |---|---|
 | Free-form policy authoring surface | Deleted `src/app/demo/surfaces/policy-authoring.tsx`. |
 | Desktop comparison surface | Deleted `src/app/demo/surfaces/comparison.tsx`. |
-| Comparison-only shared primitive | Deleted unused `src/app/presentation/comparison-columns.tsx`. The replacement uses semantic firm cards and no desktop table abstraction. |
+| Comparison-only shared primitive | Deleted unused `src/app/presentation/comparison-columns.tsx`. The replacement uses semantic firm cards and no desktop table abstraction. The normative design language is amended to match: §10 now specifies the setup-first firm comparison and the surface inventory and derivation table point at the shipped setup components (D-063). |
 | Query-string activation | Removed `approved` parsing and the `approved=1` render branch from `src/app/app/demo/[station]/page.tsx`. Both legacy routes now redirect to `/app/demo/setup`; query parameters cannot activate local state. |
 | Policy-authoring fake service | Deleted `buildPolicyAuthoring` from `src/app/demo/build-summary.ts`, its journey field, and its view-model types. |
 | Overlapping comparison fake service | Deleted `buildComparison` from `src/app/demo/build-summary.ts`, its journey field, and its view-model types. |
 | Redundant reserve arithmetic | Removed the twelve-month multiplication from the old authoring builder and app-local multiplication from `build-decision.ts`. Reserve projection now has one domain function, `src/domain/money-movement/reserve-projection.ts`. |
 | Stale monthly schedule | Replaced the old $6,000 demo value with the captain-signed $8,000 schedule. The $48,000 and $96,000 floors are derived, not stored. |
+| Partial liquidity bases | Replaced the global `AVAILABLE_CASH_MINOR` / `PENDING_DISTRIBUTION_MINOR` pair with two whole signed bases in `src/app/demo/data.ts` - `SMITHS_LIQUIDITY` (GC-01 / GC-02: $420,000 available, no pending distribution, the $75,000 request) and `LOW_HEADROOM_LIQUIDITY` (GC-05: $160,000 available, $20,000 pending, the same request). Every projection now receives all three terms, so neither surface can model one request two ways, and the unsigned $40,000 pending deduction is gone from a branch whose signed cases record no pending activity (D-063). |
+| Invented proof identity and a hardcoded export | Deleted `firmADecisionId`, `firmBDecisionId`, the old short input hash, and the single `exportHref`. Canonical `RecordVM.identity` now owns structured scenario and firm identity plus full decision id, shared firm-neutral input hash, decision hash, and firm-specific policy-bearing bundle hash. Each setup proof is projected from the exact record its explicit firm export renders, and E2E compares all six visible values byte for byte (D-063, PF-setup-08). |
 | Legacy journey links | Launcher, home card, verification forward link, and record back link now enter the setup-first journey. |
 | Legacy behavior proof | Playwright proves both old route aliases redirect and that `approved=1` cannot create an activated setup. |
 
@@ -70,7 +72,7 @@ and render typed view models only.
 | Deterministic evaluator and explanation trace | Delete the pre-authored Smiths effects and outcome comparison from the setup builder. Render evaluator and ledger projections while preserving the current firm-labeled card structure. |
 | Authority runtime and pre-execution safety | Delete the pre-authored authority reachability and proof text. Render real stages, invalidation, revalidation, reservation, and conflict receipts. |
 | Execution and verification ports | Delete the fake submitted receipt and no-call proof text. Render port-conformance-backed status and remove the matching fake-adapter badges only when the real capability is reachable. |
-| Ledger-derived examiner export | Replace the current setup export target and legacy fake record builder with the ledger projection, then delete the remaining setup proof builder and demonstration export badge. |
+| Ledger-derived examiner export | Replace the current setup export target and legacy fake record builder with the ledger projection, then delete the remaining setup proof builder and demonstration export badge. The per-firm identity projection (`proofFirm`) and the fixed `DECISION_IDENTITIES` map go with it. |
 
 ## Browser evidence
 
@@ -85,3 +87,9 @@ Companion paths prove question to Firm A to Firm B phone
 order, no comparison table or carousel, keyboard-only completion, announced
 activation errors, 200 percent text, reduced motion, and the absence of
 software-keyboard-triggering free-text controls.
+
+`e2e/demo-journey.spec.ts` additionally FOLLOWS each firm's export: it reads the
+decision id, policy version, decision hash, and input-bundle hash the proof step
+shows, proves that exporting without choosing a firm announces the gap instead of
+guessing one, then navigates and asserts the exported record carries the same
+identifiers and the same scenario (D-063; proof log PF-setup-08).
