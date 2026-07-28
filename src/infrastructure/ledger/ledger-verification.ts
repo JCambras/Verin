@@ -13,15 +13,12 @@ import {
   promotedTriggeringEntryId,
 } from "@contracts/decision-core/ledger-references";
 import {
-  canonicalJson,
-  type JsonValue,
-} from "@contracts/decision-core/serialization";
-import {
   verifyStoredByteChain,
   type ChainVerdict,
 } from "@infra/audit/hash-chain";
 import { parseRecordProvenance } from "@contracts/provenance";
 import {
+  canonicalizeRecordedLedgerValue,
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
 } from "./ledger-schema-registry";
@@ -183,8 +180,7 @@ function verifyL2(
         events,
       };
     }
-    const canonical = canonicalJson(parsed.event as unknown as JsonValue);
-    if (!canonical.ok || canonical.value !== row.payloadJson) {
+    if (parsed.canonicalBytes !== row.payloadJson) {
       return {
         verdict: level("L2", false, events.length, row.sequence, "payload bytes are not canonical for the recorded serializer"),
         events,
@@ -202,7 +198,11 @@ function verifyL3(
   for (let index = 0; index < events.length; index += 1) {
     const row = rows[index]!;
     const event = events[index]!;
-    const actor = canonicalJson(event.actor as unknown as JsonValue);
+    const actor = canonicalizeRecordedLedgerValue(
+      row.schemaVersion,
+      row.serializerVersion,
+      event.actor,
+    );
     const matches =
       event.firmId === row.orgId &&
       event.id === row.id &&
@@ -211,8 +211,7 @@ function verifyL3(
       event.serializerVersion === row.serializerVersion &&
       event.occurredAt === row.occurredAt &&
       event.recordedAt === row.recordedAt &&
-      actor.ok &&
-      actor.value === row.actorJson &&
+      actor === row.actorJson &&
       event.correlationId === row.correlationId &&
       (event.causationRef?.id ?? null) === row.causationId &&
       promotedDecisionId(event) === row.decisionId &&

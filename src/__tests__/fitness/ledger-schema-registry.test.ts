@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { SourceFile } from "ts-morph";
 import { beforeEach, afterEach, describe, expect, it } from "vitest";
-import { REPO_ROOT } from "./_fence-utils";
+import { REPO_ROOT, inMemoryProject, realProject } from "./_fence-utils";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { GENESIS_HASH, computeChainHash } from "@infra/audit/hash-chain";
 import {
@@ -11,17 +12,16 @@ import {
 import {
   CANONICAL_SERIALIZER_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
-  canonicalJson,
-  type JsonValue,
 } from "@contracts/decision-core/serialization";
 import type { RecordProvenance } from "@contracts/provenance";
 import {
+  canonicalizeRecordedLedgerValue,
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
   registeredLedgerEncodings,
 } from "@infra/ledger/ledger-schema-registry";
 import {
-  CURRENT_SOURCE_ENCODING,
+  parseRecordedReplaySource,
   registeredSourceEncodings,
 } from "@infra/ledger/ledger-source-registry";
 import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
@@ -48,6 +48,15 @@ interface RecordedRowFixture {
   readonly evidenceSnapshotId: string;
   readonly versions: Record<string, Record<string, RecordedRow>>;
 }
+interface RecordedReplayFixture {
+  readonly schemaVersion: string;
+  readonly serializerVersion: string;
+  readonly sources: readonly {
+    readonly kind: "evidence" | "bundle" | "decision";
+    readonly canonical: string;
+    readonly hash: string;
+  }[];
+}
 
 const FIXTURE = JSON.parse(
   readFileSync(
@@ -55,10 +64,34 @@ const FIXTURE = JSON.parse(
     "utf8",
   ),
 ) as RecordedRowFixture;
+const REPLAY_FIXTURE = JSON.parse(
+  readFileSync(
+    join(REPO_ROOT, "fixtures/decision-core/recorded-replay-sources.json"),
+    "utf8",
+  ),
+) as RecordedReplayFixture;
 
 const TS = "2026-07-26T13:30:00.000Z";
 const encoding = (schemaVersion: string): string =>
-  `${schemaVersion}|${CANONICAL_SERIALIZER_VERSION}`;
+  `${schemaVersion}|${FIXTURE.serializerVersion}`;
+const LIVE_CODEC_DEPENDENCIES = new Set([
+  "LedgerEntrySchema",
+  "LEDGER_SCHEMA_VERSION",
+  "EvidenceSnapshotRefSchema",
+  "DecisionInputBundleSchema",
+  "DecisionRecordSchema",
+  "canonicalJson",
+  "bundleHashPreimage",
+  "decisionHashPreimage",
+  "CANONICAL_SERIALIZER_VERSION",
+  "DECISION_CORE_SCHEMA_VERSION",
+]);
+
+function liveCodecDependencies(source: SourceFile): string[] {
+  return source.getImportDeclarations().flatMap((declaration) =>
+    declaration.getNamedImports().map((item) => item.getName()))
+    .filter((name) => LIVE_CODEC_DEPENDENCIES.has(name));
+}
 
 async function storeRecordedRow(
   db: SqlDb,
@@ -68,13 +101,19 @@ async function storeRecordedRow(
   const payload = JSON.parse(row.payloadJson) as {
     id: string;
     type: string;
+    schemaVersion: string;
+    serializerVersion: string;
     occurredAt: string;
     recordedAt: string;
-    actor: JsonValue;
+    actor: unknown;
     correlationId: string;
   };
-  const actorJson = canonicalJson(payload.actor);
-  if (!actorJson.ok) throw actorJson.error;
+  const actorJson = canonicalizeRecordedLedgerValue(
+    payload.schemaVersion,
+    payload.serializerVersion,
+    payload.actor,
+  );
+  if (actorJson === null) throw new Error("fixture actor is not canonicalizable");
   await db.query(
     `INSERT INTO evidence_snapshots
       (org_id,id,canonical_json,schema_version,contract_schema_version,
@@ -94,8 +133,8 @@ async function storeRecordedRow(
      VALUES ($1,$2,0,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
     [
       FIXTURE.firmId, payload.id, payload.type, schemaVersion,
-      CANONICAL_SERIALIZER_VERSION, payload.occurredAt, payload.recordedAt,
-      actorJson.value, payload.correlationId, row.payloadJson,
+      FIXTURE.serializerVersion, payload.occurredAt, payload.recordedAt,
+      actorJson, payload.correlationId, row.payloadJson,
       GENESIS_HASH, row.entryHash, FIXTURE.evidenceSnapshotId,
       FIXTURE.provenance.source, FIXTURE.provenance.asOf,
       FIXTURE.provenance.confidence,
@@ -129,12 +168,30 @@ describe("decision-ledger schema registry fence", () => {
     expect([...registeredLedgerEncodings()].sort()).toEqual(
       LEDGER_SCHEMA_VERSIONS.map(encoding).sort(),
     );
+    expect(registeredLedgerEncodings()).toContain(
+      `${LEDGER_SCHEMA_VERSION}|${CANONICAL_SERIALIZER_VERSION}`,
+    );
     expect(Object.keys(FIXTURE.versions).sort()).toEqual(
       [...LEDGER_SCHEMA_VERSIONS].sort(),
     );
     for (const kind of ["evidence", "bundle", "decision"] as const) {
+      expect(registeredSourceEncodings(kind)).toEqual([
+        `${REPLAY_FIXTURE.schemaVersion}|${REPLAY_FIXTURE.serializerVersion}`,
+      ]);
       expect(registeredSourceEncodings(kind)).toContain(
-        CURRENT_SOURCE_ENCODING,
+        `${DECISION_CORE_SCHEMA_VERSION}|${CANONICAL_SERIALIZER_VERSION}`,
+      );
+    }
+  });
+
+  it("enforces: retained codecs import only explicit versioned behavior", () => {
+    const project = realProject();
+    for (const file of [
+      "src/infrastructure/ledger/ledger-schema-registry.ts",
+      "src/infrastructure/ledger/ledger-source-registry.ts",
+    ]) {
+      expect(liveCodecDependencies(project.getSourceFileOrThrow(file))).toEqual(
+        [],
       );
     }
   });
@@ -148,17 +205,16 @@ describe("decision-ledger schema registry fence", () => {
         const parsed = parseRecordedLedgerEvent(
           eventType,
           schemaVersion,
-          CANONICAL_SERIALIZER_VERSION,
+          FIXTURE.serializerVersion,
           JSON.parse(row.payloadJson),
         );
         expect(parsed.ok ? "" : parsed.reason).toBe("");
         if (!parsed.ok) return;
         expect(parsed.event.schemaVersion).toBe(schemaVersion);
-        const bytes = canonicalJson(parsed.event as unknown as JsonValue);
-        expect(bytes.ok && bytes.value).toBe(row.payloadJson);
+        expect(parsed.canonicalBytes).toBe(row.payloadJson);
         const preimage = decisionLedgerChainPreimage(
           schemaVersion,
-          CANONICAL_SERIALIZER_VERSION,
+          FIXTURE.serializerVersion,
           row.payloadJson,
           FIXTURE.provenance,
         );
@@ -167,6 +223,19 @@ describe("decision-ledger schema registry fence", () => {
       }
     },
   );
+
+  it("enforces: every retained replay-source codec reproduces its recorded bytes and hash", () => {
+    for (const source of REPLAY_FIXTURE.sources) {
+      const parsed = parseRecordedReplaySource(
+        source.kind,
+        REPLAY_FIXTURE.schemaVersion,
+        REPLAY_FIXTURE.serializerVersion,
+        JSON.parse(source.canonical),
+      );
+      expect(parsed.ok ? parsed.canonicalBytes : parsed.reason).toBe(source.canonical);
+      expect(parsed.ok ? parsed.recordedHash : "").toBe(source.hash);
+    }
+  });
 
   it.each([...LEDGER_SCHEMA_VERSIONS])(
     "enforces: a ledger row stored at schema %s verifies L1-L4 through the real verifier",
@@ -188,13 +257,25 @@ describe("decision-ledger schema registry fence", () => {
   );
 
   describe("detects (companion): an unregistered encoding fails closed", () => {
+    it("detects a retained codec that closes over live schemas or serializers", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/ledger/registry.ts":
+          `import { LedgerEntrySchema } from "@contracts/decision-core/ledger";\n` +
+          `import { canonicalJson } from "@contracts/decision-core/serialization";`,
+      });
+      expect(liveCodecDependencies(project.getSourceFiles()[0]!)).toEqual([
+        "LedgerEntrySchema",
+        "canonicalJson",
+      ]);
+    });
+
     it("an unshipped schema version has no decoder and no chain preimage", () => {
       const row = FIXTURE.versions[LEDGER_SCHEMA_VERSION]!.DecisionRecorded!;
       expect(
         parseRecordedLedgerEvent(
           "DecisionRecorded",
           "9.9.9",
-          CANONICAL_SERIALIZER_VERSION,
+          FIXTURE.serializerVersion,
           JSON.parse(row.payloadJson),
         ),
       ).toEqual({
@@ -204,7 +285,7 @@ describe("decision-ledger schema registry fence", () => {
       expect(
         decisionLedgerChainPreimage(
           "9.9.9",
-          CANONICAL_SERIALIZER_VERSION,
+          FIXTURE.serializerVersion,
           row.payloadJson,
           FIXTURE.provenance,
         ),
@@ -217,7 +298,7 @@ describe("decision-ledger schema registry fence", () => {
         parseRecordedLedgerEvent(
           "DecisionRecorded",
           LEDGER_SCHEMA_VERSION,
-          CANONICAL_SERIALIZER_VERSION,
+          FIXTURE.serializerVersion,
           JSON.parse(older.payloadJson),
         ).ok,
       ).toBe(false);

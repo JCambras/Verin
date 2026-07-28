@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { relative } from "node:path";
-import { SyntaxKind, type SourceFile } from "ts-morph";
+import { join, relative } from "node:path";
+import { Node, SyntaxKind, type SourceFile } from "ts-morph";
 import {
   REPO_ROOT,
   inMemoryProject,
   realProject,
+  walk,
 } from "./_fence-utils";
 import { DECISION_LEDGER_SQL } from "@infra/store/decision-ledger-migration";
 
@@ -34,23 +35,94 @@ interface Violation {
   readonly line: number;
 }
 
+function staticString(node: Node, seen = new Set<Node>()): string | null {
+  if (seen.has(node)) return null;
+  seen.add(node);
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
+    return node.getLiteralText();
+  }
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return staticString(node.getExpression(), seen);
+  }
+  if (
+    Node.isBinaryExpression(node) &&
+    node.getOperatorToken().getKind() === SyntaxKind.PlusToken
+  ) {
+    const left = staticString(node.getLeft(), new Set(seen));
+    const right = staticString(node.getRight(), new Set(seen));
+    return left === null || right === null ? null : left + right;
+  }
+  if (Node.isTemplateExpression(node)) {
+    let value = node.getHead().getLiteralText();
+    for (const span of node.getTemplateSpans()) {
+      const expression = staticString(span.getExpression(), new Set(seen));
+      if (expression === null) return null;
+      value += expression + span.getLiteral().getLiteralText();
+    }
+    return value;
+  }
+  if (
+    Node.isIdentifier(node) ||
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    const values = (resolved?.getDeclarations() ?? []).flatMap(
+      (declaration) => {
+        const initializer =
+          Node.isVariableDeclaration(declaration) ||
+          Node.isPropertyAssignment(declaration)
+            ? declaration.getInitializer()
+            : undefined;
+        const value = initializer
+          ? staticString(initializer, new Set(seen))
+          : null;
+        return value === null ? [] : [value];
+      },
+    );
+    return values.length > 0 && values.every((value) => value === values[0])
+      ? values[0]!
+      : null;
+  }
+  return null;
+}
+
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
   const violations: Violation[] = [];
+  const seen = new Set<string>();
   for (const file of files) {
     const absolute = file.getFilePath().replace(/\\/g, "/");
     const sourceIndex = absolute.lastIndexOf("/src/");
     const rel = sourceIndex >= 0
       ? absolute.slice(sourceIndex + 1)
       : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
-    for (const literal of [
+    for (const expression of [
       ...file.getDescendantsOfKind(SyntaxKind.StringLiteral),
       ...file.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
       ...file.getDescendantsOfKind(SyntaxKind.TemplateExpression),
+      ...file.getDescendantsOfKind(SyntaxKind.BinaryExpression),
+      ...file.getDescendantsOfKind(SyntaxKind.Identifier),
+      ...file.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+      ...file.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
     ]) {
-      for (const match of literal.getText().matchAll(RAW_INSERT)) {
+      const value = staticString(expression);
+      if (value === null) continue;
+      for (const match of value.matchAll(RAW_INSERT)) {
         const table = match[1]?.toLowerCase() as ImmutableTable | undefined;
-        if (table && INSERT_ALLOWLIST[table] !== rel) {
-          violations.push({ file: rel, line: literal.getStartLineNumber() });
+        const key = `${rel}:${table}`;
+        if (table && INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
+          seen.add(key);
+          violations.push({ file: rel, line: expression.getStartLineNumber() });
         }
       }
       if (RAW_INSERT.lastIndex !== 0) {
@@ -59,6 +131,17 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
     }
   }
   return violations;
+}
+
+function ledgerFenceFiles(): SourceFile[] {
+  const project = realProject();
+  for (const file of walk(
+    join(REPO_ROOT, "scripts"),
+    (path) => path.endsWith(".ts") || path.endsWith(".tsx"),
+  )) {
+    project.addSourceFileAtPath(file);
+  }
+  return project.getSourceFiles();
 }
 
 function exportedMutationNames(file: SourceFile): string[] {
@@ -70,7 +153,7 @@ function exportedMutationNames(file: SourceFile): string[] {
 
 describe("decision-ledger append-only fence", () => {
   it("anti-fork: each immutable table has one exact raw-insert owner", () => {
-    const violations = ledgerInsertViolations(realProject().getSourceFiles());
+    const violations = ledgerInsertViolations(ledgerFenceFiles());
     expect(
       violations,
       `raw decision-ledger inserts bypass the repository:\n${violations.map(
@@ -112,6 +195,18 @@ describe("decision-ledger append-only fence", () => {
       expect(planted).toHaveLength(1);
       expect(planted[0]?.file).toMatch(/src\/infrastructure\/evil\.ts$/);
       expect(planted[0]?.line).toBe(2);
+    });
+
+    it("detects a statically composed insert in an operator script", () => {
+      const project = inMemoryProject({
+        "/scripts/evil.ts":
+          `const tables = { records: "decision_" + "records" } as const;\n` +
+          "const sql = `INSERT INTO ${tables.records} (id) VALUES ($1)`;\n" +
+          "export const run = (db: { query(s: string): unknown }) => db.query(sql);",
+      });
+      const planted = ledgerInsertViolations(project.getSourceFiles());
+      expect(planted).toHaveLength(1);
+      expect(planted[0]?.file).toMatch(/scripts\/evil\.ts$/);
     });
 
     it("detects a planted insert into any immutable source table, not just the chain", () => {

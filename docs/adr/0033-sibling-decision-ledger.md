@@ -45,7 +45,8 @@ settle now.
   causation, and exception-triggering links structurally same-tenant. Every
   reference an event can name is a promoted column L3 re-derives from the payload.
   Repository boundaries validate the canonical source hashes named by recording and
-  approval events.
+  approval events. The tenant fence classifies ledger anchors and projection
+  checkpoints as tenant data and permits only exact reviewed capability escapes.
 - Retained free text is a PII-free projection: attribution is an opaque retained-text
   reference, decision explanations and summaries repeat only closed-registry codes,
   and external statuses and structured reasons are registered codes or opaque
@@ -62,7 +63,8 @@ settle now.
   metadata in addition to the encrypted content hash.
 - All immutable source tables reject UPDATE, DELETE, and TRUNCATE through database
   triggers. A ts-morph anti-fork fence assigns each table to one exact insert-owning
-  module. Repository exports expose no immutable update or delete operation.
+  module, scans operator scripts, and resolves static string composition before
+  matching. Repository exports expose no immutable update or delete operation.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
@@ -73,6 +75,8 @@ settle now.
   affect the new generation. Projection rows persist derived provenance for repair and
   operator reads, but the register never trusts them: it replays the exact verified
   event window and verifies the immutable sources needed by every state it displays.
+  Rebuild preview reads only bounded projection metadata, so malformed mutable JSON
+  cannot prevent `--apply` from clearing and replaying derived state.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
@@ -83,7 +87,8 @@ settle now.
   the stored hash of the row preceding them, with L4 still compared against tenant
   totals. The register verifies, reads, and replays that window under one tenant-locked
   transaction and displays only decisions whose complete replay sources fall inside
-  it. Only the gate's unbounded run is examiner-grade.
+  it. Any replay-source failure returns all L1-L4 levels, no trusted decisions, and a
+  bounded PII-safe reason. Only the gate's unbounded run is examiner-grade.
 - The seeded `/app/ledger` register is read-only, uses typed view models, and shows
   both the raw event register and replayed decision state, so the projection fold is
   reachable in the PR that lands it. Rows produced by a synthetic source carry the
@@ -93,7 +98,7 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4100 and infrastructure 2500 to
-  5100. Measured final state is contracts 4001 and infrastructure 5009. Domain
+  5100. Measured final state is contracts 4062 and infrastructure 5064. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
@@ -109,11 +114,14 @@ lists every ledger schema version this build can decode and grows only by append
 `LEDGER_SCHEMA_VERSION` selects WRITES alone. The infrastructure registries -
 `ledger-schema-registry.ts` (event encoder plus chain preimage) and
 `ledger-source-registry.ts` (evidence, bundle, decision codecs) - key on explicit
-version literals, never on the current-version constants, and fail closed only for a
-version that was never shipped. `decision_ledger` and every immutable source table
-refuse DELETE, so dropping a key would leave committed rows permanently
-unverifiable with no repair path; the `ledger-schema-registry` fence proves a stored
-fixture at each shipped version still decodes, re-serializes to its recorded bytes,
+version literals, never on the current-version constants. Each entry owns its frozen
+schema, canonical serializer, and hash or chain-preimage function; replay-source
+entries also own their upcast. Recorded versions select reads; current constants
+select writes only. `decision_ledger` and every immutable source table refuse DELETE,
+so dropping or redirecting a key would leave committed rows permanently
+unverifiable with no repair path. The
+`ledger-schema-registry` fence uses fixed recorded ledger and replay-source fixtures
+to prove that every shipped encoding still parses, reproduces exact bytes and hashes,
 and verifies L1-L4.
 
 ## Later-prompt producers (explicit deferral)

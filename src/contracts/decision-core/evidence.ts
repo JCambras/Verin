@@ -26,8 +26,8 @@ import {
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 import {
-  CANONICAL_SERIALIZER_VERSION,
-  DECISION_CORE_SCHEMA_VERSION,
+  CANONICAL_SERIALIZER_V1_0_0,
+  DECISION_CORE_SCHEMA_V1_7_0,
 } from "./serialization";
 import {
   SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
@@ -52,7 +52,7 @@ export type EvidenceFreshness = z.infer<typeof EvidenceFreshnessSchema>;
  * lives, and the content hash that makes reuse tamper-evident. The snapshot never
  * carries the content itself - PII stays behind the blob ref.
  */
-export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
+export const EvidenceSnapshotRefV1_7_0Schema = TenantContextSchema.unwrap().extend({
   id: EvidenceSnapshotIdSchema,
   kind: EvidenceKindSchema,
   sourceRef: EvidenceSourceRefSchema,
@@ -93,6 +93,10 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
     }
   })
   .readonly();
+export const EvidenceSnapshotRefSchema = EvidenceSnapshotRefV1_7_0Schema.clone();
+export type EvidenceSnapshotRefV1_7_0 = z.infer<
+  typeof EvidenceSnapshotRefV1_7_0Schema
+>;
 export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
 
 /**
@@ -124,8 +128,8 @@ export const decisionInputBundleSchemaForReleases = <
   const membership = timeZoneRegistryMembership(releases);
   return TenantContextSchema.unwrap().extend({
     id: DecisionInputBundleIdSchema,
-    schemaVersion: z.literal(DECISION_CORE_SCHEMA_VERSION),
-    canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
+    schemaVersion: z.literal(DECISION_CORE_SCHEMA_V1_7_0),
+    canonicalSerializerVersion: z.literal(CANONICAL_SERIALIZER_V1_0_0),
     engineVersion: z.string().min(1),
     primitiveSetVersion: z.string().min(1),
     domainConfigVersionRef: DomainConfigVersionRefSchema,
@@ -197,8 +201,12 @@ export const decisionInputBundleSchemaForReleases = <
     .readonly();
 };
 
-export const DecisionInputBundleSchema =
+export const DecisionInputBundleV1_7_0Schema =
   decisionInputBundleSchemaForReleases(
     SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
   );
+export const DecisionInputBundleSchema = DecisionInputBundleV1_7_0Schema.clone();
+export type DecisionInputBundleV1_7_0 = z.infer<
+  typeof DecisionInputBundleV1_7_0Schema
+>;
 export type DecisionInputBundle = z.infer<typeof DecisionInputBundleSchema>;

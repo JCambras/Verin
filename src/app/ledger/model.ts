@@ -39,6 +39,7 @@ export interface LedgerRegisterViewModel {
     readonly entriesChecked: number;
     readonly entriesStored: number;
     readonly levels: readonly LedgerLevelView[];
+    readonly replaySourceReason: string | null;
   };
   readonly total: number;
   /** Replayable decisions in the verified window; larger than `decisions` when limited. */

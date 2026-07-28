@@ -1,5 +1,5 @@
 import type { SqlDb, SqlTx } from "@infra/store/db";
-import { appError } from "@contracts/errors";
+import { appError, isAppError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
   parseRecordProvenance,
@@ -33,6 +33,7 @@ export interface VerifiedRegisterSnapshot {
   readonly rows: readonly DecisionLedgerRow[];
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly replaySourceReason: string | null;
 }
 
 function parseEvent(row: DecisionLedgerRow): LedgerEntry {
@@ -145,12 +146,31 @@ export async function readVerifiedDecisionRegister(
       orgId,
       eventWindow,
     );
-    const replayed = checked.verification.ok
-      ? await replayRegisterWindow(tx, checked.rows, decisionLimit)
-      : { decisions: [], decisionsTotal: 0 };
-    return {
-      ...checked,
-      ...replayed,
-    };
+    if (!checked.verification.ok) {
+      return {
+        ...checked,
+        decisions: [],
+        decisionsTotal: 0,
+        replaySourceReason: null,
+      };
+    }
+    try {
+      const replayed = await replayRegisterWindow(
+        tx,
+        checked.rows,
+        decisionLimit,
+      );
+      return { ...checked, ...replayed, replaySourceReason: null };
+    } catch (error) {
+      return {
+        ...checked,
+        verification: { ...checked.verification, ok: false },
+        decisions: [],
+        decisionsTotal: 0,
+        replaySourceReason: isAppError(error)
+          ? error.message
+          : "immutable replay source verification failed",
+      };
+    }
   });
 }

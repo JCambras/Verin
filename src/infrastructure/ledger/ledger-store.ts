@@ -40,13 +40,12 @@ import {
 } from "@contracts/decision-core/serialization";
 import { assertLedgerSourceBindings } from "./ledger-bindings";
 import {
-  canonical,
-  canonicalDigest,
   insertDecisionSources,
   insertEvidenceSnapshots,
   preflightEvidenceSnapshots,
   replaySourcesContainPII,
 } from "./ledger-sources";
+import { canonical, canonicalDigest } from "./ledger-canonical";
 import {
   persistProjection,
   prepareProjection,

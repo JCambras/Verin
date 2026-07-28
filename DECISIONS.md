@@ -3263,8 +3263,8 @@ fails halfway.
 
 Promoted-reference extraction, canonical hashing, decision-id resolution, and the
 retained-text fixture projection each have one authority:
-`contracts/decision-core/ledger-references.ts`, `canonicalDigest` in
-`ledger-sources.ts`, and the exported projection in `scripts/seed-decision-ledger.ts`.
+`contracts/decision-core/ledger-references.ts`, `ledger-canonical.ts`, and the
+exported projection in `scripts/seed-decision-ledger.ts`.
 L3 stays meaningful - it still compares the STORED column against the canonical
 payload, and now the writer and verifier cannot transcribe that projection
 differently.
@@ -3294,3 +3294,30 @@ was the first thing to exceed its budget, failing whole files with
 **Why:** a suite that fails on machine load teaches everyone to re-run instead of
 read the failure (retro-r7 don't-again #39 applied to flakiness rather than TZ).
 **Revert path:** delete the `hookTimeout` line; the default returns.
+
+### D-107 · 2026-07-28 · reversible · Retained codecs and ledger recovery stay independent of live state
+
+Every retained ledger and replay-source registry entry owns an explicit versioned
+schema, canonical serializer, and hash or chain-preimage implementation. Fixed
+recorded fixtures prove historical bytes and hashes without regenerating expectations
+through current contracts. Recorded versions select reads; current constants select
+writes only.
+
+A replay-source failure on the bounded register returns no trusted decisions, retains
+the full L1-L4 verdict, and exposes only a bounded PII-safe reason. Rebuild preview
+reads bounded projection metadata without decoding mutable state JSON, so `--apply`
+can repair malformed derived rows after immutable integrity verification.
+
+The append-only fence scans operator scripts and resolves statically composed SQL.
+Ledger anchors and projection checkpoints are tenant data under the derived-complete
+org fence, which now reports file and line and uses exact capability escapes.
+
+The completed implementation measures contracts at 4062 lines and infrastructure at
+5064 lines, within ADR-0033's existing 4100 and 5100 ceilings.
+
+**Why:** immutable history cannot remain replayable if old reads close over live
+codecs, and repair or verification must not trust the mutable state it exists to
+check.
+**Revert path:** none while Prompt 7 promises additive recorded codecs, fail-closed
+verified reads, repairable derived state, exact insert ownership, and structural
+tenant isolation.

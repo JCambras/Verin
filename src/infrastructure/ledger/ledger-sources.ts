@@ -1,8 +1,6 @@
 /** Immutable content-addressed replay inputs and their verification. */
-import { createHash } from "node:crypto";
 import type { SqlQueryable, SqlTx } from "@infra/store/db";
-import { appError, type AppError } from "@contracts/errors";
-import { err, type Result } from "@contracts/result";
+import { appError } from "@contracts/errors";
 import { assertNoPIIValues } from "@contracts/pii";
 import {
   type EvidenceSnapshotRef,
@@ -19,30 +17,10 @@ import type {
 import {
   CANONICAL_SERIALIZER_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
-  bundleHashPreimage,
-  canonicalJson,
-  decisionHashPreimage,
-  type JsonValue,
 } from "@contracts/decision-core/serialization";
+import { canonical, digestCanonicalBytes } from "./ledger-canonical";
 import { parseRecordedReplaySource } from "./ledger-source-registry";
 import { assertReplaySourcePiiBoundary } from "./ledger-pii";
-
-export function canonical(value: unknown, label: string): Result<string, AppError> {
-  const serialized = canonicalJson(value as JsonValue);
-  return serialized.ok
-    ? serialized
-    : err(appError("VALIDATION", `${label} is not canonically serializable`));
-}
-
-export function canonicalDigest(value: unknown, label: string): Result<string, AppError> {
-  const bytes = canonical(value, label);
-  return bytes.ok
-    ? {
-        ok: true,
-        value: createHash("sha256").update(bytes.value, "utf8").digest("hex"),
-      }
-    : bytes;
-}
 
 export function replaySourcesContainPII(values: readonly unknown[]): boolean {
   try {
@@ -119,7 +97,7 @@ export async function insertEvidenceSnapshots(
         snapshot.firmId, snapshot.id, bytes.value, snapshot.schemaVersion,
         DECISION_CORE_SCHEMA_VERSION, CANONICAL_SERIALIZER_VERSION,
         snapshot.contentHash,
-        createHash("sha256").update(bytes.value, "utf8").digest("hex"), recordedAt,
+        digestCanonicalBytes(bytes.value), recordedAt,
       ],
     );
   }
@@ -203,11 +181,14 @@ function requireCanonicalSource<
   schemaVersion: string,
   serializerVersion: string,
   label: string,
-): K extends "evidence"
-  ? EvidenceSnapshotRef
-  : K extends "bundle"
-    ? DecisionInputBundle
-    : DecisionRecord {
+): {
+  readonly value: K extends "evidence"
+    ? EvidenceSnapshotRef
+    : K extends "bundle"
+      ? DecisionInputBundle
+      : DecisionRecord;
+  readonly recordedHash: string;
+} {
   const parsed = parseRecordedReplaySource(
     kind,
     schemaVersion,
@@ -228,7 +209,10 @@ function requireCanonicalSource<
   } catch {
     return replaySourceError(`${label} contains unclassified text during replay`);
   }
-  return parsed.value as never;
+  return {
+    value: parsed.value,
+    recordedHash: parsed.recordedHash,
+  } as never;
 }
 
 export async function verifyReplayEvidence(
@@ -257,7 +241,7 @@ export async function verifyReplayEvidence(
   } catch {
     return replaySourceError("evidence snapshot is not JSON during replay");
   }
-  const snapshot = requireCanonicalSource(
+  const verified = requireCanonicalSource(
     "evidence",
     value,
     row.canonical_json,
@@ -265,17 +249,14 @@ export async function verifyReplayEvidence(
     row.serializer_version,
     "evidence snapshot",
   );
-  const snapshotHash = createHash("sha256")
-    .update(row.canonical_json, "utf8")
-    .digest("hex");
+  const snapshot = verified.value;
   if (
     snapshot.firmId !== event.firmId ||
     snapshot.id !== event.evidenceSnapshotRef.id ||
     snapshot.schemaVersion !== row.schema_version ||
-    row.serializer_version !== CANONICAL_SERIALIZER_VERSION ||
     snapshot.contentHash !== row.content_hash ||
     event.contentHash !== row.content_hash ||
-    snapshotHash !== row.snapshot_hash ||
+    verified.recordedHash !== row.snapshot_hash ||
     event.snapshotHash !== row.snapshot_hash
   ) {
     return replaySourceError("evidence snapshot binding differs during replay");
@@ -329,7 +310,7 @@ export async function loadVerifiedReplayDecision(
   } catch {
     return replaySourceError("decision replay source is not JSON");
   }
-  const record = requireCanonicalSource(
+  const verifiedRecord = requireCanonicalSource(
     "decision",
     decisionValue,
     decisionRow.canonical_json,
@@ -337,7 +318,7 @@ export async function loadVerifiedReplayDecision(
     decisionRow.serializer_version,
     "decision record",
   );
-  const bundle = requireCanonicalSource(
+  const verifiedBundle = requireCanonicalSource(
     "bundle",
     bundleValue,
     bundleRow.canonical_json,
@@ -345,14 +326,8 @@ export async function loadVerifiedReplayDecision(
     bundleRow.serializer_version,
     "decision input bundle",
   );
-  const decisionHash = canonicalDigest(
-    decisionHashPreimage(record),
-    "decision hash preimage",
-  );
-  const bundleHash = canonicalDigest(
-    bundleHashPreimage(bundle),
-    "bundle hash preimage",
-  );
+  const record = verifiedRecord.value;
+  const bundle = verifiedBundle.value;
   const memberships = await tx.query<{
     evidence_snapshot_id: string;
     ordinal: number | string;
@@ -381,11 +356,9 @@ export async function loadVerifiedReplayDecision(
     bundleRow.primitive_set_version !== bundle.primitiveSetVersion ||
     bundleRow.time_zone_data_version !== bundle.timeZoneDataVersion ||
     bundleRow.bundle_hash !== bundle.bundleHash ||
-    !decisionHash.ok ||
-    decisionHash.value !== record.decisionHash ||
+    verifiedRecord.recordedHash !== record.decisionHash ||
     event.decisionHash !== record.decisionHash ||
-    !bundleHash.ok ||
-    bundleHash.value !== bundle.bundleHash ||
+    verifiedBundle.recordedHash !== bundle.bundleHash ||
     (event.bundleHash !== undefined && event.bundleHash !== bundle.bundleHash) ||
     memberIds.length !== expectedIds.length ||
     memberIds.some((id, index) => id !== expectedIds[index]) ||

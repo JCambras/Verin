@@ -28,6 +28,7 @@ import {
 } from "./actor";
 import {
   CANONICAL_SERIALIZER_VERSION,
+  CANONICAL_SERIALIZER_V1_0_0,
 } from "./serialization";
 
 const brandedString = <B extends string>() => z.string().min(1).brand<B>();
@@ -96,12 +97,18 @@ export type LedgerEventType = z.infer<typeof LedgerEventTypeSchema>;
  * retained: recorded bytes are read with the encoder they were written by, never
  * with whichever version happens to be current.
  */
-const ledgerEntrySchemaFor = (version: LedgerSchemaVersion) => {
+const ledgerEntrySchemaFor = <
+  const V extends LedgerSchemaVersion,
+  const S extends string,
+>(
+  version: V,
+  serializerVersion: S,
+) => {
   const ledgerBaseShape = {
     ...TenantContextSchema.unwrap().shape,
     id: LedgerEntryIdSchema,
     schemaVersion: z.literal(version),
-    serializerVersion: z.literal(CANONICAL_SERIALIZER_VERSION),
+    serializerVersion: z.literal(serializerVersion),
     occurredAt: TimestampSchema,
     recordedAt: TimestampSchema,
     actor: AnyActorRefSchema,
@@ -445,21 +452,18 @@ const ledgerEntrySchemaFor = (version: LedgerSchemaVersion) => {
   ]).readonly();
 };
 
-export const LedgerEntryV1_0_0Schema = ledgerEntrySchemaFor("1.0.0");
-export const LedgerEntrySchema = ledgerEntrySchemaFor(LEDGER_SCHEMA_VERSION);
-
-/**
- * Recorded-version dispatch table for reads and verification. Keys are explicit
- * version literals and entries are only ever added, so a write-side version bump
- * can never orphan bytes an earlier version already committed.
- */
-export const LEDGER_ENTRY_SCHEMAS: ReadonlyMap<
-  LedgerSchemaVersion,
-  typeof LedgerEntrySchema
-> = new Map([
-  ["1.0.0", LedgerEntryV1_0_0Schema],
-  ["1.1.0", LedgerEntrySchema],
-]);
+export const LedgerEntryV1_0_0Schema = ledgerEntrySchemaFor(
+  "1.0.0",
+  CANONICAL_SERIALIZER_V1_0_0,
+);
+export const LedgerEntryV1_1_0Schema = ledgerEntrySchemaFor(
+  "1.1.0",
+  CANONICAL_SERIALIZER_V1_0_0,
+);
+export const LedgerEntrySchema = ledgerEntrySchemaFor(
+  LEDGER_SCHEMA_VERSION,
+  CANONICAL_SERIALIZER_VERSION,
+);
 
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
 export type DecisionRecorded = Extract<LedgerEntry, { type: "DecisionRecorded" }>;

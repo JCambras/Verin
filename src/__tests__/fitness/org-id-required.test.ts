@@ -27,8 +27,10 @@ const DATA_TABLES = [
   "decision_input_bundle_evidence",
   "decision_records",
   "decision_ledger",
+  "decision_ledger_anchor",
   "decision_state_projection",
   "decision_reservation_index",
+  "decision_projection_checkpoint",
 ];
 // Reviewed NON-tenant tables (each with the reason it needs no org_id filter). The
 // derivation check below proves DATA_TABLES + NON_TENANT_TABLES = exactly the
@@ -40,13 +42,8 @@ const NON_TENANT_TABLES = [
   "crm_write_cache", // idempotency cache, PK (org_id, idempotency_key) — always key-scoped
   "audit_outbox", // internal delivery queue, keyed by row id claims
   "audit_anchor", // one integrity row per org, keyed by org_id PK upserts
-  "decision_ledger_anchor", // one integrity row per org, keyed by org_id PK upserts
-  "decision_projection_checkpoint", // one rebuild cursor per org, keyed by org_id PK
   "schema_migrations", // migration ledger (D-016), global infra table keyed by version - no tenant data
 ];
-// Columns that are themselves an unguessable capability (scope the row without org_id).
-const CAPABILITY_KEYS = ["esign_token", "resume_token", "idempotency_key"];
-
 /** Tables present in DDL but classified in neither list (must be empty). */
 export function unclassifiedTables(ddl: string, dataTables: readonly string[], nonTenant: readonly string[]): string[] {
   const inDdl = [...ddl.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]!);
@@ -74,6 +71,10 @@ const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
     sql: "SELECT password_hash FROM credentials WHERE user_id = $1",
     why: "credentials has no org_id column; keyed by the user PK resolved during authentication",
   },
+  {
+    sql: "SELECT * FROM account_opening_applications WHERE esign_token = $1",
+    why: "the unguessable e-sign token is the application capability",
+  },
 ];
 
 function normalizeSql(sql: string): string {
@@ -86,7 +87,6 @@ export function detectMissingOrgId(sql: string): boolean {
   // DDL like "BEFORE UPDATE ON audit_log" does not false-positive.
   const touchesData = DATA_TABLES.some((t) => new RegExp(`\\b(FROM|JOIN|UPDATE)\\s+${t}\\b`, "i").test(sql));
   if (!touchesData) return false;
-  if (CAPABILITY_KEYS.some((k) => new RegExp(`\\b${k}\\b`).test(sql))) return false; // capability-keyed access
   const normalized = normalizeSql(sql);
   if (REVIEWED_ESCAPES.some((e) => normalized === e.sql)) return false;
   // Vale V4: org_id must appear as a FILTER predicate (org_id = / org_id IN),
@@ -111,11 +111,26 @@ export function nonReadOnlyProbes(probes: readonly PreflightProbe[]): string[] {
 
 /** Every string-ish literal in a file — including SQL assigned to variables. */
 export function sqlLiterals(sf: SourceFile): string[] {
-  const out: string[] = [];
-  for (const node of sf.getDescendantsOfKind(SyntaxKind.StringLiteral)) out.push(node.getLiteralText());
-  for (const node of sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral)) out.push(node.getLiteralText());
-  for (const node of sf.getDescendantsOfKind(SyntaxKind.TemplateExpression)) out.push(node.getText());
-  return out;
+  return sqlOccurrences(sf).map((item) => item.sql);
+}
+
+function sqlOccurrences(sf: SourceFile): Array<{ sql: string; line: number }> {
+  return [
+    ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral).map((node) => ({
+      sql: node.getLiteralText(),
+      line: node.getStartLineNumber(),
+    })),
+    ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral).map(
+      (node) => ({
+        sql: node.getLiteralText(),
+        line: node.getStartLineNumber(),
+      }),
+    ),
+    ...sf.getDescendantsOfKind(SyntaxKind.TemplateExpression).map((node) => ({
+      sql: node.getText(),
+      line: node.getStartLineNumber(),
+    })),
+  ];
 }
 
 describe("org-id-required fence", () => {
@@ -132,8 +147,12 @@ describe("org-id-required fence", () => {
     const offenders: string[] = [];
     for (const sf of realProject().getSourceFiles()) {
       const rel = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
-      for (const sql of sqlLiterals(sf)) {
-        if (detectMissingOrgId(sql)) offenders.push(`${rel}: ${normalizeSql(sql).slice(0, 70)}`);
+      for (const item of sqlOccurrences(sf)) {
+        if (detectMissingOrgId(item.sql)) {
+          offenders.push(
+            `${rel}:${item.line}: ${normalizeSql(item.sql).slice(0, 70)}`,
+          );
+        }
       }
     }
     expect(offenders, `queries missing org_id:\n${offenders.join("\n")}`).toEqual([]);
@@ -164,11 +183,24 @@ describe("org-id-required fence", () => {
     it("flags an unscoped SELECT on users", () => {
       expect(detectMissingOrgId("SELECT * FROM users WHERE role = 'admin'")).toBe(true);
     });
+    it("flags unscoped reads of tenant-owned ledger anchors and checkpoints", () => {
+      expect(detectMissingOrgId("SELECT * FROM decision_ledger_anchor")).toBe(true);
+      expect(
+        detectMissingOrgId("SELECT * FROM decision_projection_checkpoint"),
+      ).toBe(true);
+    });
     it("allows a query that filters by org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE org_id = $1 AND id = $2")).toBe(false);
     });
     it("flags org_id in the projection but NOT the filter (Vale V4 evasion)", () => {
       expect(detectMissingOrgId("SELECT id, org_id FROM households WHERE id = $1")).toBe(true);
+    });
+    it("does not broadly exempt a tenant query that mentions a capability column", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger_anchor JOIN account_opening_applications ON true WHERE esign_token = $1",
+        ),
+      ).toBe(true);
     });
     it("ignores non-data tables (capability-keyed)", () => {
       expect(detectMissingOrgId("SELECT * FROM sessions WHERE id = $1")).toBe(false);

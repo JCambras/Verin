@@ -121,7 +121,7 @@ const normalizeDecisionResult = <
   return result;
 };
 
-export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
+export const normalizeDecisionRecordV1_7_0 = <T extends NormalizableDecisionRecord>(
   record: T,
 ): T => {
   if (!isPlainRecord(record)) return record;
@@ -136,6 +136,9 @@ export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
     result: normalizeDecisionResult(record.result),
   } as T;
 };
+export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
+  record: T,
+): T => normalizeDecisionRecordV1_7_0(record);
 
 /** JSON-scalar parameter values (canonically serializable; never objects-in-disguise). */
 export const ScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -273,7 +276,7 @@ export type RevaluationCondition = z.infer<typeof RevaluationConditionSchema>;
  * tenant-consistent by construction; a prohibited record carries no revaluation
  * conditions (see the module header).
  */
-export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
+export const DecisionRecordV1_7_0Schema = TenantContextSchema.unwrap().extend({
   id: DecisionIdSchema,
   intentRef: IntentRefSchema,
   inputBundleRef: DecisionInputBundleRefSchema,
@@ -432,4 +435,6 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
     },
   )
   .readonly();
+export const DecisionRecordSchema = DecisionRecordV1_7_0Schema.clone();
+export type DecisionRecordV1_7_0 = z.infer<typeof DecisionRecordV1_7_0Schema>;
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;

@@ -5565,3 +5565,80 @@ by the old two-value allowlist. Each planted violation failed:
 **Revert:** every planted change was restored and the focused suites pass.
 
 **Date:** 2026-07-28 (review corrections G1-G6, ADR-0033, D-105).
+
+## Frozen codecs, recoverable projections, and complete ledger fences (D-107)
+
+**Invariants:** retained ledger and replay-source codecs depend only on explicit
+versioned behavior and reproduce fixed historical bytes and hashes; a bounded
+register replay failure returns no trusted decisions and a bounded PII-safe reason;
+rebuild preview does not deserialize mutable projection JSON; the anti-fork fence
+includes statically composed SQL in operator scripts; ledger anchors and projection
+checkpoints are structurally tenant-scoped with exact capability escapes.
+
+The live `canonicalJson` export was substituted for `canonicalJsonV1_0_0` first in
+the ledger registry and then in the replay-source registry. Each injection failed the
+same dependency fence:
+
+```text
+× enforces: retained codecs import only explicit versioned behavior
+  expected [ 'canonicalJson' ] to deeply equal []
+  src/__tests__/fitness/ledger-schema-registry.test.ts:193
+```
+
+The retained ledger fixture independently replays every shipped ledger encoding
+through L1-L4. The new fixed replay-source fixture independently reproduces the
+evidence, bundle, and decision canonical bytes and recorded hashes.
+
+The register catch was replaced with `throw error`, then the replay-source version
+was corrupted with an overlong value containing an email-shaped token:
+
+```text
+× returns a failed bounded register with no trusted decisions when replay sources fail
+  Unknown Error: unsupported evidence encoding unrecognized during replay
+```
+
+With the catch restored, the test returns all four verification levels, zero
+decisions, and the 56-character reason
+`unsupported evidence encoding unrecognized during replay`; the planted token is
+absent.
+
+The rebuild runner was changed to call the state-deserializing
+`listDecisionProjections` while building its preview:
+
+```text
+× builds the preview without decoding mutable projection JSON
+  expected [ 'listDecisionProjections' ] to deeply equal
+  [ 'listDecisionProjectionMetadata' ]
+  src/__tests__/unit/ledger-rebuild-operator.test.ts:92
+```
+
+The production-path companion writes `'{broken'` to `state_json`, proves the normal
+projection reader throws, then proves the metadata preview, verified register, and
+rebuild all succeed from immutable sources.
+
+A composed raw insert was planted in `scripts/ledger-violation-probe.ts`:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+  raw decision-ledger inserts bypass the repository:
+  scripts/ledger-violation-probe.ts:2
+```
+
+The table name was assembled through an object property and string concatenation, so
+the failure proves both operator-script coverage and static expression resolution.
+
+Finally, unscoped anchor and checkpoint reads were planted:
+
+```text
+× enforces: every read/write on a tenant data table filters by org_id
+  src/infrastructure/ledger/tenant-violation-probe.ts:1: SELECT * FROM decision_ledger_anchor
+  src/infrastructure/ledger/tenant-violation-probe.ts:2: SELECT * FROM decision_projection_checkpoint
+```
+
+The companion also proves that mentioning a capability column in a larger tenant
+query does not create a broad exemption.
+
+**Revert:** every planted violation and probe file was removed. The focused codec,
+register, rebuild, anti-fork, tenant, typecheck, and line-budget suites pass.
+
+**Date:** 2026-07-28 (review corrections H1-H6, ADR-0033, D-107).

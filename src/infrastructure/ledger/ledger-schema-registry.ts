@@ -1,39 +1,30 @@
 import {
-  LEDGER_ENTRY_SCHEMAS,
+  LedgerEntryV1_0_0Schema,
+  LedgerEntryV1_1_0Schema,
   type LedgerEntry,
-  type LedgerSchemaVersion,
 } from "@contracts/decision-core/ledger";
+import { canonicalJsonV1_0_0, type JsonValue } from "@contracts/decision-core/serialization";
 import type { RecordProvenance } from "@contracts/provenance";
 
 type ParseResult =
-  | { readonly ok: true; readonly event: LedgerEntry }
+  | { readonly ok: true; readonly event: LedgerEntry; readonly canonicalBytes: string }
   | { readonly ok: false; readonly reason: string };
 
-type ChainPreimage = (
+interface RecordedLedgerCodec {
+  readonly parse: (value: unknown) => LedgerEntry | undefined;
+  readonly canonicalize: (value: unknown) => string | undefined;
+  readonly chainPreimage: (
+    payloadJson: string,
+    provenance: RecordProvenance,
+  ) => string;
+}
+
+const encodingKey = (schemaVersion: string, serializerVersion: string): string =>
+  `${schemaVersion}|${serializerVersion}`;
+const chainPreimageV1_0_0 = (
   payloadJson: string,
   provenance: RecordProvenance,
-) => string;
-
-const encodingKey = (
-  schemaVersion: string,
-  serializerVersion: string,
-): string => `${schemaVersion}|${serializerVersion}`;
-
-const schemaFor = (version: LedgerSchemaVersion) =>
-  LEDGER_ENTRY_SCHEMAS.get(version)!;
-
-/**
- * Recorded-byte registries. Both are keyed by EXPLICIT version literals, never by
- * the current-version constants: a write-side bump adds a key here and leaves every
- * older key answering for the bytes it wrote. `decision_ledger` refuses DELETE, so a
- * dropped key would make already-committed rows permanently unverifiable.
- */
-const LEDGER_SCHEMA_REGISTRY = new Map([
-  [encodingKey("1.0.0", "1.0.0"), schemaFor("1.0.0")],
-  [encodingKey("1.1.0", "1.0.0"), schemaFor("1.1.0")],
-]);
-
-const chainPreimageV1_0_0: ChainPreimage = (payloadJson, provenance) =>
+) =>
   JSON.stringify([
     "1.0.0",
     payloadJson,
@@ -42,15 +33,37 @@ const chainPreimageV1_0_0: ChainPreimage = (payloadJson, provenance) =>
     provenance.confidence,
   ]);
 
-const CHAIN_PREIMAGE_REGISTRY = new Map<string, ChainPreimage>([
-  [encodingKey("1.0.0", "1.0.0"), chainPreimageV1_0_0],
-  [encodingKey("1.1.0", "1.0.0"), chainPreimageV1_0_0],
+function codecV1_0_0(schema: {
+  safeParse(value: unknown):
+    | { success: true; data: unknown }
+    | { success: false };
+}): RecordedLedgerCodec {
+  return {
+    parse(value) {
+      const parsed = schema.safeParse(value);
+      return parsed.success ? parsed.data as LedgerEntry : undefined;
+    },
+    canonicalize(value) {
+      const serialized = canonicalJsonV1_0_0(value as JsonValue);
+      return serialized.ok ? serialized.value : undefined;
+    },
+    chainPreimage: chainPreimageV1_0_0,
+  };
+}
+
+const LEDGER_CODEC_REGISTRY = new Map<string, RecordedLedgerCodec>([
+  [
+    encodingKey("1.0.0", "1.0.0"),
+    codecV1_0_0(LedgerEntryV1_0_0Schema),
+  ],
+  [
+    encodingKey("1.1.0", "1.0.0"),
+    codecV1_0_0(LedgerEntryV1_1_0Schema),
+  ],
 ]);
 
-/** Registered recorded encodings, for the fence that proves none was dropped. */
 export function registeredLedgerEncodings(): readonly string[] {
-  return [...LEDGER_SCHEMA_REGISTRY.keys()].filter((key) =>
-    CHAIN_PREIMAGE_REGISTRY.has(key));
+  return [...LEDGER_CODEC_REGISTRY.keys()];
 }
 
 export function decisionLedgerChainPreimage(
@@ -59,10 +72,18 @@ export function decisionLedgerChainPreimage(
   payloadJson: string,
   provenance: RecordProvenance,
 ): string | null {
-  const preimage = CHAIN_PREIMAGE_REGISTRY.get(
-    encodingKey(schemaVersion, serializerVersion),
-  );
-  return preimage ? preimage(payloadJson, provenance) : null;
+  const codec = LEDGER_CODEC_REGISTRY.get(encodingKey(schemaVersion, serializerVersion));
+  return codec ? codec.chainPreimage(payloadJson, provenance) : null;
+}
+
+export function canonicalizeRecordedLedgerValue(
+  schemaVersion: string,
+  serializerVersion: string,
+  value: unknown,
+): string | null {
+  return LEDGER_CODEC_REGISTRY
+    .get(encodingKey(schemaVersion, serializerVersion))
+    ?.canonicalize(value) ?? null;
 }
 
 export function parseRecordedLedgerEvent(
@@ -71,25 +92,30 @@ export function parseRecordedLedgerEvent(
   serializerVersion: string,
   value: unknown,
 ): ParseResult {
-  const schema = LEDGER_SCHEMA_REGISTRY.get(
-    encodingKey(schemaVersion, serializerVersion),
-  );
-  if (!schema) {
+  const codec = LEDGER_CODEC_REGISTRY.get(encodingKey(schemaVersion, serializerVersion));
+  if (!codec) {
     return {
       ok: false,
       reason: `unsupported ledger encoding ${schemaVersion}/${serializerVersion}`,
     };
   }
-  const parsed = schema.safeParse(value);
+  const parsed = codec.parse(value);
   if (
-    !parsed.success ||
-    parsed.data.type !== eventType ||
-    parsed.data.schemaVersion !== schemaVersion
+    !parsed ||
+    parsed.type !== eventType ||
+    parsed.schemaVersion !== schemaVersion ||
+    parsed.serializerVersion !== serializerVersion
   ) {
     return {
       ok: false,
       reason: "payload does not match its recorded event schema",
     };
   }
-  return { ok: true, event: parsed.data };
+  const canonicalBytes = codec.canonicalize(parsed);
+  return canonicalBytes === undefined
+    ? {
+        ok: false,
+        reason: "payload is not canonicalizable by its recorded serializer",
+      }
+    : { ok: true, event: parsed, canonicalBytes };
 }

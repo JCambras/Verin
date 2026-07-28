@@ -253,6 +253,28 @@ export async function countDecisionProjections(
   return Number(rows.rows[0]?.n ?? 0);
 }
 
+export async function listDecisionProjectionMetadata(
+  db: SqlDb,
+  orgId: string,
+  limit: number,
+): Promise<Array<{ readonly decisionId: string; readonly lastSequence: number }>> {
+  const rows = await db.query<{
+    decision_id: string;
+    last_sequence: number | string;
+  }>(
+    `SELECT decision_id, last_sequence
+       FROM decision_state_projection
+      WHERE org_id = $1
+      ORDER BY last_sequence DESC, decision_id ASC
+      LIMIT $2`,
+    [orgId, limit],
+  );
+  return rows.rows.map((row) => ({
+    decisionId: row.decision_id,
+    lastSequence: Number(row.last_sequence),
+  }));
+}
+
 /**
  * Derived decision state, most recently active first, each row labeled with the
  * provenance of every event folded into it. `limit` bounds a request-path read; the

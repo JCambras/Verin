@@ -83,6 +83,11 @@ export default function DecisionLedgerPage() {
                 </li>
               ))}
             </ul>
+            {model.verification.replaySourceReason ? (
+              <p className="mt-3 text-xs text-red-800">
+                {model.verification.replaySourceReason}
+              </p>
+            ) : null}
           </section>
 
           {model.decisions.length > 0 ? (

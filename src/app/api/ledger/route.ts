@@ -69,6 +69,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     rows,
     decisions,
     decisionsTotal,
+    replaySourceReason,
   } = await readVerifiedDecisionRegister(
     db,
     principal.value.orgId,
@@ -81,6 +82,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       entriesChecked: verification.entriesChecked,
       entriesStored: verification.entriesStored,
       levels: verification.levels,
+      replaySourceReason,
     },
     total: verification.entriesStored,
     decisionsTotal,

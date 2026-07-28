@@ -13,7 +13,7 @@ import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-
 import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
 import {
   countDecisionProjections,
-  listDecisionProjections,
+  listDecisionProjectionMetadata,
 } from "../src/infrastructure/ledger/ledger-projection-store";
 import {
   LEDGER_REBUILD_USAGE,
@@ -46,15 +46,16 @@ async function printPlan(db: SqlDb, tenant: string): Promise<number> {
       `org ${tenant} has 0 decision-ledger entries - replaying nothing is vacuous (did db:seed run against this store?)`,
     );
   }
-  const sample = await listDecisionProjections(db, tenant, REBUILD_PLAN_SAMPLE);
+  const sample = await listDecisionProjectionMetadata(
+    db,
+    tenant,
+    REBUILD_PLAN_SAMPLE,
+  );
   const lines = rebuildPlanLines({
     tenant,
     entries: verdict.entriesChecked,
     derived: await countDecisionProjections(db, tenant),
-    sample: sample.map((item) => ({
-      decisionId: item.projection.decisionId,
-      lastSequence: item.projection.lastSequence,
-    })),
+    sample,
   });
   process.stdout.write(`${lines.join("\n")}\n`);
   return verdict.entriesChecked;

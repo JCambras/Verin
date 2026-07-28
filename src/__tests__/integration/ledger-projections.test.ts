@@ -12,6 +12,7 @@ import {
 } from "@infra/ledger/ledger-store";
 import {
   countDecisionProjections,
+  listDecisionProjectionMetadata,
   listDecisionProjections,
 } from "@infra/ledger/ledger-projection-store";
 import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
@@ -156,10 +157,16 @@ describe("deterministic decision-ledger projections", () => {
     const expected = await listDecisionProjections(db, LEDGER_ORG);
 
     await db.query(
-      "UPDATE decision_state_projection SET state_json = '{}' WHERE org_id = $1",
+      "UPDATE decision_state_projection SET state_json = '{broken' WHERE org_id = $1",
       [LEDGER_ORG],
     );
-    expect(await listDecisionProjections(db, LEDGER_ORG)).not.toEqual(expected);
+    await expect(listDecisionProjections(db, LEDGER_ORG)).rejects.toThrow();
+    expect(
+      await listDecisionProjectionMetadata(db, LEDGER_ORG, 10),
+    ).toEqual([{
+      decisionId: input.decisionRecord.id,
+      lastSequence: 5,
+    }]);
     expect(
       (await readVerifiedDecisionRegister(db, LEDGER_ORG, 200, 50)).decisions,
     ).toEqual(expected);
@@ -465,6 +472,47 @@ describe("deterministic decision-ledger projections", () => {
     expect(
       statements.some((sql) => sql.includes("decision_state_projection")),
     ).toBe(false);
+  });
+
+  it("returns a failed bounded register with no trusted decisions when replay sources fail", async () => {
+    expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
+    await db.exec(
+      "ALTER TABLE evidence_snapshots DISABLE TRIGGER evidence_snapshots_no_update",
+    );
+    await db.query(
+      `UPDATE evidence_snapshots
+          SET contract_schema_version = $3
+        WHERE org_id = $1 AND id = $2`,
+      [
+        LEDGER_ORG,
+        "evs:GC-01:balance",
+        `9.0.0 customer@example.com ${"private".repeat(40)}`,
+      ],
+    );
+    await db.exec(
+      "ALTER TABLE evidence_snapshots ENABLE TRIGGER evidence_snapshots_no_update",
+    );
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(false);
+    expect(snapshot.verification.levels.map((item) => item.level)).toEqual([
+      "L1",
+      "L2",
+      "L3",
+      "L4",
+    ]);
+    expect(snapshot.replaySourceReason).toBe(
+      "unsupported evidence encoding unrecognized during replay",
+    );
+    expect(snapshot.replaySourceReason).not.toContain("customer@example.com");
+    expect(snapshot.replaySourceReason!.length).toBeLessThanOrEqual(80);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsTotal).toBe(0);
   });
 
   it("records expiry then escalation in ledger order, not timestamp order", async () => {

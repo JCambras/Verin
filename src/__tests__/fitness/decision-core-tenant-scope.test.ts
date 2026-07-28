@@ -432,11 +432,14 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
     blockers: [resolvableBlocker],
   },
   "decision.ts:DecisionRecordSchema": proceedBoundary,
+  "decision.ts:DecisionRecordV1_7_0Schema": proceedBoundary,
   "decision.ts:DecisionResultSchema": probedProceedResult,
   "decision.ts:ExplanationNodeSchema": explanationNode,
   "decision.ts:ProceedDecisionSchema": probedProceedResult,
   "decision.ts:RecommendationSchema": recommendation,
   "evidence.ts:DecisionInputBundleSchema":
+    fixture("decision-input-bundle"),
+  "evidence.ts:DecisionInputBundleV1_7_0Schema":
     fixture("decision-input-bundle"),
   "execution.ts:CompensatingActionSchema": compensatingAction,
   "execution.ts:ExecutionPlanSchema": proceedResult.executionPlan,
@@ -447,6 +450,9 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "ids.ts:NonEmptyRoleRefSetSchema": roleRefSet,
   "ids.ts:RoleRefSetSchema": roleRefSet,
   "ledger.ts:LedgerEntrySchema": allLedgerEventSamples().find(
+    (event) => event.type === "ApprovalStageEscalated",
+  )!,
+  "ledger.ts:LedgerEntryV1_1_0Schema": allLedgerEventSamples().find(
     (event) => event.type === "ApprovalStageEscalated",
   )!,
   // A retained historical encoder is held to the SAME tenant boundary as the

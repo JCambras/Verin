@@ -7,12 +7,19 @@ import type { Result } from "../result";
 import { err, ok } from "../result";
 import { validationError, type AppError } from "../errors";
 import { normalizeScopedReferences } from "./ids";
-import type { DecisionInputBundle } from "./evidence";
-import { normalizeDecisionRecord, type DecisionRecord } from "./decision";
+import type { DecisionInputBundleV1_7_0 } from "./evidence";
+import {
+  normalizeDecisionRecordV1_7_0,
+  type DecisionRecordV1_7_0,
+} from "./decision";
 import { isPlainRecord } from "./normalization";
 import { canonicalizeTimeZoneForRecordedRelease } from "../time-zone";
+export const CANONICAL_SERIALIZER_V1_0_0 = "1.0.0";
+export const DECISION_CORE_SCHEMA_V1_7_0 = "1.7.0";
 export const CANONICAL_SERIALIZER_VERSION = "1.0.0";
 export const DECISION_CORE_SCHEMA_VERSION = "1.7.0";
+export const BUNDLE_HASH_PREIMAGE_V1_7_0 = "decision-input-bundle/1.7.0";
+export const DECISION_HASH_PREIMAGE_V1_7_0 = "decision-record/1.7.0";
 export const BUNDLE_HASH_PREIMAGE_VERSION = "decision-input-bundle/1.7.0";
 export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.7.0";
 /**
@@ -32,21 +39,22 @@ export const DECISION_HASH_PREIMAGE_VERSION = "decision-record/1.7.0";
  * cannot alter the contract silently.
  */
 export const HASH_PROJECTION_SCHEMA_FINGERPRINTS: Readonly<
-  Record<typeof BUNDLE_HASH_PREIMAGE_VERSION | typeof DECISION_HASH_PREIMAGE_VERSION, string>
+  Record<typeof BUNDLE_HASH_PREIMAGE_V1_7_0 | typeof DECISION_HASH_PREIMAGE_V1_7_0, string>
 > = {
-  [BUNDLE_HASH_PREIMAGE_VERSION]: "2087306d7834c731420550d14b14128b2ce1a3bafe0e2df75622098994f73efc",
-  [DECISION_HASH_PREIMAGE_VERSION]: "9c45859468cd259e16037894a24117bbb431a1c5a839a519a7d0b624d549816c",
+  [BUNDLE_HASH_PREIMAGE_V1_7_0]: "2087306d7834c731420550d14b14128b2ce1a3bafe0e2df75622098994f73efc",
+  [DECISION_HASH_PREIMAGE_V1_7_0]: "9c45859468cd259e16037894a24117bbb431a1c5a839a519a7d0b624d549816c",
 };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type BundleHashPayload = Omit<DecisionInputBundle, "id" | "bundleHash">;
-type DecisionHashPayload = Omit<DecisionRecord, "decisionHash">;
+type BundleHashPayloadV1_7_0 = Omit<DecisionInputBundleV1_7_0, "id" | "bundleHash">;
+type DecisionHashPayloadV1_7_0 = Omit<DecisionRecordV1_7_0, "decisionHash">;
 const exactProjectionKeys =
   <T extends object>() =>
   <const K extends readonly (keyof T)[]>(
     keys: K & Record<Exclude<keyof T, K[number]>, never>,
   ): K =>
     keys;
-export const BUNDLE_HASH_PAYLOAD_KEYS = exactProjectionKeys<BundleHashPayload>()([
+export const BUNDLE_HASH_PAYLOAD_KEYS_V1_7_0 =
+  exactProjectionKeys<BundleHashPayloadV1_7_0>()([
   "firmId",
   "schemaVersion",
   "canonicalSerializerVersion",
@@ -60,7 +68,8 @@ export const BUNDLE_HASH_PAYLOAD_KEYS = exactProjectionKeys<BundleHashPayload>()
   "timeZone",
   "timeZoneDataVersion",
 ] as const);
-export const DECISION_HASH_PAYLOAD_KEYS = exactProjectionKeys<DecisionHashPayload>()([
+export const DECISION_HASH_PAYLOAD_KEYS_V1_7_0 =
+  exactProjectionKeys<DecisionHashPayloadV1_7_0>()([
   "firmId",
   "id",
   "intentRef",
@@ -75,15 +84,21 @@ export const DECISION_HASH_PAYLOAD_KEYS = exactProjectionKeys<DecisionHashPayloa
   "createdBy",
   "createdAt",
 ] as const);
+export const BUNDLE_HASH_PAYLOAD_KEYS = [
+  ...BUNDLE_HASH_PAYLOAD_KEYS_V1_7_0,
+] as const;
+export const DECISION_HASH_PAYLOAD_KEYS = [
+  ...DECISION_HASH_PAYLOAD_KEYS_V1_7_0,
+] as const;
 export type BundleHashPreimage = Readonly<{
   readonly hashKind: "decision-input-bundle";
-  readonly preimageVersion: typeof BUNDLE_HASH_PREIMAGE_VERSION;
-  readonly payload: BundleHashPayload;
+  readonly preimageVersion: typeof BUNDLE_HASH_PREIMAGE_V1_7_0;
+  readonly payload: BundleHashPayloadV1_7_0;
 }>;
 export type DecisionHashPreimage = Readonly<{
   readonly hashKind: "decision-record";
-  readonly preimageVersion: typeof DECISION_HASH_PREIMAGE_VERSION;
-  readonly payload: DecisionHashPayload;
+  readonly preimageVersion: typeof DECISION_HASH_PREIMAGE_V1_7_0;
+  readonly payload: DecisionHashPayloadV1_7_0;
 }>;
 type NormalizableDecisionInputBundle = {
   readonly householdInstructionVersionRefs: readonly {
@@ -97,7 +112,7 @@ type NormalizableDecisionInputBundle = {
   readonly timeZone: string;
   readonly timeZoneDataVersion: string;
 };
-export const normalizeDecisionInputBundle = <
+export const normalizeDecisionInputBundleV1_7_0 = <
   T extends NormalizableDecisionInputBundle,
 >(
   bundle: T,
@@ -115,25 +130,44 @@ export const normalizeDecisionInputBundle = <
       bundle.timeZone,
     ),
   }) as T;
-export function bundleHashPreimage(bundle: DecisionInputBundle): BundleHashPreimage {
+export const normalizeDecisionInputBundle = <
+  T extends NormalizableDecisionInputBundle,
+>(
+  bundle: T,
+): T => normalizeDecisionInputBundleV1_7_0(bundle);
+export function bundleHashPreimageV1_7_0(
+  bundle: DecisionInputBundleV1_7_0,
+): BundleHashPreimage {
   const payload = normalizeOptionalProperties(
-    projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS),
+    projectDefined(bundle, BUNDLE_HASH_PAYLOAD_KEYS_V1_7_0),
   );
   return {
     hashKind: "decision-input-bundle",
-    preimageVersion: BUNDLE_HASH_PREIMAGE_VERSION,
-    payload: normalizeDecisionInputBundle(payload),
+    preimageVersion: BUNDLE_HASH_PREIMAGE_V1_7_0,
+    payload: normalizeDecisionInputBundleV1_7_0(payload),
   };
 }
-export function decisionHashPreimage(record: DecisionRecord): DecisionHashPreimage {
+export function decisionHashPreimageV1_7_0(
+  record: DecisionRecordV1_7_0,
+): DecisionHashPreimage {
   const payload = normalizeOptionalProperties(
-    projectDefined(record, DECISION_HASH_PAYLOAD_KEYS),
+    projectDefined(record, DECISION_HASH_PAYLOAD_KEYS_V1_7_0),
   );
   return {
     hashKind: "decision-record",
-    preimageVersion: DECISION_HASH_PREIMAGE_VERSION,
-    payload: normalizeDecisionRecord(payload),
+    preimageVersion: DECISION_HASH_PREIMAGE_V1_7_0,
+    payload: normalizeDecisionRecordV1_7_0(payload),
   };
+}
+export function bundleHashPreimage(
+  bundle: DecisionInputBundleV1_7_0,
+): BundleHashPreimage {
+  return bundleHashPreimageV1_7_0(bundle);
+}
+export function decisionHashPreimage(
+  record: DecisionRecordV1_7_0,
+): DecisionHashPreimage {
+  return decisionHashPreimageV1_7_0(record);
 }
 function projectDefined<T extends object, const K extends readonly (keyof T)[]>(value: T, keys: K): Pick<T, K[number]> {
   return Object.fromEntries(
@@ -227,12 +261,17 @@ function normalizeOptionalProperties<T>(value: T): T {
 /**
  * Fails on values JSON cannot round-trip instead of silently coercing them.
  */
-export function canonicalJson(value: JsonValue | BundleHashPreimage | DecisionHashPreimage): Result<string, AppError> {
+export function canonicalJsonV1_0_0(value: JsonValue | BundleHashPreimage | DecisionHashPreimage): Result<string, AppError> {
   try {
     return ok(serialize(value as JsonValue));
   } catch (e) {
     return err(validationError(e instanceof CanonicalizationRefusal ? e.reason : "value is not canonically serializable"));
   }
+}
+export function canonicalJson(
+  value: JsonValue | BundleHashPreimage | DecisionHashPreimage,
+): Result<string, AppError> {
+  return canonicalJsonV1_0_0(value);
 }
 /**
  * The path to the node being serialized, as a parent link rather than an array, so

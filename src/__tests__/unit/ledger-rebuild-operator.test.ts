@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   REBUILD_PLAN_SAMPLE,
@@ -20,6 +21,13 @@ const plan = (derived: number) => ({
     lastSequence: index,
   })),
 });
+const RUNNER = readFileSync(
+  new URL("../../../scripts/ledger-rebuild.ts", import.meta.url),
+  "utf8",
+);
+const planProjectionReaders = (source: string): string[] =>
+  [...source.matchAll(/\b(listDecisionProjections|listDecisionProjectionMetadata)\s*\(/g)]
+    .map((match) => match[1]!);
 
 describe("ledger-rebuild operator contract", () => {
   it("requires an explicit tenant - a bare invocation rebuilds nothing", () => {
@@ -78,5 +86,19 @@ describe("ledger-rebuild operator contract", () => {
     expect(large).toContain(
       `  ... and ${250 - REBUILD_PLAN_SAMPLE} more (plan bounded at ${REBUILD_PLAN_SAMPLE})`,
     );
+  });
+
+  it("builds the preview without decoding mutable projection JSON", () => {
+    expect(planProjectionReaders(RUNNER)).toEqual([
+      "listDecisionProjectionMetadata",
+    ]);
+  });
+
+  it("detects a preview that reads deserialized projection state", () => {
+    expect(
+      planProjectionReaders(
+        "const sample = await listDecisionProjections(db, tenant, 10);",
+      ),
+    ).toEqual(["listDecisionProjections"]);
   });
 });
