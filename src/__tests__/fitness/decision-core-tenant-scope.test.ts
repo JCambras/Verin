@@ -184,36 +184,78 @@ const OPAQUE_SCHEMA_TYPES = new Set([
   "transform",
 ]);
 
-const opaqueSchemaNodes = (
+type OpaqueSchemaEntry = {
+  readonly path: string;
+  readonly node: z.ZodType;
+};
+
+/** Every opaque node under `schema`, each keyed by its shape path from `rootPath`. */
+const opaqueSchemaNodeEntries = (
   schema: z.ZodType,
-): ReadonlySet<z.ZodType> => {
-  const opaque = new Set<z.ZodType>();
-  const pending = [schema];
+  rootPath: string,
+): OpaqueSchemaEntry[] => {
+  const entries: OpaqueSchemaEntry[] = [];
+  const pending: Array<{ schema: z.ZodType; path: string }> = [
+    { schema, path: rootPath },
+  ];
   const seen = new Set<z.ZodType>();
   while (pending.length > 0) {
-    const current = unwrapSchema(pending.pop()!);
+    const next = pending.pop()!;
+    const current = unwrapSchema(next.schema);
     if (seen.has(current)) continue;
     seen.add(current);
     if (OPAQUE_SCHEMA_TYPES.has(schemaDefinition(current).type)) {
-      opaque.add(current);
+      entries.push({ path: next.path, node: current });
     }
-    pending.push(...schemaEdges(current).map((edge) => edge.schema));
+    pending.push(
+      ...schemaEdges(current).map((edge) => ({
+        schema: edge.schema,
+        path: edge.segment === "" ? next.path : `${next.path}.${edge.segment}`,
+      })),
+    );
   }
-  return opaque;
+  return [...entries].sort((left, right) => left.path.localeCompare(right.path));
 };
+
+const opaqueSchemaNodes = (schema: z.ZodType): ReadonlySet<z.ZodType> =>
+  new Set(opaqueSchemaNodeEntries(schema, "").map((entry) => entry.node));
 
 /*
  * These exact internal nodes have behavior that JSON Schema cannot express:
- * TokenizedPayload deep-freezes already-validated JSON, ExplanationNode validates
- * its z.unknown recursion iteratively in a superRefine, and DecisionInputBundle
- * canonicalizes a time-zone spelling before its enum check. Identity-based
- * allowance does not bless a new transform or a wrapper that introduces one.
+ * TokenizedPayload deep-freezes already-validated JSON and DecisionInputBundle
+ * canonicalizes a time-zone spelling before its enum check. ExplanationNode is
+ * seeded too because its iterative z.unknown recursion is the next candidate,
+ * though it contributes no opaque node today.
+ *
+ * The seed GRAPHS are shared (DecisionInputBundle reaches TenantContext's leaves),
+ * so traversing them would silently bless any opaque node later added anywhere
+ * inside them. The resolved inventory is therefore PINNED by path below: a new
+ * opaque node - inside a seed graph or outside it - fails the pin instead of
+ * joining the allowlist.
  */
-const ALLOWED_OPAQUE_SCHEMA_NODES = new Set<z.ZodType>([
-  ...opaqueSchemaNodes(actorSchemas.TokenizedPayloadSchema),
-  ...opaqueSchemaNodes(explanationSchemas.ExplanationNodeSchema),
-  ...opaqueSchemaNodes(evidenceSchemas.DecisionInputBundleSchema),
-]);
+const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
+  "DecisionInputBundleSchema.timeZone",
+  "TokenizedPayloadSchema.value.{}",
+] as const;
+
+const ALLOWED_OPAQUE_SCHEMA_ENTRIES: readonly OpaqueSchemaEntry[] = [
+  ...opaqueSchemaNodeEntries(
+    actorSchemas.TokenizedPayloadSchema,
+    "TokenizedPayloadSchema",
+  ),
+  ...opaqueSchemaNodeEntries(
+    explanationSchemas.ExplanationNodeSchema,
+    "ExplanationNodeSchema",
+  ),
+  ...opaqueSchemaNodeEntries(
+    evidenceSchemas.DecisionInputBundleSchema,
+    "DecisionInputBundleSchema",
+  ),
+];
+
+const ALLOWED_OPAQUE_SCHEMA_NODES = new Set<z.ZodType>(
+  ALLOWED_OPAQUE_SCHEMA_ENTRIES.map((entry) => entry.node),
+);
 
 const unsafeOpaqueSchemaBoundaries = (
   modules: readonly SchemaModule[],
@@ -600,6 +642,28 @@ describe("decision-core tenant-scope fence", () => {
     );
     expect(audit.missing).toEqual([]);
     expect(audit.unsafe).toEqual(["probe.ts:OpaqueOwner"]);
+  });
+
+  it("pins the exact opaque nodes the allowlist blesses", () => {
+    expect(
+      ALLOWED_OPAQUE_SCHEMA_ENTRIES.map((entry) => entry.path).sort(),
+    ).toEqual([...ALLOWED_OPAQUE_SCHEMA_NODE_PATHS]);
+    expect(ALLOWED_OPAQUE_SCHEMA_NODES.size).toBe(
+      ALLOWED_OPAQUE_SCHEMA_NODE_PATHS.length,
+    );
+  });
+
+  it("detects an opaque node newly grown inside an already-blessed graph", () => {
+    const Grown = z.strictObject({
+      value: z.record(z.string().min(1), z.json().transform(Object.freeze)),
+      added: z.any(),
+    });
+    const grownPaths = opaqueSchemaNodeEntries(
+      Grown,
+      "TokenizedPayloadSchema",
+    ).map((entry) => entry.path);
+    expect(grownPaths).toContain("TokenizedPayloadSchema.added");
+    expect(grownPaths).not.toEqual([...ALLOWED_OPAQUE_SCHEMA_NODE_PATHS]);
   });
 
   it("requires an exact node allowlist for intentional opaque behavior", () => {

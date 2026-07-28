@@ -423,19 +423,28 @@ describe("dependency-rule fence", () => {
     });
 
     it.each([
-      "fetch('https://example.test')",
-      "Buffer.from('x')",
-      "process.getBuiltinModule('fs')",
-      "globalThis.fetch('https://example.test')",
+      ["fetch('https://example.test')", ["<platform-global fetch>"]],
+      ["Buffer.from('x')", ["<platform-global Buffer>"]],
+      [
+        "process.getBuiltinModule('fs')",
+        ["<non-literal get-builtin-module>", "<platform-global process>"],
+      ],
+      ["globalThis.fetch('https://example.test')", ["<platform-global fetch>"]],
     ])(
       "implicit platform global %s cannot evade contracts isolation",
-      (expression) => {
+      (expression, expected) => {
         const v = detectContractsExternalImportViolations(
           inMemoryProject({
             "src/contracts/evil.ts": `export const forbidden = ${expression};`,
           }),
         );
-        expect(v.some((violation) => violation.line === 1)).toBe(true);
+        // Assert the EXACT specifier set, not merely "something fired at line 1" -
+        // a count-only check passes on an unrelated detector once the intended one
+        // stops firing.
+        expect([...new Set(v.map((violation) => violation.specifier))].sort()).toEqual(
+          [...expected].sort(),
+        );
+        expect(v.every((violation) => violation.line === 1)).toBe(true);
       },
     );
 
@@ -547,6 +556,29 @@ describe("dependency-rule fence", () => {
         "globalThis member",
         `export const value = globalThis["Function"]("return 1")();`,
       ],
+      [
+        "aliased computed key",
+        [
+          `const key = "constructor";`,
+          "const Ctor = (() => {})[key];",
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "destructured globalThis member",
+        [
+          "const { Function: Ctor } = globalThis;",
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "computed destructured Reflect.get",
+        [
+          `const { ["get"]: get } = Reflect;`,
+          `const Ctor = get(() => undefined, "constructor");`,
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
     ])("dynamic Function recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -567,6 +599,31 @@ describe("dependency-rule fence", () => {
         "aliased randomness",
         "const random = Math.random;\nexport const value = random();",
       ],
+      [
+        "constructed clock",
+        "export const value = new Date().toISOString();",
+      ],
+      ["called clock", "export const value = Date();"],
+      [
+        "globalThis-namespaced clock",
+        "export const value = globalThis.Date.now();",
+      ],
+      [
+        "globalThis-namespaced randomness",
+        "export const value = globalThis.Math.random();",
+      ],
+      [
+        "computed destructured clock",
+        `const { ["now"]: now } = Date;\nexport const value = now();`,
+      ],
+      [
+        "assignment-destructured clock",
+        [
+          "let now = () => 0;",
+          "({ now } = Date);",
+          "export const value = now();",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -585,13 +642,32 @@ describe("dependency-rule fence", () => {
             "const Math = { random: () => 0.5 };",
             "const Function = (value: string) => () => value;",
             "const model = { constructor: () => 7 };",
+            "const { now } = Date;",
+            "const { constructor: ctor } = model;",
             "export const values = [",
             `  Reflect.get({}, "constructor"),`,
             "  Date.now(),",
             "  Math.random(),",
             `  Function("safe")(),`,
             "  model.constructor(),",
+            "  now(),",
+            "  ctor(),",
             "];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it("a pinned-instant Date and a plain destructuring assignment stay allowed", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "let left = 1;",
+            "let right = 2;",
+            "({ left, right } = { left: 3, right: 4 });",
+            `export const pinned = new Date("2020-01-01T00:00:00.000Z").toISOString();`,
+            "export const values = [left, right];",
           ].join("\n"),
         }),
       );

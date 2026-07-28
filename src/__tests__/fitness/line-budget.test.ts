@@ -121,6 +121,11 @@ function runtimeDataArtifactPath(
 function runtimeDataArtifactPaths(): string[] {
   const paths = new Set<string>();
   for (const sourceFile of realProject().getSourceFiles()) {
+    // Only a specifier ENDING in `.json` can ever resolve to an artifact, and a
+    // specifier is spelled literally in its file, so a file with no `.json` text
+    // cannot contribute one. Skipping it is exact, not a sampled shortcut, and it
+    // keeps this fence off moduleReferences' whole-program symbol resolution.
+    if (!sourceFile.getFullText().includes(".json")) continue;
     for (const reference of moduleReferences(sourceFile)) {
       const artifact = runtimeDataArtifactPath(
         sourceFile.getFilePath(),
