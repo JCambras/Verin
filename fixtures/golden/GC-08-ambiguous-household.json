@@ -22,6 +22,13 @@
     "maskedRequestSummary": "distribute 75000 USD for home-renovation; household slot has two candidates (tokenized)",
     "asOf": "2026-07-26T17:20:00.000Z"
   },
+  "signedMoney": {
+    "currency": "USD",
+    "cadence": "month",
+    "requestAmountUsd": 75000,
+    "plannedWithdrawalMonthlyUsd": null,
+    "reserveFloorUsd": null
+  },
   "firmConfiguration": {
     "firmId": "firm-a",
     "cashReserveMonths": 6,

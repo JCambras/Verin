@@ -9,6 +9,7 @@
  * ADR-0022 - every input here is synthetic, so it is a watermarked demonstration.
  */
 import type { DisplayMetric } from "@contracts/metric";
+import { reserveFloorMinor as calculateReserveFloorMinor } from "@contracts/money-movement";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
 import type { ComparisonRowVM, ComparisonVM, PolicyAuthoringVM, RecordVM } from "./model";
 import { derivedMetric, prov, recordProvenance } from "./provenance";
@@ -26,7 +27,19 @@ import {
   DISPOSITION_BADGES,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
-import { DEMO_NOW, FIRMS, IDS, OBSERVED_RECENT, dispositionFor, type FirmData, type ScenarioData } from "./data";
+import {
+  DEMO_NOW,
+  FIRMS,
+  IDS,
+  OBSERVED_RECENT,
+  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  dispositionFor,
+  type FirmData,
+  type ScenarioData,
+} from "./data";
+
+/** The reserve horizon the drafted policy proposes (surface 11's simulation). */
+export const DRAFT_RESERVE_MONTHS = 12;
 
 function thresholdMetric(firm: FirmData): DisplayMetric {
   // A policy parameter, not a computed figure: fixture-sourced, labeled sample data.
@@ -98,7 +111,7 @@ export function buildComparison(scenario: ScenarioData): ComparisonVM {
 
 export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): PolicyAuthoringVM {
   const isFirmA = firm.id === "firm-a";
-  const twelveMonthFloor = 12 * (reserveFloorMinor(firm) / firm.reserveMonths);
+  const twelveMonthFloor = calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, DRAFT_RESERVE_MONTHS);
   const liquidityInputs = [prov("synthetic-fixture", OBSERVED_RECENT)];
   const newHeadroom = headroomMinor(firm) - (twelveMonthFloor - reserveFloorMinor(firm));
   const disp = dispositionFor(scenario, firm.id);

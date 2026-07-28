@@ -5376,4 +5376,62 @@ named diagnostic before the companion can pass.
 **Revert:** the $6,000 production injection was removed. The focused golden and scenario fitness
 suites pass on the corrected state.
 
-**Date:** 2026-07-28 (D-098).
+**Date:** 2026-07-28 (D-061).
+
+## F102 · signed-money structure, real unit projection, and the named ledger extension (D-062, ADR-0030)
+
+**Invariant:** the golden gate must REPORT rather than crash on malformed signed input; the
+money-unit half of the cross-artifact fence must fail against real data; the surface-11 policy-draft
+floor must be fenced to the signed horizon; and the signed ledger vocabulary must state exactly the
+v3 conformance it has.
+
+**Crash path (reproduced first).** Deleting `firmConfiguration.cashReserveMonths` from GC-01 and
+running both validators together aborted with:
+
+```text
+RangeError: reserveMonths must be a non-negative safe integer
+    at reserveFloorMinor (src/contracts/money-movement.ts:7:11)
+    at validateGoldenDemoSemantics (scripts/golden-demo-semantics.lib.ts:122:9)
+```
+
+Every already-computed diagnostic - including the correct `cashReserveMonths must be an integer` -
+was discarded. After the fix the same injection (plus a fractional `6.5` on GC-02) produces the
+named problems and the run completes; the companion
+`REPORTS rather than crashes on a non-integer reserve horizon` asserts all three.
+
+**Unit projection (adversarial production injection).** `formatMetricValue`'s divisor was changed
+from the shared `MINOR_UNITS_PER_MAJOR` to `1000` and `pnpm golden:validate` failed with:
+
+```text
+✗ demo renders money at 1000 minor units per major, not 100
+```
+
+The pre-fix snapshot could not have failed: it asserted its own `minorUnitsPerMajor: 100` literal.
+
+**Policy-draft floor (adversarial production injection).** The corrected shared call in
+`buildPolicyAuthoring` was replaced with the old inverted form carrying a wrong divisor
+(`12 * (reserveFloorMinor(firm) / 8)`) and the gate failed with:
+
+```text
+✗ GC-02-firm-b-happy-path: drafted-policy reserve floor drift, fixture=9600000, demo=7200000
+✗ the policy-draft reserve floor is not the monthly withdrawal times the drafted horizon
+```
+
+That displayed figure was previously outside the fence entirely.
+
+**Ledger vocabulary.** `validateLedgerVocabulary` parses the `LedgerEntry` union out of the
+SHA-256-pinned `docs/v3/verin-core-contracts.ts`. Its companion feeds a reference with a member
+dropped, a member invented, an authority-lapse event promoted into the ratified union, and no union
+at all; each must produce its named diagnostic, including the collapse instruction that fires when
+prompt 7 lands either event.
+
+**Signed money as structure.** The companion deletes `signedMoney` (both validators must report it),
+mis-derives GC-02's floor to $90,000 (`is not 8000 x 12 months`), contradicts GC-01's trigger prose
+(`no longer states the signed request amount 75000`), and rewords the same summary to
+`distribute $75,000 ...` - which must still pass, proving the gate now tracks the numbers rather
+than the wording.
+
+**Revert:** both production injections were removed; `pnpm golden:validate` and the focused fitness
+suites pass on the corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-062).

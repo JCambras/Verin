@@ -22,6 +22,13 @@
     "maskedRequestSummary": "distribute 75000 USD from an account under an active legal hold (tokenized)",
     "asOf": "2026-07-26T15:00:00.000Z"
   },
+  "signedMoney": {
+    "currency": "USD",
+    "cadence": "month",
+    "requestAmountUsd": 75000,
+    "plannedWithdrawalMonthlyUsd": null,
+    "reserveFloorUsd": null
+  },
   "firmConfiguration": {
     "firmId": "firm-a",
     "cashReserveMonths": 6,

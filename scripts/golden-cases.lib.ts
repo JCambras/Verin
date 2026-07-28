@@ -25,22 +25,22 @@ import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { TimestampSchema } from "@contracts/decision-core/ids";
 import { OBSERVED_STATUS_IDS } from "@contracts/execution-status";
+import { isMoneyQuantity, minorFromMajor, reserveFloorMinor } from "@contracts/money-movement";
 import { validateEvidenceCompleteness } from "./golden-evidence.lib";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
+export const V3_CORE_CONTRACTS = join(REPO_ROOT, "docs/v3/verin-core-contracts.ts");
 
-/** The ledger types used by signed golden truth, including the captain-ratified
- * authority-lapse events that prompt 7 must add to its canonical event union. */
-export const LEDGER_EVENT_TYPES = [
+/** The ratified v3 `LedgerEntry` union, transcribed from the SHA-256-pinned
+ * docs/v3/verin-core-contracts.ts and kept honest by `validateLedgerVocabulary`. */
+export const V3_LEDGER_ENTRY_TYPES = [
   "DecisionRecorded",
   "EvidenceSnapshotRecorded",
   "ApprovalRecorded",
   "ApprovalInvalidated",
-  "ApprovalStageEscalated",
-  "ApprovalStageExpired",
   "ReservationCreated",
   "ReservationReleased",
   "ExecutionStarted",
@@ -52,6 +52,49 @@ export const LEDGER_EVENT_TYPES = [
   "VerificationStuck",
   "ExceptionDecisionRequested",
 ] as const;
+
+/** The two authority-lapse events D-061 signed into GC-16 that the v3 union does
+ * NOT yet carry. The extension is authorized by ADR-0030; prompt 7 adds both to the
+ * canonical union when it lands the ledger, and this list empties back out. */
+export const AUTHORITY_LAPSE_EVENT_TYPES = ["ApprovalStageEscalated", "ApprovalStageExpired"] as const;
+
+/** What a signed golden case may name: the v3 union plus the ADR-0030 extension. */
+export const LEDGER_EVENT_TYPES = [...V3_LEDGER_ENTRY_TYPES, ...AUTHORITY_LAPSE_EVENT_TYPES] as const;
+
+/**
+ * Keep the transcription above honest against the pinned v3 reference, so the
+ * divergence stays a NAMED, reviewable extension instead of a silent widening:
+ * every member the reference declares must be transcribed, nothing may be invented,
+ * and once prompt 7 adds an authority-lapse event to the ratified union the
+ * extension must be collapsed rather than left shadowing it. Text is injected so
+ * the fence companion can feed a drifted reference (charter #4).
+ */
+export function validateLedgerVocabulary(contractsText: string): string[] {
+  const problems: string[] = [];
+  const union = contractsText.match(/export type LedgerEntry\s*=([^;]*);/);
+  if (!union) {
+    return ["docs/v3/verin-core-contracts.ts declares no LedgerEntry union (the ratified reference moved or was renamed)"];
+  }
+  const ratified = new Set(
+    union[1]!
+      .split("|")
+      .map((member) => member.trim())
+      .filter((member) => /^[A-Za-z][A-Za-z0-9_]*$/.test(member)),
+  );
+  const transcribed = new Set<string>(V3_LEDGER_ENTRY_TYPES);
+  for (const member of ratified) {
+    if (!transcribed.has(member)) problems.push(`v3 LedgerEntry member "${member}" is missing from V3_LEDGER_ENTRY_TYPES`);
+  }
+  for (const member of transcribed) {
+    if (!ratified.has(member)) problems.push(`V3_LEDGER_ENTRY_TYPES claims "${member}" but the ratified v3 LedgerEntry union does not declare it`);
+  }
+  for (const member of AUTHORITY_LAPSE_EVENT_TYPES) {
+    if (ratified.has(member)) {
+      problems.push(`"${member}" is now a ratified v3 LedgerEntry member - collapse it out of the ADR-0030 extension into V3_LEDGER_ENTRY_TYPES`);
+    }
+  }
+  return problems;
+}
 
 /** AuthorityRequirement.mode, plus the "none" sentinel a golden case uses to
  * state, positively, that a non-proceed disposition carries NO authority
@@ -163,6 +206,86 @@ const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 const isNonEmptyArray = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0;
+
+/**
+ * The signed money figures a case states as STRUCTURED data. Amounts are first-class
+ * fields rather than numbers regexed out of signed prose, so a captain rewording a
+ * summary cannot move product truth (and cannot break the gate). `validateGoldenCases`
+ * separately requires the prose to still mention every figure, so the two can never
+ * disagree.
+ */
+export interface SignedMoney {
+  currency: string;
+  cadence: string;
+  requestAmountUsd: number;
+  /** null when the case's signed text states no schedule for this household. */
+  plannedWithdrawalMonthlyUsd: number | null;
+  /** null when the case's signed text states no reserve floor. */
+  reserveFloorUsd: number | null;
+}
+
+const optionalAmount = (v: unknown): number | null | undefined =>
+  v === null ? null : isMoneyQuantity(v) ? v : undefined;
+
+/** Read a case's signedMoney block, or null when it is absent or malformed. */
+export function readSignedMoney(c: Record<string, unknown>): SignedMoney | null {
+  const m = c.signedMoney;
+  if (!isObj(m)) return null;
+  const monthly = optionalAmount(m.plannedWithdrawalMonthlyUsd);
+  const floor = optionalAmount(m.reserveFloorUsd);
+  if (!isNonEmptyString(m.currency) || !isNonEmptyString(m.cadence)) return null;
+  if (!isMoneyQuantity(m.requestAmountUsd) || monthly === undefined || floor === undefined) return null;
+  return {
+    currency: m.currency,
+    cadence: m.cadence,
+    requestAmountUsd: m.requestAmountUsd,
+    plannedWithdrawalMonthlyUsd: monthly,
+    reserveFloorUsd: floor,
+  };
+}
+
+/** Whether signed prose still states a figure, tolerant of `8000`, `8,000`, `$8,000.00`. */
+function mentionsAmount(text: string, amountUsd: number): boolean {
+  const normalized = text.replace(/(?<=\d),(?=\d\d\d\b)/g, "");
+  return new RegExp(`(?<![\\d.])${amountUsd}(?!\\d)`).test(normalized);
+}
+
+/** The signed money block: well-typed, internally consistent, and still stated in prose. */
+function validateSignedMoney(c: Record<string, unknown>, P: (msg: string) => void): void {
+  const signed = readSignedMoney(c);
+  if (!signed) {
+    P("signedMoney must state currency, cadence, requestAmountUsd, and (whole-dollar or null) plannedWithdrawalMonthlyUsd and reserveFloorUsd");
+    return;
+  }
+  const months = isObj(c.firmConfiguration) ? c.firmConfiguration.cashReserveMonths : undefined;
+  const monthlyMinor = minorFromMajor(signed.plannedWithdrawalMonthlyUsd);
+  const floorMinor = minorFromMajor(signed.reserveFloorUsd);
+  if (monthlyMinor !== null && floorMinor !== null) {
+    if (!isMoneyQuantity(months)) {
+      P("signedMoney states a reserve floor but firmConfiguration.cashReserveMonths is not a whole reserve horizon");
+    } else if (reserveFloorMinor(monthlyMinor, months) !== floorMinor) {
+      P(`signedMoney.reserveFloorUsd ${signed.reserveFloorUsd} is not ${signed.plannedWithdrawalMonthlyUsd} x ${months} months`);
+    }
+  }
+  const trigger = c.trigger;
+  const requestSummary = isObj(trigger) && isNonEmptyString(trigger.maskedRequestSummary) ? trigger.maskedRequestSummary : "";
+  if (!mentionsAmount(requestSummary, signed.requestAmountUsd)) {
+    P(`trigger.maskedRequestSummary no longer states the signed request amount ${signed.requestAmountUsd}`);
+  }
+  const scheduleSummary = (Array.isArray(c.householdEvidence) ? c.householdEvidence : [])
+    .filter(isObj)
+    .filter((row) => row.evidenceKind === "planned-withdrawals")
+    .map((row) => (isNonEmptyString(row.summary) ? row.summary : ""))
+    .join(" ");
+  for (const [field, amount] of [
+    ["plannedWithdrawalMonthlyUsd", signed.plannedWithdrawalMonthlyUsd],
+    ["reserveFloorUsd", signed.reserveFloorUsd],
+  ] as const) {
+    if (amount !== null && !mentionsAmount(scheduleSummary, amount)) {
+      P(`signedMoney.${field} ${amount} is not stated by any planned-withdrawals evidence summary`);
+    }
+  }
+}
 
 /**
  * Validate all golden cases against an injected ref set and doc text. Returns a
@@ -285,6 +408,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       });
     }
     for (const problem of validateEvidenceCompleteness(c)) P(problem);
+    validateSignedMoney(c, P);
 
     // policy versions. Household-instruction versions may be EMPTY only when the
     // case records why (householdInstructionsNote) - e.g. the ambiguous-household
@@ -379,7 +503,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       c.expectedLedgerEvents.forEach((l, i) => {
         const at = `expectedLedgerEvents[${i}]`;
         if (!isObj(l)) return P(`${at} is not an object`);
-        if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type, got ${JSON.stringify(l.type)}`);
+        if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event (${AUTHORITY_LAPSE_EVENT_TYPES.join("|")}), got ${JSON.stringify(l.type)}`);
         if (!isNonEmptyString(l.note)) P(`${at}.note missing or empty`);
       });
     }

@@ -3258,3 +3258,39 @@ completeness, and execution status must express one product truth before additio
 machinery is built.
 **Revert path:** none without a new captain decision re-signing the golden truth and its semantic
 contract.
+
+### D-103 · 2026-07-28 · reversible · Signed money is structured data; the ledger extension is an ADR, not a comment
+
+Review of D-102 found four defects in how the signed truth was fenced rather than in the truth
+itself. All four are fixed forward:
+
+- **The semantic validator crashed instead of reporting.** A fixture missing (or fractionally
+  stating) `firmConfiguration.cashReserveMonths` reached the throwing shared arithmetic, so
+  `pnpm golden:validate` died on a `RangeError` and discarded every diagnostic it had already
+  computed. `@contracts/money-movement` now exports `isMoneyQuantity` - the SAME predicate the
+  authority throws on - and every caller validating untrusted fixture input guards with it, so a
+  guard cannot drift from the throw conditions.
+- **The money-unit half of the cross-artifact fence was tautological.** The snapshot asserted its own
+  `"currency-minor"`/`100` literals. `formatMetricValue` now renders through the single money
+  authority, and the snapshot projects the units the demo ACTUALLY carries: the formats of the
+  emitted money metrics, and the divisor recovered by inverting the shipped renderer on those
+  metrics. A divisor changed anywhere on the display path now fails the gate.
+- **Surface 11 kept a second money path.** `buildPolicyAuthoring` re-derived the monthly withdrawal
+  by inverting the reserve floor it had just computed (`12 * floor / months`, undefined at a
+  zero horizon). It now calls the shared arithmetic directly, and the snapshot projects the
+  DISPLAYED simulated floor so the $96,000 on that surface is fenced to the signed twelve-month
+  horizon.
+- **Signed numbers were regexed out of signed prose.** Every case now carries a structured
+  `signedMoney` block (currency, cadence, request amount, monthly schedule, reserve floor). The
+  fence reads the structure; the validator separately requires the prose to still state each figure,
+  so a captain rewording a summary moves neither product truth nor the gate, and all sixteen cases'
+  amounts are fenced instead of two.
+
+**Why:** a fence that crashes, asserts its own constant, or depends on prose wording does not
+enforce the invariant it names (charter #4).
+**Revert path:** the structured block is additive to the fixtures and the validator reads it through
+one helper; removing the block and restoring prose parsing is a single-file change.
+**See also:** [ADR-0039](docs/adr/0039-authority-lapse-ledger-events.md) records the
+`ApprovalStageEscalated`/`ApprovalStageExpired` extension of the ratified `LedgerEntry` union that
+D-102 signed into GC-16, with the prompt-7 collapse trigger and a fence against the pinned reference
+- previously carried only as a code comment.

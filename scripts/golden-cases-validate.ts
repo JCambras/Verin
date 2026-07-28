@@ -15,7 +15,15 @@
  * pair.
  */
 import { readFileSync, existsSync } from "node:fs";
-import { GOLDEN_DOC, SIGNOFF_PENDING, loadGoldenCases, loadScenarioRefs, validateGoldenCases } from "./golden-cases.lib";
+import {
+  GOLDEN_DOC,
+  SIGNOFF_PENDING,
+  V3_CORE_CONTRACTS,
+  loadGoldenCases,
+  loadScenarioRefs,
+  validateGoldenCases,
+  validateLedgerVocabulary,
+} from "./golden-cases.lib";
 import { loadDemoSemanticSnapshot } from "./golden-demo-snapshot";
 import { validateGoldenDemoSemantics } from "./golden-demo-semantics.lib";
 
@@ -37,6 +45,7 @@ if (docText === "") {
 const problems = [
   ...validateGoldenCases(cases, refs, docText),
   ...validateGoldenDemoSemantics(cases, refs, loadDemoSemanticSnapshot()),
+  ...validateLedgerVocabulary(existsSync(V3_CORE_CONTRACTS) ? readFileSync(V3_CORE_CONTRACTS, "utf8") : ""),
 ];
 
 console.log(bold(`\nGOLDEN CASES - the prompt-2 truth set (${cases.length} case(s))`));

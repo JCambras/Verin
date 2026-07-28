@@ -8,9 +8,10 @@
  * build on a metric field rendered outside a provenance-carrying surface —
  * extracting `.value` to render it naked is exactly what it catches.
  */
+import { MINOR_UNITS_PER_MAJOR, MONEY_CURRENCY, MONEY_METRIC_FORMAT } from "./money-movement";
 import { type RecordProvenance, type DerivedProvenance, isDemonstration, DEMO_WATERMARK } from "./provenance";
 
-export const METRIC_FORMATS = ["currency-minor", "score", "percent", "count", "plain"] as const;
+export const METRIC_FORMATS = [MONEY_METRIC_FORMAT, "score", "percent", "count", "plain"] as const;
 export type MetricFormat = (typeof METRIC_FORMATS)[number];
 
 /** A displayed value bound to its provenance (charter #3). `T` is the raw value. */
@@ -29,13 +30,17 @@ export function metric<T extends number | string>(
   return { value, format, provenance };
 }
 
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const MONEY = new Intl.NumberFormat("en-US", { style: "currency", currency: MONEY_CURRENCY });
 
-/** Value only — <Metric> adds the source/asOf label. Money is stored in minor units. */
+/**
+ * Format a metric's raw value for display (value only — the source/asOf label is
+ * added by `<Metric>`). Money is stored in minor units and rendered through the
+ * single money-unit authority (`@contracts/money-movement`).
+ */
 export function formatMetricValue(m: DisplayMetric): string {
   switch (m.format) {
-    case "currency-minor":
-      return USD.format(Number(m.value) / 100);
+    case MONEY_METRIC_FORMAT:
+      return MONEY.format(Number(m.value) / MINOR_UNITS_PER_MAJOR);
     case "score":
       return String(Math.round(Number(m.value)));
     case "percent":

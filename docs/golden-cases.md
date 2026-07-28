@@ -123,10 +123,22 @@ Every case - in this document and in its fixture - states all of:
 9. **expected execution eligibility** - eligible flag, reason, idempotency key, reservations,
    preconditions;
 10. **expected explanation nodes** - code + summary each;
-11. **expected ledger events** - ordered `LedgerEntry` types (v3 core contracts) with notes;
+11. **expected ledger events** - ordered event types with notes, drawn from the ratified v3
+    `LedgerEntry` union PLUS the two authority-lapse events (`ApprovalStageEscalated`,
+    `ApprovalStageExpired`) the union does not yet declare. That extension is authorized and
+    trigger-bound by [ADR-0030](./adr/0030-authority-lapse-ledger-events.md); the validator fences
+    the transcribed union against the pinned reference and fails when prompt 7 lands either event,
+    so the extension collapses instead of shadowing the canonical member;
 12. **expected verification state** - reached flag, observed status (execution-plane state
     vocabulary), the settled-claim rule, note;
-13. **signoff** - §1.
+13. **signoff** - §1;
+14. **signed money** - `signedMoney`: currency, cadence, the request amount, and (where the case's
+    signed text states them, else null) the monthly planned withdrawal and the reserve floor, as
+    STRUCTURED whole-dollar fields. These fields ARE the signed numbers - the prose summaries
+    restate them, never the reverse. The validator derives the floor through the shared money
+    arithmetic (`src/contracts/money-movement.ts`) and requires each figure to still appear in the
+    case's own trigger / planned-withdrawals summaries, so structure and prose can neither diverge
+    nor be regexed apart.
 
 Structural consistency is validated, not assumed: a blocked or prohibited case cannot carry
 authority stages, execution eligibility, or a reached verification state (v3 invariants 8/9); a

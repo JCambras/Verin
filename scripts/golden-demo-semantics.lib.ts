@@ -1,23 +1,34 @@
+import type { MetricFormat } from "@contracts/metric";
 import {
   EXECUTION_RECEIPT_IDS,
   OBSERVED_STATUS_IDS,
   VERIFICATION_PROJECTION_IDS,
 } from "@contracts/execution-status";
-import { reserveFloorMinor } from "@contracts/money-movement";
-import type { LoadedCase, ScenarioRefs } from "./golden-cases.lib";
+import {
+  MINOR_UNITS_PER_MAJOR,
+  MONEY_METRIC_FORMAT,
+  isMoneyQuantity,
+  minorFromMajor,
+  reserveFloorMinor,
+} from "@contracts/money-movement";
+import { readSignedMoney, type LoadedCase, type ScenarioRefs } from "./golden-cases.lib";
 
 export interface DemoSemanticSnapshot {
   requestAmountMinor: number;
   plannedWithdrawalMonthlyMinor: number;
-  moneyUnit: "currency-minor";
-  currency: "USD";
-  cadence: "month";
-  minorUnitsPerMajor: number;
+  /** Every distinct format the demo's money metrics actually carry. */
+  moneyUnits: MetricFormat[];
+  /** Every distinct divisor the shipped renderer actually applies to those metrics. */
+  minorUnitsPerMajor: Array<number | null>;
+  currency: string;
+  cadence: string;
   firms: Array<{
     id: string;
     reserveMonths: number;
     reserveFloorMinor: number;
   }>;
+  draftedReserveMonths: number;
+  draftedReserveFloorMinor: number | null;
   executionTimelineStatuses: string[];
   verificationTimelineStatuses: string[];
 }
@@ -27,34 +38,6 @@ const isObj = (value: unknown): value is Record<string, unknown> =>
 const caseData = (cases: LoadedCase[], id: string): Record<string, unknown> | undefined => {
   const found = cases.find(({ data }) => isObj(data) && data.caseId === id);
   return found && isObj(found.data) ? found.data : undefined;
-};
-const evidenceSummary = (c: Record<string, unknown>, kind: string): string | undefined => {
-  if (!Array.isArray(c.householdEvidence)) return undefined;
-  const row = c.householdEvidence.find(
-    (value) => isObj(value) && value.evidenceKind === kind,
-  );
-  return isObj(row) && typeof row.summary === "string" ? row.summary : undefined;
-};
-const parseRequest = (c: Record<string, unknown>): { amount: number; currency: string } | undefined => {
-  const trigger = c.trigger;
-  const summary = isObj(trigger) ? trigger.maskedRequestSummary : undefined;
-  const match = typeof summary === "string" ? summary.match(/\bdistribute\s+(\d+)\s+([A-Z]{3})\b/i) : null;
-  return match ? { amount: Number(match[1]), currency: match[2]!.toUpperCase() } : undefined;
-};
-const parseReserve = (
-  c: Record<string, unknown>,
-): { monthly: number; currency: string; cadence: string; floor: number } | undefined => {
-  const summary = evidenceSummary(c, "planned-withdrawals");
-  const match = summary?.match(
-    /planned withdrawals\s+(\d+)\s+([A-Z]{3})\/([a-z]+).*reserve\s*=\s*(\d+)\s+([A-Z]{3})/i,
-  );
-  if (!match || match[2]!.toUpperCase() !== match[5]!.toUpperCase()) return undefined;
-  return {
-    monthly: Number(match[1]),
-    currency: match[2]!.toUpperCase(),
-    cadence: match[3]!.toLowerCase(),
-    floor: Number(match[4]),
-  };
 };
 const sameMembers = (left: Iterable<string>, right: Iterable<string>): boolean => {
   const a = [...new Set(left)].sort();
@@ -74,35 +57,47 @@ export function validateGoldenDemoSemantics(
     ["GC-02-firm-b-happy-path", "firm-b"],
   ] as const;
 
+  for (const unit of demo.moneyUnits) {
+    if (unit !== MONEY_METRIC_FORMAT) {
+      problems.push(`demo money metric carries format "${unit}", not "${MONEY_METRIC_FORMAT}"`);
+    }
+  }
+  if (demo.moneyUnits.length === 0) problems.push("demo emits no money metrics to project a unit from");
+  if (demo.minorUnitsPerMajor.length === 0) problems.push("demo renders no money value to project its divisor from");
+  for (const divisor of demo.minorUnitsPerMajor) {
+    if (divisor !== MINOR_UNITS_PER_MAJOR) {
+      problems.push(`demo renders money at ${divisor ?? "an unreadable"} minor units per major, not ${MINOR_UNITS_PER_MAJOR}`);
+    }
+  }
+
   for (const [caseId, firmId] of canonicalCases) {
     const c = caseData(cases, caseId);
     if (!c) {
       problems.push(`${caseId}: signed canonical fixture missing`);
       continue;
     }
-    const request = parseRequest(c);
-    const reserve = parseReserve(c);
+    const signed = readSignedMoney(c);
     const config = isObj(c.firmConfiguration) ? c.firmConfiguration : undefined;
     const demoFirm = demo.firms.find((firm) => firm.id === firmId);
-    if (!request) problems.push(`${caseId}: canonical request amount and currency are not parseable`);
-    if (!reserve) problems.push(`${caseId}: planned withdrawal, cadence, and reserve floor are not parseable`);
+    const reserveMonths = config?.cashReserveMonths;
+    if (!signed) problems.push(`${caseId}: signedMoney is missing or malformed`);
+    if (!isMoneyQuantity(reserveMonths)) problems.push(`${caseId}: firmConfiguration.cashReserveMonths is not a whole reserve horizon`);
     if (!demoFirm) problems.push(`${caseId}: demo has no firm "${firmId}"`);
-    if (!request || !reserve || !demoFirm) continue;
+    if (!signed || !isMoneyQuantity(reserveMonths) || !demoFirm) continue;
 
-    const reserveMonths = typeof config?.cashReserveMonths === "number"
-      ? config.cashReserveMonths
-      : Number.NaN;
-    const expectedRequestMinor = request.amount * demo.minorUnitsPerMajor;
-    const expectedMonthlyMinor = reserve.monthly * demo.minorUnitsPerMajor;
-    const expectedFloorMinor = reserve.floor * demo.minorUnitsPerMajor;
-    if (request.currency !== demo.currency || reserve.currency !== demo.currency) {
-      problems.push(`${caseId}: currency drift, fixture=${request.currency}/${reserve.currency}, demo=${demo.currency}`);
+    const expectedRequestMinor = minorFromMajor(signed.requestAmountUsd);
+    const expectedMonthlyMinor = minorFromMajor(signed.plannedWithdrawalMonthlyUsd);
+    const expectedFloorMinor = minorFromMajor(signed.reserveFloorUsd);
+    if (expectedRequestMinor === null) problems.push(`${caseId}: signedMoney.requestAmountUsd does not convert to minor units`);
+    if (expectedMonthlyMinor === null) problems.push(`${caseId}: the canonical case must state signedMoney.plannedWithdrawalMonthlyUsd`);
+    if (expectedFloorMinor === null) problems.push(`${caseId}: the canonical case must state signedMoney.reserveFloorUsd`);
+    if (expectedRequestMinor === null || expectedMonthlyMinor === null || expectedFloorMinor === null) continue;
+
+    if (signed.currency !== demo.currency) {
+      problems.push(`${caseId}: currency drift, fixture=${signed.currency}, demo=${demo.currency}`);
     }
-    if (reserve.cadence !== demo.cadence) {
-      problems.push(`${caseId}: reserve cadence drift, fixture=${reserve.cadence}, demo=${demo.cadence}`);
-    }
-    if (demo.moneyUnit !== "currency-minor" || demo.minorUnitsPerMajor !== 100) {
-      problems.push(`${caseId}: demo money unit must be currency-minor with 100 minor units per major`);
+    if (signed.cadence !== demo.cadence) {
+      problems.push(`${caseId}: reserve cadence drift, fixture=${signed.cadence}, demo=${demo.cadence}`);
     }
     if (demo.requestAmountMinor !== expectedRequestMinor) {
       problems.push(`${caseId}: request amount drift, fixture=${expectedRequestMinor}, demo=${demo.requestAmountMinor}`);
@@ -116,7 +111,7 @@ export function validateGoldenDemoSemantics(
     if (refs.firmReserveMonths.get(firmId) !== reserveMonths) {
       problems.push(`${caseId}: scenarios.yaml reserve horizon drift for ${firmId}`);
     }
-    if (refs.canonicalRequestAmountUsd !== request.amount) {
+    if (refs.canonicalRequestAmountUsd !== signed.requestAmountUsd) {
       problems.push(`${caseId}: scenarios.yaml canonical request amount drift`);
     }
     if (reserveFloorMinor(expectedMonthlyMinor, reserveMonths) !== expectedFloorMinor) {
@@ -125,6 +120,21 @@ export function validateGoldenDemoSemantics(
     if (demoFirm.reserveFloorMinor !== expectedFloorMinor) {
       problems.push(`${caseId}: derived reserve floor drift, fixture=${expectedFloorMinor}, demo=${demoFirm.reserveFloorMinor}`);
     }
+    // Surface 11's simulated policy draft shows a floor too: bind it to the signed
+    // horizon it simulates so the displayed figure cannot drift on its own path.
+    if (demo.draftedReserveMonths === reserveMonths && demo.draftedReserveFloorMinor !== expectedFloorMinor) {
+      problems.push(`${caseId}: drafted-policy reserve floor drift, fixture=${expectedFloorMinor}, demo=${demo.draftedReserveFloorMinor}`);
+    }
+  }
+
+  if (demo.draftedReserveFloorMinor === null) {
+    problems.push("the policy-draft simulation displays no reserve floor to fence");
+  } else if (!isMoneyQuantity(demo.draftedReserveMonths) || !isMoneyQuantity(demo.plannedWithdrawalMonthlyMinor)) {
+    problems.push("the policy-draft simulation has no whole reserve horizon or monthly schedule to derive from");
+  } else if (
+    demo.draftedReserveFloorMinor !== reserveFloorMinor(demo.plannedWithdrawalMonthlyMinor, demo.draftedReserveMonths)
+  ) {
+    problems.push("the policy-draft reserve floor is not the monthly withdrawal times the drafted horizon");
   }
 
   if (!sameMembers(refs.executionStates, OBSERVED_STATUS_IDS)) {

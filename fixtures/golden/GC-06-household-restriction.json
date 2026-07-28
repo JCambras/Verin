@@ -22,6 +22,13 @@
     "maskedRequestSummary": "distribute 30000 USD to a third-party (non-household-titled) destination (tokenized)",
     "asOf": "2026-07-26T14:15:00.000Z"
   },
+  "signedMoney": {
+    "currency": "USD",
+    "cadence": "month",
+    "requestAmountUsd": 30000,
+    "plannedWithdrawalMonthlyUsd": null,
+    "reserveFloorUsd": null
+  },
   "firmConfiguration": {
     "firmId": "firm-a",
     "cashReserveMonths": 6,

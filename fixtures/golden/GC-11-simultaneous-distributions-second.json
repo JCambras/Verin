@@ -22,6 +22,13 @@
     "maskedRequestSummary": "distribute 75000 USD for property-closing; sibling reservation already held (tokenized)",
     "asOf": "2026-07-26T19:00:30.000Z"
   },
+  "signedMoney": {
+    "currency": "USD",
+    "cadence": "month",
+    "requestAmountUsd": 75000,
+    "plannedWithdrawalMonthlyUsd": null,
+    "reserveFloorUsd": 48000
+  },
   "firmConfiguration": {
     "firmId": "firm-a",
     "cashReserveMonths": 6,
