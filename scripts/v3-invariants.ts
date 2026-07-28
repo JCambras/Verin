@@ -13,6 +13,12 @@
  * computed by running the mapped fences in this process. Registry integrity is
  * fenced by src/__tests__/fitness/v3-invariants.test.ts; the ratified-document
  * SHA-256 pins are re-verified here AND by the arch-version fence.
+ *
+ * Gates (ADR-0030) declare their wave, prompt range, and requirement set. Each
+ * gate's requirement set is DERIVED from the invariants' own `gate` field when
+ * reported, never restated in prose, and the ordering rule - no gate may require
+ * an invariant whose activation prerequisite lands after that gate closes - is
+ * re-checked here as defense in depth with the v3-gate-ordering fence.
  */
 import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -31,13 +37,23 @@ interface Invariant {
   name: string;
   status: "active" | "not-yet-active";
   activatesWhen: string;
+  activationPrompts?: number[];
+  activationArtifacts?: string[];
   mechanisms: Mechanism[];
   notes?: string;
+}
+interface Gate {
+  wave: string;
+  title: string;
+  prompts: [number, number];
+  requires: number[];
+  entryCondition: string;
+  outcome: string;
 }
 interface Registry {
   architectureVersion: string;
   documents: Array<{ path: string; sha256: string }>;
-  gates: Record<string, string>;
+  gates: Record<string, Gate>;
   invariants: Invariant[];
 }
 
@@ -67,6 +83,18 @@ for (const inv of registry.invariants) {
   }
   if (inv.status === "active" && !inv.mechanisms.some((m) => m.type === "fitness")) {
     structural.push(`invariant ${inv.id}: active but maps to no runnable fitness mechanism`);
+  }
+  // Gate ordering (ADR-0030), defense in depth with src/__tests__/fitness/v3-gate-ordering.test.ts:
+  // a gate that requires an invariant whose prerequisite lands in a later wave is unreachable.
+  const gate = registry.gates[inv.gate];
+  if (!gate) {
+    structural.push(`invariant ${inv.id}: gate '${inv.gate}' is not declared in gates`);
+  } else if (inv.status === "not-yet-active") {
+    const lands = Math.max(...(inv.activationPrompts ?? [Number.NaN]));
+    if (!Number.isFinite(lands)) structural.push(`invariant ${inv.id}: not-yet-active but declares no activationPrompts`);
+    else if (lands > gate.prompts[1]) {
+      structural.push(`invariant ${inv.id}: gated at ${inv.gate} (prompts ${gate.prompts.join("-")}) but activates at prompt ${lands} - the gate could never go green (ADR-0030)`);
+    }
   }
 }
 
@@ -170,26 +198,43 @@ console.log(bold(`\nV3 PHASE-GATED INVARIANTS - ${registry.architectureVersion} 
 console.log(dim("states: active-pass (fences executed and green) · active-fail (blocks CI) · not-yet-active (prerequisites absent - NOT a pass)\n"));
 
 const counts: Record<State, number> = { "active-pass": 0, "active-fail": 0, "not-yet-active": 0 };
+const stateById = new Map<number, State>();
 let currentGroup = "";
 for (const inv of registry.invariants) {
   if (inv.group !== currentGroup) {
     currentGroup = inv.group;
-    console.log(bold(`  ${currentGroup}  ${dim(`[gate ${inv.gate}: ${registry.gates[inv.gate] ?? ""}]`)}`));
+    console.log(bold(`  ${currentGroup}`));
   }
   const { state, details } = stateOf(inv);
+  stateById.set(inv.id, state);
   counts[state] += 1;
   const id = `#${String(inv.id).padStart(2, " ")}`;
+  // Groups no longer imply a gate (ADR-0030 split the foundation group across gates A and B),
+  // so each line carries its own. The not-yet-active line is already dim - nesting dim() there
+  // would emit a reset mid-line and un-dim the rest.
+  const at = dim(`  [gate ${inv.gate}]`);
   if (state === "active-pass") {
-    console.log(`    ${green("✓ active-pass    ")} ${id} ${inv.name}`);
+    console.log(`    ${green("✓ active-pass    ")} ${id} ${inv.name}${at}`);
     for (const d of details) console.log(dim(`                         └ ${d}`));
   } else if (state === "active-fail") {
-    console.log(`    ${red("✗ ACTIVE-FAIL    ")} ${id} ${inv.name}`);
+    console.log(`    ${red("✗ ACTIVE-FAIL    ")} ${id} ${inv.name}${at}`);
     for (const d of details) console.log(red(`                         └ ${d}`));
     failures.push(`#${inv.id} ${inv.name}`);
   } else {
-    console.log(dim(`    ○ not-yet-active  ${id} ${inv.name}`));
+    console.log(dim(`    ○ not-yet-active  ${id} ${inv.name}  [gate ${inv.gate}]`));
     console.log(dim(`                         └ activates when: ${inv.activatesWhen}`));
   }
+}
+
+// ---------- gate readiness (ADR-0030: the requirement set is DERIVED, never restated in prose) ----------
+console.log(bold("\n  PHASE GATES"));
+for (const [key, gate] of Object.entries(registry.gates)) {
+  const required = registry.invariants.filter((i) => i.gate === key).map((i) => i.id);
+  const blocking = required.filter((id) => stateById.get(id) !== "active-pass");
+  const label = `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}) requires ${required.map((n) => `#${n}`).join(" ")}`;
+  if (blocking.length === 0) console.log(`    ${green("✓ green          ")} ${label}`);
+  else console.log(dim(`    ○ not yet green   ${label} - awaiting ${blocking.map((n) => `#${n}`).join(" ")}`));
+  console.log(dim(`                       └ wave may begin when: ${gate.entryCondition}`));
 }
 
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));

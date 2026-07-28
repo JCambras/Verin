@@ -6152,3 +6152,33 @@ impossibilities).
 `temporalByteMiss` guard in `facts.ts`, restore the three plane constructions in `evaluate.ts` /
 `evaluate-primitives.ts`, and delete the evaluate case, property family H, and the two
 temporal-typed world paths (`standing-preference.effectiveOn`, `intent.requestedOn`).
+
+### D-061 · 2026-07-28 · captain-decision · Gate A requires invariants 1, 2, 4, 5; invariant 3 is gated at B
+
+Gate A (Wave A, prompts 4-7) required all five foundation invariants, but invariant 3 ("no core module,
+directory, or evaluator branch is named for a decision domain") cannot activate until prompt 10 migrates
+account opening into the domain-configuration system - and prompt 10 is in Wave B, which cannot begin
+until Gate A is green. The governance contained a cycle whose only other exits were re-ordering prompt 10
+ahead of its own prerequisites or declaring invariant 3 green on substrate that does not implement it.
+
+Captain ruling (decision key `gate-a-ordering`): Gate A requires invariants 1, 2, 4, and 5 active and
+green; invariant 3 stays honestly `not-yet-active` until prompt 10; Gate B requires invariant 3 active
+and green; Wave B may begin only after prompts 5, 6, and 7 have landed and Gate A's corrected
+requirements are green; no document, proof, or UI may claim invariant 3 is implemented before prompt 10
+exists.
+
+Implemented as structure, not prose (ADR-0030): `v3-invariants.json` gates are now `{wave, prompts,
+requires, entryCondition, outcome}`, gate B is registered, invariant 3 moves to gate B, every
+not-yet-active invariant declares `activationPrompts`, and invariant 3 declares `activationArtifacts`
+(`config/domains/account-opening.yaml`, `config/domains/money-movement.yaml`) that must exist before it
+may be flipped to `active`. `src/__tests__/fitness/v3-gate-ordering.test.ts` fails the build if any gate
+requires an invariant whose prerequisite lands after that gate closes, if a gate's `requires` set drifts
+from the registry's assignments, or if prose names a later prompt than the structured field admits.
+The ratified `verin-prompt-sequence-v3.md` keeps its verbatim bytes and pin; its Gate A sentence is read
+through ADR-0030, the same mechanism ADR-0024 and ADR-0026 use to override v3's letter.
+
+**Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
+and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
+without weakening the invariant or re-ordering the build against its own dependencies.
+**Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
+set is an amendment to ADR-0030 and ADR-0023, never a registry edit alone.

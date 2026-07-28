@@ -9254,3 +9254,64 @@ commit); `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and the full test suite are
 reverted tree.
 
 **Date:** 2026-08-10 (post-merge follow-up to PR #34, firm ruling `p9-temporal-fact-bytes`).
+
+## PF-018 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
+
+**Invariant (ADR-0030, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
+phase gate may require an invariant whose activation prerequisite lands in a later wave. Gate A requires
+invariants 1, 2, 4, and 5; invariant 3 is required at Gate B because its prerequisite is prompt 10. No
+document, proof, or UI may claim invariant 3 is implemented before prompt 10 exists.
+
+Three injections were applied to the real `v3-invariants.json`, each observed failing, each reverted.
+
+**Injection 1 - re-create the original circular dependency.** Moved invariant 3 back to `gate: "A"` and
+set `gates.A.requires` to `[1,2,3,4,5]`.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): gated at A (wave A, prompts 4-7) but its activation prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - move the invariant to the gate that covers prompt 10 (ADR-0030).
+ ❯ src/__tests__/fitness/v3-gate-ordering.test.ts:174:92
+```
+The runner caught it independently (defense in depth, blocking CI job `v3-invariants`):
+```
+v3-invariants: registry/pin problems:
+  - invariant 3: gated at A (prompts 4-7) but activates at prompt 10 - the gate could never go green (ADR-0030)
+```
+
+**Injection 2 - claim invariant 3 is implemented before prompt 10 exists.** Flipped invariant 3 to
+`status: "active"` with a real (unrelated) fitness mechanism, the shape that would otherwise satisfy the
+neighbouring registry fence.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+```
+
+**Injection 3 - dodge the ordering rule by understating the machine-readable prerequisite.** Moved
+invariant 3 to gate A but set `activationPrompts: [7]` while `activatesWhen` still named prompt 10 - the
+evasion an ordering rule reading only structured data would miss.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Companions (continuous in-CI adversarial proof, `describe("detects …")`):** the original defect
+(gate A requiring invariant 3), a `requires` set drifting from the registry's own gate assignment, a
+not-yet-active invariant with no declared activation prompt, prose naming a later prompt than the
+structured field admits, an invariant claimed active before its artifacts exist, an undeclared gate key,
+overlapping gate prompt ranges, and a positive case proving the corrected ordering passes (so the fence
+cannot be green by always failing).
+
+**Revert:** `v3-invariants.json` restored from the pre-injection copy after each injection;
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 10 passed (10)`, `pnpm v3:invariants`
+→ `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)`.
+
+**Date:** 2026-07-28 (ADR-0030, D-061).

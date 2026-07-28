@@ -62,6 +62,7 @@ const RATCHETED_ENFORCED_IDS = [
   "dependency-rule",
   "v3-direction-ratified",
   "v3-invariants-phase-gated",
+  "v3-gate-ordering",
   "demo-contract-as-data",
   "golden-cases-truth-set",
   "demo-skeleton-honesty",

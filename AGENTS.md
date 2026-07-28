@@ -7,12 +7,18 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
-governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are phase-gated in
+governed decision and execution layer; ADRs 0023-0030). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
-stores activation only - pass/fail is computed, never fake green). The ratified documents registered in
+stores activation only - pass/fail is computed, never fake green). **The registry, not the prompt-sequence
+prose, is the authoritative statement of what each gate requires**: gates declare `{wave, prompts,
+requires}` and the gate-ordering fence rejects a gate that requires an invariant whose prerequisite lands
+in a later wave (ADR-0030 - Gate A requires 1/2/4/5; invariant 3 is required at Gate B because its
+prerequisite is prompt 10). The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new
-ratified document must be registered in the PR that adds it. `docs/v3/README.md` is not registered: it is
+ratified document must be registered in the PR that adds it - but a conflict between v3's letter and this
+repo is resolved by an ADR, never by editing the ratified bytes (ADR-0024, ADR-0026, ADR-0030).
+`docs/v3/README.md` is not registered: it is
 the navigation index, and it originates nothing normative, only restating registered documents, ADRs, the
 charter, and `DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
 Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
