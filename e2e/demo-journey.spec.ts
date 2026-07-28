@@ -160,10 +160,9 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/execution?scenario=recent-bank-change-block&firm=firm-b");
   await expect(page.getByText("Execution not reached")).toBeVisible();
 
-  // Competing liquidity: the constrained $160,000 pool leaves $112,000 after Firm A's
-  // six-month reserve (the request proceeds) but only $64,000 after Firm B's
-  // twelve-month reserve, so the recorded per-firm split blocks there. No surface
-  // ever shows a proceed beside a figure smaller than the amount requested.
+  // Competing liquidity: Firm A's signed branch authority proves the first request
+  // proceeds. Firm B's recorded outcome blocks before reservation, but no signed
+  // numeric case binds that branch-and-firm pair, so no unrelated figure is copied.
   await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-a");
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
@@ -172,12 +171,14 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(
     page.getByRole("button", { name: "Reduce the amount or free additional liquidity" }),
   ).toBeVisible();
-  await expect(page.getByText("twelve-month cash reserve")).toBeVisible();
+  await expect(page.getByText("twelve-month reserve blocks the first request")).toBeVisible();
   await checkAxe(page, "decision-blocked-reserve");
   await snap(page, 18, "decision-blocked-reserve-firm-b");
+  await page.goto("/app/demo/workspace?scenario=competing-liquidity&firm=firm-b");
+  await expect(page.getByText("Missing signed liquidity authority")).toBeVisible();
   await page.goto("/app/demo/comparison?scenario=competing-liquidity&firm=firm-a");
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("$64,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("Missing signed branch-and-firm liquidity authority")).toBeVisible();
 
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
   await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
@@ -194,15 +195,32 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
 
-  // The approval-invalidation moment: the voided approval STAYS, what changed is
-  // announced, one clear next action.
+  for (const surface of ["workspace", "evidence", "decision", "authority"]) {
+    await page.goto(`/app/demo/${surface}?scenario=approval-invalidation&firm=firm-a`);
+    await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
+  }
   await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
   await expect(page.getByTestId("voided-approval")).toBeVisible();
   await expect(page.getByText("Approval voided - evidence changed").first()).toBeVisible();
   await expect(page.getByTestId("what-changed")).toBeVisible();
+  await expect(page.getByText("$0.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+  const changedText = await page.getByTestId("what-changed").innerText();
+  expect(changedText.indexOf("Initial decision")).toBeLessThan(changedText.indexOf("Pre-execution revalidation"));
   await expect(page.getByRole("link", { name: "Re-evaluate with current evidence" })).toBeVisible();
   await checkAxe(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");
+  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
+  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app/demo/workspace?scenario=approval-invalidation&firm=firm-a");
+  await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
+  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
+  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+  await checkAxe(page, "safety-invalidation-mobile");
+  await snap(page, 19, "safety-invalidation-mobile");
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // Duplicate retry: the product claim in plain words, keys matching byte-for-byte.
   await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a");
@@ -223,6 +241,22 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-b");
   await expect(page.getByText("Authority not reached")).toBeVisible();
+
+  await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
+  await expect(page.getByText("Escalated, then expired")).toBeVisible();
+  await expect(page.getByText("escalated to the operations manager, then expired unresolved")).toBeVisible();
+  const authorityEvents = page.getByTestId("authority-event-order").locator("li");
+  await expect(authorityEvents).toHaveCount(2);
+  await expect(authorityEvents.nth(0)).toHaveAttribute("data-event-type", "ApprovalStageEscalated");
+  await expect(authorityEvents.nth(1)).toHaveAttribute("data-event-type", "ApprovalStageExpired");
+  await expect(authorityEvents.nth(0)).toContainText("Jul 27, 18:20");
+  await expect(authorityEvents.nth(1)).toContainText("Jul 28, 18:20");
+  await snap(page, 20, "specialist-expiration");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(authorityEvents.nth(0)).toBeVisible();
+  await expect(authorityEvents.nth(1)).toBeVisible();
+  await checkAxe(page, "specialist-expiration-mobile");
+  await snap(page, 21, "specialist-expiration-mobile");
 });
 
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {

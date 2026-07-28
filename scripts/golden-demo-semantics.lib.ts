@@ -26,12 +26,14 @@ export interface DisplayedDecision {
   scenarioId: string;
   firmId: string;
   disposition: string;
-  /** The signed golden case whose liquidity evidence this branch mirrors. */
-  sourceCaseId: string;
-  availableCashMinor: number;
-  pendingActivityMinor: number;
+  sourceCaseId: string | null;
+  liquidityAuthorityMissing: string | null;
+  availableCashMinor: number | null;
+  pendingActivityMinor: number | null;
   reserveFloorMinor: number;
-  headroomMinor: number;
+  headroomMinor: number | null;
+  revalidationAvailableCashMinor: number | null;
+  revalidationPendingActivityMinor: number | null;
   /** Surface 11's simulated after-state under the drafted twelve-month floor. The
    * headroom row is displayed only where the draft actually moves the floor. */
   simulatedFloorMinor: number | null;
@@ -58,6 +60,15 @@ export interface DemoSemanticSnapshot {
   draftedReserveFloorMinor: number | null;
   executionTimelineStatuses: string[];
   verificationTimelineStatuses: string[];
+  authorityLapseEvents: Array<{
+    type: string;
+    timestamp: string;
+  }>;
+  approvalInvalidationPhases: {
+    initialSurfaceMoneyMinor: number[];
+    safetyBeforePendingMinor: number | null;
+    safetyAfterPendingMinor: number | null;
+  };
 }
 
 const isObj = (value: unknown): value is Record<string, unknown> =>
@@ -158,11 +169,35 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
   if (demo.decisions.length === 0) return ["the demo renders no decision to fence"];
   for (const d of demo.decisions) {
     const at = `${d.scenarioId}/${d.firmId}`;
+    if (d.sourceCaseId === null) {
+      if (!isNonEmptyString(d.liquidityAuthorityMissing)) {
+        problems.push(`${at}: has no signed liquidity case but does not surface missing authority`);
+      }
+      if (
+        d.availableCashMinor !== null ||
+        d.pendingActivityMinor !== null ||
+        d.headroomMinor !== null ||
+        d.revalidationAvailableCashMinor !== null ||
+        d.revalidationPendingActivityMinor !== null
+      ) {
+        problems.push(`${at}: displays numeric liquidity despite having no branch-and-firm signed authority`);
+      }
+      continue;
+    }
+    if (d.liquidityAuthorityMissing !== null) {
+      problems.push(`${at}: names a signed case and simultaneously claims liquidity authority is missing`);
+    }
     const source = caseData(cases, d.sourceCaseId);
     const signed = source ? readSignedMoney(source) : null;
     if (!signed) {
       problems.push(`${at}: names signed case "${d.sourceCaseId}", which is missing or states no signedMoney`);
       continue;
+    }
+    if (source?.scenarioRef !== d.scenarioId) {
+      problems.push(`${at}: signed case "${d.sourceCaseId}" belongs to scenario ${String(source?.scenarioRef)}, not this branch`);
+    }
+    if (source?.firm !== d.firmId) {
+      problems.push(`${at}: signed case "${d.sourceCaseId}" belongs to firm ${String(source?.firm)}, not this firm`);
     }
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
@@ -176,6 +211,16 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     if (d.pendingActivityMinor !== pendingMinor) {
       problems.push(`${at}: pending-activity drift, ${d.sourceCaseId}=${pendingMinor}, demo=${d.pendingActivityMinor}`);
     }
+    const revalidationAvailableMinor = minorFromMajor(signed.preExecutionRevalidation?.availableLiquidityUsd ?? null);
+    const revalidationPendingMinor = minorFromMajor(signed.preExecutionRevalidation?.pendingLiquidityUsd ?? null);
+    if (
+      d.revalidationAvailableCashMinor !== revalidationAvailableMinor ||
+      d.revalidationPendingActivityMinor !== revalidationPendingMinor
+    ) {
+      problems.push(
+        `${at}: pre-execution revalidation drift, ${d.sourceCaseId}=${revalidationAvailableMinor}/${revalidationPendingMinor}, demo=${d.revalidationAvailableCashMinor}/${d.revalidationPendingActivityMinor}`,
+      );
+    }
     const expectedFloor = demo.firms.find((firm) => firm.id === d.firmId)?.reserveFloorMinor;
     if (d.reserveFloorMinor !== expectedFloor) {
       problems.push(`${at}: reserve floor ${d.reserveFloorMinor} is not this firm's derived floor ${expectedFloor ?? "(unknown firm)"}`);
@@ -187,11 +232,11 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       problems.push(`${at}: displayed liquidity, pending activity, and reserve floor must each be a whole non-negative amount`);
       continue;
     }
-    const expectedHeadroom = headroomMinor(d.availableCashMinor, d.pendingActivityMinor, d.reserveFloorMinor);
+    const expectedHeadroom = headroomMinor(d.availableCashMinor!, d.pendingActivityMinor!, d.reserveFloorMinor);
     if (d.headroomMinor !== expectedHeadroom) {
       problems.push(`${at}: displayed headroom ${d.headroomMinor} is not available - pending - reserve (${expectedHeadroom})`);
     }
-    if (d.disposition === "proceed" && d.headroomMinor < demo.requestAmountMinor) {
+    if (d.disposition === "proceed" && (d.headroomMinor === null || d.headroomMinor < demo.requestAmountMinor)) {
       problems.push(`${at}: renders proceed beside ${d.headroomMinor} available after reserve, which does not cover the ${demo.requestAmountMinor} request`);
     }
     if (d.simulatedDisposition === "proceed") {
@@ -364,6 +409,34 @@ export function validateGoldenDemoSemantics(
   if (!sameMembers(gc16Events, requiredGc16) ||
       gc16Events.some((event, index) => event !== requiredGc16[index])) {
     problems.push(`GC-16 event sequence must be ${requiredGc16.join(" -> ")}`);
+  }
+  const visibleAuthorityEvents = demo.authorityLapseEvents;
+  const visibleTypes = visibleAuthorityEvents.map((event) => event.type);
+  const visibleTimestamps = visibleAuthorityEvents.map((event) => event.timestamp);
+  const requiredVisible = ["ApprovalStageEscalated", "ApprovalStageExpired"];
+  if (
+    visibleTypes.length !== requiredVisible.length ||
+    visibleTypes.some((event, index) => event !== requiredVisible[index]) ||
+    visibleTimestamps.some((timestamp, index) => index > 0 && timestamp <= visibleTimestamps[index - 1]!)
+  ) {
+    problems.push(`GC-16 visible authority order must be ${requiredVisible.join(" -> ")} with ascending timestamps`);
+  }
+  const gc15 = caseData(cases, "GC-15-approval-invalidation");
+  const gc15Signed = gc15 ? readSignedMoney(gc15) : null;
+  const gc15InitialPending = minorFromMajor(gc15Signed?.pendingLiquidityUsd ?? null);
+  const gc15RevalidationPending = minorFromMajor(
+    gc15Signed?.preExecutionRevalidation?.pendingLiquidityUsd ?? null,
+  );
+  if (
+    gc15InitialPending === null ||
+    gc15RevalidationPending === null ||
+    demo.approvalInvalidationPhases.initialSurfaceMoneyMinor.includes(gc15RevalidationPending) ||
+    demo.approvalInvalidationPhases.safetyBeforePendingMinor !== gc15InitialPending ||
+    demo.approvalInvalidationPhases.safetyAfterPendingMinor !== gc15RevalidationPending
+  ) {
+    problems.push(
+      "GC-15 must keep revalidation pending activity off initial surfaces, then render initial and refreshed pending values in order",
+    );
   }
   return problems;
 }

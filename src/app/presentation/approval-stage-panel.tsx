@@ -23,6 +23,11 @@ export interface ApprovalStageProps {
   readonly actors: readonly ApprovalActorSlot[];
   readonly expiry?: string;
   readonly escalation?: string;
+  readonly authorityEvents?: readonly {
+    readonly type: string;
+    readonly timestamp: string;
+    readonly display: string;
+  }[];
 }
 
 export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
@@ -55,6 +60,15 @@ export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
           {stage.expiry && stage.escalation ? " · " : ""}
           {stage.escalation}
         </p>
+      ) : null}
+      {stage.authorityEvents ? (
+        <ol className="flex flex-col gap-1 text-xs text-slate-700" data-testid="authority-event-order">
+          {stage.authorityEvents.map((event) => (
+            <li key={event.type} data-event-type={event.type} data-event-timestamp={event.timestamp}>
+              {event.display}
+            </li>
+          ))}
+        </ol>
       ) : null}
     </section>
   );

@@ -123,9 +123,10 @@ export interface AccountVM {
 export interface WorkspaceVM {
   readonly household: { readonly name: string; readonly advisor: string; readonly provenance: RecordProvenance; readonly fakeClass: FakeClass };
   readonly accounts: readonly AccountVM[];
-  readonly liquidity: DisplayMetric;
+  readonly liquidity: DisplayMetric | null;
   readonly plannedMonthlyWithdrawal: DisplayMetric;
-  readonly pendingActivity: FactVM;
+  readonly pendingActivity: FactVM | null;
+  readonly liquidityAuthorityMissing: string | null;
   readonly onRamp: { readonly title: string; readonly description: string };
 }
 
@@ -207,6 +208,11 @@ export interface ApprovalStageVM {
   readonly actors: readonly ActorSlotVM[];
   readonly expiry?: string;
   readonly escalation?: string;
+  readonly authorityEvents?: readonly {
+    readonly type: "ApprovalStageEscalated" | "ApprovalStageExpired";
+    readonly timestamp: string;
+    readonly display: string;
+  }[];
   readonly expired?: boolean;
 }
 export interface ApprovalVM {
@@ -227,8 +233,8 @@ export interface SafetyCheckVM {
 export interface InvalidationVM {
   readonly voidedActor: { readonly name: string; readonly role: string; readonly when: string };
   readonly deltaSentence: string;
-  readonly before: FactVM;
-  readonly after: FactVM;
+  readonly before: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
+  readonly after: { readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string };
   readonly why: WhyVM;
   readonly primaryLabel: string;
 }

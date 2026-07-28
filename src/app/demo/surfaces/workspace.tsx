@@ -7,6 +7,7 @@
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { EvidenceMissing } from "@app/presentation/evidence-row";
 import { EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type WorkspaceVM } from "../model";
 import { PrimaryLink, SurfaceShell, demoHref } from "./shared";
@@ -44,12 +45,14 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
       <section aria-label="Liquidity" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
         <h2 className="text-base font-semibold text-slate-900">Liquidity</h2>
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
-          <div className="flex flex-col gap-0.5">
-            <dt className="text-xs text-slate-600">Available cash</dt>
-            <dd className="text-sm">
-              <Metric metric={vm.liquidity} />
-            </dd>
-          </div>
+          {vm.liquidity ? (
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-xs text-slate-600">Available cash</dt>
+              <dd className="text-sm">
+                <Metric metric={vm.liquidity} />
+              </dd>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-0.5">
             <dt className="text-xs text-slate-600">Planned monthly withdrawal</dt>
             <dd className="text-sm">
@@ -57,9 +60,14 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
             </dd>
           </div>
         </dl>
-        <p className="text-sm text-slate-700">
-          <FreshValue provenance={vm.pendingActivity.provenance}>{vm.pendingActivity.display}</FreshValue>
-        </p>
+        {vm.pendingActivity ? (
+          <p className="text-sm text-slate-700">
+            <FreshValue provenance={vm.pendingActivity.provenance}>{vm.pendingActivity.display}</FreshValue>
+          </p>
+        ) : null}
+        {vm.liquidityAuthorityMissing ? (
+          <EvidenceMissing text={`Missing signed liquidity authority - ${vm.liquidityAuthorityMissing}. No unrelated case was substituted.`} />
+        ) : null}
       </section>
 
       <EmptyState

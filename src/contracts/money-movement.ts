@@ -44,7 +44,9 @@ export function headroomMinor(availableMinor: number, pendingMinor: number, floo
   for (const quantity of [availableMinor, pendingMinor, floorMinor]) {
     if (!isMoneyQuantity(quantity)) throw new RangeError("headroom inputs must be non-negative safe integers");
   }
-  return availableMinor - pendingMinor - floorMinor;
+  const headroom = availableMinor - pendingMinor - floorMinor;
+  if (!Number.isSafeInteger(headroom)) throw new RangeError("headroom exceeds safe integer range");
+  return headroom;
 }
 
 /** Convert a whole major-unit amount (dollars) to minor units, or null when the

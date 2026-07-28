@@ -26,10 +26,14 @@
     "currency": "USD",
     "cadence": "month",
     "requestAmountUsd": 75000,
-    "plannedWithdrawalMonthlyUsd": null,
+    "plannedWithdrawalMonthlyUsd": 8000,
     "reserveFloorUsd": 48000,
     "availableLiquidityUsd": 300000,
-    "pendingLiquidityUsd": 15000
+    "pendingLiquidityUsd": 0,
+    "preExecutionRevalidation": {
+      "availableLiquidityUsd": 300000,
+      "pendingLiquidityUsd": 15000
+    }
   },
   "firmConfiguration": {
     "firmId": "firm-a",
@@ -50,6 +54,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "liquidityPhase": "initial-decision",
       "summary": "Balance 300000 USD at first evaluation."
     },
     {
@@ -60,7 +65,31 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "No pending activity at first evaluation. AFTER approval, a 15000 USD pending distribution posts - pre-execution revalidation observes it (effective liquidity 285000; reserve still satisfied: 285000 - 75000 = 210000 >= 48000)."
+      "liquidityPhase": "initial-decision",
+      "observedAbsent": true,
+      "summary": "No pending liquidity activity was observed at the initial decision."
+    },
+    {
+      "evidenceKind": "account-balance",
+      "subjectRef": "subject:smiths-joint-taxable",
+      "observedAt": "2026-07-26T21:58:00.000Z",
+      "retrievedAt": "2026-07-26T21:58:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "liquidityPhase": "pre-execution-revalidation",
+      "summary": "Available taxable liquidity remains 300000 USD at pre-execution revalidation."
+    },
+    {
+      "evidenceKind": "pending-actions",
+      "subjectRef": "subject:smiths-household",
+      "observedAt": "2026-07-26T21:58:00.000Z",
+      "retrievedAt": "2026-07-26T21:58:02.000Z",
+      "freshness": "fresh",
+      "source": "house-crm",
+      "provenance": "synthetic-fixture",
+      "liquidityPhase": "pre-execution-revalidation",
+      "summary": "After approval, a new 15000 USD pending distribution posts; effective liquidity is 285000 USD before the 75000 USD request."
     },
     {
       "evidenceKind": "planned-withdrawals",
@@ -70,7 +99,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "Six-month reserve = 48000 USD; satisfied on BOTH the original and the refreshed basis - the invalidation fires on material change, not on breach."
+      "summary": "Planned withdrawals are 8000 USD per month and the six-month reserve is 48000 USD; it is satisfied on both the original and refreshed basis."
     },
     {
       "evidenceKind": "bank-instruction",
@@ -80,7 +109,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "The initially verified household-titled bank instruction changed after approval; the refreshed snapshot records the material change before execution."
+      "summary": "The household-titled bank instruction remains independently verified and unchanged through pre-execution revalidation."
     },
     {
       "evidenceKind": "household-instruction",

@@ -24,6 +24,8 @@ import {
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
   THIRD_PARTY_DESTINATION,
+  liquidityAuthorityFor,
+  type FirmData,
   type ScenarioData,
 } from "./data";
 
@@ -33,8 +35,10 @@ export function destinationFor(scenario: ScenarioData): string {
   return scenario.spec.bankChanged ? BANK_INSTRUCTION.changed : BANK_INSTRUCTION.stable;
 }
 
-export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
+export function buildWorkspace(scenario: ScenarioData, firm: FirmData): WorkspaceVM {
   const liquidityAsOf = scenario.spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  const liquidity = authority.kind === "signed" ? authority.initialDecision : null;
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -50,9 +54,14 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
       custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
     })),
-    liquidity: fixtureMetric(scenario.liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
+    liquidity: liquidity
+      ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf)
+      : null,
     plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-    pendingActivity: fact(scenario.liquidity.pendingNote, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+    pendingActivity: liquidity
+      ? fact(liquidity.pendingNote, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT)
+      : null,
+    liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
     onRamp: {
       title: "What do the Smiths need?",
       description: "Ask Verin in plain language. It gathers the evidence, determines the governed action, and routes the authority to approve it.",
@@ -82,18 +91,12 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
   };
 }
 
-export function buildEvidence(scenario: ScenarioData): EvidenceVM {
+export function buildEvidence(scenario: ScenarioData, firm: FirmData): EvidenceVM {
   const spec = scenario.spec;
   const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
-  const liquidity = scenario.liquidity;
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  const liquidity = authority.kind === "signed" ? authority.initialDecision : null;
   const rows: EvidenceRowVM[] = [
-    {
-      kind: "metric",
-      label: "Available cash across household accounts",
-      metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
-      retrievedAt: RETRIEVED_AT,
-      fakeClass: "synthetic-fixture",
-    },
     {
       kind: "metric",
       label: "Planned monthly withdrawal",
@@ -101,25 +104,6 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
-    // Pending liquidity activity is stated positively either way: an observed
-    // amount, or the signed observed-absent reading. An absent row would read as
-    // "not looked at", which is the inference the golden cases forbid.
-    liquidity.pendingActivityMinor > 0
-      ? {
-          kind: "metric",
-          label: "Pending approved distribution (not yet settled)",
-          metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-          retrievedAt: RETRIEVED_AT,
-          fakeClass: "synthetic-fixture",
-          why: { reason: `${liquidity.pendingNote}.` },
-        }
-      : {
-          kind: "fact",
-          label: "Pending or reserved liquidity activity",
-          fact: fact(`${liquidity.pendingNote}.`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
-          fakeClass: "synthetic-fixture",
-          why: { reason: "Absence here is an observation, not a gap: the pending-activity source was read and returned nothing against this household." },
-        },
     spec.bankChanged
       ? {
           kind: "fact",
@@ -142,6 +126,39 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       why: { reason: "A household-specific restriction. It takes precedence over firm policy defaults when the destination of a movement is checked." },
     },
   ];
+  if (liquidity) {
+    rows.unshift(
+      {
+        kind: "metric",
+        label: "Available cash across household accounts",
+        metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
+        retrievedAt: RETRIEVED_AT,
+        fakeClass: "synthetic-fixture",
+      },
+      liquidity.pendingActivityMinor > 0
+        ? {
+            kind: "metric",
+            label: "Pending approved distribution (not yet settled)",
+            metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+            retrievedAt: RETRIEVED_AT,
+            fakeClass: "synthetic-fixture",
+            why: { reason: `${liquidity.pendingNote}.` },
+          }
+        : {
+            kind: "fact",
+            label: "Pending or reserved liquidity activity",
+            fact: fact(`${liquidity.pendingNote}.`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+            fakeClass: "synthetic-fixture",
+            why: { reason: "Absence here is an observation, not a gap: the pending-activity source was read and returned nothing against this household." },
+          },
+    );
+  } else {
+    rows.unshift({
+      kind: "missing",
+      text: `Missing signed liquidity authority - ${authority.kind === "missing" ? authority.reason : "numeric evidence unavailable"}. No unrelated case was substituted.`,
+      fakeClass: "synthetic-fixture",
+    });
+  }
   if (spec.conflictingInstruction) {
     rows.push({
       kind: "conflict",

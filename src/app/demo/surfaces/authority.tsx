@@ -54,6 +54,7 @@ export function AuthoritySurface({
             actors: s.actors,
             ...(s.expiry ? { expiry: s.expiry } : {}),
             ...(s.escalation ? { escalation: s.escalation } : {}),
+            ...(s.authorityEvents ? { authorityEvents: s.authorityEvents } : {}),
           }}
         />
       ))}

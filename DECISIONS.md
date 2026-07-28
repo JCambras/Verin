@@ -3306,36 +3306,38 @@ covers the amount". Surface 11's Firm A simulation drifted the same way. The glo
 unsigned: GC-01 and GC-02 state $420,000 of available taxable liquidity and positively observe NO
 pending activity, so the demo was inventing both figures.
 
-The globals are gone. Each branch now carries a `liquidity` record naming the signed golden case it
-mirrors (`sourceCaseId`, available cash, pending activity, and whether that pending activity was
-observed or observed-absent), and every visible liquidity figure, headroom, blocker, policy-trace
-row, comparison column, and simulation delta derives from it through the shared arithmetic
+The globals are gone. Each branch now carries firm-specific signed-liquidity authority naming the
+golden case it mirrors (`sourceCaseId`, initial-decision liquidity, and optional pre-execution
+revalidation liquidity). Every visible liquidity figure, headroom, blocker, policy-trace row,
+comparison column, and simulation delta derives from it through the shared arithmetic
 (`headroomMinor` in `@contracts/money-movement`). The happy paths run on GC-01/GC-02's $420,000 with
-no pending activity; approval-invalidation runs on GC-15's $300,000 against a $15,000 pending
-distribution; competing-liquidity keeps GC-10's constrained $160,000 pool, which is what makes two
-$75,000 requests jointly invalid.
+no pending activity; approval-invalidation starts at GC-15's $300,000 with no pending activity and
+adds the new $15,000 distribution only at pre-execution revalidation; competing-liquidity keeps
+GC-10's constrained $160,000 pool for Firm A, which is what makes two $75,000 requests jointly
+invalid.
 
 That constrained pool forced one contract question. Under Firm A's $48,000 six-month reserve the
-first request is individually valid and proceeds (GC-10, signed). Under Firm B's $96,000
-twelve-month reserve the SAME single request already breaches the floor — $160,000 − $75,000 =
-$85,000 — which is precisely the arithmetic GC-05 signs for firm-b. `config/demo/scenarios.yaml`
-therefore records `competing-liquidity` as `per_firm: {firm-a: proceed, firm-b: blocked}`, the same
-shape two other branches already use, and the demo grows a reserve-shortfall blocker with its
-resolving affordance. No signed fixture, disposition, or amount was changed to make this fit.
+first request is individually valid and proceeds (GC-10, signed). The matrix records Firm B as
+blocked by its twelve-month reserve before a live reservation matters, but there is no
+branch-and-firm signed numeric case for that rendered arm. The demo therefore surfaces missing
+numeric authority instead of borrowing GC-05. GC-05 remains the separate signed single-request
+case: $160,000 available minus $20,000 pending equals $140,000 effective liquidity; after the
+$75,000 request, $65,000 remains, below Firm B's $96,000 reserve.
 
 Two fences make the class of defect unrepeatable rather than the instance:
 
-- **Signed side.** A `proceed` golden case must leave its request covered: available − pending −
-  reserve floor ≥ the request amount. Available liquidity and pending activity are structured
+- **Signed side.** A `proceed` golden case must state complete structured numeric authority and
+  leave its request covered: available minus pending minus reserve floor must be at least the
+  request amount. Available liquidity and pending activity are structured
   `signedMoney` fields tied to the evidence rows that observed them (`observedAbsent: true` requires
   `pendingLiquidityUsd: 0`; stating liquidity without stating the pending activity beside it is
-  rejected). Every stated reserve floor is now derived — a case that omits the schedule derives it
-  from the household's canonical signed schedule, and if no case anywhere states one the validator
-  fails with a missing-authority diagnostic instead of skipping the arithmetic.
+  rejected). Missing authority fails by field name instead of skipping the arithmetic. A structured
+  revalidation snapshot must independently match phase-tagged evidence and cover the request.
 - **Rendered side.** The snapshot projects EVERY decision the demo displays. A displayed headroom
-  that is not `available − pending − floor`, liquidity that does not match the case the branch
-  names, or a `proceed` (or simulated `proceed`) beside a headroom smaller than the request fails
-  the build with the branch and firm named.
+  that is not `available - pending - floor`, liquidity sourced from a case whose `scenarioRef` or
+  firm does not match the rendered branch, or a `proceed` beside contradictory headroom fails with
+  the branch and firm named. A branch with no exact signed numeric case must display the gap and
+  render no borrowed figures.
 
 **Why:** the demo's own figures are product truth in front of an investor; a `proceed` beside a
 number that contradicts it is the exact dishonesty the charter's provenance rules exist to prevent.
@@ -3367,3 +3369,26 @@ Two smaller review findings from the same pass:
 that cites an annotation it does not contain is not normative.
 **Revert path:** both are pure functions in `scripts/golden-demo-semantics.lib.ts` with injected
 inputs; deleting either leaves the rest of the gate intact.
+
+### D-065 · 2026-07-28 · reversible · Liquidity authority is firm-bound and phase-aware
+
+Review of D-063 found two ownership defects in the single branch-level liquidity record. First,
+GC-15's after-approval pending distribution was rendered as if it existed at initial evaluation.
+Second, the same `sourceCaseId` was reused across both firms and across branches that had no matching
+signed numeric case.
+
+`ScenarioData` now carries signed liquidity by firm. Each source case is accepted only when the
+fixture's own `scenarioRef` and `firm` match the rendered branch. Missing pairs render an explicit
+authority gap and do not emit headroom or policy-simulation figures. GC-15 carries an
+`initialDecision` snapshot with $300,000 available and no pending activity plus a
+`preExecutionRevalidation` snapshot with the new $15,000 pending distribution. The invalidation
+surface and printed record show those phases in order.
+
+GC-16 authority events are also rendered as ordered data. `ApprovalStageEscalated` at P1D precedes
+`ApprovalStageExpired` at the projected deadline, and the dual-approval stage remains pending
+because it never arms.
+
+**Why:** evidence ownership includes branch, firm, and time. A numerically correct value is still
+false when borrowed from another decision context or shown before it existed.
+**Revert path:** the authority union and its accessor are confined to the demo fake-service
+layer; removing phase or firm binding requires reverting the companion semantic and browser proofs.

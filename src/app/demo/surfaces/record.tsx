@@ -218,6 +218,13 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                           {s.escalation}
                         </p>
                       ) : null}
+                      {s.authorityEvents ? (
+                        <ol className="flex flex-col gap-1 text-xs text-slate-600">
+                          {s.authorityEvents.map((event) => (
+                            <li key={event.type}>{event.display}</li>
+                          ))}
+                        </ol>
+                      ) : null}
                     </div>
                   ))
                 ) : (
@@ -247,8 +254,16 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                         <p className="text-sm text-slate-800">
                           Approval by {vm.safety.invalidation.voidedActor.name} ({vm.safety.invalidation.voidedActor.when}) was voided: {vm.safety.invalidation.deltaSentence}
                         </p>
-                        <EvidenceRow label="Before" fact={vm.safety.invalidation.before} />
-                        <EvidenceRow label="After" fact={vm.safety.invalidation.after} />
+                        <EvidenceMetricRow
+                          label={vm.safety.invalidation.before.label}
+                          metric={vm.safety.invalidation.before.metric}
+                          retrievedAt={vm.safety.invalidation.before.retrievedAt}
+                        />
+                        <EvidenceMetricRow
+                          label={vm.safety.invalidation.after.label}
+                          metric={vm.safety.invalidation.after.metric}
+                          retrievedAt={vm.safety.invalidation.after.retrievedAt}
+                        />
                         <ExpandedWhy why={vm.safety.invalidation.why} />
                       </div>
                     ) : null}

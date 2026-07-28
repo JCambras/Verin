@@ -52,6 +52,7 @@ describe("money-movement arithmetic", () => {
       expect(() => headroomMinor(bad as number, 0, 4_800_000)).toThrow(/non-negative safe integers/);
       expect(() => headroomMinor(42_000_000, 0, bad as number)).toThrow(/non-negative safe integers/);
     }
+    expect(() => headroomMinor(0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toThrow(/safe integer range/);
   });
 
   it("renders money through the same divisor the arithmetic counts in", () => {

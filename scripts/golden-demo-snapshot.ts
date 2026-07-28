@@ -1,12 +1,14 @@
 import { formatMetricValue, type DisplayMetric } from "@contracts/metric";
 import { MONEY_CURRENCY, RESERVE_CADENCE } from "@contracts/money-movement";
 import { buildExecution, buildVerification } from "../src/app/demo/build-outcome";
+import { getJourney } from "../src/app/demo/journey";
 import {
   amountMetric,
   headroomMetric,
   headroomMinor,
   reserveFloorMetric,
   reserveFloorMinor,
+  buildStages,
 } from "../src/app/demo/build-decision";
 import { DRAFT_RESERVE_MONTHS, buildPolicyAuthoring } from "../src/app/demo/build-summary";
 import {
@@ -16,6 +18,7 @@ import {
   SCENARIOS,
   dispositionFor,
   firmById,
+  liquidityAuthorityFor,
 } from "../src/app/demo/data";
 import type { DemoSemanticSnapshot, DisplayedDecision, RenderedMoney } from "./golden-demo-semantics.lib";
 
@@ -51,15 +54,21 @@ function displayedDecisions(): DisplayedDecision[] {
   return SCENARIOS.flatMap((scenario) =>
     Object.values(FIRMS).map((firm) => {
       const simulated = draftSimulation(scenario.id, firm.id);
+      const authority = liquidityAuthorityFor(scenario, firm.id);
+      const initial = authority.kind === "signed" ? authority.initialDecision : null;
+      const revalidation = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
       return {
         scenarioId: scenario.id,
         firmId: firm.id,
         disposition: dispositionFor(scenario, firm.id),
-        sourceCaseId: scenario.liquidity.sourceCaseId,
-        availableCashMinor: scenario.liquidity.availableCashMinor,
-        pendingActivityMinor: scenario.liquidity.pendingActivityMinor,
+        sourceCaseId: authority.kind === "signed" ? authority.sourceCaseId : null,
+        liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
+        availableCashMinor: initial?.availableCashMinor ?? null,
+        pendingActivityMinor: initial?.pendingActivityMinor ?? null,
         reserveFloorMinor: reserveFloorMinor(firm),
         headroomMinor: headroomMinor(scenario, firm),
+        revalidationAvailableCashMinor: revalidation?.availableCashMinor ?? null,
+        revalidationPendingActivityMinor: revalidation?.pendingActivityMinor ?? null,
         simulatedFloorMinor: simulated.floorMinor,
         simulatedHeadroomMinor: simulated.headroomMinor,
         simulatedDisposition: simulated.disposition,
@@ -74,8 +83,26 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const moneyMetrics = [
     amountMetric(),
     ...firms.map((firm) => reserveFloorMetric(firm)),
-    ...SCENARIOS.flatMap((scenario) => firms.map((firm) => headroomMetric(scenario, firm))),
+    ...SCENARIOS.flatMap((scenario) =>
+      firms.flatMap((firm) => {
+        const headroom = headroomMetric(scenario, firm);
+        return headroom ? [headroom] : [];
+      }),
+    ),
   ];
+  const lapseScenario = SCENARIOS.find((scenario) => scenario.id === "specialist-review-expiration")!;
+  const authorityLapseEvents = buildStages(lapseScenario, FIRMS["firm-a"]!, "final")
+    .flatMap((stage) => stage.authorityEvents ?? [])
+    .map(({ type, timestamp }) => ({ type, timestamp }));
+  const invalidationJourney = getJourney("approval-invalidation", "firm-a");
+  const initialSurfaceMoneyMinor = [
+    invalidationJourney.workspace.liquidity?.value,
+    invalidationJourney.workspace.plannedMonthlyWithdrawal.value,
+    ...invalidationJourney.evidence.rows.flatMap((row) => row.kind === "metric" ? [row.metric.value] : []),
+    ...(invalidationJourney.recommendation.disposition.figures ?? []).map((figure) => figure.metric.value),
+    ...(invalidationJourney.approvals?.gate.figures ?? []).map((figure) => figure.metric.value),
+  ].flatMap((value) => typeof value === "number" ? [value] : []);
+  const invalidation = invalidationJourney.safety?.invalidation;
   return {
     requestAmountMinor: CANONICAL_REQUEST.amountMinor,
     plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
@@ -97,5 +124,13 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     verificationTimelineStatuses: SCENARIOS.flatMap((scenario) =>
       buildVerification(scenario).appended.map((row) => row.status),
     ),
+    authorityLapseEvents,
+    approvalInvalidationPhases: {
+      initialSurfaceMoneyMinor,
+      safetyBeforePendingMinor:
+        typeof invalidation?.before.metric.value === "number" ? invalidation.before.metric.value : null,
+      safetyAfterPendingMinor:
+        typeof invalidation?.after.metric.value === "number" ? invalidation.after.metric.value : null,
+    },
   };
 }

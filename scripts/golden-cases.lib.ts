@@ -245,6 +245,10 @@ export interface SignedMoney {
   /** Pending or reserved activity counted against it. 0 is the observed-absent
    * reading (a positive observation); null is "this case states no figure". */
   pendingLiquidityUsd: number | null;
+  preExecutionRevalidation: {
+    availableLiquidityUsd: number;
+    pendingLiquidityUsd: number;
+  } | null;
 }
 
 const optionalAmount = (v: unknown): number | null | undefined =>
@@ -258,9 +262,21 @@ export function readSignedMoney(c: Record<string, unknown>): SignedMoney | null 
   const floor = optionalAmount(m.reserveFloorUsd);
   const available = optionalAmount(m.availableLiquidityUsd);
   const pending = optionalAmount(m.pendingLiquidityUsd);
+  const revalidation = m.preExecutionRevalidation;
+  const parsedRevalidation =
+    revalidation === undefined || revalidation === null
+      ? null
+      : isObj(revalidation) &&
+          isMoneyQuantity(revalidation.availableLiquidityUsd) &&
+          isMoneyQuantity(revalidation.pendingLiquidityUsd)
+        ? {
+            availableLiquidityUsd: revalidation.availableLiquidityUsd,
+            pendingLiquidityUsd: revalidation.pendingLiquidityUsd,
+          }
+        : undefined;
   if (!isNonEmptyString(m.currency) || !isNonEmptyString(m.cadence)) return null;
   if (!isMoneyQuantity(m.requestAmountUsd) || monthly === undefined || floor === undefined) return null;
-  if (available === undefined || pending === undefined) return null;
+  if (available === undefined || pending === undefined || parsedRevalidation === undefined) return null;
   return {
     currency: m.currency,
     cadence: m.cadence,
@@ -269,6 +285,7 @@ export function readSignedMoney(c: Record<string, unknown>): SignedMoney | null 
     reserveFloorUsd: floor,
     availableLiquidityUsd: available,
     pendingLiquidityUsd: pending,
+    preExecutionRevalidation: parsedRevalidation,
   };
 }
 
@@ -300,6 +317,26 @@ const evidenceRows = (c: Record<string, unknown>): Record<string, unknown>[] =>
 const summariesOfKind = (c: Record<string, unknown>, kind: string): string =>
   evidenceRows(c)
     .filter((row) => row.evidenceKind === kind)
+    .map((row) => (isNonEmptyString(row.summary) ? row.summary : ""))
+    .join(" ");
+const rowsOfLiquidityPhase = (
+  c: Record<string, unknown>,
+  kind: string,
+  phase: "initial-decision" | "pre-execution-revalidation",
+): Record<string, unknown>[] =>
+  evidenceRows(c).filter(
+    (row) =>
+      row.evidenceKind === kind &&
+      (phase === "initial-decision"
+        ? row.liquidityPhase === undefined || row.liquidityPhase === phase
+        : row.liquidityPhase === phase),
+  );
+const summariesOfLiquidityPhase = (
+  c: Record<string, unknown>,
+  kind: string,
+  phase: "initial-decision" | "pre-execution-revalidation",
+): string =>
+  rowsOfLiquidityPhase(c, kind, phase)
     .map((row) => (isNonEmptyString(row.summary) ? row.summary : ""))
     .join(" ");
 
@@ -364,9 +401,9 @@ function validateSignedLiquidity(
   P: (msg: string) => void,
 ): void {
   const { availableLiquidityUsd: available, pendingLiquidityUsd: pending } = signed;
-  const pendingRows = evidenceRows(c).filter((row) => row.evidenceKind === "pending-actions");
+  const pendingRows = rowsOfLiquidityPhase(c, "pending-actions", "initial-decision");
   const observedAbsent = pendingRows.some((row) => row.observedAbsent === true);
-  if (available !== null && !mentionsAmount(summariesOfKind(c, "account-balance"), available)) {
+  if (available !== null && !mentionsAmount(summariesOfLiquidityPhase(c, "account-balance", "initial-decision"), available)) {
     P(`signedMoney.availableLiquidityUsd ${available} is not stated by any account-balance evidence summary`);
   }
   if (available !== null && pending === null) {
@@ -378,17 +415,48 @@ function validateSignedLiquidity(
   if (observedAbsent && pending !== 0) {
     P(`a pending-actions snapshot observed ABSENT must state signedMoney.pendingLiquidityUsd 0, got ${JSON.stringify(pending)}`);
   }
-  if (pending !== null && pending > 0 && !mentionsAmount(summariesOfKind(c, "pending-actions"), pending)) {
+  if (pending !== null && pending > 0 && !mentionsAmount(summariesOfLiquidityPhase(c, "pending-actions", "initial-decision"), pending)) {
     P(`signedMoney.pendingLiquidityUsd ${pending} is not stated by any pending-actions evidence summary`);
   }
   const availableMinor = minorFromMajor(available);
   const pendingMinor = minorFromMajor(pending);
   const requestMinor = minorFromMajor(signed.requestAmountUsd);
   if (c.expectedDisposition !== "proceed") return;
-  if (availableMinor === null || pendingMinor === null || floorMinor === null || requestMinor === null) return;
-  const headroom = headroomMinor(availableMinor, pendingMinor, floorMinor);
-  if (headroom < requestMinor) {
+  const missingAuthority = [
+    signed.plannedWithdrawalMonthlyUsd === null ? "plannedWithdrawalMonthlyUsd" : null,
+    floorMinor === null ? "reserveFloorUsd" : null,
+    availableMinor === null ? "availableLiquidityUsd" : null,
+    pendingMinor === null ? "pendingLiquidityUsd" : null,
+    requestMinor === null ? "requestAmountUsd" : null,
+  ].filter((field): field is string => field !== null);
+  if (missingAuthority.length > 0) {
+    P(`proceed case is missing structured liquidity authority: ${missingAuthority.join(", ")}`);
+    return;
+  }
+  const headroom = headroomMinor(availableMinor!, pendingMinor!, floorMinor!);
+  if (headroom < requestMinor!) {
     P(`a proceed case must leave the request covered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
+  }
+  const revalidation = signed.preExecutionRevalidation;
+  if (!revalidation) return;
+  const revalidationAvailableRows = rowsOfLiquidityPhase(c, "account-balance", "pre-execution-revalidation");
+  const revalidationPendingRows = rowsOfLiquidityPhase(c, "pending-actions", "pre-execution-revalidation");
+  if (!mentionsAmount(summariesOfLiquidityPhase(c, "account-balance", "pre-execution-revalidation"), revalidation.availableLiquidityUsd)) {
+    P(`signedMoney.preExecutionRevalidation.availableLiquidityUsd ${revalidation.availableLiquidityUsd} is not stated by pre-execution account-balance evidence`);
+  }
+  if (!mentionsAmount(summariesOfLiquidityPhase(c, "pending-actions", "pre-execution-revalidation"), revalidation.pendingLiquidityUsd)) {
+    P(`signedMoney.preExecutionRevalidation.pendingLiquidityUsd ${revalidation.pendingLiquidityUsd} is not stated by pre-execution pending-actions evidence`);
+  }
+  if (revalidationAvailableRows.length === 0 || revalidationPendingRows.length === 0) {
+    P("signedMoney.preExecutionRevalidation requires account-balance and pending-actions evidence in the pre-execution-revalidation phase");
+  }
+  const refreshedHeadroom = headroomMinor(
+    minorFromMajor(revalidation.availableLiquidityUsd)!,
+    minorFromMajor(revalidation.pendingLiquidityUsd)!,
+    floorMinor!,
+  );
+  if (refreshedHeadroom < requestMinor!) {
+    P(`a proceed revalidation must leave the request covered: available ${revalidation.availableLiquidityUsd} - pending ${revalidation.pendingLiquidityUsd} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
   }
 }
 
@@ -517,6 +585,13 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
         }
         for (const k of ["observedAt", "retrievedAt"] as const) {
           if (!TimestampSchema.safeParse(e[k]).success) P(`${at}.${k} must be canonical UTC ISO (YYYY-MM-DDTHH:MM:SS.mmmZ)`);
+        }
+        if (
+          e.liquidityPhase !== undefined &&
+          e.liquidityPhase !== "initial-decision" &&
+          e.liquidityPhase !== "pre-execution-revalidation"
+        ) {
+          P(`${at}.liquidityPhase must be initial-decision|pre-execution-revalidation when present`);
         }
         if ("observedAbsent" in e && !isBool(e.observedAbsent)) P(`${at}.observedAbsent must be a boolean when present`);
         if (!(isNonEmptyString(e.freshness) && (FRESHNESS as readonly string[]).includes(e.freshness))) P(`${at}.freshness must be one of ${FRESHNESS.join("|")}`);

@@ -14,7 +14,7 @@ import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
-import { dispositionFor, firmById, scenarioById } from "./data";
+import { dispositionFor, firmById, outcomeClassFor, scenarioById } from "./data";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
 function reachOf(scenarioId: string, firmId: string) {
@@ -32,7 +32,7 @@ function stopNoteOf(scenarioId: string, firmId: string): string | null {
   const disposition = dispositionFor(scenario, firmId);
   if (disposition === "prohibited") return "This journey stopped at Decision: the prohibition is not resolvable by evidence or authority.";
   if (disposition === "blocked") return "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
-  if (scenario.spec.specialistExpired) return "This journey is waiting at Authority: the specialist review expired and escalated to the principal.";
+  if (scenario.spec.specialistExpired) return "This journey stopped at Authority: the specialist review escalated to the operations manager, then expired unresolved.";
   if (scenario.spec.invalidation) return "This journey returned to Decision: the approval was voided when material evidence changed.";
   return null;
 }
@@ -47,14 +47,14 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     firmId: firm.id,
     scenarioTitle: scenario.title,
     firmName: firm.name,
-    outcomeClass: scenario.outcomeClass,
-    workspace: buildWorkspace(scenario),
+    outcomeClass: outcomeClassFor(scenario, firm.id),
+    workspace: buildWorkspace(scenario, firm),
     intent: buildIntent(scenario),
-    evidence: buildEvidence(scenario),
+    evidence: buildEvidence(scenario, firm),
     recommendation: buildRecommendation(scenario, firm),
     policyTrace: buildPolicyTrace(scenario, firm),
     approvals: reached.authority ? buildApprovals(scenario, firm) : null,
-    safety: reached.safety ? buildSafety(scenario) : null,
+    safety: reached.safety ? buildSafety(scenario, firm) : null,
     execution: reached.execution ? buildExecution(scenario) : null,
     verification: reached.execution ? buildVerification(scenario) : null,
     stopNote,

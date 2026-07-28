@@ -211,20 +211,12 @@ scenarios:
     exercises: [proceed, awaiting-approval, approved]
 
   - id: competing-liquidity
-    description: Two simultaneous, individually valid requests compete for the same liquidity; reservations prevent a joint violation.
-    # The branch runs on the constrained pool the signed golden cases state
-    # (GC-10/GC-11: $160,000 available), which is what makes two $75,000 requests
-    # jointly invalid. Under Firm A's six-month reserve ($48,000) the first request
-    # is individually valid and proceeds; under Firm B's twelve-month reserve
-    # ($96,000) the SAME single request already breaches the floor, which is the
-    # arithmetic GC-05 signs for firm-b on the same pool. The split is recorded
-    # here rather than left implicit so the demo cannot render a proceed decision
-    # its own liquidity evidence contradicts (D-063).
+    description: Two simultaneous requests test the shared-liquidity controls under each firm's policy.
     disposition:
       per_firm:
         firm-a: proceed # 160,000 - 75,000 = 85,000 >= the 48,000 six-month reserve
-        firm-b: blocked # 85,000 < the 96,000 twelve-month reserve (GC-05 arithmetic)
-    outcome_class: one proceeds, one blocked by reservation
+        firm-b: blocked # twelve-month reserve blocks the first request before a live reservation matters
+    outcome_class: firm-aware liquidity control
     exercises: [proceed, blocked]
 
   - id: duplicate-retry
@@ -246,12 +238,12 @@ scenarios:
     exercises: [proceed, approved, submitted, nigo]
 
   - id: specialist-review-expiration
-    description: A specialist-review stage expires without action and escalates along the configured escalation path.
+    description: The configured escalation fires before unresolved specialist authority reaches its projected expiry.
     disposition:
       per_firm:
-        firm-a: proceed # specialist review expires and escalates (contract §2 handling)
+        firm-a: proceed # specialist review escalates, then expires unresolved
         firm-b: blocked # until independently verified - Firm B has no specialist stage (contract §2)
-    outcome_class: escalated
+    outcome_class: firm-aware authority outcome
     exercises: [proceed, blocked, awaiting-approval]
 
 # --------------------------------------------------------------------------

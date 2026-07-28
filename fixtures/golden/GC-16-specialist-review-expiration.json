@@ -28,7 +28,7 @@
     "requestAmountUsd": 75000,
     "plannedWithdrawalMonthlyUsd": 8000,
     "reserveFloorUsd": 48000,
-    "availableLiquidityUsd": null,
+    "availableLiquidityUsd": 420000,
     "pendingLiquidityUsd": 0
   },
   "firmConfiguration": {
@@ -60,7 +60,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "Liquidity and reserve satisfied; authority progress is the only open question."
+      "summary": "Available taxable liquidity is 420000 USD with the reserve satisfied; authority progress is the only open question."
     },
     {
       "evidenceKind": "planned-withdrawals",

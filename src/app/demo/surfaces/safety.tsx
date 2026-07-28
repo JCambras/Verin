@@ -11,7 +11,7 @@
 import { FreshValue } from "@app/presentation/fresh-value";
 import { StatusBadge } from "@app/presentation/ui";
 import { WhyBubble } from "@app/presentation/why-bubble";
-import { EvidenceRow } from "@app/presentation/evidence-row";
+import { EvidenceMetricRow } from "@app/presentation/evidence-row";
 import { TapToVerify } from "@app/presentation/tap-to-verify";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type SafetyVM } from "../model";
@@ -83,8 +83,18 @@ export function SafetySurface({
           {/* 2. What changed, at full weight; announced politely; one entry fade. */}
           <div role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="what-changed">
             <p className="text-base font-semibold text-slate-900">{vm.invalidation.deltaSentence}</p>
-            <EvidenceRow label="Before" fact={vm.invalidation.before} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
-            <EvidenceRow label="After" fact={vm.invalidation.after} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
+            <EvidenceMetricRow
+              label={vm.invalidation.before.label}
+              metric={vm.invalidation.before.metric}
+              retrievedAt={vm.invalidation.before.retrievedAt}
+              badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]}
+            />
+            <EvidenceMetricRow
+              label={vm.invalidation.after.label}
+              metric={vm.invalidation.after.metric}
+              retrievedAt={vm.invalidation.after.retrievedAt}
+              badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]}
+            />
             <WhyBubble reason={vm.invalidation.why.reason} {...(vm.invalidation.why.regulation ? { regulation: vm.invalidation.why.regulation } : {})} />
           </div>
           {/* 4. One clear next action. */}

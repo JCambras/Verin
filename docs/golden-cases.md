@@ -64,9 +64,10 @@ Notes on the two structural choices in the matrix mapping:
 - **The `competing-liquidity` branch is firm-split** in the matrix (D-063). Both signed cases are
   firm-a and run on a $160,000 pool: either $75,000 request alone clears Firm A's $48,000 six-month
   reserve, both together do not. Under Firm B's $96,000 twelve-month reserve the SAME single request
-  already breaches the floor - $160,000 - $75,000 = $85,000 - which is exactly the arithmetic GC-05
-  signs for firm-b. The matrix records `per_firm: {firm-a: proceed, firm-b: blocked}` so the demo
-  cannot render a proceed beside liquidity evidence that contradicts it.
+  is recorded as blocked before a live reservation matters. No signed numeric case binds that
+  firm-b arm to this branch, so the demo states the missing authority instead of borrowing GC-05.
+  GC-05 is a separate single-request case: $160,000 available minus $20,000 pending leaves
+  $140,000 effective liquidity, and the $75,000 request leaves $65,000, below the $96,000 reserve.
 - **The prompt-2 twelve** map to 14 fixtures because two spec cases are inherently two-sided:
   "recent bank change" diverges per firm (GC-03/GC-04 - the same facts, config-only divergence),
   and "two simultaneous distributions" has a winner and a loser (GC-10/GC-11). GC-15 and GC-16
@@ -84,7 +85,7 @@ Notes on the two structural choices in the matrix mapping:
 | ambiguous-instruction | GC-08 |
 | dual-approval | exercised by GC-01, GC-03, GC-10, GC-12, GC-13, GC-15 (Firm A stage structure at $75k) |
 | approval-invalidation | GC-15 |
-| competing-liquidity | GC-10, GC-11 (firm-a arms); the firm-b arm blocks on GC-05's arithmetic |
+| competing-liquidity | GC-10, GC-11 (firm-a arms); firm-b outcome recorded in the matrix with numeric authority explicitly missing |
 | duplicate-retry | GC-12 |
 | partial-salesforce-success | GC-13 |
 | delayed-nigo | GC-14 |
@@ -138,14 +139,17 @@ Every case - in this document and in its fixture - states all of:
 12. **expected verification state** - reached flag, observed status (execution-plane state
     vocabulary), the settled-claim rule, note;
 13. **signoff** - §1;
-14. **signed money** - `signedMoney`: currency, cadence, the request amount, and (where the case's
-    signed text states them, else null) the monthly planned withdrawal, the reserve floor, the
-    available liquidity, and the pending liquidity activity counted against it, as STRUCTURED
+14. **signed money** - `signedMoney`: currency, cadence, the request amount, the monthly planned
+    withdrawal, the reserve floor, the available liquidity, and the pending liquidity activity
+    counted against it, as STRUCTURED
     whole-dollar fields. These fields ARE the signed numbers - the prose summaries restate them,
     never the reverse. The validator derives the floor through the shared money arithmetic
     (`src/contracts/money-movement.ts`) and requires each figure to still appear in the case's own
     trigger / planned-withdrawals / account-balance / pending-actions summaries, so structure and
-    prose can neither diverge nor be regexed apart. Three rules make the derivation total rather
+    prose can neither diverge nor be regexed apart. `preExecutionRevalidation`, when present,
+    records a second available/pending snapshot whose evidence rows carry
+    `liquidityPhase: pre-execution-revalidation`; initial rows carry `initial-decision`. Four rules
+    make the derivation total rather
     than opt-in:
     - a case that states a reserve floor WITHOUT restating the schedule derives it from the
       household's canonical signed schedule (the one value the schedule-stating cases agree on);
@@ -155,7 +159,11 @@ Every case - in this document and in its fixture - states all of:
       pending-actions snapshot records `observedAbsent: true`; stating available liquidity without
       stating the pending activity beside it is rejected (silence is recorded, never inferred);
     - a `proceed` case must actually leave the request covered: available - pending - reserve floor
-      must be at least the request amount. A case cannot sign an outcome its own numbers contradict.
+      must be at least the request amount;
+    - every `proceed` case must state all five numeric authorities itself. Missing request,
+      schedule, floor, available liquidity, or pending activity fails with a named
+      missing-authority diagnostic, and every revalidation snapshot must independently cover the
+      request.
 
 Structural consistency is validated, not assumed: a blocked or prohibited case cannot carry
 authority stages, execution eligibility, or a reached verification state (v3 invariants 8/9); a
@@ -428,7 +436,7 @@ $48,000 and the Firm B reserve is $96,000.
 - **Trigger:** the $75,000 request; the external capability accepts the instruction record but
   fails to schedule the disbursement leg.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** clean evaluation with balance, $8,000 monthly schedule, $48,000 reserve,
+- **Household evidence:** clean evaluation with $420,000 available taxable liquidity, $8,000 monthly schedule, $48,000 reserve,
   verified bank instruction, satisfied destination restriction, and explicit absence of pending
   liquidity activity. The partial outcome is an execution-plane event.
 - **Policy versions / household instructions:** as GC-12.
@@ -479,9 +487,11 @@ $48,000 and the Firm B reserve is $96,000.
   distribution posts, changing the liquidity basis the approvals were bound to.
 - **Firm configuration:** firm-a (§4).
 - **Household evidence:** balance $300,000; $8,000 monthly schedule and $48,000 reserve; verified
-  bank instruction and satisfied destination restriction; no pending activity at first evaluation;
-  the $15,000 pending distribution appears at revalidation (reserve still satisfied on both bases -
-  the invalidation fires on material CHANGE, not on breach).
+  bank instruction and satisfied destination restriction. The structured initial-decision phase
+  records $300,000 available and an observed absence of pending activity. Only the structured
+  pre-execution-revalidation phase records the new $15,000 pending distribution and $285,000
+  effective liquidity (reserve still satisfied on both bases - the invalidation fires on material
+  CHANGE, not on breach).
 - **Policy versions / household instructions:** as GC-01.
 - **Expected disposition:** proceed (through invalidation and re-approval).
 - **Expected authority stages:** `ops-dual-approval`, run TWICE end to end: once against the
@@ -508,8 +518,9 @@ $48,000 and the Firm B reserve is $96,000.
   takes no action. The P1D escalation fires first; unresolved escalated authority later reaches its
   projected deadline.
 - **Firm configuration:** firm-a (§4).
-- **Household evidence:** the changed, unverified bank instruction; balance, $8,000 monthly schedule,
-  and $48,000 reserve; destination restriction satisfied; no pending liquidity activity observed.
+- **Household evidence:** the changed, unverified bank instruction; $420,000 available taxable
+  liquidity, $8,000 monthly schedule, and $48,000 reserve; destination restriction satisfied; no
+  pending liquidity activity observed.
 - **Policy versions / household instructions:** as GC-03.
 - **Expected disposition:** proceed (authority remains unresolved - the branch ends still awaiting).
 - **Expected authority stages:** as GC-03; the subject is the time dimension. At P1D the configured
@@ -521,7 +532,8 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected explanation nodes:** specialist-review-required; stage-escalated-then-expired, with
   both authority facts shown and nothing auto-approved.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded →
-  **ApprovalStageEscalated** at P1D → **ApprovalStageExpired** at the projected deadline. No
+  **ApprovalStageEscalated** at P1D → **ApprovalStageExpired** at the projected deadline. The
+  authority surface renders those two facts in that chronological order with their timestamps. No
   `ApprovalInvalidated` occurs because no approval was recorded, and lapse alone does not derive a
   new decision.
 - **Expected verification state:** not reached while authority is unresolved.
@@ -542,7 +554,8 @@ labels flip only when prompt 27 lands against the real sandbox.
 - `pnpm golden:validate` - runs [`scripts/golden-cases-validate.ts`](../scripts/golden-cases-validate.ts)
   (CI job `golden-cases`, blocking): every required §5 field present and populated in every fixture,
   evidence completeness and canonical UTC instants enforced, amount/unit/schedule/reserve/status
-  semantics aligned with the live demo and scenarios.yaml, GC-16 event order enforced, structural
+  semantics aligned with the live demo and scenarios.yaml, branch-and-firm source binding and
+  phased revalidation enforced, GC-16 fixture and visible event order enforced, structural
   consistency (§5) enforced, doc/fixture ids in sync, all twelve spec-required case names covered,
   at least twelve cases, and every signoff in one of the two legal §1 shapes (all reapproved by the
   captain, 2026-07-28).

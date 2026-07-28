@@ -9,9 +9,9 @@
  * settled, green is earned, NIGO and stuck are first-class.
  */
 import type { ExecutionRowVM, ExecutionVM, SafetyVM, VerificationVM } from "./model";
-import { fact } from "./provenance";
+import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
-import { BANK_INSTRUCTION, CAST, IDS, RETRIEVED_AT, type ScenarioData } from "./data";
+import { CAST, IDS, RETRIEVED_AT, liquidityAuthorityFor, type FirmData, type ScenarioData } from "./data";
 
 const IDENTIFIERS = [
   { label: "Idempotency key", value: IDS.idempotencyKey },
@@ -19,24 +19,51 @@ const IDENTIFIERS = [
   { label: "Reservation", value: IDS.reservationId },
 ];
 
-export function buildSafety(scenario: ScenarioData): SafetyVM {
+export function buildSafety(scenario: ScenarioData, firm: FirmData): SafetyVM {
   const spec = scenario.spec;
-  const checks = [
-    { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
-    scenario.liquidity.pendingActivityMinor > 0
-      ? {
-          label: "Pending actions re-checked against this household",
-          status: "done",
-          statusLabel: "Re-read",
-          detail: `${scenario.liquidity.pendingNote}. It was already counted against the decision's liquidity, and the reserve floor still holds after this movement.`,
-        }
-      : { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
-  ];
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  const initial = authority.kind === "signed" ? authority.initialDecision : null;
+  const refreshed = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
+  const checks = authority.kind === "missing"
+    ? [
+        {
+          label: "Signed liquidity authority unavailable for this branch and firm",
+          status: "pending",
+          statusLabel: "Evidence missing",
+          detail: `${authority.reason}. No unrelated case was substituted.`,
+        },
+      ]
+    : refreshed
+      ? [
+          {
+            label: "Liquidity snapshot changed after approval",
+            status: "voided",
+            statusLabel: "Evidence changed",
+            detail: `The refreshed bundle records ${refreshed.pendingNote}.`,
+          },
+          {
+            label: "Pending actions re-checked against this household",
+            status: "voided",
+            statusLabel: "New activity found",
+            detail: "The initial decision observed no pending activity. Pre-execution revalidation found the new distribution.",
+          },
+        ]
+      : [
+          { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
+          initial && initial.pendingActivityMinor > 0
+            ? {
+                label: "Pending actions re-checked against this household",
+                status: "done",
+                statusLabel: "Re-read",
+                detail: `${initial.pendingNote}. It was counted against the decision's liquidity.`,
+              }
+            : { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
+        ];
   if (spec.invalidation) {
     checks.push({
-      label: "Bank instruction changed after approval",
+      label: "Input bundle refreshed after the liquidity change",
       status: "voided",
-      statusLabel: "Evidence changed",
+      statusLabel: "Approval invalidated",
     } as (typeof checks)[number]);
   } else {
     checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
@@ -56,15 +83,23 @@ export function buildSafety(scenario: ScenarioData): SafetyVM {
     reservationId: IDS.reservationId,
     conflictKeys: IDS.conflictKeys,
     idempotencyKey: IDS.idempotencyKey,
-    invalidation: spec.invalidation
+    invalidation: spec.invalidation && initial && refreshed
       ? {
           voidedActor: { name: CAST.opsApprover1, role: "Operations", when: "Jul 26, 10:02" },
-          deltaSentence: "The bank instruction changed after this approval was given.",
-          before: fact(BANK_INSTRUCTION.stable, "synthetic-fixture", "2026-05-20", RETRIEVED_AT),
-          after: fact(BANK_INSTRUCTION.changed, "synthetic-fixture", "2026-07-26", "Jul 26, 13:58"),
+          deltaSentence: "A new $15,000 pending distribution appeared after this approval was given.",
+          before: {
+            label: "Initial decision · pending activity",
+            metric: fixtureMetric(initial.pendingActivityMinor, "currency-minor", "synthetic-fixture", "2026-07-26"),
+            retrievedAt: RETRIEVED_AT,
+          },
+          after: {
+            label: "Pre-execution revalidation · pending distribution",
+            metric: fixtureMetric(refreshed.pendingActivityMinor, "currency-minor", "synthetic-fixture", "2026-07-26"),
+            retrievedAt: "Jul 26, 13:58",
+          },
           why: {
             reason:
-              "Approval binds to the decision hash and the input-bundle hash. The bundle changed when the bank instruction changed, so the approval cannot stand.",
+              "Approval binds to the decision hash and the input-bundle hash. Revalidation changed effective liquidity from $300,000 to $285,000, so the refreshed bundle requires a new decision and fresh approvals even though the reserve still holds.",
           },
           primaryLabel: "Re-evaluate with current evidence",
         }

@@ -76,6 +76,25 @@ function blockingCiText(): string {
   return existsSync(f) ? readFileSync(f, "utf8") : "";
 }
 
+export function duplicateReviewProofIds(text: string): string[] {
+  const firstLine = new Map<number, number>();
+  const duplicates: string[] = [];
+  for (const match of text.matchAll(/^## F(\d+)(?:-F?(\d+))?\b/gm)) {
+    const start = Number(match[1]);
+    const end = Number(match[2] ?? match[1]);
+    const line = text.slice(0, match.index).split("\n").length;
+    for (let id = start; id <= end; id += 1) {
+      const first = firstLine.get(id);
+      if (first !== undefined) {
+        duplicates.push(`docs/fences/proof-log.md:${line} :: duplicate F${id} (first declared at line ${first})`);
+      } else {
+        firstLine.set(id, line);
+      }
+    }
+  }
+  return duplicates;
+}
+
 describe("charter-drift fence", () => {
   it("(a) every enforced file/config/fitness mechanism exists on disk", () => {
     const missing: string[] = [];
@@ -143,5 +162,14 @@ describe("charter-drift fence", () => {
       if (!refs.has(rel)) orphans.push(rel);
     }
     expect(orphans, `fitness fences not referenced by charter-map.json (silently added?):\n${orphans.join("\n")}`).toEqual([]);
+  });
+
+  it("proof-log review ids are unique, including ids covered by ranges", () => {
+    const proofLog = readFileSync(p("docs/fences/proof-log.md"), "utf8");
+    expect(duplicateReviewProofIds(proofLog)).toEqual([]);
+    const injected = duplicateReviewProofIds(`${proofLog}\n## F103 · injected duplicate\n`);
+    expect(injected).toHaveLength(1);
+    expect(injected[0]).toContain("duplicate F103");
+    expect(injected[0]).toContain("docs/fences/proof-log.md:");
   });
 });

@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { SCENARIOS, DEFAULT_FIRM } from "@app/demo/data";
+import { SCENARIOS, DEFAULT_FIRM, launcherFirmFor, outcomeClassFor } from "@app/demo/data";
 import { PrimaryLink, demoHref } from "@app/demo/surfaces/shared";
 
 export const runtime = "nodejs";
@@ -32,18 +32,21 @@ export default function DemoLauncherPage() {
         <h2 className="text-base font-semibold text-slate-900">Scenario branches</h2>
         <p className="text-sm text-slate-600">The twelve contract branches (demo contract §5), each clickable end to end.</p>
         <ul className="grid gap-3 sm:grid-cols-2">
-          {SCENARIOS.map((s) => (
-            <li key={s.id}>
-              <Link
-                href={demoHref("workspace", s.id, DEFAULT_FIRM)}
-                className="block h-full rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 focus-visible:border-slate-500"
-              >
-                <p className="text-sm font-semibold text-slate-900">{s.title}</p>
-                <p className="mt-1 text-sm text-slate-600">{s.description}</p>
-                <p className="mt-2 text-xs text-slate-600">Outcome class: {s.outcomeClass}</p>
-              </Link>
-            </li>
-          ))}
+          {SCENARIOS.map((s) => {
+            const firmId = launcherFirmFor(s);
+            return (
+              <li key={s.id}>
+                <Link
+                  href={demoHref("workspace", s.id, firmId)}
+                  className="block h-full rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 focus-visible:border-slate-500"
+                >
+                  <p className="text-sm font-semibold text-slate-900">{s.title}</p>
+                  <p className="mt-1 text-sm text-slate-600">{s.description}</p>
+                  <p className="mt-2 text-xs text-slate-600">Outcome class: {outcomeClassFor(s, firmId)}</p>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

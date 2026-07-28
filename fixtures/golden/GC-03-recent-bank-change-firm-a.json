@@ -26,7 +26,7 @@
     "currency": "USD",
     "cadence": "month",
     "requestAmountUsd": 75000,
-    "plannedWithdrawalMonthlyUsd": null,
+    "plannedWithdrawalMonthlyUsd": 8000,
     "reserveFloorUsd": 48000,
     "availableLiquidityUsd": 420000,
     "pendingLiquidityUsd": 0
@@ -70,7 +70,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "Six-month reserve (48000 USD) remains satisfied after the movement."
+      "summary": "Planned withdrawals are 8000 USD per month; the six-month reserve (48000 USD) remains satisfied after the movement."
     },
     {
       "evidenceKind": "pending-actions",

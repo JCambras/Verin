@@ -5436,7 +5436,7 @@ suites pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-062).
 
-## F102 · golden-cases: displayed decisions, signed liquidity, exact money rendering, status-vocabulary docs
+## F103 · golden-cases: displayed decisions, signed liquidity, exact money rendering, status-vocabulary docs
 
 **Fences:** `src/__tests__/fitness/golden-cases.test.ts` (`validateDisplayedDecisions` and
 `validateStatusVocabularyDocs` in `scripts/golden-demo-semantics.lib.ts`; `validateSignedLiquidity`
@@ -5483,7 +5483,7 @@ be what caught it):
 **Reserve-floor derivation.** The companion nulls `plannedWithdrawalMonthlyUsd` on every fixture and
 must see both `no golden case states signedMoney.plannedWithdrawalMonthlyUsd` and the per-case
 `no signed monthly-withdrawal authority exists to derive it from` — the missing-authority
-diagnostic, not a silent skip. It separately edits GC-03's floor (a case that states no schedule of
+diagnostic, not a silent skip. It separately edits GC-11's floor (a case that states no schedule of
 its own) to $42,000 AND rewords its prose to agree, and the canonical household schedule still
 catches it: `is not 8000 x 6 months`. A second case stating `9000` produces
 `conflicting planned-withdrawal schedules`.
@@ -5517,3 +5517,54 @@ empty-list cases, so the fence cannot pass vacuously.
 specs, axe included) pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-063/D-064).
+
+## F104 · phased liquidity, branch binding, complete proceed authority, and ordered lapse events
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts`,
+`src/__tests__/fitness/charter-drift.test.ts`, and `src/__tests__/unit/money-movement.test.ts`.
+**Invariant:** initial decision evidence cannot contain a later revalidation fact; signed liquidity
+cannot cross a scenario or firm boundary; every proceed case states complete numeric authority;
+GC-16 renders escalation before expiration; review proof ids are unique; and exact minor-unit
+subtraction cannot overflow the safe-integer range.
+
+The golden companion injects GC-15's $15,000 revalidation distribution into the initial snapshot,
+removes its phase tags, and reverses the safety before/after values. Each mutation produces the
+named GC-15 timing diagnostic. Browser coverage separately visits workspace, evidence, decision,
+and authority before visiting safety and the printable record. The amount is absent from all four
+initial surfaces, then appears in the revalidation and later record at desktop and phone widths.
+
+Wrong-source companions point `safe-proceed/firm-a` first at GC-10 and then at GC-02. They fail with
+the exact wrong-scenario and wrong-firm diagnostics. A rendered branch with no matching numeric
+case carries a missing-authority state and cannot carry numeric liquidity at the same time.
+
+The proceed-authority companion nulls GC-13's structured available liquidity and requires:
+
+```text
+proceed case is missing structured liquidity authority: availableLiquidityUsd
+```
+
+GC-13 and GC-16 now state $420,000 available, no pending activity, $8,000 monthly withdrawals, and
+the $48,000 six-month floor. All other proceed fixtures state the same complete field set under
+their own firm configuration.
+
+The GC-16 companion reverses both the fixture ledger events and the visible authority events. The
+first fails the signed event sequence; the second fails the visible
+`ApprovalStageEscalated -> ApprovalStageExpired` sequence and timestamp ordering. Browser assertions
+prove the same order and the "Escalated, then expired" label at desktop and phone widths.
+
+The proof-log companion appends a second `F103` heading and requires `duplicateReviewProofIds` to
+return a file-and-line diagnostic naming F103; the live log returns no duplicates after the prior
+second F102 was renumbered F103.
+The money unit test subtracts two `Number.MAX_SAFE_INTEGER` inputs and requires the shared
+`headroomMinor` authority to reject the unsafe result.
+
+GC-05 remains separate from `competing-liquidity`: $160,000 available minus $20,000 pending equals
+$140,000 effective liquidity, and the $75,000 request leaves $65,000 below Firm B's $96,000 floor.
+The competing branch uses GC-10/GC-11 for Firm A and displays Firm B's missing numeric authority
+instead of copying GC-05.
+
+**Revert:** every injected mutation remains only inside a companion test. `pnpm golden:validate`,
+the focused adversarial suites, all 557 Vitest cases, all 17 Playwright cases with axe, typecheck,
+lint, knip, the v3 invariant report, and the production build pass on the corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-065).

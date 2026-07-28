@@ -25,6 +25,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
+  liquidityAuthorityFor,
   type FirmData,
   type ScenarioData,
 } from "./data";
@@ -38,20 +39,24 @@ const LIQUIDITY_INPUTS = [prov("synthetic-fixture", OBSERVED_RECENT), prov("synt
 export function reserveFloorMinor(firm: FirmData): number {
   return calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, firm.reserveMonths);
 }
-export function headroomMinor(scenario: ScenarioData, firm: FirmData): number {
-  const { availableCashMinor, pendingActivityMinor } = scenario.liquidity;
+export function headroomMinor(scenario: ScenarioData, firm: FirmData): number | null {
+  const authority = liquidityAuthorityFor(scenario, firm.id);
+  if (authority.kind === "missing") return null;
+  const { availableCashMinor, pendingActivityMinor } = authority.initialDecision;
   return calculateHeadroomMinor(availableCashMinor, pendingActivityMinor, reserveFloorMinor(firm));
 }
 /** Whether the branch's signed liquidity covers the canonical request under this
  * firm's reserve floor - the one comparison every proceed claim on screen rests on. */
-export function reserveHolds(scenario: ScenarioData, firm: FirmData): boolean {
-  return headroomMinor(scenario, firm) >= CANONICAL_REQUEST.amountMinor;
+export function reserveHolds(scenario: ScenarioData, firm: FirmData): boolean | null {
+  const headroom = headroomMinor(scenario, firm);
+  return headroom === null ? null : headroom >= CANONICAL_REQUEST.amountMinor;
 }
 export function reserveFloorMetric(firm: FirmData) {
   return derivedMetric(reserveFloorMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
 export function headroomMetric(scenario: ScenarioData, firm: FirmData) {
-  return derivedMetric(headroomMinor(scenario, firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
+  const headroom = headroomMinor(scenario, firm);
+  return headroom === null ? null : derivedMetric(headroom, "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
 export function amountMetric() {
   return metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
@@ -89,7 +94,12 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
       affordanceLabel: "Choose the governing value",
     });
   }
-  if (!spec.staleLiquidity && !reserveHolds(scenario, firm)) {
+  if (spec.competing && firm.id === "firm-b") {
+    out.push({
+      condition: "Firm B's twelve-month reserve blocks the first request before a live reservation can affect the outcome",
+      affordanceLabel: "Reduce the amount or free additional liquidity",
+    });
+  } else if (!spec.staleLiquidity && reserveHolds(scenario, firm) === false) {
     out.push({
       condition: `This movement would leave the household below ${firm.name}'s ${reserveHorizonWord(firm)}-month cash reserve`,
       affordanceLabel: "Reduce the amount or free additional liquidity",
@@ -98,11 +108,13 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   return out;
 }
 
-function proceedWhy(firm: FirmData, bankChanged: boolean | undefined): WhyVM {
+function proceedWhy(firm: FirmData, bankChanged: boolean | undefined, hasLiquidityAuthority: boolean): WhyVM {
   const cite = firm.id === "firm-a" ? `${firm.policyVersion} §2, §4` : `${firm.policyVersion} §3, §4`;
   return {
     reason:
-      "The destination passes the household restriction, the cash reserve holds after this movement, and available liquidity covers the amount." +
+      (hasLiquidityAuthority
+        ? "The destination passes the household restriction, the cash reserve holds after this movement, and available liquidity covers the amount."
+        : "The recorded scenario disposition proceeds, but this branch and firm have no captain-signed numeric liquidity case to display; Verin does not substitute another case's figures.") +
       (bankChanged && firm.bankChangeHandling === "specialist-review" ? " The recent bank-instruction change routes to specialist review rather than blocking." : ""),
     regulation: `Firm policy ${cite}`,
   };
@@ -141,6 +153,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
     };
   }
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
+  const headroom = headroomMetric(scenario, firm);
   const authoritySummary = dualApproval
     ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
       (scenario.spec.bankChanged ? " The recent bank-instruction change adds a specialist-review stage." : "")
@@ -150,10 +163,10 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData): Dispos
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
     figures: [
       { label: "Amount", metric: amountMetric() },
-      { label: "Available after reserve", metric: headroomMetric(scenario, firm) },
+      ...(headroom ? [{ label: "Available after reserve", metric: headroom }] : []),
     ],
     authoritySummary,
-    why: proceedWhy(firm, scenario.spec.bankChanged),
+    why: proceedWhy(firm, scenario.spec.bankChanged, headroom !== null),
     fakeClass: "deterministic-engine-output",
   };
 }
@@ -209,7 +222,9 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData): Policy
       rule: "Cash-reserve floor (months of planned withdrawals)",
       result: spec.staleLiquidity
         ? "Cannot evaluate - liquidity evidence is older than policy allows"
-        : reserveHolds(scenario, firm)
+        : reserveHolds(scenario, firm) === null
+          ? "Cannot display - no signed numeric liquidity case covers this branch and firm"
+          : reserveHolds(scenario, firm)
           ? "Satisfied after this movement"
           : "Breached - this movement would leave the household below the floor",
       version: reserveCite,
@@ -250,21 +265,75 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
   const spec = scenario.spec;
   const stages: ApprovalStageVM[] = [];
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
+  const specialistReview = spec.bankChanged && firm.bankChangeHandling === "specialist-review";
+  if (specialistReview) {
+    if (spec.specialistExpired) {
+      stages.push({
+        title: "Stage 1 - Bank-instruction specialist review",
+        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
+        stepState: "active",
+        actors: [
+          { name: CAST.specialist, role: "Banking specialist", status: "expired", statusLabel: "Escalated, then expired" },
+          { name: CAST.principal, role: "Operations manager (escalation)", status: "expired", statusLabel: "Expired unresolved" },
+        ],
+        authorityEvents: [
+          {
+            type: "ApprovalStageEscalated",
+            timestamp: "2026-07-27T22:20:00.000Z",
+            display: "Escalated to operations manager · Jul 27, 18:20",
+          },
+          {
+            type: "ApprovalStageExpired",
+            timestamp: "2026-07-28T22:20:00.000Z",
+            display: "Expired unresolved · Jul 28, 18:20",
+          },
+        ],
+        expired: true,
+      });
+    } else {
+      stages.push({
+        title: "Stage 1 - Bank-instruction specialist review",
+        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
+        stepState: phase === "final" ? "done" : "active",
+        actors: [
+          phase === "final"
+            ? { name: CAST.specialist, role: "Banking specialist", status: "done", statusLabel: "Reviewed · Jul 26, 11:15" }
+            : { name: CAST.specialist, role: "Banking specialist", status: "pending", statusLabel: "Awaiting review" },
+        ],
+        expiry: "expires Aug 12",
+        escalation: "Escalates to: operations manager",
+      });
+    }
+  }
   if (dualApproval) {
+    const stageNumber = specialistReview ? 2 : 1;
+    const stageReached = !specialistReview || phase === "final";
     const second =
-      phase === "final" && !spec.invalidation
-        ? { name: CAST.opsApprover2, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:31" }
+      phase === "final" && !spec.invalidation && !spec.specialistExpired
+        ? {
+            name: CAST.opsApprover2,
+            role: "Operations",
+            status: "done",
+            statusLabel: specialistReview ? "Approved · Jul 26, 11:47" : "Approved · Jul 26, 10:31",
+          }
         : { name: CAST.opsApprover2, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
-      title: "Stage 1 - Dual operations approval",
+      title: `Stage ${stageNumber} - Dual operations approval`,
       requirement: "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
-      stepState: phase === "final" && !spec.invalidation ? "done" : "active",
+      stepState: spec.specialistExpired ? "pending" : phase === "final" && !spec.invalidation ? "done" : stageReached ? "active" : "pending",
       actors: [
         {
           name: CAST.opsApprover1,
           role: "Operations",
-          status: spec.invalidation && phase === "final" ? "voided" : "done",
-          statusLabel: spec.invalidation && phase === "final" ? "Approval voided - evidence changed" : "Approved · Jul 26, 10:02",
+          status: spec.invalidation && phase === "final" ? "voided" : stageReached && !spec.specialistExpired ? "done" : "pending",
+          statusLabel:
+            spec.invalidation && phase === "final"
+              ? "Approval voided - evidence changed"
+              : stageReached && !spec.specialistExpired
+                ? specialistReview
+                  ? "Approved · Jul 26, 11:32"
+                  : "Approved · Jul 26, 10:02"
+                : "Awaiting prior stage",
         },
         second,
         {
@@ -290,35 +359,6 @@ export function buildStages(scenario: ScenarioData, firm: FirmData, phase: "gate
       stepState: phase === "final" && !spec.invalidation ? "done" : "active",
       actors: [approver],
     });
-  }
-  if (spec.bankChanged && firm.bankChangeHandling === "specialist-review") {
-    if (spec.specialistExpired) {
-      stages.push({
-        title: "Stage 2 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        stepState: "active",
-        actors: [
-          { name: CAST.specialist, role: "Banking specialist", status: "expired", statusLabel: "Expired - escalated" },
-          { name: CAST.principal, role: "Principal (escalation)", status: "pending", statusLabel: "Awaiting review" },
-        ],
-        expiry: "expired Jul 25",
-        escalation: "Escalates to: principal",
-        expired: true,
-      });
-    } else {
-      stages.push({
-        title: "Stage 2 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        stepState: phase === "final" ? "done" : "pending",
-        actors: [
-          phase === "final"
-            ? { name: CAST.specialist, role: "Banking specialist", status: "done", statusLabel: "Reviewed · Jul 26, 11:15" }
-            : { name: CAST.specialist, role: "Banking specialist", status: "pending", statusLabel: "Awaiting review" },
-        ],
-        expiry: "expires Aug 12",
-        escalation: "Escalates to: principal",
-      });
-    }
   }
   return stages;
 }

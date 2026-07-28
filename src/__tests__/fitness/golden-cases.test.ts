@@ -315,7 +315,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const drained = demoClone();
     const decision = drained.decisions.find((d) => d.disposition === "proceed")!;
     decision.availableCashMinor = 10_000_000;
-    decision.headroomMinor = 10_000_000 - decision.pendingActivityMinor - decision.reserveFloorMinor;
+    decision.headroomMinor = 10_000_000 - decision.pendingActivityMinor! - decision.reserveFloorMinor;
     const problems = validateGoldenDemoSemantics(clone(), realRefs, drained);
     expect(problems.some((p) => p.includes("available-liquidity drift"))).toBe(true);
 
@@ -369,6 +369,27 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const malformedProblems = validateGoldenDemoSemantics(clone(), realRefs, malformed);
     expect(malformedProblems.some((p) => p.includes("must each be a whole non-negative amount"))).toBe(true);
     expect(malformedProblems.some((p) => p.includes("available-liquidity drift"))).toBe(true);
+
+    const wrongBranch = demoClone();
+    const safeFirmA = wrongBranch.decisions.find(
+      (decision) => decision.scenarioId === "safe-proceed" && decision.firmId === "firm-a",
+    )!;
+    safeFirmA.sourceCaseId = "GC-10-simultaneous-distributions-first";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, wrongBranch).some((p) =>
+        p.includes("belongs to scenario competing-liquidity, not this branch"),
+      ),
+    ).toBe(true);
+
+    const wrongFirm = demoClone();
+    wrongFirm.decisions.find(
+      (decision) => decision.scenarioId === "safe-proceed" && decision.firmId === "firm-a",
+    )!.sourceCaseId = "GC-02-firm-b-happy-path";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, wrongFirm).some((p) =>
+        p.includes("belongs to firm firm-b, not this firm"),
+      ),
+    ).toBe(true);
   });
 
   it("flags GC-02's rendered arithmetic drifting from its own signed fixture", () => {
@@ -376,7 +397,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     for (const d of drifted.decisions) {
       if (d.scenarioId !== "safe-proceed") continue;
       d.availableCashMinor = 20_000_000;
-      d.headroomMinor = 20_000_000 - d.pendingActivityMinor - d.reserveFloorMinor;
+      d.headroomMinor = 20_000_000 - d.pendingActivityMinor! - d.reserveFloorMinor;
     }
     const problems = validateGoldenDemoSemantics(clone(), realRefs, drifted);
     expect(problems.some((p) => p.includes("GC-02") && p.includes("rendered liquidity drift"))).toBe(true);
@@ -402,17 +423,17 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   });
 
   it("derives a schedule-less case's floor from the canonical household schedule", () => {
-    // GC-03 states reserveFloorUsd with plannedWithdrawalMonthlyUsd null: the floor
+    // GC-11 states reserveFloorUsd with plannedWithdrawalMonthlyUsd null: the floor
     // is still checked through the shared arithmetic, so an edited floor cannot pass
     // by rewording its prose to match.
     const cases = clone();
-    const gc03 = caseById(cases, "GC-03-recent-bank-change-firm-a");
-    (gc03.signedMoney as Record<string, unknown>).reserveFloorUsd = 42_000;
-    const schedule = (gc03.householdEvidence as Array<Record<string, unknown>>).find(
+    const gc11 = caseById(cases, "GC-11-simultaneous-distributions-second");
+    (gc11.signedMoney as Record<string, unknown>).reserveFloorUsd = 42_000;
+    const schedule = (gc11.householdEvidence as Array<Record<string, unknown>>).find(
       (row) => row.evidenceKind === "planned-withdrawals",
     )!;
-    schedule.summary = "Six-month reserve (42000 USD) remains satisfied after the movement.";
-    expect(run(cases).some((p) => p.includes("GC-03") && p.includes("is not 8000 x 6 months"))).toBe(true);
+    schedule.summary = "Firm A six-month reserve is 42000 USD.";
+    expect(run(cases).some((p) => p.includes("GC-11") && p.includes("is not 8000 x 6 months"))).toBe(true);
 
     const conflicting = clone();
     (caseById(conflicting, "GC-14-delayed-nigo").signedMoney as Record<string, unknown>).plannedWithdrawalMonthlyUsd = 9_000;
@@ -442,6 +463,45 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     balance.summary = "Joint taxable brokerage available balance 160000 USD.";
     expect(
       run(overdrawn).some((p) => p.includes("a proceed case must leave the request covered")),
+    ).toBe(true);
+
+    const missingProceedAuthority = clone();
+    (caseById(missingProceedAuthority, "GC-13-partial-salesforce-success").signedMoney as Record<string, unknown>).availableLiquidityUsd = null;
+    expect(
+      run(missingProceedAuthority).some((p) =>
+        p.includes("GC-13") && p.includes("proceed case is missing structured liquidity authority: availableLiquidityUsd"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags GC-15 liquidity rendered in the wrong evidence phase", () => {
+    const timingDrift = demoClone();
+    const decision = timingDrift.decisions.find(
+      (candidate) => candidate.scenarioId === "approval-invalidation" && candidate.firmId === "firm-a",
+    )!;
+    decision.pendingActivityMinor = 1_500_000;
+    decision.revalidationPendingActivityMinor = null;
+    const problems = validateGoldenDemoSemantics(clone(), realRefs, timingDrift);
+    expect(problems.some((p) => p.includes("pending-activity drift"))).toBe(true);
+    expect(problems.some((p) => p.includes("pre-execution revalidation drift"))).toBe(true);
+
+    const unphased = clone();
+    const rows = caseById(unphased, "GC-15-approval-invalidation").householdEvidence as Array<Record<string, unknown>>;
+    for (const row of rows) {
+      if (row.liquidityPhase === "pre-execution-revalidation") delete row.liquidityPhase;
+    }
+    expect(
+      run(unphased).some((p) => p.includes("preExecutionRevalidation requires account-balance and pending-actions evidence")),
+    ).toBe(true);
+
+    const surfaceTiming = demoClone();
+    surfaceTiming.approvalInvalidationPhases.initialSurfaceMoneyMinor.push(1_500_000);
+    surfaceTiming.approvalInvalidationPhases.safetyBeforePendingMinor = 1_500_000;
+    surfaceTiming.approvalInvalidationPhases.safetyAfterPendingMinor = 0;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, surfaceTiming).some((p) =>
+        p.includes("keep revalidation pending activity off initial surfaces"),
+      ),
     ).toBe(true);
   });
 
@@ -529,6 +589,14 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     events.reverse();
     expect(
       validateGoldenDemoSemantics(cases, realRefs, realDemo).some((p) => p.includes("GC-16 event sequence must be")),
+    ).toBe(true);
+
+    const visible = demoClone();
+    visible.authorityLapseEvents.reverse();
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, visible).some((p) =>
+        p.includes("GC-16 visible authority order must be"),
+      ),
     ).toBe(true);
   });
 
