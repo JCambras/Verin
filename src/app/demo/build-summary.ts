@@ -4,7 +4,7 @@
  * bounded setup-first replacement became the demo's primary journey.
  */
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
-import type { DispositionVM, RecordVM } from "./model";
+import type { ApprovalStageVM, DispositionVM, RecordVM } from "./model";
 import { prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
@@ -28,6 +28,7 @@ export interface RecordBuildOptions {
   readonly identity?: DecisionIdentity;
   readonly disposition?: DispositionVM;
   readonly approvalClock?: ApprovalClock;
+  readonly approvalStages?: readonly ApprovalStageVM[] | null;
   readonly activatedConfiguration?: RecordVM["activatedConfiguration"];
 }
 
@@ -73,9 +74,12 @@ export function buildRecord(
     evidence: buildEvidence(scenario).rows,
     disposition,
     precedence: buildPolicyTrace(scenario, firm, disposition.kind).rows,
-    approvalStages: reached.authority
-      ? buildStages(scenario, firm, "final", options.approvalClock)
-      : null,
+    approvalStages:
+      options.approvalStages !== undefined
+        ? options.approvalStages
+        : reached.authority
+          ? buildStages(scenario, firm, "final", options.approvalClock)
+          : null,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario).rows : null,
     verification: reached.execution ? buildVerification(scenario) : null,

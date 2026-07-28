@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   MoneyMovementSetupVM,
@@ -19,6 +19,10 @@ import {
   SetupHeading,
   SetupProgress,
 } from "./setup-shared";
+import {
+  activationResponseMatchesDraft,
+  captureSetupActivationDraft,
+} from "./setup-activation-state";
 
 function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
   const selected = {
@@ -40,6 +44,7 @@ function StepBody({
   attested,
   onAttested,
   activationError,
+  activating,
   exportFirmId,
   onExportFirm,
   exportError,
@@ -52,6 +57,7 @@ function StepBody({
   attested: boolean;
   onAttested: (value: boolean) => void;
   activationError: string | null;
+  activating: boolean;
   exportFirmId: SetupFirmId | null;
   onExportFirm: (firmId: SetupFirmId) => void;
   exportError: string | null;
@@ -75,6 +81,7 @@ function StepBody({
           attested={attested}
           onAttested={onAttested}
           error={activationError}
+          disabled={activating}
         />
       );
     case "request":
@@ -121,6 +128,8 @@ export function MoneyMovementSetupSurface({
   const initial = useMemo(() => initialSelections(vm), [vm]);
   const [stepIndex, setStepIndex] = useState(0);
   const [selections, setSelections] = useState<SetupSelections>(initial);
+  const currentSelections = useRef<SetupSelections>(initial);
+  const draftGeneration = useRef(0);
   const [attested, setAttested] = useState(false);
   const [activeSnapshot, setActiveSnapshot] = useState<SetupActivatedSnapshotVM | null>(null);
   const [activating, setActivating] = useState(false);
@@ -136,10 +145,16 @@ export function MoneyMovementSetupSurface({
   }
 
   function select(firmId: SetupFirmId, groupId: SetupPolicyGroupVM["id"], optionId: string) {
-    setSelections((current) => ({
-      ...current,
-      [firmId]: { ...current[firmId], [groupId]: optionId },
-    }));
+    if (activating) return;
+    setSelections((current) => {
+      const next = {
+        ...current,
+        [firmId]: { ...current[firmId], [groupId]: optionId },
+      };
+      currentSelections.current = next;
+      draftGeneration.current += 1;
+      return next;
+    });
     setAttested(false);
     setActiveSnapshot(null);
     setActivationError(null);
@@ -155,23 +170,46 @@ export function MoneyMovementSetupSurface({
       }
       setActivationError(null);
       setActivating(true);
-      let result: SetupActivationResult;
+      const captured = captureSetupActivationDraft(
+        draftGeneration.current,
+        currentSelections.current,
+      );
       try {
-        result = await activate(selections);
+        const result: SetupActivationResult = await activate(captured.selections);
+        if (
+          !activationResponseMatchesDraft(
+            captured,
+            draftGeneration.current,
+            currentSelections.current,
+          )
+        ) {
+          setActiveSnapshot(null);
+          setActivationError(
+            "The draft changed during activation. Review and acknowledge the current selections before trying again.",
+          );
+          return;
+        }
+        if (!result.ok) {
+          setActiveSnapshot(null);
+          setActivationError(result.error);
+          return;
+        }
+        setActiveSnapshot(result.snapshot);
+        move(stepIndex + 1);
       } catch {
         setActiveSnapshot(null);
-        setActivationError("Activation failed closed before any configuration or decision identity was created.");
+        setActivationError(
+          activationResponseMatchesDraft(
+            captured,
+            draftGeneration.current,
+            currentSelections.current,
+          )
+            ? "Activation failed closed before any configuration or decision identity was created."
+            : "The draft changed during activation. Review and acknowledge the current selections before trying again.",
+        );
+      } finally {
         setActivating(false);
-        return;
       }
-      setActivating(false);
-      if (!result.ok) {
-        setActiveSnapshot(null);
-        setActivationError(result.error);
-        return;
-      }
-      setActiveSnapshot(result.snapshot);
-      move(stepIndex + 1);
       return;
     }
     if (step.id === "proof") {
@@ -188,6 +226,7 @@ export function MoneyMovementSetupSurface({
   }
 
   function back() {
+    if (activating) return;
     if (stepIndex > 0) move(stepIndex - 1);
   }
 
@@ -209,10 +248,12 @@ export function MoneyMovementSetupSurface({
         onSelect={select}
         attested={attested}
         onAttested={(value) => {
+          if (activating) return;
           setAttested(value);
           setActivationError(null);
         }}
         activationError={activationError}
+        activating={activating}
         exportFirmId={exportFirmId}
         onExportFirm={(firmId) => {
           setExportFirmId(firmId);
@@ -224,7 +265,9 @@ export function MoneyMovementSetupSurface({
         primaryLabel={activating ? "Activating…" : step.primaryLabel}
         primaryDisabled={activating}
         onPrimary={() => void primary()}
-        {...(stepIndex > 0 ? { onBack: back } : {})}
+        {...(stepIndex > 0
+          ? { onBack: back, backDisabled: activating }
+          : {})}
       >
         {step.id === "activation"
           ? "The proposer and approver are different synthetic humans. Real activation remains blocked on the real lifecycle."

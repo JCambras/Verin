@@ -18,9 +18,12 @@ import type {
 import { derivedMetric, fixtureMetric, prov } from "./provenance";
 import {
   CANONICAL_REQUEST,
+  BANK_INSTRUCTION,
   DEMO_NOW,
   LOW_HEADROOM_LIQUIDITY,
   OBSERVED_RECENT,
+  OBSERVED_GC09_BALANCE,
+  OBSERVED_STALE,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
   type SignedLiquidityCase,
@@ -117,8 +120,8 @@ function freshnessOption(days: number, truthLabel: SetupChoiceOptionVM["truthLab
     signedCaseEffect: effect(
       "blocked",
       "Blocked",
-      "The 47-day-old reserve evidence is stale under this window.",
-      "GC-09 requires a fresh snapshot before reevaluation.",
+      `Planned-withdrawal evidence observed ${OBSERVED_STALE} is 47 days old.`,
+      `GC-09 requires a fresh planned-withdrawal snapshot before reevaluation. Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}.`,
     ),
   };
 }
@@ -277,7 +280,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "controls", shortLabel: "Controls", kicker: "Step 2 · Same for every firm", title: "Confirm the controls no firm can weaken", description: "Universal safety stays locked. Where accountability is required, each profile names the responsible role.", primaryLabel: "Confirm required controls" },
       { id: "posture", shortLabel: "Posture", kicker: "Step 3 · Safe starting point", title: "Begin conservatively, then make differences explicit", description: "The starting posture is expanded into exact values before it enters either draft.", primaryLabel: "Use this starting posture" },
       { id: "choices", shortLabel: "Choices", kicker: "Step 4 · Firm-specific choices", title: "Tune only the decisions that can legitimately differ", description: "Five closed groups express institutional posture without exposing a general rule builder.", primaryLabel: "Review signed impact" },
-      { id: "impact", shortLabel: "Impact", kicker: "Step 5 · Before activation", title: "See the impact on signed examples", description: "Four high-signal cases show how the selected profiles change authority, evidence handling, or liquidity while universal safety stays fixed.", primaryLabel: "Send for approval" },
+      { id: "impact", shortLabel: "Impact", kicker: "Step 5 · Before activation", title: "See the impact on signed examples", description: "Five high-signal cases show how the selected profiles change authority, evidence handling, or liquidity while universal safety stays fixed.", primaryLabel: "Send for approval" },
       { id: "activation", shortLabel: "Activate", kicker: "Step 6 · Human review", title: "A different human acknowledges immutable versions", description: "The demonstration records proposal, review, visible differences, version identity, and effective time without pretending the real lifecycle exists.", primaryLabel: "Acknowledge and activate demonstration" },
       { id: "request", shortLabel: "Request", kicker: "Step 7 · Same request, two profiles", title: "Run the Smiths request under both profiles", description: "The request and evidence stay identical. Only the pinned demonstration profile changes.", primaryLabel: "Run under both profiles" },
       { id: "outcomes", shortLabel: "Outcomes", kicker: "Step 8 · Policy explains the difference", title: "Identical facts, different correct outcomes", description: "Each branch preserves its firm label and stops at the strongest proof the branch honestly has.", primaryLabel: "View complete proof trail" },
@@ -315,7 +318,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       group("expiry", "Normal approval expiry and escalation", "When does waiting create escalation work, and when does authority expire?", "Clocks are closed pairs. Expiry never produces approval.", "GC-01 / GC-16", [firmChoices("firm-a", "1d-3d", expiryA), firmChoices("firm-b", "1d-3d", expiryB)]),
     ],
     impacts: [
-      { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: "Same request · change 4 days ago · independent verification absent", groupId: "bank-change" },
+      { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: `Same request · changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · independent verification absent`, groupId: "bank-change" },
+      { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · 47 days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
       { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
       { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
       { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: "A new evidence snapshot changes the input hash", groupId: null, universalEffect: "Prior authority is voided for both firms. Evidence, validation, policy, disposition, and authority rerun against the new bundle." },
@@ -341,7 +345,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
         { label: "Pending approved activity", metric: fixtureMetric(SMITHS_LIQUIDITY.pendingMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Planned monthly withdrawals", metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Household instruction", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Destination restriction", value: "Household-titled destinations only", category: "Household instruction", provenance: prov("synthetic-fixture", "2026-05-10"), fakeClass: "synthetic-fixture" },
-        { label: "Bank instruction", value: "Changed 4 days ago · not independently verified", category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
+        { label: "Bank instruction", value: `Changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · not independently verified`, category: "Synthetic fixture", provenance: prov("synthetic-fixture", BANK_INSTRUCTION.changedOn), fakeClass: "synthetic-fixture" },
         { label: "Execution capability", value: "ACH through labeled fake adapter only", category: "Adapter fact", provenance: prov("fake-adapter-response", DEMO_NOW), fakeClass: "fake-adapter-response" },
         { label: "Authority invariant", value: "Blocked and prohibited decisions carry no approval authority", category: "Regulatory or product constraint", provenance: prov("deterministic-engine-output", DEMO_NOW), fakeClass: "deterministic-engine-output" },
       ],

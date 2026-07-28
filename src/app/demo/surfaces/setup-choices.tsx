@@ -168,7 +168,7 @@ export function ImpactBody({
       </div>
       <p className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
-        16 signed cases are available to the future real simulation lifecycle. Four high-signal cases are shown here.
+        16 signed cases are available to the future real simulation lifecycle. Five high-signal cases are shown here.
       </p>
     </>
   );
@@ -180,12 +180,14 @@ export function ActivationBody({
   attested,
   onAttested,
   error,
+  disabled,
 }: {
   vm: MoneyMovementSetupVM;
   selections: SetupSelections;
   attested: boolean;
   onAttested: (checked: boolean) => void;
   error: string | null;
+  disabled: boolean;
 }) {
   return (
     <>
@@ -255,6 +257,7 @@ export function ActivationBody({
             type="checkbox"
             checked={attested}
             onChange={(event) => onAttested(event.target.checked)}
+            disabled={disabled}
             className="mt-1 size-4 shrink-0 accent-slate-900"
           />
           <span className="text-sm text-slate-800">

@@ -17,6 +17,7 @@ import type { DispositionKind } from "./model";
 export const DEMO_NOW = "2026-07-26";
 export const RETRIEVED_AT = "Jul 26, 09:14";
 export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
+export const OBSERVED_BANK_INSTRUCTION_CHANGED = "2026-07-22";
 export const OBSERVED_GC09_BALANCE = "2026-07-26";
 export const OBSERVED_STALE = "2026-06-09"; // 47 days old: visibly receded, over policy age
 export const DEADLINE = "August 15, 2026";
@@ -51,7 +52,11 @@ export const PLANNED_WITHDRAWAL_MONTHLY_MINOR = 800_000; // $8,000 / month
 export const BANK_INSTRUCTION = {
   stable: "Chase ····4417 (Robert & Elaine Smith)",
   changed: "Chase ····8802 (Robert & Elaine Smith, new checking)",
-  changedOn: OBSERVED_RECENT,
+  changedOn: OBSERVED_BANK_INSTRUCTION_CHANGED,
+  changedAgeDays:
+    (Date.parse(DEMO_NOW) -
+      Date.parse(OBSERVED_BANK_INSTRUCTION_CHANGED)) /
+    86_400_000,
 } as const;
 
 // The household-specific destination restriction (drives the permanent prohibition).

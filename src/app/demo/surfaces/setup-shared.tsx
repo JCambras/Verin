@@ -77,12 +77,14 @@ export function SetupActionRow({
   primaryDisabled,
   onPrimary,
   onBack,
+  backDisabled,
   children,
 }: {
   primaryLabel: string;
   primaryDisabled?: boolean;
   onPrimary: () => void;
   onBack?: () => void;
+  backDisabled?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -94,7 +96,12 @@ export function SetupActionRow({
       <div className="min-w-0 text-xs text-slate-600">{children}</div>
       <div className="flex flex-col-reverse gap-2 sm:flex-row">
         {onBack ? (
-          <Button type="button" variant="secondary" onClick={onBack}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onBack}
+            disabled={backDisabled}
+          >
             Back
           </Button>
         ) : null}

@@ -5599,3 +5599,109 @@ src/app/demo/build-context.ts:47 :: planned withdrawals use 2026-07-26, not the 
 ```
 
 The injection was reverted and the focused semantic suite passed all 26 tests.
+
+## PF-setup-11 · activation accepts only the captured draft
+
+**Date:** 2026-07-28.
+
+**Invariant:** setup activation is one atomic user action. Navigation and the
+attestation control stay disabled while the action is pending, and a response is
+accepted only when both the captured draft generation and every captured selection
+still equal the current draft.
+
+**Fence:** `src/__tests__/unit/setup-activation.test.tsx` exercises the pending
+surface and both response-acceptance comparisons.
+
+**Adversarial proof:** the pending Back control was temporarily re-enabled. The
+component test failed on the live button:
+
+```text
+src/__tests__/unit/setup-activation.test.tsx:79
+expect(element).toBeDisabled()
+Received element is not disabled
+```
+
+The injection was reverted. Companion inputs independently change only the
+generation and only one exact selection; both responses are rejected.
+
+## PF-setup-12 · activated authority is evaluator-owned and ordered
+
+**Date:** 2026-07-28.
+
+**Invariant:** the deterministic setup evaluator freezes the complete ordered
+authority-stage plan into the activated snapshot. Outcomes render that plan, and
+the exported record consumes the same frozen array without recomputing stages,
+roles, requester rules, or below-threshold approvals.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares the signed
+Firm A stage order, asserts object-identical plan consumption at export, and
+exercises Firm B specialist mutations above and below the dual-approval threshold.
+
+**Adversarial proof:** the evaluator's Firm A stage array was temporarily reversed.
+The production check failed:
+
+```text
+src/__tests__/fitness/demo-semantic-truth.test.ts:923
+Expected:
+  Stage 1 - Bank-instruction specialist review
+  Stage 2 - Dual operations approval
+Received:
+  Stage 2 - Dual operations approval
+  Stage 1 - Bank-instruction specialist review
+```
+
+The injection was reverted. Firm B's below-threshold mutation has only specialist
+review, and its dual-approval mutation retains the unbound requester rule.
+
+## PF-setup-13 · GC-09 impact names the signed stale evidence
+
+**Date:** 2026-07-28.
+
+**Invariant:** the rendered GC-09 signed-impact card names planned-withdrawal
+evidence observed 2026-06-09 and 47 days old. It separately preserves the fresh
+available-cash observation from 2026-07-26 and the planned-withdrawal refresh path.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` derives both dates
+from the captain-signed GC-09 fixture and compares the exact rendered copy.
+`e2e/demo-journey.spec.ts` asserts the same copy on the impact surface.
+
+**Adversarial proof:** the impact facts were temporarily replaced with the generic
+text "Reserve evidence is stale." The production check failed with the owning
+source line:
+
+```text
+src/app/demo/build-setup.ts:322 :: GC-09 impact facts "Reserve evidence is stale" do not equal "Planned-withdrawal evidence observed 2026-06-09 · 47 days old"
+```
+
+The injection was reverted.
+
+## PF-setup-14 · one signed bank-change timestamp drives identity
+
+**Date:** 2026-07-28.
+
+**Invariant:** GC-03 and GC-04 record the bank-instruction change on 2026-07-22,
+four days before the decision. That one source drives journey evidence, setup
+provenance, displayed age, blocker copy, canonical input hashing, and therefore
+the firm-specific bundle identities.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` reads the signed date
+from GC-03, reconstructs the canonical input preimage independently, and compares
+all display and hashing consumers. `e2e/demo-journey.spec.ts` asserts the evidence
+surface timestamp.
+
+**Adversarial proof:** the production source was temporarily changed back to
+2026-07-24. The production check failed with eight violations:
+
+```text
+src/app/demo/data.ts:20 :: displayed age is 2 days, not the 4 days derived from 2026-07-22
+src/app/demo/data.ts:20 :: source uses 2026-07-24, not signed bank-change date 2026-07-22
+src/app/demo/data.ts:20 :: journey evidence uses 2026-07-24, not signed bank-change date 2026-07-22
+src/app/demo/data.ts:20 :: setup provenance uses 2026-07-24, not signed bank-change date 2026-07-22
+src/app/demo/data.ts:20 :: setup value does not render signed 2026-07-22 as 4 days old
+src/app/demo/data.ts:20 :: impact facts does not render signed 2026-07-22 as 4 days old
+src/app/demo/data.ts:20 :: blocker does not render signed 2026-07-22 as 4 days old
+src/app/demo/data.ts:20 :: canonical input hash does not bind signed bank-change date 2026-07-22
+```
+
+The injection was reverted. The focused unit and semantic suites then passed all
+60 tests.

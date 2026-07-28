@@ -3237,3 +3237,28 @@ fixed signed records.
 
 PF-setup-06 remains unchanged: the Turbopack ignore hint is still load-bearing and
 `src/infrastructure/store/db.ts` was not modified.
+
+### D-065 · 2026-07-28 · reversible · Activation, authority, and signed evidence stay snapshot-owned
+
+Setup activation now captures both a draft generation and exact selections. Navigation
+and attestation are disabled while activation is pending, and a response is rejected
+unless both captured values still match the current draft.
+
+The evaluator now freezes its ordered authority-stage plan into each activated firm
+snapshot. Firm A exports specialist review before dual operations approval, exactly as
+GC-03 records. A supported Firm B specialist mutation creates no below-threshold
+standard approval and no requester exclusion; the requester rule remains unbound.
+Outcome and export surfaces consume the frozen plan without rebuilding it.
+
+GC-09's impact card names the stale planned-withdrawal evidence observed 2026-06-09
+and separately preserves fresh available cash observed 2026-07-26. The signed
+2026-07-22 bank-instruction change is now the single source for displayed age,
+provenance, canonical input hashing, and firm bundle identity.
+
+**Why:** asynchronous activation, authority evaluation, and signed evidence are one
+ownership boundary. Recomputing or restating any of them after activation can produce
+a record that no longer proves the action the operator approved.
+
+**Revert path:** remove the response guard and frozen plan together only if setup
+activation becomes synchronous and non-interactive; restore independent evidence
+dates only with a new captain-signed golden case.

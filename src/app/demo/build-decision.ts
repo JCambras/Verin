@@ -15,6 +15,7 @@ import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
 import {
   CANONICAL_REQUEST,
+  BANK_INSTRUCTION,
   CAST,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
@@ -62,7 +63,7 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   const out: BlockerVM[] = [];
   if (spec.bankChanged && firm.bankChangeHandling === "block-until-independently-verified") {
     out.push({
-      condition: "The bank instruction changed on Jul 24 and has not been independently verified",
+      condition: `The bank instruction changed on ${BANK_INSTRUCTION.changedOn}, ${BANK_INSTRUCTION.changedAgeDays} days before this decision, and has not been independently verified`,
       affordanceLabel: "Request independent verification of the bank instruction",
     });
   }

@@ -126,6 +126,15 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await page.getByRole("button", { name: "Review signed impact" }).click();
   await expect(page.getByRole("heading", { name: "See the impact on signed examples" })).toBeVisible();
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText("GC-03 / GC-04");
+  await expect(page.getByTestId("signed-impact-recent-bank")).toContainText(
+    "changed 2026-07-22 · 4 days ago",
+  );
+  await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
+    "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
+  );
+  await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
+    "Available cash remains fresh as of 2026-07-26",
+  );
   await expect(page.getByTestId("signed-impact-low-headroom")).toContainText("GC-05");
   await checkAxe(page, "setup-impact");
   await snap(page, 5, "setup-impact");
@@ -212,6 +221,16 @@ test("each firm's export lands on the record whose identifiers the proof step sh
     // Byte-for-byte: the frozen version, configuration, outcome, and all identity
     // hashes survive the export boundary.
     await expectRecordIdentity(page, shown);
+    if (firmId === "firm-a") {
+      await expect(
+        page
+          .locator('section[aria-label="Authority and approvals"]')
+          .locator(":scope > div > p:first-child"),
+      ).toHaveText([
+        "Stage 1 - Bank-instruction specialist review",
+        "Stage 2 - Dual operations approval",
+      ]);
+    }
   }
 });
 
@@ -359,6 +378,15 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByTestId("blocker-row")).toContainText(
     "Planned-withdrawal evidence is 47 days old",
   );
+
+  await page.goto(
+    "/app/demo/evidence?scenario=recent-bank-change-block&firm=firm-a",
+  );
+  await expect(
+    page
+      .getByText("Bank instruction on file", { exact: true })
+      .locator(".."),
+  ).toContainText("as of 2026-07-22");
 
   // Same request, same evidence, Firm B: BLOCKED with resolving affordances (amber).
   await page.goto("/app/demo/decision?scenario=recent-bank-change-block&firm=firm-b");

@@ -193,10 +193,19 @@ function OutcomeCard({
         </div>
         <div className="rounded-md border border-slate-200 bg-surface p-3">
           <dt className="text-xs font-medium text-slate-600">
-            {firm.reachesAuthority ? "Authority path" : "Resolving condition"}
+            {firm.authorityPlan.reached ? "Authority path" : "Resolving condition"}
           </dt>
-          <dd className="mt-1 text-sm text-slate-800">{firm.authoritySummary}</dd>
-          <dd className="mt-1 text-xs text-slate-600">{firm.authorityDetail}</dd>
+          <dd className="mt-1 text-sm text-slate-800">{firm.authorityPlan.summary}</dd>
+          <dd className="mt-1 text-xs text-slate-600">{firm.authorityPlan.detail}</dd>
+          {firm.authorityPlan.stages.length > 0 ? (
+            <dd>
+              <ol className="mt-2 flex flex-col gap-1 text-xs text-slate-700">
+                {firm.authorityPlan.stages.map((stage) => (
+                  <li key={stage.title}>{stage.title}</li>
+                ))}
+              </ol>
+            </dd>
+          ) : null}
         </div>
       </dl>
 
@@ -288,9 +297,9 @@ function Trail({
           <p className="mt-1 text-xs text-slate-600">{identity.disposition.headline}</p>
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
-          <CategoryLabel>{identity.reachesAuthority ? "Adapter fact" : "Universal safety"}</CategoryLabel>
+          <CategoryLabel>{identity.authorityPlan.reached ? "Adapter fact" : "Universal safety"}</CategoryLabel>
           <p className="mt-2 text-sm font-medium text-slate-900">
-            4. {identity.reachesAuthority ? "Authority, revalidation, and one submission" : "Path stops safely"}
+            4. {identity.authorityPlan.reached ? "Authority, revalidation, and one submission" : "Path stops safely"}
           </p>
           <p className="mt-1 text-xs text-slate-600">
             {identity.strongestProofDetail}

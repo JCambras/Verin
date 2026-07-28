@@ -27,6 +27,7 @@ import {
   type SetupSelections,
 } from "./setup-model";
 import type { RecordVM } from "./model";
+import { evaluateAuthorityPlan } from "./setup-authority";
 
 const SETUP_SCENARIO_ID = "recent-bank-change-block";
 const RESERVE_MONTHS: Readonly<Record<string, number>> = {
@@ -269,12 +270,12 @@ function evaluateFirm(
   const dualApproval =
     CANONICAL_REQUEST.amountMinor > configuration.dualApprovalThresholdMinor;
   const approvalClock = APPROVAL_CLOCKS[configuration.approvalClockId]!;
-  const reachesAuthority = disposition.kind === "proceed";
-  const authoritySummary = reachesAuthority
-    ? dualApproval
-      ? "Specialist review, then two distinct operations approvers"
-      : "Specialist review, then no dual approval at this amount"
-    : "Independent bank verification is required before authority exists";
+  const evaluatedAuthority = evaluateAuthorityPlan(
+    firm,
+    disposition,
+    dualApproval,
+    approvalClock,
+  );
   const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => ({
     groupId,
     label: optionFor(firmId, groupId, selections[firmId][groupId])!.label,
@@ -294,7 +295,7 @@ function evaluateFirm(
       ? "Captain-signed configuration"
       : "Demonstration-only configuration",
     disposition,
-    reachesAuthority,
+    authorityPlan: evaluatedAuthority,
     reserveMetric: derivedMetric(
       projection.requiredReserveMinor,
       "currency-minor",
@@ -312,14 +313,10 @@ function evaluateFirm(
       ? "Reserve evidence is fresh under the activated window."
       : "Reserve evidence is outside the activated freshness window.",
     freshnessDetail: `${configuration.freshnessDays} calendar days in the activated configuration.`,
-    authoritySummary,
-    authorityDetail: reachesAuthority
-      ? `${approvalClock.escalation}. ${approvalClock.expiry}.`
-      : "No approval can substitute for the missing evidence.",
-    strongestProofTitle: reachesAuthority
+    strongestProofTitle: evaluatedAuthority.reached
       ? "Submitted · not verified"
       : "Blocked decision recorded",
-    strongestProofDetail: reachesAuthority
+    strongestProofDetail: evaluatedAuthority.reached
       ? "One idempotent instruction reached the labeled fake adapter. Settlement and Salesforce parity remain unproven."
       : "No authority, reservation, execution plan, adapter call, or external status exists for this branch.",
     selectedOptions,
@@ -396,11 +393,11 @@ export function buildActivatedRecord(
   }
   const firm = runtimeFirm(firmId, snapshot.selections, evaluated.policyVersion);
   const reached = {
-    authority: evaluated.reachesAuthority,
-    safety: evaluated.reachesAuthority,
-    execution: evaluated.reachesAuthority,
+    authority: evaluated.authorityPlan.reached,
+    safety: evaluated.authorityPlan.reached,
+    execution: evaluated.authorityPlan.reached,
   };
-  const stopNote = evaluated.reachesAuthority
+  const stopNote = evaluated.authorityPlan.reached
     ? null
     : "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
   return buildRecord(
@@ -416,7 +413,9 @@ export function buildActivatedRecord(
         bundleHash: evaluated.bundleHash,
       },
       disposition: evaluated.disposition,
-      approvalClock: evaluated.approvalClock,
+      approvalStages: evaluated.authorityPlan.reached
+        ? evaluated.authorityPlan.stages
+        : null,
       activatedConfiguration: {
         snapshotVersion: snapshot.snapshotVersion,
         snapshotHash: snapshot.snapshotHash,

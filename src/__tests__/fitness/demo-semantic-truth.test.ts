@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
+  BANK_INSTRUCTION,
+  CANONICAL_REQUEST,
+  DEMO_NOW,
+  DESTINATION_RESTRICTION,
   FIRMS,
   LOW_HEADROOM_LIQUIDITY,
+  OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
   decisionIdentityFor,
@@ -255,6 +261,134 @@ export function staleEvidenceViolations(
   if (actual.plannedWithdrawalsAsOf !== truth.plannedWithdrawalsAsOf) {
     violations.push(
       `${sourceRef("src/app/demo/build-context.ts", "const plannedWithdrawalsAsOf")} :: planned withdrawals use ${actual.plannedWithdrawalsAsOf}, not the signed stale timestamp ${truth.plannedWithdrawalsAsOf}`,
+    );
+  }
+  return violations;
+}
+
+interface StaleImpactAssignment {
+  readonly facts: string;
+  readonly effect: string;
+}
+
+export function staleImpactViolations(
+  actual: StaleImpactAssignment,
+  plannedWithdrawalsAsOf: string,
+  availableCashAsOf: string,
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/build-setup.ts",
+    'id: "stale-withdrawals"',
+  );
+  const expectedFacts = `Planned-withdrawal evidence observed ${plannedWithdrawalsAsOf} · 47 days old`;
+  const expectedEffect = `Available cash remains fresh as of ${availableCashAsOf}. Refresh the planned-withdrawal snapshot before reevaluation.`;
+  const violations: string[] = [];
+  if (actual.facts !== expectedFacts) {
+    violations.push(
+      `${where} :: GC-09 impact facts "${actual.facts}" do not equal "${expectedFacts}"`,
+    );
+  }
+  if (actual.effect !== expectedEffect) {
+    violations.push(
+      `${where} :: GC-09 impact effect does not preserve fresh available cash as of ${availableCashAsOf} and the planned-withdrawal refresh path`,
+    );
+  }
+  return violations;
+}
+
+interface BankInstructionDateAssignment {
+  readonly sourceDate: string;
+  readonly sourceAgeDays: number;
+  readonly journeyEvidenceDate: string;
+  readonly setupProvenanceDate: string;
+  readonly setupValue: string;
+  readonly impactFacts: string;
+  readonly blocker: string;
+  readonly inputHash: string;
+}
+
+function recentBankInputHash(bankInstructionObservedAt: string): string {
+  const scenario = scenarioById("recent-bank-change-block");
+  const canonicalInput = {
+    scenarioId: scenario.id,
+    request: {
+      text: CANONICAL_REQUEST.text,
+      amountMinor: CANONICAL_REQUEST.amountMinor,
+      purpose: CANONICAL_REQUEST.purpose,
+      deadline: CANONICAL_REQUEST.deadline,
+      destination: BANK_INSTRUCTION.changed,
+    },
+    evidence: {
+      availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
+      availableCashObservedAt: OBSERVED_RECENT,
+      pendingApprovedMinor: SMITHS_LIQUIDITY.pendingMinor,
+      plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+      plannedWithdrawalObservedAt: OBSERVED_RECENT,
+      bankInstruction: BANK_INSTRUCTION.changed,
+      bankInstructionObservedAt,
+      destinationRestrictionRef: DESTINATION_RESTRICTION.ref,
+      destinationRestriction: DESTINATION_RESTRICTION.text,
+      conflictingFundingInstructions: [],
+    },
+    branchFacts: {
+      invalidation: false,
+      competing: false,
+      duplicateRetry: false,
+      partial: false,
+      delayedNigo: false,
+      specialistExpired: false,
+    },
+  };
+  return createHash("sha256")
+    .update(JSON.stringify(["verin-demo-input-v2", canonicalInput]))
+    .digest("hex");
+}
+
+export function bankInstructionDateViolations(
+  actual: BankInstructionDateAssignment,
+  signedDate: string,
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/data.ts",
+    "export const OBSERVED_BANK_INSTRUCTION_CHANGED",
+  );
+  const violations: string[] = [];
+  const signedAgeDays =
+    (Date.parse(DEMO_NOW) - Date.parse(signedDate)) / 86_400_000;
+  if (actual.sourceAgeDays !== signedAgeDays) {
+    violations.push(
+      `${where} :: displayed age is ${actual.sourceAgeDays} days, not the ${signedAgeDays} days derived from ${signedDate}`,
+    );
+  }
+  for (const [label, value] of [
+    ["source", actual.sourceDate],
+    ["journey evidence", actual.journeyEvidenceDate],
+    ["setup provenance", actual.setupProvenanceDate],
+  ] as const) {
+    if (value !== signedDate) {
+      violations.push(
+        `${where} :: ${label} uses ${value}, not signed bank-change date ${signedDate}`,
+      );
+    }
+  }
+  for (const [label, value] of [
+    ["setup value", actual.setupValue],
+    ["impact facts", actual.impactFacts],
+    ["blocker", actual.blocker],
+  ] as const) {
+    if (
+      !value.includes(signedDate) ||
+      !value.includes(`${signedAgeDays} days`)
+    ) {
+      violations.push(
+        `${where} :: ${label} does not render signed ${signedDate} as ${signedAgeDays} days old`,
+      );
+    }
+  }
+  const expectedHash = recentBankInputHash(signedDate);
+  if (actual.inputHash !== expectedHash) {
+    violations.push(
+      `${where} :: canonical input hash does not bind signed bank-change date ${signedDate}`,
     );
   }
   return violations;
@@ -546,6 +680,8 @@ export interface ExportIdentity {
   readonly configurationProvenance: string;
   readonly disposition: string;
   readonly explanation: string;
+  readonly authorityMode: string;
+  readonly authorityStages: string;
   readonly exportHref: string;
 }
 
@@ -595,6 +731,8 @@ export function exportIdentityViolations(
       "configurationProvenance",
       "disposition",
       "explanation",
+      "authorityMode",
+      "authorityStages",
     ] as const) {
       if (identity[field] !== target[field]) {
         violations.push(
@@ -649,6 +787,8 @@ function renderedIdentity(
       record.activatedConfiguration.configurationProvenance,
     disposition: record.disposition.kind,
     explanation: record.disposition.why.reason,
+    authorityMode: record.approvalStages === null ? "none" : "specialist-review",
+    authorityStages: JSON.stringify(record.approvalStages ?? []),
     exportHref: `/app/demo/record?scenario=${record.identity.scenario.id}&firm=${record.identity.firm.id}&activation=${record.activatedConfiguration.snapshotHash}`,
   };
 }
@@ -672,6 +812,8 @@ function claimedIdentities(
     configurationProvenance: firm.configurationProvenance,
     disposition: firm.disposition.kind,
     explanation: firm.disposition.why.reason,
+    authorityMode: firm.authorityPlan.mode,
+    authorityStages: JSON.stringify(firm.authorityPlan.stages),
     exportHref: firm.exportHref,
   });
   return [identity(snapshot.firms[0]), identity(snapshot.firms[1])];
@@ -786,6 +928,56 @@ describe("demo semantic-truth fence", () => {
     }).toEqual(priorIdentity);
   });
 
+  it("enforces: the evaluator freezes ordered authority stages and export consumes them unchanged", () => {
+    const snapshot = activatedSnapshot();
+    const firmA = snapshot.firms[0];
+    expect(firmA.authorityPlan.mode).toBe("specialist-review");
+    expect(firmA.authorityPlan.stages.map((stage) => stage.title)).toEqual([
+      "Stage 1 - Bank-instruction specialist review",
+      "Stage 2 - Dual operations approval",
+    ]);
+    const record = buildActivatedRecord(snapshot, "firm-a");
+    expect(record.approvalStages).toBe(firmA.authorityPlan.stages);
+    expect(record.approvalStages).toEqual(firmA.authorityPlan.stages);
+    expect(Object.isFrozen(firmA.authorityPlan.stages)).toBe(true);
+  });
+
+  it("enforces: Firm B mutations add neither a standard approval nor a requester rule", () => {
+    const belowThreshold = activatedSnapshot((selections) => {
+      selections["firm-b"]["bank-change"] = "specialist";
+    });
+    const belowThresholdPlan = belowThreshold.firms[1].authorityPlan;
+    expect(belowThresholdPlan.stages.map((stage) => stage.title)).toEqual([
+      "Stage 1 - Bank-instruction specialist review",
+    ]);
+    expect(
+      belowThresholdPlan.stages.flatMap((stage) => stage.actors),
+    ).not.toContainEqual(
+      expect.objectContaining({ requesterExcluded: true }),
+    );
+    expect(buildActivatedRecord(belowThreshold, "firm-b").approvalStages).toBe(
+      belowThresholdPlan.stages,
+    );
+
+    const dualApproval = activatedSnapshot((selections) => {
+      selections["firm-b"]["bank-change"] = "specialist";
+      selections["firm-b"].threshold = "25000";
+    });
+    const dualPlan = dualApproval.firms[1].authorityPlan;
+    expect(dualPlan.stages.map((stage) => stage.title)).toEqual([
+      "Stage 1 - Bank-instruction specialist review",
+      "Stage 2 - Dual operations approval",
+    ]);
+    expect(dualPlan.stages[1]?.requirement).toContain(
+      "Requester participation remains unbound",
+    );
+    expect(
+      dualPlan.stages.flatMap((stage) => stage.actors),
+    ).not.toContainEqual(
+      expect.objectContaining({ requesterExcluded: true }),
+    );
+  });
+
   it("enforces: unsupported setup combinations fail closed and name the combination", () => {
     const selections = setupSelections();
     selections["firm-a"].reserve = "18-months";
@@ -852,6 +1044,75 @@ describe("demo semantic-truth fence", () => {
     );
   });
 
+  it("enforces: GC-09 impact renders the exact signed planned-withdrawal fact", () => {
+    const gc09 = signed(loadGolden("GC-09-stale-evidence.json"));
+    const available = gc09.householdEvidence.find(
+      (evidence) => evidence.evidenceKind === "account-balance",
+    )!;
+    const planned = gc09.householdEvidence.find(
+      (evidence) => evidence.evidenceKind === "planned-withdrawals",
+    )!;
+    const vm = buildMoneyMovementSetup();
+    const impact = vm.impacts.find(
+      (candidate) => candidate.id === "stale-withdrawals",
+    )!;
+    const actual = {
+      facts: impact.facts,
+      effect: impact.universalEffect ?? "",
+    };
+    expect(
+      staleImpactViolations(
+        actual,
+        planned.observedAt.slice(0, 10),
+        available.observedAt.slice(0, 10),
+      ),
+    ).toEqual([]);
+  });
+
+  it("enforces: the signed bank-change date drives evidence, display, and input identity", () => {
+    const gc03 = signed(
+      loadGolden("GC-03-recent-bank-change-firm-a.json"),
+    );
+    const signedDate = gc03.householdEvidence
+      .find((evidence) => evidence.evidenceKind === "bank-instruction")!
+      .observedAt.slice(0, 10);
+    const journey = getJourney("recent-bank-change-block", "firm-a");
+    const evidence = journey.evidence.rows.find(
+      (row) => row.kind === "fact" && row.label === "Bank instruction on file",
+    );
+    const vm = buildMoneyMovementSetup();
+    const setupFact = vm.request.facts.find(
+      (fact) => fact.label === "Bank instruction",
+    )!;
+    const impact = vm.impacts.find(
+      (candidate) => candidate.id === "recent-bank",
+    )!;
+    const blocker = getJourney(
+      "recent-bank-change-block",
+      "firm-b",
+    ).recommendation.disposition.blockers?.[0];
+    expect(evidence?.kind).toBe("fact");
+    if (evidence?.kind !== "fact") return;
+    expect(
+      bankInstructionDateViolations(
+        {
+          sourceDate: BANK_INSTRUCTION.changedOn,
+          sourceAgeDays: BANK_INSTRUCTION.changedAgeDays,
+          journeyEvidenceDate: evidence.fact.provenance.asOf,
+          setupProvenanceDate: setupFact.provenance.asOf,
+          setupValue: setupFact.value ?? "",
+          impactFacts: impact.facts,
+          blocker: blocker?.condition ?? "",
+          inputHash: decisionIdentityFor(
+            scenarioById("recent-bank-change-block"),
+            firmById("firm-a"),
+          ).inputHash,
+        },
+        signedDate,
+      ),
+    ).toEqual([]);
+  });
+
   it("detects: swapped GC-09 evidence timestamps cannot pass", () => {
     const truth = {
       availableCashAsOf: "2026-07-26",
@@ -867,6 +1128,37 @@ describe("demo semantic-truth fence", () => {
     expect(violations).toHaveLength(2);
     expect(violations[0]).toContain("build-context.ts:");
     expect(violations[1]).toContain("planned withdrawals");
+  });
+
+  it("detects: generic GC-09 copy or a timestamp swap cannot pass", () => {
+    const violations = staleImpactViolations(
+      {
+        facts: "Reserve evidence is stale",
+        effect: "Refresh the reserve evidence",
+      },
+      "2026-06-09",
+      "2026-07-26",
+    );
+    expect(violations).toHaveLength(2);
+    expect(violations.join("\n")).toContain("planned-withdrawal");
+  });
+
+  it("detects: a bank-change timestamp not bound through hashing cannot pass", () => {
+    const violations = bankInstructionDateViolations(
+      {
+        sourceDate: "2026-07-24",
+        sourceAgeDays: 2,
+        journeyEvidenceDate: "2026-07-24",
+        setupProvenanceDate: "2026-07-24",
+        setupValue: "Changed 2 days ago",
+        impactFacts: "Change 2 days ago",
+        blocker: "Changed recently",
+        inputHash: recentBankInputHash("2026-07-24"),
+      },
+      "2026-07-22",
+    );
+    expect(violations).toHaveLength(8);
+    expect(violations.at(-1)).toContain("canonical input hash");
   });
 
   it("detects: GC-04 liquidity drift cannot hide behind the first three signed cases", () => {
