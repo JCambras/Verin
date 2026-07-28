@@ -46,10 +46,11 @@ settle now.
   reference an event can name is a promoted column L3 re-derives from the payload.
   Repository boundaries validate the canonical source hashes named by recording and
   approval events.
-- Retained free text is a PII-free projection: attribution is a source reference,
-  decision explanations and summaries are recorded codes/template references, and
-  external statuses and structured reasons are code-shaped. The storage boundary
-  rejects unclassified text and never rewrites submitted immutable bytes.
+- Retained free text is a PII-free projection: attribution is an opaque retained-text
+  reference, decision explanations and summaries repeat only closed-registry codes,
+  and external statuses and structured reasons are registered codes or opaque
+  references. The storage boundary rejects unclassified text and never rewrites
+  submitted immutable bytes.
 - Every ledger row stores the provenance of the producer that appended it
   (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
   an unregistered source, the chain binds all three fields, and surfaces classify a
@@ -60,9 +61,8 @@ settle now.
   Each evidence-recording event binds a digest of the complete canonical snapshot
   metadata in addition to the encrypted content hash.
 - All immutable source tables reject UPDATE, DELETE, and TRUNCATE through database
-  triggers. A ts-morph anti-fork fence permits raw ledger INSERT text only in the
-  sole repository and forward migration. Repository exports expose no immutable
-  update or delete operation.
+  triggers. A ts-morph anti-fork fence assigns each table to one exact insert-owning
+  module. Repository exports expose no immutable update or delete operation.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
@@ -70,8 +70,9 @@ settle now.
   reservation reference, owning decision reference, and its creation ledger-entry
   identity. A release cites that exact generation. Reuse is allowed after release
   only through a new creation identity, and a delayed old-generation release cannot
-  affect the new generation. The projection persists its derived provenance summary,
-  so a bounded decision read never joins every contributing ledger row.
+  affect the new generation. Projection rows persist derived provenance for repair and
+  operator reads, but the register never trusts them: it replays the exact verified
+  event window and verifies the immutable sources needed by every state it displays.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
@@ -80,9 +81,9 @@ settle now.
   decision rows through recorded source codecs, and refuses a zero-entry pass.
 - A request path may verify a bounded window: the most recent entries, anchored to
   the stored hash of the row preceding them, with L4 still compared against tenant
-  totals. Full-chain verification is O(entries) under one connection, so the register
-  verifies its visible window and says which scope it is showing. Only the gate's
-  unbounded run is examiner-grade.
+  totals. The register verifies, reads, and replays that window under one tenant-locked
+  transaction and displays only decisions whose complete replay sources fall inside
+  it. Only the gate's unbounded run is examiner-grade.
 - The seeded `/app/ledger` register is read-only, uses typed view models, and shows
   both the raw event register and replayed decision state, so the projection fold is
   reachable in the PR that lands it. Rows produced by a synthetic source carry the
@@ -92,12 +93,12 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4000 and infrastructure 2500 to
-  4800. Measured final state is contracts 3884 and infrastructure 4736. Domain
+  5100. Measured final state is contracts 3927 and infrastructure 5003. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
-  reservation state (`ledger-projection-store.ts`), with replay orchestration in
-  `ledger-rebuild.ts`.
+  reservation state (`ledger-projection-store.ts`), with rebuild orchestration in
+  `ledger-rebuild.ts` and verified request replay in `ledger-register.ts`.
 
 ## Alternatives Rejected
 

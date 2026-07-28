@@ -4,11 +4,7 @@ import {
   getDb,
   requirePrincipalWithRole,
 } from "@app/_server/context";
-import { verifyAndListDecisionLedger } from "@infra/ledger/ledger-verification";
-import {
-  countDecisionProjections,
-  listDecisionProjections,
-} from "@infra/ledger/ledger-projection-store";
+import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import {
   canFeedComplianceDecision,
   DEV_BADGE_TEXT,
@@ -68,17 +64,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   );
   if (!principal.ok) return errorResponse(principal.error);
   const db = await getDb();
-  const { verification, rows } = await verifyAndListDecisionLedger(
+  const {
+    verification,
+    rows,
+    decisions,
+    decisionsTotal,
+  } = await readVerifiedDecisionRegister(
     db,
     principal.value.orgId,
     MAX_ENTRIES,
-  );
-  const decisions = await listDecisionProjections(
-    db,
-    principal.value.orgId,
     MAX_DECISIONS,
   );
-  const decisionsTotal = await countDecisionProjections(db, principal.value.orgId);
   const body = {
     verification: {
       ok: verification.ok,

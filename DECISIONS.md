@@ -3205,3 +3205,24 @@ mutable-snapshot verification, host-current replay parsing, retained free text, 
 ownerless reservation reuse.
 **Revert path:** none while Prompt 7 promises atomic append, deterministic rebuild,
 fail-closed retention, and reusable reservation identifiers.
+
+### D-104 · 2026-07-28 · reversible · Register state replays the exact verified window
+
+`DecisionRecorded` advances to ledger schema 1.1.0 and binds both the decision hash
+and input-bundle hash. Causal and exception-trigger references must name preceding
+entries. Retained decision text uses closed code registries or opaque text references,
+and the shared PII traversal is iterative.
+
+The register now verifies, reads, and replays one bounded event window under the same
+tenant lock. It reconstructs displayed decision state from those immutable events and
+verified replay sources instead of trusting mutable projection rows. The anti-fork
+fence assigns every immutable table to one exact insert owner.
+
+The completed implementation measures contracts at 3927 lines and infrastructure at
+5003 lines. ADR-0033 amends ADR-0018's infrastructure ceiling to 5100 while preserving
+the 500-line file cap.
+
+**Why:** a cryptographic claim must bind the exact bundle and the exact state displayed,
+and retained text cannot become safe merely by duplicating an untrusted value.
+**Revert path:** none while Prompt 7 promises cryptographically bound replay inputs,
+causal event order, fail-closed retention, and an honestly verified register.

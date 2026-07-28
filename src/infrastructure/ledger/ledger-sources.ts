@@ -1,9 +1,4 @@
-/**
- * Immutable replay inputs: evidence snapshots, the input bundle with its ordered
- * evidence membership, and the decision record. These rows are content-addressed and
- * append-only, so this module either writes new bytes or reuses byte-identical stored
- * ones - it never rewrites, and it refuses a same-id/different-bytes collision.
- */
+/** Immutable content-addressed replay inputs and their verification. */
 import { createHash } from "node:crypto";
 import type { SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError, type AppError } from "@contracts/errors";
@@ -103,7 +98,6 @@ export async function preflightEvidenceSnapshots(
   }
 }
 
-/** Evidence recorded with a decision, or gathered later and cited by a status event. */
 export async function insertEvidenceSnapshots(
   tx: SqlTx,
   snapshots: readonly EvidenceSnapshotRef[],
@@ -131,7 +125,6 @@ export async function insertEvidenceSnapshots(
   }
 }
 
-/** A later decision over the same inputs reuses the stored bundle instead of colliding. */
 async function insertBundle(
   tx: SqlTx,
   bundle: DecisionInputBundle,
@@ -393,6 +386,7 @@ export async function loadVerifiedReplayDecision(
     event.decisionHash !== record.decisionHash ||
     !bundleHash.ok ||
     bundleHash.value !== bundle.bundleHash ||
+    event.bundleHash !== bundle.bundleHash ||
     memberIds.length !== expectedIds.length ||
     memberIds.some((id, index) => id !== expectedIds[index]) ||
     expectedIds.some((id) => !verifiedEvidence.has(id))
@@ -400,6 +394,38 @@ export async function loadVerifiedReplayDecision(
     return replaySourceError("decision replay source binding differs during replay");
   }
   return record;
+}
+
+export async function listReplayDecisionEvidenceCoverage(
+  tx: SqlQueryable,
+  event: DecisionRecorded,
+): Promise<Array<{
+  readonly id: string;
+  readonly recordedSequence: number | null;
+}>> {
+  const result = await tx.query<{
+    evidence_snapshot_id: string;
+    recorded_sequence: number | string | null;
+  }>(
+    `SELECT m.evidence_snapshot_id, min(l.sequence) AS recorded_sequence
+       FROM decision_records r
+       JOIN decision_input_bundle_evidence m
+         ON m.org_id = r.org_id AND m.bundle_id = r.input_bundle_id
+       LEFT JOIN decision_ledger l
+         ON l.org_id = m.org_id
+        AND l.evidence_snapshot_id = m.evidence_snapshot_id
+        AND l.event_type = 'EvidenceSnapshotRecorded'
+      WHERE r.org_id = $1 AND r.id = $2
+      GROUP BY m.ordinal, m.evidence_snapshot_id
+      ORDER BY m.ordinal ASC`,
+    [event.firmId, event.decisionRef.id],
+  );
+  return result.rows.map((row) => ({
+    id: row.evidence_snapshot_id,
+    recordedSequence: row.recorded_sequence === null
+      ? null
+      : Number(row.recorded_sequence),
+  }));
 }
 
 export interface VerifiedReplaySources {

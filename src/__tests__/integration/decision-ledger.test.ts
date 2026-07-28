@@ -454,6 +454,38 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
   });
 
+  it("requires causation and exception triggers to precede the citing event", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const later = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalStageExpired")!,
+      id: "causal:later",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    const forwardCause = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
+      id: "causal:forward",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+      causationRef: { firmId: LEDGER_ORG, id: later.id },
+    });
+    await expect(append(db, [forwardCause, later])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+
+    const exception = LedgerEntrySchema.parse({
+      ...samples.find(
+        (event) => event.type === "ExceptionDecisionRequested",
+      )!,
+      id: "trigger:forward",
+      triggeringEntryRef: { firmId: LEDGER_ORG, id: later.id },
+    });
+    await expect(append(db, [exception, later])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
   it("rejects PII in ledger text without rewriting the submitted bytes", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
@@ -577,6 +609,117 @@ describe("decision ledger storage and L1-L4 verification", () => {
       decision_records: 0,
       decision_ledger: 0,
     });
+  });
+
+  it("refuses duplicated names disguised as source and decision codes", async () => {
+    const evidenceInput = decisionRecordingInput();
+    const snapshot = {
+      ...evidenceInput.evidenceSnapshots[0]!,
+      sourceRef: {
+        ...evidenceInput.evidenceSnapshots[0]!.sourceRef,
+        id: "robert-smith",
+      },
+      attribution: "robert-smith",
+    };
+    const evidenceEvent = LedgerEntrySchema.parse({
+      ...evidenceInput.events[0]!,
+      snapshotHash: hashPreimage(snapshot),
+    });
+    const evidenceResult = await recordDecision(db, {
+      ...evidenceInput,
+      evidenceSnapshots: [
+        snapshot,
+        ...evidenceInput.evidenceSnapshots.slice(1),
+      ],
+      events: [evidenceEvent, ...evidenceInput.events.slice(1)],
+    });
+    expect(evidenceResult.ok).toBe(false);
+    expect(evidenceResult.ok ? null : evidenceResult.error.code).toBe(
+      "PII_VIOLATION",
+    );
+
+    const decisionInput = decisionRecordingInput();
+    if (decisionInput.decisionRecord.result.kind !== "proceed") {
+      throw new Error("expected proceed decision fixture");
+    }
+    const candidate = DecisionRecordSchema.parse({
+      ...decisionInput.decisionRecord,
+      result: {
+        ...decisionInput.decisionRecord.result,
+        recommendation: {
+          ...decisionInput.decisionRecord.result.recommendation,
+          code: "robert-smith",
+          summary: "robert-smith",
+        },
+      },
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...candidate,
+      decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...decisionInput.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+    });
+    const decisionResult = await recordDecision(db, {
+      ...decisionInput,
+      decisionRecord,
+      events: [
+        ...decisionInput.events.slice(0, -1),
+        decisionEvent,
+      ],
+    });
+    expect(decisionResult.ok).toBe(false);
+    expect(decisionResult.ok ? null : decisionResult.error.code).toBe(
+      "PII_VIOLATION",
+    );
+  });
+
+  it("refuses a replay bundle whose recomputed hash is not bound by its decision event", async () => {
+    await recordFixture(db);
+    const stored = await db.query<{ canonical_json: string }>(
+      `SELECT canonical_json
+         FROM decision_input_bundles
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "bundle:GC-01:0001"],
+    );
+    const original = DecisionInputBundleSchema.parse(
+      JSON.parse(stored.rows[0]!.canonical_json),
+    );
+    const candidate = DecisionInputBundleSchema.parse({
+      ...original,
+      asOf: LEDGER_LATER,
+      bundleHash: "0".repeat(64),
+    });
+    const changed = DecisionInputBundleSchema.parse({
+      ...candidate,
+      bundleHash: hashPreimage(bundleHashPreimage(candidate)),
+    });
+    const bytes = canonicalJson(changed as unknown as JsonValue);
+    expect(bytes.ok).toBe(true);
+    if (!bytes.ok) return;
+    await db.exec(
+      "ALTER TABLE decision_input_bundles DISABLE TRIGGER decision_input_bundles_no_update",
+    );
+    await db.query(
+      `UPDATE decision_input_bundles
+          SET canonical_json = $3,
+              bundle_hash = $4
+        WHERE org_id = $1 AND id = $2`,
+      [
+        LEDGER_ORG,
+        original.id,
+        bytes.value,
+        changed.bundleHash,
+      ],
+    );
+    await db.exec(
+      "ALTER TABLE decision_input_bundles ENABLE TRIGGER decision_input_bundles_no_update",
+    );
+    expect((await verifyDecisionLedgerIntegrity(db, LEDGER_ORG)).ok).toBe(
+      false,
+    );
   });
 
   it("refuses replay after immutable decision bytes are changed", async () => {

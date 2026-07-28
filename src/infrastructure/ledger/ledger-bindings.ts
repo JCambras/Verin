@@ -74,9 +74,11 @@ export async function assertLedgerSourceBindings(
     throw appError("STORE_CONSTRAINT", "ledger event decision hash does not match immutable record");
   }
   if (
-    event.type === "ApprovalRecorded" &&
-    event.inputBundleHash !== stored.bundle_hash
+    (event.type === "ApprovalRecorded" &&
+      event.inputBundleHash !== stored.bundle_hash) ||
+    (event.type === "DecisionRecorded" &&
+      event.bundleHash !== stored.bundle_hash)
   ) {
-    throw appError("STORE_CONSTRAINT", "approval input bundle hash does not match immutable bundle");
+    throw appError("STORE_CONSTRAINT", "ledger input bundle hash does not match immutable bundle");
   }
 }

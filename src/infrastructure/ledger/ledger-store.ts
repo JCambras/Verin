@@ -159,6 +159,27 @@ async function appendPrepared(
   const appended: AppendedLedgerEntry[] = [];
   for (const prepared of events) {
     const { event, payloadJson, actorJson } = prepared;
+    for (const reference of [
+      event.causationRef,
+      event.type === "ExceptionDecisionRequested"
+        ? event.triggeringEntryRef
+        : undefined,
+    ]) {
+      if (!reference) continue;
+      const preceding = await tx.query<{ sequence: number | string }>(
+        "SELECT sequence FROM decision_ledger WHERE org_id = $1 AND id = $2",
+        [orgId, reference.id],
+      );
+      if (
+        !preceding.rows[0] ||
+        Number(preceding.rows[0].sequence) >= sequence
+      ) {
+        throw appError(
+          "STORE_CONSTRAINT",
+          "ledger causal reference must name a preceding entry",
+        );
+      }
+    }
     await assertLedgerSourceBindings(tx, event);
     const projection = await prepareProjection(
       tx,
@@ -334,6 +355,7 @@ function validateDecisionInput(
     event?.type !== "DecisionRecorded" ||
     event.decisionRef.id !== record.data.id ||
     event.decisionHash !== record.data.decisionHash ||
+    event.bundleHash !== bundle.data.bundleHash ||
     events.value.some(({ event: item }) =>
       item.type !== "DecisionRecorded" &&
       item.type !== "EvidenceSnapshotRecorded")

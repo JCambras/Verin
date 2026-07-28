@@ -9,7 +9,7 @@ all of it. The files contain one `DecisionInputBundle`,
 three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
 `src/contracts/decision-core/serialization.ts`, schema version 1.7.0 and serializer version
 1.0.0), and one digest lock for the canonical bytes of every prompt-7 ledger event
-shape. The record and bundle keys are sorted at every depth with no insignificant
+shape at ledger schema 1.1.0. The record and bundle keys are sorted at every depth with no insignificant
 whitespace and one trailing newline.
 
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through

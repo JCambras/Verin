@@ -32,7 +32,7 @@ import {
 
 const brandedString = <B extends string>() => z.string().min(1).brand<B>();
 
-export const LEDGER_SCHEMA_VERSION = "1.0.0";
+export const LEDGER_SCHEMA_VERSION = "1.1.0";
 
 export const LedgerEntryIdSchema = brandedString<"LedgerEntryId">();
 export type LedgerEntryId = z.infer<typeof LedgerEntryIdSchema>;
@@ -98,8 +98,9 @@ const ledgerBaseShape = {
 
 type LedgerTenant = {
   readonly firmId: string;
+  readonly id: string;
   readonly actor: { readonly firmId: string };
-  readonly causationRef?: { readonly firmId: string };
+  readonly causationRef?: { readonly firmId: string; readonly id: string };
 };
 
 function requireBaseTenant(
@@ -121,6 +122,13 @@ function requireBaseTenant(
       code: "custom",
       message: "ledger causation must belong to the event tenant",
       path: ["causationRef", "firmId"],
+    });
+  }
+  if (event.causationRef?.id === event.id) {
+    ctx.addIssue({
+      code: "custom",
+      message: "ledger entry cannot cause itself",
+      path: ["causationRef", "id"],
     });
   }
 }
@@ -145,6 +153,7 @@ const DecisionRecordedSchema = z.strictObject({
   type: z.literal("DecisionRecorded"),
   decisionRef: DecisionRefSchema,
   decisionHash: HashSchema,
+  bundleHash: HashSchema,
 }).superRefine((event, ctx) => {
   requireBaseTenant(event, ctx);
   requireRefTenant(event, event.decisionRef, ["decisionRef", "firmId"], ctx);
@@ -387,6 +396,13 @@ const ExceptionDecisionRequestedSchema = z.strictObject({
   requireBaseTenant(event, ctx);
   requireRefTenant(event, event.priorDecisionRef, ["priorDecisionRef", "firmId"], ctx);
   requireRefTenant(event, event.triggeringEntryRef, ["triggeringEntryRef", "firmId"], ctx);
+  if (event.triggeringEntryRef.id === event.id) {
+    ctx.addIssue({
+      code: "custom",
+      message: "exception request cannot trigger itself",
+      path: ["triggeringEntryRef", "id"],
+    });
+  }
 });
 
 export const LedgerEntrySchema = z.discriminatedUnion("type", [

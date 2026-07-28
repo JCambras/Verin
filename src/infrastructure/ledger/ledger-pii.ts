@@ -6,7 +6,35 @@ import type {
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 
-const SAFE_CODE = /^[a-z0-9]+(?:[.:/_-][a-z0-9]+)*$/;
+const REGISTERED_RETAINED_CODES = new Set([
+  "active-legal-hold",
+  "additional-evidence-required",
+  "approval-stage-expired",
+  "approval-stage-idle",
+  "approved-after-review",
+  "cash-reserve-breach",
+  "cash-reserve-preserved",
+  "custodian-timeout",
+  "decision-closed",
+  "distribute-from-ira",
+  "distribute-from-joint-taxable",
+  "household-floor-narrows-reserve",
+  "legal-hold-detected",
+  "material-evidence-fresh-at-execution",
+  "material-input-changed",
+  "partial",
+  "pending-review",
+  "regulatory-precedence-applied",
+  "reserve-policy-governs",
+  "source-account-selected",
+  "status-source-unavailable",
+  "submitted",
+  "taxable-event-source-rejected",
+  "timeout",
+  "verification-stuck",
+]);
+const RETAINED_TEXT_REFERENCE = /^retained-text:v1:[a-f0-9]{64}$/;
+const BUNDLE_VERSION_CODES = new Set(["0", "0.0.0"]);
 
 function refuse(): never {
   throw appError(
@@ -15,11 +43,20 @@ function refuse(): never {
   );
 }
 
-function requireCode(value: string): void {
+export function retainedTextReference(opaqueId: string): string {
+  const value = `retained-text:v1:${opaqueId}`;
+  if (!RETAINED_TEXT_REFERENCE.test(value)) refuse();
+  return value;
+}
+
+function requireRegisteredCode(value: string): void {
+  if (!REGISTERED_RETAINED_CODES.has(value)) refuse();
+}
+
+function requireRetainedToken(value: string): void {
   if (
-    !SAFE_CODE.test(value) ||
-    !/[a-z]/.test(value) ||
-    /\d{8,}/.test(value)
+    !REGISTERED_RETAINED_CODES.has(value) &&
+    !RETAINED_TEXT_REFERENCE.test(value)
   ) {
     refuse();
   }
@@ -31,6 +68,7 @@ function requireExplanationCodes(
   const pending = [...nodes];
   while (pending.length > 0) {
     const node = pending.pop()!;
+    requireRegisteredCode(node.code);
     if (node.messageTemplate !== node.code) refuse();
     pending.push(...node.childNodes);
   }
@@ -38,24 +76,33 @@ function requireExplanationCodes(
 
 function requireDecisionTextProjection(record: DecisionRecord): void {
   requireExplanationCodes(record.explanationTrace);
+  record.precedenceTrace.forEach((step) =>
+    requireRegisteredCode(step.reasonCode));
   if (record.result.kind === "proceed") {
     const recommendation = record.result.recommendation;
+    requireRegisteredCode(recommendation.code);
     if (recommendation.summary !== recommendation.code) refuse();
     for (const alternative of recommendation.alternatives) {
+      requireRegisteredCode(alternative.code);
       if (alternative.summary !== alternative.code) refuse();
+      alternative.rejectedBecause.forEach(requireRegisteredCode);
     }
     for (const parameter of Object.values(recommendation.parameters)) {
-      if (typeof parameter === "string") requireCode(parameter);
+      if (typeof parameter === "string") requireRetainedToken(parameter);
     }
   } else if (record.result.kind === "blocked") {
     for (const blocker of record.result.blockers) {
+      requireRegisteredCode(blocker.code);
       if (blocker.explanation !== blocker.code) refuse();
     }
-  } else if (
-    record.result.prohibition.explanation !==
-    record.result.prohibition.reasonCode
-  ) {
-    refuse();
+  } else {
+    requireRegisteredCode(record.result.prohibition.reasonCode);
+    if (
+      record.result.prohibition.explanation !==
+      record.result.prohibition.reasonCode
+    ) {
+      refuse();
+    }
   }
 }
 
@@ -65,7 +112,15 @@ export function assertReplaySourcePiiBoundary(
 ): void {
   if (kind === "evidence") {
     const snapshot = value as EvidenceSnapshotRef;
-    if (snapshot.attribution !== snapshot.sourceRef.id) refuse();
+    if (!RETAINED_TEXT_REFERENCE.test(snapshot.attribution)) refuse();
+  } else if (kind === "bundle") {
+    const bundle = value as DecisionInputBundle;
+    if (
+      !BUNDLE_VERSION_CODES.has(bundle.engineVersion) ||
+      !BUNDLE_VERSION_CODES.has(bundle.primitiveSetVersion)
+    ) {
+      refuse();
+    }
   } else if (kind === "decision") {
     requireDecisionTextProjection(value as DecisionRecord);
   }
@@ -73,9 +128,9 @@ export function assertReplaySourcePiiBoundary(
 
 export function assertLedgerEventPiiBoundary(event: LedgerEntry): void {
   if (event.type === "ApprovalRecorded" && event.structuredReason !== undefined) {
-    requireCode(event.structuredReason);
+    requireRetainedToken(event.structuredReason);
   }
   if ("sourceStatus" in event && event.sourceStatus !== undefined) {
-    requireCode(event.sourceStatus);
+    requireRetainedToken(event.sourceStatus);
   }
 }
