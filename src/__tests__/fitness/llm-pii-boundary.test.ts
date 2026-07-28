@@ -12,7 +12,7 @@ import {
 import {
   realSemanticProject,
   inMemoryProject,
-  importSpecifiers,
+  moduleReferences,
   REPO_ROOT,
 } from "./_fence-utils";
 import { isPIIField } from "@contracts/pii";
@@ -721,7 +721,10 @@ export function detectPIIReachableFromLlm(project: Project): string[] {
           `${origin} reaches an unverifiable module load in ${current}:${line}`,
         );
       }
-      for (const spec of importSpecifiers(sf)) {
+      for (const { specifier: spec } of moduleReferences(sf)) {
+        // Non-literal loads carry no specifier; they are already reported above
+        // by unverifiableModuleLoadLines, so a null here is never a silent skip.
+        if (spec === null) continue;
         const target = resolveToProjectPath(project, current, spec);
         if (!target || visited.has(target)) continue;
         visited.add(target);
