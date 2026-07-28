@@ -9415,3 +9415,184 @@ injection (verified by string comparison);
 all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-opus-review-1`).
+
+### PF-018 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
+
+**SUPERSESSION CROSS-REFERENCE (read this before re-running injections 1-8).** The entries above are
+preserved as the historical record of what actually ran at the time, against the implementations of the
+day; they are NOT rewritten to quote strings they never emitted. Two of them no longer reproduce
+verbatim:
+
+| Historical entry | What it proved then | Where that rule lives now |
+|---|---|---|
+| Injections 1-3, test name `enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave` | the first cut of the ordering rule, computed inline in the fence | test is now `enforces: nothing a phase gate requires lands after that gate closes`; the rule is `gateOrderingProblems` in `scripts/v3-gates.lib.ts` |
+| Injections 1, 6 failure text `... but its activation prerequisite is prompt 10, which lands AFTER that gate closes ...` / `invariant 3: gated at A (prompts 4-7) but activates at prompt 10` | a gate requiring an invariant whose prerequisite is later | rule (e), now decided from PROOF POINTS and emitted by `gateOrderingProblems`; injection 1 is re-run verbatim under the current implementation as **injection 16** below |
+
+Injections 4, 5, 7 and 8 still reproduce verbatim. Everything else below is current, byte-identical
+output captured in this round; `v3-invariants.json` and `.github/workflows/ci.yml` were each restored
+from a pre-injection copy and verified identical with `diff -q` after every injection.
+
+**What changed (ADR-0030, amended in place again).** The ordering rule now decides from a requirement's
+PROOF POINT rather than from a status short-circuit, so a gate referencing an invariant a LATER gate owns
+fails whether or not that invariant is already active; both prose scanners cover every spelling the
+registry uses (ranges, comma lists, conjunctions, lower-case gate names); a `ci-gate` requirement must
+name the command its blocking job runs, checked against a structural parse of the workflow; Gate B
+requires invariant 16 and Gate C invariant 11 (each complete inside that gate's own range) while
+invariant 6 stays a Gate D requirement; and two RATCHETS pin the complete 30-invariant
+activation-ownership map and every gate's invariant requirement set in the fence file.
+
+**Injection 9 - the circular dependency by reference to an ALREADY-ACTIVE invariant.** Added
+`{"kind": "invariant", "id": 7}` to `gates.A.requires`. Invariant 7 is `active` and owned by gate D
+[16-19], so the previous rule read it as "lands at prompt 0" and passed.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0030).: expected [ Array(1) ] to deeply equal []
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+AssertionError: expected [ 1, 2, 4, 5, 7 ] to deeply equal [ 1, 2, 4, 5 ]
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5, 7 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
+```
+v3-invariants: registry/pin problems:
+  - gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0030).
+```
+
+**Injection 10 - the reported ci-gate substring hole.** Deleted the whole `e2e:` job from
+`.github/workflows/ci.yml`, leaving only a comment naming it
+(`# the e2e job was here; e2e/demo-journey.spec.ts still names it`). Under `ciText.includes("e2e")` the
+gate-0 requirement kept reading `met` off that comment.
+
+**Observed report line (verbatim), gate 0's `e2e` requirement now unmet:**
+```
+    ○ not yet green      gate 0 (wave 0, prompts 1-3) requires docs/demo-contract.md · config/demo/scenarios.yaml · docs/golden-cases.md · golden-cases · src/__tests__/fitness/demo-skeleton-honesty.test.ts · e2e · every demo-contract §4 required surface exists and is reachable in the walking skeleton
+                         └ awaiting: e2e
+```
+
+**Injection 11 - the same hole on the INVARIANT-MECHANISM side.** Kept the `audit-chain-verify` job but
+replaced its blocking command with `echo 'audit-chain-verify temporarily disabled'`, so the job NAME
+still appears everywhere it used to.
+
+**Observed failure (verbatim), the runner (blocking CI job `v3-invariants`, exit 1):**
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+```
+and the registry fence, independently:
+```
+ FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+
+**Injection 12 - the prose evasion written as a COMMA LIST.** Set invariant 3's `activationPrompts` to
+`[9]` while `activatesWhen` read "the vocabulary and the migration land (Wave B prompts 9, 10) so no
+decision domain survives as a core module". The previous scanner read only `9` from that spelling, so
+rule (f) passed and the understated prerequisite stood.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose: expected [ Array(1) ] to deeply equal []
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Injection 13 - an entry condition depending on an unregistered gate, written in LOWER CASE.** Set gate
+C's `entryCondition` to "gate Z is green: money movement and account opening are expressible as data."
+The previous scanner compiled without `/i`, so a lower-case gate name skipped rule (h) entirely.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0030): expected [ Array(1) ] to deeply equal []
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0030)
+```
+
+**Injection 14 - the reported ratchet gap: an invariant pushed to a LATER gate with both requirement
+lists updated.** Moved invariant 6 from gate D to gate E, removed it from `gates.D.requires`, and added
+it to `gates.E.requires` - the shape that passes every rule in `gateOrderingProblems` (verified: the
+runner printed a clean report, `0` occurrences of "registry/pin problems") and silently lets Gate D go
+green earlier.
+
+**Observed failure (verbatim), caught ONLY by the ratchets, which is why they exist:**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): the ratified activation-ownership map of all 30 invariants
+AssertionError: expected { '1': 'A', '2': 'A', '3': 'B', …(27) } to deeply equal { '1': 'A', '2': 'A', '3': 'B', …(27) }
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+
+**Injection 15 - a gate quietly dropping a ruled requirement.** Removed invariant 16 from
+`gates.B.requires`, the shape in which Gate B could read green after prompt 9 with the closed policy-AST
+prohibition unproven.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+
+**Injection 16 - historical injection 1, re-run verbatim under the current implementation.** Moved
+invariant 3 back to `gate: "A"` and set `gates.A.requires` to `[1,2,3,4,5]` - the original circular Gate
+A dependency. This is the entry the supersession table above points at; the rule still rejects it, and
+now three checks catch it independently.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0030).: expected [ Array(1) ] to deeply equal []
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+AssertionError: expected [ 1, 2, 3, 4, 5 ] to deeply equal [ 1, 2, 4, 5 ]
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): the ratified activation-ownership map of all 30 invariants
+AssertionError: expected { '1': 'A', '2': 'A', '3': 'A', …(27) } to deeply equal { '1': 'A', '2': 'A', '3': 'B', …(27) }
+```
+Independently caught by the runner (exit 1, no report printed):
+```
+v3-invariants: registry/pin problems:
+  - gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0030).
+```
+(The `(activation owned by gate X)` clause seen in injection 9 is absent here because this injection
+moves invariant 3's OWNERSHIP to gate A as well, so the requiring gate is the owner.)
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a gate referencing
+an already-active invariant a later gate owns; a referenced invariant whose `activationPrompts` are
+dropped on activation, leaving only its owner gate to place it (the fail-closed direction); a `ci-gate`
+requirement naming a job but no command; the prose evasion in comma-list and conjunction form; a
+lower-case gate name in an `entryCondition`; every accepted prompt spelling and a set of evasive
+near-matches that must NOT be read as prompt references (ADR ids, `§`/section numbers, dates, bare
+counts, a trailing non-numeric clause); a structural CI parse in which a job named only in a comment and
+a job running the wrong command both fail while the real workflow satisfies all three registry
+`ci-gate`s; a readiness case holding a gate below green when its job does not run the command; and both
+ratchets, shown rejecting a moved assignment and a dropped requirement while still matching the live
+registry (so neither can pass by always failing). The registry fence gained the matching companions for
+a name-only and a wrong-command `ci-gate` mechanism, plus the honest case.
+
+**Revert:** `v3-invariants.json` and `.github/workflows/ci.yml` restored from pre-injection copies after
+every injection and verified byte-identical with `diff -q`; `git status` clean of both files.
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts src/__tests__/fitness/v3-invariants.test.ts` →
+`Tests 42 passed (42)`, `pnpm test` → `562 passed`, `pnpm v3:invariants` →
+`5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with all nine gates printed and NONE green
+(gate 0 `not-yet-verifiable`; A-I `not yet green`).
+
+**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-2`).

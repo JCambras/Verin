@@ -6192,8 +6192,27 @@ re-checked only the ordering rule. The fence also stopped asserting invariant 3'
 `not-yet-active` status and now asserts the durable rule that `active` requires its declared prompt-10
 artifacts to exist.
 
+Review round `gatea-fix-review-2` (2026-07-28) amended ADR-0030 in place again, still without touching
+the original ruling: **(1)** the ordering rule is decided from a requirement's PROOF POINT (the last of an
+invariant's `activationPrompts`, or - when it declares none - the closing prompt of the gate that owns
+it) instead of short-circuiting on `status: "active"`, so a gate referencing an invariant a LATER gate
+owns now fails whether or not that invariant is already active, and the verdict does not flip when one
+activates; **(2)** `ci-gate` requirements and mechanisms name the `command` their blocking job runs,
+checked against a structural parse of `ci.yml`, because a job NAME alone is satisfied by a comment or a
+path; **(3)** both prose scanners cover every spelling the registry uses - ranges, comma lists,
+conjunctions, and lower-case gate names - while still reading nothing that merely looks like a prompt
+reference; **(4)** two RATCHETS in the fence file pin the complete 30-invariant activation-ownership map
+and every gate's invariant requirement set, so pushing an invariant to a later gate fails CI even though
+it passes every structural rule; **(5)** Gate B additionally requires invariant 16 and Gate C invariant
+11, each being complete inside that gate's own prompt range, while invariant 6 stays a Gate D requirement
+because it needs BOTH prompt 15's bundle and prompt 16's evaluator - a requirement-set change only, since
+16 stays owned by Gate E and 11 by Gate D. Where the ruling's general reference rule and its specific
+Gate-B-requires-16 instruction conflict, ADR-0030 records that the specific instruction governs and the
+general rule is enforced in its provable form (proof point at or before the referencing gate's close).
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
-list is an amendment to ADR-0030 and ADR-0023, never a registry edit alone.
+list, or any invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and both ratchets in
+`src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.

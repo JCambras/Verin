@@ -496,7 +496,7 @@
     },
     {
       "id": "v3-gate-ordering",
-      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires lands after it closes; Gate A requires 1/2/4/5, Gate B requires 3 (ADR-0030)",
+      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; the 30-invariant gate-assignment map and every gate's requirement set are ratcheted; Gate A requires 1/2/4/5, Gate B requires 3 (ADR-0030)",
       "status": "enforced",
       "phase": "v3-0",
       "mechanisms": [

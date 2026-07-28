@@ -1,5 +1,5 @@
 {
-  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G/H, I) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven) is distinct from gate REQUIREMENT ('gates.<G>.requires'): a gate must require every invariant it owns, and may additionally reference invariants owned by EARLIER gates (Gate C restates invariant 1 without taking it from Gate A). ORDERING RULE: nothing a gate requires may land after that gate closes - every not-yet-active invariant's 'activationPrompts' must end at or before its own gate's last prompt, and every non-invariant requirement's 'prompt' at or before the requiring gate's last prompt. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
+  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G/H, I) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven, pinned for all 30 invariants by the fence's ratchet) is distinct from gate REQUIREMENT ('gates.<G>.requires'): a gate must require every invariant it owns, and may additionally REFERENCE an invariant another gate owns as long as that invariant is fully proven by the time the referencing gate closes (Gate C restates invariant 1 without taking it from Gate A; Gate B requires invariant 16, whose closed policy AST is complete at prompt 9, though Gate E owns it). A requirement is set at the EARLIEST gate that can prove the WHOLE invariant, never at the first gate that touches part of it - which is why invariant 6 is required only at Gate D (it needs prompt 15's bundle AND prompt 16's evaluator). ORDERING RULE: nothing a gate requires may land after that gate closes, decided from each requirement's PROOF POINT - the last of an invariant's 'activationPrompts', or, when it declares none, the closing prompt of the gate that owns it (so a reference to an invariant a LATER gate owns fails whether or not it is already active), and a non-invariant requirement's own 'prompt'. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. A 'ci-gate' requirement must name the 'command' its blocking job runs: a job name matching a comment or a path is not evidence. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
   "architectureVersion": "v3",
   "documents": [
     {
@@ -50,6 +50,7 @@
         {
           "kind": "ci-gate",
           "ref": "golden-cases",
+          "command": "pnpm golden:validate",
           "prompt": 2
         },
         {
@@ -60,6 +61,7 @@
         {
           "kind": "ci-gate",
           "ref": "e2e",
+          "command": "pnpm test:e2e",
           "prompt": 3
         },
         {
@@ -113,6 +115,11 @@
           "id": 3
         },
         {
+          "kind": "invariant",
+          "id": 16,
+          "note": "REFERENCED, NOT OWNED (ruling gatea-fix-review-2): invariant 16's whole subject - firm policy configuration contains no arbitrary executable code - is complete at prompt 9, where the constrained policy AST and its load-time validator land INSIDE Wave B. Gate B is therefore the earliest gate that can honestly prove it, so Gate B may not go green without it. Its activation ownership stays with Gate E, which re-asserts it over the prompts 20-22 policy lifecycle."
+        },
+        {
           "kind": "artifact",
           "ref": "config/domains/account-opening.yaml",
           "prompt": 10
@@ -124,7 +131,7 @@
         }
       ],
       "entryCondition": "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A's corrected requirements (invariants 1, 2, 4, 5) are active and green (ADR-0030).",
-      "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/ (Wave B, prompts 8-11; ADR-0030)."
+      "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030)."
     },
     "C": {
       "wave": "C",
@@ -138,6 +145,11 @@
           "kind": "invariant",
           "id": 1,
           "note": "REFERENCED, NOT OWNED: v3's Gate C restates 'no PII in LLM artifacts', whose invariant subject is #1. Invariant 1's activation stays owned by Gate A (prompt 6) per the captain's ruled Gate A set; Gate C re-asserts it over the intake and evidence paths built in prompts 12-15."
+        },
+        {
+          "kind": "invariant",
+          "id": 11,
+          "note": "REFERENCED, NOT OWNED (ruling gatea-fix-review-2): invariant 11's whole subject - a decision with blocking evidence gaps cannot proceed automatically - is complete at prompt 15, where the validation stage lands INSIDE Wave C (validate is distinct from evaluate: present-but-stale evidence cannot silently proceed). Gate C is therefore the earliest gate that can honestly prove it. Its activation ownership stays with Gate D, which re-asserts it over the prompts 16-19 deterministic evaluator. Contrast invariant 6, which is NOT required here: it needs BOTH prompt 15's input bundle AND prompt 16's evaluator, so it is not complete until Wave D."
         },
         {
           "kind": "evidence",
@@ -424,7 +436,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "audit-chain-verify"
+          "ref": "audit-chain-verify",
+          "command": "pnpm audit:chain"
         },
         {
           "type": "file",
@@ -448,7 +461,8 @@
         15,
         16
       ],
-      "mechanisms": []
+      "mechanisms": [],
+      "notes": "OWNED AND REQUIRED AT GATE D, and deliberately NOT required at Gate C (ruling gatea-fix-review-2). Prompt 15 (Wave C) supplies only half of it - the immutable input bundle; the pure, deterministic, version-pinned evaluator lands at prompt 16 (Wave D). A gate requirement is set at the earliest gate that can prove the WHOLE invariant, never at the first gate that touches part of it."
     },
     {
       "id": 7,
@@ -517,7 +531,8 @@
       "activationPrompts": [
         15
       ],
-      "mechanisms": []
+      "mechanisms": [],
+      "notes": "ACTIVATION OWNED BY GATE D, REQUIRED FROM GATE C ONWARD (ruling gatea-fix-review-2). Its whole subject is complete at prompt 15, inside Wave C, so Gate C may not go green without it; Gate D re-asserts it over the deterministic evaluator it owns. Ownership and requirement are separate relations - this invariant appears in two gates' requirement lists and only one gate's activation ownership."
     },
     {
       "id": 12,
@@ -574,6 +589,9 @@
       "name": "Firm policy configuration contains no arbitrary executable code",
       "status": "active",
       "activatesWhen": "",
+      "activationPrompts": [
+        9
+      ],
       "mechanisms": [
         {
           "type": "fitness",
@@ -592,7 +610,7 @@
           "ref": "src/domain/policy/load.ts"
         }
       ],
-      "notes": "Activated by prompt 9 (ADR-0053). Policy is a CLOSED, typed AST: strict Zod schemas admit exactly the ratified ValueNode/PredicateNode/PolicyEffect variants (grammar 1.0.0; 1.1.0 adds only the reserved 'elapsed' op, refused by the loader as grammar-only). loadPolicy performs the seven ratified checks against Map-backed pinned registries - unknown operators, paths, context keys, primitives, parameters, strategies, and templates are load errors; prototype-chain paths are simply unknown; constants are inert data, never interpreted; effect conflicts are rejected by the conservative disjointness prover, never resolved by rule order. The policy-ast fence pins the grammar closure, domain neutrality, purity (no clock/random/tz/locale), the migration fixture digests, and named-deferral reachability. The interpreter itself (src/domain/policy/evaluate.ts) is a pure four-phase function; determinism, totality, monotonicity, and fail-closed behavior are property-tested (fast-check families A-H in src/__tests__/unit/policy-properties.test.ts; family H holds temporal-typed fact reads to canonical bytes, D-186)."
+      "notes": "ACTIVATION OWNED BY GATE E, REQUIRED FROM GATE B ONWARD (ruling gatea-fix-review-2). Its whole subject is complete at prompt 9, inside Wave B, so Gate B may not go green without it; Gate E re-asserts it over the policy lifecycle it owns. Ownership and requirement are separate relations - this invariant appears in two gates' requirement lists and only one gate's activation ownership. Activated by prompt 9 (ADR-0053). Policy is a CLOSED, typed AST: strict Zod schemas admit exactly the ratified ValueNode/PredicateNode/PolicyEffect variants (grammar 1.0.0; 1.1.0 adds only the reserved 'elapsed' op, refused by the loader as grammar-only). loadPolicy performs the seven ratified checks against Map-backed pinned registries - unknown operators, paths, context keys, primitives, parameters, strategies, and templates are load errors; prototype-chain paths are simply unknown; constants are inert data, never interpreted; effect conflicts are rejected by the conservative disjointness prover, never resolved by rule order. The policy-ast fence pins the grammar closure, domain neutrality, purity (no clock/random/tz/locale), the migration fixture digests, and named-deferral reachability. The interpreter itself (src/domain/policy/evaluate.ts) is a pure four-phase function; determinism, totality, monotonicity, and fail-closed behavior are property-tested (fast-check families A-H in src/__tests__/unit/policy-properties.test.ts; family H holds temporal-typed fact reads to canonical bytes, D-186)."
     },
     {
       "id": 17,

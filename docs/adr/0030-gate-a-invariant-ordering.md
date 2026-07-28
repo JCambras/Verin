@@ -1,8 +1,8 @@
 # ADR-0030: Gate A requires invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review ruling `gatea-opus-review-1`
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1` and `gatea-fix-review-2`
 **Date:** 2026-07-28
-**Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; review ruling `gatea-opus-review-1`, 2026-07-28), founding architect
+**Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; review rulings `gatea-opus-review-1` and `gatea-fix-review-2`, 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
 **Informed by:** `docs/v3/verin-prompt-sequence-v3.md` (Gate A at prompt 7; prompt 10 in Wave B), `docs/v3/marriage-map.md` C10 (the account-opening flow definition migrates to `config/domains/`), v3 §17 preamble ("CI reports active, not-yet-active, or failed - never fake green")
 
@@ -68,12 +68,46 @@ relations are now separate:
 - **Gate requirement** - `gates.<G>.requires` is a list of TYPED requirements: `invariant`, `artifact`,
   `fitness`, `ci-gate` (all machine-checkable) and `evidence` (an outcome clause with no executable
   proof yet, which must carry a note saying why, and which can never read green). A gate may
-  additionally REFERENCE an invariant an earlier gate owns - Gate C restates invariant 1 over the
-  intake and evidence paths without taking it from Gate A.
+  additionally REFERENCE an invariant another gate owns, provided that invariant is fully proven by the
+  time the referencing gate closes - Gate C restates invariant 1 over the intake and evidence paths
+  without taking it from Gate A.
 
 The ordering rule generalizes to every typed requirement: **nothing a gate requires may land after that
 gate closes**. A gate declaring no machine-checkable requirement is rejected outright, because an empty
 set would read green the moment it was registered - empty sets never prove readiness.
+
+**Proof points, not status (review ruling `gatea-fix-review-2`).** The first cut of the ordering rule
+read an already-`active` invariant as needing no future prompt, which made the reference DIRECTION
+undecidable: `gates.A.requires` could name invariant 7, which Gate D owns, and pass. The rule now
+compares a requirement's PROOF POINT - the prompt by which it is fully proven - against the requiring
+gate's closing prompt. An invariant's proof point is the last of its `activationPrompts`, and, when it
+declares none, the closing prompt of the gate that owns it, read off the canonical ordered gate ranges.
+This is deliberately STATUS-INDEPENDENT: a rule whose verdict flips the moment an invariant activates is
+not a structural rule, and the fallback is fail-closed, so `activationPrompts` is a permanent record of
+when an invariant landed rather than a to-do list. Dropping it on activation breaks every earlier gate
+that requires the invariant, which is where a reader will see it.
+
+**Requirements sit at the earliest gate that can prove the WHOLE invariant** (same ruling), never at the
+first gate that touches part of one. Gate B therefore requires invariant 16 - the closed policy AST and
+its load-time validator are complete at prompt 9, inside Wave B - and Gate C requires invariant 11, whose
+validation stage is complete at prompt 15, inside Wave C. Neither invariant changes ACTIVATION ownership:
+16 stays owned by Gate E and 11 by Gate D, each re-asserting it over the subject that gate builds.
+Invariant 6 stays a Gate D requirement only, because it needs BOTH prompt 15's input bundle AND prompt
+16's evaluator; requiring it at Gate C would be the mechanical over-reach this rule rejects. The reason
+is recorded per invariant in the registry, so the ownership/requirement distinction survives the edit.
+
+Where those two clauses meet, the ruling's own general statement ("a gate may reference an invariant
+owned by the same or an earlier gate, never a later gate") and its specific instruction ("Gate B must
+REQUIRE invariant 16 ... invariant 16 stays owned by gate E") cannot both hold literally. The specific
+instruction governs, and the general rule is implemented in its provable form: a gate may reference an
+invariant any gate owns **as long as that invariant's proof point is at or before the referencing gate's
+close**. That still rejects the case the ruling asked to be verified - Gate A referencing the active,
+Gate-D-owned invariant 7 - and it stays correct when invariant 16 activates.
+
+**A CI job NAME is not evidence** (same ruling). `ci-gate` requirements and `ci-gate` invariant
+mechanisms previously matched by substring, so a three-character token like `e2e` stayed "met" off a
+comment or a file path after the blocking job was deleted. The workflow is now parsed structurally into
+`job -> run scripts`, and every `ci-gate` must name the `command` its job actually runs.
 
 **One rule set, two callers.** The rules live in `scripts/v3-gates.lib.ts` (the same split as
 `scripts/golden-cases.lib.ts`). `src/__tests__/fitness/v3-gate-ordering.test.ts` owns the adversarial
@@ -104,6 +138,10 @@ or deferred without a trigger - it is required, in full, at Gate B.
 | Register only the gates that own an invariant (leave 0, C, and I out) | Gate D's own entry condition cites "Gate C is green" - a precondition nothing could compute. An unregistered gate is not an absent requirement, it is an unverifiable one. |
 | Give gates 0, C, and I an invariant of their own so `requires` can stay an id list | v3's Gate C subject IS invariant 1, which the ruling pins to Gate A; manufacturing a second owner would contradict the ruled set, and §17's 30 invariants are fixed - none may be added or restated to make a gate registrable. |
 | Let a requirement-less gate render green and rely on review to catch it | Registration would confer readiness. A gate with nothing to decide is exactly the fake green this ADR exists to remove. |
+| Keep deciding the ordering rule from `status: "active"` (treat an active invariant as needing no future prompt) | The verdict then flips when an invariant activates - a reference legal today becomes illegal at the moment the work lands - and the reference DIRECTION is undecidable in the meantime, so a gate could read green on an invariant a later gate owns. |
+| Move invariant 16 to Gate B and invariant 11 to Gate C so "reference only earlier-owned invariants" holds literally | That changes ACTIVATION OWNERSHIP, which the ruling forbids: Gate E must still be the gate that proves invariant 16 over the policy lifecycle it builds. Ownership and requirement are separate relations precisely so this trade is not necessary. |
+| Prove a `ci-gate` by searching ci.yml for the job name | A three-character token like `e2e` matches a comment, a path, or a `pnpm test:e2e` invocation in an unrelated job, so the requirement keeps reading "met" after the blocking job is deleted - the weak/tautological check charter #4 calls worse than no check. |
+| Pin only Gate A and Gate B in the fence and trust review for the rest | Gate assignment decides which gate can never go green without an invariant. Moving one to a later gate while updating both `requires` lists passes every structural rule (proved: injection 14), so nothing would surface it. |
 
 ## Trade-offs and Costs
 
@@ -124,9 +162,16 @@ or deferred without a trigger - it is required, in full, at Gate B.
   lists; invariant 3 moves to gate B with `activationArtifacts`; invariant 4's `activatesWhen` now names
   its Wave A activation subjects (prompts 5-7) explicitly, since Gate A requires it - later waves extend
   the same §16 fence family without re-gating it (ADR-0026).
-- Gate A's requirement set is unchanged by the review round: `{1, 2, 4, 5}`, all four owned by A. Gate B
-  requires invariant 3 plus prompt 10's two `config/domains/*.yaml` artifacts. Gate C references
-  invariant 1 without owning it. Nothing else took an invariant from another gate.
+- Gate A's requirement set is unchanged by either review round: `{1, 2, 4, 5}`, all four owned by A. Gate
+  B requires invariants 3 and 16 plus prompt 10's two `config/domains/*.yaml` artifacts. Gate C requires
+  invariants 1 and 11. Gate D still requires 6-13 and Gate E still requires 14-17. No invariant changed
+  ACTIVATION ownership: invariant 16 is owned by E and 11 by D, and both are additionally required at the
+  earlier gate that can prove them.
+- Two RATCHETS live in the fence file, where review sees the edit: the complete 30-invariant
+  activation-ownership map, and every gate's invariant requirement set. Changing either fails CI until
+  the ratchet, this ADR, ADR-0023 where applicable, and the proof evidence are amended together.
+- Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
+  blocking job runs, checked against a structural parse of `.github/workflows/ci.yml`.
 - Registering a gate cannot make it green. Today gate 0 reads `not-yet-verifiable` (no mechanism decides
   completeness against the demo contract's §4 required-surface list - the skeleton-honesty fence proves
   contract parity and the surface import boundary, and the e2e walkthrough screenshots a hard-coded
@@ -156,5 +201,14 @@ or deferred without a trigger - it is required, in full, at Gate B.
   gate C's validated-bundle clause, gate I's severity verdict): replace that entry with the
   `invariant` / `fitness` / `artifact` requirement that decides it, in the same PR. An `evidence` entry
   is a named gap, never a permanent excuse.
-- Any gate's `requires` list is proposed for change: that is an amendment to this ADR and to ADR-0023's
-  phase-gated commitment, never a registry edit alone.
+- Any gate's `requires` list, or any invariant's `gate`, is proposed for change: that is an amendment to
+  this ADR, to ADR-0023's phase-gated commitment, and to BOTH ratchets in
+  `src/__tests__/fitness/v3-gate-ordering.test.ts`, with fresh proof-log evidence - never a registry edit
+  alone. A registry-only edit fails CI (proved: PF-018 injections 14 and 15).
+- An invariant that has been referenced by an earlier gate is activated: keep its `activationPrompts`.
+  They are the permanent record of the prompt at which it landed, and the ordering rule falls back to its
+  owner gate's close without them, which would make the earlier gate's requirement illegal. If a future
+  invariant genuinely has no single landing prompt, the proof-point model needs the partial-activation
+  extension named in the first bullet above rather than a dropped field.
+- A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
+  PR. The structural check reads the workflow, so a stale pair fails rather than silently matching.

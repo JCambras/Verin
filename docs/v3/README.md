@@ -62,11 +62,19 @@ the ratified sequence (0, A, B, C, D, E, F, G/H, I) are registered with their wa
 condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
 (machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
 green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
-every invariant it owns, and may additionally reference invariants an earlier gate owns. The shared rule
+every invariant it owns, and may additionally reference an invariant another gate owns as long as that
+invariant is fully proven by the time the referencing gate closes. A requirement is set at the EARLIEST
+gate that can prove the WHOLE invariant - so Gate B requires invariant 16 (closed policy AST, complete at
+prompt 9) and Gate C requires invariant 11 (validation stage, complete at prompt 15) without taking
+either from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
+prompt 15's bundle and prompt 16's evaluator. The shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
-fails the build if a gate requires anything that lands after that gate closes, or if a gate declares no
-machine-checkable requirement (an empty set would read green merely by being registered). Per
+fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
+declares no machine-checkable requirement (an empty set would read green merely by being registered), or
+if a `ci-gate` does not name the command its blocking job actually runs. Two ratchets in the fence pin
+the complete 30-invariant gate-assignment map and every gate's invariant requirement set, so neither
+moves by a registry edit alone. Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
 4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account

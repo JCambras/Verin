@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ciJobRuns, parseCiJobs } from "../../../scripts/v3-gates.lib";
 
 /**
  * V3-INVARIANT REGISTRY FENCE (ADR-0023; v3 §17 preamble: CI reports active,
@@ -12,9 +13,10 @@ import { fileURLToPath } from "node:url";
  *      running the mapped fences: scripts/v3-invariants.ts, CI job
  *      'v3-invariants');
  *  (c) every ACTIVE invariant maps to >=1 runnable fitness mechanism, every
- *      path-like mechanism exists on disk, and every ci-gate mechanism is
- *      declared in the BLOCKING ci.yml (a name surviving only in the
- *      non-blocking scheduled.yml does not count - same rule as charter-drift);
+ *      path-like mechanism exists on disk, and every ci-gate mechanism names a
+ *      job that EXISTS in the BLOCKING ci.yml and RUNS the mechanism's declared
+ *      command (a name surviving only in the non-blocking scheduled.yml, or only
+ *      in a comment or a path, does not count - ruling `gatea-fix-review-2`);
  *  (d) every NOT-YET-ACTIVE invariant names its activation prerequisite
  *      (activatesWhen) - a bare "not yet" with no named trigger is the silent
  *      deferral the charter forbids;
@@ -29,6 +31,8 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 interface Mechanism {
   type: string;
   ref: string;
+  /** `ci-gate` only: the command the named blocking job must actually run. */
+  command?: string;
 }
 interface Invariant {
   id: number;
@@ -52,7 +56,7 @@ const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedu
 export const ACTIVE_RATCHET = [1, 2, 5, 7, 8, 9];
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
-export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciText: string }): string[] {
+export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciJobs: Map<string, string[]> }): string[] {
   const problems: string[] = [];
   const invs = reg.invariants ?? [];
 
@@ -87,7 +91,11 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
     for (const m of inv.mechanisms ?? []) {
       if (!MECHANISM_TYPES.includes(m.type)) problems.push(`${tag}: unknown mechanism type '${m.type}'`);
       if (m.type === "ci-gate") {
-        if (!deps.ciText.includes(m.ref)) problems.push(`${tag}: ci-gate '${m.ref}' not found in the BLOCKING .github/workflows/ci.yml`);
+        if (typeof m.command !== "string" || m.command.trim() === "") {
+          problems.push(`${tag}: ci-gate '${m.ref}' must name the command its blocking job runs - a job NAME alone is satisfied by a comment or a path`);
+        } else if (!ciJobRuns(deps.ciJobs, m.ref, m.command)) {
+          problems.push(`${tag}: ci-gate '${m.ref}' does not run '${m.command}' as a job in the BLOCKING .github/workflows/ci.yml`);
+        }
       } else if (!deps.exists(m.ref)) {
         problems.push(`${tag}: mechanism ${m.type}:${m.ref} does not exist on disk`);
       }
@@ -103,11 +111,11 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
 }
 
 const registry = JSON.parse(readFileSync(root + "v3-invariants.json", "utf8")) as Registry;
-const ciText = existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "";
+const ciJobs = parseCiJobs(existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "");
 
 describe("v3-invariant registry fence", () => {
   it("enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted", () => {
-    const problems = validateRegistry(registry, { exists: (p) => existsSync(root + p), ciText });
+    const problems = validateRegistry(registry, { exists: (p) => existsSync(root + p), ciJobs });
     expect(problems, `v3-invariants.json problems:\n${problems.join("\n")}`).toEqual([]);
   });
 
@@ -125,8 +133,11 @@ describe("v3-invariant registry fence", () => {
     const full = (over: Map<number, Partial<Invariant>> = new Map()): Registry => ({
       invariants: Array.from({ length: 30 }, (_, k) => inv(k + 1, over.get(k + 1))),
     });
-    const deps = { exists: () => true, ciText: "jobs: v3-invariants audit-chain-verify" };
-    // Ratcheted ids (1, 2, 5) must be active in fixtures that test OTHER failure classes.
+    const deps = {
+      exists: () => true,
+      ciJobs: parseCiJobs(["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm db:seed && pnpm audit:chain", ""].join("\n")),
+    };
+    // Ratcheted ids must be active in fixtures that test OTHER failure classes.
     const ratchetActive: Array<[number, Partial<Invariant>]> = ACTIVE_RATCHET.map((id) => [
       id,
       { status: "active", mechanisms: [{ type: "fitness", ref: "src/__tests__/fitness/x.test.ts" }] },
@@ -148,12 +159,44 @@ describe("v3-invariant registry fence", () => {
       const reg = full(
         new Map<number, Partial<Invariant>>([
           ...ratchetActive,
-          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "src/__tests__/fitness/ghost.test.ts" }, { type: "ci-gate", ref: "ghost-gate" }] }],
+          [
+            9,
+            {
+              status: "active",
+              mechanisms: [
+                { type: "fitness", ref: "src/__tests__/fitness/ghost.test.ts" },
+                { type: "ci-gate", ref: "ghost-gate", command: "pnpm ghost" },
+              ],
+            },
+          ],
         ]),
       );
-      const problems = validateRegistry(reg, { exists: (p) => !p.includes("ghost"), ciText: deps.ciText });
+      const problems = validateRegistry(reg, { exists: (p) => !p.includes("ghost"), ciJobs: deps.ciJobs });
       expect(problems.some((p) => p.includes("does not exist on disk"))).toBe(true);
-      expect(problems.some((p) => p.includes("not found in the BLOCKING"))).toBe(true);
+      expect(problems.some((p) => p.includes("does not run 'pnpm ghost' as a job in the BLOCKING"))).toBe(true);
+    });
+    it("flags a ci-gate satisfied only by a NAME - the job must exist and run the declared command", () => {
+      const named = full(
+        new Map<number, Partial<Invariant>>([
+          ...ratchetActive,
+          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify" }] }],
+        ]),
+      );
+      expect(validateRegistry(named, deps).some((p) => p.includes("must name the command its blocking job runs"))).toBe(true);
+      const wrongCommand = full(
+        new Map<number, Partial<Invariant>>([
+          ...ratchetActive,
+          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm lint" }] }],
+        ]),
+      );
+      expect(validateRegistry(wrongCommand, deps).some((p) => p.includes("does not run 'pnpm lint'"))).toBe(true);
+      const honest = full(
+        new Map<number, Partial<Invariant>>([
+          ...ratchetActive,
+          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm audit:chain" }] }],
+        ]),
+      );
+      expect(validateRegistry(honest, deps)).toEqual([]);
     });
     it("flags a ratcheted invariant regressing to not-yet-active, and a missing invariant", () => {
       const regressed = full(); // the ratcheted ids default to not-yet-active here

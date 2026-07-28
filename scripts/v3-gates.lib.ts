@@ -1,6 +1,7 @@
 /**
  * V3 PHASE-GATE MODEL - the SHARED core of the gate constitution (ADR-0030;
- * captain rulings `gate-a-ordering` and `gatea-opus-review-1`, 2026-07-28).
+ * captain rulings `gate-a-ordering`, `gatea-opus-review-1` and
+ * `gatea-fix-review-2`, 2026-07-28).
  *
  * Both checkers of `v3-invariants.json` import this module, so the blocking
  * runner (scripts/v3-invariants.ts, CI job `v3-invariants`) and the fitness
@@ -10,17 +11,28 @@
  *
  * TWO SEPARATE RELATIONS (the review-round correction):
  *  - ACTIVATION OWNERSHIP - `invariant.gate` names the one gate at which that
- *    invariant's activation is proven. The ordering rule is computed against it.
+ *    invariant's activation is proven. It is pinned, for all 30 invariants, by
+ *    the ratchet in the fence, so it cannot be moved by a registry edit alone.
  *  - GATE REQUIREMENT - `gates.<G>.requires` lists what <G> needs to be green.
  *    A gate MUST require every invariant it owns (so ownership cannot drift
- *    silently) and MAY additionally reference invariants owned by earlier gates,
+ *    silently) and MAY additionally reference invariants owned by other gates,
  *    plus artifacts, fences, and CI gates. v3's Gate C, for instance, restates
- *    "no PII in LLM artifacts" (invariant 1) without taking it from Gate A.
+ *    "no PII in LLM artifacts" (invariant 1) without taking it from Gate A, and
+ *    Gate B requires invariant 16, whose closed policy-AST prohibition is fully
+ *    proven at prompt 9 - inside Wave B - though Gate E owns its activation.
  *
  * THE ORDERING RULE: nothing a gate requires may land after that gate closes.
  * A gate that requires something unreachable inside its own wave can only ever
  * be "passed" by lying about activation - the circular Gate A dependency this
  * ADR removed, and exactly what v3 §17's never-fake-green preamble forbids.
+ *
+ * The ordering rule is decided from a requirement's PROOF POINT - the prompt by
+ * which it is fully proven (see `proofPoint`). For an invariant that declares
+ * `activationPrompts`, that is the last of them; for one that does not, it is
+ * the closing prompt of the gate that OWNS its activation, read off the
+ * canonical ordered gate ranges. Reading an already-active invariant as "lands
+ * at prompt 0" is what previously let a gate reference an invariant a LATER gate
+ * owns and still pass (ruling `gatea-fix-review-2`).
  */
 
 /** The v3 build sequence is exactly 30 prompts (docs/v3/verin-prompt-sequence-v3.md). */
@@ -40,6 +52,8 @@ export interface GateRequirement {
   ref?: string;
   /** every non-invariant kind: the prompt whose landing produces it. */
   prompt?: number;
+  /** `ci-gate` only: the command the named blocking job must actually run. */
+  command?: string;
   note?: string;
 }
 
@@ -72,20 +86,88 @@ export const isMechanized = (r: GateRequirement): boolean => (MECHANIZED_KINDS a
 /** How a requirement is named in a report and in a failure message. */
 export const requirementLabel = (r: GateRequirement): string => (r.kind === "invariant" ? `#${r.id}` : (r.ref ?? "<no ref>"));
 
-/** Prompt numbers named in prose: "prompt 6", "prompts 24-25", "prompts 5-7". */
+/**
+ * Prompt numbers named in prose, in every spelling the registry uses:
+ * "prompt 6", "prompts 5-7", "prompts 9, 10", "prompts 5 and 6",
+ * "prompts 5, 6, and 7". The `prompt(s)` keyword is required, so ADR numbers,
+ * section numbers, dates, and bare counts are NOT prompt references.
+ */
 export function promptsNamedInProse(prose: string): number[] {
   const out = new Set<number>();
-  for (const m of prose.matchAll(/prompts?\s+(\d+)(?:\s*[-–—]\s*(\d+))?/gi)) {
-    const from = Number(m[1]);
-    const to = m[2] === undefined ? from : Number(m[2]);
-    for (let n = Math.min(from, to); n <= Math.max(from, to); n += 1) out.add(n);
+  for (const list of prose.matchAll(/\bprompts?\s+(\d+(?:\s*(?:[-–—]|,\s*and\b|,|\band\b)\s*\d+)*)/gi)) {
+    for (const item of list[1]!.matchAll(/(\d+)(?:\s*[-–—]\s*(\d+))?/g)) {
+      const from = Number(item[1]);
+      const to = item[2] === undefined ? from : Number(item[2]);
+      for (let n = Math.min(from, to); n <= Math.max(from, to); n += 1) out.add(n);
+    }
   }
   return [...out].sort((a, b) => a - b);
 }
 
-/** Gate keys named in prose: "Gate A", "Gate G/H", "Gate 0". */
+/**
+ * Gate keys named in prose: "Gate A", "Gate G/H", "Gate 0" - CASE-INSENSITIVELY,
+ * so "gate C is green" cannot slip past the entry-condition rule. Keys are
+ * normalized to the registry's uppercase spelling.
+ */
 export function gatesNamedInProse(prose: string): string[] {
-  return [...new Set([...prose.matchAll(/\bGate\s+([0-9A-Z](?:\/[0-9A-Z])*)/g)].map((m) => m[1]!))];
+  return [...new Set([...prose.matchAll(/\bgate\s+([0-9a-z](?:\/[0-9a-z])*)\b/gi)].map((m) => m[1]!.toUpperCase()))];
+}
+
+/**
+ * A ci-gate requirement is only evidence if the named job EXISTS in the blocking
+ * workflow and RUNS the required command. A bare substring match is satisfied by
+ * a comment, a path, or an unrelated step - the tautological shape charter #4
+ * rejects - so the workflow is parsed structurally into `job key -> run scripts`.
+ * Every `run:` value is captured, including `|` and `>-` block scalars, with
+ * whitespace collapsed so a folded command still matches.
+ */
+export function parseCiJobs(yamlText: string): Map<string, string[]> {
+  const lines = yamlText.split("\n");
+  const jobs = new Map<string, string[]>();
+  let inJobs = false;
+  let current: string | undefined;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (/^\S/.test(line)) {
+      inJobs = /^jobs:\s*$/.test(line);
+      current = undefined;
+      continue;
+    }
+    if (!inJobs) continue;
+    const jobKey = /^ {2}([A-Za-z0-9_.-]+):\s*$/.exec(line);
+    if (jobKey) {
+      current = jobKey[1]!;
+      jobs.set(current, []);
+      continue;
+    }
+    if (current === undefined) continue;
+    const run = /^(\s*)-?\s*run:\s*(.*)$/.exec(line);
+    if (!run) continue;
+    const indent = run[1]!.length;
+    let value = run[2]!.trim();
+    if (/^[|>][-+0-9]*$/.test(value)) {
+      const block: string[] = [];
+      let j = i + 1;
+      for (; j < lines.length; j += 1) {
+        const next = lines[j]!;
+        if (next.trim() === "") continue;
+        if (next.length - next.trimStart().length <= indent) break;
+        block.push(next.trim());
+      }
+      value = block.join(" ");
+      // Consume the block so a `run:`-looking line INSIDE a shell script is not
+      // read as another step (an outer scan would over-collect run text).
+      i = j - 1;
+    }
+    jobs.get(current)!.push(value.replace(/\s+/g, " ").trim());
+  }
+  return jobs;
+}
+
+/** True only when `ref` is a declared job that runs `command` in one of its steps. */
+export function ciJobRuns(jobs: Map<string, string[]>, ref: string, command: string): boolean {
+  if (command.trim() === "") return false;
+  return (jobs.get(ref) ?? []).some((r) => r.includes(command.trim()));
 }
 
 /** The invariant ids a gate requires green, in registry order (the captain's ruled sets). */
@@ -93,17 +175,36 @@ export const requiredInvariantIds = (gate: Gate | undefined): number[] =>
   (gate?.requires ?? []).filter((r) => r.kind === "invariant").map((r) => r.id!);
 
 /**
- * The earliest prompt by which a requirement can be satisfied, or `undefined`
- * when the registry does not say (which is itself a problem reported below).
- * An already-active invariant needs no future prompt, so it lands at 0.
+ * The PROOF POINT of a requirement: the prompt by which it is fully proven, plus
+ * how the registry says so. `undefined` when the registry does not say (itself a
+ * problem reported below).
+ *
+ * For an invariant this is STATUS-INDEPENDENT on purpose. Reading an active
+ * invariant as "needs no future prompt" made the reference direction undecidable
+ * - a gate could require an invariant a LATER gate owns and pass - and a rule
+ * whose verdict flips the moment an invariant activates is not a structural rule
+ * at all. So: the last declared `activationPrompts` entry when there is one, and
+ * otherwise the closing prompt of the gate that owns the invariant's activation.
+ * The fallback is fail-closed: dropping `activationPrompts` on activation breaks
+ * every earlier gate that requires the invariant, which is why those prompt
+ * numbers are a permanent record of when it landed, not a to-do list.
  */
-function landsAtPrompt(req: GateRequirement, invById: Map<number, Invariant>): number | undefined {
-  if (req.kind !== "invariant") return req.prompt;
+function proofPoint(
+  req: GateRequirement,
+  invById: Map<number, Invariant>,
+  gates: Record<string, Gate>,
+): { at: number; how: string; ownedBy?: string } | undefined {
+  if (req.kind !== "invariant") return req.prompt === undefined ? undefined : { at: req.prompt, how: `prompt ${req.prompt}` };
   const inv = invById.get(req.id ?? Number.NaN);
   if (!inv) return undefined;
-  if (inv.status === "active") return 0;
   const declared = inv.activationPrompts ?? [];
-  return declared.length > 0 ? Math.max(...declared) : undefined;
+  if (declared.length > 0) {
+    const at = Math.max(...declared);
+    return { at, how: `prompt ${at}`, ownedBy: inv.gate };
+  }
+  const owner = gates[inv.gate];
+  if (!owner || !Array.isArray(owner.prompts) || owner.prompts.length !== 2) return undefined;
+  return { at: owner.prompts[1], how: `prompt ${owner.prompts[1]}, where gate ${inv.gate} proves its activation`, ownedBy: inv.gate };
 }
 
 /**
@@ -147,6 +248,14 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       }
       if (!Number.isInteger(req.prompt) || req.prompt! < 1 || req.prompt! > LAST_PROMPT) {
         problems.push(`gate ${key}: '${requirementLabel(req)}' must name the prompt (1-${LAST_PROMPT}) that produces it`);
+      }
+      // A CI job name alone is satisfied by a comment or a path; the job must be
+      // proven to RUN something, so the requirement names the command (charter #4).
+      if (req.kind === "ci-gate" && (typeof req.command !== "string" || req.command.trim().length === 0)) {
+        problems.push(
+          `gate ${key}: the 'ci-gate' requirement '${requirementLabel(req)}' must name the command that blocking job runs - ` +
+            `a job name matching a comment, a path, or an unrelated step is not evidence (ADR-0030)`,
+        );
       }
       // An `evidence` requirement holds a gate below green forever, so it may not be
       // silent about WHY nothing decides it - that is the deferral-with-no-trigger the
@@ -195,19 +304,19 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     }
   }
 
-  // (e) THE ORDERING RULE, over every typed requirement: nothing a gate requires may land after it closes
+  // (e) THE ORDERING RULE, over every typed requirement: nothing a gate requires may land after it
+  // closes - decided from proof points, so a reference to an invariant a LATER gate owns fails too.
   for (const [key, gate] of Object.entries(gates)) {
     if (!Array.isArray(gate.prompts) || gate.prompts.length !== 2) continue;
     const closesAt = gate.prompts[1];
     for (const req of gate.requires ?? []) {
-      const lands = landsAtPrompt(req, invById);
-      if (lands === undefined || lands <= closesAt) continue;
-      const owner = req.kind === "invariant" ? invById.get(req.id!) : undefined;
-      const owned = owner && owner.gate !== key ? ` (activation is owned by gate ${owner.gate})` : "";
+      const point = proofPoint(req, invById, gates);
+      if (point === undefined || point.at <= closesAt) continue;
+      const owned = point.ownedBy !== undefined && point.ownedBy !== key ? ` (activation owned by gate ${point.ownedBy})` : "";
       problems.push(
-        `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}): requires ${requirementLabel(req)}${owned}, whose ` +
-          `prerequisite is prompt ${lands}, which lands AFTER that gate closes. The gate could never go green without ` +
-          `faking activation - require it at the gate that covers prompt ${lands} (ADR-0030).`,
+        `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}): requires ${requirementLabel(req)}${owned}, which is ` +
+          `not proven until ${point.how} - AFTER this gate closes at prompt ${closesAt}. The gate could never go green without ` +
+          `faking activation - require it at a gate that covers prompt ${point.at} (ADR-0030).`,
       );
     }
   }
@@ -279,7 +388,8 @@ export interface ReadinessDeps {
   /** The COMPUTED invariant state from this run - the registry never stores a result. */
   invariantState: (id: number) => string | undefined;
   exists: (path: string) => boolean;
-  ciDeclares: (ref: string) => boolean;
+  /** The named blocking CI job exists AND runs the named command. */
+  ciRuns: (ref: string, command: string) => boolean;
   fitnessPassed: (ref: string) => boolean | undefined;
 }
 
@@ -292,7 +402,7 @@ function requirementState(req: GateRequirement, deps: ReadinessDeps): Requiremen
     case "fitness":
       return deps.fitnessPassed(req.ref ?? "") === true ? "met" : "unmet";
     case "ci-gate":
-      return deps.ciDeclares(req.ref ?? "") ? "met" : "unmet";
+      return deps.ciRuns(req.ref ?? "", req.command ?? "") ? "met" : "unmet";
     default:
       // `evidence`: the outcome clause has no executable proof in this repo yet.
       return "unverifiable";

@@ -14,11 +14,15 @@ prose, is the authoritative statement of what each gate requires**: all nine gat
 G/H, I) declare `{wave, prompts, requires, entryCondition, outcome}` with TYPED requirements
 (`invariant`/`artifact`/`fitness`/`ci-gate`, plus `evidence` for an outcome clause nothing decides yet,
 which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
-gate must require every invariant it owns and may reference invariants earlier gates own. One shared rule
+gate must require every invariant it owns and may reference one another gate owns when it is fully proven
+by the time this gate closes. One shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
-rejects a gate requiring anything that lands after that gate closes, and a gate with no machine-checkable
-requirement (ADR-0030 - Gate A requires 1/2/4/5; invariant 3 is required at Gate B because its
-prerequisite is prompt 10). The ratified documents registered in
+rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
+gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
+`ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A requires 1/2/4/5;
+invariant 3 is required at Gate B because its prerequisite is prompt 10). Two ratchets in the fence pin
+the 30-invariant gate-assignment map and every gate's invariant requirement set: moving one is an
+ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new
 ratified document must be registered in the PR that adds it - but a conflict between v3's letter and this

@@ -27,11 +27,21 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { gateOrderingProblems, gateReadiness, type Gate, type Invariant as GateInvariant, type Registry as GateRegistry } from "./v3-gates.lib";
+import {
+  ciJobRuns,
+  gateOrderingProblems,
+  gateReadiness,
+  parseCiJobs,
+  type Gate,
+  type Invariant as GateInvariant,
+  type Registry as GateRegistry,
+} from "./v3-gates.lib";
 
 interface Mechanism {
   type: string;
   ref: string;
+  /** `ci-gate` only: the command the named blocking job must actually run. */
+  command?: string;
 }
 interface Invariant extends GateInvariant {
   group: string;
@@ -97,6 +107,7 @@ if (structural.length > 0) fail(`registry/pin problems:\n  - ${structural.join("
 
 // ---------- execute the mapped fitness fences (one vitest run, per-file results) ----------
 const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
+const ciJobs = parseCiJobs(ciText);
 const active = registry.invariants.filter((i) => i.status === "active");
 const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filter((r) => r.kind === "fitness").map((r) => r.ref!));
 const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
@@ -162,10 +173,12 @@ function stateOf(inv: Invariant): { state: State; details: string[] } {
         details.push(`fitness ${m.ref} passed`);
       }
     } else if (m.type === "ci-gate") {
-      if (ciText.includes(m.ref)) details.push(`ci-gate ${m.ref} declared in blocking ci.yml`);
+      // A job NAME can appear in a comment or a path; the blocking job must exist
+      // and actually run the mechanism's command (ruling `gatea-fix-review-2`).
+      if (ciJobRuns(ciJobs, m.ref, m.command ?? "")) details.push(`ci-gate ${m.ref} runs '${m.command}' in blocking ci.yml`);
       else {
         ok = false;
-        details.push(`ci-gate ${m.ref} MISSING from blocking ci.yml`);
+        details.push(`ci-gate ${m.ref} does not run '${m.command ?? "<no command declared>"}' as a blocking ci.yml job`);
       }
     } else if (existsSync(join(ROOT, m.ref))) {
       details.push(`${m.type} ${m.ref} present`);
@@ -219,7 +232,7 @@ const gateTag = (s: string) => s.padEnd(GATE_STATE_WIDTH, " ");
 for (const view of gateReadiness(registry, {
   invariantState: (id) => stateById.get(id),
   exists: (p) => existsSync(join(ROOT, p)),
-  ciDeclares: (ref) => ciText.includes(ref),
+  ciRuns: (ref, command) => ciJobRuns(ciJobs, ref, command),
   fitnessPassed: (ref) => fileResults.get(ref),
 })) {
   const { key, gate } = view;
