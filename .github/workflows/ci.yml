@@ -194,7 +194,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: seed + verify org audit chains
+      - name: seed + verify operational audit and decision-ledger chains
         run: pnpm db:seed && pnpm audit:chain
 
   v3-invariants:

@@ -39,7 +39,52 @@ export function canonicalize(e: ChainableEntry): string {
 }
 
 export function computeEntryHash(e: ChainableEntry, prevHash: string): string {
-  return createHash("sha256").update(canonicalize(e)).update("|").update(prevHash).digest("hex");
+  return computeChainHash(canonicalize(e), prevHash);
+}
+
+/** Shared chain primitive. Existing audit preimages remain byte-for-byte unchanged. */
+export function computeChainHash(canonicalBytes: string, prevHash: string): string {
+  return createHash("sha256")
+    .update(canonicalBytes)
+    .update("|")
+    .update(prevHash)
+    .digest("hex");
+}
+
+export interface StoredByteChainRow {
+  readonly sequence: number;
+  readonly canonicalBytes: string;
+  readonly prevHash: string;
+  readonly entryHash: string;
+}
+
+/** L1 verification for chains whose authoritative preimage is already persisted. */
+export function verifyStoredByteChain(rows: StoredByteChainRow[]): ChainVerdict {
+  let prev = GENESIS_HASH;
+  let expectedSequence = 0;
+  for (const row of rows) {
+    if (row.sequence !== expectedSequence) {
+      return broken(row.sequence, expectedSequence, `sequence gap: expected ${expectedSequence}, got ${row.sequence}`);
+    }
+    if (row.prevHash !== prev) {
+      return broken(row.sequence, expectedSequence, "prev_hash does not match preceding entry_hash");
+    }
+    if (computeChainHash(row.canonicalBytes, prev) !== row.entryHash) {
+      return broken(row.sequence, expectedSequence, "entry_hash does not match stored canonical bytes");
+    }
+    prev = row.entryHash;
+    expectedSequence += 1;
+  }
+  return { ok: true, entriesChecked: rows.length, brokenAtSequence: null, reason: null };
+}
+
+function broken(sequence: number, checked: number, reason: string): ChainVerdict {
+  return {
+    ok: false,
+    entriesChecked: checked,
+    brokenAtSequence: sequence,
+    reason,
+  };
 }
 
 export interface ChainRow extends ChainableEntry, GovernedOutput<"audit.export"> {

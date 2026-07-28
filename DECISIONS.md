@@ -3392,3 +3392,25 @@ could be weakened or deleted and the build would stay green).
 **Revert path:** delete this entry and the PLAN.md forward-work pointer; the
 obligations then live only in docs/primitive-rationale.md, which is where they
 were before.
+
+## D-105 - Prompt-7 decision ledger is a synchronous sibling, not an audit-log extension
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0007, ADR-0018,
+ADR-0019, ADR-0041, v3 prompt 7, charter #1/#2/#7/#13
+
+The decision and replay storage foundation lands as an independent
+`decision_ledger` chain beside the unchanged operational `audit_log`. Immutable
+evidence snapshots, exact input-bundle bytes, ordered evidence membership, and
+decision records commit with their typed recording events in one transaction.
+Composite tenant foreign keys, append-only database triggers, the repository
+anti-fork fence, L1-L4 chain verification, and one pure online/rebuild projection
+fold make the storage claim executable. The 16-event vocabulary includes explicit
+approval-stage expiry and escalation facts but no authority evaluation, execution
+behavior, or second orchestration engine.
+
+The `/app/ledger` register makes the source reachable and read-only; the seeded
+chain is visibly labeled `Synthetic fixture`. Existing demo fake decision and
+status histories remain because this prompt lands no real producers. They become
+deletion/switchover candidates only with the later decision, approval, and
+execution prompts. ADR-0041 records the topology, retention extension, forward-only
+migration, and ADR-0018 ceiling amendments.

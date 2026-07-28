@@ -9,31 +9,33 @@ in shape.
 `scripts/backup-restore-drill.ts` is run in CI (`.github/workflows/scheduled.yml`) and on demand
 (`pnpm exec tsx scripts/backup-restore-drill.ts`). It:
 
-1. seeds an org and performs real **audited, hash-chained** writes;
-2. records row counts + verifies the audit chain;
+1. seeds an org, performs real operational audit writes, and records a synthetic decision;
+2. records row counts + verifies both independent audit-class chains;
 3. **backs up** the store (`store.dump()`);
 4. **restores** to a FRESH instance (`createDbFromDump()`);
-5. asserts row counts AND audit-chain integrity **survive the restore**.
+5. asserts row counts and both chains' integrity **survive the restore**.
 
-### Latest local run (2026-07-19)
+### Latest local run (2026-07-28)
 
 ```
 === Verin backup-restore drill ===
 households: 5 -> 5
 audit entries: 5 -> 5
 audit chain after restore: VERIFIED
-backup: 22ms | restore: 91ms | total drill: 753ms
+decision entries: 5 -> 5
+decision chain after restore: L1-L4 VERIFIED
+backup: 26ms | restore: 101ms | total drill: 856ms
 RESULT: PASS
 ```
 
-The audit chain re-verifies after restore — a backup that silently corrupted the tamper-evident trail would
+Both chains re-verify after restore - a backup that silently corrupted either tamper-evident trail would
 fail this drill (SEC 17a-4 / SOC 2 CC7.4).
 
 ## Production procedure
 
 1. **Backup:** managed Postgres automated backups + PITR (RPO ≤ 24h). Verify the latest backup timestamp.
 2. **Restore:** provision a fresh instance from the target snapshot/PITR point (RTO ≤ 4h).
-3. **Verify:** run `pnpm audit:chain` against the restored store; confirm per-org chains verify and row
+3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row
    counts match expectations. Confirm `/ready` returns ready.
 4. **Cut over:** point the stateless app tier at the restored store (a deployment config change — the app
    tier holds no state).

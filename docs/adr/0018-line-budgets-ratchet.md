@@ -1,6 +1,6 @@
 # ADR-0018: Line budgets — ratchet-down platform ceilings, a separate growable presentation budget, a load gate
 
-**Status:** Accepted (amended by ADR-0029: contracts ceiling re-baselined 600 → 3500 via this ADR's own amendment path)
+**Status:** Accepted (amended by ADR-0029, the ADR-0030..0040 line-budget series, and ADR-0041, each via this ADR's own amendment path)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #1, #10, #11

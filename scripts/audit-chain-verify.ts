@@ -10,6 +10,7 @@ import { createDb } from "../src/infrastructure/store/db";
 import { verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemTenant } from "../src/contracts/tenant";
 import { errorMessage } from "./error-message";
+import { verifyDecisionLedger } from "../src/infrastructure/ledger/ledger-verification";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -24,12 +25,18 @@ async function main(): Promise<void> {
   }
   let broken = 0;
   let entriesTotal = 0;
+  let decisionEntriesTotal = 0;
   for (const { id } of orgs.rows) {
     const v = await verifyOrgChain(db, systemTenant("audit-chain-verify", id));
     const line = `org ${id}: ${v.ok ? "OK" : "BROKEN"} (${v.entriesChecked} entries${v.reason ? `, ${v.reason}` : ""})`;
     process.stdout.write(`${line}\n`);
     if (!v.ok) broken += 1;
     entriesTotal += v.entriesChecked;
+    const decision = await verifyDecisionLedger(db, id);
+    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.entriesChecked} entries)`;
+    process.stdout.write(`${decisionLine}\n`);
+    if (!decision.ok) broken += 1;
+    decisionEntriesTotal += decision.entriesChecked;
   }
   await db.close();
   if (broken > 0) {
@@ -40,7 +47,11 @@ async function main(): Promise<void> {
     process.stderr.write("audit-chain-verify: 0 audit entries across all orgs — a chain verification that checked nothing is vacuous (the seed writes an audited entry)\n");
     process.exit(1);
   }
-  process.stdout.write(`audit-chain-verify: all ${orgs.rows.length} org chain(s) verified (${entriesTotal} entries)\n`);
+  if (decisionEntriesTotal === 0) {
+    process.stderr.write("audit-chain-verify: 0 decision-ledger entries across all orgs - typed-chain verification is vacuous\n");
+    process.exit(1);
+  }
+  process.stdout.write(`audit-chain-verify: all ${orgs.rows.length} org chain pair(s) verified (${entriesTotal} audit, ${decisionEntriesTotal} decision entries)\n`);
 }
 
 main().catch((e) => {
