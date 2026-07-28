@@ -101,7 +101,7 @@ export default function DecisionLedgerPage() {
                 Folded from the recorded events below, in ledger order. Nothing
                 here is evaluated or inferred.
                 {model.decisionsTotal > model.decisions.length
-                  ? ` Showing the ${model.decisions.length} most recently active of ${model.decisionsTotal} decisions.`
+                  ? ` Showing ${model.decisions.length} of ${model.decisionsTotal} replayable decisions in this verified window.`
                   : null}
               </p>
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">

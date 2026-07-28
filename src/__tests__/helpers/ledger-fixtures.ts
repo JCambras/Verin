@@ -20,6 +20,7 @@ import {
 import type { RecordProvenance } from "@contracts/provenance";
 import { unwrap } from "@contracts/result";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
+import { retainedTextReference } from "@infra/ledger/ledger-pii";
 
 export const LEDGER_ORG = "firm-a";
 export const LEDGER_OTHER_ORG = "firm-b";
@@ -109,7 +110,7 @@ export function decisionRecordingInput(): RecordDecisionInput {
       subjectRef: { firmId: ref.firmId, id: `subject:test:${index}` },
       observedAt: LEDGER_TIME,
       retrievedAt: LEDGER_TIME,
-      attribution: "source:test",
+      attribution: retainedTextReference("1".repeat(64)),
       schemaVersion: "evidence/1.0.0",
       encryptedStorageRef: { firmId: ref.firmId, id: `blob:test:${index}` },
       contentHash: String(index + 1).repeat(64),
@@ -129,6 +130,7 @@ export function decisionRecordingInput(): RecordDecisionInput {
       type: "DecisionRecorded",
       decisionRef,
       decisionHash: decisionRecord.decisionHash,
+      bundleHash: inputBundle.bundleHash,
     }),
   ];
   return {
@@ -169,6 +171,7 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
       type: "DecisionRecorded",
       decisionRef: { firmId: LEDGER_ORG, id: decisionId },
       decisionHash: decisionRecord.decisionHash,
+      bundleHash: first.inputBundle.bundleHash,
     })],
     provenance: LEDGER_PROVENANCE,
   };
@@ -190,7 +193,7 @@ export function laterEvidenceRecording(id: string): {
     subjectRef: { firmId: LEDGER_ORG, id: "subject:test:status" },
     observedAt: LEDGER_LATER,
     retrievedAt: LEDGER_LATER,
-    attribution: "source:test",
+    attribution: retainedTextReference("1".repeat(64)),
     schemaVersion: "evidence/1.0.0",
     encryptedStorageRef: { firmId: LEDGER_ORG, id: "blob:test:status" },
     contentHash: "9".repeat(64),
@@ -220,6 +223,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       type: "DecisionRecorded",
       decisionRef,
       decisionHash: LEDGER_HASH,
+      bundleHash: LEDGER_HASH,
     },
     {
       ...base("sample:evidence"),

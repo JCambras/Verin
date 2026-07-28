@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createMemoryDb, type SqlDb, type SqlResult } from "@infra/store/db";
+import {
+  createMemoryDb,
+  type SqlDb,
+  type SqlResult,
+  type SqlTx,
+} from "@infra/store/db";
 import {
   appendDecisionEvents,
   rebuildDecisionProjections,
@@ -10,6 +15,7 @@ import {
   listDecisionProjections,
 } from "@infra/ledger/ledger-projection-store";
 import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
+import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
@@ -154,6 +160,9 @@ describe("deterministic decision-ledger projections", () => {
       [LEDGER_ORG],
     );
     expect(await listDecisionProjections(db, LEDGER_ORG)).not.toEqual(expected);
+    expect(
+      (await readVerifiedDecisionRegister(db, LEDGER_ORG, 200, 50)).decisions,
+    ).toEqual(expected);
     expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual(expected);
 
     await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_delete");
@@ -405,6 +414,57 @@ describe("deterministic decision-ledger projections", () => {
     };
     expect(await listDecisionProjections(measured, LEDGER_ORG, 1)).toHaveLength(1);
     expect(largestResult).toBe(1);
+  });
+
+  it("reads the verified register under one tenant lock without trusting projection rows", async () => {
+    expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
+    expect(
+      (await recordDecision(
+        db,
+        reusedBundleRecordingInput("dec:GC-01:0002"),
+      )).ok,
+    ).toBe(true);
+    let directQueries = 0;
+    const statements: string[] = [];
+    const measured: SqlDb = {
+      ...db,
+      async query<T>(
+        sql: string,
+        params?: unknown[],
+      ): Promise<SqlResult<T>> {
+        directQueries += 1;
+        return db.query<T>(sql, params);
+      },
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) =>
+          fn({
+            ...tx,
+            async query<U>(
+              sql: string,
+              params?: unknown[],
+            ): Promise<SqlResult<U>> {
+              statements.push(sql);
+              return tx.query<U>(sql, params);
+            },
+          }));
+      },
+    };
+    const snapshot = await readVerifiedDecisionRegister(
+      measured,
+      LEDGER_ORG,
+      200,
+      1,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions).toHaveLength(1);
+    expect(snapshot.decisionsTotal).toBe(2);
+    expect(directQueries).toBe(0);
+    expect(statements[0]).toMatch(
+      /SELECT id FROM orgs WHERE id = \$1 FOR UPDATE/,
+    );
+    expect(
+      statements.some((sql) => sql.includes("decision_state_projection")),
+    ).toBe(false);
   });
 
   it("records expiry then escalation in ledger order, not timestamp order", async () => {

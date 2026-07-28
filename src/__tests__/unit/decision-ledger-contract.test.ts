@@ -56,6 +56,34 @@ describe("decision ledger contract", () => {
     }
   });
 
+  it("binds decision recordings to the exact input bundle and rejects causal loops", () => {
+    const decision = allLedgerEventSamples().find(
+      (event) => event.type === "DecisionRecorded",
+    )!;
+    expect(
+      decision.type === "DecisionRecorded" ? decision.bundleHash : null,
+    ).toMatch(/^[a-f0-9]{64}$/);
+    expect(LedgerEntrySchema.safeParse({
+      ...decision,
+      bundleHash: undefined,
+    }).success).toBe(false);
+    expect(LedgerEntrySchema.safeParse({
+      ...decision,
+      causationRef: { firmId: decision.firmId, id: decision.id },
+    }).success).toBe(false);
+
+    const exception = allLedgerEventSamples().find(
+      (event) => event.type === "ExceptionDecisionRequested",
+    )!;
+    expect(LedgerEntrySchema.safeParse({
+      ...exception,
+      triggeringEntryRef: {
+        firmId: exception.firmId,
+        id: exception.id,
+      },
+    }).success).toBe(false);
+  });
+
   it("normalizes set-like escalation roles and rejects overlapping parts", () => {
     const escalation = allLedgerEventSamples().find(
       (event) => event.type === "ApprovalStageEscalated",

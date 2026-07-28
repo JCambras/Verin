@@ -5779,3 +5779,43 @@ cannot affect a reused reservation.
 integration, and projection suites pass.
 
 **Date:** 2026-07-28 (review corrections F1-F9, ADR-0041, D-110).
+
+## Decision-ledger binding and verified register corrections (D-111)
+
+**Invariants:** the recorded decision binds the exact input bundle hash; causal
+references point only backward; retained text is a registered code or opaque
+reference; PII traversal is stack-safe; the register verifies and replays the exact
+immutable window it displays under one tenant lock; immutable-table insert ownership
+is exact per table and module.
+
+Before the corrections, the adversarial tests reproduced the bundle substitution,
+retained-name, deep-traversal, causal-loop, projection-cache, and split-register
+failures:
+
+```text
+× binds DecisionRecorded to the exact input bundle hash
+  expected a sha256 bundleHash, received undefined
+× refuses duplicated free text masquerading as a code or source id
+  expected false, received true
+× scans deeply nested retained values without recursive stack exhaustion
+  RangeError: Maximum call stack size exceeded
+× rejects self-causation and non-preceding causal references
+  self-referencing events parsed and stored
+× serves replayed state from the verified immutable window
+  corrupted decision_state_projection bytes were returned
+× reads verification, events, and decision state in one locked transaction
+  register data was read outside the verification transaction
+```
+
+For the anti-fork companion, a raw evidence insert was planted in
+`src/infrastructure/ledger/ledger-store.ts`, then the focused fence reported:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-store.ts:56
+```
+
+**Revert:** removed the planted raw insert. The focused correction suite passes.
+
+**Date:** 2026-07-28 (review corrections F1-F7, ADR-0041, D-111).

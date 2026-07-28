@@ -18,6 +18,7 @@ import {
   decisionHashPreimage,
 } from "../src/contracts/decision-core/serialization";
 import { recordDecision } from "../src/infrastructure/ledger/ledger-store";
+import { retainedTextReference } from "../src/infrastructure/ledger/ledger-pii";
 import { unwrap } from "../src/contracts/result";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/decision-core");
@@ -106,7 +107,7 @@ export async function seedDecisionLedger(
       subjectRef: { firmId, id: `subject:synthetic:${index}` },
       observedAt: inputBundle.asOf,
       retrievedAt: inputBundle.asOf,
-      attribution: "source:synthetic-seed",
+      attribution: retainedTextReference("2".repeat(64)),
       schemaVersion: "evidence/1.0.0",
       encryptedStorageRef: { firmId, id: `blob:synthetic:${index}` },
       contentHash: String(index + 1).repeat(64),
@@ -136,6 +137,7 @@ export async function seedDecisionLedger(
       type: "DecisionRecorded",
       decisionRef: { firmId, id: decisionRecord.id },
       decisionHash: decisionRecord.decisionHash,
+      bundleHash: inputBundle.bundleHash,
     }),
   ];
   const result = await recordDecision(db, {

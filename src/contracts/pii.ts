@@ -187,24 +187,51 @@ export function assertNoAmbiguousSensitiveText(
  * leaves are themselves redacted — any other primitive (a raw string, number, bigint,
  * or boolean) means the scrubber was bypassed, so throw rather than persist.
  */
-export function assertNoPIIValues(payload: unknown, boundary: string, seen = new WeakSet<object>()): void {
-  if (payload == null) return;
-  if (typeof payload === "string") {
-    if (looksLikePIIValue(payload)) throw pii(boundary, "value pattern");
-    return;
-  }
-  if (typeof payload === "number" || typeof payload === "bigint") {
-    if (looksLikePIIValue(String(payload))) throw pii(boundary, "value pattern");
-    return;
-  }
-  if (typeof payload !== "object") return;
-  if (seen.has(payload)) return;
-  seen.add(payload);
-  for (const [key, value] of Object.entries(payload)) {
-    if (isPIIField(key) && value != null && typeof value !== "object" && value !== REDACTED) {
-      throw pii(boundary, `unredacted value under PII field '${key}'`);
+export function assertNoPIIValues(payload: unknown, boundary: string): void {
+  const seen = new WeakMap<object, boolean>();
+  const pending: Array<{
+    readonly value: unknown;
+    readonly piiField?: string;
+  }> = [{ value: payload }];
+  while (pending.length > 0) {
+    const { value, piiField } = pending.pop()!;
+    if (value == null) continue;
+    if (typeof value === "string") {
+      if (piiField && value !== REDACTED) {
+        throw pii(boundary, `unredacted value under PII field '${piiField}'`);
+      }
+      if (looksLikePIIValue(value)) throw pii(boundary, "value pattern");
+      continue;
     }
-    assertNoPIIValues(value, boundary, seen);
+    if (typeof value === "number" || typeof value === "bigint") {
+      if (piiField) {
+        throw pii(boundary, `unredacted value under PII field '${piiField}'`);
+      }
+      if (looksLikePIIValue(String(value))) throw pii(boundary, "value pattern");
+      continue;
+    }
+    if (typeof value !== "object") {
+      if (piiField) {
+        throw pii(boundary, `unredacted value under PII field '${piiField}'`);
+      }
+      continue;
+    }
+    const seenWithPiiContext = seen.get(value);
+    if (
+      seenWithPiiContext === true ||
+      (seenWithPiiContext === false && piiField === undefined)
+    ) {
+      continue;
+    }
+    seen.set(value, piiField !== undefined);
+    for (const [key, nested] of Object.entries(value)) {
+      pending.push({
+        value: nested,
+        ...(piiField || isPIIField(key)
+          ? { piiField: piiField ?? key }
+          : {}),
+      });
+    }
   }
 }
 

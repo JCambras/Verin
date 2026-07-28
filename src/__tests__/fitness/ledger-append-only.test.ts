@@ -8,11 +8,6 @@ import {
 } from "./_fence-utils";
 import { DECISION_LEDGER_SQL } from "@infra/store/decision-ledger-migration";
 
-const APPEND_PATHS = new Set([
-  "src/infrastructure/ledger/ledger-store.ts",
-  "src/infrastructure/ledger/ledger-sources.ts",
-  "src/infrastructure/store/decision-ledger-migration.ts",
-]);
 const IMMUTABLE_TABLES = [
   "evidence_snapshots",
   "decision_input_bundles",
@@ -20,9 +15,18 @@ const IMMUTABLE_TABLES = [
   "decision_records",
   "decision_ledger",
 ] as const;
+type ImmutableTable = (typeof IMMUTABLE_TABLES)[number];
+const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
+  evidence_snapshots: "src/infrastructure/ledger/ledger-sources.ts",
+  decision_input_bundles: "src/infrastructure/ledger/ledger-sources.ts",
+  decision_input_bundle_evidence:
+    "src/infrastructure/ledger/ledger-sources.ts",
+  decision_records: "src/infrastructure/ledger/ledger-sources.ts",
+  decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
+};
 const RAW_INSERT = new RegExp(
   `\\bINSERT\\s+INTO\\s+(${IMMUTABLE_TABLES.join("|")})\\b`,
-  "i",
+  "gi",
 );
 
 interface Violation {
@@ -33,15 +37,24 @@ interface Violation {
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
   const violations: Violation[] = [];
   for (const file of files) {
-    const rel = relative(REPO_ROOT, file.getFilePath()).replace(/\\/g, "/");
-    if (APPEND_PATHS.has(rel)) continue;
+    const absolute = file.getFilePath().replace(/\\/g, "/");
+    const sourceIndex = absolute.lastIndexOf("/src/");
+    const rel = sourceIndex >= 0
+      ? absolute.slice(sourceIndex + 1)
+      : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
     for (const literal of [
       ...file.getDescendantsOfKind(SyntaxKind.StringLiteral),
       ...file.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
       ...file.getDescendantsOfKind(SyntaxKind.TemplateExpression),
     ]) {
-      if (RAW_INSERT.test(literal.getText())) {
-        violations.push({ file: rel, line: literal.getStartLineNumber() });
+      for (const match of literal.getText().matchAll(RAW_INSERT)) {
+        const table = match[1]?.toLowerCase() as ImmutableTable | undefined;
+        if (table && INSERT_ALLOWLIST[table] !== rel) {
+          violations.push({ file: rel, line: literal.getStartLineNumber() });
+        }
+      }
+      if (RAW_INSERT.lastIndex !== 0) {
+        RAW_INSERT.lastIndex = 0;
       }
     }
   }
@@ -56,7 +69,7 @@ function exportedMutationNames(file: SourceFile): string[] {
 }
 
 describe("decision-ledger append-only fence", () => {
-  it("anti-fork: only the ledger repository and migration contain raw immutable-source INSERTs", () => {
+  it("anti-fork: each immutable table has one exact raw-insert owner", () => {
     const violations = ledgerInsertViolations(realProject().getSourceFiles());
     expect(
       violations,
@@ -111,6 +124,26 @@ describe("decision-ledger append-only fence", () => {
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(
         IMMUTABLE_TABLES.length,
       );
+    });
+
+    it("rejects a ledger insert from the replay-source module", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/ledger/ledger-sources.ts":
+          `export async function fork(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query("INSERT INTO decision_ledger (id) VALUES ('x')");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
+    });
+
+    it("rejects a replay-source insert from the ledger-chain module", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/ledger/ledger-store.ts":
+          `export async function fork(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query("INSERT INTO evidence_snapshots (id) VALUES ('x')");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
     });
 
     it("detects a planted immutable mutation export", () => {
