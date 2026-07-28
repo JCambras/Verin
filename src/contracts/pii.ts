@@ -48,7 +48,7 @@ export function looksLikePIIValue(value: string): boolean {
 
 /**
  * The account/tax-identifier shape: an unbroken 9-18 digit run. A source fragment
- * for the same reason as TITLE_CASE_WORD_SOURCE — the evidence→LLM projection
+ * for the same reason as PERSON_WORD_SOURCE - the evidence→LLM projection
  * binds exactly the spans this predicate refuses, so the masker and the residual
  * check cannot drift apart.
  */
@@ -107,13 +107,22 @@ const CREDENTIAL_VALUE_RE =
 
 const PERSON_WORD_G = new RegExp(`${PERSON_WORD_SOURCE}\\b`, "gu");
 
+/**
+ * A stand-in for the neutralized sentinel: not a letter (so it can never BE a person
+ * word) and not whitespace (so it still counts as content). Blanking the sentinel to
+ * whitespace instead erases the "something precedes this" signal embeddedPersonWord
+ * reads, and "[REDACTED] Alice" then seals as piiFree with the raw name intact -
+ * caller-supplied text containing the literal sentinel is the whole evasion.
+ */
+const SENTINEL_STANDIN = ".";
+
 export function looksLikeAmbiguousSensitiveText(value: string): boolean {
   // The redaction sentinel is the scrubber's OWN output and is itself all-caps, so
   // every occurrence is neutralized before shape-testing. Comparing the whole value
   // against it (the previous guard) was enough only while all-caps was invisible;
   // now "[REDACTED] requested a transfer" would otherwise be refused as an embedded
   // person word - the detector rejecting exactly the text the scrubber just made safe.
-  const residual = value.split(REDACTED).join(" ");
+  const residual = value.split(REDACTED).join(SENTINEL_STANDIN);
   const personWords = [...residual.matchAll(PERSON_WORD_G)];
   const embeddedPersonWord = personWords.some((match) =>
     match.index !== undefined &&

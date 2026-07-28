@@ -136,6 +136,7 @@ describe("logs never carry raw names or account numbers", () => {
   it("accepts every real machine id shape and still refuses name- and account-shaped values", () => {
     for (const value of [
       "3F2504E0-4F89-11D3-9A0C-0305E82C3301", // uppercase-hex UUID (the route accepts these)
+      "AB12CD34-EF56", // the all-caps lookalike the digit gate keeps buildable
       "org", // the backup-restore drill's org id
       "o",
       "esign-webhook",
@@ -147,6 +148,13 @@ describe("logs never carry raw names or account numbers", () => {
     for (const value of [
       "Alice", // a person-name shape
       "Okonkwo-Blackwood",
+      // ...and the half `\p{Lu}\p{Ll}` structurally cannot see. entityId is
+      // client-supplied (audited-write feeds it straight from the request body), and
+      // an accepted value is emitted verbatim into the log line and over OTLP.
+      "SMITH",
+      "ALICE",
+      "OBRIEN",
+      "SMITH-JOHN",
       FIXTURES.accountNumber,
       FIXTURES.email,
       "078-05-1120",

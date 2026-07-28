@@ -1235,11 +1235,205 @@ const AUTHORITY_ASSERTIONS: ReadonlyArray<{ readonly file: string; readonly func
   { file: "src/contracts/tenant.ts", functionName: "assertTenantContext" },
 ];
 
+function declaredAsType(type: Type, file: string, name: string): boolean {
+  const queue = [type];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const current = queue.shift()!;
+    const key = typeKey(current);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
+      if (
+        symbol?.getName() === name &&
+        symbol.getDeclarations().some((declaration) =>
+          normalizedPath(declaration.getSourceFile().getFilePath()) === file
+        )
+      ) return true;
+    }
+    queue.push(...current.getUnionTypes(), ...current.getIntersectionTypes());
+  }
+  return false;
+}
+
+const SEALED_AUTHORITY_KINDS = [
+  {
+    kind: "grant",
+    typeName: "ActionGrant",
+    declaration: "src/contracts/authz.ts",
+    assertion: "assertActionGrant",
+    file: "src/contracts/authz.ts",
+  },
+  {
+    kind: "writeActor",
+    typeName: "WriteActor",
+    declaration: "src/contracts/principal.ts",
+    assertion: "assertWriteActor",
+    file: "src/contracts/principal.ts",
+  },
+  {
+    kind: "tenant",
+    typeName: "TenantContext",
+    declaration: "src/contracts/tenant.ts",
+    assertion: "assertTenantContext",
+    file: "src/contracts/tenant.ts",
+  },
+] as const;
+
+export interface SealedAuthorityParameter {
+  readonly kind: (typeof SEALED_AUTHORITY_KINDS)[number]["kind"];
+  /** The expression that NAMES the authority: `grant`, or `ctx.tenant` when wrapped. */
+  readonly argument: string;
+  readonly assertion: string;
+  readonly file: string;
+  readonly type: Type;
+}
+
+/**
+ * EVERY sealed authority a signature carries, in declaration order.
+ *
+ * "Every" and "order" are both load-bearing. Returning on the FIRST sealed parameter
+ * made the cross-authority rule opt-out by declaration order: with `ActionGrant`
+ * tested before `TenantContext`, `listPeople(db, grant, tenant)` asserted only the
+ * grant, and the two authorities were never compared - swapping two parameter
+ * positions was the entire evasion. A TenantContext WRAPPED in an object
+ * (`ctx: { tenant: TenantContext }`) is the same authority reached one property in,
+ * so it is recognized wherever it is structurally carried; a parameter whose OWN
+ * type is a sealed authority is NOT descended into, because `grant.tenant` and
+ * `actor.tenant` are that authority's own internals and the same-tenant proof is
+ * what relates them.
+ */
+export function sealedAuthorityParameters(signature: Signature): SealedAuthorityParameter[] {
+  const direct: SealedAuthorityParameter[] = [];
+  const wrapped: SealedAuthorityParameter[] = [];
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ?? parameter.getDeclarations()[0];
+    if (!declaration) continue;
+    const type = parameter.getTypeAtLocation(declaration);
+    const name = parameter.getName();
+    const own = SEALED_AUTHORITY_KINDS.find((candidate) =>
+      declaredAsType(type, candidate.declaration, candidate.typeName)
+    );
+    if (own) {
+      direct.push({ kind: own.kind, argument: name, assertion: own.assertion, file: own.file, type });
+      continue;
+    }
+    for (const property of ["actor", "tenant"] as const) {
+      const member = type.getProperty(property);
+      const memberDeclaration = member?.getValueDeclaration() ?? member?.getDeclarations()[0];
+      if (!member || !memberDeclaration) continue;
+      const memberType = member.getTypeAtLocation(memberDeclaration);
+      const carried = SEALED_AUTHORITY_KINDS.find((candidate) =>
+        declaredAsType(memberType, candidate.declaration, candidate.typeName)
+      );
+      if (carried) {
+        wrapped.push({
+          kind: carried.kind,
+          argument: `${name}.${property}`,
+          assertion: carried.assertion,
+          file: carried.file,
+          type: memberType,
+        });
+      }
+    }
+  }
+  // A wrapped authority stands in only where the signature names NONE of that kind
+  // directly. A callable taking both a `TenantContext` and a value that merely
+  // CARRIES one (createSession's AuthenticatedUser, whose own proof is its runtime
+  // seal) has one tenant scope, not two - demanding an assertion on the carrier's
+  // member would make that signature unbuildable, which is the failure mode the
+  // shared prologue exists to remove.
+  return [
+    ...direct,
+    ...SEALED_AUTHORITY_KINDS.flatMap(({ kind }) =>
+      direct.some((authority) => authority.kind === kind)
+        ? []
+        : wrapped.filter((authority) => authority.kind === kind).slice(0, 1)
+    ),
+  ];
+}
+
+/**
+ * The single literal action an ActionGrant parameter is typed to. `null` means the
+ * grant's action is a UNION or a type parameter: no single assertion can prove it, so
+ * the callers below refuse the signature rather than silently dropping BOTH the
+ * assertion and the same-tenant proof - widening one type argument would otherwise
+ * remove the whole cross-authority requirement.
+ */
+export function grantAction(authority: SealedAuthorityParameter): string | null {
+  const property = authority.type.getProperty("action");
+  const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
+  if (!property || !declaration) return null;
+  const action = property.getTypeAtLocation(declaration);
+  return action.isStringLiteral() ? String(action.getLiteralValue()) : null;
+}
+
+/**
+ * THE shared authority prologue for a signature: an assertion per sealed authority it
+ * carries, plus - when it carries BOTH a tenant and a grant - proof that the two name
+ * the same scope. One derivation, so the governed-sink and tenant-scope fences cannot
+ * demand incompatible prologues (each used to require ITS assertion in the literal
+ * first statement slot, which made a dual-authority signature unbuildable).
+ */
+export function requiredAuthorityPrologue(
+  signature: Signature,
+): { required: RequiredAuthorityAssertion[]; unfenceable: string[] } {
+  const authorities = sealedAuthorityParameters(signature);
+  const grant = authorities.find((authority) => authority.kind === "grant");
+  const tenant = authorities.find((authority) => authority.kind === "tenant");
+  const action = grant ? grantAction(grant) : null;
+  const unfenceable = grant && action === null
+    ? [
+      `ActionGrant parameter '${grant.argument}' must be typed to ONE literal action; a union or generic action cannot be asserted or cross-checked against the tenant scope`,
+    ]
+    : [];
+  const required: RequiredAuthorityAssertion[] = authorities.map((authority) => ({
+    functionName: authority.assertion,
+    file: authority.file,
+    args: authority === grant && action !== null
+      ? [authority.argument, JSON.stringify(action)]
+      : [authority.argument],
+  }));
+  if (grant && tenant) {
+    required.push({
+      functionName: "assertSameTenant",
+      file: "src/contracts/tenant.ts",
+      args: [tenant.argument, `${grant.argument}.tenant`],
+    });
+  }
+  return { required, unfenceable };
+}
+
 export interface RequiredAuthorityAssertion {
   readonly functionName: string;
   readonly file: string;
-  /** Expected argument texts, positionally. A string-literal action is compared as written. */
+  /**
+   * Expected arguments, positionally. A JSON-quoted element (built with
+   * `JSON.stringify(action)`) is compared by string VALUE; anything else is compared
+   * as written, which is what pins the guard to the actual parameter binding.
+   */
   readonly args: readonly string[];
+}
+
+/**
+ * Quote style is a formatting choice Prettier does not normalize in every context,
+ * and this rule is fail-closed: comparing an action's SOURCE TEXT rejects a correct
+ * `assertActionGrant(grant, 'pii.view')` as a missing prologue assertion. Identifiers
+ * still compare as written - `assertActionGrant(other, …)` names a different value.
+ */
+function authorityArgumentMatches(argument: Node | undefined, expected: string): boolean {
+  if (!argument) return false;
+  if (!(expected.startsWith('"') && expected.endsWith('"'))) {
+    return argument.getText() === expected;
+  }
+  if (!Node.isStringLiteral(argument) && !Node.isNoSubstitutionTemplateLiteral(argument)) {
+    return false;
+  }
+  try {
+    return argument.getLiteralValue() === (JSON.parse(expected) as unknown);
+  } catch {
+    return false;
+  }
 }
 
 /** Resolved by SYMBOL, so an aliased import cannot pose as the assertion. */
@@ -1298,7 +1492,7 @@ export function authorityPrologueViolations(
       !prologue.some((call) =>
         callResolvesToDeclaration(call, requirement.file, requirement.functionName) &&
         requirement.args.every((expected, index) =>
-          call.getArguments()[index]?.getText() === expected
+          authorityArgumentMatches(call.getArguments()[index], expected)
         )
       )
     )
@@ -1350,15 +1544,9 @@ function syntacticCalleeName(call: CallExpression): string | undefined {
   return undefined;
 }
 
-export function isSqlExecutorCall(call: CallExpression): boolean {
-  const signatures = call.getExpression().getType().getCallSignatures();
-  // An anonymous signature (`__type`/`__call`, what a cast to a function type or an
-  // inline function type yields) resolves to no DECLARED name, so it proves nothing
-  // about what is being called and must not count as "the checker answered".
-  const declaredNames = signatures
-    .map((signature) => signature.getDeclaration().getSymbol()?.getName())
-    .filter((name): name is string => Boolean(name) && !name!.startsWith("__"));
-  const resolved = signatures.some((signature) => {
+/** Does this type's own signature declare it an executor (`query(sql: string, …)`)? */
+function declaresExecutorSignature(type: Type): boolean {
+  return type.getCallSignatures().some((signature) => {
     const method = signature.getDeclaration().getSymbol()?.getName();
     if (!method || !SQL_EXECUTOR_METHODS.has(method)) return false;
     const parameter = signature.getParameters()[0];
@@ -1367,21 +1555,103 @@ export function isSqlExecutorCall(call: CallExpression): boolean {
     return Boolean(parameter && declaration &&
       parameter.getTypeAtLocation(declaration).isString());
   });
-  if (resolved) return true;
-  // FAIL CLOSED on a callee the checker cannot narrow. Resolving the executor through
-  // its SIGNATURE is what makes destructured and computed callsites resolve alike, but
-  // a callee widened past SqlDb - a `Function`-typed local, an opaque alias, a value
-  // behind an `any` - yields ZERO call signatures, and returning false there made this
-  // whole rule a one-line evasion: `const run: Function = db.query; run("SELECT … FROM
-  // users …")` issues exactly the same SQL from exactly the same place. Both fences
-  // that stand behind this derivation (governed-sink and tenant-scope) treat an
-  // unresolvable type as a violation everywhere else; this is the same answer.
+}
+
+/**
+ * An anonymous signature (`__type`/`__call`, what a cast to a function type or an
+ * inline function type yields) resolves to no DECLARED name, so it proves nothing
+ * about what is being called and must not count as "the checker answered".
+ */
+function declaredCalleeNames(type: Type): string[] {
+  return type.getCallSignatures()
+    .map((signature) => signature.getDeclaration().getSymbol()?.getName())
+    .filter((name): name is string => Boolean(name) && !name!.startsWith("__"));
+}
+
+/** The expression a widened local was BOUND from: `const run: Function = db.query`. */
+function bindingSources(expression: Node, depth = 0): Node[] {
+  if (depth > 4 || !Node.isIdentifier(expression)) return [];
+  const out: Node[] = [];
+  for (const declaration of expression.getSymbol()?.getDeclarations() ?? []) {
+    if (!Node.isVariableDeclaration(declaration)) continue;
+    const initializer = declaration.getInitializer();
+    if (!initializer) continue;
+    let source: Node = initializer;
+    while (
+      Node.isParenthesizedExpression(source) || Node.isAsExpression(source) ||
+      Node.isTypeAssertion(source) || Node.isSatisfiesExpression(source)
+    ) source = source.getExpression();
+    out.push(source, ...bindingSources(source, depth + 1));
+  }
+  return out;
+}
+
+/** The name an expression NAMES, if it names one: `db.query` → "query". */
+function accessedName(node: Node): string | undefined {
+  if (Node.isPropertyAccessExpression(node)) return node.getName();
+  if (Node.isIdentifier(node)) return node.getText();
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    return argument && Node.isStringLiteral(argument) ? argument.getLiteralValue() : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A statement string, by its leading command word. A SQL string handed to a callee
+ * nobody can resolve is persistence whatever the local happens to be called.
+ */
+const SQL_STATEMENT_RE =
+  /^\s*\(?\s*(?:WITH|SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|COPY|GRANT|REVOKE|LOCK|COMMENT|REFRESH|EXPLAIN|VACUUM|ANALYZE|DO|BEGIN|COMMIT|ROLLBACK|SAVEPOINT)\b/i;
+
+function issuesSqlLiteral(call: CallExpression): boolean {
+  const [first] = call.getArguments();
+  if (!first) return false;
+  const text = Node.isStringLiteral(first) || Node.isNoSubstitutionTemplateLiteral(first)
+    ? first.getLiteralValue()
+    : Node.isTemplateExpression(first)
+    ? first.getText()
+    : undefined;
+  return Boolean(text && SQL_STATEMENT_RE.test(text));
+}
+
+export function isSqlExecutorCall(call: CallExpression): boolean {
+  const calleeType = call.getExpression().getType();
+  if (declaresExecutorSignature(calleeType)) return true;
   // A callee whose signatures DID resolve but name something other than an executor
   // is a genuine non-SQL call and stays clean, so an unrelated `.query()` taking no
   // SQL string is still not mistaken for persistence.
-  if (declaredNames.length > 0) return false;
+  if (declaredCalleeNames(calleeType).length > 0) return false;
+  // FAIL CLOSED on a callee the checker cannot narrow. Resolving the executor through
+  // its SIGNATURE is what makes destructured and computed callsites resolve alike, but
+  // a callee widened past SqlDb - a `Function`-typed local, a `(sql: string) => …`
+  // alias, a value behind an `any` - yields ZERO declared signatures, and returning
+  // false there made this whole rule a one-line evasion: `const run: Function =
+  // db.query; run("SELECT … FROM users …")` issues exactly the same SQL from exactly
+  // the same place. Both fences that stand behind this derivation (governed-sink and
+  // tenant-scope) treat an unresolvable type as a violation everywhere else.
   const written = syntacticCalleeName(call);
-  return Boolean(written && SQL_EXECUTOR_METHODS.has(written));
+  if (written && SQL_EXECUTOR_METHODS.has(written)) return true;
+  // A SQL statement handed to a callee nobody can resolve is persistence under any
+  // name, so the identifier text is never the last word.
+  if (issuesSqlLiteral(call)) return true;
+  // ...and when the statement arrives in a variable, the callee is resolved by VALUE:
+  // the widened local is followed back to what it was BOUND from, so renaming it
+  // changes nothing. Gated on the call actually taking SQL-shaped TEXT, because
+  // following bindings is the one expensive step here and an executor always does.
+  const [argument] = call.getArguments();
+  if (!argument || !Node.isExpression(argument)) return false;
+  const argumentType = argument.getType();
+  if (!argumentType.isString() && !argumentType.isStringLiteral()) return false;
+  let expression: Node = call.getExpression();
+  while (
+    Node.isParenthesizedExpression(expression) || Node.isAsExpression(expression) ||
+    Node.isTypeAssertion(expression) || Node.isSatisfiesExpression(expression)
+  ) expression = expression.getExpression();
+  return bindingSources(expression).some((source) =>
+    declaresExecutorSignature(source.getType()) ||
+    SQL_EXECUTOR_METHODS.has(accessedName(source) ?? "")
+  );
 }
 
 /**

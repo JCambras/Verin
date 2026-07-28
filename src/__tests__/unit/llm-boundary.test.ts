@@ -683,4 +683,27 @@ describe("all-caps person shapes fail closed without span provenance", () => {
     expect(hasUnresolvedProjectionEvidence({ note: "SMITH" })).toBe(true);
     expect(hasUnresolvedProjectionEvidence({ SMITH: "requested" })).toBe(true);
   });
+
+  it("refuses a name a CALLER-SUPPLIED redaction sentinel is hiding behind", () => {
+    // Neutralizing the sentinel by blanking it to WHITESPACE also erased the
+    // "something precedes this" signal the embedded-name check reads, so a name
+    // sitting directly after a sentinel the caller typed itself sealed as piiFree
+    // with the raw name intact - while the identical "wire to Alice" was refused.
+    // The stand-in has to be content without being a word.
+    for (const text of [
+      `${REDACTED} Alice`,
+      `${REDACTED}Alice`,
+      `${REDACTED} SMITH`,
+      `${REDACTED}SMITH`,
+      `${REDACTED} sends to ${REDACTED} Alice`,
+    ]) {
+      expect(hasUnresolvedProjectionText(text), text).toBe(true);
+      expect(() => tokenizeText(text), text).toThrow(/PII_VIOLATION/);
+    }
+    // ...and the scrubber's own output still passes: the sentinel alone, and a
+    // sentinel followed by ordinary lowercase prose.
+    expect(hasUnresolvedProjectionText(REDACTED)).toBe(false);
+    expect(hasUnresolvedProjectionText(`${REDACTED} requested a transfer`)).toBe(false);
+    expect(tokenizeText(`${REDACTED} requested a transfer`).piiFree).toBe(true);
+  });
 });

@@ -17,12 +17,13 @@ import {
   isSqlExecutorCall,
   normalizedPath,
   REPO_ROOT,
+  requiredAuthorityPrologue,
   returnedCallableMembers,
   structuralPiiExposures,
   typeKey,
-  type RequiredAuthorityAssertion,
 } from "./_fence-utils";
 import { GOVERNED_ACTIONS } from "@contracts/authz";
+import { isPIIField } from "@contracts/pii";
 import { ROLES } from "@contracts/roles";
 
 /**
@@ -502,8 +503,10 @@ const GOVERNED_NON_PII_FIELDS = new Set([
  * RecordedSpan would key to the identical string, report no exposure, and let an
  * exported callable returning it derive no pii.view sink at all. The property must
  * therefore be a DIRECT member of the named declaration, and the dotted path the
- * caller computed must actually end at it - the sibling rule in
- * llm-pii-boundary.test.ts keys the same way, and the two halves must agree.
+ * caller computed must actually end at it. The sibling rule in
+ * llm-pii-boundary.test.ts is STRICTER still - it keys on the whole dotted path, so
+ * it reaches through type literals a direct-member test simply never matches - and
+ * both refuse the ancestor-keyed form this one used to have.
  */
 function isGovernedNonPiiField(path: string, declaration: Node): boolean {
   if (!Node.isPropertyNamed(declaration)) return false;
@@ -514,6 +517,33 @@ function isGovernedNonPiiField(path: string, declaration: Node): boolean {
   return GOVERNED_NON_PII_FIELDS.has(
     `${normalizedPath(declaration.getSourceFile().getFilePath())} :: ${owner.getName()}.${name}`,
   );
+}
+
+/**
+ * An escape registry nobody checks is a registry that silently outlives what it
+ * described. Each entry must still resolve to a real direct interface member AND
+ * still be one this fence would otherwise flag - a key that stops matching stops
+ * being reviewed, and one whose field is renamed to something PII-shaped would carry
+ * the review forward onto a field nobody looked at.
+ */
+export function detectStaleGovernedNonPiiFields(project: Project): string[] {
+  const out: string[] = [];
+  for (const entry of GOVERNED_NON_PII_FIELDS) {
+    const [file, member = ""] = entry.split(" :: ");
+    const [owner = "", property = ""] = member.split(".");
+    const sf = project.getSourceFiles().find((candidate) =>
+      normalizedPath(candidate.getFilePath()) === file
+    );
+    const declared = sf?.getInterface(owner)?.getProperty(property);
+    if (!declared) {
+      out.push(`${entry}: reviewed non-PII escape no longer resolves to a direct interface member`);
+      continue;
+    }
+    if (!isPIIField(property)) {
+      out.push(`${entry}: reviewed non-PII escape is no longer needed - the field name is not PII-shaped`);
+    }
+  }
+  return out;
 }
 
 function exportedCallables(sf: SourceFile): ExportedCallable[] {
@@ -586,7 +616,19 @@ function exportedCallables(sf: SourceFile): ExportedCallable[] {
   return [...callables, ...returned];
 }
 
+/**
+ * Both derivations below are a full type-checker pass over src/infrastructure/**,
+ * and each is asked for several times per run (three sink derivations, two
+ * unbounded-read passes in one assertion block). MEMOIZED per Project, the same
+ * WeakMap shape the llm-pii-boundary fence uses for its file index: these fences only
+ * READ the project, so one answer per project is the same answer every time.
+ */
+const GOVERNED_SINKS = new WeakMap<Project, GovernedSink[]>();
+const UNBOUNDED_PII_READS = new WeakMap<Project, string[]>();
+
 export function deriveGovernedSinks(project: Project): GovernedSink[] {
+  const cached = GOVERNED_SINKS.get(project);
+  if (cached) return cached;
   const sinks: GovernedSink[] = [];
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
@@ -616,6 +658,7 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
       if (action) sinks.push({ file, action, ...callable });
     }
   }
+  GOVERNED_SINKS.set(project, sinks);
   return sinks;
 }
 
@@ -688,6 +731,8 @@ export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why:
 
 /** `file :: name` for every exported infrastructure callable returning PII with no tenant boundary. */
 export function unboundedPiiReads(project: Project): string[] {
+  const cached = UNBOUNDED_PII_READS.get(project);
+  if (cached) return cached;
   const out: string[] = [];
   for (const sf of project.getSourceFiles()) {
     const file = normalizedPath(sf.getFilePath());
@@ -714,6 +759,7 @@ export function unboundedPiiReads(project: Project): string[] {
       out.push(`${file} :: ${callable.name}`);
     }
   }
+  UNBOUNDED_PII_READS.set(project, out);
   return out;
 }
 
@@ -736,26 +782,6 @@ export function detectUnreviewedPreAuthPiiReads(
   ];
 }
 
-/**
- * The explicit TenantContext parameter of a signature, if it has one. A callable
- * carrying BOTH authorities owes an assertion on each PLUS proof they name the same
- * scope: otherwise one value could scope the query while the other carried the
- * authorization, and nothing would notice they disagreed.
- */
-function tenantParameterName(signature: Signature): string | null {
-  for (const parameter of signature.getParameters()) {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (
-      declaration &&
-      declaredAs(parameter.getTypeAtLocation(declaration), "src/contracts/tenant.ts", "TenantContext")
-    ) {
-      return parameter.getName();
-    }
-  }
-  return null;
-}
-
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out: string[] = [];
   for (const sink of deriveGovernedSinks(project)) {
@@ -774,32 +800,19 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
       );
       continue;
     }
-    const tenant = tenantParameterName(sink.signature);
-    const required: RequiredAuthorityAssertion[] = [
-      {
-        functionName: "assertActionGrant",
-        file: "src/contracts/authz.ts",
-        args: [grant.getName(), JSON.stringify(sink.action)],
-      },
-      ...(tenant
-        ? [
-          {
-            functionName: "assertTenantContext",
-            file: "src/contracts/tenant.ts",
-            args: [tenant],
-          },
-          {
-            functionName: "assertSameTenant",
-            file: "src/contracts/tenant.ts",
-            args: [tenant, `${grant.getName()}.tenant`],
-          },
-        ]
-        : []),
-    ];
+    // ONE derivation, shared with the tenant-scope fence: an assertion per sealed
+    // authority the signature carries - a tenant WRAPPED in an object parameter
+    // included, and in whatever order they are declared - plus proof that the tenant
+    // and the grant name the same scope. Otherwise one value could scope the query
+    // while the other carried the authorization, and nothing would notice they
+    // disagreed. Deriving it separately here is what let the two fences demand
+    // incompatible prologues for the same signature.
+    const { required, unfenceable } = requiredAuthorityPrologue(sink.signature);
     out.push(
-      ...authorityPrologueViolations(sink.declaration, required).map((message) =>
-        `${sink.file} :: ${sink.name}: ${message}`
-      ),
+      ...[
+        ...unfenceable,
+        ...authorityPrologueViolations(sink.declaration, required),
+      ].map((message) => `${sink.file} :: ${sink.name}: ${message}`),
     );
   }
   return out;
@@ -1496,6 +1509,12 @@ describe("governed-actions fence (v3 §15.3)", () => {
       .toEqual(unboundedPiiReads(project).sort());
   });
 
+  it("enforces: every reviewed non-PII field escape still resolves and is still needed", () => {
+    const stale = detectStaleGovernedNonPiiFields(realSemanticProject());
+    expect(stale, stale.join("\n")).toEqual([]);
+    expect(GOVERNED_NON_PII_FIELDS.size, "an empty registry proves nothing").toBeGreaterThan(0);
+  });
+
   it("enforces: structural non-PII field escapes are exact and load-bearing", () => {
     const project = realSemanticProject();
     const recordedSpan = project.getSourceFileOrThrow(
@@ -1814,6 +1833,52 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(detectUnguardedGovernedSinks(project)).toEqual([
         `src/infrastructure/new-adapter/repository.ts :: loadClients: boundary must require ActionGrant<"pii.view">`,
       ]);
+    });
+    it("requires the same-tenant proof when the tenant arrives WRAPPED in an object", () => {
+      // `tenantParameterName` used to match only a parameter whose OWN type is a
+      // TenantContext, so wrapping it dropped both the tenant assertion and the
+      // same-tenant proof from a pii.view sink - the two authorities could then name
+      // different scopes with nothing noticing. The prologue is now derived by the
+      // SHARED rule the tenant-scope fence uses, so the two cannot disagree.
+      const sink = (body: string): string[] =>
+        detectUnguardedGovernedSinks(inMemoryProject({
+          "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+          "/src/contracts/tenant.ts": `
+            export interface TenantContext { orgId: string }
+            export function assertTenantContext(v: unknown): asserts v is TenantContext { void v; }
+            export function assertSameTenant(a: unknown, b: unknown): void { void a; void b; }
+          `,
+          "/src/contracts/authz.ts": `
+            import type { TenantContext } from "./tenant";
+            export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+            export function assertActionGrant<A extends string>(v: unknown, a: A): asserts v is ActionGrant<A> {
+              void v; void a;
+            }
+          `,
+          "/src/infrastructure/new-adapter/repository.ts": `
+            import type { PIIBearing } from "../../contracts/pii";
+            import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
+            import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+            interface ClientRecord extends PIIBearing { fullName: string }
+            export function loadClients(
+              ctx: { tenant: TenantContext },
+              grant: ActionGrant<"pii.view">,
+            ): ClientRecord[] {
+${body}
+              return [{ fullName: ctx.tenant.orgId }];
+            }
+          `,
+        }));
+      expect(sink(`              assertActionGrant(grant, "pii.view");`)).toHaveLength(2);
+      expect(sink(`
+              assertTenantContext(ctx.tenant);
+              assertActionGrant(grant, "pii.view");
+              assertSameTenant(ctx.tenant, grant.tenant);`)).toEqual([]);
+      // ...and the action compares as a VALUE, so the other quote style is fine.
+      expect(sink(`
+              assertTenantContext(ctx.tenant);
+              assertActionGrant(grant, 'pii.view');
+              assertSameTenant(ctx.tenant, grant.tenant);`)).toEqual([]);
     });
     it("derives PII read sinks from arrow, object, and class callables", () => {
       const project = inMemoryProject({
@@ -2402,30 +2467,60 @@ describe("governed-actions fence (v3 §15.3)", () => {
       expect(detectAppLayerSqlAccess(project)).toEqual([]);
     });
 
-    it("FAILS CLOSED on an executor the checker cannot narrow", () => {
+    it("FAILS CLOSED on an executor the checker cannot narrow, whatever it is NAMED", () => {
       // Resolving through the callee's SIGNATURE is what makes destructured and
       // computed callsites resolve alike, but a callee widened past SqlDb yields
       // ZERO call signatures. Returning "clean" there made the whole rule a
       // one-line evasion: every form below issues the same SQL from the same place.
+      // None of them is WRITTEN as query/exec/execute, so a name-keyed fallback let
+      // all of them through - the executor has to be resolved by VALUE.
       const project = inMemoryProject({
         "/src/infrastructure/store/db.ts": `
           export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
           export function getDb(): Promise<SqlDb> { throw new Error(); }
         `,
         "/src/app/api/audit/route.ts": `
+          type Runner = (sql: string) => Promise<unknown>;
           import { getDb } from "@infra/store/db";
           export async function GET() {
             const db = await getDb();
-            const query: Function = db.query;
+            const run: Function = db.query;
+            const aliased: Runner = db.query as unknown as Runner;
+            const anyDb = db as any;
+            const reflected = anyDb.query;
             const opaque = db as unknown as { exec: unknown };
-            await (query as (sql: string) => unknown)("SELECT id, email FROM users");
+            await (run as (sql: string) => unknown)("SELECT id, email FROM users");
+            await aliased("SELECT id, email FROM users");
+            await reflected("SELECT id, email FROM users");
             await (opaque.exec as Function)("SELECT id, email FROM users");
             return null;
           }
         `,
       });
       const hits = detectAppLayerSqlAccess(project);
-      expect(hits.length, hits.join("\n")).toBeGreaterThanOrEqual(1);
+      // One assertion PER planted shape, and an exact total: asserting "at least
+      // one" cannot tell a working detector from a half-gutted one.
+      for (const line of [11, 12, 13, 14]) {
+        expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}: ${hits.join(" | ")}`)
+          .toBe(true);
+      }
+      expect(hits, hits.join("\n")).toHaveLength(4);
+    });
+
+    it("catches an opaque executor reached by ELEMENT access, and spares a non-SQL call", () => {
+      const project = inMemoryProject({
+        "/src/app/api/audit/route.ts": `
+          declare const opaque: any;
+          declare const cache: { lookup(spec: { id: string }): string };
+          export async function GET() {
+            await opaque["query"]("SELECT id, email FROM users");
+            return cache.lookup({ id: "x" });
+          }
+        `,
+      });
+      const hits = detectAppLayerSqlAccess(project);
+      expect(hits, hits.join("\n")).toHaveLength(1);
+      expect(hits[0]).toContain("route.ts:5");
     });
 
     it("keys a governed non-PII escape to the EXACT reviewed structural path", () => {
@@ -2447,6 +2542,15 @@ describe("governed-actions fence (v3 §15.3)", () => {
         { path: "RecordedSpan", isEscaped: isGovernedNonPiiField },
       );
       expect(exposures).toEqual(["RecordedSpan.attributes.name"]);
+
+      // A registry entry that stops resolving, or stops describing a PII-shaped
+      // field, is reported rather than silently carried forward.
+      expect(detectStaleGovernedNonPiiFields(inMemoryProject({
+        "/src/infrastructure/observability/tracer.ts":
+          `export interface RecordedSpan { readonly label: string }`,
+      }))).toEqual([
+        "src/infrastructure/observability/tracer.ts :: RecordedSpan.name: reviewed non-PII escape no longer resolves to a direct interface member",
+      ]);
 
       // ...and the reviewed top-level field itself is still escaped (the safe lookalike).
       const reviewedOnly = inMemoryProject({

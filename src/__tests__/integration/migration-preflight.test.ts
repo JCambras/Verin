@@ -252,7 +252,9 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
       UNION ALL
-      SELECT 'trigger', t.tgname FROM pg_trigger t WHERE NOT t.tgisinternal
+      SELECT 'trigger', t.tgname FROM pg_trigger t
+        JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE NOT t.tgisinternal AND n.nspname = current_schema()
       UNION ALL
       SELECT 'routine', p.proname FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -305,6 +307,31 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
 
   it("a GENUINELY virgin store still bootstraps every version (the proof is not a blanket refusal)", async () => {
     const db = await createMemoryDb();
+    expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((m) => m.version));
+  });
+
+  it("a NEIGHBOUR schema's same-named objects do not block a virgin bootstrap", async () => {
+    // Verin can share a managed Postgres with another schema. The probe asks what
+    // THIS schema owns, so a neighbour that happens to own a table, a trigger, or a
+    // function with one of our names is none of our business - an unqualified
+    // pg_trigger scan sees every schema's triggers and would refuse a correct
+    // deployment, telling the operator to restore a ledger that never existed.
+    const db = await createMemoryDb();
+    // Our schema back to genuinely virgin; the neighbour's objects stay, and they
+    // carry OUR names on purpose.
+    await db.exec(`
+      DROP SCHEMA public CASCADE;
+      CREATE SCHEMA public;
+      CREATE SCHEMA neighbour;
+      CREATE TABLE neighbour.audit_log (id text primary key);
+      CREATE FUNCTION neighbour.audit_log_immutable() RETURNS trigger AS $$
+        BEGIN RETURN NULL; END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON neighbour.audit_log
+        FOR EACH ROW EXECUTE FUNCTION neighbour.audit_log_immutable();
+    `);
+    expect(await schemaSnapshot(db)).toEqual([]);
+    await runMigrations(db);
     expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((m) => m.version));
   });
 

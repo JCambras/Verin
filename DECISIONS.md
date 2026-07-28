@@ -2047,3 +2047,69 @@ with `createSession` or not at all); and raising the infrastructure ceiling past
 trusting empty-ledger bootstrap, the two conflicting first-statement rules, the
 copyable `AuthenticatedUser` marker, the SQLSTATE allowlist, the fail-open SQL
 detector, and the duplicated decision ids.
+
+## D-079 - Sealed positions, order-free authority, and value-resolved SQL
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-078, ADR-0033, ADR-0034,
+v3 §15.1/§15.2/§15.3, charter #1/#4/#7/#13/#14
+
+Fifteen findings from the eighteenth review round, two of which were regressions the
+seventeenth round introduced. They resolve to five roots.
+
+**"Mentions it somewhere" is not "delivers it here."** The sealed-cast rule exempted a
+cast whose SOURCE type reached the target sealed type anywhere in its graph. An
+`ActionGrant` carries both a `TenantContext` and a `WriteActor`, so every governed
+route handler holds a value that mentions three sealed types, and `grant as unknown as
+TenantContext` - the only compile-legal cast form past a `unique symbol` brand, i.e.
+the mainline laundering shape - passed with zero violations while the ESLint mirror
+still flagged it. Source and target are now compared at the same STRUCTURAL POSITION,
+with the sealed key carrying its type arguments, so re-shaping an authorized value
+still passes and `ActionGrant<"pii.view">` cannot become
+`ActionGrant<"decision.approve">`. The same position walk closes the mint nested one
+property inside a composite literal argument.
+
+**Neutralizing a sentinel must not neutralize the signal around it.** Blanking
+`[REDACTED]` to whitespace before shape-testing also erased the "there is preceding
+content" fact the embedded-name check reads, so caller-supplied text of the form
+`[REDACTED] Alice` sealed as `piiFree: true` with the raw name intact - while the
+identical `wire to Alice` was refused. The stand-in is now a non-letter,
+non-whitespace mark: content, never a word.
+
+**The all-caps gap had a second site.** `NAME_SHAPED_RE` in the observability
+predicate was still title-case only, so `observabilityId("entityId", "SMITH-JOHN")`
+succeeded and the value went verbatim into the log line and out over OTLP - and
+`entityId` is client-supplied. It now composes the same `PERSON_WORD_SOURCE`, gated on
+the value carrying no digit, which is what keeps uppercase-hex ids working.
+
+**Authority is a set, not a first parameter.** The prologue derivation returned on the
+FIRST sealed parameter, so declaring the grant before the tenant dropped both the
+tenant assertion and the same-tenant proof; wrapping the tenant in an object escaped
+both fences; and widening the grant's action to a union removed every requirement at
+once. One shared derivation now collects EVERY sealed authority a signature carries,
+recognizes one carried inside an object parameter where none is named directly, and
+refuses a grant whose action is not a single literal rather than silently dropping the
+cross-check. Action arguments compare by VALUE again, so quote style cannot reject a
+correct boundary.
+
+**Fail closed on the value, not on the spelling.** The app-layer SQL detector's
+fail-closed arm keyed on the WRITTEN callee name, so renaming a widened local walked
+through the very evasion the arm was added to close. It now follows an unresolvable
+callee back to what it was bound from, and treats a SQL statement handed to an
+unresolvable callee as persistence under any name. The reviewed non-PII escape
+registry became existence- and staleness-checked, the governed-sink and unbounded-read
+derivations are memoized per project (five full type-checker passes to two), and the
+managed-object probe's trigger clause is scoped to `current_schema()` so a neighbour
+schema's same-named trigger can no longer refuse a correct virgin bootstrap.
+
+**Alternatives rejected:** keeping "reachable anywhere" and adding a target-is-container
+guard only (the recast-to-another-action hole survives, since matching was by symbol
+name); requiring the grant assertion for every member of a union action (no single
+assertion proves a union - the signature is refused instead); demanding an assertion on
+every structurally carried tenant (`createSession` takes both a `TenantContext` and an
+`AuthenticatedUser` that carries one, and that has one scope, not two); and raising the
+domain ceiling speculatively alongside infrastructure (ADR-0034: each layer moves on
+its own measurement).
+
+**Revert path:** revert this changeset to restore the reachable-anywhere cast
+exemption, the whitespace sentinel stand-in, title-case-only observability ids, the
+order-dependent authority prologue, and the name-keyed SQL fail-closed arm.

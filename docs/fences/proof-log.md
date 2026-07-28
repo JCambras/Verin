@@ -3891,3 +3891,111 @@ pnpm v3:invariants     # 6 active-pass, 0 active-fail
 ```
 
 **Date:** 2026-07-28 (seventeenth review-fix round on v3 build-sequence prompt 6).
+
+### PF-101 a sealed cast is judged by POSITION, not by graph reach
+
+`carriesSealedType` asked whether the cast's SOURCE reached the target sealed type
+anywhere in its type graph, and it was consulted before any check that the TARGET was
+a container. `ActionGrant` carries a `TenantContext` and a `WriteActor`, so
+`grant as unknown as TenantContext` was exempted - and since every sealed type is
+`unique symbol`-branded, `as unknown as X` is the ONLY compile-legal cast form. The
+fence was strictly weaker than the ESLint mirror it is asserted to be a superset of.
+
+Source and target are now compared at the same structural position
+(`sealedPositionsOf` / `typeAtPosition`), and the position key carries type arguments.
+
+**Adversarial proof:** five casts off CHECKED sources that merely carry the type -
+`grant as unknown as TenantContext`, `map as unknown as Principal` from
+`Map<string, Principal>`, `getTenant as unknown as TenantContext` from a function
+RETURNING one, `allTenants as unknown as TenantContext` from `readonly TenantContext[]`,
+and `grant as unknown as ActionGrant<"decision.approve">` - each reported on its own
+line; all five produced ZERO violations before this change. The safe lookalikes still
+pass: `held as { tenant: TenantContext }`, `grant as ActionGrant<"pii.view">`, and
+`grant.tenant as TenantContext`.
+
+### PF-102 an unchecked value nested inside a composite literal argument is a mint
+
+`consume({ tenant: JSON.parse(x) })` against `consume(a: { tenant: TenantContext })`
+left no cast, no `piiFree` literal and no type argument for any other rule to see, and
+the object-literal rule reads the contextual type with the NARROW walk.
+
+**Adversarial proof:** the object form and the array form (`consumeAll([JSON.parse(x)])`)
+are both reported; `consume({ tenant: systemTenant(...) })` and
+`consumeAll([systemTenant(...)])` still pass.
+
+### PF-103 the redaction sentinel is neutralized without erasing its neighbours
+
+Blanking `[REDACTED]` to whitespace erased the "there is preceding content" signal
+`embeddedPersonWord` reads, so `tokenizeText("[REDACTED] Alice")` sealed as
+`piiFree: true` with the raw name intact while `"wire to Alice"` was refused. The
+stand-in is now a non-letter, non-whitespace mark.
+
+**Adversarial proof:** `[REDACTED] Alice`, `[REDACTED]Alice`, `[REDACTED] SMITH`,
+`[REDACTED]SMITH`, and a doubled form each fail `hasUnresolvedProjectionText` and throw
+`PII_VIOLATION` from `tokenizeText`. The scrubber's own output still passes: the
+sentinel alone, and the sentinel followed by lowercase prose.
+
+### PF-104 all-caps person shapes are refused by the observability id predicate too
+
+`NAME_SHAPED_RE` needed a `Lu` immediately followed by a `Ll`, so
+`observabilityId("entityId", "SMITH-JOHN")` succeeded and the value was emitted
+verbatim into the pino line and over OTLP - and `audited-write` feeds `entityId`
+straight from the request body. The predicate now composes `PERSON_WORD_SOURCE`, gated
+on the value carrying no digit so uppercase-hex ids keep working.
+
+**Adversarial proof:** "SMITH", "ALICE", "OBRIEN", and "SMITH-JOHN" all throw and
+degrade to `[REDACTED]`; every real machine id shape still round-trips, including the
+uppercase-hex UUID the account-opening route accepts and the `AB12CD34-EF56` lookalike.
+
+### PF-105 the authority prologue is derived from EVERY sealed parameter
+
+The derivation returned on the first sealed parameter, so declaring the grant before
+the tenant asserted only the grant and never cross-checked; a tenant wrapped in an
+object escaped both fences; and widening the action type to a union or a type
+parameter removed the grant assertion AND the same-tenant proof together.
+
+**Adversarial proof, both fences:** the reversed parameter order fails without the
+tenant half and passes with it; `ctx: { tenant: TenantContext }` fails without
+`assertSameTenant(ctx.tenant, grant.tenant)` and passes with it; both
+`ActionGrant<"pii.view" | "audit.export">` and the generic `ActionGrant<A>` are
+refused as unfenceable. `assertActionGrant(grant, 'pii.view')` in the other quote style
+passes - the action compares as a VALUE, not as source text. `createSession`, which
+takes a `TenantContext` and an `AuthenticatedUser` that CARRIES one, stays buildable.
+
+### PF-106 the SQL fail-closed arm resolves the executor by value
+
+The arm added in PF-099 fell back to the WRITTEN callee name, so a renamed widened
+local walked straight through the evasion its own comment named. An unresolvable callee
+is now followed back to what it was BOUND from, and a SQL statement handed to an
+unresolvable callee is persistence under any name.
+
+**Adversarial proof:** `const run: Function = db.query`, a
+`type Runner = (sql: string) => …` alias, a reflected `anyDb.query`, and an opaque
+`{ exec: unknown }` are each reported - one assertion per shape plus an exact total of
+4, so deleting any single branch fails the companion. `opaque["query"](…)` is reported
+through element access, and `cache.lookup({ id })` beside it is not.
+
+### PF-107 the managed-object probe asks what THIS schema owns
+
+`MANAGED_OBJECT_PROBE_SQL` scoped its `pg_class` and `pg_proc` clauses to
+`current_schema()` but not its `pg_trigger` clause, so a Verin schema sharing a managed
+Postgres with a neighbour owning an `audit_log_no_update` refused to bootstrap, telling
+the operator to restore a ledger that never existed.
+
+**Adversarial proof:** a virgin schema beside a `neighbour` schema holding a table,
+function, and trigger with OUR names bootstraps every version; reverting the
+qualification makes that test fail with the restored-dump diagnostic. The
+restored-dump refusal and its zero-mutation proof are unchanged.
+
+### PF-101 - PF-107 verification
+
+```
+pnpm exec vitest run   # 54 files, 932 tests passed
+pnpm exec eslint .     # clean
+pnpm exec tsc --noEmit # clean
+pnpm knip              # clean
+pnpm v3:invariants     # clean
+pnpm golden:validate   # clean
+```
+
+**Date:** 2026-07-28 (eighteenth review-fix round on v3 build-sequence prompt 6).

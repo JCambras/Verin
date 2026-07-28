@@ -1,6 +1,7 @@
 import {
   isPIIField,
   looksLikePIIValue,
+  PERSON_WORD_SOURCE,
   REDACTED,
 } from "@contracts/pii";
 import { appError } from "@contracts/errors";
@@ -98,6 +99,14 @@ const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
 // ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex runs are
 // digits/uppercase and slugs are lowercase — so "seed" and "org" stay allowed.
 const NAME_SHAPED_RE = /\p{Lu}\p{Ll}/u;
+// ...and the half `\p{Lu}\p{Ll}` structurally CANNOT see: an ALL-CAPS name ("SMITH",
+// "SMITH-JOHN"), an ordinary CRM rendering that reaches here as a client-supplied
+// entityId. Composed from the SAME PERSON_WORD_SOURCE the scrub boundary keys on, so
+// the two cannot drift, and gated on the value carrying NO digit - that is what keeps
+// uppercase hex ids working ("3F2504E0-4F89-…", which the account-opening route
+// accepts and a bare `\p{Lu}{2,}` would refuse). Names carry no digits; ids do.
+const DIGIT_RE = /\d/;
+const ALL_CAPS_NAME_RE = new RegExp(PERSON_WORD_SOURCE, "u");
 /**
  * A well-formed SQLSTATE: a two-character CLASS followed by three subclass
  * characters, all uppercase-alphanumeric. The class is where the shape gets its
@@ -120,8 +129,9 @@ const REASON_RE = new RegExp(
 function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
   return ID_FIELDS.has(field) && typeof value === "string" &&
     value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
-    !NAME_SHAPED_RE.test(value) && !/^\d{9,18}$/.test(value) &&
-    !looksLikePIIValue(value);
+    !NAME_SHAPED_RE.test(value) &&
+    !(!DIGIT_RE.test(value) && ALL_CAPS_NAME_RE.test(value)) &&
+    !/^\d{9,18}$/.test(value) && !looksLikePIIValue(value);
 }
 
 function sealId(field: ObservabilityIdField, value: string): ObservabilityId {

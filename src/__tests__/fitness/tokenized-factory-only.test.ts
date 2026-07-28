@@ -461,19 +461,187 @@ function isUncheckedSource(type: Type): boolean {
   return type.isAny() || type.isUnknown() || type.isNever();
 }
 
+/** Nothing in this repo nests a sealed type deeper than a handful of positions. */
+const POSITION_DEPTH = 8;
+
+/** One step into a type: a named property, an array element, a type argument, a return. */
+type PositionStep =
+  | { readonly kind: "property"; readonly name: string }
+  | { readonly kind: "element" }
+  | { readonly kind: "argument"; readonly index: number }
+  | { readonly kind: "return" };
+
+interface SealedPosition {
+  readonly steps: readonly PositionStep[];
+  /** The sealed type living there, WITH its type arguments. */
+  readonly sealed: string;
+}
+
 /**
- * Did the value a cast STARTS from already hold that sealed type, through a path
- * the checker verified?
- *
- * This is what separates re-shaping an authorized value (`held as { tenant:
- * TenantContext }`, where `held` already carries one) from MINTING one (`row as {
- * tenant: TenantContext }`, where `row.tenant` was `unknown` a character earlier).
- * An `any`/`unknown`/`never` source carries nothing by definition - the checker
- * stopped reasoning about it - so it is refused before the walk even runs.
+ * The sealed instance a value of this type IS - never one it merely contains - with
+ * its type arguments folded into the key, so `ActionGrant<"pii.view">` and
+ * `ActionGrant<"decision.approve">` are different authorities rather than one name.
  */
-function carriesSealedType(source: Type, sealed: (typeof SEALED)[number]): boolean {
-  return !isUncheckedSource(source) &&
-    sealedType(source, true, [sealed], true) !== null;
+function sealedKeyOf(type: Type): string | null {
+  const members = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
+  if (members.length) {
+    for (const member of members) {
+      const key = sealedKeyOf(member);
+      if (key) return key;
+    }
+    return null;
+  }
+  const direct = sealedValueType(type);
+  if (!direct) return null;
+  const args = [...type.getAliasTypeArguments(), ...type.getTypeArguments()];
+  return args.length ? `${direct.typeName}<${args.map(typeKey).join(",")}>` : direct.typeName;
+}
+
+/** Is this type's own shape declared in this repo? Mirrors sealedType's descent gate. */
+function projectOwned(type: Type): boolean {
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  return !symbol || symbol.getDeclarations().some((declaration) =>
+    Node.isTypeLiteral(declaration) ||
+    normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+  );
+}
+
+/**
+ * WHERE a sealed type sits inside this one - the structural positions a value of
+ * this type hands one out at.
+ *
+ * "Does the other side MENTION this sealed type anywhere in its graph?" is not the
+ * question. `ActionGrant` carries both a `TenantContext` and a `WriteActor`, so
+ * every governed route handler holds a value that mentions three sealed types, and
+ * a reachable-anywhere test exempts `grant as unknown as TenantContext` - a
+ * one-line mint of the very authority the cast names. Since every sealed type is
+ * `unique symbol`-branded, `as unknown as X` is the ONLY compile-legal cast form,
+ * so that is the MAINLINE laundering shape, not an exotic one.
+ *
+ * Position is what separates re-shaping an authorized value (`held as { tenant:
+ * TenantContext }`, where `held.tenant` already is one) from minting: the sealed
+ * type has to come out where it went in. The walk STOPS at a sealed value, or
+ * descending `ActionGrant.tenant` would re-open the same hole one level down, and
+ * it keeps sealedType's project-owned gate so a cast to a library container costs
+ * a type-argument walk rather than that container's whole member graph.
+ */
+function sealedPositionsOf(
+  type: Type,
+  steps: readonly PositionStep[] = [],
+  out: SealedPosition[] = [],
+  seen = new Set<string>(),
+): SealedPosition[] {
+  if (steps.length > POSITION_DEPTH) return out;
+  const key = `${steps.length} ${typeKey(type)}`;
+  if (seen.has(key)) return out;
+  seen.add(key);
+  const sealed = sealedKeyOf(type);
+  if (sealed) {
+    out.push({ steps, sealed });
+    return out;
+  }
+  for (const member of [...type.getUnionTypes(), ...type.getIntersectionTypes(), ...type.getBaseTypes()]) {
+    sealedPositionsOf(member, steps, out, seen);
+  }
+  const element = type.getArrayElementType();
+  if (element) sealedPositionsOf(element, [...steps, { kind: "element" }], out, seen);
+  [...type.getAliasTypeArguments(), ...type.getTypeArguments()].forEach((argument, index) =>
+    sealedPositionsOf(argument, [...steps, { kind: "argument", index }], out, seen)
+  );
+  if (!projectOwned(type)) return out;
+  for (const property of type.getProperties()) {
+    const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
+    if (declaration) {
+      sealedPositionsOf(
+        property.getTypeAtLocation(declaration),
+        [...steps, { kind: "property", name: property.getName() }],
+        out,
+        seen,
+      );
+    }
+  }
+  for (const signature of [...type.getCallSignatures(), ...type.getConstructSignatures()]) {
+    sealedPositionsOf(signature.getReturnType(), [...steps, { kind: "return" }], out, seen);
+  }
+  return out;
+}
+
+/**
+ * The type the OTHER side of a cast delivers at the same position - resolved by
+ * name on demand, never by enumerating that side's members, so a foreign source
+ * (zod's inferred `parsed.data`) is answered without dragging its type graph in.
+ */
+function typeAtPosition(type: Type, steps: readonly PositionStep[]): Type | null {
+  let current: Type | null = type;
+  for (const step of steps) {
+    if (!current) return null;
+    const members: Type[] = [
+      ...current.getUnionTypes(),
+      ...current.getIntersectionTypes(),
+    ];
+    if (members.length) {
+      const resolved: Type | null = members
+        .map((member): Type | null => typeAtPosition(member, [step]))
+        .find((candidate): candidate is Type => candidate !== null) ?? null;
+      current = resolved;
+      continue;
+    }
+    if (step.kind === "property") {
+      const property = current.getProperty(step.name);
+      const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
+      current = property && declaration ? property.getTypeAtLocation(declaration) : null;
+    } else if (step.kind === "element") {
+      current = current.getArrayElementType() ?? null;
+    } else if (step.kind === "argument") {
+      current = [...current.getAliasTypeArguments(), ...current.getTypeArguments()][step.index] ?? null;
+    } else {
+      current = current.getCallSignatures()[0]?.getReturnType() ??
+        current.getConstructSignatures()[0]?.getReturnType() ?? null;
+    }
+  }
+  return current;
+}
+
+/**
+ * Does the source already deliver every sealed type the target names, at the same
+ * position and with the same type arguments? Fail-closed at both edges: a target
+ * whose sealed reach this walk cannot place yields no positions and is NOT a
+ * re-shape, and an `any`/`unknown` source resolves to nothing at every position.
+ */
+function isSealedReshape(source: Type, target: Type): boolean {
+  const wanted = sealedPositionsOf(target);
+  if (wanted.length === 0) return false;
+  return wanted.every(({ steps, sealed }) => {
+    const held = typeAtPosition(source, steps);
+    return held !== null && sealedKeyOf(held) === sealed;
+  });
+}
+
+/**
+ * Is a composite literal unchecked EXACTLY where its annotation expects a sealed
+ * type? `consume({ tenant: JSON.parse(x) })` is the same mint as `consume(JSON.parse
+ * (x))` with the annotation one property further in, and it leaves no cast, no
+ * literal flag and no type argument for any other rule here to see: the sealed-value
+ * rule below reads the contextual type with the NARROW walk, and `{ tenant:
+ * TenantContext }` is not itself a sealed value. Keyed on "unchecked at a sealed
+ * position" rather than "not sealed", so `undefined` against an optional
+ * `tenant?: TenantContext` stays buildable.
+ */
+/** Does this literal's own inferred type hold an `any`/`unknown` anywhere shallow? */
+function carriesUncheckedMember(type: Type): boolean {
+  const element = type.getArrayElementType();
+  if (element && isUncheckedSource(awaited(element))) return true;
+  return type.getProperties().some((property) => {
+    const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
+    return Boolean(declaration && isUncheckedSource(awaited(property.getTypeAtLocation(declaration))));
+  });
+}
+
+function uncheckedAtSealedPosition(value: Type, expected: Type): boolean {
+  return sealedPositionsOf(expected).some(({ steps }) => {
+    const held = typeAtPosition(value, steps);
+    return held !== null && isUncheckedSource(awaited(held));
+  });
 }
 
 /**
@@ -688,15 +856,41 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         // selector matches the name wherever it appears inside the cast.
         const sealed = type ? sealedType(type) : null;
         if (!sealed || normalized === sealed.factory) continue;
-        // ...and the SOURCE is what tells minting apart from re-shaping. Nothing is
-        // minted when the value already carried that same sealed type on the way in;
-        // an unchecked source (`JSON.parse`, an awaited `Promise<any>`) carries
-        // nothing, which is the whole compile-legal mint surface past a brand.
+        // ...and the SOURCE is what tells minting apart from re-shaping, compared at
+        // the SAME structural position. "The source mentions this sealed type
+        // somewhere" is not enough: `ActionGrant` carries a `TenantContext` and a
+        // `WriteActor`, so a reachable-anywhere test exempts `grant as unknown as
+        // TenantContext` - the mainline laundering shape, since a `unique symbol`
+        // brand leaves `as unknown as X` the only compile-legal cast form.
         if (
-          carriesSealedType(awaited(unwrapAssertions(node.getExpression()).getType()), sealed)
+          isSealedReshape(awaited(unwrapAssertions(node.getExpression()).getType()), type!)
         ) continue;
         out.push(
           `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
+        );
+      }
+    }
+
+    // A composite literal fills the same annotation the call-argument rule below
+    // reads, one property further in: `consume({ tenant: JSON.parse(x) })`. Gated on
+    // the literal's OWN type carrying an unchecked member first - resolving a
+    // contextual type is the expensive step, and a literal with nothing unchecked in
+    // it cannot be minting anything.
+    for (
+      const literal of [
+        ...sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression),
+        ...sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression),
+      ]
+    ) {
+      if (!carriesUncheckedMember(literal.getType())) continue;
+      const contextual = literal.getContextualType();
+      const nested = contextual ? sealedType(contextual) : null;
+      if (
+        nested && normalized !== nested.factory &&
+        uncheckedAtSealedPosition(literal.getType(), contextual!)
+      ) {
+        out.push(
+          `${normalized}:${literal.getStartLineNumber()} - sealed type '${nested.typeName}' minted from an unchecked call argument outside its factory`,
         );
       }
     }
@@ -970,8 +1164,15 @@ function sealedFixture(path: string, source: string): Project {
       export function systemTenant(systemId: string, orgId: string): TenantContext { return { orgId } }
     `,
     "/src/contracts/authz.ts": `
+      import type { TenantContext } from "./tenant";
       export interface ActorRef { actorId: string }
-      export interface ActionGrant { action: string }
+      // Generic and tenant-carrying like the real one (contracts/authz.ts): a grant
+      // is the value every governed handler holds, so it is the source a
+      // reachable-anywhere exemption would launder three sealed types out of.
+      export interface ActionGrant<A extends string = string> {
+        action: A;
+        tenant: TenantContext;
+      }
     `,
     "/src/contracts/principal.ts": `
       import { systemTenant, type TenantContext } from "./tenant";
@@ -1387,6 +1588,93 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         hit.startsWith("src/app/evil.ts:6") && hit.includes("unchecked call argument") &&
         hit.includes("TenantContext")
       )).toBe(true);
+    });
+
+    it("catches a DIRECT cast whose source merely CARRIES the sealed type elsewhere", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          import type { ActionGrant } from "../contracts/authz";
+          import type { Principal } from "../contracts/principal";
+          declare const grant: ActionGrant<"pii.view">;
+          declare const byId: Map<string, Principal>;
+          declare const getTenant: () => TenantContext;
+          declare const allTenants: readonly TenantContext[];
+          export const a = grant as unknown as TenantContext;
+          export const b = byId as unknown as Principal;
+          export const c = getTenant as unknown as TenantContext;
+          export const d = allTenants as unknown as TenantContext;
+          export const e = grant as unknown as ActionGrant<"decision.approve">;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.startsWith("src/app/evil.ts"));
+      // Every source here is CHECKED and mentions the target sealed type somewhere -
+      // a grant carries a TenantContext, a Map is parameterized by a Principal, a
+      // function RETURNS one, an array holds them. None of them delivers it at the
+      // position the cast claims, so all five are mints. A `unique symbol` brand
+      // leaves `as unknown as X` the only compile-legal cast form, so this IS the
+      // mainline laundering shape.
+      for (const line of [9, 10, 11, 12, 13]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line} `)),
+          `line ${line} not reported: ${hits.join(" | ")}`,
+        ).toBe(true);
+      }
+      // ...including re-labelling one authority as another: same symbol, different
+      // action, so matching on the NAME alone would hand out an approval grant.
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:13") && hit.includes("ActionGrant")
+      )).toBe(true);
+    });
+
+    it("catches an unchecked value NESTED inside a composite literal argument", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare function consume(scope: { tenant: TenantContext }): void;
+          declare function consumeAll(scopes: TenantContext[]): void;
+          declare const raw: string;
+          consume({ tenant: JSON.parse(raw) });
+          consumeAll([JSON.parse(raw)]);
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.startsWith("src/app/evil.ts"));
+      for (const line of [6, 7]) {
+        expect(
+          hits.some((hit) =>
+            hit.startsWith(`src/app/evil.ts:${line} `) && hit.includes("TenantContext")
+          ),
+          `line ${line} not reported: ${hits.join(" | ")}`,
+        ).toBe(true);
+      }
+    });
+
+    it("allows a CHECKED source that delivers the sealed type at the cast's own position", () => {
+      const project = sealedFixture(
+        "/src/app/fine.ts",
+        `
+          import { systemTenant, type TenantContext } from "../contracts/tenant";
+          import type { ActionGrant } from "../contracts/authz";
+          declare function consume(scope: { tenant: TenantContext }): void;
+          declare function consumeAll(scopes: TenantContext[]): void;
+          declare const grant: ActionGrant<"pii.view">;
+          declare const held: { tenant: TenantContext; note: string };
+          // The re-shape the position rule must not eat: the sealed type comes out
+          // where it went in, and the grant keeps its own action.
+          export const narrowed = held as { tenant: TenantContext };
+          export const same = grant as ActionGrant<"pii.view">;
+          export const scope = grant.tenant as TenantContext;
+          consume({ tenant: systemTenant("seed", "org") });
+          consumeAll([systemTenant("seed", "org")]);
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/fine.ts")
+      )).toEqual([]);
     });
 
     it("allows RESHAPING an already-sealed value and passing one into a sealed parameter", () => {

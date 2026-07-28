@@ -16,9 +16,9 @@ import {
   detectAppLayerSqlAccess,
   isSqlExecutorCall,
   REPO_ROOT,
+  requiredAuthorityPrologue,
   returnedCallableMembers,
   typeKey,
-  type RequiredAuthorityAssertion,
 } from "./_fence-utils";
 
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
@@ -130,12 +130,6 @@ interface RepositoryEntry {
   readonly signatures: Signature[];
 }
 
-interface RuntimeGuard {
-  readonly functionName: "assertActionGrant" | "assertTenantContext" | "assertWriteActor";
-  readonly file: string;
-  readonly argument: string;
-}
-
 function callableMembers(
   type: Type,
   owner: string,
@@ -186,108 +180,23 @@ function signatureHas(
   });
 }
 
-function runtimeGuard(signature: Signature): RuntimeGuard | null {
-  for (const parameter of signature.getParameters()) {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (!declaration) continue;
-    const parameterType = parameter.getTypeAtLocation(declaration);
-    const parameterName = parameter.getName();
-    if (declaredAs(parameterType, "src/contracts/authz.ts", "ActionGrant")) {
-      return {
-        functionName: "assertActionGrant",
-        file: "src/contracts/authz.ts",
-        argument: parameterName,
-      };
-    }
-    if (declaredAs(parameterType, "src/contracts/principal.ts", "WriteActor")) {
-      return {
-        functionName: "assertWriteActor",
-        file: "src/contracts/principal.ts",
-        argument: parameterName,
-      };
-    }
-    if (declaredAs(parameterType, "src/contracts/tenant.ts", "TenantContext")) {
-      return {
-        functionName: "assertTenantContext",
-        file: "src/contracts/tenant.ts",
-        argument: parameterName,
-      };
-    }
-    for (const propertyName of ["actor", "tenant"] as const) {
-      const property = parameterType.getProperty(propertyName);
-      const propertyDeclaration = property?.getValueDeclaration() ??
-        property?.getDeclarations()[0];
-      if (!property || !propertyDeclaration) continue;
-      const propertyType = property.getTypeAtLocation(propertyDeclaration);
-      if (declaredAs(propertyType, "src/contracts/principal.ts", "WriteActor")) {
-        return {
-          functionName: "assertWriteActor",
-          file: "src/contracts/principal.ts",
-          argument: `${parameterName}.${propertyName}`,
-        };
-      }
-      if (declaredAs(propertyType, "src/contracts/tenant.ts", "TenantContext")) {
-        return {
-          functionName: "assertTenantContext",
-          file: "src/contracts/tenant.ts",
-          argument: `${parameterName}.${propertyName}`,
-        };
-      }
-    }
-  }
-  return null;
-}
-
-/** The ActionGrant parameter of a signature, with the exact action it is typed to. */
-function grantParameter(signature: Signature): { name: string; action: string } | null {
-  for (const parameter of signature.getParameters()) {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (!declaration) continue;
-    const parameterType = parameter.getTypeAtLocation(declaration);
-    if (!declaredAs(parameterType, "src/contracts/authz.ts", "ActionGrant")) continue;
-    const actionProperty = parameterType.getProperty("action");
-    const actionDeclaration = actionProperty?.getValueDeclaration() ??
-      actionProperty?.getDeclarations()[0];
-    const actionType = actionDeclaration && actionProperty
-      ? actionProperty.getTypeAtLocation(actionDeclaration)
-      : null;
-    if (!actionType?.isStringLiteral()) continue;
-    return { name: parameter.getName(), action: String(actionType.getLiteralValue()) };
-  }
-  return null;
-}
-
 /**
- * The SHARED authority-prologue rule (see _fence-utils). This fence used to demand
- * its tenant assertion be literally statement #1 while the governed-actions fence
- * demanded the SAME position for its grant assertion, which made a signature carrying
- * both authorities unbuildable. Both now derive the same prologue from one
- * implementation: every required assertion must run before anything else, in any
- * order, and a callable carrying both must also prove they name the same scope.
+ * The SHARED authority-prologue rule (requiredAuthorityPrologue in _fence-utils).
+ * This fence used to demand its tenant assertion be literally statement #1 while the
+ * governed-actions fence demanded the SAME position for its grant assertion, which
+ * made a signature carrying both authorities unbuildable. Both now derive the same
+ * prologue from ONE implementation over ALL of a signature's sealed parameters:
+ * every required assertion runs before anything else, in any order, and a callable
+ * carrying both authorities must also prove they name the same scope - including
+ * when the tenant arrives WRAPPED in an object parameter, and regardless of which
+ * authority happens to be declared first.
  */
-function runtimeGuardViolations(signature: Signature, guard: RuntimeGuard): string[] {
-  const grant = grantParameter(signature);
-  const tenant = guard.functionName === "assertTenantContext" ? guard.argument : null;
-  const required: RequiredAuthorityAssertion[] = [
-    { functionName: guard.functionName, file: guard.file, args: [guard.argument] },
-    ...(grant && tenant && !tenant.includes(".")
-      ? [
-        {
-          functionName: "assertActionGrant",
-          file: "src/contracts/authz.ts",
-          args: [grant.name, JSON.stringify(grant.action)],
-        },
-        {
-          functionName: "assertSameTenant",
-          file: "src/contracts/tenant.ts",
-          args: [tenant, `${grant.name}.tenant`],
-        },
-      ]
-      : []),
-  ];
-  return authorityPrologueViolations(signature.getDeclaration(), required);
+function runtimeGuardViolations(signature: Signature): string[] {
+  const { required, unfenceable } = requiredAuthorityPrologue(signature);
+  if (required.length === 0) {
+    return ["no sealed authority parameter to assert"];
+  }
+  return [...unfenceable, ...authorityPrologueViolations(signature.getDeclaration(), required)];
 }
 
 function exportedDomainCallableTypes(
@@ -486,8 +395,7 @@ export function detectMissingTenantParams(
         continue;
       }
       const missingGuard = entry.signatures.some((signature) => {
-        const guard = runtimeGuard(signature);
-        return !guard || runtimeGuardViolations(signature, guard).length > 0;
+        return runtimeGuardViolations(signature).length > 0;
       });
       if (missingGuard) {
         out.push({
@@ -670,16 +578,18 @@ describe("tenant-context-required fence", () => {
      * the assertions to run before anything else, in any order, plus proof the two
      * authorities name the same scope.
      */
-    const dualAuthorityFixture = (body: string): Project =>
+    const DUAL_AUTHORITY_PARAMS = `
+          db: SqlDb,
+          tenant: TenantContext,
+          grant: ActionGrant<"pii.view">,`;
+
+    const dualAuthorityFixture = (body: string, params = DUAL_AUTHORITY_PARAMS): Project =>
       repositoryFixture(
         `
         import type { SqlDb } from "../store/db";
         import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
         import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
-        export function listPeople(
-          db: SqlDb,
-          tenant: TenantContext,
-          grant: ActionGrant<"pii.view">,
+        export function listPeople<A extends string = never>(${params}
         ): unknown {
 ${body}
         }
@@ -695,8 +605,8 @@ ${body}
         },
       );
 
-    const dualAuthorityViolations = (body: string): unknown[] =>
-      detectMissingTenantParams(dualAuthorityFixture(body), new Set());
+    const dualAuthorityViolations = (body: string, params?: string): unknown[] =>
+      detectMissingTenantParams(dualAuthorityFixture(body, params), new Set());
 
     it("PASSES a dual-authority signature whose prologue is contiguous (previously unbuildable)", () => {
       expect(dualAuthorityViolations(`
@@ -769,6 +679,95 @@ ${body}
           assertSameTenant(grant.tenant, grant.tenant);
           return db.query("SELECT 1");
       `)).toHaveLength(1);
+    });
+
+    it("PASSES an action written with the other QUOTE style (a value, not source text)", () => {
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          assertActionGrant(grant, 'pii.view');
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+      `)).toEqual([]);
+    });
+
+    it("rejects the same omission when the GRANT is declared before the tenant", () => {
+      // The cross-check must not be opt-out by declaration order: deriving the
+      // prologue from the FIRST sealed parameter meant swapping these two positions
+      // dropped both the tenant assertion and the same-tenant proof entirely.
+      const reversed = `
+          db: SqlDb,
+          grant: ActionGrant<"pii.view">,
+          tenant: TenantContext,`;
+      expect(dualAuthorityViolations(
+        `
+          assertActionGrant(grant, "pii.view");
+          return db.query("SELECT 1");
+        `,
+        reversed,
+      )).toHaveLength(1);
+      expect(dualAuthorityViolations(
+        `
+          assertActionGrant(grant, "pii.view");
+          assertTenantContext(tenant);
+          assertSameTenant(tenant, grant.tenant);
+          return db.query("SELECT 1");
+        `,
+        reversed,
+      )).toEqual([]);
+    });
+
+    it("rejects a tenant WRAPPED in an object parameter that never proves the same scope", () => {
+      const wrapped = `
+          db: SqlDb,
+          ctx: { tenant: TenantContext },
+          grant: ActionGrant<"pii.view">,`;
+      expect(dualAuthorityViolations(
+        `
+          assertTenantContext(ctx.tenant);
+          assertActionGrant(grant, "pii.view");
+          return db.query("SELECT 1");
+        `,
+        wrapped,
+      )).toHaveLength(1);
+      expect(dualAuthorityViolations(
+        `
+          assertTenantContext(ctx.tenant);
+          assertActionGrant(grant, "pii.view");
+          assertSameTenant(ctx.tenant, grant.tenant);
+          return db.query("SELECT 1");
+        `,
+        wrapped,
+      )).toEqual([]);
+    });
+
+    it("rejects a grant whose action is a UNION or a type parameter, not one literal", () => {
+      // Widening the action type used to drop BOTH the grant assertion and the
+      // same-tenant proof, so a one-token signature change removed the whole
+      // cross-authority requirement. There is no single assertion that proves a
+      // union, so the signature is refused instead.
+      for (
+        const params of [
+          `
+          db: SqlDb,
+          tenant: TenantContext,
+          grant: ActionGrant<"pii.view" | "audit.export">,`,
+          `
+          db: SqlDb,
+          tenant: TenantContext,
+          grant: ActionGrant<A>,`,
+        ]
+      ) {
+        expect(
+          dualAuthorityViolations(
+            `
+          assertTenantContext(tenant);
+          return db.query("SELECT 1");
+        `,
+            params,
+          ),
+          params,
+        ).toHaveLength(1);
+      }
     });
 
     it("flags an exported repository function without tenant scope", () => {

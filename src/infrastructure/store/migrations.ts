@@ -406,11 +406,14 @@ const MANAGED_OBJECT_NAMES: ReadonlySet<string> = new Set(
 // nothing about whether the store is virgin.
 const LEDGER_TABLE = "schema_migrations";
 
-/** Names only, never row data: every value this returns is one of OUR identifiers. */
+// Names only, never row data: every value here is one of OUR identifiers, and EVERY
+// clause is scoped to current_schema() - triggers included, or a neighbour schema in a
+// shared Postgres owning an `audit_log_no_update` refuses a correct virgin bootstrap.
 const MANAGED_OBJECT_PROBE_SQL = `
 SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
-UNION SELECT t.tgname FROM pg_trigger t WHERE NOT t.tgisinternal
+UNION SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace WHERE NOT t.tgisinternal AND n.nspname = current_schema()
 UNION SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = current_schema();
 `;
