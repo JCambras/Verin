@@ -75,42 +75,43 @@ export default async function DemoStationPage({
     notFound();
   }
   const pass: JourneyPass = requestedPass === "revalidated" ? "revalidated" : "initial";
-  const querySuffix = [
-    sourceCaseId ? `&case=${encodeURIComponent(sourceCaseId)}` : "",
-    pass === "revalidated" ? "&pass=revalidated" : "",
-  ].join("") || undefined;
   const journey = getJourney(
     scenarioId,
     firmId,
     pass,
     sourceCaseId ?? undefined,
   );
-  const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
+  const routeContext = {
+    scenarioId: journey.scenarioId,
+    firmId: journey.firmId,
+    sourceCaseId,
+    pass,
+  };
 
   switch (station as DemoStation) {
     case "workspace":
-      return <WorkspaceSurface vm={journey.workspace} {...ids} querySuffix={querySuffix} />;
+      return <WorkspaceSurface vm={journey.workspace} routeContext={routeContext} />;
     case "intent":
-      return <IntentSurface vm={journey.intent} {...ids} querySuffix={querySuffix} />;
+      return <IntentSurface vm={journey.intent} routeContext={routeContext} />;
     case "evidence":
-      return <EvidenceSurface vm={journey.evidence} {...ids} querySuffix={querySuffix} />;
+      return <EvidenceSurface vm={journey.evidence} routeContext={routeContext} />;
     case "decision":
-      return <RecommendationSurface vm={journey.recommendation} {...ids} querySuffix={querySuffix} />;
+      return <RecommendationSurface vm={journey.recommendation} routeContext={routeContext} />;
     case "policy-trace":
-      return <PolicyTraceSurface vm={journey.policyTrace} {...ids} journeyContinues={journey.approvals !== null} querySuffix={querySuffix} />;
+      return <PolicyTraceSurface vm={journey.policyTrace} routeContext={routeContext} journeyContinues={journey.approvals !== null} />;
     case "authority":
-      return <AuthoritySurface vm={journey.approvals} {...ids} stopNote={journey.stopNote} journeyContinues={journey.safety !== null} querySuffix={querySuffix} />;
+      return <AuthoritySurface vm={journey.approvals} routeContext={routeContext} stopNote={journey.stopNote} journeyContinues={journey.safety !== null} />;
     case "safety":
-      return <SafetySurface vm={journey.safety} {...ids} stopNote={journey.stopNote} journeyContinues={journey.execution !== null} querySuffix={querySuffix} />;
+      return <SafetySurface vm={journey.safety} routeContext={routeContext} stopNote={journey.stopNote} journeyContinues={journey.execution !== null} />;
     case "execution":
-      return <ExecutionSurface vm={journey.execution} {...ids} stopNote={journey.stopNote} querySuffix={querySuffix} />;
+      return <ExecutionSurface vm={journey.execution} routeContext={routeContext} stopNote={journey.stopNote} />;
     case "verification":
-      return <VerificationSurface vm={journey.verification} {...ids} stopNote={journey.stopNote} querySuffix={querySuffix} />;
+      return <VerificationSurface vm={journey.verification} routeContext={routeContext} stopNote={journey.stopNote} />;
     case "comparison":
-      return <ComparisonSurface vm={journey.comparison} {...ids} querySuffix={querySuffix} />;
+      return <ComparisonSurface vm={journey.comparison} routeContext={routeContext} />;
     case "policy-authoring":
-      return <PolicyAuthoringSurface vm={journey.policyAuthoring} {...ids} approved={approved} querySuffix={querySuffix} />;
+      return <PolicyAuthoringSurface vm={journey.policyAuthoring} routeContext={routeContext} approved={approved} />;
     case "record":
-      return <RecordSurface vm={journey.record} {...ids} querySuffix={querySuffix} />;
+      return <RecordSurface vm={journey.record} routeContext={routeContext} />;
   }
 }

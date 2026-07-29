@@ -8,21 +8,17 @@
 import { ComparisonColumns } from "@app/presentation/comparison-columns";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type ComparisonVM } from "../model";
-import { JourneyNav, SecondaryLink, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, SecondaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 export function ComparisonSurface({
   vm,
-  scenarioId,
-  firmId,
-  querySuffix,
+  routeContext,
 }: {
   vm: ComparisonVM;
-  scenarioId: string;
-  firmId: string;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
-  const otherFirm = firmId === "firm-a" ? "firm-b" : "firm-a";
-  const otherName = firmId === "firm-a" ? "Firm B" : "Firm A";
+  const otherFirm = routeContext.firmId === "firm-a" ? "firm-b" : "firm-a";
+  const otherName = routeContext.firmId === "firm-a" ? "Firm B" : "Firm A";
   return (
     <SurfaceShell
       title="Firm A / Firm B"
@@ -32,10 +28,19 @@ export function ComparisonSurface({
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
       <ComparisonColumns columns={vm.columns} rows={vm.rows} />
-      <SecondaryLink href={demoHref("decision", scenarioId, otherFirm)}>Rerun this request under {otherName}</SecondaryLink>
+      <SecondaryLink
+        href={demoHref("decision", {
+          ...routeContext,
+          firmId: otherFirm,
+          sourceCaseId: null,
+          pass: "initial",
+        })}
+      >
+        Rerun this request under {otherName}
+      </SecondaryLink>
       <JourneyNav
-        back={{ href: demoHref("verification", scenarioId, firmId, querySuffix), label: "Back to verification" }}
-        forward={{ href: demoHref("policy-authoring", scenarioId, firmId, querySuffix), label: "Author a policy change" }}
+        back={{ href: demoHref("verification", routeContext), label: "Back to verification" }}
+        forward={{ href: demoHref("policy-authoring", routeContext), label: "Author a policy change" }}
       />
     </SurfaceShell>
   );

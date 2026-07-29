@@ -15,27 +15,23 @@ import { EvidenceMetricRow } from "@app/presentation/evidence-row";
 import { TapToVerify } from "@app/presentation/tap-to-verify";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type SafetyVM } from "../model";
-import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 export function SafetySurface({
   vm,
-  scenarioId,
-  firmId,
   stopNote,
   journeyContinues,
-  querySuffix,
+  routeContext,
 }: {
   vm: SafetyVM | null;
-  scenarioId: string;
-  firmId: string;
   stopNote: string | null;
   journeyContinues: boolean;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   if (!vm) {
     return (
       <SurfaceShell title="Safety before execution" description="Pre-execution revalidation for an in-flight decision.">
-        <NotReached title="Safety check not reached" stopNote={stopNote} backHref={demoHref("decision", scenarioId, firmId)} />
+        <NotReached title="Safety check not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
       </SurfaceShell>
     );
   }
@@ -143,13 +139,20 @@ export function SafetySurface({
             <WhyBubble reason={vm.invalidation.why.reason} {...(vm.invalidation.why.regulation ? { regulation: vm.invalidation.why.regulation } : {})} />
           </div>
           {/* 4. One clear next action. */}
-          <PrimaryLink href={demoHref("decision", scenarioId, firmId, "&pass=revalidated")}>{vm.invalidation.primaryLabel}</PrimaryLink>
+          <PrimaryLink
+            href={demoHref("decision", {
+              ...routeContext,
+              pass: "revalidated",
+            })}
+          >
+            {vm.invalidation.primaryLabel}
+          </PrimaryLink>
         </section>
       ) : journeyContinues ? (
-        <PrimaryLink href={demoHref("execution", scenarioId, firmId, querySuffix)}>Execute the movement</PrimaryLink>
+        <PrimaryLink href={demoHref("execution", routeContext)}>Execute the movement</PrimaryLink>
       ) : null}
 
-      <JourneyNav back={{ href: demoHref("authority", scenarioId, firmId, querySuffix), label: "Back to authority" }} />
+      <JourneyNav back={{ href: demoHref("authority", routeContext), label: "Back to authority" }} />
     </SurfaceShell>
   );
 }

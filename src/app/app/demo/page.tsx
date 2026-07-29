@@ -9,22 +9,21 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import {
   SCENARIOS,
   DEFAULT_FIRM,
-  launcherFirmFor,
+  launcherVariantsFor,
   outcomeClassFor,
-  sourceCaseIdsFor,
 } from "@app/demo/data";
 import { PrimaryLink, demoHref } from "@app/demo/surfaces/shared";
 
 export const runtime = "nodejs";
 
 export default function DemoLauncherPage() {
-  const launcherEntries = SCENARIOS.flatMap((scenario) => {
-    const firmId = launcherFirmFor(scenario);
-    const sourceCaseIds = sourceCaseIdsFor(scenario, firmId);
-    return (sourceCaseIds.length ? sourceCaseIds : [null]).map(
-      (sourceCaseId) => ({ scenario, firmId, sourceCaseId }),
-    );
-  });
+  const launcherEntries = SCENARIOS.flatMap((scenario) =>
+    launcherVariantsFor(scenario).map(({ firmId, sourceCaseId }) => ({
+      scenario,
+      firmId,
+      sourceCaseId,
+    })),
+  );
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
       <div>
@@ -39,7 +38,16 @@ export default function DemoLauncherPage() {
         </p>
       </div>
 
-      <PrimaryLink href={demoHref("workspace", "recent-bank-change-block", DEFAULT_FIRM)}>Run the seven-minute journey</PrimaryLink>
+      <PrimaryLink
+        href={demoHref("workspace", {
+          scenarioId: "recent-bank-change-block",
+          firmId: DEFAULT_FIRM,
+          sourceCaseId: null,
+          pass: "initial",
+        })}
+      >
+        Run the seven-minute journey
+      </PrimaryLink>
 
       <section aria-label="Scenario branches" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Scenario branches</h2>
@@ -51,11 +59,12 @@ export default function DemoLauncherPage() {
                 <Link
                   href={demoHref(
                     "workspace",
-                    s.id,
-                    firmId,
-                    sourceCaseId
-                      ? `&case=${encodeURIComponent(sourceCaseId)}`
-                      : undefined,
+                    {
+                      scenarioId: s.id,
+                      firmId,
+                      sourceCaseId,
+                      pass: "initial",
+                    },
                   )}
                   className="block h-full rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 focus-visible:border-slate-500"
                 >

@@ -14,18 +14,14 @@ import {
 } from "@app/presentation/evidence-row";
 import { EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type WorkspaceVM } from "../model";
-import { PrimaryLink, SurfaceShell, demoHref } from "./shared";
+import { PrimaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 export function WorkspaceSurface({
   vm,
-  scenarioId,
-  firmId,
-  querySuffix,
+  routeContext,
 }: {
   vm: WorkspaceVM;
-  scenarioId: string;
-  firmId: string;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   return (
     <SurfaceShell
@@ -105,7 +101,7 @@ export function WorkspaceSurface({
       <EmptyState
         title={vm.onRamp.title}
         description={vm.onRamp.description}
-        action={<PrimaryLink href={demoHref("intent", scenarioId, firmId, querySuffix)}>Ask Verin about this household</PrimaryLink>}
+        action={<PrimaryLink href={demoHref("intent", routeContext)}>Ask Verin about this household</PrimaryLink>}
       />
     </SurfaceShell>
   );

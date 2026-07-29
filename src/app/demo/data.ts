@@ -396,6 +396,15 @@ export function hasSignedInvalidationAuthority(
     authority.sourceCaseId === "GC-15-approval-invalidation"
   );
 }
-export function launcherFirmFor(scenario: ScenarioData): string {
-  return Object.keys(scenario.sourceCaseIdsByFirm ?? {})[0] ?? DEFAULT_FIRM;
+export function launcherVariantsFor(scenario: ScenarioData): readonly {
+  readonly firmId: string;
+  readonly sourceCaseId: SignedCaseId | null;
+}[] {
+  const variants = Object.entries(scenario.sourceCaseIdsByFirm ?? {}).flatMap(
+    ([firmId, sourceCaseIds]) =>
+      sourceCaseIds.map((sourceCaseId) => ({ firmId, sourceCaseId })),
+  );
+  return variants.length
+    ? variants
+    : [{ firmId: DEFAULT_FIRM, sourceCaseId: null }];
 }

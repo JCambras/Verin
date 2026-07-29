@@ -3585,3 +3585,20 @@ unreachable while displaying another case's rule and account facts.
 **Revert path:** this captain ruling is product truth and is not reversible without a new captain
 decision. Exact-case route binding, policy-source classification, workspace projection, and their
 adversarial fences are confined to the demo fake-service.
+
+### D-074 · 2026-07-29 · reversible · Exact route context and launcher variants are structural
+
+Every same-journey link now accepts one required route-context value containing scenario, firm,
+selected case, and pass. Printable records, dead-end returns, and evidence revalidation therefore
+cannot omit case or pass through an optional query suffix. The explicit cross-firm rerun starts a
+new initial context because a signed case cannot cross firm ownership.
+
+The launcher expands every configured firm and exact-case pair. Scenarios without signed variants
+retain one default entry, while GC-01/GC-02 and GC-03/GC-04 are independently reachable. Browser
+regressions prove all four pair links, both prohibited variants, every NotReached return, the
+printable record, and the revalidated pass.
+
+**Why:** singular firm selection and optional string suffixes made D-073's exact-case guarantee
+depend on every call site remembering hidden URL state.
+**Revert path:** restore positional link arguments and singular launcher selection only if another
+typed navigation boundary preserves all four context fields and every exact variant.

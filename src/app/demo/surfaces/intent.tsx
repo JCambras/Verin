@@ -10,18 +10,14 @@ import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type IntentVM } from "../model";
-import { JourneyNav, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 export function IntentSurface({
   vm,
-  scenarioId,
-  firmId,
-  querySuffix,
+  routeContext,
 }: {
   vm: IntentVM;
-  scenarioId: string;
-  firmId: string;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   return (
     <SurfaceShell
@@ -65,8 +61,8 @@ export function IntentSurface({
       </section>
 
       <JourneyNav
-        back={{ href: demoHref("workspace", scenarioId, firmId, querySuffix), label: "Back to the workspace" }}
-        forward={{ href: demoHref("evidence", scenarioId, firmId, querySuffix), label: "Gather evidence" }}
+        back={{ href: demoHref("workspace", routeContext), label: "Back to the workspace" }}
+        forward={{ href: demoHref("evidence", routeContext), label: "Gather evidence" }}
       />
     </SurfaceShell>
   );

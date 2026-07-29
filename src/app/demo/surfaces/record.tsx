@@ -14,7 +14,7 @@ import { FreshValue } from "@app/presentation/fresh-value";
 import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } from "@app/presentation/evidence-row";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionRowVM, type RecordVM, type WhyVM } from "../model";
-import { JourneyNav, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 import { PrintButton } from "./print-button";
 
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
@@ -77,10 +77,8 @@ const NOT_REACHED = "Not reached - this record ends where the journey ended.";
 
 export function RecordSurface({
   vm,
-  scenarioId,
-  firmId,
-  querySuffix,
-}: { vm: RecordVM; scenarioId: string; firmId: string; querySuffix?: string }) {
+  routeContext,
+}: { vm: RecordVM; routeContext: DemoRouteContext }) {
   const running = `${vm.header.watermark ? `${vm.header.watermark} · ` : ""}${vm.header.decisionId}`;
   return (
     /* ADR-0022: the running header and footer of EVERY printed page. thead/tfoot
@@ -478,7 +476,7 @@ export function RecordSurface({
                 </p>
               </DocSection>
 
-              <JourneyNav back={{ href: demoHref("policy-authoring", scenarioId, firmId, querySuffix), label: "Back to policy authoring" }} />
+              <JourneyNav back={{ href: demoHref("policy-authoring", routeContext), label: "Back to policy authoring" }} />
             </SurfaceShell>
           </td>
         </tr>

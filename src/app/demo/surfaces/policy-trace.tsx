@@ -7,20 +7,16 @@
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type PolicyTraceVM } from "../model";
-import { JourneyNav, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 export function PolicyTraceSurface({
   vm,
-  scenarioId,
-  firmId,
   journeyContinues,
-  querySuffix,
+  routeContext,
 }: {
   vm: PolicyTraceVM;
-  scenarioId: string;
-  firmId: string;
   journeyContinues: boolean;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   return (
     <SurfaceShell spine={vm.spine} title="Policy and precedence" description="The rules that governed this decision, in the order they were applied.">
@@ -81,8 +77,8 @@ export function PolicyTraceSurface({
       </div>
 
       <JourneyNav
-        back={{ href: demoHref("decision", scenarioId, firmId, querySuffix), label: "Back to the decision" }}
-        {...(journeyContinues ? { forward: { href: demoHref("authority", scenarioId, firmId, querySuffix), label: "Continue to authority" } } : {})}
+        back={{ href: demoHref("decision", routeContext), label: "Back to the decision" }}
+        {...(journeyContinues ? { forward: { href: demoHref("authority", routeContext), label: "Continue to authority" } } : {})}
       />
     </SurfaceShell>
   );

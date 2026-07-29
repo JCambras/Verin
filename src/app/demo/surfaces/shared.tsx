@@ -31,8 +31,26 @@ export const DEMO_SEQUENCE = [
 ] as const;
 export type DemoStation = (typeof DEMO_SEQUENCE)[number];
 
-export function demoHref(station: DemoStation, scenarioId: string, firmId: string, extra?: string): string {
-  return `/app/demo/${station}?scenario=${scenarioId}&firm=${firmId}${extra ?? ""}`;
+export interface DemoRouteContext {
+  readonly scenarioId: string;
+  readonly firmId: string;
+  readonly sourceCaseId: string | null;
+  readonly pass: "initial" | "revalidated";
+}
+
+export function demoHref(
+  station: DemoStation,
+  context: DemoRouteContext,
+  options?: { readonly approved?: boolean },
+): string {
+  const params = new URLSearchParams({
+    scenario: context.scenarioId,
+    firm: context.firmId,
+  });
+  if (context.sourceCaseId) params.set("case", context.sourceCaseId);
+  if (context.pass === "revalidated") params.set("pass", "revalidated");
+  if (options?.approved) params.set("approved", "1");
+  return `/app/demo/${station}?${params.toString()}`;
 }
 
 /** The one ExecutionRowVM -> ExecutionTimeline row mapping, shared by the execution

@@ -10,7 +10,7 @@ import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } fro
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type EvidenceRowVM, type EvidenceVM } from "../model";
-import { JourneyNav, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 function Row({ row }: { row: EvidenceRowVM }) {
   switch (row.kind) {
@@ -51,14 +51,10 @@ function Row({ row }: { row: EvidenceRowVM }) {
 
 export function EvidenceSurface({
   vm,
-  scenarioId,
-  firmId,
-  querySuffix,
+  routeContext,
 }: {
   vm: EvidenceVM;
-  scenarioId: string;
-  firmId: string;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   return (
     <SurfaceShell
@@ -83,8 +79,8 @@ export function EvidenceSurface({
         ))}
       </div>
       <JourneyNav
-        back={{ href: demoHref("intent", scenarioId, firmId, querySuffix), label: "Back to the request" }}
-        forward={{ href: demoHref("decision", scenarioId, firmId, querySuffix), label: "View the recommendation" }}
+        back={{ href: demoHref("intent", routeContext), label: "Back to the request" }}
+        forward={{ href: demoHref("decision", routeContext), label: "View the recommendation" }}
       />
     </SurfaceShell>
   );

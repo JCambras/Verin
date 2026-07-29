@@ -8,25 +8,21 @@ import { FreshValue } from "@app/presentation/fresh-value";
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type VerificationVM } from "../model";
-import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow } from "./shared";
+import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow, type DemoRouteContext } from "./shared";
 
 export function VerificationSurface({
   vm,
-  scenarioId,
-  firmId,
   stopNote,
-  querySuffix,
+  routeContext,
 }: {
   vm: VerificationVM | null;
-  scenarioId: string;
-  firmId: string;
   stopNote: string | null;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   if (!vm) {
     return (
       <SurfaceShell title="Verification" description="What the returned status proves for an in-flight decision.">
-        <NotReached title="Verification not reached" stopNote={stopNote} backHref={demoHref("decision", scenarioId, firmId)} />
+        <NotReached title="Verification not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
       </SurfaceShell>
     );
   }
@@ -101,8 +97,8 @@ export function VerificationSurface({
       ) : null}
 
       <JourneyNav
-        back={{ href: demoHref("execution", scenarioId, firmId, querySuffix), label: "Back to execution" }}
-        forward={{ href: demoHref("comparison", scenarioId, firmId, querySuffix), label: "Compare Firm A and Firm B" }}
+        back={{ href: demoHref("execution", routeContext), label: "Back to execution" }}
+        forward={{ href: demoHref("comparison", routeContext), label: "Compare Firm A and Firm B" }}
       />
     </SurfaceShell>
   );

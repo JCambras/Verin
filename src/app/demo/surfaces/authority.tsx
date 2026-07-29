@@ -10,7 +10,7 @@ import { ApprovalStagePanel } from "@app/presentation/approval-stage-panel";
 import { Metric } from "@app/presentation/metric";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type ApprovalVM } from "../model";
-import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 function shortHash(h: string): string {
   return `${h.slice(0, 8)}…`;
@@ -18,23 +18,19 @@ function shortHash(h: string): string {
 
 export function AuthoritySurface({
   vm,
-  scenarioId,
-  firmId,
   stopNote,
   journeyContinues,
-  querySuffix,
+  routeContext,
 }: {
   vm: ApprovalVM | null;
-  scenarioId: string;
-  firmId: string;
   stopNote: string | null;
   journeyContinues: boolean;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   if (!vm) {
     return (
       <SurfaceShell title="Authority" description="Approval stages for an in-flight decision.">
-        <NotReached title="Authority not reached" stopNote={stopNote} backHref={demoHref("decision", scenarioId, firmId)} />
+        <NotReached title="Authority not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
       </SurfaceShell>
     );
   }
@@ -98,13 +94,13 @@ export function AuthoritySurface({
               </div>
             ))}
           </dl>
-          <PrimaryLink href={demoHref("safety", scenarioId, firmId, querySuffix)}>{vm.gate.primaryLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("safety", routeContext)}>{vm.gate.primaryLabel}</PrimaryLink>
         </section>
       ) : (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{stopNote}</p>
       )}
 
-      <JourneyNav back={{ href: demoHref("policy-trace", scenarioId, firmId, querySuffix), label: "Back to the policy trace" }} />
+      <JourneyNav back={{ href: demoHref("policy-trace", routeContext), label: "Back to the policy trace" }} />
     </SurfaceShell>
   );
 }

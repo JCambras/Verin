@@ -705,6 +705,70 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
 });
 
+test("the launcher exposes every exact signed firm and case variant", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo");
+
+  const variants = [
+    ["GC-01-firm-a-happy-path", "safe-proceed", "firm-a"],
+    ["GC-02-firm-b-happy-path", "safe-proceed", "firm-b"],
+    ["GC-03-recent-bank-change-firm-a", "recent-bank-change-block", "firm-a"],
+    ["GC-04-recent-bank-change-firm-b", "recent-bank-change-block", "firm-b"],
+    ["GC-06-household-restriction", "permanent-prohibition", "firm-a"],
+    ["GC-07-regulatory-prohibition", "permanent-prohibition", "firm-a"],
+    ["GC-08-ambiguous-household", "ambiguous-instruction", "firm-a"],
+    ["GC-09-stale-evidence", "stale-evidence", "firm-a"],
+    ["GC-10-simultaneous-distributions-first", "competing-liquidity", "firm-a"],
+    ["GC-12-duplicate-retry", "duplicate-retry", "firm-a"],
+    ["GC-13-partial-salesforce-success", "partial-salesforce-success", "firm-a"],
+    ["GC-14-delayed-nigo", "delayed-nigo", "firm-b"],
+    ["GC-15-approval-invalidation", "approval-invalidation", "firm-a"],
+    ["GC-16-specialist-review-expiration", "specialist-review-expiration", "firm-a"],
+  ] as const;
+
+  for (const [caseId, scenarioId, firmId] of variants) {
+    await expect(
+      page.getByRole("link", { name: new RegExp(caseId) }),
+    ).toHaveAttribute(
+      "href",
+      `/app/demo/workspace?scenario=${scenarioId}&firm=${firmId}&case=${caseId}`,
+    );
+  }
+});
+
+test("exact demo route context survives every inspective and dead-end link", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const prohibitedContext =
+    "scenario=permanent-prohibition&firm=firm-a&case=GC-07-regulatory-prohibition";
+
+  await page.goto(`/app/demo/decision?${prohibitedContext}`);
+  await page.getByRole("link", { name: "View the printable record" }).click();
+  await expect(page).toHaveURL(new RegExp(`${prohibitedContext}$`));
+  await expect(
+    page.getByText("reg-distribution-holds@2026.02").first(),
+  ).toBeVisible();
+
+  for (const station of ["authority", "safety", "execution", "verification"]) {
+    await page.goto(`/app/demo/${station}?${prohibitedContext}`);
+    await page.getByRole("link", { name: "Back to the decision" }).click();
+    await expect(page).toHaveURL(new RegExp(`${prohibitedContext}$`));
+    await expect(
+      page.getByText("reg-distribution-holds@2026.02").first(),
+    ).toBeVisible();
+  }
+
+  await page.goto(
+    "/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation",
+  );
+  await page
+    .getByRole("link", { name: "Re-evaluate with current evidence" })
+    .click();
+  await expect(page).toHaveURL(
+    /scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated$/,
+  );
+  await expect(page.getByTestId("derived-decision")).toBeVisible();
+});
+
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {
   await login(page, PRINCIPAL);
   const surfaces = [

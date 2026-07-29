@@ -11,7 +11,7 @@ import { StatusBadge } from "@app/presentation/ui";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
 import { DEV_BADGE_TEXT } from "../model";
-import { JourneyNav, PrimaryLink, SurfaceShell, demoHref } from "./shared";
+import { JourneyNav, PrimaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
 function Cell({ cell }: { cell: ComparisonCellVM }) {
   return (
@@ -25,16 +25,12 @@ function Cell({ cell }: { cell: ComparisonCellVM }) {
 
 export function PolicyAuthoringSurface({
   vm,
-  scenarioId,
-  firmId,
   approved,
-  querySuffix,
+  routeContext,
 }: {
   vm: PolicyAuthoringVM;
-  scenarioId: string;
-  firmId: string;
   approved: boolean;
-  querySuffix?: string;
+  routeContext: DemoRouteContext;
 }) {
   return (
     <SurfaceShell
@@ -108,16 +104,16 @@ export function PolicyAuthoringSurface({
             </span>
           </p>
           <p className="text-sm text-slate-700">{vm.changedRerunResult}</p>
-          <PrimaryLink href={demoHref("record", scenarioId, firmId, querySuffix)}>View the printable decision record</PrimaryLink>
+          <PrimaryLink href={demoHref("record", routeContext)}>View the printable decision record</PrimaryLink>
         </section>
       ) : (
         <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
-          <PrimaryLink href={demoHref("policy-authoring", scenarioId, firmId, `${querySuffix ?? ""}&approved=1`)}>{vm.gateLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("policy-authoring", routeContext, { approved: true })}>{vm.gateLabel}</PrimaryLink>
         </section>
       )}
 
-      <JourneyNav back={{ href: demoHref("comparison", scenarioId, firmId, querySuffix), label: "Back to the comparison" }} />
+      <JourneyNav back={{ href: demoHref("comparison", routeContext), label: "Back to the comparison" }} />
     </SurfaceShell>
   );
 }
