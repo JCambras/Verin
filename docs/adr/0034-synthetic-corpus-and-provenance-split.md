@@ -49,13 +49,14 @@ corpus order-fragile: inserting one household reshuffles every subsequent value.
 each value a pure function of its own address, so **adding a household changes exactly that
 household's bytes** - fenced directly, along with byte identity across runs and time zones, seed
 sensitivity, and an AST ban on clocks, randomness, locale APIs and environment reads inside
-`scripts/corpus/`.
+`scripts/corpus/`. The ban resolves direct calls, named imports, aliases, and destructured globals.
 
 Bytes come from the landed `canonicalJson` (ADR-0029) plus one trailing newline. Money is integer
 minor units; percentages are basis points; every string is NFC-normalized; every collection is
 explicitly sorted; local time is rendered from **time-zone transition instants carried in the spec**
 and checked against the platform tz database by the fence as an independent oracle - never from a
-hardcoded offset and never from `Intl` inside the generator.
+hardcoded offset and never from `Intl` inside the generator. The active offset is selected from the
+chronologically latest qualifying transition, independent of input order, and duplicate instants fail.
 
 Order-independence and reference resolution are part of the same property (D-080). Every cross-record
 reference resolves by **structured parse against exact identifiers**, never by substring - a household
@@ -66,10 +67,11 @@ sorted first, so a semantically neutral reorder in `cases.json` cannot move a co
 Every evidence and request reference resolves to exactly one emitted record in its own case subgraph.
 Every evidence-producing collection is present, keyed collections reject duplicates, planned withdrawals
 and model assignments carry distinct prefixed derived ids, recent changes are emitted, restriction
-subjects are preserved, and an explicitly named cross-household destination is included with its linked
-account and party records rather than filtered away. Accounts and bank instructions preserve their
-`householdRef`; each non-primary referenced household appears exactly once as an opaque id with closed
-relationship reasons, so every household edge resolves without importing another household's PII.
+subjects are preserved, and an explicitly named cross-household destination is represented by minimal
+opaque projected account and bank-instruction nodes rather than filtered away. Accounts and bank
+instructions preserve their `householdRef`; each non-primary referenced household appears exactly once as
+an opaque id with closed relationship reasons. Every household edge resolves without importing foreign
+balances, tax attributes, owner roster records, or unrelated household records through that expansion.
 
 Pending-action direction and liquidity class come from a closed kind registry. Only live unresolved
 outgoing distributions or debits reduce effective liquidity. Blocked, cancelled, rejected, incoming,
@@ -96,6 +98,10 @@ property.
   assignment, parameter, return-flow, and imported-alias laundering from the reachable product API.
 - **Measurement inputs are provenance-specific.** Every outcome carries a required partition literal,
   and the measurement boundary rejects an outcome supplied to the wrong partition.
+- **Attribution is defect-specific.** An evaluated outcome carries a closed list of attributed
+  defect-class ids. Coverage credits a defect case only for its exact signed class; any class on a clean
+  control is a false positive. Null attribution is incomplete, while duplicate, unknown, or contradictory
+  attribution is invalid.
 - **The labels are different words.** `syntheticDefectCoverage` for the synthetic partition;
   `detectionRate` may name only the real-derived one. Enforced by structural key identity.
 - **Honest empty.** With `realDerived.total === 0` the reporter emits `detectionRate: null` with
@@ -128,11 +134,18 @@ and fed to the real-derived reporting path.
 
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
-before and after, method, with review by a second party) and a
-**closed-vocabulary-only** rule - a real-derived case may contain no free text at all, so a scrubbing
-miss has nowhere to live. The contract is **fail-closed**: an unanticipated string is rejected rather
-than waved through. It runs over the empty partition in the blocking `corpus` CI job, and its
-companions drive it with unattested, free-text-bearing, self-reviewed and mislabeled cases, which is
+before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
+envelope and `verin-real-derived-replay/1.0.0` payload. That payload contains only typed destination,
+ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
+temporal, evidence, reservation, and execution inputs needed by supported defect classes. Absent, extra,
+ambiguous, incompatible, or unversioned inputs fail. Raw names, account numbers, unrelated balances, and
+unrelated household data have no field in the contract.
+
+Delivery bytes must already equal canonical JSON plus one newline. That byte check rejects duplicate
+object keys before semantic parsing can admit a value. Diagnostics expose only bounded safe paths and
+redacted descriptions, never rejected prose or unrecognized key text. The contract runs over the empty
+partition in the blocking `corpus` CI job, and its companions drive it with unattested,
+free-text-bearing, self-reviewed, duplicate-key, structurally incomplete, and mislabeled cases. This is
 what makes a shipped-but-unpopulated capability charter-#5-legal.
 
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
@@ -156,10 +169,10 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.2.0` preimage covers both partition inventories, a
-versioned semantic digest of the taxonomy definitions and citations, and the versioned semantic digest of
-the real-derived freshness policy. Redefining a class or changing a freshness window invalidates the prior
-signoff even if no case bytes change.
+figure the corpus can report. The `verin-corpus/1.3.0` preimage covers every inventory entry's partition,
+case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
+and citations and the real-derived freshness policy. Relabeling inventory, redefining a class, or changing
+a freshness window invalidates prior signoff even if no case bytes change.
 
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
 `signedAt` instant.

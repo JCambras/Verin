@@ -108,7 +108,12 @@ export function localOffsetMinutes(
   const at = epochMs(instant);
   let current: TimeZoneTransition | null = null;
   for (const transition of transitions) {
-    if (epochMs(transition.at) <= at) current = transition;
+    if (
+      epochMs(transition.at) <= at &&
+      (current === null || epochMs(transition.at) > epochMs(current.at))
+    ) {
+      current = transition;
+    }
   }
   if (current === null) {
     throw new Error(

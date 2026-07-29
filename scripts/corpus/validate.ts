@@ -116,6 +116,7 @@ interface EmittedRecords {
   }>;
   parties: Array<{ id: string }>;
   accounts: Array<{ id: string; householdRef: string; ownerRefs: string[] }>;
+  referencedAccounts: Array<{ id: string; householdRef: string }>;
   beneficiaries: Array<{ accountRef: string; partyRef: string }>;
   authorizedSigners: Array<{
     id: string;
@@ -132,6 +133,11 @@ interface EmittedRecords {
     bank: string;
     lastFour: string;
     verifiedAt: string | null;
+  }>;
+  referencedBankInstructions: Array<{
+    id: string;
+    householdRef: string;
+    accountRefs: string[];
   }>;
   plannedWithdrawals: Array<{ id: string; householdRef: string }>;
   restrictions: Array<{ id: string; subjectRef: string; inForceAtAsOf: boolean }>;

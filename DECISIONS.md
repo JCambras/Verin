@@ -4643,3 +4643,31 @@ headroom for this completed boundary set. The post-prompt-19 ratchet-down point 
 **Why:** a signed digest must bind the exact denominator and the policies that interpret it; replay
 topology and freshness cannot depend on caller convention or source-syntax heuristics.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-083 · 2026-07-28 · captain-decision · Replay intake and measurement carry closed semantic identity
+
+Real-derived delivery accepts only canonical JSON bytes with unique object keys. Strict hand-owned case
+and replay schemas admit exactly the typed destination, ownership, liquidity, direction, authority,
+threshold, policy, tax-review, instruction-conflict, temporal, evidence, reservation, and execution
+inputs required by the supported defect classes. Cross-field identity, lifecycle, chronology, freshness,
+pending-action treatment, and exact reference inventories are recomputed. Rejected prose and
+unrecognized key text never enter diagnostics.
+
+Cross-household topology uses minimal opaque projected account and bank-instruction nodes plus ownership
+edges. The destination expansion does not import foreign balances, tax attributes, owner roster records,
+or unrelated household records. Local time selects the chronologically latest qualifying transition and
+rejects duplicate instants. The determinism fence resolves direct, imported, aliased, and destructured
+nondeterministic APIs.
+
+Detector outcomes attribute closed defect-class ids. Exact signed-class attribution earns defect
+coverage, any attributed class on a clean control is a false positive, null is incomplete, and duplicate,
+unknown, or contradictory attribution is invalid. Structured measurement remains module-private. The
+`verin-corpus/1.3.0` signed preimage binds label kind and label id beside each case's partition, id, and
+byte digest.
+
+The tooling bucket remains at its D-082 measurement of 4818 lines under the 4900 ceiling, preserving 82
+lines of headroom without deleting existing design documentation.
+
+**Why:** a signed measurement cannot depend on a lossy JSON parse, a case-level boolean, caller-supplied
+labels, foreign household data, input ordering, or diagnostics that disclose the value being rejected.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

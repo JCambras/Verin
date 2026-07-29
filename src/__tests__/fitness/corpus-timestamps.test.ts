@@ -8,6 +8,7 @@ import {
   renderLocal,
 } from "../../../scripts/corpus/clock";
 import { timestampProblems, validateCorpus } from "../../../scripts/corpus/validate";
+import { WorldSpecSchema } from "../../../scripts/corpus/world";
 
 /**
  * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0034; charter #1/#4).
@@ -240,5 +241,21 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
       /no pinned time-zone transition covers/,
     );
     expect(renderLocal(clock.asOf, clock.transitions)).toMatch(/^2026-07-26T09:30:00\.000-04:00$/);
+  });
+
+  it("transition lookup is order-independent and duplicate instants are refused", () => {
+    const distinctOffsets = [
+      { at: "2026-01-01T00:00:00.000Z", offsetMinutes: -300 },
+      { at: "2026-03-08T07:00:00.000Z", offsetMinutes: -240 },
+      { at: "2026-11-01T06:00:00.000Z", offsetMinutes: -300 },
+    ];
+    expect(
+      localOffsetMinutes("2026-07-01T00:00:00.000Z", [...distinctOffsets].reverse()),
+    ).toBe(-240);
+    const duplicate = structuredClone(real.spec.world);
+    duplicate.clock.transitions.push(
+      structuredClone(duplicate.clock.transitions[0]!),
+    );
+    expect(WorldSpecSchema.safeParse(duplicate).success).toBe(false);
   });
 });

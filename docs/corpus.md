@@ -33,6 +33,8 @@ fixtures/corpus/
   spec/world.json            hand-owned  world clock, roster, households, accounts, instructions
   spec/cases.json            hand-owned  the 21 awkward structures + every case
   spec/defect-taxonomy.json  hand-owned  the closed defect vocabulary
+  spec/real-derived-case-schema.json    hand-owned  strict scrubbed-case envelope
+  spec/real-derived-replay-schema.json  hand-owned  closed replay inputs
   spec/SIGNOFF.md            hand-owned  captain-only; agents never write it
   manifest.json              GENERATED   version, seed, digests, per-partition counts
   synthetic/CS-*.json        GENERATED   provenance: synthetic-fixture
@@ -56,9 +58,9 @@ manifest, included in `corpusDigest`, and supplied to the provenance-specific re
 | # | Rule |
 |---|---|
 | 1 | Bytes come from `canonicalJson` (`src/contracts/decision-core/serialization.ts`) plus exactly one trailing `\n`. |
-| 2 | No `Math.random`, `Date.now`, argless `new Date()`, `crypto.randomUUID`, `performance.now`, `process.hrtime` anywhere under `scripts/corpus/`. AST-fenced. |
+| 2 | No `Math.random`, `Date.now`, argless `new Date()`, `crypto.randomUUID`, `performance.now`, `process.hrtime` anywhere under `scripts/corpus/`, including named imports, aliases, and destructured globals. AST-fenced. |
 | 3 | No wall clock. Every instant descends from `spec.clock.asOf` by an explicit offset. |
-| 4 | No locale API and no `Intl` in generator code. Local time is derived from pinned tz transitions. |
+| 4 | No locale API and no `Intl` in generator code. Local time is derived from the chronologically latest qualifying pinned tz transition; duplicate transition instants are rejected. |
 | 5 | No `Set`/`Map` iteration-order dependence: every collection is sorted by a named comparator before emission. |
 | 6 | Money is integer minor units; percentages are basis points. No float reaches a fixture. |
 | 7 | Timestamps are canonical UTC with exactly three fractional digits - the form `TimestampSchema` accepts. |
@@ -80,10 +82,12 @@ Seed: `verin-corpus/2026.07.0`. World clock: `2026-07-26T13:30:00.000Z`, `Americ
 `iana-tzdb/2026b`.
 
 Every evidence and request reference resolves to exactly one emitted record in its case subgraph. Every
-evidence-producing collection is required even when empty, collection keys are unique, cross-household
-destinations named by a case are emitted with their linked accounts and parties, and relationship fields
-such as restriction subjects are preserved. Missing, dangling, or multi-resolving references fail
-validation for defect cases and controls alike.
+evidence-producing collection is required even when empty, collection keys are unique, and relationship
+fields such as restriction subjects are preserved. A cross-household destination is represented only by
+opaque projected account and bank-instruction nodes plus the ownership edges required for replay. Foreign
+balances, tax attributes, owner roster records, and unrelated household records are never imported by
+that expansion. Missing, dangling, or multi-resolving references fail validation for defect cases and
+controls alike.
 
 Accounts and bank instructions retain `householdRef`. A non-primary household referenced by either appears
 exactly once in `records.referencedHouseholds`, carrying only an opaque derived id and closed relationship
@@ -211,6 +215,10 @@ derivation keys on the DECISION: `idem:<caseId>:<scope>-<discriminator>`. The fe
   partition figures.
 - Outcome inputs carry a required provenance literal. Supplying a real-derived outcome to synthetic
   measurement, or the reverse, fails at the measurement boundary.
+- Each evaluated outcome carries a closed list of attributed defect-class ids. A defect case receives
+  coverage credit only when that list contains its exact signed label. Any attributed class on a clean
+  control is a false positive. Null attribution is unevaluated; duplicate, unknown, or contradictory
+  attribution is rejected.
 - With an empty real-derived partition, `detectionRate` is `null` with
   `reasonCode: "real-derived-corpus-absent"`, and the synthetic figure is never substituted.
 - A partially evaluated partition reports both figures as `null` with
@@ -234,11 +242,11 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.2.0` preimage. It covers both partition inventories,
-the versioned semantic digest of defect-taxonomy ids, titles, descriptions, and source citations, and the
-versioned semantic digest of the real-derived per-kind freshness policy. Changing what a defect class means
-or changing a freshness window therefore invalidates the prior captain signoff even when no case bytes
-change.
+`corpusDigest` uses the versioned `verin-corpus/1.3.0` preimage. It covers each case's partition, id,
+byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
+defect-taxonomy definitions and the real-derived per-kind freshness policy. Relabeling an inventory entry,
+changing what a defect class means, or changing a freshness window therefore invalidates the prior captain
+signoff even when no case bytes change.
 
 **Agents never sign.** No generated file contains a signature: the manifest holds a `signoffRef` pointer,
 validation recursively rejects `signedBy`, `signedAt`, and `signedDigest` keys in actual generated
@@ -264,4 +272,4 @@ pnpm corpus:report     # provenance-split measurement; refuses to blend
 ```
 
 Fences: `corpus-determinism`, `corpus-provenance-split`, `corpus-timestamps`, `conflict-key-families`
-(adversarial proofs PF-090…PF-095 in [`docs/fences/proof-log.md`](./fences/proof-log.md)).
+(adversarial proofs PF-090 through PF-098 in [`docs/fences/proof-log.md`](./fences/proof-log.md)).

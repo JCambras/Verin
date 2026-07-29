@@ -10,8 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDocument } from "yaml";
-import { Node, Project, SyntaxKind } from "ts-morph";
-import { REPO_ROOT, inMemoryProject, walk } from "./_fence-utils";
+import { REPO_ROOT } from "./_fence-utils";
+import { canonicalJson } from "../../../src/contracts/decision-core/serialization";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
 import { defectClassIds, taxonomyExerciseProblems } from "../../../scripts/corpus/defects";
 import { evidenceResolutionProblems } from "../../../scripts/corpus/graph";
@@ -36,12 +36,16 @@ import {
   realDerivedCollectionProblems,
 } from "../../../scripts/corpus/real-derived";
 import {
-  buildCorpusReport,
+  renderCorpusReport,
   type RealDerivedCaseOutcome,
   type ReportInput,
   type SyntheticCaseOutcome,
 } from "../../../scripts/corpus/report";
-import { realDerivedCaseProblems } from "../../../scripts/corpus/scrub-contract";
+import * as corpusReportRuntime from "../../../scripts/corpus/report";
+import {
+  loadRealDerivedDelivery,
+  realDerivedCaseProblems,
+} from "../../../scripts/corpus/scrub-contract";
 import {
   CAPTAIN_SIGNING_AUTHORITY,
   signoffProblems,
@@ -94,99 +98,18 @@ import { specReferenceProblems } from "../../../scripts/corpus/world";
 const CORPUS_MANIFEST = join(REPO_ROOT, "fixtures/corpus/manifest.json");
 const SCENARIOS = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
-// ── (c) the no-blending rule ───────────────────────────────────────────────────
-
-const isReportModule = (specifier: string): boolean =>
-  /(?:^|\/)corpus\/report$/.test(specifier.replace(/\\/g, "/"));
-
-export function measurementBoundaryViolations(
-  project: Project,
-  root = "",
-): string[] {
-  const violations: string[] = [];
-  for (const sf of project.getSourceFiles()) {
-    const file = sf.getFilePath().replace(/\\/g, "/");
-    const isCli = file.endsWith("/scripts/corpus-report.ts");
-    for (const declaration of sf.getImportDeclarations()) {
-      if (!isReportModule(declaration.getModuleSpecifierValue())) continue;
-      const valueNames = declaration
-        .getNamedImports()
-        .filter((specifier) => !specifier.isTypeOnly())
-        .map((specifier) => specifier.getName());
-      const allowed =
-        isCli &&
-        declaration.getDefaultImport() === undefined &&
-        declaration.getNamespaceImport() === undefined &&
-        valueNames.length === 1 &&
-        valueNames[0] === "renderCorpusReport";
-      if (!allowed) {
-        violations.push(
-          `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: structured corpus measurement is private to scripts/corpus/report.ts`,
-        );
-      }
-    }
-    for (const declaration of sf.getExportDeclarations()) {
-      const specifier = declaration.getModuleSpecifierValue();
-      if (specifier === undefined || !isReportModule(specifier)) continue;
-      violations.push(
-        `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: corpus measurement cannot be re-exported`,
-      );
-    }
-    for (const declaration of sf.getDescendantsOfKind(
-      SyntaxKind.ImportEqualsDeclaration,
-    )) {
-      if (!/corpus[/\\]report/.test(declaration.getModuleReference().getText())) {
-        continue;
-      }
-      violations.push(
-        `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: corpus measurement cannot use import-equals`,
-      );
-    }
-    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const argument = call.getArguments()[0];
-      if (
-        argument === undefined ||
-        !Node.isStringLiteral(argument) ||
-        !isReportModule(argument.getLiteralValue())
-      ) {
-        continue;
-      }
-      violations.push(
-        `${sf.getFilePath().replace(root, "")}:${call.getStartLineNumber()}: corpus measurement cannot use dynamic or CommonJS loading`,
-      );
-    }
-  }
-  return violations;
-}
-
-const projectOf = (filter: (file: string) => boolean): Project => {
-  const project = new Project({
-    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
-    skipAddingFilesFromTsConfig: true,
-  });
-  for (const file of walk(join(REPO_ROOT, "scripts"), (f) => f.endsWith(".ts") && filter(f))) {
-    project.addSourceFileAtPath(file);
-  }
-  return project;
-};
-
-const measuredCodeProject = (): Project => {
-  const project = projectOf(() => true);
-  for (const file of walk(
-    join(REPO_ROOT, "src"),
-    (candidate) =>
-      /\.(?:ts|tsx)$/.test(candidate) &&
-      !candidate.includes(`${join("src", "__tests__")}`),
-  )) {
-    project.addSourceFileAtPath(file);
-  }
-  return project;
-};
+const reportExportProblems = (names: readonly string[]): string[] =>
+  names.filter((name) => name !== "renderCorpusReport");
 
 // ── shared fixtures for the companions ─────────────────────────────────────────
 
 const OPAQUE = "tok:0123456789abcdef";
 const OPAQUE_REVIEWER = "tok:fedcba9876543210";
+const canonicalFixtureBytes = (value: unknown): string => {
+  const result = canonicalJson(value as any);
+  if (!result.ok) throw result.error;
+  return `${result.value}\n`;
+};
 
 const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   caseId: "RD-00112233445566aa",
@@ -212,6 +135,90 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
     freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0",
   },
   subjects: [OPAQUE],
+  replayPayload: {
+    schemaVersion: "verin-real-derived-replay/1.0.0",
+    request: {
+      requestRef: OPAQUE,
+      householdRef: OPAQUE,
+      sourceAccountRef: OPAQUE,
+      destinationRef: OPAQUE,
+      amountMinor: 10_000,
+      currency: "USD",
+      deadlineAt: "2026-04-30T13:00:00.000Z",
+      settlementEarliestAt: "2026-04-29T13:00:00.000Z",
+    },
+    identity: {
+      subjectRef: OPAQUE,
+      resolution: "unique",
+      candidateRefs: [OPAQUE],
+    },
+    destination: {
+      instructionRef: OPAQUE,
+      householdRef: OPAQUE,
+      ownerRefs: [OPAQUE],
+      ownership: "same-household",
+      verificationState: "verified",
+      discriminatorState: "unique",
+    },
+    liquidity: {
+      sources: [
+        {
+          accountRef: OPAQUE,
+          availableMinor: 20_000,
+          sourceTaxClass: "taxable",
+        },
+      ],
+      reserveState: "modeled-scalar",
+      reserveRequiredMinor: 1_000,
+      withdrawalSegmentsMinor: [1_000],
+      pendingAction: {
+        actionRef: null,
+        actionKind: null,
+        actionState: null,
+        direction: null,
+        liquidityClass: null,
+        amountMinor: null,
+        reducesEffectiveLiquidity: false,
+        increasesAvailableLiquidity: false,
+      },
+    },
+    authority: {
+      grantRef: OPAQUE,
+      actorRef: OPAQUE,
+      authorityScope: "distribution-request",
+      authorityState: "effective",
+      validFrom: "2026-04-01T13:00:00.000Z",
+      validTo: null,
+    },
+    policy: {
+      policyRef: OPAQUE,
+      policyVersionRef: OPAQUE,
+      thresholdMinor: 5_000,
+      thresholdComparison: "above",
+      restrictionRef: null,
+      restrictionState: "absent",
+      legalHoldRef: null,
+      legalHoldScope: "none",
+    },
+    taxReviewState: "completed",
+    instructionConflict: {
+      conflictState: "none",
+      instructionRefs: [],
+      impactedSubjectRefs: [],
+    },
+    temporal: {
+      eventAt: "2026-04-28T13:00:00.000Z",
+      timeZoneRuleRef: OPAQUE,
+      transitionState: "daylight",
+    },
+    evidenceRefs: ["evs:tok:0123456789abcdef:balance"],
+    execution: {
+      reservationKeys: [
+        "conflict:tok:0123456789abcdef:liquidity",
+      ],
+      preconditions: ["evidence-fresh"],
+    },
+  },
   evidence: [
     {
       id: "evs:tok:0123456789abcdef:balance",
@@ -227,17 +234,21 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
   ...overrides,
 });
 
-const outcomes = (defects: number, controls: number, flagged: boolean | null): SyntheticCaseOutcome[] => [
+const outcomes = (
+  defects: number,
+  controls: number,
+  detected: boolean | null,
+): SyntheticCaseOutcome[] => [
   ...Array.from({ length: defects }, (_, i) => ({
     caseId: `d${i}`,
-    labelKind: "defect" as const,
-    flagged,
+    attributedDefectClassIds:
+      detected === null ? null : detected ? ["test-defect"] : [],
     provenance: "synthetic-fixture" as const,
   })),
   ...Array.from({ length: controls }, (_, i) => ({
     caseId: `c${i}`,
-    labelKind: "clean-control" as const,
-    flagged,
+    attributedDefectClassIds:
+      detected === null ? null : detected ? ["test-defect"] : [],
     provenance: "synthetic-fixture" as const,
   })),
 ];
@@ -251,18 +262,18 @@ const inventoryOf = (
     file: `synthetic/${outcome.caseId}.json`,
     digest: outcome.caseId,
     partition: "synthetic" as const,
-    labelKind: outcome.labelKind,
+    labelKind: outcome.caseId.startsWith("d") ? "defect" as const : "clean-control" as const,
     labelId:
-      outcome.labelKind === "defect" ? "test-defect" : "clean-control",
+      outcome.caseId.startsWith("d") ? "test-defect" : "clean-control",
   })),
   ...realDerived.map((outcome) => ({
     caseId: outcome.caseId,
     file: `real-derived/${outcome.caseId}.json`,
     digest: outcome.caseId,
     partition: "real-derived" as const,
-    labelKind: outcome.labelKind,
+    labelKind: outcome.caseId === "RD-c" ? "clean-control" as const : "defect" as const,
     labelId:
-      outcome.labelKind === "defect" ? "test-defect" : "clean-control",
+      outcome.caseId === "RD-c" ? "clean-control" : "test-defect",
   })),
 ];
 
@@ -329,33 +340,23 @@ describe("corpus-provenance-split fence", () => {
   });
 
   it("(c) enforces: structured partition measurements stay inside the partition-safe report owner", () => {
-    const violations = measurementBoundaryViolations(
-      measuredCodeProject(),
-      REPO_ROOT,
-    );
-    expect(
-      violations,
-      `measurement boundary violations:\n${violations.join("\n")}`,
-    ).toEqual([]);
+    const names = Object.keys(corpusReportRuntime);
+    expect(names).toEqual(["renderCorpusReport"]);
+    expect(reportExportProblems(names)).toEqual([]);
   });
 
   it("(c) enforces: the report type has no aggregate key and the two figures have different names", () => {
-    const report = buildCorpusReport(reportInput(outcomes(2, 1, true)));
-    for (const banned of ["overall", "blended", "combined", "total", "all", "rate"]) {
-      expect(Object.keys(report)).not.toContain(banned);
-    }
-    expect(Object.keys(report.synthetic)).toContain("syntheticDefectCoverage");
-    expect(Object.keys(report.synthetic)).not.toContain("detectionRate");
-    expect(Object.keys(report.realDerived)).toContain("detectionRate");
-    expect(Object.keys(report.realDerived)).not.toContain("syntheticDefectCoverage");
+    const report = renderCorpusReport(reportInput(outcomes(2, 1, true)));
+    expect(report).toContain("syntheticDefectCoverage  100.00%");
+    expect(report).toContain("detectionRate            null (real-derived-corpus-absent)");
+    expect(report).not.toContain("overallRate");
   });
 
   it("(d) enforces: with an empty real-derived partition the reporter withholds detectionRate", () => {
     const synthetic = outcomes(3, 2, true);
-    const report = buildCorpusReport(reportInput(synthetic));
-    expect(report.realDerived.detectionRate).toEqual({ value: null, reasonCode: "real-derived-corpus-absent" });
-    expect(report.realDerived.interpretable).toBe(false);
-    expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
+    const report = renderCorpusReport(reportInput(synthetic));
+    expect(report).toContain("detectionRate            null (real-derived-corpus-absent)");
+    expect(report).toContain("syntheticDefectCoverage  100.00%");
   });
 
   it("(d) enforces: the committed real-derived partition IS empty and ships its intake contract", () => {
@@ -375,15 +376,25 @@ describe("corpus-provenance-split fence", () => {
     const crossHousehold = real.cases.find(
       (item) => item.caseId === "CS-beneficiary-versus-destination-restriction",
     )!;
-    expect(crossHousehold.records.bankInstructions.map((row) => row.id)).toContain(
+    expect(crossHousehold.records.bankInstructions.map((row) => row.id)).not.toContain(
       "bank-instruction:mira-primary",
     );
-    expect(crossHousehold.records.accounts.map((row) => row.id)).toContain(
+    expect(crossHousehold.records.accounts.map((row) => row.id)).not.toContain(
       "subject:mira-roth",
     );
-    expect(crossHousehold.records.parties.map((row) => row.id)).toContain(
-      "subject:mira-smith",
-    );
+    expect(crossHousehold.records.referencedAccounts).toEqual([
+      {
+        id: "subject:mira-roth",
+        householdRef: "subject:smith-mira",
+      },
+    ]);
+    expect(crossHousehold.records.referencedBankInstructions).toEqual([
+      {
+        id: "bank-instruction:mira-primary",
+        householdRef: "subject:smith-mira",
+        accountRefs: ["subject:mira-roth"],
+      },
+    ]);
     expect(crossHousehold.records.referencedHouseholds).toEqual([
       {
         id: "subject:smith-mira",
@@ -394,12 +405,12 @@ describe("corpus-provenance-split fence", () => {
       },
     ]);
     expect(
-      crossHousehold.records.accounts.find(
+      crossHousehold.records.referencedAccounts.find(
         (row) => row.id === "subject:mira-roth",
       )?.householdRef,
     ).toBe("subject:smith-mira");
     expect(
-      crossHousehold.records.bankInstructions.find(
+      crossHousehold.records.referencedBankInstructions.find(
         (row) => row.id === "bank-instruction:mira-primary",
       )?.householdRef,
     ).toBe("subject:smith-mira");
@@ -509,7 +520,7 @@ describe("corpus-provenance-split fence", () => {
       writeFileSync(join(intake, ".hidden"), "hidden\n");
       writeFileSync(
         join(intake, "nested", "RD-00112233445566aa.json"),
-        `${JSON.stringify(realDerivedCase())}\n`,
+        canonicalFixtureBytes(realDerivedCase()),
       );
       const problems = realDerivedProblems(
         real.taxonomy,
@@ -549,6 +560,27 @@ describe("corpus-provenance-split fence", () => {
         CORPUS_SEED,
         changedTaxonomyDigest,
         inventory,
+      ),
+    ).not.toBe(real.corpusDigest);
+  });
+
+  it("(d) enforces: the signed digest binds each case label beside its bytes", () => {
+    const inventory = buildInventory(real.generated);
+    const relabeled = inventory.map((entry, index) =>
+      index === 0
+        ? {
+            ...entry,
+            labelKind: "clean-control" as const,
+            labelId: "clean-control",
+          }
+        : entry,
+    );
+    expect(
+      corpusDigest(
+        real.spec.world.corpusVersion,
+        CORPUS_SEED,
+        taxonomySemanticDigest(real.taxonomy),
+        relabeled,
       ),
     ).not.toBe(real.corpusDigest);
   });
@@ -724,12 +756,12 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         (item) => item.caseId === "CS-beneficiary-versus-destination-restriction",
       )!,
     );
-    destinationCase.records.accounts = destinationCase.records.accounts.filter(
+    destinationCase.records.referencedAccounts = destinationCase.records.referencedAccounts.filter(
       (row) => row.id !== "subject:mira-roth",
     );
     expect(
       evidenceResolutionProblems([destinationCase]).some((problem) =>
-        problem.includes("records.bankInstructions.bank-instruction:mira-primary.accountRefs"),
+        problem.includes("records.referencedBankInstructions.bank-instruction:mira-primary.accountRefs"),
       ),
     ).toBe(true);
     const missingHousehold = structuredClone(
@@ -743,7 +775,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(
       evidenceResolutionProblems([missingHousehold]).some((problem) =>
         problem.includes(
-          "records.accounts.subject:mira-roth.householdRef",
+          "records.referencedAccounts.subject:mira-roth.householdRef",
         ),
       ),
     ).toBe(true);
@@ -799,40 +831,73 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     const realDerivedOutcomes: RealDerivedCaseOutcome[] = [
       {
         caseId: "RD-a",
-        labelKind: "defect",
-        flagged: true,
+        attributedDefectClassIds: ["test-defect"],
         provenance: "real-derived-fixture",
       },
       {
         caseId: "RD-b",
-        labelKind: "defect",
-        flagged: false,
+        attributedDefectClassIds: [],
         provenance: "real-derived-fixture",
       },
       {
         caseId: "RD-c",
-        labelKind: "clean-control",
-        flagged: false,
+        attributedDefectClassIds: [],
         provenance: "real-derived-fixture",
       },
     ];
-    const report = buildCorpusReport(
+    const report = renderCorpusReport(
       reportInput(outcomes(2, 1, true), realDerivedOutcomes),
     );
-    expect(report.realDerived.detectionRate).toEqual({ value: 0.5, reasonCode: null });
-    expect(report.realDerived.falsePositiveRate).toEqual({ value: 0, reasonCode: null });
-    expect(report.realDerived.interpretable).toBe(true);
+    expect(report).toContain("detectionRate            50.00%");
+    expect(report).toContain("falsePositiveRate        0.00%");
   });
 
   it("a detector that flags EVERYTHING cannot claim success: 1.0 coverage arrives with 1.0 false positives", () => {
-    const report = buildCorpusReport(reportInput(outcomes(5, 5, true)));
-    expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
-    expect(report.synthetic.falsePositiveRate.value).toBe(1);
+    const report = renderCorpusReport(reportInput(outcomes(5, 5, true)));
+    expect(report).toContain("syntheticDefectCoverage  100.00%");
+    expect(report).toContain("falsePositiveRate        100.00%");
+  });
+
+  it("coverage credits only the exact signed defect class attribution", () => {
+    const exact = outcomes(2, 1, false);
+    exact[0] = {
+      ...exact[0]!,
+      attributedDefectClassIds: ["test-defect"],
+    };
+    const report = renderCorpusReport(reportInput(exact));
+    expect(report).toContain("syntheticDefectCoverage  50.00%");
+
+    const contradictory = outcomes(2, 1, false);
+    contradictory[0] = {
+      ...contradictory[0]!,
+      attributedDefectClassIds: ["other-defect"],
+    };
+    contradictory[1] = {
+      ...contradictory[1]!,
+      attributedDefectClassIds: ["other-defect"],
+    };
+    const inventory = inventoryOf(contradictory).map((entry) =>
+      entry.caseId === "d1" ? { ...entry, labelId: "other-defect" } : entry,
+    );
+    expect(() =>
+      renderCorpusReport(
+        reportInput(contradictory, [], { inventory }),
+      ),
+    ).toThrow("contradicts its signed defect label");
+
+    const unknown = outcomes(1, 1, false);
+    unknown[0] = {
+      ...unknown[0]!,
+      attributedDefectClassIds: ["unknown-defect"],
+    };
+    expect(() => renderCorpusReport(reportInput(unknown))).toThrow(
+      "attributes unknown defect class",
+    );
   });
 
   it("an unsigned corpus and an unevaluated corpus both withhold every figure with a reason code", () => {
     const evaluated = outcomes(5, 5, true);
-    const unsigned = buildCorpusReport(
+    const unsigned = renderCorpusReport(
       reportInput(evaluated, [], {
         signoff: {
           corpusVersion: "x",
@@ -843,53 +908,38 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         },
       }),
     );
-    expect(unsigned.synthetic.syntheticDefectCoverage).toEqual({ value: null, reasonCode: "corpus-signoff-pending" });
-    const unevaluated = buildCorpusReport(
+    expect(unsigned).toContain("syntheticDefectCoverage  null (corpus-signoff-pending)");
+    const unevaluated = renderCorpusReport(
       reportInput(outcomes(5, 5, null)),
     );
-    expect(unevaluated.synthetic.syntheticDefectCoverage).toEqual({ value: null, reasonCode: "detector-outcomes-absent" });
+    expect(unevaluated).toContain("syntheticDefectCoverage  null (detector-outcomes-absent)");
   });
 
   it("a partially evaluated corpus withholds both figures instead of reporting the favorable subset", () => {
     const partial = outcomes(2, 2, null);
-    partial[0] = { ...partial[0]!, flagged: true };
-    partial[2] = { ...partial[2]!, flagged: false };
-    const report = buildCorpusReport(reportInput(partial));
-    expect(report.synthetic.syntheticDefectCoverage).toEqual({
-      value: null,
-      reasonCode: "detector-outcomes-incomplete",
-    });
-    expect(report.synthetic.falsePositiveRate).toEqual({
-      value: null,
-      reasonCode: "detector-outcomes-incomplete",
-    });
-    expect(report.synthetic.interpretable).toBe(false);
+    partial[0] = { ...partial[0]!, attributedDefectClassIds: ["test-defect"] };
+    partial[2] = { ...partial[2]!, attributedDefectClassIds: [] };
+    const report = renderCorpusReport(reportInput(partial));
+    expect(report).toContain("syntheticDefectCoverage  null (detector-outcomes-incomplete)");
+    expect(report).toContain("falsePositiveRate        null (detector-outcomes-incomplete)");
   });
 
   it("omitting unevaluated manifest cases cannot turn a favorable subset into a complete run", () => {
     const completeInventory = outcomes(2, 2, true);
     const favorableSubset = [completeInventory[0]!, completeInventory[2]!];
-    const report = buildCorpusReport(
+    const report = renderCorpusReport(
       reportInput(favorableSubset, [], {
         inventory: inventoryOf(completeInventory),
       }),
     );
-    expect(report.synthetic.totalCases).toBe(4);
-    expect(report.synthetic.evaluatedCases).toBe(2);
-    expect(report.synthetic.syntheticDefectCoverage).toEqual({
-      value: null,
-      reasonCode: "detector-outcomes-incomplete",
-    });
-    expect(report.synthetic.falsePositiveRate).toEqual({
-      value: null,
-      reasonCode: "detector-outcomes-incomplete",
-    });
+    expect(report).toContain("cases 4  defects 2  clean controls 2  evaluated 2");
+    expect(report).toContain("syntheticDefectCoverage  null (detector-outcomes-incomplete)");
   });
 
   it("duplicate or non-inventoried outcomes are rejected at the measurement boundary", () => {
     const complete = outcomes(1, 1, true);
     expect(() =>
-      buildCorpusReport(
+      renderCorpusReport(
         reportInput(
           [complete[0]!, complete[0]!, complete[1]!],
           [],
@@ -898,14 +948,13 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       ),
     ).toThrow("duplicate outcome");
     expect(() =>
-      buildCorpusReport(
+      renderCorpusReport(
         reportInput(
           [
             ...complete,
             {
               caseId: "not-in-manifest",
-              labelKind: "defect",
-              flagged: true,
+              attributedDefectClassIds: ["test-defect"],
               provenance: "synthetic-fixture",
             },
           ],
@@ -919,7 +968,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed corpus digest binds the exact inventory supplied to reporting", () => {
     const input = reportInput(outcomes(2, 2, true));
     expect(() =>
-      buildCorpusReport({
+      renderCorpusReport({
         ...input,
         inventory: input.inventory.slice(0, 2),
         syntheticOutcomes: input.syntheticOutcomes.slice(0, 2),
@@ -929,7 +978,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
 
   it("the report validates signoff instead of trusting a caller-supplied signed flag", () => {
     expect(() =>
-      buildCorpusReport(
+      renderCorpusReport(
         reportInput(outcomes(1, 1, true), [], {
           signoff: {
             ...signedSignoff(),
@@ -941,66 +990,32 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   });
 
   it("coverage measured with NO clean controls is marked uninterpretable", () => {
-    const report = buildCorpusReport(reportInput(outcomes(4, 0, true)));
-    expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
-    expect(report.synthetic.falsePositiveRate).toEqual({ value: null, reasonCode: "no-clean-controls" });
-    expect(report.synthetic.interpretable).toBe(false);
+    const report = renderCorpusReport(reportInput(outcomes(4, 0, true)));
+    expect(report).toContain("syntheticDefectCoverage  100.00%");
+    expect(report).toContain("falsePositiveRate        null (no-clean-controls)");
   });
 
-  it.each([
-    [
-      "named alias and later assignment",
-      'import { buildCorpusReport as make } from "../../scripts/corpus/report";\nlet report; report = make({} as any);\nexport const use = report;\n',
-    ],
-    [
-      "namespace and bracket access",
-      'import * as reporting from "../../scripts/corpus/report";\nexport const use = reporting["buildCorpusReport"]({} as any);\n',
-    ],
-    [
-      "dynamic import and destructuring",
-      'export async function use() { const { buildCorpusReport } = await import("../../scripts/corpus/report"); return buildCorpusReport({} as any); }\n',
-    ],
-    [
-      "re-export",
-      'export { buildCorpusReport } from "../../scripts/corpus/report";\n',
-    ],
-  ])(
-    "the partition-safe ownership boundary rejects %s",
-    (_name, source) => {
-      expect(
-        measurementBoundaryViolations(
-          inMemoryProject({ "/src/domain/blend.ts": source }),
-        ).length,
-      ).toBeGreaterThan(0);
-    },
-  );
+  it("the structured builder cannot be acquired through any module syntax", () => {
+    expect("buildCorpusReport" in corpusReportRuntime).toBe(false);
+    expect(
+      reportExportProblems(["renderCorpusReport", "buildCorpusReport"]),
+    ).toEqual(["buildCorpusReport"]);
+  });
 
   it("the measurement boundary rejects outcomes from the wrong provenance partition", () => {
     expect(() =>
-      buildCorpusReport(
+      renderCorpusReport(
         reportInput(
           [
           {
             caseId: "RD-wrong",
-            labelKind: "defect",
-            flagged: true,
+            attributedDefectClassIds: ["test-defect"],
             provenance: "real-derived-fixture",
           },
           ] as any,
         ),
       ),
     ).toThrow("received 1 outcome(s) from another provenance partition");
-  });
-
-  it("the report CLI can import only the string-rendering boundary", () => {
-    expect(
-      measurementBoundaryViolations(
-        inMemoryProject({
-          "/scripts/corpus-report.ts":
-            'import { renderCorpusReport } from "./corpus/report";\nexport const output = renderCorpusReport({} as any);\n',
-        }),
-      ),
-    ).toEqual([]);
   });
 
   it("recursive signature keys are rejected in actual generated artifacts", () => {
@@ -1025,6 +1040,101 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
 
   it("a VALID real-derived case is accepted (the intake contract is not a blanket reject)", () => {
     expect(realDerivedCaseProblems(realDerivedCase(), classes, "real-derived/RD-ok.json")).toEqual([]);
+  });
+
+  it("the real-derived replay payload is versioned, complete, strict, and internally consistent", () => {
+    const missing = realDerivedCase();
+    delete missing.replayPayload;
+    expect(
+      realDerivedCaseProblems(
+        missing,
+        classes,
+        "real-derived/RD-missing-payload.json",
+      ).some((problem) => problem.includes("replayPayload")),
+    ).toBe(true);
+
+    const extra = realDerivedCase();
+    (extra.replayPayload as Record<string, unknown>).accountNumber =
+      "tok:1111222233334444";
+    expect(
+      realDerivedCaseProblems(
+        extra,
+        classes,
+        "real-derived/RD-extra-payload.json",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const ambiguous = realDerivedCase();
+    (
+      (ambiguous.replayPayload as Record<string, any>).identity
+        .candidateRefs as string[]
+    ).push(OPAQUE_REVIEWER);
+    expect(
+      realDerivedCaseProblems(
+        ambiguous,
+        classes,
+        "real-derived/RD-ambiguous-payload.json",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const mismatched = realDerivedCase();
+    const pending = (mismatched.replayPayload as Record<string, any>).liquidity
+      .pendingAction;
+    Object.assign(pending, {
+      actionRef: OPAQUE,
+      actionKind: "incoming-transfer",
+      actionState: "pending",
+      direction: "outgoing",
+      liquidityClass: "credit",
+      amountMinor: 500,
+    });
+    expect(
+      realDerivedCaseProblems(
+        mismatched,
+        classes,
+        "real-derived/RD-incompatible-payload.json",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const incompatibleMutations: Array<(payload: Record<string, any>) => void> = [
+      (payload) => { payload.schemaVersion = "verin-real-derived-replay/9.9.9"; },
+      (payload) => { payload.liquidity.reserveState = "missing"; },
+      (payload) => { payload.authority.authorityState = "missing"; },
+      (payload) => { payload.instructionConflict.conflictState = "present"; },
+      (payload) => { payload.policy.restrictionRef = OPAQUE; },
+      (payload) => { payload.request.destinationRef = OPAQUE_REVIEWER; },
+      (payload) => { payload.policy.thresholdComparison = "below"; },
+      (payload) => { payload.destination.ownerRefs.push(OPAQUE); },
+    ];
+    for (const mutate of incompatibleMutations) {
+      const candidate = realDerivedCase();
+      mutate(candidate.replayPayload as Record<string, any>);
+      expect(
+        realDerivedCaseProblems(
+          candidate,
+          classes,
+          "real-derived/RD-incompatible-payload.json",
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("duplicate JSON keys are rejected before a delivered value can enter inventory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "verin-corpus-duplicate-key-"));
+    try {
+      writeFileSync(
+        join(dir, "RD-00112233445566aa.json"),
+        '{"subject":"Robert Smith","subject":"tok:0123456789abcdef"}\n',
+      );
+      const delivery = loadRealDerivedDelivery(dir);
+      expect(delivery.files).toEqual([]);
+      expect(delivery.problems.join("\n")).toContain(
+        "canonical JSON with unique object keys",
+      );
+      expect(delivery.problems.join("\n")).not.toContain("Robert Smith");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("real-derived freshness is derived from evaluation.asOf and the versioned per-kind policy", () => {
@@ -1175,15 +1285,22 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(problems.length).toBeGreaterThan(0);
     expect(problems.join("\n")).toContain("subjects");
+    expect(problems.join("\n")).not.toContain("Robert Smith");
   });
 
   it("a real-derived case with a free-text field in an UNANTICIPATED key is rejected (fail-closed)", () => {
+    const unexpected = realDerivedCase();
+    unexpected["Robert Smith"] = "call the client back about the wire";
     const problems = realDerivedCaseProblems(
-      realDerivedCase({ advisorNote: "call the client back about the wire" }),
+      unexpected,
       classes,
       "real-derived/RD-extra.json",
     );
     expect(problems.length).toBeGreaterThan(0);
+    expect(problems.join("\n")).not.toContain(
+      "call the client back about the wire",
+    );
+    expect(problems.join("\n")).not.toContain("Robert Smith");
   });
 
   it("a real-derived case MISSING its scrub attestation is rejected", () => {

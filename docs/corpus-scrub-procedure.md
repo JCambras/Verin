@@ -85,24 +85,29 @@ recorded as a CLASS, never a named institution** - the institution is itself ide
 
 ## 4. Fail-closed, by construction
 
-The validator walks every string in a delivered case and requires it to be a canonical instant, an opaque
-token, a derived id whose variable components are opaque tokens and whose suffix is a member of the
-appropriate closed vocabulary, a `RD-<16 hex>` case id, or a member of a declared closed vocabulary for
-its key. **Anything else is rejected**, including a field nobody anticipated. A scrubbing miss therefore
-has nowhere to live: it cannot arrive in a new key, because a new key with a string value fails by default.
-Every evidence subject resolves to exactly one opaque subject, and evidence and conflict-key suffixes
-must match their declared kind or family.
+The hand-owned `real-derived-case-schema.json` and `real-derived-replay-schema.json` are strict at every
+object boundary: every field is required or explicitly nullable, additional fields are forbidden, ids use
+opaque token components and closed suffixes, and every categorical value comes from a closed vocabulary.
+**Anything else is rejected**, including a field nobody anticipated. A scrubbing miss therefore has
+nowhere to live. Every evidence subject resolves to exactly one opaque subject, and evidence and
+conflict-key suffixes must match their declared kind or family.
+
+Delivery bytes must already be canonical JSON with one trailing newline. Parsing and canonical
+re-serialization must reproduce the exact bytes, so duplicate object keys, alternate key order,
+noncanonical whitespace, and hidden earlier values are rejected before a parsed value can enter inventory.
+Schema diagnostics include only bounded safe field paths and redacted descriptions. Rejected field values
+and unrecognized key text are never printed to CLI or CI output.
 
 The filesystem boundary is recursive and exact. While deferral is active, hidden, nested, non-JSON, and
 unsupported entries all count as delivery and are rejected. After un-deferral, a case must be a top-level
 `RD-<16 hex>.json` file whose filename matches its case id; case ids are unique across the collection and
 every case names the active corpus version before any case enters manifest inventory.
 
-Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; a free-text subject,
-a free-text field under an unanticipated key, a missing attestation, a self-reviewed scrub, an inflated
+Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; duplicate JSON keys,
+a free-text subject, a free-text field or key, a missing attestation, a self-reviewed scrub, an inflated
 record count, a dangling evidence subject, a mismatched derived-id suffix, a mislabeled provenance, a
 hidden or nested delivery, a duplicate case id, a stale corpus version, an unknown freshness policy,
-inverted chronology, and inconsistent freshness are each rejected.
+inverted chronology, and inconsistent freshness are each rejected without echoing rejected prose.
 
 ---
 
@@ -116,9 +121,24 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [tok:…]
+replayPayload   verin-real-derived-replay/1.0.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{family, conflictKey}]
 ```
+
+The replay payload contains only the typed inputs needed by the supported defect classes:
+
+- request, destination, ownership, discriminator, and identity-resolution state;
+- source liquidity, reserve shape, typed pending-action direction and treatment, and source tax class;
+- approval grant, scope, lifecycle, policy version, threshold comparison, restriction, and legal-hold state;
+- tax-review and instruction-conflict state;
+- event time and pinned time-zone-rule identity;
+- exact evidence references, reservation keys, and execution preconditions.
+
+Absent, additional, ambiguous, or mutually incompatible fields fail. Request and destination identity,
+ownership, threshold comparison, pending-action treatment, authority lifecycle, evidence inventory,
+reservation inventory, and subject inventory are cross-checked rather than trusted. The payload carries
+no raw names, account numbers, institution names, unrelated balances, or unrelated household records.
 
 Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
 `fresh | stale` value. Missing source observation uses `observationState: "missing"`,
@@ -138,7 +158,7 @@ computable, and a coverage figure without one is reported `interpretable: false`
 
 ## 6. Delivery and review path
 
-1. Extractor and scrubber produce candidate cases per §2 and §3.
+1. Extractor and scrubber produce canonical candidate cases per §2 through §5.
 2. Reviewer independently re-reads every field of every case and attests.
 3. Lift the recorded deferral, then hand-place canonical top-level files in
    `fixtures/corpus/real-derived/`.

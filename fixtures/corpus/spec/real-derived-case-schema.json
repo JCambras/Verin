@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verin-real-derived-case/1.0.0",
+  "title": "Verin scrubbed real-derived replay case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "caseId",
+    "corpusVersion",
+    "partition",
+    "provenance",
+    "scrubAttestation",
+    "label",
+    "occurredAt",
+    "evaluation",
+    "subjects",
+    "replayPayload",
+    "evidence",
+    "reservations"
+  ],
+  "properties": {
+    "caseId": {
+      "type": "string",
+      "pattern": "^RD-[0-9a-f]{16}$"
+    },
+    "corpusVersion": {
+      "type": "string",
+      "pattern": "^\\d{4}\\.\\d{2}\\.\\d+$"
+    },
+    "partition": { "const": "real-derived" },
+    "provenance": { "const": "real-derived-fixture" },
+    "scrubAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSystemClass",
+        "extractedAt",
+        "extractedBy",
+        "scrubbedBy",
+        "scrubbedAt",
+        "reviewedBy",
+        "reviewedAt",
+        "recordsBefore",
+        "recordsAfter",
+        "method"
+      ],
+      "properties": {
+        "sourceSystemClass": {
+          "enum": [
+            "custodian-exception-feed",
+            "crm-case-history",
+            "operations-exception-log"
+          ]
+        },
+        "extractedAt": { "$ref": "#/$defs/instant" },
+        "extractedBy": { "$ref": "#/$defs/opaque" },
+        "scrubbedBy": { "$ref": "#/$defs/opaque" },
+        "scrubbedAt": { "$ref": "#/$defs/instant" },
+        "reviewedBy": { "$ref": "#/$defs/opaque" },
+        "reviewedAt": { "$ref": "#/$defs/instant" },
+        "recordsBefore": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "recordsAfter": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "method": {
+          "enum": [
+            "deterministic-tokenization",
+            "field-suppression",
+            "generalization"
+          ]
+        }
+      }
+    },
+    "label": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "defectClassId"],
+          "properties": {
+            "kind": { "const": "defect" },
+            "defectClassId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "controlRationaleId"],
+          "properties": {
+            "kind": { "const": "clean-control" },
+            "controlRationaleId": {
+              "enum": [
+                "no-defect-present",
+                "defect-class-absent",
+                "resolved-before-execution"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "occurredAt": { "$ref": "#/$defs/instant" },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asOf", "freshnessPolicyVersion"],
+      "properties": {
+        "asOf": { "$ref": "#/$defs/instant" },
+        "freshnessPolicyVersion": {
+          "const": "verin-real-derived-freshness/1.0.0"
+        }
+      }
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/opaque" }
+    },
+    "replayPayload": { "type": "object" },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "evidenceKind",
+              "subjectRef",
+              "observationState",
+              "observedAt",
+              "retrievedAt",
+              "freshness"
+            ],
+            "properties": {
+              "id": { "$ref": "#/$defs/evidenceId" },
+              "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
+              "subjectRef": { "$ref": "#/$defs/opaque" },
+              "observationState": { "const": "observed" },
+              "observedAt": { "$ref": "#/$defs/instant" },
+              "retrievedAt": { "$ref": "#/$defs/instant" },
+              "freshness": { "enum": ["fresh", "stale"] }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "evidenceKind",
+              "subjectRef",
+              "observationState",
+              "observedAt",
+              "retrievedAt",
+              "freshness"
+            ],
+            "properties": {
+              "id": { "$ref": "#/$defs/evidenceId" },
+              "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
+              "subjectRef": { "$ref": "#/$defs/opaque" },
+              "observationState": { "const": "missing" },
+              "observedAt": { "type": "null" },
+              "retrievedAt": { "$ref": "#/$defs/instant" },
+              "freshness": { "const": "unknown" }
+            }
+          }
+        ]
+      }
+    },
+    "reservations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["family", "conflictKey"],
+        "properties": {
+          "family": {
+            "enum": [
+              "liquidity",
+              "bank-instruction",
+              "account-registration",
+              "household-instruction",
+              "regulatory-hold",
+              "party-authority",
+              "model-rebalance"
+            ]
+          },
+          "conflictKey": { "$ref": "#/$defs/conflictKey" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "opaque": {
+      "type": "string",
+      "pattern": "^tok:[0-9a-f]{16}$"
+    },
+    "instant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "\\.\\d{3}Z$"
+    },
+    "evidenceKind": {
+      "enum": [
+        "balance",
+        "bank-instruction",
+        "household-instruction",
+        "planned-withdrawals",
+        "pending-actions",
+        "restriction",
+        "authority",
+        "model-assignment",
+        "legal-hold",
+        "recent-change"
+      ]
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^evs:tok:[0-9a-f]{16}:(balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|model-assignment|legal-hold|recent-change)$"
+    },
+    "conflictKey": {
+      "type": "string",
+      "pattern": "^conflict:tok:[0-9a-f]{16}:(liquidity|bank-instruction|account-registration|household-instruction|regulatory-hold|party-authority|model-rebalance)$"
+    }
+  }
+}

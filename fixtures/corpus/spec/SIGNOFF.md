@@ -14,8 +14,9 @@ ADR-0034). Two legal states exist and nothing in between:
 **Regeneration that changes `corpusDigest` invalidates the signature.** `pnpm corpus:validate` fails with
 `signed-but-regenerated` rather than carrying a stale attestation forward. Narrative wording outside the
 signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature. The
-digest covers both partition inventories and the versioned semantic digest of the defect taxonomy.
-It also covers the versioned semantic digest of the real-derived per-kind freshness policy.
+`verin-corpus/1.3.0` digest covers each inventory entry's partition, case id, bytes, label kind, and label
+id. It also covers the versioned semantic digests of the defect taxonomy and the real-derived per-kind
+freshness policy.
 
 **What signing means here.** The captain signs the corpus version's **labels**: that each defect case's
 `defectClassId` and each clean control's control status are correct product truth. The labels are the

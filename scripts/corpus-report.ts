@@ -32,21 +32,18 @@ if (result.problems.length > 0) {
   process.exit(1);
 }
 
-// No detector exists at prompt 11, so no case is evaluated. `flagged: null` is
+// No detector exists at prompt 11, so no case is evaluated. A null attribution is
 // the honest input, and the reporter turns it into a withheld figure with a
 // reason code rather than a zero.
 const syntheticOutcomes: SyntheticCaseOutcome[] = result.cases.map((item) => ({
   caseId: item.caseId,
-  labelKind: item.label.kind === "defect" ? "defect" : "clean-control",
-  flagged: null,
+  attributedDefectClassIds: null,
   provenance: "synthetic-fixture",
 }));
 const realDerivedOutcomes: RealDerivedCaseOutcome[] = result.realDerivedCases.map((item) => {
-  const label = item.label as { kind: string };
   return {
     caseId: String(item.caseId),
-    labelKind: label.kind === "defect" ? "defect" : "clean-control",
-    flagged: null,
+    attributedDefectClassIds: null,
     provenance: "real-derived-fixture",
   };
 });

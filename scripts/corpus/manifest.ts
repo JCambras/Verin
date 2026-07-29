@@ -9,7 +9,7 @@ import {
 import { CORPUS_SEED } from "./seed";
 import { SPEC_FILES, type LoadedSpec } from "./world";
 
-export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.2.0";
+export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.3.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
@@ -74,7 +74,9 @@ export function corpusDigest(
       freshnessPolicy: { ...freshnessPolicy },
       cases: [...entries]
         .sort((left, right) => (left.caseId < right.caseId ? -1 : left.caseId > right.caseId ? 1 : 0))
-        .map((entry) => [entry.partition, entry.caseId, entry.digest] as unknown as JsonValue),
+        .map((entry) => [
+          entry.partition, entry.caseId, entry.digest, entry.labelKind, entry.labelId,
+        ] as unknown as JsonValue),
     },
   };
   return sha256(canonicalBytes(preimage, "corpusDigest preimage"));

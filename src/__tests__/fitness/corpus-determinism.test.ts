@@ -54,10 +54,108 @@ interface BannedUse {
  */
 export function bannedNondeterminismUses(project: Project, root = ""): BannedUse[] {
   const uses: BannedUse[] = [];
+  const seen = new Set<string>();
   const record = (node: Node, api: string, sf: SourceFile): void => {
-    uses.push({ file: sf.getFilePath().replace(root, ""), line: node.getStartLineNumber(), api });
+    const file = sf.getFilePath().replace(root, "");
+    const line = node.getStartLineNumber();
+    const key = `${file}:${line}:${api}`;
+    if (!seen.has(key)) uses.push({ file, line, api });
+    seen.add(key);
   };
   for (const sf of project.getSourceFiles()) {
+    const origins = new Map<string, string>([
+      ["Math", "Math"],
+      ["Date", "Date"],
+      ["performance", "performance"],
+      ["process", "process"],
+      ["crypto", "crypto"],
+      ["Intl", "Intl"],
+    ]);
+    const banned = new Set([
+      "Math.random",
+      "Date.now",
+      "performance.now",
+      "process.hrtime",
+      "process.env",
+      "crypto.randomUUID",
+      "randomUUID",
+      "Intl",
+    ]);
+    const originOf = (input: Node | undefined): string | undefined => {
+      if (input === undefined) return undefined;
+      let node = input;
+      while (
+        Node.isParenthesizedExpression(node) ||
+        Node.isAsExpression(node) ||
+        Node.isTypeAssertion(node) ||
+        Node.isNonNullExpression(node)
+      ) {
+        node = node.getExpression();
+      }
+      if (Node.isIdentifier(node)) return origins.get(node.getText());
+      if (Node.isPropertyAccessExpression(node)) {
+        const base = originOf(node.getExpression());
+        return base === undefined ? undefined : `${base}.${node.getName()}`;
+      }
+      if (Node.isElementAccessExpression(node)) {
+        const base = originOf(node.getExpression());
+        const argument = node.getArgumentExpression();
+        if (
+          base !== undefined &&
+          argument !== undefined &&
+          (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+        ) {
+          return `${base}.${argument.getLiteralText()}`;
+        }
+      }
+      return undefined;
+    };
+    for (const declaration of sf.getImportDeclarations()) {
+      const moduleName = declaration.getModuleSpecifierValue().replace(/^node:/, "");
+      const namespace = declaration.getNamespaceImport()?.getText();
+      const defaultImport = declaration.getDefaultImport()?.getText();
+      const base =
+        moduleName === "crypto" ? "crypto" :
+          moduleName === "process" ? "process" :
+            moduleName === "perf_hooks" ? "performance" :
+              undefined;
+      if (base !== undefined && namespace !== undefined) origins.set(namespace, base);
+      if (base !== undefined && defaultImport !== undefined) origins.set(defaultImport, base);
+      for (const specifier of declaration.getNamedImports()) {
+        const imported = specifier.getName();
+        const local = specifier.getAliasNode()?.getText() ?? imported;
+        const origin =
+          moduleName === "crypto" && imported === "randomUUID" ? "crypto.randomUUID" :
+            moduleName === "process" && (imported === "hrtime" || imported === "env") ?
+              `process.${imported}` :
+              moduleName === "perf_hooks" && imported === "performance" ? "performance" :
+                undefined;
+        if (origin === undefined) continue;
+        origins.set(local, origin);
+        if (banned.has(origin)) record(specifier, imported, sf);
+      }
+    }
+    for (const declaration of sf.getVariableDeclarations()) {
+      const initializerOrigin = originOf(declaration.getInitializer());
+      const name = declaration.getNameNode();
+      if (Node.isIdentifier(name) && initializerOrigin !== undefined) {
+        origins.set(name.getText(), initializerOrigin);
+        if (banned.has(initializerOrigin)) record(name, initializerOrigin, sf);
+      } else if (
+        Node.isObjectBindingPattern(name) &&
+        initializerOrigin !== undefined
+      ) {
+        for (const element of name.getElements()) {
+          const local = element.getNameNode();
+          if (!Node.isIdentifier(local)) continue;
+          const property =
+            element.getPropertyNameNode()?.getText() ?? local.getText();
+          const origin = `${initializerOrigin}.${property}`;
+          origins.set(local.getText(), origin);
+          if (banned.has(origin)) record(element, origin, sf);
+        }
+      }
+    }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
       if (call.getExpression().getText() === "Date" && call.getArguments().length === 0) {
         record(call, "new Date() (argless)", sf);
@@ -301,6 +399,20 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
   it("flags a process.env read inside the generator", () => {
     const uses = bannedNondeterminismUses(inMemoryProject(file('export const s = process.env.SEED ?? "x";\n')));
     expect(uses.some((u) => u.api === "process.env")).toBe(true);
+  });
+
+  it("flags destructured, aliased, and named-import nondeterministic APIs", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/globals.ts":
+          "const { random: sample } = Math;\nconst alias = sample;\nconst { now: clock } = Date;\nconst { hrtime: highResolution } = process;\nvoid [alias, clock, highResolution];\n",
+        "/src/contracts/imported.ts":
+          'import { randomUUID as uuid } from "node:crypto";\nvoid uuid;\n',
+      }),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["Math.random", "Date.now", "process.hrtime", "randomUUID"]),
+    );
   });
 
   it("a hand edit to a generated file is caught by the byte comparison", () => {

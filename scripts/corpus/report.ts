@@ -1,13 +1,5 @@
-import {
-  corpusDigest as computeCorpusDigest,
-  type CaseInventoryEntry,
-  type FreshnessPolicyBinding,
-} from "./manifest";
-import {
-  isSigned,
-  signoffProblems,
-  type CorpusSignoff,
-} from "./signoff";
+import { corpusDigest as computeCorpusDigest, type CaseInventoryEntry, type FreshnessPolicyBinding } from "./manifest";
+import { isSigned, signoffProblems, type CorpusSignoff } from "./signoff";
 
 export type ReasonCode =
   | "corpus-signoff-pending"
@@ -18,16 +10,14 @@ export type ReasonCode =
   | "no-labeled-defects"
   | "no-clean-controls";
 
-export interface Measured {
+interface Measured {
   readonly value: number | null;
   readonly reasonCode: ReasonCode | null;
 }
 
-/** One case's label and, if a detector ran, whether that detector flagged it. */
 interface CaseOutcomeBase {
   readonly caseId: string;
-  readonly labelKind: "defect" | "clean-control";
-  readonly flagged: boolean | null;
+  readonly attributedDefectClassIds: readonly string[] | null;
 }
 
 export interface SyntheticCaseOutcome extends CaseOutcomeBase {
@@ -38,48 +28,15 @@ export interface RealDerivedCaseOutcome extends CaseOutcomeBase {
   readonly provenance: "real-derived-fixture";
 }
 
-export type CaseOutcome = SyntheticCaseOutcome | RealDerivedCaseOutcome;
-
-interface PartitionCounts {
-  readonly totalCases: number;
-  readonly defectCases: number;
-  readonly cleanControls: number;
-  readonly evaluatedCases: number;
-}
-
-export interface SyntheticPartitionReport extends PartitionCounts {
-  readonly provenance: "synthetic-fixture";
-  readonly syntheticDefectCoverage: Measured;
-  readonly falsePositiveRate: Measured;
-  readonly interpretable: boolean;
-}
-
-export interface RealDerivedPartitionReport extends PartitionCounts {
-  readonly provenance: "real-derived-fixture";
-  readonly detectionRate: Measured;
-  readonly falsePositiveRate: Measured;
-  readonly interpretable: boolean;
-}
-
-export interface CorpusReport {
-  readonly corpusVersion: string;
-  readonly corpusDigest: string;
-  readonly signoffStatus: string;
-  readonly signed: boolean;
-  readonly synthetic: SyntheticPartitionReport;
-  readonly realDerived: RealDerivedPartitionReport;
-}
+type CaseOutcome = SyntheticCaseOutcome | RealDerivedCaseOutcome;
 
 const withheld = (reasonCode: ReasonCode): Measured => ({ value: null, reasonCode });
+const withheldPartition = <T>(counts: T, reason: ReasonCode) => ({
+  counts, coverage: withheld(reason), falsePositiveRate: withheld(reason),
+});
 
 const rateOf = (numerator: number, denominator: number): number =>
   Math.round((numerator / denominator) * 10_000) / 10_000;
-
-interface PartitionFigures {
-  readonly counts: PartitionCounts;
-  readonly coverage: Measured;
-  readonly falsePositiveRate: Measured;
-}
 
 function measurePartition(
   inventory: readonly CaseInventoryEntry[],
@@ -88,9 +45,10 @@ function measurePartition(
   emptyReason: ReasonCode,
   provenance: CaseOutcome["provenance"],
   partition: CaseInventoryEntry["partition"],
-): PartitionFigures {
-  const partitionInventory = inventory.filter(
-    (entry) => entry.partition === partition,
+) {
+  const partitionInventory = inventory.filter((entry) => entry.partition === partition);
+  const knownDefectClasses = new Set(
+    inventory.filter((entry) => entry.labelKind === "defect").map((entry) => entry.labelId),
   );
   const inventoryByCase = new Map<string, CaseInventoryEntry>();
   for (const entry of partitionInventory) {
@@ -120,72 +78,73 @@ function measurePartition(
         `corpus report: ${provenance} outcome "${outcome.caseId}" is absent from the signed manifest inventory`,
       );
     }
-    if (entry.labelKind !== outcome.labelKind) {
+    const attributions = outcome.attributedDefectClassIds;
+    if (
+      attributions !== null &&
+      new Set(attributions).size !== attributions.length
+    ) {
       throw new Error(
-        `corpus report: ${provenance} outcome "${outcome.caseId}" label "${outcome.labelKind}" does not match manifest label "${entry.labelKind}"`,
+        `corpus report: ${provenance} outcome "${outcome.caseId}" contains duplicate defect attribution`,
+      );
+    }
+    const unknown = attributions?.find((id) => !knownDefectClasses.has(id));
+    if (unknown !== undefined) {
+      throw new Error(
+        `corpus report: ${provenance} outcome "${outcome.caseId}" attributes unknown defect class`,
+      );
+    }
+    if (
+      entry.labelKind === "defect" &&
+      attributions !== null &&
+      attributions.length > 0 &&
+      !attributions.includes(entry.labelId)
+    ) {
+      throw new Error(
+        `corpus report: ${provenance} outcome "${outcome.caseId}" contradicts its signed defect label`,
       );
     }
     outcomeByCase.set(outcome.caseId, outcome);
   }
-  const counts: PartitionCounts = {
+  const counts = {
     totalCases: partitionInventory.length,
-    defectCases: partitionInventory.filter(
-      (entry) => entry.labelKind === "defect",
-    ).length,
-    cleanControls: partitionInventory.filter(
-      (entry) => entry.labelKind === "clean-control",
-    ).length,
+    defectCases: partitionInventory.filter((entry) => entry.labelKind === "defect").length,
+    cleanControls: partitionInventory.filter((entry) => entry.labelKind === "clean-control").length,
     evaluatedCases: partitionInventory.filter(
-      (entry) => outcomeByCase.get(entry.caseId)?.flagged !== null &&
-        outcomeByCase.get(entry.caseId)?.flagged !== undefined,
+      (entry) =>
+        outcomeByCase.get(entry.caseId)?.attributedDefectClassIds !== null &&
+        outcomeByCase.get(entry.caseId)?.attributedDefectClassIds !== undefined,
     ).length,
   };
   if (!signed) {
-    return {
-      counts,
-      coverage: withheld("corpus-signoff-pending"),
-      falsePositiveRate: withheld("corpus-signoff-pending"),
-    };
+    return withheldPartition(counts, "corpus-signoff-pending");
   }
   if (counts.totalCases === 0) {
-    return { counts, coverage: withheld(emptyReason), falsePositiveRate: withheld(emptyReason) };
+    return withheldPartition(counts, emptyReason);
   }
   if (counts.evaluatedCases === 0) {
-    return {
-      counts,
-      coverage: withheld("detector-outcomes-absent"),
-      falsePositiveRate: withheld("detector-outcomes-absent"),
-    };
+    return withheldPartition(counts, "detector-outcomes-absent");
   }
   if (counts.evaluatedCases !== counts.totalCases) {
-    return {
-      counts,
-      coverage: withheld("detector-outcomes-incomplete"),
-      falsePositiveRate: withheld("detector-outcomes-incomplete"),
-    };
+    return withheldPartition(counts, "detector-outcomes-incomplete");
   }
-  const evaluatedDefects = partitionInventory
-    .filter((entry) => entry.labelKind === "defect")
-    .map((entry) => outcomeByCase.get(entry.caseId)!);
-  const evaluatedControls = partitionInventory
-    .filter((entry) => entry.labelKind === "clean-control")
-    .map((entry) => outcomeByCase.get(entry.caseId)!);
+  const measured = (
+    labelKind: CaseInventoryEntry["labelKind"],
+    absentReason: ReasonCode,
+    detected: (entry: CaseInventoryEntry) => boolean,
+  ): Measured => {
+    const cases = partitionInventory.filter((entry) => entry.labelKind === labelKind);
+    return cases.length === 0
+      ? withheld(absentReason)
+      : { value: rateOf(cases.filter(detected).length, cases.length), reasonCode: null };
+  };
   return {
     counts,
-    coverage:
-      evaluatedDefects.length === 0
-        ? withheld("no-labeled-defects")
-        : {
-            value: rateOf(evaluatedDefects.filter((o) => o.flagged === true).length, evaluatedDefects.length),
-            reasonCode: null,
-          },
-    falsePositiveRate:
-      evaluatedControls.length === 0
-        ? withheld("no-clean-controls")
-        : {
-            value: rateOf(evaluatedControls.filter((o) => o.flagged === true).length, evaluatedControls.length),
-            reasonCode: null,
-          },
+    coverage: measured("defect", "no-labeled-defects", (entry) =>
+      outcomeByCase.get(entry.caseId)!.attributedDefectClassIds!.includes(entry.labelId),
+    ),
+    falsePositiveRate: measured("clean-control", "no-clean-controls", (entry) =>
+      outcomeByCase.get(entry.caseId)!.attributedDefectClassIds!.length > 0,
+    ),
   };
 }
 
@@ -201,24 +160,14 @@ export interface ReportInput {
   readonly realDerivedOutcomes: readonly RealDerivedCaseOutcome[];
 }
 
-export function buildCorpusReport(input: ReportInput): CorpusReport {
-  const inventoryDigest = computeCorpusDigest(
-    input.corpusVersion,
-    input.seed,
-    input.taxonomyDigest,
-    input.inventory,
-    input.freshnessPolicy,
-  );
+function buildCorpusReport(input: ReportInput) {
+  const inventoryDigest = computeCorpusDigest(input.corpusVersion, input.seed, input.taxonomyDigest, input.inventory, input.freshnessPolicy);
   if (inventoryDigest !== input.corpusDigest) {
     throw new Error(
       `corpus report: manifest inventory digest ${inventoryDigest} does not match corpusDigest ${input.corpusDigest}`,
     );
   }
-  const signoffValidation = signoffProblems(
-    input.signoff,
-    input.corpusVersion,
-    input.corpusDigest,
-  );
+  const signoffValidation = signoffProblems(input.signoff, input.corpusVersion, input.corpusDigest);
   if (signoffValidation.length > 0) {
     throw new Error(
       `corpus report: invalid signoff\n${signoffValidation.join("\n")}`,

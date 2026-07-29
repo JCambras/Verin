@@ -7071,3 +7071,97 @@ scripts/corpus-report.ts:15: structured corpus measurement is private to scripts
 holding.
 
 **Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 3).
+
+---
+
+## PF-098 · corpus intake, attribution, privacy, digest, clock, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,timestamps,determinism}.test.ts`
+
+**Invariant (D-083, ADR-0034):** real-derived delivery cannot lose hidden JSON members or disclose
+rejected text; replay input is complete and closed; detector credit names the exact signed defect class;
+foreign topology is minimal; structured measurement is private; signed inventory binds labels; transition
+selection is chronological; and nondeterministic APIs cannot hide behind imports or destructuring.
+
+**Injection 1 - duplicate-key admission.** Removed the canonical-byte equality check after `JSON.parse`.
+
+**Observed failure:**
+```
+duplicate JSON keys are rejected before a delivered value can enter inventory
+AssertionError: expected [ { ... } ] to deeply equal []
+"subject": "tok:0123456789abcdef"
+```
+The lossy parse admitted the last duplicate value and discarded the earlier raw name.
+
+**Injection 2 - diagnostic disclosure.** Returned Zod's raw issue message instead of the redacted
+schema-validation description.
+
+**Observed failure:**
+```
+a real-derived case with a free-text field in an UNANTICIPATED key is rejected (fail-closed)
+Expected diagnostic not to contain: "Robert Smith"
+Received: Unrecognized key: "Robert Smith"
+```
+
+**Injection 3 - case-level detector credit.** Disabled the signed-label contradiction check at the
+measurement boundary.
+
+**Observed failure:**
+```
+coverage credits only the exact signed defect class attribution
+AssertionError: expected [Function] to throw an error
+```
+
+**Injection 4 - foreign household expansion.** Added projected foreign accounts back into the full
+`accounts` collection.
+
+**Observed failure:**
+```
+CS-beneficiary-versus-destination-restriction/...accountRefs:
+reference "subject:mira-roth" resolves to 2 emitted records, expected exactly one
+```
+
+**Injection 5 - structured result export.** Exported `buildCorpusReport`.
+
+**Observed failure:**
+```
+structured partition measurements stay inside the partition-safe report owner
+Expected: [ "renderCorpusReport" ]
+Received: [ "buildCorpusReport", "renderCorpusReport" ]
+```
+
+**Injection 6 - label-free signed preimage.** Removed `labelKind` and `labelId` from the case tuple.
+
+**Observed failure:**
+```
+the signed digest binds each case label beside its bytes
+AssertionError: expected relabeled digest not to equal corpusDigest
+```
+
+**Injection 7 - input-order transition lookup.** Restored last-qualifying-input behavior. The companion
+uses three explicit transitions with distinct offsets, because reversing the committed table happened to
+select two transitions with the same offset and was not adversarial.
+
+**Observed failure:**
+```
+transition lookup is order-independent and duplicate instants are refused
+Expected: -240
+Received: -300
+```
+
+**Injection 8 - named-import laundering.** Skipped the `node:crypto` named-import origin.
+
+**Observed failure:**
+```
+flags destructured, aliased, and named-import nondeterministic APIs
+Expected set contained "randomUUID"; received set did not
+```
+
+**Standing companions:** missing, extra, ambiguous, and incompatible replay-payload fields; duplicate
+payload references; pending-action registry mismatch; exact evidence, reservation, and subject
+inventories; unknown and contradictory defect attribution; duplicate transition instants; destructured
+`Math`, `Date`, and `process` APIs; recursive generated-signature rejection; and malicious free text in
+both a value and an unrecognized key.
+
+**Revert:** all eight source injections were reverted with patch edits. Focused fences, typecheck,
+canonical regeneration, and the full repository gates are green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 4).

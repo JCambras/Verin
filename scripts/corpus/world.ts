@@ -27,6 +27,9 @@ export const SPEC_FILES = ["world.json", "cases.json", "defect-taxonomy.json"] a
 const Instant = z.iso.datetime({ precision: 3 });
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
 const Money = z.int().nonnegative();
+const duplicates = (values: readonly string[]): string[] => [
+  ...new Set(values.filter((value, index) => values.indexOf(value) !== index)),
+];
 
 /**
  * WHEN THE EVIDENCE SOURCE OBSERVED THIS RECORD - never when the underlying fact
@@ -49,9 +52,10 @@ const ClockSchema = z.strictObject({
   timeZone: z.string().min(1),
   timeZoneDataVersion: z.string().min(1),
   recentChangeWindowDays: z.int().positive(),
-  transitions: z
-    .array(z.strictObject({ at: Instant, offsetMinutes: z.int() }))
-    .min(2),
+  transitions: z.array(z.strictObject({ at: Instant, offsetMinutes: z.int() })).min(2),
+}).refine((clock) => duplicates(clock.transitions.map((item) => item.at)).length === 0, {
+  path: ["transitions"],
+  message: "duplicate time-zone transition instant",
 });
 
 const PartySchema = z.strictObject({
@@ -283,10 +287,6 @@ export interface LoadedSpec {
 }
 
 const readSpecFile = (name: string, dir: string): string => readFileSync(join(dir, name), "utf8");
-
-const duplicates = (values: readonly string[]): string[] => [
-  ...new Set(values.filter((value, index) => values.indexOf(value) !== index)),
-];
 
 /** Cross-reference resolution. A dangling ref is a spec bug reported by path. */
 export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): string[] {
