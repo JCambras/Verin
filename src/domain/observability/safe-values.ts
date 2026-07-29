@@ -134,9 +134,10 @@ const REASON_RE = new RegExp(
 );
 
 function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
-  if (RECORD_ID_FIELDS.has(field)) return isMachineRecordId(value);
-  return ID_FIELDS.has(field) && typeof value === "string" &&
-    value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
+  if (!ID_FIELDS.has(field)) return false;
+  if (isMachineRecordId(value)) return true;
+  if (RECORD_ID_FIELDS.has(field)) return false;
+  return value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
     !NAME_SHAPED_RE.test(value) &&
     !(!/\d/.test(value) && ALL_CAPS_NAME_RE.test(value)) &&
     !hasSensitiveAccountReference(value) && !looksLikePIIValue(value);

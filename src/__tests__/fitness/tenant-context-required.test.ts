@@ -4,6 +4,7 @@ import {
   Node,
   SyntaxKind,
   ts,
+  type CallExpression,
   type Project,
   type Signature,
   type SourceFile,
@@ -475,17 +476,40 @@ export function detectMissingTenantParams(
     const sqlCalls = sf
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter(isSqlExecutorCall);
-    const preBodySql = sqlCalls.filter((call) => {
-      const parameter = call.getFirstAncestorByKind(
-        SyntaxKind.Parameter,
-      );
-      const initializer = parameter?.getInitializer();
-      return Boolean(
-        initializer &&
-        (initializer === call ||
-          call.getAncestors().includes(initializer)),
-      );
-    });
+    const preBodySqlSet = new Set<CallExpression>();
+    const visitedPreBodyCallables = new Set<string>();
+    const visitPreBodyExecution = (node: Node): void => {
+      const calls = [
+        ...(Node.isCallExpression(node) ? [node] : []),
+        ...node.getDescendantsOfKind(SyntaxKind.CallExpression),
+      ];
+      for (const call of calls) {
+        if (isSqlExecutorCall(call)) {
+          preBodySqlSet.add(call);
+          continue;
+        }
+        for (const implementation of callableImplementations(
+          call.getExpression(),
+        )) {
+          if (implementation.getSourceFile() !== sf) continue;
+          const key = `${normalized}:${implementation.getStart()}`;
+          if (visitedPreBodyCallables.has(key)) continue;
+          visitedPreBodyCallables.add(key);
+          const implementationBody =
+            Node.isFunctionDeclaration(implementation) ||
+              Node.isFunctionExpression(implementation) ||
+              Node.isArrowFunction(implementation)
+              ? implementation.getBody()
+              : undefined;
+          if (implementationBody) visitPreBodyExecution(implementationBody);
+        }
+      }
+    };
+    for (const parameter of sf.getDescendantsOfKind(SyntaxKind.Parameter)) {
+      const initializer = parameter.getInitializer();
+      if (initializer) visitPreBodyExecution(initializer);
+    }
+    const preBodySql = sqlCalls.filter((call) => preBodySqlSet.has(call));
     for (const call of preBodySql) {
       out.push({
         ref: `${normalized}:${call.getStartLineNumber()} :: <pre-body-sql>`,
@@ -874,6 +898,38 @@ describe("tenant-context-required fence", () => {
           db: SqlDb,
           tenant: TenantContext,
           rows = db.query("SELECT email FROM users"),
+        ) {
+          assertTenantContext(tenant);
+          return rows;
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: expect.stringMatching(
+            /^src\/infrastructure\/crm\/subject\.ts:\d+ :: <pre-body-sql>$/,
+          ),
+          detail: "SQL executor call runs before the callable authority prologue",
+        },
+      ]);
+    });
+
+    it("rejects SQL reached transitively from a parameter default", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import {
+          assertTenantContext,
+          type TenantContext,
+        } from "../../contracts/tenant";
+        function load(db: SqlDb) {
+          return db.query("SELECT email FROM users");
+        }
+        function indirect(db: SqlDb) {
+          return load(db);
+        }
+        export function listAll(
+          db: SqlDb,
+          tenant: TenantContext,
+          rows = indirect(db),
         ) {
           assertTenantContext(tenant);
           return rows;
@@ -1293,6 +1349,16 @@ ${body}
       `const later = Object.freeze(carrier).piiGrant;
           return db.query(later.tenant.orgId);`,
       `const later = [carrier][0]!.piiGrant;
+          return db.query(later.tenant.orgId);`,
+      `const box = [carrier] as const;
+          const later = box[0].piiGrant;
+          return db.query(later.tenant.orgId);`,
+      `const box = { held: carrier } as const;
+          const later = box.held.piiGrant;
+          return db.query(later.tenant.orgId);`,
+      `let box: readonly [GrantCarrier];
+          box = [carrier] as const;
+          const later = box[0].piiGrant;
           return db.query(later.tenant.orgId);`,
     ])("rejects authority re-reads through transparent wrappers and fixed containers", (laterRead) => {
       const prelude = `

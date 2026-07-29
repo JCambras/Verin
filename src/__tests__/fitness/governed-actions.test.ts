@@ -265,7 +265,7 @@ function invocationTargetExpressions(call: CallExpression): readonly Node[] {
   return [callee];
 }
 
-function invocationArguments(call: CallExpression): readonly Node[] | null {
+function directInvocationArguments(call: CallExpression): readonly Node[] | null {
   const callee = call.getExpression();
   if (isAmbientReflectApply(callee)) {
     return fixedInvocationArguments(call.getArguments()[2]);
@@ -282,6 +282,106 @@ function invocationArguments(call: CallExpression): readonly Node[] | null {
     ];
   }
   return call.getArguments();
+}
+
+function fixedContainerValueSources(
+  node: Node,
+  name: string | null,
+  seen = new Set<string>(),
+): Node[] {
+  const key = nodeKey(node);
+  if (seen.has(key)) return [];
+  seen.add(key);
+  const expression =
+    Node.isParenthesizedExpression(node) ||
+      Node.isAsExpression(node) ||
+      Node.isSatisfiesExpression(node) ||
+      Node.isTypeAssertion(node) ||
+      Node.isNonNullExpression(node)
+      ? node.getExpression()
+      : node;
+  if (Node.isConditionalExpression(expression)) {
+    return [
+      ...fixedContainerValueSources(expression.getWhenTrue(), name, seen),
+      ...fixedContainerValueSources(expression.getWhenFalse(), name, seen),
+    ];
+  }
+  if (Node.isBinaryExpression(expression)) {
+    const operator = expression.getOperatorToken().getKind();
+    if (operator === SyntaxKind.CommaToken) {
+      return fixedContainerValueSources(expression.getRight(), name, seen);
+    }
+    if (
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      return [
+        ...fixedContainerValueSources(expression.getLeft(), name, seen),
+        ...fixedContainerValueSources(expression.getRight(), name, seen),
+      ];
+    }
+  }
+  if (Node.isArrayLiteralExpression(expression)) {
+    if (name === null) {
+      return expression.getElements().filter((element) =>
+        !Node.isOmittedExpression(element)
+      );
+    }
+    const index = Number.parseInt(name, 10);
+    const element = expression.getElements()[index];
+    return String(index) === name && element && !Node.isOmittedExpression(element)
+      ? [element]
+      : [];
+  }
+  if (Node.isObjectLiteralExpression(expression)) {
+    return expression.getProperties().flatMap((property) => {
+      if (Node.isSpreadAssignment(property)) {
+        return fixedContainerValueSources(property.getExpression(), name, seen);
+      }
+      if (
+        !Node.isPropertyAssignment(property) &&
+        !Node.isShorthandPropertyAssignment(property) &&
+        !Node.isGetAccessorDeclaration(property)
+      ) return [];
+      if (name !== null && property.getName() !== name) return [];
+      if (Node.isPropertyAssignment(property)) {
+        const initializer = property.getInitializer();
+        return initializer ? [initializer] : [];
+      }
+      if (Node.isShorthandPropertyAssignment(property)) {
+        return [property.getNameNode()];
+      }
+      return returnedValues(property);
+    });
+  }
+  if (Node.isCallExpression(expression)) {
+    const member = invocationMember(expression.getExpression());
+    const receiver = invocationReceiver(expression.getExpression());
+    if (
+      member === "freeze" &&
+      receiver?.getText() === "Object"
+    ) {
+      const argument = expression.getArguments()[0];
+      return argument
+        ? fixedContainerValueSources(argument, name, seen)
+        : [];
+    }
+    const providers = resolveCallTargets(expression.getExpression());
+    const values = providers.flatMap(returnedValues);
+    if (values.length > 0) {
+      return values.flatMap((value) =>
+        fixedContainerValueSources(value, name, seen)
+      );
+    }
+  }
+  const sources = assignedValueSources(expression);
+  if (sources.length > 0) {
+    return sources.flatMap((source) =>
+      fixedContainerValueSources(source, name, seen)
+    );
+  }
+  return [];
 }
 
 /**
@@ -333,16 +433,26 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
       ...resolveCallTargets(expression.getWhenFalse(), seen),
     ];
   }
-  // `[listHouseholds][0](…)` — every element is a possible callee.
-  if (Node.isElementAccessExpression(expression)) {
-    const receiver = expression.getExpression();
-    if (Node.isArrayLiteralExpression(receiver)) {
-      return receiver.getElements().flatMap((element) =>
-        resolveCallTargets(element, seen)
-      );
+  if (
+    Node.isPropertyAccessExpression(expression) ||
+    Node.isElementAccessExpression(expression)
+  ) {
+    const member = Node.isPropertyAccessExpression(expression)
+      ? expression.getName()
+      : invocationMember(expression);
+    const values = fixedContainerValueSources(
+      expression.getExpression(),
+      member,
+    );
+    if (values.length > 0) {
+      return values.flatMap((value) => resolveCallTargets(value, seen));
     }
   }
   if (Node.isCallExpression(expression)) {
+    if (invocationMember(expression.getExpression()) === "bind") {
+      const target = invocationReceiver(expression.getExpression());
+      return target ? resolveCallTargets(target, seen) : [];
+    }
     const invocationTargets = invocationTargetExpressions(expression);
     if (
       invocationTargets.length !== 1 ||
@@ -420,15 +530,30 @@ function callTargetResolutionComplete(
     return callTargetResolutionComplete(expression.getWhenTrue(), seen) &&
       callTargetResolutionComplete(expression.getWhenFalse(), seen);
   }
-  if (Node.isElementAccessExpression(expression)) {
-    const receiver = expression.getExpression();
-    if (Node.isArrayLiteralExpression(receiver)) {
-      return receiver.getElements().every((element) =>
-        callTargetResolutionComplete(element, seen)
+  if (
+    Node.isPropertyAccessExpression(expression) ||
+    Node.isElementAccessExpression(expression)
+  ) {
+    const member = Node.isPropertyAccessExpression(expression)
+      ? expression.getName()
+      : invocationMember(expression);
+    const values = fixedContainerValueSources(
+      expression.getExpression(),
+      member,
+    );
+    if (values.length > 0) {
+      return values.every((value) =>
+        callTargetResolutionComplete(value, seen)
       );
     }
   }
   if (Node.isCallExpression(expression)) {
+    if (invocationMember(expression.getExpression()) === "bind") {
+      const target = invocationReceiver(expression.getExpression());
+      return Boolean(
+        target && callTargetResolutionComplete(target, seen),
+      );
+    }
     const invocationTargets = invocationTargetExpressions(expression);
     if (
       invocationTargets.length !== 1 ||
@@ -483,6 +608,137 @@ function callTargetResolutionComplete(
     }
     return false;
   });
+}
+
+function boundArgumentPrefixes(
+  expression: Node,
+  seen = new Set<string>(),
+): readonly (readonly Node[])[] | null {
+  const key = nodeKey(expression);
+  if (seen.has(key)) return null;
+  seen.add(key);
+  if (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isNonNullExpression(expression)
+  ) {
+    return boundArgumentPrefixes(expression.getExpression(), seen);
+  }
+  if (
+    Node.isFunctionDeclaration(expression) ||
+    Node.isFunctionExpression(expression) ||
+    Node.isArrowFunction(expression) ||
+    Node.isMethodDeclaration(expression)
+  ) return [[]];
+  if (Node.isConditionalExpression(expression)) {
+    const left = boundArgumentPrefixes(expression.getWhenTrue(), seen);
+    const right = boundArgumentPrefixes(expression.getWhenFalse(), seen);
+    return left && right ? [...left, ...right] : null;
+  }
+  if (Node.isBinaryExpression(expression)) {
+    const operator = expression.getOperatorToken().getKind();
+    if (operator === SyntaxKind.CommaToken) {
+      return boundArgumentPrefixes(expression.getRight(), seen);
+    }
+    if (
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      const left = boundArgumentPrefixes(expression.getLeft(), seen);
+      const right = boundArgumentPrefixes(expression.getRight(), seen);
+      return left && right ? [...left, ...right] : null;
+    }
+  }
+  if (
+    Node.isPropertyAccessExpression(expression) ||
+    Node.isElementAccessExpression(expression)
+  ) {
+    const member = Node.isPropertyAccessExpression(expression)
+      ? expression.getName()
+      : invocationMember(expression);
+    const values = fixedContainerValueSources(
+      expression.getExpression(),
+      member,
+    );
+    if (values.length > 0) {
+      const prefixes = values.map((value) =>
+        boundArgumentPrefixes(value, seen)
+      );
+      return prefixes.every(
+        (candidate): candidate is readonly (readonly Node[])[] =>
+          candidate !== null,
+      )
+        ? prefixes.flat()
+        : null;
+    }
+  }
+  if (Node.isCallExpression(expression)) {
+    if (invocationMember(expression.getExpression()) === "bind") {
+      const target = invocationReceiver(expression.getExpression());
+      if (!target || !callTargetResolutionComplete(target)) return null;
+      const targetPrefixes = boundArgumentPrefixes(target, seen);
+      return targetPrefixes?.map((prefix) => [
+        ...prefix,
+        ...expression.getArguments().slice(1),
+      ]) ?? null;
+    }
+    const providers = resolveCallTargets(expression.getExpression());
+    const values = providers.flatMap(returnedValues);
+    if (providers.length === 0 || values.length === 0) return null;
+    const prefixes = values.map((value) =>
+      boundArgumentPrefixes(value, seen)
+    );
+    return prefixes.every(
+      (candidate): candidate is readonly (readonly Node[])[] =>
+        candidate !== null,
+    )
+      ? prefixes.flat()
+      : null;
+  }
+  const sources = assignedValueSources(expression);
+  if (sources.length > 0) {
+    const prefixes = sources.map((source) =>
+      boundArgumentPrefixes(source, seen)
+    );
+    return prefixes.every(
+      (candidate): candidate is readonly (readonly Node[])[] =>
+        candidate !== null,
+    )
+      ? prefixes.flat()
+      : null;
+  }
+  return resolveCallTargets(expression).length > 0 ? [[]] : null;
+}
+
+function invocationArgumentSets(
+  call: CallExpression,
+): readonly (readonly Node[])[] | null {
+  const direct = directInvocationArguments(call);
+  if (!direct) return null;
+  const targets = invocationTargetExpressions(call);
+  const prefixes = targets.map((target) =>
+    boundArgumentPrefixes(target)
+  );
+  const effectivePrefixes = prefixes.map((prefix, index) => {
+    if (prefix) return prefix;
+    const target = targets[index];
+    return target === call.getExpression() &&
+        assignedValueSources(target).length === 0
+      ? [[]]
+      : null;
+  });
+  if (
+    effectivePrefixes.length === 0 ||
+    effectivePrefixes.some((prefix) => prefix === null)
+  ) {
+    return null;
+  }
+  return effectivePrefixes.flatMap((prefix) =>
+    prefix!.map((bound) => [...bound, ...direct])
+  );
 }
 
 function resolveCallTargetsForCall(call: CallExpression): Node[] {
@@ -1852,8 +2108,15 @@ export function detectUnwiredGovernedRoutes(
         helper.parameters.forEach((parameter, position) => {
           if (derivedKeys.has(nodeKey(parameter))) return;
           const authorizedEverywhere = sites.length > 0 && sites.every((site) => {
-            const argument = invocationArguments(site)?.[position];
-            return Boolean(argument && isAuthorizedValue(argument));
+            const argumentSets = invocationArgumentSets(site);
+            return Boolean(
+              argumentSets &&
+              argumentSets.length > 0 &&
+              argumentSets.every((arguments_) => {
+                const argument = arguments_[position];
+                return Boolean(argument && isAuthorizedValue(argument));
+              }),
+            );
           });
           if (authorizedEverywhere) {
             markDerived(parameter);
@@ -1865,14 +2128,15 @@ export function detectUnwiredGovernedRoutes(
     }
     const sinkCalls = reachableCalls.filter((call) => callMatchesSink(call, entry));
     const carriesGrant = (call: CallExpression): boolean => {
-      const args = invocationArguments(call);
-      if (args === null) return false;
-      // The GRANT argument specifically — not "some argument".
-      if (entry.grantIndex === undefined || entry.grantIndex === null) {
-        return args.some(isAuthorizedValue);
-      }
-      const grantArgument = args[entry.grantIndex];
-      return Boolean(grantArgument && isAuthorizedValue(grantArgument));
+      const argumentSets = invocationArgumentSets(call);
+      if (!argumentSets || argumentSets.length === 0) return false;
+      return argumentSets.every((args) => {
+        if (entry.grantIndex === undefined || entry.grantIndex === null) {
+          return args.some(isAuthorizedValue);
+        }
+        const grantArgument = args[entry.grantIndex];
+        return Boolean(grantArgument && isAuthorizedValue(grantArgument));
+      });
     };
     // EVERY call site, not one of them. Entries are deduped per (file, handler,
     // sink), so N calls to the same sink collapse to one entry — an existential
@@ -3457,6 +3721,65 @@ ${body}
       expect(discovered.violations).toEqual([]);
       expect(discovered.entries).toHaveLength(1);
       expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it.each([
+      `const run = verifyAndListOrgChain.bind(null);
+        return run({}, {} as never);`,
+      `let run: typeof verifyAndListOrgChain;
+        run = verifyAndListOrgChain.bind(null);
+        return run({}, {} as never);`,
+      `function select() {
+          return verifyAndListOrgChain.bind(null);
+        }
+        const run = select();
+        return run({}, {} as never);`,
+      `const run = verifyAndListOrgChain.bind(null);
+        const box = [run] as const;
+        return box[0]({}, {} as never);`,
+    ])("preserves governed sink provenance through bound callable values", (work) => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          void req;
+          ${work}
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toEqual([
+        expect.objectContaining({
+          action: "audit.export",
+          sink: "verifyAndListOrgChain",
+        }),
+      ]);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it.each([
+      `const run = verifyAndListOrgChain.bind(null, {});
+        return run(auth.value);`,
+      `const run = verifyAndListOrgChain.bind(null, {}, auth.value);
+        return run();`,
+      `const withDb = verifyAndListOrgChain.bind(null, {});
+        const run = withDb.bind(null, auth.value);
+        return run();`,
+      `const withDb = verifyAndListOrgChain.bind(null, {});
+        return withDb.call(null, auth.value);`,
+    ])("preserves effective arguments through bound governed sink values", (work) => {
+      const project = governedDiscoveryProject(`
+        import { requireActionGrant, errorResponse } from "@app/_server/context";
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          ${work}
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toHaveLength(1);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toEqual([]);
     });
 
     it("fails closed when a governed logical callee has an unresolved arm", () => {

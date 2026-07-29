@@ -5,6 +5,7 @@ import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
 import { loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
+import { appError } from "@contracts/errors";
 import { parseMachineRecordId, type MachineRecordIdFamily } from "@contracts/record-id";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
@@ -67,6 +68,15 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
     expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
+    expect(safeReason(appError("INTERNAL", "Trusted safe message."))).toBe("app-error:INTERNAL");
+    expect(safeReason(Object.freeze({ code: "23505" }))).toBe("driver-error:23505");
+    const hostileProxy = new Proxy({}, {
+      isExtensible() {
+        throw new Error(FIXTURES.email);
+      },
+    });
+    expect(() => safeReason(hostileProxy)).not.toThrow();
+    expect(safeReason(hostileProxy)).toBe("unexpected-error");
     let appCodeReads = 0;
     const statefulAppError = {
       get code() {
@@ -185,6 +195,7 @@ describe("logs never carry raw names or account numbers", () => {
   it("accepts every real machine id shape and still refuses name- and account-shaped values", () => {
     for (const value of [
       "3F2504E0-4F89-11D3-9A0C-0305E82C3301", // uppercase-hex UUID (the route accepts these)
+      "63235503-52cc-43df-a81a-2517e7f45884",
       "AB12CD34-EF56", // the all-caps lookalike the digit gate keeps buildable
       "org", // the backup-restore drill's org id
       "o",

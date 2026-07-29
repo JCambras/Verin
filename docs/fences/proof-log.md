@@ -4398,6 +4398,110 @@ APP_ENV=development <test-only placeholder env> pnpm build   # compiled and gene
 pnpm test:e2e                                                # 17 tests passed
 ```
 
+### PF-172 error classification uses authenticated provenance
+
+Observability treated any frozen object as an authenticated `AppError`.
+`Object.isFrozen` could execute an untrusted proxy trap, and a frozen SQLSTATE
+object lost its driver classification.
+
+**Adversarial proof:** test-first integration cases supplied a frozen
+`{ code: "23505" }`, an actual factory-created `AppError`, and a proxy whose
+extensibility trap throws PII-shaped text. The frozen driver value initially
+became `unexpected-error`, and the proxy escaped classification. The restrictive
+trusted-only normalization path now recognizes only module-authenticated
+instances. Guarded single reads retain `driver-error:23505`, the proxy cannot
+throw, and none of its text reaches the reason.
+
+### PF-173 governed bindings retain sink and argument provenance
+
+Governed target discovery recognized a `bind` wrapper only while it was
+immediately invoked. Storing the bound callable in an alias, returning it from a
+helper, or placing it in a fixed container erased the route requirement.
+
+**Adversarial proof:** test-first routes invoked `verifyAndListOrgChain` through
+a declaration alias, later assignment, helper return, and fixed array. Every
+route initially produced no governed entry. The same fixtures now retain the
+exact `audit.export` sink. Separate companions compose arguments across direct,
+nested-bound, and `call` invocation: authorized grants pass at the effective
+parameter, and missing grants fail.
+
+### PF-174 inferred generics expose every sealed position
+
+Invented generic detection traversed composite sealed positions only for
+explicit type arguments. A contextual target could infer an object containing a
+`TenantContext` while the direct yielded type check saw no seal.
+
+**Adversarial proof:** a test-first fixture assigned `coerce()` to inferred
+object, tuple, array, and union targets containing `TenantContext`. All four
+initially passed. Complete sealed-position inventory now runs for inferred and
+explicit yields alike, and every planted mint fails at its source line.
+
+### PF-175 authority provenance survives aliased fixed containers
+
+Repeated-authority detection resolved only inline fixed arrays. An
+accessor-backed carrier stored in an `as const` array, object, or later-assigned
+tuple could be read again after the stable prologue capture under a different
+source spelling.
+
+**Adversarial proof:** test-first tenant-boundary fixtures captured
+`carrier.piiGrant`, then reread it through each of those three aliases before
+repository work. Every reread initially escaped. Fixed-member provenance now
+follows initializers and all reaching assignments back to the original carrier,
+and all three emit the repeated-evaluation violation.
+
+### PF-176 parameter-default effects are transitively pre-body
+
+SQL ownership recognized a query physically inside a parameter initializer but
+not one reached by calling a local helper from that initializer. The later body
+prologue was incorrectly allowed to authorize work that had already executed.
+
+**Adversarial proof:** a test-first repository fixture called a two-helper chain
+from a parameter default, with the final helper issuing `db.query`. It initially
+passed. Pre-body execution analysis now follows statically resolved helper calls
+transitively and emits one exact `<pre-body-sql>` violation, while ordinary
+body-owned SQL remains governed by its callable boundary.
+
+### PF-177 line-budget evidence remains exact
+
+The correction adds narrowly shared contract and analyzer behavior without
+changing a measured ceiling or deleting useful material.
+
+**Adversarial proof:** the authoritative real measurement and its synthetic
+over-budget and empty-bucket companions pass at contracts 4,021/4,050 (29
+headroom), domain 1,260/1,300 (40), infrastructure 3,440/3,450 (10), and
+presentation 918/6,000 (5,082). No ceiling amendment is needed.
+
+### PF-178 canonical machine identity outranks partial PII resemblance
+
+The shared formatted-account classifier correctly failed closed on ambiguous
+numeric clusters, but a generated UUID could contain such a cluster as only one
+part of its complete machine identifier. Those UUIDs failed observability
+nondeterministically when used as actor IDs.
+
+**Adversarial proof:** the production walkthrough generated
+`63235503-52cc-43df-a81a-2517e7f45884`, then failed account opening with
+`PII_VIOLATION` before workflow work. A focused regression reproduced the same
+refusal. The observability boundary now accepts the complete canonical machine
+UUID first, while existing uninterrupted, space-separated, and hyphenated
+account references remain refused. The focused integration case and all 17
+end-to-end tests pass.
+
+### PF-172 - PF-178 verification
+
+```
+corepack pnpm test                                          # 56 files, 1,198 tests passed
+corepack pnpm test:fitness                                  # 35 files, 856 tests passed
+corepack pnpm typecheck                                     # clean
+corepack pnpm lint                                          # clean
+corepack pnpm knip                                          # clean
+corepack pnpm v3:invariants                                 # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                               # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts --reporter=verbose
+                                                             # contracts 4,021/4,050; domain 1,260/1,300; infrastructure 3,440/3,450
+APP_ENV=development <CI placeholder env> corepack pnpm build # compiled and generated all routes
+corepack pnpm test:e2e                                      # 17 tests passed
+```
+
 **Date:** 2026-07-28 (twenty-second review-fix round on v3 build-sequence prompt 6).
 
 ### PF-124 every repeated sealed sibling remains a distinct structural path

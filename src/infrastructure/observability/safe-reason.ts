@@ -46,16 +46,14 @@ function readErrorProperty(
 
 export function classifyErrorMetadata(error: unknown): ErrorMetadataClassification {
   if (typeof error !== "object" || error === null) return UNEXPECTED_ERROR_METADATA;
-  if (Object.isFrozen(error)) {
-    const appError = normalizeAppError(error);
-    return appError
-      ? Object.freeze({
-        appError,
-        sqlState: null,
-        piiViolation: false,
-        reason: `app-error:${appError.code}`,
-      })
-      : UNEXPECTED_ERROR_METADATA;
+  const trusted = normalizeAppError(error, "trusted-only");
+  if (trusted) {
+    return Object.freeze({
+      appError: trusted,
+      sqlState: null,
+      piiViolation: false,
+      reason: `app-error:${trusted.code}`,
+    });
   }
   const code = readErrorProperty(error, "code");
   if (!code.ok) return UNEXPECTED_ERROR_METADATA;

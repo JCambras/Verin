@@ -113,12 +113,12 @@ proof — the prompt-6 entries were renumbered on rebase, see the numbering note
 | `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-033 + companions |
 | `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-035 + companions |
 
-**Current prompt-6 line-budget PR evidence:** contracts 4,017/4,050 (33
-headroom), domain 1,251/1,300 (49), infrastructure 3,437/3,450 (13), and
-presentation 918/6,000 (5,082). ADR-0037 raises only domain from 1,250 because
-the pre-load runtime tenant-seal assertion adds one required domain line to a
-layer with zero headroom. No useful implementation or documentation was removed
-or compressed, and the other measured ceilings remain unchanged.
+**Current prompt-6 line-budget PR evidence:** contracts 4,021/4,050 (29
+headroom), domain 1,260/1,300 (40), infrastructure 3,440/3,450 (10), and
+presentation 918/6,000 (5,082). ADR-0037 remains the last ceiling amendment.
+The final security corrections reuse shared semantic ownership and the existing
+reviewed error-normalization boundary, so no ceiling changed. No useful
+implementation or documentation was removed or compressed.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

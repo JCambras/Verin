@@ -2646,6 +2646,108 @@ function repeatedAuthorityEvaluations(
     .filter((candidate) =>
       candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken
     );
+  const fixedMemberValues = (
+    node: Node | undefined,
+    name: string | null,
+    seen: ReadonlySet<object> = new Set(),
+  ): Node[] => {
+    const expression = unwrap(node);
+    if (!expression) return [];
+    if (Node.isConditionalExpression(expression)) {
+      return [
+        ...fixedMemberValues(expression.getWhenTrue(), name, seen),
+        ...fixedMemberValues(expression.getWhenFalse(), name, seen),
+      ];
+    }
+    if (Node.isBinaryExpression(expression)) {
+      const operator = expression.getOperatorToken().getKind();
+      if (operator === SyntaxKind.CommaToken) {
+        return fixedMemberValues(expression.getRight(), name, seen);
+      }
+      if (
+        operator === SyntaxKind.BarBarToken ||
+        operator === SyntaxKind.AmpersandAmpersandToken ||
+        operator === SyntaxKind.QuestionQuestionToken
+      ) {
+        return [
+          ...fixedMemberValues(expression.getLeft(), name, seen),
+          ...fixedMemberValues(expression.getRight(), name, seen),
+        ];
+      }
+    }
+    if (Node.isArrayLiteralExpression(expression)) {
+      if (name === null) {
+        return expression.getElements().filter((element) =>
+          !Node.isOmittedExpression(element)
+        );
+      }
+      const index = Number.parseInt(name, 10);
+      const element = expression.getElements()[index];
+      return String(index) === name && element && !Node.isOmittedExpression(element)
+        ? [element]
+        : [];
+    }
+    if (Node.isObjectLiteralExpression(expression)) {
+      return expression.getProperties().flatMap((property) => {
+        if (Node.isSpreadAssignment(property)) {
+          return fixedMemberValues(property.getExpression(), name, seen);
+        }
+        const propertyName = propertyText(
+          property.getNameNode(),
+          property.getName(),
+        );
+        if (name !== null && propertyName !== name) return [];
+        if (Node.isPropertyAssignment(property)) {
+          const initializer = property.getInitializer();
+          return initializer ? [initializer] : [];
+        }
+        if (Node.isShorthandPropertyAssignment(property)) {
+          return [property.getNameNode()];
+        }
+        if (Node.isGetAccessorDeclaration(property)) {
+          return property.getBody()
+            ?.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+            .flatMap((statement) => {
+              const value = statement.getExpression();
+              return value ? [value] : [];
+            }) ?? [];
+        }
+        return [];
+      });
+    }
+    if (Node.isCallExpression(expression)) {
+      const transparent = normalizedAmbientBuiltinCall(
+        expression,
+        "Object",
+        ["freeze", "seal", "preventExtensions"],
+      );
+      if (transparent?.arguments) {
+        return fixedMemberValues(transparent.arguments[0], name, seen);
+      }
+    }
+    if (!Node.isIdentifier(expression) || stableBindings.has(expression.getText())) {
+      return [];
+    }
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return [];
+    const nested = new Set(seen).add(key);
+    const declaration = symbol?.getDeclarations().find(Node.isVariableDeclaration);
+    const initializer = declaration?.getInitializer();
+    const sources = [
+      ...(initializer ? [initializer] : []),
+      ...assignments
+        .filter((candidate) =>
+          candidate.getStart() < expression.getStart() &&
+          Node.isIdentifier(unwrap(candidate.getLeft())) &&
+          unwrap(candidate.getLeft())?.getSymbol() === symbol
+        )
+        .map((candidate) => candidate.getRight()),
+    ];
+    return sources.flatMap((source) =>
+      fixedMemberValues(source, name, nested)
+    );
+  };
   const resolvedTexts = (
     node: Node | undefined,
     seen: ReadonlySet<object> = new Set(),
@@ -2653,21 +2755,30 @@ function repeatedAuthorityEvaluations(
     const expression = unwrap(node);
     if (!expression) return [];
     if (Node.isPropertyAccessExpression(expression)) {
+      const values = fixedMemberValues(
+        expression.getExpression(),
+        expression.getName(),
+        seen,
+      );
+      if (values.length > 0) {
+        return [...new Set(values.flatMap((value) =>
+          resolvedTexts(value, seen)
+        ))];
+      }
       return resolvedTexts(expression.getExpression(), seen)
         .map((owner) => memberText(owner, expression.getName()));
     }
     if (Node.isElementAccessExpression(expression)) {
       const name = propertyText(expression.getArgumentExpression(), "");
       const receiver = unwrap(expression.getExpression());
-      if (name !== null && Node.isArrayLiteralExpression(receiver)) {
-        const index = Number.parseInt(name, 10);
-        const element = receiver.getElements()[index];
-        if (String(index) === name && element && !Node.isOmittedExpression(element)) {
-          return resolvedTexts(element, seen);
-        }
+      const values = fixedMemberValues(receiver, name, seen);
+      if (values.length > 0) {
+        return [...new Set(values.flatMap((value) =>
+          resolvedTexts(value, seen)
+        ))];
       }
       return name === null
-        ? []
+        ? resolvedTexts(receiver, seen)
         : resolvedTexts(receiver, seen)
           .map((owner) => memberText(owner, name));
     }

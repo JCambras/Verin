@@ -900,10 +900,6 @@ function mintsThroughInventedTypeParameter(
     ? typeArguments.map((argument) => argument.getType())
     : [awaited(call.getType())];
   const owners: Array<(typeof SEALED)[number]> = yielded.flatMap((type) => {
-    if (typeArguments.length === 0) {
-      const direct = sealedValueType(type);
-      return direct ? [direct] : [];
-    }
     const inventory = sealedPositionsOf(type);
     return inventory.complete
       ? inventory.positions.map((position) => position.owner)
@@ -2108,6 +2104,32 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       const hits = detectSealedTypeConstruction(project)
         .filter((hit) => hit.includes("type argument") && hit.includes("TenantContext"));
       for (const line of [8, 9, 10, 11, 12]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line}`)),
+          `line ${line}`,
+        ).toBe(true);
+      }
+    });
+
+    it("catches inferred invented sealed values at every composite position", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          function coerce<T>(): T { throw new Error(); }
+          const object: { tenant: TenantContext } = coerce();
+          const tuple: [TenantContext] = coerce();
+          const array: Array<TenantContext> = coerce();
+          const union: { left: TenantContext } | { right: TenantContext } = coerce();
+          void object;
+          void tuple;
+          void array;
+          void union;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("type argument") && hit.includes("TenantContext"));
+      for (const line of [4, 5, 6, 7]) {
         expect(
           hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line}`)),
           `line ${line}`,

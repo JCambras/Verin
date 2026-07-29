@@ -86,8 +86,12 @@ function isAppError(value: unknown): value is AppError {
   return typeof value === "object" && value !== null && APP_ERRORS.has(value);
 }
 
-export function normalizeAppError(value: unknown): AppError | null {
+export function normalizeAppError(
+  value: unknown,
+  policy: "accept-recognized-code" | "trusted-only" = "accept-recognized-code",
+): AppError | null {
   if (isAppError(value)) return value;
+  if (policy === "trusted-only") return null;
   if (typeof value !== "object" || value === null) return null;
   try {
     const code = Reflect.get(value, "code");

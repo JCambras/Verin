@@ -2789,3 +2789,76 @@ parameter defaults retroactively (the SQL already ran).
 transparent loader and authority gaps, incomplete governed invocation
 normalization, nested generic seal exemptions, sibling SQL ownership, and
 pre-body SQL execution.
+
+## D-092 - Security provenance survives bound and pre-body execution
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-085, D-089, D-091,
+ADR-0035, ADR-0036, ADR-0037, v3 §15.1/§15.2/§15.3/§15.4,
+charter #1/#3/#4/#7/#12/#14
+
+All five review findings were legitimate. The observability finding was a local
+misuse of frozen state as authentication. The other four exposed incomplete
+semantic provenance across callable binding, inferred generic results, fixed
+carrier aliases, and execution reached from parameter defaults.
+
+Error classification now asks the existing reviewed normalization boundary for
+module-authenticated `AppError` provenance in a restrictive trusted-only mode.
+Unknown objects are handled only through guarded single reads. A frozen
+SQLSTATE-shaped object retains driver classification, while a proxy whose
+extensibility trap throws cannot replace the original failure.
+
+Governed sink discovery retains exact sink actions through bound callable
+values, later aliases, helper returns, getters, and fixed containers. Bound
+argument prefixes compose across nested `bind`, `call`, and direct invocation,
+so authorization is checked at the effective sink parameter rather than the
+wrapper call's local position.
+
+Invented generic analysis now runs the complete sealed-position inventory for
+inferred results as well as explicit type arguments. Nested objects, tuples,
+arrays, and unions cannot mint a `TenantContext` merely because the generic
+argument was inferred from a contextual target.
+
+Repeated-authority analysis resolves fixed array and object members through
+declaration initializers and every potentially reaching assignment. An
+`as const` container cannot hide a second read from an accessor-backed carrier
+after the stable prologue capture.
+
+Pre-body SQL ownership follows statically resolved helper calls transitively
+from parameter default initializers. SQL reached through one or more helpers is
+still rejected before a body authority prologue because that prologue has not
+executed.
+
+Full end-to-end validation exposed a separate machine-identity collision. A
+generated user UUID whose leading numeric groups resembled a formatted account
+reference was rejected as an observability actor. The identifier boundary now
+recognizes the complete canonical machine UUID before applying partial
+account-reference refusal. Formatted accounts remain rejected because they do
+not satisfy the complete machine shape.
+
+The authoritative line-budget metric remains within the existing measured ADR
+ceilings:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,021 | 4,050 | 29 |
+| domain | 1,260 | 1,300 | 40 |
+| infrastructure | 3,440 | 3,450 | 10 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. The correction reused shared semantic analyzers and the
+existing reviewed opaque normalization boundary. No useful code or
+documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** treat `Object.isFrozen` as error provenance (frozen
+driver metadata is misclassified and proxy traps can escape); track only an
+immediately invoked `bind` (aliases lose both the sink and its effective
+arguments); inspect only explicit generic arguments (contextual inference mints
+nested seals); compare fixed-container source text (initializer and assignment
+aliases evade capture ownership); and inspect only SQL syntax physically inside
+a default initializer (called helpers execute in the same pre-body phase).
+Treating every account-like UUID substring as PII was also rejected because it
+makes generated machine identity nondeterministically unobservable.
+
+**Revert path:** revert this changeset to restore frozen-state trust,
+bound-callable authorization gaps, inferred nested seal construction,
+fixed-container authority rereads, and transitive pre-body SQL execution.
