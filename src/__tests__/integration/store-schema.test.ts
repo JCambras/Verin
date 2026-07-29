@@ -176,6 +176,14 @@ describe("store schema hardening (integration)", () => {
         "WHERE (event_type = 'EvidenceSnapshotRecorded'::text)",
       );
     });
+
+    it("indexes bundle provenance lookup by tenant and input bundle", async () => {
+      const idx = await db.query<{ indexdef: string }>(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'decision_records_input_bundle'",
+      );
+      expect(idx.rows).toHaveLength(1);
+      expect(idx.rows[0]!.indexdef).toContain("(org_id, input_bundle_id)");
+    });
   });
 });
 

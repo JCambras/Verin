@@ -7,13 +7,14 @@ import {
   realProject,
   walk,
 } from "./_fence-utils";
-import { DECISION_LEDGER_SQL } from "@infra/store/decision-ledger-migration";
+import { MIGRATION_SQL } from "@infra/store/migrations";
 
 const IMMUTABLE_TABLES = [
   "evidence_snapshots",
   "decision_input_bundles",
   "decision_input_bundle_evidence",
   "decision_records",
+  "decision_replay_source_provenance",
   "decision_ledger",
 ] as const;
 type ImmutableTable = (typeof IMMUTABLE_TABLES)[number];
@@ -23,6 +24,8 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   decision_input_bundle_evidence:
     "src/infrastructure/ledger/ledger-sources.ts",
   decision_records: "src/infrastructure/ledger/ledger-sources.ts",
+  decision_replay_source_provenance:
+    "src/infrastructure/ledger/ledger-sources.ts",
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
 };
 const RAW_INSERT = new RegExp(
@@ -34,6 +37,16 @@ interface Violation {
   readonly file: string;
   readonly line: number;
 }
+
+const RESTRICTED_SOURCE_IMPORTS: Record<string, string> = {
+  insertEvidenceSnapshots: "src/infrastructure/ledger/ledger-store.ts",
+  insertDecisionSources: "src/infrastructure/ledger/ledger-store.ts",
+  bindReplaySourceProvenance: "src/infrastructure/ledger/ledger-store.ts",
+  issueValidatedLedgerSourceWrite:
+    "src/infrastructure/ledger/ledger-store.ts",
+  assertValidatedLedgerSourceWrite:
+    "src/infrastructure/ledger/ledger-sources.ts",
+};
 
 function staticStringArray(node: Node, seen: Set<Node>): string[] | null {
   if (seen.has(node)) return null;
@@ -379,14 +392,155 @@ function hasStaticStringRoot(
   return false;
 }
 
-function sqlTextArgument(call: Node): Node | null {
+function symbolOf(node: Node) {
+  const symbol = node.getSymbol();
+  return symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+}
+
+function assignedValueBefore(
+  node: Node,
+  before: number,
+): Node | null {
+  const symbol = symbolOf(node);
+  if (!symbol) return null;
+  const values: Array<{ position: number; value: Node }> = [];
+  for (const declaration of symbol.getDeclarations()) {
+    if (Node.isFunctionDeclaration(declaration)) {
+      values.push({ position: declaration.getStart(), value: declaration });
+      continue;
+    }
+    if (!Node.isVariableDeclaration(declaration)) continue;
+    const initializer = declaration.getInitializer();
+    if (initializer) {
+      values.push({ position: declaration.getStart(), value: initializer });
+    }
+  }
+  const source = node.getSourceFile();
+  for (const assignment of source.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (
+      assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+      assignment.getStart() >= before ||
+      symbolOf(assignment.getLeft()) !== symbol
+    ) {
+      continue;
+    }
+    values.push({
+      position: assignment.getStart(),
+      value: assignment.getRight(),
+    });
+  }
+  return values
+    .filter(({ position }) => position < before)
+    .sort((left, right) => right.position - left.position)[0]?.value ?? null;
+}
+
+function sqlCallableParameter(
+  node: Node,
+  before: number,
+  seen = new Set<Node>(),
+): number | null {
+  if (seen.has(node)) return null;
+  seen.add(node);
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return sqlCallableParameter(node.getExpression(), before, seen);
+  }
+  const target = callTarget(node);
+  if (target?.name === "query" || target?.name === "exec") return 0;
+  if (Node.isCallExpression(node)) {
+    const bind = callTarget(node.getExpression());
+    return bind?.name === "bind"
+      ? sqlCallableParameter(bind.receiver, before, seen)
+      : null;
+  }
+  if (Node.isIdentifier(node)) {
+    const value = assignedValueBefore(node, before);
+    return value ? sqlCallableParameter(value, before, seen) : null;
+  }
+  if (
+    Node.isArrowFunction(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isFunctionDeclaration(node)
+  ) {
+    const parameters = node.getParameters();
+    const body = node.getBody();
+    if (!body) return null;
+    const calls = [
+      ...(Node.isCallExpression(body) ? [body] : []),
+      ...body.getDescendantsOfKind(SyntaxKind.CallExpression),
+    ];
+    for (const call of calls) {
+      const argument = sqlTextArgument(call, new Set(seen));
+      if (!argument || !Node.isIdentifier(argument)) continue;
+      const parameter = parameters.findIndex(
+        (candidate) => symbolOf(candidate.getNameNode()) === symbolOf(argument),
+      );
+      if (parameter >= 0) return parameter;
+    }
+  }
+  return null;
+}
+
+function sqlTextArgument(
+  call: Node,
+  seen = new Set<Node>(),
+): Node | null {
   if (!Node.isCallExpression(call)) return null;
-  const expression = call.getExpression();
-  const target = callTarget(expression);
-  const name = target?.name ??
-    (Node.isIdentifier(expression) ? expression.getText() : null);
-  if (name !== "query" && name !== "exec") return null;
-  return call.getArguments()[0] ?? null;
+  const parameter = sqlCallableParameter(
+    call.getExpression(),
+    call.getStart(),
+    seen,
+  );
+  return parameter === null ? null : call.getArguments()[parameter] ?? null;
+}
+
+function hasSqlCallableRoot(
+  node: Node,
+  before: number,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return hasSqlCallableRoot(node.getExpression(), before, seen);
+  }
+  const target = callTarget(node);
+  if (target?.name === "query" || target?.name === "exec") return true;
+  if (Node.isCallExpression(node)) {
+    return hasSqlCallableRoot(node.getExpression(), before, new Set(seen)) ||
+      node.getArguments().some((argument) =>
+        hasSqlCallableRoot(argument, before, new Set(seen)));
+  }
+  if (Node.isIdentifier(node)) {
+    const value = assignedValueBefore(node, before);
+    return value
+      ? hasSqlCallableRoot(value, before, new Set(seen))
+      : false;
+  }
+  if (
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    return hasSqlCallableRoot(node.getExpression(), before, new Set(seen));
+  }
+  if (Node.isConditionalExpression(node)) {
+    return hasSqlCallableRoot(node.getWhenTrue(), before, new Set(seen)) ||
+      hasSqlCallableRoot(node.getWhenFalse(), before, new Set(seen));
+  }
+  return false;
 }
 
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
@@ -400,7 +554,27 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
     for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const expression = sqlTextArgument(call);
-      if (expression === null) continue;
+      if (expression === null) {
+        const rooted = call.getArguments().find((argument) =>
+          hasStaticStringRoot(argument));
+        if (
+          rooted &&
+          hasSqlCallableRoot(
+            call.getExpression(),
+            call.getStart(),
+          )
+        ) {
+          const key = `${rel}:${rooted.getStartLineNumber()}:sql-alias`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({
+              file: rel,
+              line: rooted.getStartLineNumber(),
+            });
+          }
+        }
+        continue;
+      }
       const value = staticString(expression);
       if (value === null) {
         if (hasStaticStringRoot(expression)) {
@@ -445,6 +619,105 @@ function ledgerFenceFiles(): SourceFile[] {
   return project.getSourceFiles();
 }
 
+function sourceWriteBoundaryViolations(
+  files: readonly SourceFile[],
+): Violation[] {
+  const violations: Violation[] = [];
+  for (const file of files) {
+    const absolute = file.getFilePath().replace(/\\/g, "/");
+    const sourceIndex = absolute.lastIndexOf("/src/");
+    const rel = sourceIndex >= 0
+      ? absolute.slice(sourceIndex + 1)
+      : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
+    for (const declaration of file.getImportDeclarations()) {
+      const specifier = declaration.getModuleSpecifierValue();
+      const restrictedModule =
+        /(?:^|\/)ledger-sources$/.test(specifier) ||
+        /(?:^|\/)ledger-source-capability$/.test(specifier);
+      if (
+        restrictedModule &&
+        declaration.getNamespaceImport()
+      ) {
+        violations.push({
+          file: rel,
+          line: declaration.getStartLineNumber(),
+        });
+      }
+      for (const imported of declaration.getNamedImports()) {
+        const name = imported.getName();
+        const owner = RESTRICTED_SOURCE_IMPORTS[name];
+        if (owner && owner !== rel) {
+          violations.push({
+            file: rel,
+            line: imported.getStartLineNumber(),
+          });
+        }
+      }
+    }
+    for (const declaration of file.getExportDeclarations()) {
+      const specifier = declaration.getModuleSpecifierValue();
+      if (
+        specifier &&
+        (
+          /(?:^|\/)ledger-sources$/.test(specifier) ||
+          /(?:^|\/)ledger-source-capability$/.test(specifier)
+        )
+      ) {
+        violations.push({
+          file: rel,
+          line: declaration.getStartLineNumber(),
+        });
+      }
+    }
+    for (const declaration of file.getDescendantsOfKind(
+      SyntaxKind.ImportEqualsDeclaration,
+    )) {
+      const moduleReference = declaration.getModuleReference();
+      if (!Node.isExternalModuleReference(moduleReference)) continue;
+      const expression = moduleReference.getExpression();
+      const value =
+        Node.isStringLiteral(expression) ||
+          Node.isNoSubstitutionTemplateLiteral(expression)
+          ? expression.getLiteralText()
+          : null;
+      if (
+        value &&
+        (
+          /(?:^|\/)ledger-sources$/.test(value) ||
+          /(?:^|\/)ledger-source-capability$/.test(value)
+        )
+      ) {
+        violations.push({
+          file: rel,
+          line: declaration.getStartLineNumber(),
+        });
+      }
+    }
+    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expression = call.getExpression();
+      const moduleLoader =
+        expression.getKind() === SyntaxKind.ImportKeyword ||
+        (Node.isIdentifier(expression) && expression.getText() === "require");
+      if (!moduleLoader) continue;
+      const specifier = call.getArguments()[0];
+      const value = specifier ? staticString(specifier) : null;
+      if (
+        value &&
+        (
+          /(?:^|\/)ledger-sources$/.test(value) ||
+          /(?:^|\/)ledger-source-capability$/.test(value)
+        )
+      ) {
+        violations.push({
+          file: rel,
+          line: call.getStartLineNumber(),
+        });
+      }
+    }
+  }
+  return violations;
+}
+
 function exportedMutationNames(file: SourceFile): string[] {
   return [...file.getExportedDeclarations().keys()]
     .filter((name) =>
@@ -463,6 +736,10 @@ describe("decision-ledger append-only fence", () => {
     ).toEqual([]);
   });
 
+  it("immutable source writers require the validated ledger-store capability", () => {
+    expect(sourceWriteBoundaryViolations(ledgerFenceFiles())).toEqual([]);
+  });
+
   it("repository exports append/read/rebuild surfaces, never immutable update/delete APIs", () => {
     const file = realProject().getSourceFileOrThrow(
       "src/infrastructure/ledger/ledger-store.ts",
@@ -476,7 +753,7 @@ describe("decision-ledger append-only fence", () => {
     const missing: string[] = [];
     for (const table of IMMUTABLE_TABLES) {
       for (const verb of ["update", "delete", "truncate"]) {
-        if (!DECISION_LEDGER_SQL.includes(`${table}_no_${verb}`)) {
+        if (!MIGRATION_SQL.includes(`${table}_no_${verb}`)) {
           missing.push(`${table}:${verb}`);
         }
       }
@@ -559,6 +836,40 @@ describe("decision-ledger append-only fence", () => {
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
     });
 
+    it("detects bound query aliases, wrappers, and the latest reassignment", () => {
+      const project = inMemoryProject({
+        "/scripts/bound.ts":
+          `export const run = (db: { query(s: string): unknown }) => {\n` +
+          `  const execute = db.query.bind(db);\n` +
+          `  return execute("INSERT INTO decision_ledger (id) VALUES ('x')");\n` +
+          `};`,
+        "/scripts/wrapper.ts":
+          `export const run = (db: { exec(s: string): unknown }) => {\n` +
+          `  const execute = (sql: string) => db.exec(sql);\n` +
+          `  return execute("INSERT INTO decision_records (id) VALUES ('x')");\n` +
+          `};`,
+        "/scripts/reassigned.ts":
+          `export const run = (db: { query(s: string): unknown }) => {\n` +
+          `  let execute = (value: string) => value;\n` +
+          `  execute = db.query.bind(db);\n` +
+          `  return execute("INSERT INTO evidence_snapshots (id) VALUES ('x')");\n` +
+          `};`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(3);
+    });
+
+    it("fails closed on an unresolved SQL-bearing alias", () => {
+      const project = inMemoryProject({
+        "/scripts/unresolved-alias.ts":
+          `declare function wrap<T>(value: T): T;\n` +
+          `export const run = (db: { query(s: string): unknown }) => {\n` +
+          `  const execute = wrap(db.query.bind(db));\n` +
+          `  return execute("INSERT INTO decision_ledger (id) VALUES ('x')");\n` +
+          `};`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
+    });
+
     it("does not interpret dynamic bound values as SQL text", () => {
       const project = inMemoryProject({
         "/scripts/parameters.ts":
@@ -600,6 +911,29 @@ describe("decision-ledger append-only fence", () => {
           `}`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
+    });
+
+    it("rejects immutable source writer and capability imports outside their owners", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `import { insertEvidenceSnapshots } from "./ledger/ledger-sources";\n` +
+          `import { issueValidatedLedgerSourceWrite } from "./ledger/ledger-source-capability";`,
+        "/src/infrastructure/namespace.ts":
+          `import * as sources from "./ledger/ledger-sources";\n` +
+          `void sources;`,
+        "/src/infrastructure/dynamic.ts":
+          `export const load = () => import("./ledger/ledger-source-capability");`,
+        "/src/infrastructure/require.ts":
+          `export const load = () => require("./ledger/ledger-sources");`,
+        "/src/infrastructure/import-equals.ts":
+          `import sources = require("./ledger/ledger-sources");\n` +
+          `void sources;`,
+        "/src/infrastructure/reexport.ts":
+          `export * from "./ledger/ledger-sources";`,
+      });
+      expect(
+        sourceWriteBoundaryViolations(project.getSourceFiles()),
+      ).toHaveLength(7);
     });
 
     it("detects a planted immutable mutation export", () => {

@@ -26,6 +26,7 @@ const DATA_TABLES = [
   "decision_input_bundles",
   "decision_input_bundle_evidence",
   "decision_records",
+  "decision_replay_source_provenance",
   "decision_ledger",
   "decision_ledger_anchor",
   "decision_state_projection",

@@ -146,6 +146,20 @@ describe("decision ledger storage and L1-L4 verification", () => {
       decision_records: 1,
       decision_ledger: 5,
     });
+    const sourceProvenance = await db.query<{
+      source_kind: string;
+      source_id: string;
+      recording_entry_id: string;
+    }>(
+      `SELECT source_kind, source_id, recording_entry_id
+         FROM decision_replay_source_provenance
+        WHERE org_id = $1
+        ORDER BY source_kind ASC, source_id ASC`,
+      [LEDGER_ORG],
+    );
+    expect(sourceProvenance.rows).toHaveLength(6);
+    expect(sourceProvenance.rows.every((row) =>
+      row.recording_entry_id.startsWith("ledger:"))).toBe(true);
     const replayMetadata = await db.query<{
       schema_version: string;
       serializer_version: string;
@@ -212,6 +226,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       "decision_input_bundles",
       "decision_input_bundle_evidence",
       "decision_records",
+      "decision_replay_source_provenance",
       "decision_ledger",
     ]) {
       await expect(
@@ -981,6 +996,89 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
+  it("rejects decision citations that are not pinned by the exact input bundle", async () => {
+    const cases = [
+      (record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) => {
+        if (record.result.kind !== "proceed") throw new Error("expected proceed");
+        return {
+          ...record,
+          result: {
+            ...record.result,
+            executionPlan: {
+              ...record.result.executionPlan,
+              steps: record.result.executionPlan.steps.map((step, index) => ({
+                ...step,
+                preconditions: step.preconditions.map((precondition) => ({
+                  ...precondition,
+                  requiredEvidenceSnapshotRefs: index === 0
+                    ? [{
+                        firmId: LEDGER_ORG,
+                        id: "evidence:not-in-bundle",
+                      }]
+                    : precondition.requiredEvidenceSnapshotRefs,
+                })),
+              })),
+            },
+          },
+        };
+      },
+      (record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) => ({
+        ...record,
+        precedenceTrace: record.precedenceTrace.map((step, index) => index === 0
+          ? {
+              ...step,
+              left: {
+                ...step.left,
+                versionRef: {
+                  firmId: LEDGER_ORG,
+                  id: "policy:not-in-bundle",
+                },
+              },
+            }
+          : step),
+      }),
+      (record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) => ({
+        ...record,
+        precedenceTrace: record.precedenceTrace.map((step, index) => index === 0
+          ? {
+              ...step,
+              right: {
+                ...step.right,
+                versionRef: {
+                  firmId: LEDGER_ORG,
+                  id: "instruction:not-in-bundle",
+                },
+              },
+            }
+          : step),
+      }),
+    ];
+
+    for (const mutate of cases) {
+      const input = decisionRecordingInput();
+      const candidate = DecisionRecordSchema.parse({
+        ...mutate(input.decisionRecord),
+        decisionHash: "0".repeat(64),
+      });
+      const decisionRecord = DecisionRecordSchema.parse({
+        ...candidate,
+        decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+      });
+      const decisionEvent = LedgerEntrySchema.parse({
+        ...input.events.at(-1)!,
+        decisionHash: decisionRecord.decisionHash,
+      });
+      const result = await recordDecision(db, {
+        ...input,
+        decisionRecord,
+        events: [...input.events.slice(0, -1), decisionEvent],
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? null : result.error.code).toBe("VALIDATION");
+    }
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toEqual([]);
+  });
+
   it("refuses retained names and unformatted account numbers without rewriting bytes", async () => {
     const input = decisionRecordingInput();
     const snapshot = {
@@ -1222,6 +1320,44 @@ describe("decision ledger storage and L1-L4 verification", () => {
     // that reports only BROKEN leaves an unverifiable ledger undiagnosable.
     expect(broken.replaySourceReason).toBe(
       "unsupported evidence encoding 9.0.0/1.0.0 during replay",
+    );
+  });
+
+  it("refuses a replay source provenance binding moved to a later recording", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const snapshot = input.evidenceSnapshots[0]!;
+    const rerecorded = LedgerEntrySchema.parse({
+      ...input.events[0]!,
+      id: "ledger:evidence:rerecorded",
+      occurredAt: LEDGER_LATER,
+      recordedAt: LEDGER_LATER,
+    });
+    await db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [rerecorded],
+      { source: "verin-crm", asOf: LEDGER_LATER, confidence: "high" },
+      [snapshot],
+    ));
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       DISABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+    await db.query(
+      `UPDATE decision_replay_source_provenance
+          SET recording_entry_id = $3
+        WHERE org_id = $1 AND source_kind = 'evidence' AND source_id = $2`,
+      [LEDGER_ORG, snapshot.id, rerecorded.id],
+    );
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       ENABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+    const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(broken.ok).toBe(false);
+    expect(broken.replaySourceReason).toBe(
+      "immutable replay source provenance binding is invalid",
     );
   });
 

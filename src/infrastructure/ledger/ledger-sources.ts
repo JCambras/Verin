@@ -21,6 +21,11 @@ import {
 import { canonical, digestCanonicalBytes } from "./ledger-canonical";
 import { parseRecordedReplaySource } from "./ledger-source-registry";
 import { assertReplaySourcePiiBoundary } from "./ledger-pii";
+import {
+  assertValidatedLedgerSourceWrite,
+  type ValidatedLedgerSourceWrite,
+} from "./ledger-source-capability";
+import { verifyReplaySourceProvenanceBinding } from "./ledger-source-provenance";
 
 export function replaySourcesContainPII(values: readonly unknown[]): boolean {
   try {
@@ -82,10 +87,12 @@ export async function preflightEvidenceSnapshots(
 }
 
 export async function insertEvidenceSnapshots(
+  capability: ValidatedLedgerSourceWrite,
   tx: SqlTx,
   snapshots: readonly EvidenceSnapshotRef[],
   recordedAt: string,
 ): Promise<void> {
+  assertValidatedLedgerSourceWrite(capability);
   for (const snapshot of snapshots) {
     const bytes = canonical(snapshot, "evidence snapshot");
     if (!bytes.ok) throw bytes.error;
@@ -150,13 +157,15 @@ async function insertBundle(
 }
 
 export async function insertDecisionSources(
+  capability: ValidatedLedgerSourceWrite,
   tx: SqlTx,
   snapshots: readonly EvidenceSnapshotRef[],
   bundle: DecisionInputBundle,
   record: DecisionRecord,
   recordedAt: string,
 ): Promise<void> {
-  await insertEvidenceSnapshots(tx, snapshots, recordedAt);
+  assertValidatedLedgerSourceWrite(capability);
+  await insertEvidenceSnapshots(capability, tx, snapshots, recordedAt);
   await insertBundle(tx, bundle, recordedAt);
   const recordBytes = canonical(record, "decision record");
   if (!recordBytes.ok) throw recordBytes.error;
@@ -171,6 +180,47 @@ export async function insertDecisionSources(
       record.decisionHash, record.createdAt,
     ],
   );
+}
+
+export async function bindReplaySourceProvenance(
+  capability: ValidatedLedgerSourceWrite,
+  tx: SqlTx,
+  event: EvidenceSnapshotRecorded | DecisionRecorded,
+): Promise<void> {
+  assertValidatedLedgerSourceWrite(capability);
+  const sources: Array<{
+    kind: "evidence" | "bundle" | "decision";
+    id: string;
+  }> = [];
+  if (event.type === "EvidenceSnapshotRecorded") {
+    sources.push({ kind: "evidence", id: event.evidenceSnapshotRef.id });
+  } else {
+    const record = await tx.query<{ input_bundle_id: string }>(
+      `SELECT input_bundle_id FROM decision_records
+        WHERE org_id = $1 AND id = $2`,
+      [event.firmId, event.decisionRef.id],
+    );
+    const bundleId = record.rows[0]?.input_bundle_id;
+    if (!bundleId) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "decision provenance binding has no immutable input bundle",
+      );
+    }
+    sources.push(
+      { kind: "bundle", id: bundleId },
+      { kind: "decision", id: event.decisionRef.id },
+    );
+  }
+  for (const source of sources) {
+    await tx.query(
+      `INSERT INTO decision_replay_source_provenance
+        (org_id, source_kind, source_id, recording_entry_id)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (org_id, source_kind, source_id) DO NOTHING`,
+      [event.firmId, source.kind, source.id, event.id],
+    );
+  }
 }
 
 function replaySourceError(reason: string): never {
@@ -374,52 +424,6 @@ export async function loadVerifiedReplayDecision(
   return record;
 }
 
-export async function listReplayDecisionEvidenceCoverage(
-  tx: SqlQueryable,
-  event: DecisionRecorded,
-  windowStart: number,
-  decisionSequence: number,
-): Promise<Array<{
-  readonly id: string;
-  readonly recordedSequence: number | null;
-  readonly hasPrecedingRecording: boolean;
-}>> {
-  const result = await tx.query<{
-    evidence_snapshot_id: string;
-    recorded_sequence: number | string | null;
-  }>(
-    `SELECT m.evidence_snapshot_id,
-            recording.sequence AS recorded_sequence
-       FROM decision_records r
-       JOIN decision_input_bundle_evidence m
-         ON m.org_id = r.org_id AND m.bundle_id = r.input_bundle_id
-       LEFT JOIN LATERAL (
-         SELECT l.sequence
-           FROM decision_ledger l
-          WHERE l.org_id = m.org_id
-            AND l.evidence_snapshot_id = m.evidence_snapshot_id
-            AND l.event_type = 'EvidenceSnapshotRecorded'
-            AND l.sequence <= $3
-          ORDER BY l.sequence DESC
-          LIMIT 1
-       ) recording ON TRUE
-      WHERE r.org_id = $1 AND r.id = $2
-      ORDER BY m.ordinal ASC`,
-    [event.firmId, event.decisionRef.id, decisionSequence],
-  );
-  return result.rows.map((row) => {
-    const latest = row.recorded_sequence === null
-      ? null
-      : Number(row.recorded_sequence);
-    return {
-      id: row.evidence_snapshot_id,
-      recordedSequence:
-        latest !== null && latest >= windowStart ? latest : null,
-      hasPrecedingRecording: latest !== null,
-    };
-  });
-}
-
 export interface VerifiedReplaySources {
   readonly decisions: ReadonlyMap<string, DecisionRecord>;
   readonly sourcesChecked: number;
@@ -434,8 +438,10 @@ export async function verifyReplaySources(
   const decisions = new Map<string, DecisionRecord>();
   for (const event of events) {
     if (event.type === "EvidenceSnapshotRecorded") {
+      await verifyReplaySourceProvenanceBinding(tx, event);
       evidence.add(await verifyReplayEvidence(tx, event));
     } else if (event.type === "DecisionRecorded") {
+      await verifyReplaySourceProvenanceBinding(tx, event);
       decisions.set(
         event.decisionRef.id,
         await loadVerifiedReplayDecision(tx, event, evidence),

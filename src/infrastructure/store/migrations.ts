@@ -29,6 +29,7 @@ import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
   DECISION_LEDGER_SQL,
+  DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "./decision-ledger-migration";
 
 export interface Migration {
@@ -362,6 +363,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 6,
     name: "decision-ledger-replay-coverage-index",
     sql: DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
+  },
+  {
+    version: 7,
+    name: "decision-replay-source-provenance",
+    sql: DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
   },
 ];
 

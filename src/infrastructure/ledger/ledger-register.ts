@@ -18,10 +18,11 @@ import {
 } from "./ledger-verification";
 import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
 import {
-  listReplayDecisionEvidenceCoverage,
   loadVerifiedReplayDecision,
   verifyReplayEvidence,
 } from "./ledger-sources";
+import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
+import { listReplayDecisionEvidenceCoverage } from "./ledger-source-coverage";
 
 export interface VerifiedRegisterDecision {
   readonly projection: DecisionProjection;
@@ -130,13 +131,20 @@ async function replayRegisterWindow(
     if (!provenance) {
       throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
     }
-    const asOf = current && current.provenance.asOf > provenance.asOf
+    const eventProvenance = await deriveLedgerEventProvenance(
+      tx,
+      event,
+      provenance,
+    );
+    const asOf = current && current.provenance.asOf > eventProvenance.asOf
       ? current.provenance.asOf
-      : provenance.asOf;
+      : eventProvenance.asOf;
     decisions.set(id, {
       projection,
       provenance: deriveArtifactProvenance(
-        current ? [current.provenance, provenance] : [provenance],
+        current
+          ? [current.provenance, eventProvenance]
+          : [eventProvenance],
         asOf,
       ),
     });

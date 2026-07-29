@@ -38,13 +38,20 @@ import {
   bundleHashPreimage,
   decisionHashPreimage,
 } from "@contracts/decision-core/serialization";
-import { assertLedgerSourceBindings } from "./ledger-bindings";
 import {
+  assertLedgerSourceBindings,
+  decisionReplayPinsMatchBundle,
+} from "./ledger-bindings";
+import {
+  bindReplaySourceProvenance,
   insertDecisionSources,
   insertEvidenceSnapshots,
   preflightEvidenceSnapshots,
   replaySourcesContainPII,
 } from "./ledger-sources";
+import { issueValidatedLedgerSourceWrite } from "./ledger-source-capability";
+import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
+import { assertStatusEvidenceOrder } from "./ledger-event-order";
 import { canonical, canonicalDigest } from "./ledger-canonical";
 import {
   persistProjection,
@@ -117,6 +124,7 @@ async function appendPrepared(
   orgId: string,
   events: readonly PreparedEvent[],
   provenance: RecordProvenance,
+  sourceWrite: ReturnType<typeof issueValidatedLedgerSourceWrite>,
   decisionRecord?: DecisionRecord,
 ): Promise<AppendedLedgerEntry[]> {
   const head = await tx.query<{ sequence: number | string; entry_hash: string }>(
@@ -150,11 +158,17 @@ async function appendPrepared(
       }
     }
     await assertLedgerSourceBindings(tx, event);
+    const projectionProvenance = await deriveLedgerEventProvenance(
+      tx,
+      event,
+      provenance,
+      event.type === "DecisionRecorded",
+    );
     const projection = await prepareProjection(
       tx,
       event,
       sequence,
-      provenance,
+      projectionProvenance,
       event.type === "DecisionRecorded" ? decisionRecord : undefined,
     );
     const chainPreimage = decisionLedgerChainPreimage(
@@ -186,6 +200,12 @@ async function appendPrepared(
         provenance.source, provenance.asOf, provenance.confidence,
       ],
     );
+    if (
+      event.type === "EvidenceSnapshotRecorded" ||
+      event.type === "DecisionRecorded"
+    ) {
+      await bindReplaySourceProvenance(sourceWrite, tx, event);
+    }
     await persistProjection(tx, projection, sequence);
     // Per entry, never once per batch: if a later event of this batch throws and a
     // future producer swallows it inside its own transaction, the rows that DID
@@ -298,7 +318,8 @@ function validateDecisionInput(
   }
   if (
     bundle.data.firmId !== record.data.firmId ||
-    record.data.inputBundleRef.id !== bundle.data.id
+    record.data.inputBundleRef.id !== bundle.data.id ||
+    !decisionReplayPinsMatchBundle(record.data, bundle.data)
   ) {
     return err(appError("VALIDATION", "decision record and input bundle do not match"));
   }
@@ -349,9 +370,11 @@ export async function recordDecision(
   const prepared = validateDecisionInput(input);
   if (!prepared.ok) return prepared;
   try {
+    const sourceWrite = issueValidatedLedgerSourceWrite();
     const appended = await db.transaction(async (tx) => {
       await lockDecisionLedgerTenant(tx, prepared.value.record.firmId, "append");
       await insertDecisionSources(
+        sourceWrite,
         tx,
         prepared.value.snapshots,
         prepared.value.bundle,
@@ -363,6 +386,7 @@ export async function recordDecision(
         prepared.value.record.firmId,
         prepared.value.events,
         prepared.value.provenance,
+        sourceWrite,
         prepared.value.record,
       );
     });
@@ -420,10 +444,13 @@ export async function appendDecisionEvents(
     throw appError("VALIDATION", "decision source rows and recording events do not correspond");
   }
   await lockDecisionLedgerTenant(tx, orgId, "append");
+  await assertStatusEvidenceOrder(tx, orgId, prepared.value);
   await preflightEvidenceSnapshots(tx, snapshots);
+  const sourceWrite = issueValidatedLedgerSourceWrite();
   await tx.exec("SAVEPOINT decision_ledger_append");
   try {
     await insertEvidenceSnapshots(
+      sourceWrite,
       tx,
       snapshots,
       prepared.value.at(-1)!.event.recordedAt,
@@ -433,6 +460,7 @@ export async function appendDecisionEvents(
       orgId,
       prepared.value,
       normalizedProvenance,
+      sourceWrite,
     );
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
     return appended;

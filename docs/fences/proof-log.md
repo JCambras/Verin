@@ -5849,3 +5849,59 @@ ledger, projection, anti-fork, provenance, typecheck, lint, and line-budget suit
 pass.
 
 **Date:** 2026-07-28 (review corrections K1-K4, ADR-0033, D-110).
+
+## Replay-source provenance and immutable write ownership (D-111)
+
+**Invariants:** every immutable replay source binds to its first matching
+cryptographically covered recording fact; a decision folds the least-trust
+provenance of its producer, bundle, and every exact bundle member identically
+online and during both replay paths; every decision citation agrees with the
+stored bundle; status evidence is recorded before citation; only the canonical
+ledger store can invoke low-level immutable-source writers; SQL sink aliases
+cannot evade exact insert ownership.
+
+The four behavioral regressions were added before the production corrections.
+Reusing fixture evidence under a real decision producer rendered the new decision
+as real, an independently rehashed decision could cite evidence and versions
+outside its bundle, a status could precede its evidence fact in the same accepted
+batch, and bound SQL aliases were invisible:
+
+```text
+× keeps reused fixture bundle evidence synthetic under a real decision producer
+  expected false to be true
+× rejects decision citations that are not pinned by the exact input bundle
+  expected true to be false
+× refuses a status whose cited evidence has no preceding recording fact
+  promise resolved instead of rejecting
+× detects bound query aliases, wrappers, and the latest reassignment
+  expected [] to have a length of 3 but got 0
+```
+
+The replay-source companion records the same evidence again under a different
+producer, bypasses the append-only trigger to move its provenance binding to the
+later matching entry, and proves examiner-grade verification fails with the
+bounded reason `immutable replay source provenance binding is invalid`.
+The migration companion also proves bundle provenance lookup retains its
+tenant-and-input-bundle index instead of scanning decision history.
+
+Two real repository violations were then planted. One operator script invoked a
+bound decision-ledger query alias, and one infrastructure module re-exported both
+the raw source writer and capability issuer:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+  scripts/ledger-alias-violation-probe.ts:3
+× immutable source writers require the validated ledger-store capability
+  src/infrastructure/ledger/ledger-source-violation-probe.ts:1
+  src/infrastructure/ledger/ledger-source-violation-probe.ts:4
+```
+
+The source-boundary companions also reject named, namespace, dynamic, CommonJS,
+and re-export access. SQL companions follow bound aliases, simple wrappers, and
+the latest preceding assignment, fail closed on an unresolved SQL-bearing alias,
+and ignore insert-shaped dynamic parameter values.
+
+**Revert:** both planted files were removed. The behavioral, provenance-binding,
+capability, SQL ownership, tenant, migration, and projection companions pass.
+
+**Date:** 2026-07-28 (review corrections L1-L5, ADR-0033, D-111).

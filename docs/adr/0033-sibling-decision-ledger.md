@@ -59,6 +59,12 @@ settle now.
   (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
   an unregistered source, the chain binds all three fields, and surfaces classify a
   row from the stored value - never from an actor name.
+- Every immutable evidence, bundle, and decision source is bound to the exact
+  chain entry that first recorded it. The binding is append-only and tenant-scoped,
+  and provenance is read from the bound chain row instead of copied into mutable
+  metadata. Decision initialization folds the event producer, bundle producer,
+  decision producer, and every exact bundle member through one least-trust
+  authority shared by online append, rebuild, and verified register replay.
 - Evidence snapshots and input bundles are content-addressed and reusable: a later
   decision over the same immutable inputs links the stored bytes. Reuse demands byte
   equality, so an id collision with different bytes is refused, never overwritten.
@@ -107,7 +113,7 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4300 and infrastructure 2500 to
-  5600. Measured final state is contracts 4185 and infrastructure 5423. Domain
+  6100. Measured final state is contracts 4185 and infrastructure 5986. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and

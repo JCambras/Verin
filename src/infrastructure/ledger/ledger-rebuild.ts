@@ -13,6 +13,7 @@ import {
   type ProjectedDecision,
 } from "./ledger-projection-store";
 import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
+import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
 
 export async function rebuildDecisionProjections(
   db: SqlDb,
@@ -79,7 +80,11 @@ export async function rebuildDecisionProjections(
         tx,
         item.event,
         item.row.sequence,
-        item.provenance,
+        await deriveLedgerEventProvenance(
+          tx,
+          item.event,
+          item.provenance,
+        ),
         record,
       );
     }

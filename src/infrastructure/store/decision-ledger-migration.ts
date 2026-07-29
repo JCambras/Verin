@@ -272,3 +272,112 @@ CREATE INDEX IF NOT EXISTS decision_ledger_evidence_recorded
   ON decision_ledger(org_id, evidence_snapshot_id, sequence)
   WHERE event_type = 'EvidenceSnapshotRecorded';
 `;
+
+export const DECISION_REPLAY_SOURCE_PROVENANCE_SQL = `
+CREATE TABLE IF NOT EXISTS decision_replay_source_provenance (
+  org_id text NOT NULL REFERENCES orgs(id),
+  source_kind text NOT NULL CHECK (
+    source_kind IN ('evidence', 'bundle', 'decision')
+  ),
+  source_id text NOT NULL,
+  recording_entry_id text NOT NULL,
+  PRIMARY KEY (org_id, source_kind, source_id),
+  FOREIGN KEY (org_id, recording_entry_id)
+    REFERENCES decision_ledger(org_id, id)
+);
+CREATE INDEX IF NOT EXISTS decision_records_input_bundle
+  ON decision_records(org_id, input_bundle_id);
+
+INSERT INTO decision_replay_source_provenance
+  (org_id, source_kind, source_id, recording_entry_id)
+SELECT source.org_id, 'evidence', source.id, recording.id
+  FROM evidence_snapshots source
+  JOIN LATERAL (
+    SELECT ledger.id
+      FROM decision_ledger ledger
+     WHERE ledger.org_id = source.org_id
+       AND ledger.evidence_snapshot_id = source.id
+       AND ledger.event_type = 'EvidenceSnapshotRecorded'
+     ORDER BY ledger.sequence ASC
+     LIMIT 1
+  ) recording ON TRUE;
+
+INSERT INTO decision_replay_source_provenance
+  (org_id, source_kind, source_id, recording_entry_id)
+SELECT source.org_id, 'bundle', source.id, recording.id
+  FROM decision_input_bundles source
+  JOIN LATERAL (
+    SELECT ledger.id
+      FROM decision_records record
+      JOIN decision_ledger ledger
+        ON ledger.org_id = record.org_id
+       AND ledger.decision_id = record.id
+       AND ledger.event_type = 'DecisionRecorded'
+     WHERE record.org_id = source.org_id
+       AND record.input_bundle_id = source.id
+     ORDER BY ledger.sequence ASC
+     LIMIT 1
+  ) recording ON TRUE;
+
+INSERT INTO decision_replay_source_provenance
+  (org_id, source_kind, source_id, recording_entry_id)
+SELECT source.org_id, 'decision', source.id, recording.id
+  FROM decision_records source
+  JOIN LATERAL (
+    SELECT ledger.id
+      FROM decision_ledger ledger
+     WHERE ledger.org_id = source.org_id
+       AND ledger.decision_id = source.id
+       AND ledger.event_type = 'DecisionRecorded'
+     ORDER BY ledger.sequence ASC
+     LIMIT 1
+  ) recording ON TRUE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM evidence_snapshots source
+     WHERE NOT EXISTS (
+       SELECT 1 FROM decision_replay_source_provenance binding
+        WHERE binding.org_id = source.org_id
+          AND binding.source_kind = 'evidence'
+          AND binding.source_id = source.id
+     )
+  ) OR EXISTS (
+    SELECT 1 FROM decision_input_bundles source
+     WHERE NOT EXISTS (
+       SELECT 1 FROM decision_replay_source_provenance binding
+        WHERE binding.org_id = source.org_id
+          AND binding.source_kind = 'bundle'
+          AND binding.source_id = source.id
+     )
+  ) OR EXISTS (
+    SELECT 1 FROM decision_records source
+     WHERE NOT EXISTS (
+       SELECT 1 FROM decision_replay_source_provenance binding
+        WHERE binding.org_id = source.org_id
+          AND binding.source_kind = 'decision'
+          AND binding.source_id = source.id
+     )
+  ) THEN
+    RAISE EXCEPTION 'immutable replay source lacks provenance recording fact';
+  END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS decision_replay_source_provenance_no_update
+  ON decision_replay_source_provenance;
+CREATE TRIGGER decision_replay_source_provenance_no_update
+  BEFORE UPDATE ON decision_replay_source_provenance
+  FOR EACH ROW EXECUTE FUNCTION decision_source_append_only();
+DROP TRIGGER IF EXISTS decision_replay_source_provenance_no_delete
+  ON decision_replay_source_provenance;
+CREATE TRIGGER decision_replay_source_provenance_no_delete
+  BEFORE DELETE ON decision_replay_source_provenance
+  FOR EACH ROW EXECUTE FUNCTION decision_source_append_only();
+DROP TRIGGER IF EXISTS decision_replay_source_provenance_no_truncate
+  ON decision_replay_source_provenance;
+CREATE TRIGGER decision_replay_source_provenance_no_truncate
+  BEFORE TRUNCATE ON decision_replay_source_provenance
+  FOR EACH STATEMENT EXECUTE FUNCTION decision_source_append_only();
+`;

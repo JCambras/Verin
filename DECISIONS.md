@@ -3407,3 +3407,34 @@ cannot guess at unresolved SQL, bounded reads cannot aggregate tenant history, a
 corrupt provenance cannot render as real.
 **Revert path:** none while Prompt 7 promises a PII-safe immutable boundary, exact
 insert ownership, bounded register work, and fail-closed provenance rendering.
+
+### D-111 · 2026-07-28 · reversible · Replay-source provenance, bundle citations, and append ownership are structural
+
+Migration 7 adds one append-only tenant-scoped binding from each immutable
+evidence, bundle, and decision source to the exact ledger entry that first recorded
+it. Producer provenance remains cryptographically covered only in the chain row,
+and one shared fold loads the decision producer, bundle producer, and every exact
+bundle member for online projection, rebuild, and bounded register replay. Reusing
+fixture evidence under a real decision producer therefore remains a demonstration
+and cannot feed compliance.
+
+The decision write boundary rejects evidence, policy-version, and household-
+instruction-version citations that the exact immutable input bundle does not pin.
+Later status facts require their cited evidence recording to precede them in
+committed sequence or earlier batch order.
+
+Low-level immutable-source writers require a runtime nominal capability issued by
+`ledger-store.ts`, and the anti-fork fence rejects any other importer. Its SQL
+callee analysis follows bound query or exec aliases, simple wrappers, and the latest
+preceding assignment.
+
+The composed infrastructure measurement is 7261 lines. ADR-0033 amends ADR-0018's
+infrastructure ceiling to 7400, leaving 139 lines of measured headroom
+while preserving the 500-line file cap and the 4900-line contracts ceiling.
+
+**Why:** a producer label cannot erase less-trusted immutable inputs, a replayable
+decision cannot cite inputs outside its bundle, and an exact insert owner is not
+exact when callers can import its raw writers or alias the SQL sink.
+**Revert path:** none while Prompt 7 promises least-trust replay provenance,
+bundle-bound decisions, ordered evidence facts, and exact immutable write
+ownership.

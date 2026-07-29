@@ -10,7 +10,6 @@ import {
   rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
-import { insertEvidenceSnapshots } from "@infra/ledger/ledger-sources";
 import {
   countDecisionProjections,
   listDecisionProjectionMetadata,
@@ -384,6 +383,39 @@ describe("deterministic decision-ledger projections", () => {
     expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toEqual([mixed]);
   });
 
+  it("keeps reused fixture bundle evidence synthetic under a real decision producer", async () => {
+    expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
+    const reused = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, {
+      ...reused,
+      provenance: {
+        source: "verin-crm",
+        asOf: LEDGER_TIME,
+        confidence: "high",
+      },
+    })).ok).toBe(true);
+
+    const online = (await listDecisionProjections(db, LEDGER_ORG))
+      .find(({ projection }) => projection.decisionId === reused.decisionRecord.id)!;
+    expect(online.provenance.demonstration).toBe(true);
+    expect(online.provenance.derivedFrom).toContain("fixture");
+    expect(canFeedComplianceDecision(online.provenance)).toBe(false);
+
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(register.verification.ok).toBe(true);
+    expect(register.decisions.find(({ projection }) =>
+      projection.decisionId === reused.decisionRecord.id)?.provenance)
+      .toEqual(online.provenance);
+    expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toContainEqual(
+      online,
+    );
+  });
+
   it("bounds a request-path read while reporting how many decisions exist", async () => {
     expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");
@@ -515,12 +547,10 @@ describe("deterministic decision-ledger projections", () => {
       projection.decisionId)).toEqual(["dec:GC-01:0002"]);
   });
 
-  it("excludes a status whose cited evidence has no verified recording fact", async () => {
+  it("refuses a status whose cited evidence has no preceding recording fact", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
     const later = laterEvidenceRecording("evidence:orphan-status");
-    await db.transaction((tx) =>
-      insertEvidenceSnapshots(tx, [later.snapshot], LEDGER_TIME));
     const observed = allLedgerEventSamples().find(
       (event) => event.type === "StatusObserved",
     )!;
@@ -532,17 +562,13 @@ describe("deterministic decision-ledger projections", () => {
         id: later.snapshot.id,
       },
     });
-    await expect(append(db, [status])).resolves.toHaveLength(1);
-
-    const snapshot = await readVerifiedDecisionRegister(
-      db,
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
       LEDGER_ORG,
-      200,
-      50,
-    );
-    expect(snapshot.verification.ok).toBe(true);
-    expect(snapshot.decisions).toEqual([]);
-    expect(snapshot.decisionsTotal).toBe(0);
+      [status, later.event],
+      LEDGER_PROVENANCE,
+      [later.snapshot],
+    ))).rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
   });
 
   it("excludes status evidence recorded before the exact verified window", async () => {
