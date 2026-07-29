@@ -15,6 +15,10 @@ import type {
   UnreachedAuthorityVM,
 } from "./model";
 import type { SetupPolicyEvaluation } from "./setup-policy";
+import {
+  operationsStageRequirementFor,
+  specialistStageRequirementFor,
+} from "./authority-stage-requirements";
 
 export function unreachedAuthorityPlan(
   detail: string,
@@ -93,6 +97,8 @@ export function evaluateAuthorityPlan(
   const requiresSpecialist = evaluation.requiresSpecialist;
   const dualApproval = evaluation.dualApproval;
   const specialistStage = {
+    authorityRequirement:
+      specialistStageRequirementFor(firm, 1),
     title: "Stage 1 - Bank-instruction specialist review",
     requirement:
       "The changed bank instruction requires review by a banking specialist before execution.",
@@ -145,6 +151,11 @@ export function evaluateAuthorityPlan(
         ]),
   ];
   const operationsStage: ApprovalStageVM = {
+    authorityRequirement: operationsStageRequirementFor(
+      firm,
+      approvalClock,
+      requiresSpecialist ? 2 : 1,
+    ),
     title: `Stage ${requiresSpecialist ? 2 : 1} - Dual operations approval`,
     requirement:
       firm.requesterParticipation.mode === "unbound"

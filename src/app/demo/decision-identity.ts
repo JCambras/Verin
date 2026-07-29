@@ -37,7 +37,7 @@ export {
 } from "./decision-authority-claim";
 
 export const DEMO_DECISION_SCHEMA_VERSION =
-  "money-movement-demo-decision/5.0.0";
+  "money-movement-demo-decision/6.0.0";
 export const DEMO_DECISION_ENGINE_VERSION =
   "money-movement-demo-engine/4.0.0";
 
@@ -255,10 +255,15 @@ export function approvalReceiptHashFor(
   return hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-approval-receipt",
     preimageVersion:
-      "money-movement-demo-approval-receipt/1.0.0",
+      "money-movement-demo-approval-receipt/2.0.0",
     payload: {
       decisionHash,
-      stages: authority.stages,
+      stages: authority.stages.map((stage) => ({
+        stageId: stage.authorityRequirement.stageId,
+        order: stage.authorityRequirement.order,
+        stepState: stage.stepState,
+        actors: stage.actors,
+      })),
     },
   }));
 }
@@ -296,7 +301,7 @@ export function decisionBundlePreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
-    preimageVersion: "money-movement-demo-bundle/4.0.0",
+    preimageVersion: "money-movement-demo-bundle/5.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -326,7 +331,7 @@ export function decisionRecordPreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
-    preimageVersion: "money-movement-demo-record/4.0.0",
+    preimageVersion: "money-movement-demo-record/5.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,

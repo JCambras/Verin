@@ -6341,3 +6341,38 @@ fixture mutations each change the baseline hash. The GC-07 companion replaces th
 scope and exact explanation, recomputes a valid decision hash, and still receives explicit scope
 and explanation parity failures while receiving no hash failure. The focused Vitest command
 completed with 107 passing tests across both fence files.
+
+## PF-setup-41 · authority, execution, precedence, and projection claims are structural
+
+**Date:** 2026-07-29.
+
+**Invariant:** staged decision identity binds each ordered stage's execution mode, eligible roles,
+quorum, distinct-actor rule, requester eligibility, expiration, and escalation independently of
+completed actor receipts. The canonical execution payload structurally binds Smith Family Taxable.
+GC-07 mirrors the complete ordered regulatory precedence projection over both firm policy and the
+household instruction. Projected comparisons never claim an output changed or retain signed-case
+preview wording when exact attribution is unavailable.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares the exact structured stage
+projection and independently changes every authority requirement before claim extraction, requiring
+each decision hash to change while actor-only changes affect only the receipt hash.
+`src/__tests__/fitness/golden-cases.test.ts` verifies the canonical payload bytes, payload digest,
+command and recommendation source parity, decision hash, and complete ordered GC-07 precedence
+projection. Its companions recompute valid hashes after every precedence and executable-source
+mutation. `e2e/demo-journey.spec.ts` rejects the prior impact and outcome wording in the complete
+setup-first browser journey. `e2e/demo-setup-responsive.spec.ts` renders both automatic and staged
+records at 200 percent text, rejects intrinsic page overflow, and scans the structured authority
+proof with axe.
+
+**Adversarial proof:** authority extraction was temporarily changed to replace every stage quorum
+with one. The focused semantic run failed at
+`src/__tests__/fitness/demo-semantic-truth.test.ts:1933`, receiving one approval for the two-approval
+operations stage. The secure payload source was changed to Joint Taxable; the focused golden run
+failed at `src/__tests__/fitness/golden-cases.test.ts:354` with source, recommendation, and digest
+errors. The golden household precedence source was changed; exact mirror parity failed at line 345.
+The old impact sentence then failed the production-browser journey at
+`e2e/demo-journey.spec.ts:179`, and the old signed-case outcome notice failed the same journey at
+line 253. The first staged-record 200 percent run exposed a 408-pixel document inside a 390-pixel
+viewport through the record's long safety and execution identifiers. Adding minimum-width
+containment and identifier wrapping returned the same overflow and axe run to green. Every
+injection was reverted before the focused green runs.

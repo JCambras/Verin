@@ -19,7 +19,7 @@ import { PrintButton } from "./print-button";
 import { RecordAuthority } from "./record-authority";
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <section aria-label={title} className="flex flex-col gap-2 print-avoid-break">
+    <section aria-label={title} className="flex min-w-0 flex-col gap-2 print-avoid-break">
       <h2 className="border-b border-border pb-1 text-base font-semibold text-slate-900">
         {n}. {title}
       </h2>
@@ -60,13 +60,13 @@ function EvidenceDocRow({ row }: { row: EvidenceRowVM }) {
 
 function ExecutionDocRow({ row }: { row: ExecutionRowVM }) {
   return (
-    <li className="flex flex-col gap-0.5 text-sm print-avoid-break">
+    <li className="flex min-w-0 flex-col gap-0.5 text-sm print-avoid-break">
       <span className="text-slate-800">
         {row.step} · {row.target} · {row.statusLabel} · {row.timestamp}
       </span>
       {row.honestyLine ? <span className="text-xs text-slate-600">{row.honestyLine}</span> : null}
       {row.plainClaim ? <span className="text-slate-700">{row.plainClaim}</span> : null}
-      <span className="font-mono text-xs text-slate-600">{row.identifiers.map((i) => `${i.label}: ${i.value}`).join(" · ")}</span>
+      <span className="break-all font-mono text-xs text-slate-600">{row.identifiers.map((i) => `${i.label}: ${i.value}`).join(" · ")}</span>
     </li>
   );
 }
@@ -394,7 +394,7 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                         </li>
                       ))}
                     </ul>
-                    <p className="font-mono text-xs text-slate-600">
+                    <p className="break-all font-mono text-xs text-slate-600">
                       Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
                     </p>
                     {vm.safety.invalidation ? (

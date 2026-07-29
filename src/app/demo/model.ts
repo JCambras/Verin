@@ -200,7 +200,40 @@ export interface ActorSlotVM {
   readonly note?: string; // e.g. "You requested this - you cannot approve"
   readonly requesterExcluded?: boolean;
 }
+export type AuthorityRoleId =
+  | "bank-change-specialist"
+  | "operations"
+  | "operations-manager";
+export type RequesterApprovalEligibility =
+  | boolean
+  | "unbound";
+export interface AuthorityEscalationStepVM {
+  readonly after: string;
+  readonly eligibleRoleIds: readonly [
+    AuthorityRoleId,
+    ...AuthorityRoleId[],
+  ];
+  readonly reasonCode: string;
+}
+export interface AuthorityStageRequirementVM {
+  readonly stageId: string;
+  readonly order: number;
+  readonly executionMode: "sequential" | "parallel";
+  readonly eligibleRoleIds: readonly [
+    AuthorityRoleId,
+    ...AuthorityRoleId[],
+  ];
+  readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
+  readonly requesterMayApprove: RequesterApprovalEligibility;
+  readonly expiresAt: string;
+  readonly escalationPath: readonly [
+    AuthorityEscalationStepVM,
+    ...AuthorityEscalationStepVM[],
+  ];
+}
 export interface ApprovalStageVM {
+  readonly authorityRequirement: AuthorityStageRequirementVM;
   readonly title: string;
   readonly requirement: string;
   readonly stepState: StationState;

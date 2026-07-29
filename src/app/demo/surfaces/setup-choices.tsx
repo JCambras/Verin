@@ -104,7 +104,7 @@ function ImpactFirmCard({
       <p className="mt-1 text-xs text-slate-600">{effect.detail}</p>
       {signed ? null : (
         <p className="mt-2 text-xs text-slate-800" data-testid={`impact-${firmId}-varied`}>
-          Projected under the current selection. This outcome is not the one the signed case records.
+          Projected under the current selection. Exact captain-signed attribution is unavailable.
         </p>
       )}
     </article>

@@ -1,15 +1,17 @@
 # Decision-core canonical-serialization fixtures (ADR-0029, D-040)
 
 Synthetic test vectors - NOT product data (charter #3: labeled synthetic; never seeded, never
-displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle` and
-three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
+displayed, never fed to a compliance decision). The files contain one `DecisionInputBundle`, three
+`DecisionRecord` values, and the exact synthetic secure execution payload behind the proceed
+record's blob reference. They are committed in canonical byte form (`canonicalJson` in
 `src/contracts/decision-core/serialization.ts`, schema version 1.7.0 and serializer version
 1.0.0): keys sorted at every depth, no insignificant whitespace, one trailing newline.
 
-`src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
+`src/__tests__/unit/decision-core.test.ts` proves each bundle and record fixture parses through
 its schema and re-serializes byte-identically. It also hashes the canonical, domain-separated
 preimage bytes with SHA-256 and requires the digest to equal the fixture's stored `bundleHash` or
-`decisionHash`.
+`decisionHash`. The golden-cases fitness fence canonicalizes the secure execution payload, verifies
+its exact versioned shape, and requires its digest to equal the execution command's `payloadHash`.
 
 Bundle preimage version `decision-input-bundle/1.7.0` excludes `id` and `bundleHash`, because
 identity is not a material evaluation input, and sorts the instruction-version and
@@ -35,3 +37,9 @@ except a Zod upgrade that changes only the JSON Schema emitter's representation,
 The three records mirror golden cases GC-01 (proceed), GC-05 (blocked), GC-07 (prohibited) -
 `fixtures/golden/` remains the captain-signed truth set; these fixtures only lock the byte form of
 the type system, they assert nothing about engine outcomes.
+
+`execution-payload-proceed.json` uses
+`money-movement-execution-payload/1.0.0`. Its SHA-256 digest is the proceed
+record's `command.payloadHash`, and its structured `sourceSubjectRef` must equal
+the recommendation's source subject. A source-account change therefore changes
+the payload digest, execution command identity, and decision hash together.

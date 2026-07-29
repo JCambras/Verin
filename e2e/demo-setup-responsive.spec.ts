@@ -58,11 +58,31 @@ async function assertNoPageOverflow(page: Page) {
           text: element.textContent?.trim().slice(0, 80),
           rect: element.getBoundingClientRect().toJSON(),
         })),
+      intrinsicOffenders: [...document.querySelectorAll("*")]
+        .filter(
+          (element) =>
+            element.scrollWidth > element.clientWidth + 1,
+        )
+        .slice(0, 12)
+        .map((element) => ({
+          tag: element.tagName,
+          testId: element.getAttribute("data-testid"),
+          text: element.textContent?.trim().slice(0, 80),
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        })),
     };
   });
   expect(
     dimensions.scrollWidth,
-    JSON.stringify(dimensions.offenders, null, 2),
+    JSON.stringify(
+      {
+        rect: dimensions.offenders,
+        intrinsic: dimensions.intrinsicOffenders,
+      },
+      null,
+      2,
+    ),
   ).toBe(dimensions.clientWidth);
 }
 
@@ -214,6 +234,25 @@ test("the exported decision record stays clean at every width and at 200 percent
   await expect(page.getByTestId("record-reserve-headroom")).toBeVisible();
   await assertNoPageOverflow(page);
   await expect(page.getByRole("button", { name: "Print this record" })).toBeVisible();
+
+  const stagedRecordUrl = recordUrl.replace(
+    "firm=firm-b",
+    "firm=firm-a",
+  );
+  await page.goto(stagedRecordUrl);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await expect(
+    page.getByTestId(
+      "authority-requirement-bank-change-specialist-review",
+    ),
+  ).toContainText("Awaiting captain decision");
+  await expect(
+    page.getByTestId("authority-requirement-ops-dual-approval"),
+  ).toContainText("2 approvals · distinct actors required");
+  await assertNoPageOverflow(page);
+  await assertAxe(page, "390-record-staged-200-percent");
 });
 
 test("the full setup journey is keyboard operable and announces activation errors", async ({ page }) => {

@@ -176,6 +176,12 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
     await expect(impact).not.toContainText(
       "Captain-signed outcome",
     );
+    await expect(impact).toContainText(
+      "Exact captain-signed attribution is unavailable.",
+    );
+    await expect(impact).not.toContainText(
+      "This outcome is not the one the signed case records.",
+    );
   }
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
     "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
@@ -244,6 +250,12 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(
     page.getByTestId("outcome-firm-b-configuration-provenance"),
   ).toHaveText("Recommended configuration · pending captain signoff");
+  await expect(page.getByTestId("setup-journey")).toContainText(
+    "This is a projected demonstration comparison",
+  );
+  await expect(page.getByTestId("setup-journey")).not.toContainText(
+    "This comparison shows the signed-case preview",
+  );
   await checkAxe(page, "setup-outcomes");
   await snap(page, 8, "setup-outcomes");
 
@@ -425,6 +437,36 @@ test("each firm's export lands on the record whose identifiers the proof step sh
       await expect(authority).toContainText("Reviewed · Jul 28, 10:15");
       await expect(authority).toContainText("Approved · Jul 28, 10:32");
       await expect(authority).toContainText("Approved · Jul 28, 10:41");
+      const specialistRequirement = page.getByTestId(
+        "authority-requirement-bank-change-specialist-review",
+      );
+      await expect(specialistRequirement).toContainText(
+        "1 · bank-change-specialist-review",
+      );
+      await expect(specialistRequirement).toContainText(
+        "sequential · bank-change-specialist",
+      );
+      await expect(specialistRequirement).toContainText(
+        "Awaiting captain decision",
+      );
+      await expect(specialistRequirement).toContainText(
+        "2026-07-30T14:05:00.000Z",
+      );
+      await expect(specialistRequirement).toContainText(
+        "P1D · operations-manager · specialist-review-idle",
+      );
+      const operationsRequirement = page.getByTestId(
+        "authority-requirement-ops-dual-approval",
+      );
+      await expect(operationsRequirement).toContainText(
+        "parallel · operations",
+      );
+      await expect(operationsRequirement).toContainText(
+        "2 approvals · distinct actors required",
+      );
+      await expect(operationsRequirement).toContainText(
+        "2026-07-31T14:05:00.000Z",
+      );
     }
     await checkAxe(page, `record-${firmId}`);
     await snap(page, 10 + index, `record-${firmId}`);

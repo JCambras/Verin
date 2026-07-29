@@ -3535,3 +3535,28 @@ rejects drift even when a divergent record carries an internally valid recompute
 decision record cannot serve as a second mutable version of binding product truth.
 **Revert path:** none while setup attribution cites captain-signed fixtures and the GC-07
 decision-core mirror remains canonical.
+
+### D-076 · 2026-07-29 · captain-decision · Authority, execution payload, and canonical parity use complete structural identities
+
+Staged demo authority identity now binds a typed per-stage requirement containing the stable stage
+id and order, execution mode, eligible roles, quorum, distinct-actor rule, requester eligibility,
+absolute expiration, and structured escalation path. Presentation strings and completed actors no
+longer stand in for that contract. Actor status remains in the separate approval-receipt preimage,
+and setup requester eligibility remains explicitly unbound.
+
+The GC-01 secure execution payload is now a canonical synthetic blob whose structured source is
+Smith Family Taxable. Its digest flows through the execution command and regenerated decision hash.
+GC-07 now carries the complete ordered golden precedence projection, including regulatory
+precedence over both firm policy and the household instruction, and the canonical prohibited record
+and hash mirror it exactly.
+
+Projected impact copy states that exact captain-signed attribution is unavailable without claiming
+the outcome changed. The activated outcome calls itself a projected demonstration comparison while
+requester participation remains unbound.
+
+**Why:** immutable decision identity must bind executable and authority semantics, not nearby prose
+or a stale opaque digest. Canonical mirrors and product labels must make the same exact-input claim.
+**Alternatives:** retain display strings as the authority preimage and add more string assertions,
+or trust an opaque payload hash without committed bytes. Both leave the same drift class open.
+**Revert path:** none while interactive setup produces staged authority and the canonical fixtures
+remain replay and parity evidence.

@@ -84,7 +84,23 @@
     "source": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
     "scope": "scope:account:subject:smiths-family-taxable",
     "reasonCode": "active-legal-hold",
-    "explanation": "An active legal hold on the source account prohibits all distributions while it stands. Regulatory sources take precedence over firm policy and household instructions."
+    "explanation": "An active legal hold on the source account prohibits all distributions while it stands. Regulatory sources take precedence over firm policy and household instructions.",
+    "precedenceTrace": [
+      {
+        "order": 1,
+        "left": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
+        "resolution": "left_wins",
+        "reasonCode": "regulatory-precedence-applied",
+        "right": { "sourceType": "firm_policy", "sourceId": "firm-a-distribution-policy", "versionId": "firm-a-policy@2026.07.1" }
+      },
+      {
+        "order": 2,
+        "left": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
+        "resolution": "left_wins",
+        "reasonCode": "regulatory-precedence-applied",
+        "right": { "sourceType": "household_instruction", "sourceId": "smiths-destination-restriction", "versionId": "smiths-destination-restriction@v2" }
+      }
+    ]
   },
   "expectedExplanationNodes": [
     { "code": "legal-hold-detected", "summary": "The account-restriction evidence shows an active legal hold recorded 2026-07-18 against the source account." },

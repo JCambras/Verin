@@ -278,7 +278,10 @@ Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 - **Expected authority stages:** none.
 - **Expected execution eligibility:** not eligible; prohibition source regulatory, reason
   `active-legal-hold`.
-- **Expected explanation nodes:** legal-hold-detected; regulatory-precedence-applied.
+- **Expected explanation nodes:** legal-hold-detected; regulatory-precedence-applied. The ordered
+  precedence projection records `left_wins` from the regulatory source first over the firm-policy
+  source and then over the household-instruction source, with source ids, version ids, and reason
+  codes preserved exactly.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded (prohibited).
 - **Expected verification state:** not reached; a released hold arrives as new evidence for a new
   intent.

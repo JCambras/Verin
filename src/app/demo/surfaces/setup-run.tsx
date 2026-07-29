@@ -334,7 +334,7 @@ export function OutcomesBody({
       </section>
       <DemoNotice
         vm={vm}
-        text="Requester participation remains awaiting captain decision. This comparison shows the signed-case preview and does not bind that unresolved rule."
+        text="Requester participation remains awaiting captain decision. This is a projected demonstration comparison and does not bind that unresolved rule."
       />
     </>
   );

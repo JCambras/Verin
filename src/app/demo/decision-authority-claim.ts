@@ -1,16 +1,9 @@
 import type {
   ApprovalStageVM,
+  AuthorityStageRequirementVM,
   AuthorityPlanVM,
   RequesterParticipation,
 } from "./model";
-
-interface DecisionAuthorityRequirementClaim {
-  readonly order: number;
-  readonly title: string;
-  readonly requirement: string;
-  readonly expiry: string | null;
-  readonly escalation: string | null;
-}
 
 export type DecisionAuthorityClaim =
   | {
@@ -29,19 +22,79 @@ export type DecisionAuthorityClaim =
       readonly mode: "staged";
       readonly eligibleRole: "operations";
       readonly requesterParticipation: RequesterParticipation;
-      readonly requirements: readonly DecisionAuthorityRequirementClaim[];
+      readonly requirements: readonly AuthorityStageRequirementVM[];
     };
 
 export function decisionAuthorityRequirementsFor(
   stages: readonly ApprovalStageVM[],
-): readonly DecisionAuthorityRequirementClaim[] {
-  return stages.map((stage, index) => ({
-    order: index + 1,
-    title: stage.title,
-    requirement: stage.requirement,
-    expiry: stage.expiry ?? null,
-    escalation: stage.escalation ?? null,
-  }));
+): readonly AuthorityStageRequirementVM[] {
+  return stages.map((stage) => stage.authorityRequirement);
+}
+
+function assertStageRequirement(
+  stage: AuthorityStageRequirementVM,
+  index: number,
+): void {
+  const expectedKeys = [
+    "approvalsRequired",
+    "distinctActorsRequired",
+    "eligibleRoleIds",
+    "escalationPath",
+    "executionMode",
+    "expiresAt",
+    "order",
+    "requesterMayApprove",
+    "stageId",
+  ];
+  const actualKeys = Object.keys(stage).sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, keyIndex) => key !== expectedKeys[keyIndex])
+  ) {
+    throw new Error(
+      `Authority stage ${index + 1} has an unsupported field mixture`,
+    );
+  }
+  if (
+    stage.order !== index + 1 ||
+    stage.stageId.trim().length === 0 ||
+    !["sequential", "parallel"].includes(stage.executionMode) ||
+    stage.eligibleRoleIds.length === 0 ||
+    stage.approvalsRequired < 1 ||
+    !Number.isInteger(stage.approvalsRequired) ||
+    typeof stage.distinctActorsRequired !== "boolean" ||
+    !(
+      typeof stage.requesterMayApprove === "boolean" ||
+      stage.requesterMayApprove === "unbound"
+    ) ||
+    !Number.isFinite(Date.parse(stage.expiresAt)) ||
+    stage.escalationPath.length === 0
+  ) {
+    throw new Error(
+      `Authority stage ${index + 1} has an invalid immutable requirement`,
+    );
+  }
+  if (
+    new Set(stage.eligibleRoleIds).size !==
+    stage.eligibleRoleIds.length
+  ) {
+    throw new Error(
+      `Authority stage ${index + 1} has duplicate eligible roles`,
+    );
+  }
+  for (const escalation of stage.escalationPath) {
+    if (
+      escalation.after.trim().length === 0 ||
+      escalation.reasonCode.trim().length === 0 ||
+      escalation.eligibleRoleIds.length === 0 ||
+      new Set(escalation.eligibleRoleIds).size !==
+        escalation.eligibleRoleIds.length
+    ) {
+      throw new Error(
+        `Authority stage ${index + 1} has an invalid escalation requirement`,
+      );
+    }
+  }
 }
 
 export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
@@ -95,6 +148,9 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
     throw new Error("Staged authority requires at least one stage");
   }
   if (plan.mode !== "staged") return;
+  plan.stages.forEach((stage, index) =>
+    assertStageRequirement(stage.authorityRequirement, index),
+  );
   if (plan.eligibleRole !== "operations") {
     throw new Error(
       "Staged authority requires the Operations eligible role",
@@ -112,11 +168,35 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
     );
   }
   if (
+    plan.requesterParticipation.mode === "unbound" &&
+    plan.stages.some(
+      (stage) =>
+        stage.authorityRequirement.requesterMayApprove !==
+        "unbound",
+    )
+  ) {
+    throw new Error(
+      "Unbound requester participation requires unbound stage eligibility",
+    );
+  }
+  if (
     plan.requesterParticipation.mode === "excluded" &&
     requesterActors.length === 0
   ) {
     throw new Error(
       "Excluded requester participation requires an attributed requester exclusion",
+    );
+  }
+  if (
+    plan.requesterParticipation.mode === "excluded" &&
+    plan.stages.some(
+      (stage) =>
+        stage.authorityRequirement.requesterMayApprove !==
+        false,
+    )
+  ) {
+    throw new Error(
+      "Excluded requester participation requires ineligible requester stages",
     );
   }
 }

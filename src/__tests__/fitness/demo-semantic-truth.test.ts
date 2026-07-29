@@ -94,6 +94,8 @@ import type { DisplayMetric } from "@contracts/metric";
 import type { JsonValue } from "@contracts/decision-core/serialization";
 import { isDemonstration } from "@contracts/provenance";
 import type {
+  ApprovalStageVM,
+  AuthorityStageRequirementVM,
   AuthorityPlanVM,
   RecordReserveVM,
   RecordVM,
@@ -1297,7 +1299,7 @@ export function semanticTruthViolations(
       truth.automaticAuthority[caseKey]
     ) {
       violations.push(
-        `${sourceRef("src/app/demo/build-decision.ts", "export function buildAuthorityPlan")} :: ${caseKey} authority mode "${actual.automaticAuthority[caseKey]}" differs from captain-signed "${truth.automaticAuthority[caseKey]}"`,
+        `${sourceRef("src/app/demo/build-decision-authority.ts", "export function buildAuthorityPlan")} :: ${caseKey} authority mode "${actual.automaticAuthority[caseKey]}" differs from captain-signed "${truth.automaticAuthority[caseKey]}"`,
       );
     }
   }
@@ -1687,7 +1689,8 @@ describe("demo semantic-truth fence", () => {
               index === 0
                 ? {
                     ...requirement,
-                    requirement: "Changed authority requirement",
+                    approvalsRequired:
+                      requirement.approvalsRequired + 1,
                   }
                 : requirement,
           ),
@@ -1911,16 +1914,58 @@ describe("demo semantic-truth fence", () => {
     );
   });
 
-  it("detects: changing an immutable authority requirement changes identity", () => {
-    const journey = getJourney("safe-proceed", "firm-a");
-    const scenario = scenarioById("safe-proceed");
+  it("detects: every immutable authority-stage constraint changes identity", () => {
+    const journey = getJourney(
+      "recent-bank-change-block",
+      "firm-a",
+    );
+    const scenario = scenarioById(
+      "recent-bank-change-block",
+    );
     const firm = firmById("firm-a");
-    expect(journey.record.authority?.mode).toBe("staged");
-    if (journey.record.authority?.mode !== "staged") return;
-    const authority = decisionAuthorityClaimFor(journey.record.authority);
+    const authorityPlan = journey.record.authority;
+    expect(authorityPlan?.mode).toBe("staged");
+    if (authorityPlan?.mode !== "staged") return;
+    const authority = decisionAuthorityClaimFor(authorityPlan);
     expect(authority.mode).toBe("staged");
     if (authority.mode !== "staged") return;
     const requirements = authority.requirements;
+    expect(requirements).toEqual([
+      {
+        stageId: "bank-change-specialist-review",
+        order: 1,
+        executionMode: "sequential",
+        eligibleRoleIds: ["bank-change-specialist"],
+        approvalsRequired: 1,
+        distinctActorsRequired: false,
+        requesterMayApprove: false,
+        expiresAt: "2026-07-30T14:05:00.000Z",
+        escalationPath: [
+          {
+            after: "P1D",
+            eligibleRoleIds: ["operations-manager"],
+            reasonCode: "specialist-review-idle",
+          },
+        ],
+      },
+      {
+        stageId: "ops-dual-approval",
+        order: 2,
+        executionMode: "parallel",
+        eligibleRoleIds: ["operations"],
+        approvalsRequired: 2,
+        distinctActorsRequired: true,
+        requesterMayApprove: false,
+        expiresAt: "2026-07-31T14:05:00.000Z",
+        escalationPath: [
+          {
+            after: "P1D",
+            eligibleRoleIds: ["operations-manager"],
+            reasonCode: "approval-stage-idle",
+          },
+        ],
+      },
+    ]);
     const claims = {
       disposition: journey.recommendation.disposition,
       precedence: journey.policyTrace.rows,
@@ -1934,25 +1979,145 @@ describe("demo semantic-truth fence", () => {
         claims,
       ),
     );
-    const changed = hashCanonicalPreimage(
-      decisionRecordPreimageFor(
-        scenario,
-        firm,
-        decisionConfigurationFor(firm),
+    const requirement = requirements[0]!;
+    const changedRequirements: readonly AuthorityStageRequirementVM[] =
+      [
         {
-          ...claims,
-          authority: {
-            ...authority,
-            requirements: requirements.map((requirement, index) =>
-              index === 0
-                ? { ...requirement, expiry: "Expires after 4 days" }
-                : requirement,
-            ),
-          },
+          ...requirement,
+          stageId: "changed-stage-id",
         },
-      ),
+        {
+          ...requirement,
+          executionMode:
+            requirement.executionMode === "parallel"
+              ? "sequential"
+              : "parallel",
+        },
+        {
+          ...requirement,
+          eligibleRoleIds: ["operations-manager"],
+        },
+        {
+          ...requirement,
+          approvalsRequired:
+            requirement.approvalsRequired + 1,
+        },
+        {
+          ...requirement,
+          distinctActorsRequired:
+            !requirement.distinctActorsRequired,
+        },
+        {
+          ...requirement,
+          expiresAt: "2026-08-01T14:05:00.000Z",
+        },
+        {
+          ...requirement,
+          escalationPath: [
+            {
+              ...requirement.escalationPath[0]!,
+              after: "P2D",
+            },
+          ],
+        },
+        {
+          ...requirement,
+          escalationPath: [
+            {
+              ...requirement.escalationPath[0]!,
+              eligibleRoleIds: ["operations"],
+            },
+          ],
+        },
+        {
+          ...requirement,
+          escalationPath: [
+            {
+              ...requirement.escalationPath[0]!,
+              reasonCode: "changed-reason",
+            },
+          ],
+        },
+      ];
+    const changedClaims = changedRequirements.map(
+      (changedRequirement) => {
+        const changedStage: ApprovalStageVM = {
+          ...authorityPlan.stages[0]!,
+          authorityRequirement: changedRequirement,
+        };
+        return decisionAuthorityClaimFor({
+          ...authorityPlan,
+          stages: [
+            changedStage,
+            ...authorityPlan.stages.slice(1),
+          ],
+        });
+      },
     );
-    expect(changed).not.toBe(base);
+    const [firstStage, secondStage] =
+      authorityPlan.stages;
+    expect(firstStage).toBeDefined();
+    expect(secondStage).toBeDefined();
+    const reorderedStages: [
+      ApprovalStageVM,
+      ...ApprovalStageVM[],
+    ] = [
+      {
+        ...secondStage!,
+        authorityRequirement: {
+          ...secondStage!.authorityRequirement,
+          order: 1,
+        },
+      },
+      {
+        ...firstStage!,
+        authorityRequirement: {
+          ...firstStage!.authorityRequirement,
+          order: 2,
+        },
+      },
+    ];
+    changedClaims.push(
+      decisionAuthorityClaimFor({
+        ...authorityPlan,
+        stages: reorderedStages,
+      }),
+    );
+    const changedHashes = changedClaims.map(
+      (changedAuthority) =>
+        hashCanonicalPreimage(
+          decisionRecordPreimageFor(
+            scenario,
+            firm,
+            decisionConfigurationFor(firm),
+            {
+              ...claims,
+              authority: changedAuthority,
+            },
+          ),
+        ),
+    );
+    expect(changedHashes).not.toContain(base);
+    expect(new Set(changedHashes).size).toBe(
+      changedHashes.length,
+    );
+    expect(() =>
+      decisionAuthorityClaimFor({
+        ...authorityPlan,
+        stages: [
+          {
+            ...authorityPlan.stages[0]!,
+            authorityRequirement: {
+              ...authorityPlan.stages[0]!.authorityRequirement,
+              requesterMayApprove: true,
+            },
+          },
+          ...authorityPlan.stages.slice(1),
+        ],
+      }),
+    ).toThrow(
+      "Excluded requester participation requires ineligible requester stages",
+    );
   });
 
   it("enforces: automatic authority binds exact fields without approval receipts", () => {
@@ -4269,7 +4434,7 @@ describe("demo semantic-truth fence", () => {
       expect(
         violations.every(
           (violation) =>
-            violation.includes("src/app/demo/build-decision.ts:") &&
+            violation.includes("src/app/demo/build-decision-authority.ts:") &&
             violation.includes('captain-signed "automatic"'),
         ),
       ).toBe(true);

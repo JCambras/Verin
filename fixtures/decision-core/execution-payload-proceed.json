@@ -1,0 +1,1 @@
+{"amountMinor":7500000,"commandType":"submit-cash-distribution","currency":"USD","destinationInstructionRef":{"firmId":"firm-a","id":"subject:smiths-verified-bank-instruction"},"schemaVersion":"money-movement-execution-payload/1.0.0","sourceSubjectRef":{"firmId":"firm-a","id":"subject:smiths-family-taxable"}}

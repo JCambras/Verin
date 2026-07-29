@@ -274,16 +274,73 @@ export interface DecisionIdentity {
  */
 export interface ApprovalClock {
   readonly id: string;
+  readonly escalationAfter: string;
+  readonly expiresAfter: string;
   readonly escalation: string;
   readonly expiry: string;
 }
+
+function approvalDuration(value: string): {
+  days: number;
+  hours: number;
+} {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/.exec(
+    value,
+  );
+  if (!match || (!match[1] && !match[2])) {
+    throw new Error(
+      `Unsupported demonstration approval duration: ${value}`,
+    );
+  }
+  return {
+    days: Number(match[1] ?? 0),
+    hours: Number(match[2] ?? 0),
+  };
+}
+
+function approvalDurationLabel(value: string): string {
+  const { days, hours } = approvalDuration(value);
+  return [
+    days > 0 ? `${days} day${days === 1 ? "" : "s"}` : null,
+    hours > 0
+      ? `${hours} hour${hours === 1 ? "" : "s"}`
+      : null,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" ");
+}
+
+function approvalClock(
+  id: string,
+  escalationAfter: string,
+  expiresAfter: string,
+): ApprovalClock {
+  return {
+    id,
+    escalationAfter,
+    expiresAfter,
+    escalation: `Escalates after ${approvalDurationLabel(escalationAfter)}`,
+    expiry: `Expires after ${approvalDurationLabel(expiresAfter)}`,
+  };
+}
+
 export const APPROVAL_CLOCKS: Readonly<Record<string, ApprovalClock>> = {
-  "4h-2d": { id: "4h-2d", escalation: "Escalates after 4 hours", expiry: "Expires after 2 days" },
-  "1d-3d": { id: "1d-3d", escalation: "Escalates after 1 day", expiry: "Expires after 3 days" },
-  "2d-5d": { id: "2d-5d", escalation: "Escalates after 2 days", expiry: "Expires after 5 days" },
+  "4h-2d": approvalClock("4h-2d", "PT4H", "P2D"),
+  "1d-3d": approvalClock("1d-3d", "P1D", "P3D"),
+  "2d-5d": approvalClock("2d-5d", "P2D", "P5D"),
 } as const;
 /** The clock the fixture journey runs under, and the id its configuration hashes. */
 export const DEFAULT_APPROVAL_CLOCK: ApprovalClock = APPROVAL_CLOCKS["1d-3d"]!;
+
+export function approvalExpiryAt(
+  createdAt: string,
+  expiresAfter: string,
+): string {
+  const { days, hours } = approvalDuration(expiresAfter);
+  const milliseconds =
+    days * 86_400_000 + hours * 3_600_000;
+  return new Date(Date.parse(createdAt) + milliseconds).toISOString();
+}
 
 export interface DecisionConfiguration {
   readonly policyVersion: string;
@@ -312,7 +369,7 @@ export const CAST = {
   opsApprover1: "Miguel Torres",
   opsApprover2: "Priya Nair",
   specialist: "Alex Kim",
-  principal: "Jordan Bell",
+  operationsManager: "Jordan Bell",
 } as const;
 
 // Stable fake identifiers (rendered font-mono; full values print on the record).

@@ -9,6 +9,7 @@ import {
 import {
   canonicalJson,
   decisionHashPreimage,
+  type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { unwrap } from "@contracts/result";
 import { REPO_ROOT } from "./_fence-utils";
@@ -74,6 +75,53 @@ const goldenGc07 = JSON.parse(
     scope: string;
     reasonCode: string;
     explanation: string;
+    precedenceTrace: Array<{
+      order: number;
+      left: {
+        sourceType: string;
+        sourceId: string;
+        versionId: string;
+      };
+      resolution: string;
+      reasonCode: string;
+      right: {
+        sourceType: string;
+        sourceId: string;
+        versionId: string;
+      };
+    }>;
+  };
+};
+const proceedRecordFixture = JSON.parse(
+  readFileSync(
+    join(
+      REPO_ROOT,
+      "fixtures/decision-core/decision-record-proceed.json",
+    ),
+    "utf8",
+  ),
+) as unknown;
+const executionPayloadFixtureBytes = readFileSync(
+  join(
+    REPO_ROOT,
+    "fixtures/decision-core/execution-payload-proceed.json",
+  ),
+  "utf8",
+);
+const executionPayloadFixture = JSON.parse(
+  executionPayloadFixtureBytes,
+) as {
+  amountMinor: number;
+  commandType: string;
+  currency: string;
+  destinationInstructionRef: {
+    firmId: string;
+    id: string;
+  };
+  schemaVersion: string;
+  sourceSubjectRef: {
+    firmId: string;
+    id: string;
   };
 };
 const prohibitedRecordFixture = JSON.parse(
@@ -95,6 +143,125 @@ function decisionHashFor(record: DecisionRecord): string {
     .digest("hex");
 }
 
+function executionPayloadHash(payload: typeof executionPayloadFixture): string {
+  const serialized = canonicalJson(payload as JsonValue);
+  if (!serialized.ok) throw new Error(serialized.error.message);
+  return createHash("sha256")
+    .update(serialized.value, "utf8")
+    .digest("hex");
+}
+
+function executionPayloadByteProblems(
+  payload: typeof executionPayloadFixture,
+  bytes: string,
+): string[] {
+  const serialized = canonicalJson(payload as JsonValue);
+  if (!serialized.ok) return [serialized.error.message];
+  return bytes === `${serialized.value}\n`
+    ? []
+    : [
+        "GC-01 secure execution payload must be committed in canonical byte form",
+      ];
+}
+
+function executionPayloadProblems(
+  recordValue: unknown,
+  payload: typeof executionPayloadFixture,
+): string[] {
+  const parsed = DecisionRecordSchema.safeParse(recordValue);
+  if (!parsed.success)
+    return ["GC-01 canonical record must satisfy DecisionRecordSchema"];
+  const record = parsed.data;
+  if (record.result.kind !== "proceed")
+    return ["GC-01 canonical record must be a proceed decision"];
+  const result = record.result;
+  const steps = result.executionPlan.steps;
+  if (steps.length !== 1) {
+    return ["GC-01 canonical record must carry exactly one execution step"];
+  }
+  const command = steps[0]!.command;
+  const sourceSubject =
+    result.recommendation.parameters.sourceSubject;
+  const expectedKeys = [
+    "amountMinor",
+    "commandType",
+    "currency",
+    "destinationInstructionRef",
+    "schemaVersion",
+    "sourceSubjectRef",
+  ];
+  const actualKeys = Object.keys(payload).sort();
+  const sourceKeys = Object.keys(payload.sourceSubjectRef).sort();
+  const destinationKeys = Object.keys(
+    payload.destinationInstructionRef,
+  ).sort();
+  return [
+    actualKeys.length === expectedKeys.length &&
+    actualKeys.every((key, index) => key === expectedKeys[index]) &&
+    JSON.stringify(sourceKeys) ===
+      JSON.stringify(["firmId", "id"]) &&
+    JSON.stringify(destinationKeys) ===
+      JSON.stringify(["firmId", "id"])
+      ? null
+      : "GC-01 secure execution payload must use the complete versioned shape",
+    payload.schemaVersion ===
+    "money-movement-execution-payload/1.0.0"
+      ? null
+      : "GC-01 secure execution payload schemaVersion must be pinned",
+    payload.commandType === command.commandType
+      ? null
+      : "GC-01 secure execution payload command type must equal the execution command",
+    payload.amountMinor ===
+    Number(result.recommendation.parameters.amountUsd) * 100
+      ? null
+      : "GC-01 secure execution payload amount must equal the recommendation amount",
+    payload.currency === "USD"
+      ? null
+      : "GC-01 secure execution payload currency must be USD",
+    payload.sourceSubjectRef.firmId === record.firmId &&
+    payload.sourceSubjectRef.id ===
+      "subject:smiths-family-taxable"
+      ? null
+      : "GC-01 secure execution payload source must be Smith Family Taxable",
+    JSON.stringify(payload.sourceSubjectRef) ===
+    JSON.stringify(sourceSubject)
+      ? null
+      : "GC-01 secure execution payload source must equal the recommendation source",
+    payload.destinationInstructionRef.firmId === record.firmId &&
+    payload.destinationInstructionRef.id ===
+      "subject:smiths-verified-bank-instruction"
+      ? null
+      : "GC-01 secure execution payload destination must bind the verified bank instruction",
+    command.payloadRef.id === "blob:GC-01:distribution"
+      ? null
+      : "GC-01 execution command must retain the canonical secure blob reference",
+    command.payloadHash === executionPayloadHash(payload)
+      ? null
+      : "GC-01 execution command payloadHash must hash the exact secure payload",
+    record.decisionHash === decisionHashFor(record)
+      ? null
+      : "GC-01 canonical record decisionHash must match its canonical preimage",
+  ].filter((problem): problem is string => problem !== null);
+}
+
+function gc07PrecedenceProjection(record: DecisionRecord) {
+  return record.precedenceTrace.map((step, index) => ({
+    order: index + 1,
+    left: {
+      sourceType: step.left.sourceType,
+      sourceId: step.left.sourceRef.id,
+      versionId: step.left.versionRef.id,
+    },
+    resolution: step.resolution,
+    reasonCode: step.reasonCode,
+    right: {
+      sourceType: step.right.sourceType,
+      sourceId: step.right.sourceRef.id,
+      versionId: step.right.versionRef.id,
+    },
+  }));
+}
+
 function gc07MirrorProblems(
   golden: typeof goldenGc07,
   recordValue: unknown,
@@ -110,7 +277,6 @@ function gc07MirrorProblems(
     ];
   }
   const prohibition = record.result.prohibition;
-  const precedence = record.precedenceTrace[0];
   return [
     record.firmId === golden.firm
       ? null
@@ -143,18 +309,45 @@ function gc07MirrorProblems(
     golden.prohibition.source.versionId
       ? null
       : "GC-07 canonical record prohibition version must equal golden source",
-    precedence?.left.versionRef.id ===
-    golden.prohibition.source.versionId
+    JSON.stringify(gc07PrecedenceProjection(record)) ===
+    JSON.stringify(golden.prohibition.precedenceTrace)
       ? null
-      : "GC-07 canonical record precedence left must equal golden regulatory version",
-    precedence?.right.versionRef.id ===
-    golden.policyVersions.firmPolicyVersionId
-      ? null
-      : "GC-07 canonical record precedence right must equal golden firm policy version",
+      : "GC-07 canonical record precedence trace must exactly equal the ordered golden projection",
     record.decisionHash === decisionHashFor(record)
       ? null
       : "GC-07 canonical record decisionHash must match its canonical preimage",
   ].filter((problem): problem is string => problem !== null);
+}
+
+interface MutableVersionedSource {
+  sourceType: string;
+  sourceRef: { firmId: string; id: string };
+  versionRef: { firmId: string; id: string };
+}
+
+interface MutablePrecedenceStep {
+  left: MutableVersionedSource;
+  resolution: string;
+  reasonCode: string;
+  right: MutableVersionedSource;
+}
+
+interface MutableGc07Record {
+  decisionHash: string;
+  precedenceTrace: MutablePrecedenceStep[];
+}
+
+function hashValidGc07Mutation(
+  mutate: (record: MutableGc07Record) => void,
+): MutableGc07Record {
+  const record = structuredClone(
+    prohibitedRecordFixture,
+  ) as MutableGc07Record;
+  mutate(record);
+  record.decisionHash = decisionHashFor(
+    DecisionRecordSchema.parse(record),
+  );
+  return record;
 }
 
 describe("golden-cases fence", () => {
@@ -171,6 +364,21 @@ describe("golden-cases fence", () => {
   it("enforces: the canonical GC-07 record exactly mirrors its golden prohibition", () => {
     expect(
       gc07MirrorProblems(goldenGc07, prohibitedRecordFixture),
+    ).toEqual([]);
+  });
+
+  it("enforces: the GC-01 execution command hashes a source-bound secure payload", () => {
+    expect(
+      executionPayloadByteProblems(
+        executionPayloadFixture,
+        executionPayloadFixtureBytes,
+      ),
+    ).toEqual([]);
+    expect(
+      executionPayloadProblems(
+        proceedRecordFixture,
+        executionPayloadFixture,
+      ),
     ).toEqual([]);
   });
 });
@@ -361,5 +569,123 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         problem.includes("decisionHash"),
       ),
     ).toBe(false);
+  });
+
+  it("flags every hash-valid GC-07 precedence drift, including a missing household row", () => {
+    const mutations: Array<
+      (record: MutableGc07Record) => void
+    > = [
+      (record) => {
+        record.precedenceTrace.reverse();
+      },
+      (record) => {
+        record.precedenceTrace[0]!.resolution = "right_wins";
+      },
+      (record) => {
+        record.precedenceTrace[0]!.reasonCode =
+          "changed-precedence-reason";
+      },
+      (record) => {
+        record.precedenceTrace[0]!.left.sourceType =
+          "firm_policy";
+      },
+      (record) => {
+        record.precedenceTrace[0]!.left.sourceRef.id =
+          "different-regulatory-source";
+      },
+      (record) => {
+        record.precedenceTrace[0]!.left.versionRef.id =
+          "different-regulatory-version";
+      },
+      (record) => {
+        record.precedenceTrace[1]!.right.sourceType =
+          "firm_policy";
+      },
+      (record) => {
+        record.precedenceTrace[1]!.right.sourceRef.id =
+          "different-household-source";
+      },
+      (record) => {
+        record.precedenceTrace[1]!.right.versionRef.id =
+          "different-household-version";
+      },
+      (record) => {
+        record.precedenceTrace.push(
+          structuredClone(record.precedenceTrace[0]!),
+        );
+      },
+      (record) => {
+        record.precedenceTrace.pop();
+      },
+    ];
+    for (const mutate of mutations) {
+      const problems = gc07MirrorProblems(
+        goldenGc07,
+        hashValidGc07Mutation(mutate),
+      );
+      expect(
+        problems.some((problem) =>
+          problem.includes("precedence trace"),
+        ),
+      ).toBe(true);
+      expect(
+        problems.some((problem) =>
+          problem.includes("decisionHash"),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("flags a hash-valid execution command whose secure payload names the wrong source", () => {
+    const payload = structuredClone(executionPayloadFixture);
+    payload.sourceSubjectRef.id =
+      "subject:smiths-joint-taxable";
+    const record = structuredClone(proceedRecordFixture) as {
+      decisionHash: string;
+      result: {
+        executionPlan: {
+          steps: Array<{
+            command: { payloadHash: string };
+          }>;
+        };
+      };
+    };
+    record.result.executionPlan.steps[0]!.command.payloadHash =
+      executionPayloadHash(payload);
+    record.decisionHash = decisionHashFor(
+      DecisionRecordSchema.parse(record),
+    );
+    const problems = executionPayloadProblems(record, payload);
+    expect(
+      problems.some((problem) =>
+        problem.includes("source must be Smith Family Taxable"),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some((problem) =>
+        problem.includes("source must equal the recommendation"),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some((problem) =>
+        problem.includes("payloadHash"),
+      ),
+    ).toBe(false);
+    expect(
+      problems.some((problem) =>
+        problem.includes("decisionHash"),
+      ),
+    ).toBe(false);
+  });
+
+  it("flags noncanonical secure payload bytes without changing their parsed value", () => {
+    expect(
+      executionPayloadByteProblems(
+        executionPayloadFixture,
+        `${JSON.stringify(executionPayloadFixture, null, 2)}\n`,
+      ),
+    ).toEqual([
+      "GC-01 secure execution payload must be committed in canonical byte form",
+    ]);
   });
 });

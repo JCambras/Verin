@@ -48,7 +48,7 @@ function stopNoteOf(scenarioId: string, firmId: string): string | null {
   const disposition = dispositionFor(scenario, firmId);
   if (disposition === "prohibited") return "This journey stopped at Decision: the prohibition is not resolvable by evidence or authority.";
   if (disposition === "blocked") return "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
-  if (scenario.spec.specialistExpired) return "This journey is waiting at Authority: the specialist review expired and escalated to the principal.";
+  if (scenario.spec.specialistExpired) return "This journey is waiting at Authority: the specialist review expired and escalated to the operations manager.";
   if (scenario.spec.invalidation) return "This journey returned to Decision: the approval was voided when material evidence changed.";
   return null;
 }
