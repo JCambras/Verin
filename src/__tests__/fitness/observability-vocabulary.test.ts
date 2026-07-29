@@ -366,56 +366,57 @@ function isSessionSecret(node: Node): boolean {
     resolvesTo(config.getExpression(), CONFIG, "getConfig");
 }
 
+function immutableSingleUseInitializer(node: Node): Node | null {
+  if (!Node.isIdentifier(node)) return null;
+  const definitions = node.getDefinitionNodes();
+  if (definitions.length !== 1) return null;
+  const [definition] = definitions;
+  if (!definition || !Node.isVariableDeclaration(definition)) return null;
+  const statement = definition.getVariableStatement();
+  if (
+    !statement?.getDeclarationKindKeywords().some((keyword) =>
+      keyword.getKind() === SyntaxKind.ConstKeyword
+    )
+  ) {
+    return null;
+  }
+  const name = definition.getNameNode();
+  if (!Node.isIdentifier(name)) return null;
+  const references = name.findReferencesAsNodes();
+  if (
+    references.length !== 1 ||
+    references[0]!.getSourceFile() !== node.getSourceFile() ||
+    references[0]!.getStart() !== node.getStart() ||
+    references[0]!.getEnd() !== node.getEnd()
+  ) {
+    return null;
+  }
+  return definition.getInitializer() ?? null;
+}
+
 function isSecretDerivedPurposeKey(node: Node): boolean {
-  if (!Node.isIdentifier(node)) return false;
-  return node.getDefinitionNodes().some((definition) => {
-    if (!Node.isVariableDeclaration(definition)) return false;
-    const statement = definition.getVariableStatement();
-    if (
-      !statement?.getDeclarationKindKeywords().some((keyword) =>
-        keyword.getKind() === SyntaxKind.ConstKeyword
-      )
-    ) {
-      return false;
-    }
-    const name = definition.getNameNode();
-    if (!Node.isIdentifier(name)) return false;
-    const references = name.findReferencesAsNodes();
-    if (
-      references.length !== 1 ||
-      references[0]!.getSourceFile() !== node.getSourceFile() ||
-      references[0]!.getStart() !== node.getStart() ||
-      references[0]!.getEnd() !== node.getEnd()
-    ) {
-      return false;
-    }
-    const initializer = definition.getInitializer();
-    if (!initializer || !Node.isCallExpression(initializer)) return false;
-    const trace = hmacDigestTrace(initializer, null);
-    return Boolean(
-      trace &&
-      isSessionSecret(trace.key) &&
-      trace.inputs.length === 1 &&
-      literalText(trace.inputs[0]) === RECORD_ID_KEY_PURPOSE,
-    );
-  });
+  const initializer = immutableSingleUseInitializer(node);
+  if (!initializer || !Node.isCallExpression(initializer)) return false;
+  const trace = hmacDigestTrace(initializer, null);
+  return Boolean(
+    trace &&
+    isSessionSecret(trace.key) &&
+    trace.inputs.length === 1 &&
+    literalText(trace.inputs[0]) === RECORD_ID_KEY_PURPOSE,
+  );
 }
 
 function hmacDigestInitializer(node: Node, owner: FunctionDeclaration): boolean {
-  if (!Node.isIdentifier(node)) return false;
-  return node.getDefinitionNodes().some((definition) => {
-    if (!Node.isVariableDeclaration(definition)) return false;
-    const initializer = definition.getInitializer();
-    if (!initializer || !Node.isCallExpression(initializer)) return false;
-    const trace = hmacDigestTrace(initializer, "hex");
-    return Boolean(
-      trace &&
-      isSecretDerivedPurposeKey(trace.key) &&
-      trace.inputs.some((input) =>
-        isNormalizedRecordDigestInput(input, owner)
-      ),
-    );
-  });
+  const initializer = immutableSingleUseInitializer(node);
+  if (!initializer || !Node.isCallExpression(initializer)) return false;
+  const trace = hmacDigestTrace(initializer, "hex");
+  return Boolean(
+    trace &&
+    isSecretDerivedPurposeKey(trace.key) &&
+    trace.inputs.some((input) =>
+      isNormalizedRecordDigestInput(input, owner)
+    ),
+  );
 }
 
 function isHmacDigestValue(
@@ -1136,6 +1137,96 @@ describe("observability-vocabulary fence (charter #14)", () => {
             const digest = createHmac("sha256", purposeKey)
               .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
               .digest("hex");
+            return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
+          }
+        `,
+      });
+      const violations = detectUntrustedObservabilityRecordMints(project);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(
+        "keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      );
+    });
+
+    it("rejects an emitted digest reassigned after valid derivation", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `
+          export interface SecretValue { readonly kind: "secret" }
+          export function revealSecret(value: SecretValue): string {
+            return value.kind;
+          }
+        `,
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/config/index.ts": `
+          import type { SecretValue } from "@contracts/secret";
+          declare const secret: SecretValue;
+          export function getConfig(): { session: { secret: SecretValue } } {
+            return { session: { secret } };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { createHash, createHmac } from "node:crypto";
+          import { revealSecret } from "@contracts/secret";
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          import { getConfig } from "@infra/config";
+          export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
+            const purposeKey = createHmac("sha256", revealSecret(getConfig().session.secret))
+              .update("verin:observability-record-id:key:v1")
+              .digest();
+            let digest = createHmac("sha256", purposeKey)
+              .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
+              .digest("hex");
+            digest = createHash("sha256")
+              .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
+              .digest("hex");
+            return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
+          }
+        `,
+      });
+      const violations = detectUntrustedObservabilityRecordMints(project);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(
+        "keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      );
+    });
+
+    it("rejects an emitted digest consumed more than once", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `
+          export interface SecretValue { readonly kind: "secret" }
+          export function revealSecret(value: SecretValue): string {
+            return value.kind;
+          }
+        `,
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/config/index.ts": `
+          import type { SecretValue } from "@contracts/secret";
+          declare const secret: SecretValue;
+          export function getConfig(): { session: { secret: SecretValue } } {
+            return { session: { secret } };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { createHmac } from "node:crypto";
+          import { revealSecret } from "@contracts/secret";
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          import { getConfig } from "@infra/config";
+          export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
+            const purposeKey = createHmac("sha256", revealSecret(getConfig().session.secret))
+              .update("verin:observability-record-id:key:v1")
+              .digest();
+            const digest = createHmac("sha256", purposeKey)
+              .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
+              .digest("hex");
+            void digest;
             return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
           }
         `,

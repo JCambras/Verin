@@ -5301,3 +5301,39 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+
+### PF-187 emitted observability digest bindings are immutable and single-use
+
+The keyed-record provenance fence validated the emitted digest binding's
+initializer but not the binding itself. A mutable digest could therefore start
+with the required secret-derived HMAC, be reassigned to an unkeyed SHA-256
+digest, and emit the replacement while the fence stayed green.
+
+**Adversarial proof:** the new in-memory companion initializes `let digest`
+with the complete tenant-, field-, and value-scoped HMAC, reassigns it from
+`createHash("sha256")`, and emits the reassigned value. Before the correction,
+the detector returned no violations and the focused file failed with one failed
+test out of 40. After the correction, the companion passes. The same
+reassignment was then injected into the live record-id implementation. The
+enforcement assertion failed at
+`src/infrastructure/observability/record-id.ts:36`, naming the untrusted keyed
+mint. The injection was reverted. A second companion consumes a valid `const`
+digest twice and proves that immutable but ambiguous ownership is also refused.
+
+### PF-187 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/observability-vocabulary.test.ts
+                                                             # 41 tests passed
+corepack pnpm test                                           # 56 files, 1,213 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+corepack pnpm test:e2e                                       # production build and 17 tests passed
+```

@@ -2973,3 +2973,34 @@ a recovery oracle).
 
 **Revert path:** revert this changeset to restore input-only emitted-digest
 tracing and remove the public-key companion.
+
+## D-096 - Emitted record digest bindings are immutable and single-use
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, D-094, D-095,
+ADR-0013, ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The emitted keyed-record digest now passes through the same immutable,
+single-use binding proof as its secret-derived purpose key. The shared analysis
+requires one variable definition, a `const` declaration, and exactly one
+resolved reference at the inspected use before it trusts the initializer. A
+valid HMAC initializer can therefore no longer authenticate a later reassigned
+or ambiguously reused value.
+
+One adversarial companion initializes a mutable digest with the complete
+secret-derived HMAC, reassigns it to an unkeyed SHA-256 digest, and emits that
+replacement. It failed before the correction because the analyzer inspected
+only the initializer and passes only when the reassigned value is refused. A
+second companion proves that an otherwise immutable digest with another
+consumer also fails.
+
+Only the fitness analyzer, its adversarial companions, decision evidence, and
+proof evidence changed. Runtime behavior and platform line measurements remain
+unchanged.
+
+**Alternatives rejected:** trace every reaching assignment through arbitrary
+control flow when the reviewed boundary needs no mutation; require only `const`
+without proving the inspected use is the binding's sole consumer; or special
+case the reported reassignment while leaving equivalent mutable bindings open.
+
+**Revert path:** restore initializer-only digest validation and remove the two
+digest-binding companions.
