@@ -7,16 +7,29 @@ import {
   SyntaxKind,
   VariableDeclarationKind,
 } from "ts-morph";
+import { parse as parseYaml } from "yaml";
+import {
+  ciJobRuns,
+  parseCiJobs,
+} from "../../../scripts/v3-gates.lib";
+import {
+  demoScreenArtifactProblems,
+  EXPECTED_DEMO_SCREEN_ARTIFACTS,
+} from "../../../scripts/demo-screen-artifacts.lib";
 import {
   DEMO_SURFACES,
   type DemoSurfaceDefinition,
 } from "../../app/demo/surface-contract";
 import { DEMO_SEQUENCE } from "../../app/demo/model";
+import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 
 const CONTRACT_PATH = "docs/demo-contract.md";
 const ROUTE_PATH = "src/app/app/demo/[station]/page.tsx";
 const E2E_PATH = "e2e/demo-journey.spec.ts";
+const CI_PATH = ".github/workflows/ci.yml";
+const ARTIFACT_COMMAND =
+  "pnpm exec tsx scripts/demo-screen-artifacts.ts";
 const JOURNEY_TEST = "the seven-minute journey is clickable end-to-end on labeled fakes";
 
 function contractSurfaceNames(markdown: string): string[] {
@@ -146,18 +159,8 @@ function screenshotSequence(
     return [];
   }
   const statements = body.getStatements();
-  return statements.flatMap((statement, index) => {
-    if (
-      statements
-        .slice(0, index)
-        .some(
-          (preceding) =>
-            Node.isReturnStatement(preceding) ||
-            Node.isThrowStatement(preceding),
-        )
-    ) {
-      return [];
-    }
+  return statements.flatMap((statement) => {
+    if (!isProvablyReachable(statement, callback)) return [];
     if (!Node.isExpressionStatement(statement)) return [];
     const awaited = statement.getExpression();
     if (!Node.isAwaitExpression(awaited)) return [];
@@ -381,20 +384,74 @@ export function surfaceCompletenessProblems(
   return problems;
 }
 
+export function demoArtifactCiProblems(ci: string): string[] {
+  const problems: string[] = [];
+  if (!ciJobRuns(parseCiJobs(ci), "e2e", ARTIFACT_COMMAND)) {
+    problems.push(
+      `${CI_PATH}:1 e2e must run the demo screenshot artifact validator in a dedicated blocking step`,
+    );
+  }
+  let document: unknown;
+  try {
+    document = parseYaml(ci);
+  } catch {
+    document = undefined;
+  }
+  const jobs = (document as { jobs?: unknown } | undefined)?.jobs;
+  const e2eJob =
+    jobs !== null && typeof jobs === "object" && !Array.isArray(jobs)
+      ? (jobs as Record<string, unknown>).e2e
+      : undefined;
+  const steps = (e2eJob as { steps?: unknown } | undefined)?.steps;
+  const hasFailClosedUpload =
+    Array.isArray(steps) &&
+    steps.some((step) => {
+      const candidate = step as
+        | { uses?: unknown; with?: unknown }
+        | null;
+      const settings = candidate?.with;
+      if (
+        typeof candidate?.uses !== "string" ||
+        !candidate.uses.startsWith("actions/upload-artifact@") ||
+        settings === null ||
+        typeof settings !== "object" ||
+        Array.isArray(settings)
+      ) {
+        return false;
+      }
+      const values = settings as Record<string, unknown>;
+      return (
+        values.name === "demo-screens" &&
+        values.path === "demo-screens/" &&
+        values["if-no-files-found"] === "error"
+      );
+    });
+  if (!hasFailClosedUpload) {
+    problems.push(
+      `${CI_PATH}:1 demo-screens upload must fail when the expected artifact directory is missing`,
+    );
+  }
+  return problems;
+}
+
 const contract = readFileSync(join(REPO_ROOT, CONTRACT_PATH), "utf8");
 const route = readFileSync(join(REPO_ROOT, ROUTE_PATH), "utf8");
 const e2e = readFileSync(join(REPO_ROOT, E2E_PATH), "utf8");
+const ci = readFileSync(join(REPO_ROOT, CI_PATH), "utf8");
 const exists = (path: string) => existsSync(join(REPO_ROOT, path));
 
 describe("demo-surface-completeness fence", () => {
   it("enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted", () => {
-    const problems = surfaceCompletenessProblems(
-      contract,
-      DEMO_SURFACES,
-      route,
-      e2e,
-      exists,
-    );
+    const problems = [
+      ...surfaceCompletenessProblems(
+        contract,
+        DEMO_SURFACES,
+        route,
+        e2e,
+        exists,
+      ),
+      ...demoArtifactCiProblems(ci),
+    ];
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
@@ -483,6 +540,10 @@ describe("demo-surface-completeness fence", () => {
         ),
         e2e.replace(
           '  await snap(page, 12, "record", "record");',
+          '  if (true) return;\n  await snap(page, 12, "record", "record");',
+        ),
+        e2e.replace(
+          '  await snap(page, 12, "record", "record");',
           '  await snap(page, 12, "record", "workspace");',
         ),
       ]) {
@@ -542,6 +603,42 @@ describe("demo-surface-completeness fence", () => {
           invalidHelper,
         ).not.toEqual([]);
       }
+    });
+
+    it("rejects missing, empty, or non-blocking screenshot artifacts", () => {
+      const complete = EXPECTED_DEMO_SCREEN_ARTIFACTS.map((name) => ({
+        name,
+        size: 1,
+      }));
+      expect(demoScreenArtifactProblems(complete)).toEqual([]);
+      expect(demoScreenArtifactProblems(complete.slice(1))).toContain(
+        "missing screenshot artifact '00-launcher.png'",
+      );
+      expect(
+        demoScreenArtifactProblems([
+          ...complete.slice(0, -1),
+          { name: complete.at(-1)!.name, size: 0 },
+        ]),
+      ).toContain(
+        `empty screenshot artifact '${complete.at(-1)!.name}'`,
+      );
+      expect(
+        demoArtifactCiProblems(
+          ci.replace(
+            `        run: ${ARTIFACT_COMMAND}`,
+            "        run: echo skipped",
+          ),
+        ),
+      ).toContain(
+        `${CI_PATH}:1 e2e must run the demo screenshot artifact validator in a dedicated blocking step`,
+      );
+      expect(
+        demoArtifactCiProblems(
+          ci.replace("          if-no-files-found: error\n", ""),
+        ),
+      ).toContain(
+        `${CI_PATH}:1 demo-screens upload must fail when the expected artifact directory is missing`,
+      );
     });
   });
 });

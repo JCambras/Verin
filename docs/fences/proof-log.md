@@ -10527,3 +10527,128 @@ namespace-member neutralizer aliases introduced by later typed assignments.
 **Revert:** the three injected statements were removed immediately.
 
 **Date:** 2026-07-29.
+
+### PF-024 (continued) · complete active-invariant mechanism ratchets
+
+**Invariant (v3 §17 preamble, ADR-0023):** once an invariant is active, both its activation state and
+the complete mechanism tuple set that proves it are monotonic governance. A registry edit cannot
+redirect an active guarantee to an unrelated passing fence.
+
+**Injection 5 - redirect invariant 7.** Changed only invariant 7's fitness reference from
+`decision-core-illegal-states.test.ts` to the unrelated passing `org-id-required.test.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 7: shipped mechanism set drifted; expected [["fitness","src/__tests__/fitness/decision-core-illegal-states.test.ts",null]], received [["fitness","src/__tests__/fitness/org-id-required.test.ts",null]]
+```
+
+**Companion added:** an in-memory complete registry keeps every active status unchanged while repointing
+invariant 7 to an unrelated passing fitness file. The registry fence rejects the changed type, reference,
+or command tuple and also rejects tuple additions or removal.
+
+**Revert:** invariant 7's exact decision-core illegal-states mechanism was restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-030 (continued, 13th review round) · matrix reachability is blocking evidence
+
+**Invariant (ADR-0030):** a mapped CI command is evidence only when at least one structurally proven job
+instance executes it and can fail the workflow. A matrix whose exclusions remove every combination
+proves no execution.
+
+**Injection 13 - exclude the only matrix combination.** Added a one-value `strategy.matrix` to the real
+`v3-invariants` job and excluded its sole combination while leaving the mapped command unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+AssertionError: enforced CI gates are not proven by .github/workflows/ci.yml:
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' is neutralized by job strategy.matrix is not supported as blocking evidence
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' is neutralized by job strategy.matrix is not supported as blocking evidence
+```
+
+**Companion added:** an in-memory evidence job with one matrix value and a matching exclusion is rejected
+by both `ciJobRuns` and `ciJobBlocks`, and its diagnostic names `strategy.matrix` rather than reporting
+the command missing.
+
+**Revert:** the injected matrix was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · stable route provenance and callback reachability
+
+**Invariant (charter #9):** every required Axe route loop scans the complete imported route collection
+from a provably reachable callback path. An unreachable assignment cannot supply the collection, and a
+conditional callback exit cannot skip every scan while Playwright reports success.
+
+**Injection 10 - hide route assignment in dead control flow.** Replaced the public route collection with
+an empty mutable alias and assigned `PUBLIC_AXE_ROUTES` only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Injection 11 - return before the route loop.** Added `if (true) return;` immediately before the real
+public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reproduce both bypasses. Stable import aliases remain
+accepted, while reassigned collection aliases and reachable callback exits before a required loop fail.
+
+**Revert:** both real injections were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · conditional screenshot exits and runtime artifacts
+
+**Invariant (Gate 0, ADR-0030):** the canonical screenshot calls are provably reachable, and the blocking
+E2E job verifies the produced artifact set at runtime. Every canonical PNG must exist and be non-empty;
+missing uploads fail instead of warning.
+
+**Injection 5 - return before the record capture.** Added `if (true) return;` immediately before the
+twelfth canonical `snap` call.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Injection 6 - downgrade a missing upload to a warning.** Removed only
+`if-no-files-found: error` from the real `demo-screens` upload step.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: .github/workflows/ci.yml:1 demo-screens upload must fail when the expected artifact directory is missing
+```
+
+**Injection 7 - remove one runtime artifact.** Temporarily moved `12-record.png` out of its expected
+name and executed the dedicated artifact validator.
+
+**Observed failure (verbatim):**
+```text
+demo screen artifacts:
+- missing screenshot artifact '12-record.png'
+```
+
+**Companions added:** in-memory journeys reject conditional early exits, the artifact validator rejects
+missing and zero-byte canonical files, the CI fence requires its direct blocking command, and the
+upload step must fail when the directory is absent.
+
+**Revert:** the journey, upload setting, and record artifact were restored immediately.
+
+**Restored verification:** the combined `axe-required`, `demo-surface-completeness`,
+`v3-invariants`, `v3-gate-ordering`, and `charter-drift` run passed 5 files and 96 tests. The dedicated
+runtime validator then reported `demo screen artifacts: 18 verified`.
+
+**Date:** 2026-07-29.

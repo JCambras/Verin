@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, and the captain-approved enforcement-integrity review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, and the captain-approved control-flow, artifact, mechanism, and matrix review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -112,6 +112,9 @@ non-empty, contain unique prompt numbers inside the 1-30 sequence, and include e
 `activatesWhen`. The earlier Gate A references depend on exact prompt-5 proof, so a fourth ratchet pins
 invariants 7, 8, and 9 to `[5]`; changing them to an earlier valid prompt fails even when the general
 ordering rule would still pass.
+The active-invariant ratchet also pins every complete mechanism tuple, including type, reference, and
+CI command where present. An active invariant therefore cannot keep its status while redirecting its
+proof to an unrelated passing fitness file.
 
 **Requirements sit at the earliest gate that can prove the WHOLE invariant** (same ruling), never at the
 first gate that touches part of one. Gate A therefore requires invariants 7, 8, and 9 because their
@@ -194,6 +197,9 @@ An evidence job with a non-empty `needs` dependency is also non-blocking under t
 contract. A dependency can be skipped by its own condition and cause the evidence job never to run while
 the workflow remains successful. `parseCiJobs` therefore rejects dependency-bearing evidence jobs rather
 than attempting to model GitHub's transitive job-result semantics.
+An evidence job using `strategy.matrix` is rejected for the same reason. Matrix exclusions can eliminate
+every job combination while GitHub reports the skipped job successfully, so the restricted contract
+does not treat a local command as executed when matrix reachability is undecidable.
 
 **One structural CI authority, three call sites** (same ruling). `charter-map.json`'s enforced `ci-gate`
 mechanisms were still proven by `ci.includes(ref)` in the charter-drift fence, so a deleted job matched
@@ -220,7 +226,9 @@ binds each required specification to its typed route group and loaded-state asse
 direct, computed, destructured, aliased, and namespace-imported Playwright neutralization calls through
 their imported symbols. A multi-argument `defineConfig` is rejected because later arguments override
 earlier selection settings. Each sanctioned route loop is a direct statement of its enabled registered
-test, outside uncalled functions and caught branches.
+test, outside uncalled functions and caught branches. Its route collection must come from a stable import
+or immutable alias rather than a later assignment, and any reachable callback exit before the loop makes
+the scan non-evidence. The shared AST control-flow proof applies the same rule to canonical screenshots.
 Configuration property names are normalized across direct and computed literal syntax at the root and
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
@@ -233,6 +241,9 @@ surface screenshot in order. Each `snap` call names its manifest station, and th
 station URL plus its surface-specific loaded marker before directly awaiting `page.screenshot` into
 `demo-screens` and asserting that the returned capture is non-empty. The
 blocking E2E gate reaches every typed demo route and waits for its surface-specific loaded marker.
+After Playwright completes, a dedicated blocking command checks that every canonical screenshot exists
+and is non-empty. The artifact upload also sets `if-no-files-found: error`, so an early test return cannot
+leave the job green with no deliverable.
 Gate 0 now computes green, and remains the structural predecessor of Gate A.
 
 **Entry conditions are executable dependencies, not display copy.** Every gate declares structural
@@ -357,8 +368,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   short-circuited expressions, heredocs, compound commands, step names, environment values, and `uses:`
   paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
   effective shell, any missing, dynamic, invalid, or unsupported runner regardless of an explicit
-  shell, or a job carrying a non-empty `needs`
-  dependency. An unparseable
+  shell, a job carrying a non-empty `needs` dependency, or an evidence job using `strategy.matrix`.
+  An unparseable
   workflow yields no jobs, so every `ci-gate` reads unmet rather than passing on a file nothing could read.
 - `parseCiJobs` is the repo's one structured CI authority, read by three call sites - the gate
   requirements, the invariant mechanisms (`v3-invariants.test.ts`), and charter-drift check (a'). The
@@ -373,6 +384,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   annotation calls and aliases introduced by later simple assignments. Playwright configuration must be one effective configuration object, reject
   focused-test exclusion, and select the required specifications. Typed public, authenticated,
   and demo route groups bind each directly owned route loop to navigation plus its loaded-state marker.
+  Reassigned route aliases and conditional callback exits before the loop are non-evidence.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -383,7 +395,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
   manifest, each route case's imported component, and direct awaited ordered screenshots. The screenshot
   helper verifies the corresponding URL and loaded marker, writes only to the pinned artifact directory,
-  and rejects an empty capture. Gates A through I remain non-green against their own unmet requirements.
+  and rejects an empty capture. A dedicated post-Playwright command validates every canonical artifact,
+  and upload-artifact fails when the directory is missing. Gates A through I remain non-green against
+  their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
   a rule cannot be enforced in one and missing in the other. The runner exits nonzero when the shared
   Vitest invocation fails or any mapped fitness file, including a gate-only fence, fails or produces no
@@ -429,13 +443,17 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A blocking evidence job legitimately needs another job: point the requirement at a dependency-free
   blocking job, or extend `parseCiJobs` with complete transitive reachability semantics and adversarial
   companions. Do not treat a local command as executed when `needs` can skip its job.
+- A blocking evidence job legitimately needs `strategy.matrix`: move the mapped proof to a
+  matrix-independent blocking job, or extend `parseCiJobs` with complete combination expansion,
+  exclusion, and reachability semantics plus adversarial companions.
 - A blocking job needs a runner or shell outside the supported implicit Ubuntu/macOS, `bash`, or `sh`
   semantics: extend the restricted parser to decide that exact execution model and add adversarial
   companions before using it as evidence. Unsupported custom shells remain non-evidence.
 - A mapped command must legitimately run outside the repository root: add a typed governed-root field
   and validate its complete ownership boundary before relaxing the current root-only contract.
 - The required demo surface list changes: update the typed manifest, route, canonical screenshots,
-  loaded-state route group, Gate 0 requirement ratchet, and PF-032 evidence together.
+  loaded-state route group, runtime artifact expectation, Gate 0 requirement ratchet, and PF-032
+  evidence together.
 - A `charter-map.json` `ci-gate` entry changes its command: update the mapping, its exact-command ratchet,
   and the proof evidence in the same PR. Name-only enforced mappings are invalid.
 - An invariant that has been referenced by an earlier gate is activated: keep its `activationPrompts`.

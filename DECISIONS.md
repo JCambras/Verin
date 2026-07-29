@@ -6332,6 +6332,17 @@ assignment for named imports, namespace imports, and member aliases, including t
 declarations. PF-030 and PF-031 record the red reproductions, focused companions, and restored green
 proofs.
 
+The captain-approved control-flow, artifact, mechanism, and matrix review (2026-07-29) amended
+ADR-0030 in place a thirteenth time: **(1)** required Axe route collections reject reassigned aliases,
+including assignments hidden in unreachable control flow; **(2)** the shared AST reachability proof
+rejects conditional callback exits before required Axe loops and canonical screenshot calls; **(3)**
+CI runs a dedicated post-Playwright validator that requires every canonical screenshot artifact to
+exist and be non-empty, while upload-artifact fails when the directory is missing; **(4)** every
+shipped active invariant ratchets its complete mechanism tuple set, so status cannot remain active
+after proof is redirected to an unrelated fence; and **(5)** evidence jobs using `strategy.matrix`
+are non-evidence until complete matrix reachability semantics exist. PF-024, PF-030, PF-031, and
+PF-032 record the red reproductions, focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

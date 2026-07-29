@@ -55,10 +55,78 @@ interface Registry {
 
 const VALID_STATUSES = ["active", "not-yet-active"];
 const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedure"];
-// The RATCHET (e): every invariant id that has shipped as 'active'. Flipping one
-// back to 'not-yet-active' would un-enforce it silently; removal needs an ADR
-// AND an edit here, where review sees it.
-export const ACTIVE_RATCHET = [1, 2, 5, 7, 8, 9];
+export const ACTIVE_MECHANISM_RATCHET: Readonly<
+  Record<number, readonly Mechanism[]>
+> = {
+  1: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/llm-pii-boundary.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/tokenized-factory-only.test.ts",
+    },
+  ],
+  2: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/org-id-required.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-tenant-scope.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/tenant-context-required.test.ts",
+    },
+  ],
+  5: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/audited-write-required.test.ts",
+    },
+    {
+      type: "ci-gate",
+      ref: "audit-chain-verify",
+      command: "pnpm exec tsx scripts/audit-chain-verify.ts",
+    },
+    {
+      type: "file",
+      ref: "src/infrastructure/store/migrations.ts",
+    },
+  ],
+  7: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+  8: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+  9: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+};
+export const ACTIVE_RATCHET = Object.keys(ACTIVE_MECHANISM_RATCHET).map(Number);
+
+function mechanismTuples(
+  mechanisms: readonly Mechanism[],
+): Array<[string, string, string | null]> {
+  return mechanisms.map((mechanism) => [
+    mechanism.type,
+    mechanism.ref,
+    mechanism.command ?? null,
+  ]);
+}
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
 export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciJobs: Map<string, CiJob> }): string[] {
@@ -112,6 +180,13 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
     const inv = invs.find((i) => i.id === id);
     if (!inv) continue; // already reported as missing above
     if (inv.status !== "active") problems.push(`invariant ${id}: shipped as 'active' but regressed to '${inv.status}' (the ratchet is monotonic)`);
+    const expected = mechanismTuples(ACTIVE_MECHANISM_RATCHET[id] ?? []);
+    const actual = mechanismTuples(inv.mechanisms ?? []);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      problems.push(
+        `invariant ${id}: shipped mechanism set drifted; expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      );
+    }
   }
   return problems;
 }
@@ -142,25 +217,42 @@ describe("v3-invariant registry fence", () => {
     const deps = {
       exists: () => true,
       ciJobs: parseCiJobs(
-        ["name: ci", "on:", "  push:", "  pull_request:", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm audit:chain", ""].join("\n"),
+        [
+          "name: ci",
+          "on:",
+          "  push:",
+          "  pull_request:",
+          "jobs:",
+          "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm exec tsx scripts/audit-chain-verify.ts",
+          "      - run: pnpm audit:chain",
+          "",
+        ].join("\n"),
       ),
     };
     // Ratcheted ids must be active in fixtures that test OTHER failure classes.
     const ratchetActive: Array<[number, Partial<Invariant>]> = ACTIVE_RATCHET.map((id) => [
       id,
-      { status: "active", mechanisms: [{ type: "fitness", ref: "src/__tests__/fitness/x.test.ts" }] },
+      {
+        status: "active",
+        mechanisms: ACTIVE_MECHANISM_RATCHET[id]!.map((mechanism) => ({
+          ...mechanism,
+        })),
+      },
     ]);
 
     it("flags a stored pass/fail result masquerading as a status", () => {
-      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [7, { status: "active-pass" }]]));
+      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [10, { status: "active-pass" }]]));
       expect(validateRegistry(reg, deps).some((p) => p.includes("never fake green"))).toBe(true);
     });
     it("flags an active invariant with no runnable fitness mechanism (fake green)", () => {
-      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [7, { status: "active", mechanisms: [] }]]));
+      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [10, { status: "active", mechanisms: [] }]]));
       expect(validateRegistry(reg, deps).some((p) => p.includes("fake green"))).toBe(true);
     });
     it("flags a not-yet-active invariant with no named activation prerequisite (silent deferral)", () => {
-      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [8, { activatesWhen: "" }]]));
+      const reg = full(new Map<number, Partial<Invariant>>([...ratchetActive, [10, { activatesWhen: "" }]]));
       expect(validateRegistry(reg, deps).some((p) => p.includes("silent deferral"))).toBe(true);
     });
     it("flags a mechanism pointing at a missing file and a ci-gate absent from ci.yml", () => {
@@ -168,7 +260,7 @@ describe("v3-invariant registry fence", () => {
         new Map<number, Partial<Invariant>>([
           ...ratchetActive,
           [
-            9,
+            10,
             {
               status: "active",
               mechanisms: [
@@ -187,21 +279,21 @@ describe("v3-invariant registry fence", () => {
       const named = full(
         new Map<number, Partial<Invariant>>([
           ...ratchetActive,
-          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify" }] }],
+          [10, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify" }] }],
         ]),
       );
       expect(validateRegistry(named, deps).some((p) => p.includes("must name the command its blocking job runs"))).toBe(true);
       const wrongCommand = full(
         new Map<number, Partial<Invariant>>([
           ...ratchetActive,
-          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm lint" }] }],
+          [10, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm lint" }] }],
         ]),
       );
       expect(validateRegistry(wrongCommand, deps).some((p) => p.includes("does not run 'pnpm lint'"))).toBe(true);
       const honest = full(
         new Map<number, Partial<Invariant>>([
           ...ratchetActive,
-          [9, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm audit:chain" }] }],
+          [10, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm audit:chain" }] }],
         ]),
       );
       expect(validateRegistry(honest, deps)).toEqual([]);
@@ -212,6 +304,24 @@ describe("v3-invariant registry fence", () => {
       const twentyNine = full(new Map(ratchetActive));
       twentyNine.invariants = twentyNine.invariants.filter((i) => i.id !== 17);
       expect(validateRegistry(twentyNine, deps).some((p) => p.includes("missing from the registry: 17"))).toBe(true);
+    });
+    it("flags a shipped active invariant repointed to an unrelated passing fence", () => {
+      const overrides = new Map(ratchetActive);
+      overrides.set(7, {
+        status: "active",
+        mechanisms: [
+          {
+            type: "fitness",
+            ref: "src/__tests__/fitness/unrelated-passing.test.ts",
+          },
+        ],
+      });
+      const repointed = full(overrides);
+      expect(
+        validateRegistry(repointed, deps).some((p) =>
+          p.includes("shipped mechanism set drifted"),
+        ),
+      ).toBe(true);
     });
     it("flags failed and missing results from every mapped fitness file", () => {
       const refs = ["active.test.ts", "gate-only.test.ts"];

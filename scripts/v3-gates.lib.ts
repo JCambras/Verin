@@ -250,6 +250,22 @@ function dependencyNeutralizerOf(node: unknown): string | undefined {
   return `needs: ${value}`;
 }
 
+function strategyNeutralizerOf(node: unknown): string | undefined {
+  const strategy = (node as { strategy?: unknown } | null)?.strategy;
+  if (
+    strategy === null ||
+    typeof strategy !== "object" ||
+    Array.isArray(strategy)
+  ) {
+    return strategy === undefined
+      ? undefined
+      : `strategy: ${String(strategy)}`;
+  }
+  return Object.hasOwn(strategy, "matrix")
+    ? "strategy.matrix is not supported as blocking evidence"
+    : undefined;
+}
+
 function configuredRunShell(node: unknown): unknown {
   const defaults = (node as { defaults?: unknown } | null)?.defaults;
   const run = (defaults as { run?: unknown } | null)?.run;
@@ -467,7 +483,10 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
     const commands = parsedSteps
       .filter((step) => step.neutralizedBy === undefined && step.blockingCommand !== undefined)
       .map((step) => step.blockingCommand!);
-    const neutralizedBy = neutralizerOf(job) ?? dependencyNeutralizerOf(job);
+    const neutralizedBy =
+      neutralizerOf(job) ??
+      dependencyNeutralizerOf(job) ??
+      strategyNeutralizerOf(job);
     jobs.set(key, neutralizedBy === undefined ? { commands, steps: parsedSteps } : { neutralizedBy, commands, steps: parsedSteps });
   }
   return jobs;

@@ -5,6 +5,7 @@ import {
   Node,
   Project,
   SyntaxKind,
+  VariableDeclarationKind,
   type ArrowFunction,
   type CallExpression,
   type FunctionDeclaration,
@@ -18,6 +19,7 @@ import {
   PUBLIC_AXE_ROUTES,
 } from "../../../e2e/axe-routes";
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
+import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
@@ -367,32 +369,6 @@ function ownedCalls(fn: FunctionNode): CallExpression[] {
   return fn.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) => nearestFunction(call) === fn);
 }
 
-function contains(container: Node, node: Node): boolean {
-  return container === node || node.getAncestors().includes(container);
-}
-
-function isStaticallyDead(node: Node, boundary: Node): boolean {
-  for (const ancestor of node.getAncestors()) {
-    if (ancestor === boundary) break;
-    if (Node.isIfStatement(ancestor)) {
-      const condition = ancestor.getExpression().getKind();
-      if (condition === SyntaxKind.FalseKeyword && contains(ancestor.getThenStatement(), node)) return true;
-      if (condition === SyntaxKind.TrueKeyword && ancestor.getElseStatement() !== undefined && contains(ancestor.getElseStatement()!, node)) return true;
-    }
-    if (Node.isConditionalExpression(ancestor)) {
-      const condition = ancestor.getCondition().getKind();
-      if (condition === SyntaxKind.FalseKeyword && contains(ancestor.getWhenTrue(), node)) return true;
-      if (condition === SyntaxKind.TrueKeyword && contains(ancestor.getWhenFalse(), node)) return true;
-    }
-    if (Node.isBlock(ancestor)) {
-      const statements = ancestor.getStatements();
-      const index = statements.findIndex((statement) => contains(statement, node));
-      if (index > 0 && statements.slice(0, index).some((statement) => Node.isReturnStatement(statement) || Node.isThrowStatement(statement))) return true;
-    }
-  }
-  return false;
-}
-
 function isInsideTry(node: Node, boundary: Node): boolean {
   return node.getAncestors().some((ancestor) => ancestor !== boundary && Node.isTryStatement(ancestor));
 }
@@ -460,7 +436,7 @@ function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
       (nested) =>
         isNamedImportCall(nested, "./axe", AXE_HELPER_EXPORT) &&
         Node.isAwaitExpression(nested.getParent()) &&
-        !isStaticallyDead(nested, callback) &&
+        isProvablyReachable(nested, callback) &&
         !isInsideTry(nested, callback),
     );
   });
@@ -518,7 +494,7 @@ function routeLoopIsSanctioned(
   if (
     !Node.isBlock(callbackBody) ||
     loop.getParent() !== callbackBody ||
-    isStaticallyDead(loop, callback) ||
+    !isProvablyReachable(loop, callback) ||
     isInsideTry(loop, callback)
   ) {
     return false;
@@ -604,13 +580,54 @@ function specCoversRouteGroup(
       .filter(Node.isForOfStatement)
       .some(
         (loop) =>
-          isNamedImportIdentifier(
+          isStableNamedImportIdentifier(
             loop.getExpression(),
             "./axe-routes",
             imported,
           ) && routeLoopIsSanctioned(loop, callback, requiresLogin),
       );
   });
+}
+
+function isStableNamedImportIdentifier(
+  node: Node,
+  moduleName: string,
+  imported: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (!Node.isIdentifier(node) || seen.has(node)) return false;
+  seen.add(node);
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return false;
+  const reassigned = node
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .some(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < node.getStart() &&
+        Node.isIdentifier(candidate.getLeft()) &&
+        candidate.getLeft().getSymbol() === symbol,
+    );
+  if (reassigned) return false;
+  if (isDirectNamedImportIdentifier(node, moduleName, imported)) return true;
+  return (
+    symbol.getDeclarations().some((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return false;
+      const statement = declaration.getVariableStatement();
+      const initializer = declaration.getInitializer();
+      return (
+        statement?.getDeclarationKind() === VariableDeclarationKind.Const &&
+        initializer !== undefined &&
+        isStableNamedImportIdentifier(
+          initializer,
+          moduleName,
+          imported,
+          new Set(seen),
+        )
+      );
+    })
+  );
 }
 
 function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
@@ -1217,6 +1234,49 @@ test("axe", async ({ page }) => {
           "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
         );
       }
+    });
+
+    it("rejects route aliases assigned only in unreachable control flow", () => {
+      const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  let routes: typeof PUBLIC_AXE_ROUTES = [];
+  if (false) routes = PUBLIC_AXE_ROUTES;
+  for (const route of routes) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": spec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
+      );
+    });
+
+    it("rejects route loops after conditional callback exits", () => {
+      const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  if (true) return;
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": spec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+      );
     });
 
     it("rejects namespace-imported Playwright neutralizers", () => {

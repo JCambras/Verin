@@ -85,14 +85,16 @@ required command must be a dedicated simple command whose exit status controls i
 named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
 `env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
 neutralized by `continue-on-error` or an `if:`.
-An unsupported runner, custom shell, or evidence job carrying a non-empty `needs` dependency is
-non-evidence because its execution or reachability semantics are not proven. Every declared
-`activationPrompts` array is validated regardless of activation status.
+An unsupported runner, custom shell, evidence job carrying a non-empty `needs` dependency, or evidence
+job using `strategy.matrix` is non-evidence because its execution or reachability semantics are not
+proven. Every declared `activationPrompts` array is validated regardless of activation status.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
+The v3 registry fence separately pins the complete mechanism tuple set for every shipped active invariant,
+so an active guarantee cannot be redirected to an unrelated passing fence.
 Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
 `domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
 an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
@@ -108,7 +110,9 @@ moves by a registry edit alone. Gate 0 now has executable section 4 surface-comp
 typed manifest is equal to the normative demo contract, every component and dynamic route exists, the
 canonical route binds each station to its manifest component, and the journey directly awaits all twelve
 screenshots in order. Each capture verifies its station URL and loaded marker, writes to `demo-screens`,
-and asserts the result is non-empty. The runner fails on every mapped fitness failure or missing result,
+and asserts the result is non-empty. CI separately verifies that every canonical artifact exists and is
+non-empty, then configures upload-artifact to fail when the directory is missing. The runner fails on
+every mapped fitness failure or missing result,
 including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
 stable-corpus evidence, Gate F includes prompt 26's verification
 reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
@@ -116,7 +120,8 @@ The Axe-specific fence also parses Playwright selection settings, forbids focuse
 route groups to directly owned loaded-state scans, rejects multi-argument configuration overrides and
 side-effecting assertion messages, normalizes computed configuration keys while failing closed on
 unresolved keys, and resolves direct, computed, destructured, aliased, and
-namespace-imported neutralization calls through imported Playwright symbols.
+namespace-imported neutralization calls through imported Playwright symbols. Reassigned route aliases
+and conditional callback exits before a required scan are rejected as non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

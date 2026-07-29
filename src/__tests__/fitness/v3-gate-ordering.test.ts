@@ -891,6 +891,29 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRunProblem(jobs, "audit-chain-verify", "pnpm audit:chain")).toContain("needs: disabled");
     });
 
+    it("refuses an evidence job whose matrix can exclude every combination", () => {
+      const jobs = parseCiFixture(
+        [
+          "jobs:",
+          "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
+          "    strategy:",
+          "      matrix:",
+          "        only: [one]",
+          "        exclude:",
+          "          - only: one",
+          "    steps:",
+          "      - run: pnpm audit:chain",
+          "",
+        ].join("\n"),
+      );
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
+      expect(ciJobBlocks(jobs, "audit-chain-verify")).toBe(false);
+      expect(
+        ciJobRunProblem(jobs, "audit-chain-verify", "pnpm audit:chain"),
+      ).toContain("strategy.matrix");
+    });
+
     it("refuses manual-only and filtered workflows as CI evidence", () => {
       const workflow = (trigger: string) =>
         parseCiJobs(
