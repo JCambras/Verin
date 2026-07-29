@@ -59,12 +59,19 @@ const ERROR_MAP: Record<ErrorCode, CodeMeta> = {
   INTERNAL: { status: 500, logLevel: "error", category: "permanent", retryable: false },
 };
 
+const APP_ERRORS = new WeakSet<object>();
+const UNTRUSTED_APP_ERROR_MESSAGE = "The request could not be completed.";
+
 export function appError(
   code: ErrorCode,
   message: string,
   context?: AppError["context"],
 ): AppError {
-  return context ? { code, message, context } : { code, message };
+  const error: AppError = context
+    ? { code, message, context: Object.freeze({ ...context }) }
+    : { code, message };
+  APP_ERRORS.add(error);
+  return Object.freeze(error);
 }
 
 export function validationError(message: string, context?: AppError["context"]): AppError {
@@ -75,25 +82,18 @@ export function isErrorCode(value: unknown): value is ErrorCode {
   return typeof value === "string" && Object.hasOwn(ERROR_MAP, value);
 }
 
+function isAppError(value: unknown): value is AppError {
+  return typeof value === "object" && value !== null && APP_ERRORS.has(value);
+}
+
 export function normalizeAppError(value: unknown): AppError | null {
+  if (isAppError(value)) return value;
   if (typeof value !== "object" || value === null) return null;
   try {
     const code = Reflect.get(value, "code");
-    const message = Reflect.get(value, "message");
-    const rawContext = Reflect.get(value, "context");
-    if (!isErrorCode(code) || typeof message !== "string") return null;
-    if (rawContext === undefined) return Object.freeze({ code, message });
-    if (
-      typeof rawContext !== "object" ||
-      rawContext === null ||
-      ![Object.prototype, null].includes(Object.getPrototypeOf(rawContext))
-    ) return null;
-    const entries = Object.entries(rawContext);
-    if (entries.some(([, entry]) =>
-      !["string", "number", "boolean"].includes(typeof entry)
-    )) return null;
-    const context = Object.freeze(Object.fromEntries(entries)) as AppError["context"];
-    return Object.freeze({ code, message, context });
+    return isErrorCode(code)
+      ? appError(code, UNTRUSTED_APP_ERROR_MESSAGE)
+      : null;
   } catch {
     return null;
   }

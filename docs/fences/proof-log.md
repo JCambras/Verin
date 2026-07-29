@@ -4127,6 +4127,107 @@ pnpm build                                                   # compiled and gene
 pnpm test:e2e                                                # 17 tests passed
 ```
 
+### PF-165 unknown AppError shapes cannot authenticate messages
+
+An object with a recognized `ErrorCode` and attacker-controlled message could
+be normalized as trusted and echoed by HTTP responses or retained by failure
+classification.
+
+**Adversarial proof:** a test-first dependency-shaped error carries a PII-shaped
+message and formatted account context. Accessor variants return changing codes
+or throw from the message getter. Before correction, the message reached
+`toResponse`. Module-private provenance now preserves messages only for
+factory-created errors. Every unknown recognized-code shape returns the static
+safe message without reading message or context.
+
+### PF-166 loader provenance survives transparent and fixed wrappers
+
+`Object.freeze(nodeModule).createRequire` and an array-destructured
+`Reflect.get` alias both lost loader provenance before dependency, LLM PII,
+sealed-factory, and secret-containment analysis.
+
+**Adversarial proof:** both forms were planted in all four consuming fence
+companions and initially emitted no `create-require` reference. Transparent
+namespace calls and fixed-array builtin aliases now resolve through shared
+semantic provenance. Every planted loader is rejected while a guaranteed safe
+overwrite remains accepted.
+
+### PF-167 authority provenance survives transparent and fixed wrappers
+
+A stateful carrier getter could be captured and asserted once, then read again
+through `Object.freeze(carrier)` or `[carrier][0]` without matching the original
+authority path.
+
+**Adversarial proof:** test-first repository fixtures capture and pairwise
+assert execution and PII grants, then repeat the PII read through each wrapper
+before SQL work. Both initially passed. Exact fixed-element and transparent-call
+provenance now resolves both reads to the captured carrier path and rejects each
+fixture.
+
+### PF-168 governed call wrappers retain sink and argument ownership
+
+Getter-returned sinks and `bind`, `call`, `apply`, or `Reflect.apply`
+invocations produced no governed route entry or treated the invoked target as an
+escaped value.
+
+**Adversarial proof:** five test-first routes invoke `verifyAndListOrgChain`
+through those forms without authorization. Each initially produced no exact
+governed entry. Target, completeness, escape, helper, and effective-argument
+analysis now share normalized invocation ownership. Each route derives one
+`audit.export` entry and fails the unwired authorization check.
+
+### PF-169 invented generic results expose every sealed position
+
+Generic construction checked only a directly sealed call result. Sealed values
+nested in an object, tuple, array, union, overload, or mixed factory-owned
+composite disappeared.
+
+**Adversarial proof:** test-first coercion helpers yield all five composite
+forms, and a Tokenized factory fixture combines an owned token with a foreign
+tenant. Every nested tenant initially passed. Structural yielded-position
+inventory now rejects every composite line and both foreign tenant mints while
+leaving the owned token and foreign generic validators permitted.
+
+### PF-170 SQL belongs to an exact callable execution phase
+
+All callable members of one exported object shared every implementation owner,
+and parameter default SQL inherited body ownership. A guarded sibling could
+therefore claim an effectful getter, while a body prologue appeared to authorize
+SQL that ran before entry.
+
+**Adversarial proof:** one test-first repository combines a guarded method with
+an unguarded SQL getter; another places SQL in a default parameter before a
+valid tenant assertion. Both initially passed. Exact member ownership reports
+the getter as unowned, and execution-phase analysis reports the default as
+pre-body SQL.
+
+### PF-171 final security-boundary verification
+
+```
+corepack pnpm vitest run src/__tests__/unit/result.test.ts src/__tests__/fitness/dependency-rule.test.ts src/__tests__/fitness/llm-pii-boundary.test.ts
+                                                             # 173 tests passed
+corepack pnpm vitest run src/__tests__/fitness/no-secret-fallback.test.ts
+                                                             # 40 tests passed
+corepack pnpm vitest run src/__tests__/fitness/tenant-context-required.test.ts
+                                                             # 143 tests passed
+corepack pnpm vitest run src/__tests__/fitness/tokenized-factory-only.test.ts
+                                                             # 75 tests passed
+corepack pnpm vitest run src/__tests__/fitness/governed-actions.test.ts
+                                                             # 118 tests passed
+corepack pnpm vitest run src/__tests__/unit/result.test.ts src/__tests__/integration/pii-observability.test.ts src/__tests__/integration/account-opening.test.ts src/__tests__/integration/wire-authority.test.ts
+                                                             # 42 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm vitest run src/__tests__/fitness/line-budget.test.ts --reporter=verbose
+                                                             # contracts 4,017/4,050; domain 1,259/1,300; infrastructure 3,442/3,450
+corepack pnpm test                                           # 56 files, 1,185 tests passed
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+```
+
 ### PF-115 closed authority carriers have one deterministic inventory
 
 Authority discovery previously relied on `type.getProperties()`. Unions expose

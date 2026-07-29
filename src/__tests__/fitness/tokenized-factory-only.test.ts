@@ -840,6 +840,40 @@ function inventedTypeParameters(declaration: Node): Set<string> {
   );
 }
 
+function directlyYieldsInventedType(declaration: Node): boolean {
+  const invented = inventedTypeParameters(declaration);
+  if (invented.size === 0 ||
+    (!Node.isFunctionLikeDeclaration(declaration) &&
+      !Node.isMethodSignature(declaration) &&
+      !Node.isFunctionTypeNode(declaration))) {
+    return false;
+  }
+  const returned = declaration.getReturnTypeNode();
+  if (!returned) return false;
+  return [returned, ...returned.getDescendants()]
+    .filter(Node.isIdentifier)
+    .filter((identifier) => invented.has(identifier.getText()))
+    .some((identifier) => {
+      for (const ancestor of identifier.getAncestors()) {
+        const reference = ancestor.asKind(SyntaxKind.TypeReference);
+        if (reference) {
+          const argument = reference.getTypeArguments().find((candidate) =>
+            identifier.getAncestors().includes(candidate)
+          );
+          if (
+            argument &&
+            !["Promise", "Awaited", "Array", "ReadonlyArray"].includes(
+              reference.getTypeName().getText(),
+            ) &&
+            !projectOwned(reference.getType())
+          ) return false;
+        }
+        if (ancestor === returned) break;
+      }
+      return true;
+    });
+}
+
 /**
  * A call whose sealed result came from INFERENCE rather than from the callee's
  * declaration. Explicit (`coerce<TenantContext>(raw)`) and inferred
@@ -848,25 +882,38 @@ function inventedTypeParameters(declaration: Node): Set<string> {
  * left the inferred half invisible to every layer except the runtime WeakSet.
  */
 function mintsThroughInventedTypeParameter(
-  call: Node & { getExpression(): Node },
-): (typeof SEALED)[number] | null {
-  const sealed = sealedValueType(awaited(call.getType()));
-  if (!sealed) return null;
+  call: Node & {
+    getExpression(): Node;
+    getTypeArguments(): Node[];
+  },
+): readonly (typeof SEALED)[number][] {
   const symbol = call.getExpression().getSymbol();
   const target = symbol?.getAliasedSymbol() ?? symbol;
   const declarations = target?.getDeclarations() ?? [];
-  // The factory's OWN generic entry points may of course be parameterized:
-  // `tokenizeRecord<Shape>(…)` is the sanctioned mint, not an evasion of it.
   if (
-    declarations.some((declaration) =>
-      normalizedPath(declaration.getSourceFile().getFilePath()) === sealed.factory
+    !declarations.some((declaration) =>
+      directlyYieldsInventedType(declaration)
     )
-  ) {
-    return null;
-  }
-  return declarations.some((declaration) => inventedTypeParameters(declaration).size > 0)
-    ? sealed
-    : null;
+  ) return [];
+  const typeArguments = call.getTypeArguments();
+  const yielded = typeArguments.length > 0
+    ? typeArguments.map((argument) => argument.getType())
+    : [awaited(call.getType())];
+  const owners: Array<(typeof SEALED)[number]> = yielded.flatMap((type) => {
+    if (typeArguments.length === 0) {
+      const direct = sealedValueType(type);
+      return direct ? [direct] : [];
+    }
+    const inventory = sealedPositionsOf(type);
+    return inventory.complete
+      ? inventory.positions.map((position) => position.owner)
+      : SEALED.filter((sealed) =>
+        sealedType(type, true, [sealed], true) !== null
+      );
+  });
+  return [...new Map(
+    owners.map((sealed) => [sealed.typeName, sealed]),
+  ).values()];
 }
 
 /** Strip `as T` / `<T>v` / `(v)` / `v satisfies T` down to the expression itself. */
@@ -1032,11 +1079,12 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         // already exempts the Tokenized case this used to skip the file for, and
         // skipping the whole file let `const t: TenantContext = coerce(raw)` inside
         // the scrubber mint any of the OTHER six sealed types silently.
-        const sealed = mintsThroughInventedTypeParameter(call);
-        if (sealed && normalized !== sealed.factory) {
-          out.push(
-            `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an inferred or explicit type argument outside its factory`,
-          );
+        for (const sealed of mintsThroughInventedTypeParameter(call)) {
+          if (normalized !== sealed.factory) {
+            out.push(
+              `${normalized}:${call.getStartLineNumber()} - sealed type '${sealed.typeName}' minted through an inferred or explicit type argument outside its factory`,
+            );
+          }
         }
         // A PARAMETER is an annotation the CALLER fills, so `consume(JSON.parse(x))`
         // is the same mint as `const t: TenantContext = JSON.parse(x)` with the
@@ -2035,6 +2083,38 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toBe(true);
     });
 
+    it("catches invented sealed values nested in composite yielded types", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          function coerce<T>(): T { throw new Error(); }
+          function choose<T>(): { left: T } | { right: T } { throw new Error(); }
+          function list<T>(): Array<T> { throw new Error(); }
+          function overloaded<T>(): { value: T };
+          function overloaded(): unknown { return {}; }
+          const object = coerce<{ tenant: TenantContext }>();
+          const tuple = coerce<[TenantContext]>();
+          const array = list<TenantContext>();
+          const union = choose<TenantContext>();
+          const overload = overloaded<TenantContext>();
+          void object;
+          void tuple;
+          void array;
+          void union;
+          void overload;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project)
+        .filter((hit) => hit.includes("type argument") && hit.includes("TenantContext"));
+      for (const line of [8, 9, 10, 11, 12]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line}`)),
+          `line ${line}`,
+        ).toBe(true);
+      }
+    });
+
     it("catches a PROMISE-wrapped laundering function (the normal async shape)", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -2150,6 +2230,10 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
           function coerce<T>(value: unknown): T { return value as T; }
           export const sealed = coerce<Tokenized<string>>("raw");
           export const stolen: TenantContext = coerce(JSON.parse("{}"));
+          export const mixed = coerce<{
+            token: Tokenized<string>;
+            tenant: TenantContext;
+          }>(JSON.parse("{}"));
         `,
         { overwrite: true },
       );
@@ -2157,8 +2241,8 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         .filter((hit) => hit.includes("type argument"));
       // The exemption is per-TYPE, not per-FILE: Tokenized is this file's own type
       // (allowed), TenantContext is not (a mint the whole-file skip used to swallow).
-      expect(hits).toHaveLength(1);
-      expect(hits[0]).toContain("TenantContext");
+      expect(hits).toHaveLength(2);
+      expect(hits.every((hit) => hit.includes("TenantContext"))).toBe(true);
       expect(hits.some((hit) => hit.includes("Tokenized"))).toBe(false);
     });
 
@@ -2359,6 +2443,10 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
           const created = holder[0].createRequire(import.meta.url);`,
       `const [held] = [nodeModule] as const;
           const created = held.createRequire(import.meta.url);`,
+      `const held = Object.freeze(nodeModule);
+          const created = held.createRequire(import.meta.url);`,
+      `const [read] = [Reflect.get] as const;
+          const created = read(nodeModule, "createRequire")(import.meta.url);`,
       `const holder = [{}, nodeModule] as const;
           let index = 0;
           if (Date.now() > 0) index = 1;

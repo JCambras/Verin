@@ -160,7 +160,8 @@ function returnedValues(declaration: Node): Node[] {
     Node.isFunctionDeclaration(declaration) ||
       Node.isFunctionExpression(declaration) ||
       Node.isArrowFunction(declaration) ||
-      Node.isMethodDeclaration(declaration)
+      Node.isMethodDeclaration(declaration) ||
+      Node.isGetAccessorDeclaration(declaration)
       ? declaration
       : null;
   if (!callable) return [];
@@ -173,13 +174,114 @@ function returnedValues(declaration: Node): Node[] {
         Node.isFunctionDeclaration(ancestor) ||
         Node.isFunctionExpression(ancestor) ||
         Node.isArrowFunction(ancestor) ||
-        Node.isMethodDeclaration(ancestor)
+        Node.isMethodDeclaration(ancestor) ||
+        Node.isGetAccessorDeclaration(ancestor)
       ) === callable
     )
     .flatMap((statement) => {
       const value = statement.getExpression();
       return value ? [value] : [];
     });
+}
+
+function invocationMember(node: Node): string | null {
+  const expression =
+    Node.isParenthesizedExpression(node) ||
+      Node.isAsExpression(node) ||
+      Node.isSatisfiesExpression(node) ||
+      Node.isTypeAssertion(node) ||
+      Node.isNonNullExpression(node)
+      ? node.getExpression()
+      : node;
+  if (Node.isPropertyAccessExpression(expression)) return expression.getName();
+  if (!Node.isElementAccessExpression(expression)) return null;
+  const argument = expression.getArgumentExpression();
+  return argument &&
+      (Node.isStringLiteral(argument) ||
+        Node.isNoSubstitutionTemplateLiteral(argument))
+    ? argument.getLiteralText()
+    : null;
+}
+
+function invocationReceiver(node: Node): Node | null {
+  const expression =
+    Node.isParenthesizedExpression(node) ||
+      Node.isAsExpression(node) ||
+      Node.isSatisfiesExpression(node) ||
+      Node.isTypeAssertion(node) ||
+      Node.isNonNullExpression(node)
+      ? node.getExpression()
+      : node;
+  return Node.isPropertyAccessExpression(expression) ||
+      Node.isElementAccessExpression(expression)
+    ? expression.getExpression()
+    : null;
+}
+
+function isAmbientReflectApply(node: Node): boolean {
+  if (invocationMember(node) !== "apply") return false;
+  const receiver = invocationReceiver(node);
+  return Boolean(
+    receiver &&
+    Node.isIdentifier(receiver) &&
+    receiver.getText() === "Reflect" &&
+    (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
+      declaration.getSourceFile().isDeclarationFile()
+    ),
+  );
+}
+
+function fixedInvocationArguments(node: Node | undefined): readonly Node[] | null {
+  if (!node) return null;
+  let expression = node;
+  while (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isNonNullExpression(expression)
+  ) expression = expression.getExpression();
+  return Node.isArrayLiteralExpression(expression) &&
+      !expression.getElements().some(Node.isSpreadElement)
+    ? expression.getElements()
+    : null;
+}
+
+function invocationTargetExpressions(call: CallExpression): readonly Node[] {
+  const callee = call.getExpression();
+  if (isAmbientReflectApply(callee)) {
+    const target = call.getArguments()[0];
+    return target ? [target] : [];
+  }
+  const member = invocationMember(callee);
+  const receiver = invocationReceiver(callee);
+  if ((member === "call" || member === "apply") && receiver) {
+    return [receiver];
+  }
+  if (Node.isCallExpression(callee) && invocationMember(callee.getExpression()) === "bind") {
+    const target = invocationReceiver(callee.getExpression());
+    return target ? [target] : [];
+  }
+  return [callee];
+}
+
+function invocationArguments(call: CallExpression): readonly Node[] | null {
+  const callee = call.getExpression();
+  if (isAmbientReflectApply(callee)) {
+    return fixedInvocationArguments(call.getArguments()[2]);
+  }
+  const member = invocationMember(callee);
+  if (member === "call") return call.getArguments().slice(1);
+  if (member === "apply") {
+    return fixedInvocationArguments(call.getArguments()[1]);
+  }
+  if (Node.isCallExpression(callee) && invocationMember(callee.getExpression()) === "bind") {
+    return [
+      ...callee.getArguments().slice(1),
+      ...call.getArguments(),
+    ];
+  }
+  return call.getArguments();
 }
 
 /**
@@ -241,6 +343,15 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
     }
   }
   if (Node.isCallExpression(expression)) {
+    const invocationTargets = invocationTargetExpressions(expression);
+    if (
+      invocationTargets.length !== 1 ||
+      invocationTargets[0] !== expression.getExpression()
+    ) {
+      return invocationTargets.flatMap((target) =>
+        resolveCallTargets(target, seen)
+      );
+    }
     const providers = resolveCallTargets(expression.getExpression(), seen);
     const values = providers.flatMap(returnedValues);
     if (values.length > 0) {
@@ -256,7 +367,13 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
       .flatMap((source) => resolveCallTargets(source, seen)),
   );
   for (const declaration of declarations) {
-    if (
+    if (Node.isGetAccessorDeclaration(declaration)) {
+      out.push(
+        ...returnedValues(declaration).flatMap((value) =>
+          resolveCallTargets(value, seen)
+        ),
+      );
+    } else if (
       Node.isVariableDeclaration(declaration) ||
       Node.isPropertyAssignment(declaration)
     ) {
@@ -312,6 +429,16 @@ function callTargetResolutionComplete(
     }
   }
   if (Node.isCallExpression(expression)) {
+    const invocationTargets = invocationTargetExpressions(expression);
+    if (
+      invocationTargets.length !== 1 ||
+      invocationTargets[0] !== expression.getExpression()
+    ) {
+      return invocationTargets.length > 0 &&
+        invocationTargets.every((target) =>
+          callTargetResolutionComplete(target, seen)
+        );
+    }
     const providers = resolveCallTargets(expression.getExpression());
     const values = providers.flatMap(returnedValues);
     return providers.length > 0 && values.length > 0 &&
@@ -330,9 +457,13 @@ function callTargetResolutionComplete(
       Node.isFunctionDeclaration(declaration) ||
       Node.isFunctionExpression(declaration) ||
       Node.isArrowFunction(declaration) ||
-      Node.isMethodDeclaration(declaration) ||
-      Node.isGetAccessorDeclaration(declaration)
+      Node.isMethodDeclaration(declaration)
     ) return true;
+    if (Node.isGetAccessorDeclaration(declaration)) {
+      const values = returnedValues(declaration);
+      return values.length > 0 &&
+        values.every((value) => callTargetResolutionComplete(value, seen));
+    }
     if (
       Node.isVariableDeclaration(declaration) ||
       Node.isPropertyAssignment(declaration) ||
@@ -354,11 +485,23 @@ function callTargetResolutionComplete(
   });
 }
 
+function resolveCallTargetsForCall(call: CallExpression): Node[] {
+  return invocationTargetExpressions(call).flatMap((target) =>
+    resolveCallTargets(target)
+  );
+}
+
+function callTargetResolutionCompleteForCall(call: CallExpression): boolean {
+  const targets = invocationTargetExpressions(call);
+  return targets.length > 0 &&
+    targets.every((target) => callTargetResolutionComplete(target));
+}
+
 function governedSinksForCall(
   call: CallExpression,
   sinks: readonly GovernedSink[],
 ): GovernedSink[] {
-  const targets = resolveCallTargets(call.getExpression());
+  const targets = resolveCallTargetsForCall(call);
   return sinks.filter((sink) =>
     targets.some((declaration) =>
       sink.anchors.some((anchor) => nodeKey(declaration) === nodeKey(anchor))
@@ -374,7 +517,7 @@ function governedSinksForCall(
  */
 function callMatchesSink(call: CallExpression, entry: GovernedRouteEntry): boolean {
   const expected = entry.sink.split(".").pop()!;
-  const targets = resolveCallTargets(call.getExpression());
+  const targets = resolveCallTargetsForCall(call);
   if (targets.length > 0) {
     return targets.some((declaration) =>
       declaration.getSymbol()?.getName() === expected &&
@@ -1141,7 +1284,7 @@ function enclosingHandlerNames(call: CallExpression): string[] {
 /** True when `body` contains a call that resolves to the callable keyed `targetKey`. */
 function invokesCallable(body: Node, targetKey: string): boolean {
   return body.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
-    resolveCallTargets(call.getExpression()).some((declaration) =>
+    resolveCallTargetsForCall(call).some((declaration) =>
       nodeKey(declaration) === targetKey || nodeKey(ownerOfCallable(declaration)) === targetKey
     )
   );
@@ -1272,7 +1415,13 @@ function detectEscapedGovernedSinks(
     });
   };
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const invokedArguments = new Set(
+      invocationTargetExpressions(call).filter((target) =>
+        call.getArguments().includes(target)
+      ),
+    );
     for (const argument of call.getArguments()) {
+      if (invokedArguments.has(argument)) continue;
       const supplied = sinks.find((candidate) =>
         valueTargets(argument).some((declaration) =>
           candidate.anchors.some((anchor) =>
@@ -1343,7 +1492,7 @@ export function discoverGovernedRoutes(
       const callSinks = governedSinksForCall(call, sinks);
       if (
         callSinks.length > 0 &&
-        !callTargetResolutionComplete(call.getExpression())
+        !callTargetResolutionCompleteForCall(call)
       ) {
         violations.push(
           `${file}:${call.getStartLineNumber()}: governed callee has an unresolved value-producing arm`,
@@ -1675,7 +1824,7 @@ export function detectUnwiredGovernedRoutes(
      */
     const helpers = routeLocalHelpers(sf);
     const helperOfCall = (call: CallExpression): RouteLocalHelper | undefined =>
-      resolveCallTargets(call.getExpression())
+      resolveCallTargetsForCall(call)
         .flatMap((target) =>
           helpers.filter((candidate) =>
             nodeKey(candidate.declaration) === nodeKey(target) ||
@@ -1703,7 +1852,7 @@ export function detectUnwiredGovernedRoutes(
         helper.parameters.forEach((parameter, position) => {
           if (derivedKeys.has(nodeKey(parameter))) return;
           const authorizedEverywhere = sites.length > 0 && sites.every((site) => {
-            const argument = site.getArguments()[position];
+            const argument = invocationArguments(site)?.[position];
             return Boolean(argument && isAuthorizedValue(argument));
           });
           if (authorizedEverywhere) {
@@ -1716,7 +1865,8 @@ export function detectUnwiredGovernedRoutes(
     }
     const sinkCalls = reachableCalls.filter((call) => callMatchesSink(call, entry));
     const carriesGrant = (call: CallExpression): boolean => {
-      const args = call.getArguments();
+      const args = invocationArguments(call);
+      if (args === null) return false;
       // The GRANT argument specifically — not "some argument".
       if (entry.grantIndex === undefined || entry.grantIndex === null) {
         return args.some(isAuthorizedValue);
@@ -3272,6 +3422,35 @@ ${body}
         const fallback = () => null;
         export async function GET(req: Request) {
           return (${callee})({}, {} as never);
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toHaveLength(1);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it.each([
+      `const holder = {
+          get run() {
+            return verifyAndListOrgChain;
+          },
+        };
+        return holder.run({}, {} as never);`,
+      `return verifyAndListOrgChain.bind(null)({}, {} as never);`,
+      `return verifyAndListOrgChain.call(null, {}, {} as never);`,
+      `return verifyAndListOrgChain.apply(null, [{}, {} as never]);`,
+      `return Reflect.apply(
+          verifyAndListOrgChain,
+          null,
+          [{}, {} as never],
+        );`,
+    ])("discovers governed sinks through getters and invocation wrappers", (work) => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          void req;
+          ${work}
         }
       `);
       const discovered = discoverGovernedRoutes(project);

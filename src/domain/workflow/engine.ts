@@ -6,7 +6,7 @@
  * event (a webhook) calls resumeFlow(token, payload) to run the remaining steps.
  * Resume is idempotent at the write layer, so replay has exactly-once effect.
  */
-import { normalizeAppError, type AppError } from "@contracts/errors";
+import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import type { ActionGrant } from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
@@ -83,7 +83,8 @@ async function drive<D>(
       // driver errors with a `code` like '23505'/'ENOENT' included — becomes a
       // vetted INTERNAL so downstream statusFor/toResponse never sees an unknown
       // code or leaks an unvetted message.
-      const error: AppError = normalizeAppError(e) ?? { code: "INTERNAL", message: "Step threw" };
+      const error: AppError = normalizeAppError(e) ??
+        appError("INTERNAL", "Step threw");
       result = { kind: "fail", error };
     }
 
@@ -144,7 +145,14 @@ export async function retryFlow<D>(
   tenant: TenantContext,
 ): Promise<FlowRunResult> {
   assertTenantContext(tenant);
-  if (state.orgId !== tenant.orgId) return { executionId: state.id, status: "failed", error: { code: "AUTH_FAILED", message: "Execution does not belong to this tenant" }, data: {} };
+  if (state.orgId !== tenant.orgId) {
+    return {
+      executionId: state.id,
+      status: "failed",
+      error: appError("AUTH_FAILED", "Execution does not belong to this tenant"),
+      data: {},
+    };
+  }
   return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
 export async function resumeFlow<D>(

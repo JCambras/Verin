@@ -779,6 +779,10 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
           const created = holder[0].createRequire(import.meta.url);`,
       `const [held] = [nodeModule] as const;
           const created = held.createRequire(import.meta.url);`,
+      `const held = Object.freeze(nodeModule);
+          const created = held.createRequire(import.meta.url);`,
+      `const [read] = [Reflect.get] as const;
+          const created = read(nodeModule, "createRequire")(import.meta.url);`,
       `const holder = [{}, nodeModule] as const;
           let index = 0;
           if (Date.now() > 0) index = 1;

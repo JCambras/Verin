@@ -44,16 +44,21 @@ describe("AppError", () => {
     const normalized = normalizeAppError(accessorError);
     expect(normalized).toEqual({
       code: "VALIDATION",
-      message: "Request rejected.",
+      message: "The request could not be completed.",
     });
     expect(codeReads).toBe(1);
-    expect(messageReads).toBe(1);
+    expect(messageReads).toBe(0);
     expect(toResponse(normalized!)).toEqual({
       status: 400,
-      body: { error: { code: "VALIDATION", message: "Request rejected." } },
+      body: {
+        error: {
+          code: "VALIDATION",
+          message: "The request could not be completed.",
+        },
+      },
     });
     expect(codeReads).toBe(1);
-    expect(messageReads).toBe(1);
+    expect(messageReads).toBe(0);
   });
 
   it("degrades invalid or throwing error accessors without leaking or throwing", () => {
@@ -63,10 +68,34 @@ describe("AppError", () => {
         throw new Error("secret@example.test");
       },
     };
-    expect(normalizeAppError(throwingMessage)).toBeNull();
+    expect(normalizeAppError(throwingMessage)).toEqual({
+      code: "VALIDATION",
+      message: "The request could not be completed.",
+    });
     expect(toResponse(throwingMessage as AppError)).toEqual({
+      status: 400,
+      body: {
+        error: {
+          code: "VALIDATION",
+          message: "The request could not be completed.",
+        },
+      },
+    });
+  });
+
+  it("does not trust messages on AppError-shaped dependency failures", () => {
+    expect(toResponse({
+      code: "INTERNAL",
+      message: "alice@example.test",
+      context: { accountNumber: "1234-5678-9012" },
+    })).toEqual({
       status: 500,
-      body: { error: { code: "INTERNAL", message: "An internal error occurred." } },
+      body: {
+        error: {
+          code: "INTERNAL",
+          message: "The request could not be completed.",
+        },
+      },
     });
   });
 });

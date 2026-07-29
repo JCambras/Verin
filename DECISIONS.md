@@ -2714,3 +2714,78 @@ unowned).
 **Revert path:** revert this changeset to restore pre-validation continuation
 loads, array and conditional provenance gaps, whole-composite factory
 exemptions, and incomplete governed sink ownership.
+
+## D-091 - Security boundaries retain trusted provenance through wrappers
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-089,
+D-090, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#3/#4/#7/#12/#14
+
+All seven review findings were legitimate. The error finding exposed an
+authentication flaw at the contract boundary. The remaining findings shared
+incomplete semantic ownership or provenance traversal in security fitness
+analyzers.
+
+`AppError` instances now carry module-private WeakSet provenance and are frozen
+with copied, frozen context. Only errors created through `appError` retain their
+message. Unknown recognized-code lookalikes normalize to a static safe message
+without reading attacker-controlled message or context accessors. Observability
+classification reads unknown driver code once and consumes only the normalized
+snapshot.
+
+Module-reference provenance treats `Object.freeze`, `Object.seal`, and
+`Object.preventExtensions` as transparent namespace wrappers. Fixed-array
+builtin aliases use the shared conservative resolver, so array-destructured
+`Reflect.get` reaches the same loader analysis as direct and object-destructured
+forms without weakening guaranteed overwrite handling.
+
+Repeated-authority analysis carries exact carrier provenance through fixed
+arrays and transparent wrappers. Unresolved transparent invocation arguments
+expand to the complete captured authority inventory. A stateful getter cannot
+be read again after the stable authority capture under a new trusted spelling.
+
+Governed call discovery resolves getter-returned callables and normalizes
+`bind`, `call`, `apply`, and `Reflect.apply` to the underlying sink. The same
+normalization supplies effective argument positions to helper and grant wiring,
+and a `Reflect.apply` target is treated as an invocation rather than an escaped
+value.
+
+Invented generic returns are checked at every sealed position in explicit
+objects, tuples, arrays, unions, project-owned wrappers, and overloads.
+Factory ownership is applied per sealed owner, so an allowed `Tokenized<T>`
+position cannot hide a foreign `TenantContext`. Foreign generic validators that
+only name a sealed type remain ordinary validation containers rather than
+construction sites.
+
+SQL ownership now maps each exported object callable to its exact method,
+accessor, or property implementation. A guarded sibling cannot claim SQL in an
+effectful non-callable getter. SQL in parameter default initializers is rejected
+as pre-body execution because no function-body authority prologue can authorize
+work that already ran.
+
+The authoritative line-budget metric remains within the existing measured ADR
+ceilings:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,259 | 1,300 | 41 |
+| infrastructure | 3,442 | 3,450 | 8 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. No useful code or documentation was removed or compressed
+to manufacture room.
+
+**Alternatives rejected:** trust recognized error codes as message provenance
+(attacker text reaches responses); enumerate only direct loader syntax
+(transparent and fixed-container aliases remain open); compare authority source
+text (equivalent carrier spellings evade capture ownership); flag wrapper calls
+without normalizing arguments (authorization checks the wrong position); exempt
+a whole generic result by its first sealed owner (foreign sibling seals
+disappear); assign every object implementation to every callable signature
+(guarded siblings claim unguarded effects); and let a body prologue authorize
+parameter defaults retroactively (the SQL already ran).
+
+**Revert path:** revert this changeset to restore untrusted AppError messages,
+transparent loader and authority gaps, incomplete governed invocation
+normalization, nested generic seal exemptions, sibling SQL ownership, and
+pre-body SQL execution.

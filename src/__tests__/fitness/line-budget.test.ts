@@ -25,8 +25,8 @@ import { relative } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED at the ADR-0037 amendment, with this file's own algorithm: contracts
-// 4017/4050 (33), domain 1251/1300 (49), infrastructure 3437/3450 (13). These are
+// MEASURED after D-091, with this file's own algorithm: contracts 4017/4050
+// (33), domain 1259/1300 (41), infrastructure 3442/3450 (8). These are
 // the real figures, not a stale decision-table row. Any FURTHER increase is still a
 // measured ADR amendment, never a code change.
 const CEILINGS = {

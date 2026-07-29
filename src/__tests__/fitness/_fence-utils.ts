@@ -723,6 +723,15 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         );
       }
       if (Node.isCallExpression(expression)) {
+        const transparent = normalizedAmbientBuiltinCall(
+          expression,
+          "Object",
+          ["freeze", "seal", "preventExtensions"],
+        );
+        if (transparent) {
+          return transparent.arguments === null ||
+            isCreateRequireNamespace(transparent.arguments[0], visited);
+        }
         if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")) {
           return expression.getArguments().slice(1).some((argument) =>
             isCreateRequireNamespace(argument, visited)
@@ -770,6 +779,17 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     seen: ReadonlySet<object> = new Set(),
   ): boolean => {
     const raw = unwrapExpression(node);
+    if (
+      raw &&
+      (
+        !Node.isIdentifier(raw) ||
+        (raw.getSymbol()?.getDeclarations() ?? []).some((declaration) =>
+          Node.isBindingElement(declaration) &&
+          Node.isArrayBindingPattern(declaration.getParent())
+        )
+      ) &&
+      ambientBuiltinMethodName(raw, builtin, [method]) === method
+    ) return true;
     if (Node.isIdentifier(raw)) {
       const symbol = raw.getSymbol();
       const key = (symbol ?? raw) as unknown as object;
@@ -2638,9 +2658,17 @@ function repeatedAuthorityEvaluations(
     }
     if (Node.isElementAccessExpression(expression)) {
       const name = propertyText(expression.getArgumentExpression(), "");
+      const receiver = unwrap(expression.getExpression());
+      if (name !== null && Node.isArrayLiteralExpression(receiver)) {
+        const index = Number.parseInt(name, 10);
+        const element = receiver.getElements()[index];
+        if (String(index) === name && element && !Node.isOmittedExpression(element)) {
+          return resolvedTexts(element, seen);
+        }
+      }
       return name === null
         ? []
-        : resolvedTexts(expression.getExpression(), seen)
+        : resolvedTexts(receiver, seen)
           .map((owner) => memberText(owner, name));
     }
     if (Node.isConditionalExpression(expression)) {
@@ -2663,6 +2691,21 @@ function repeatedAuthorityEvaluations(
           ...resolvedTexts(expression.getLeft(), seen),
           ...resolvedTexts(expression.getRight(), seen),
         ])];
+      }
+    }
+    if (Node.isCallExpression(expression)) {
+      const transparent = normalizedAmbientBuiltinCall(
+        expression,
+        "Object",
+        ["freeze", "seal", "preventExtensions"],
+      );
+      if (transparent) {
+        if (transparent.arguments === null) {
+          return captures.map((capture) =>
+            canonicalAuthorityText(capture.source)
+          );
+        }
+        return resolvedTexts(transparent.arguments[0], seen);
       }
     }
     if (!Node.isIdentifier(expression)) {

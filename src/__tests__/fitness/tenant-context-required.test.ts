@@ -165,6 +165,34 @@ function callableImplementations(
   return [];
 }
 
+function callableImplementationMember(node: Node): string | null {
+  const member =
+    Node.isMethodDeclaration(node) || Node.isGetAccessorDeclaration(node)
+      ? node
+      : node.getFirstAncestor((ancestor) =>
+        Node.isMethodDeclaration(ancestor) ||
+        Node.isGetAccessorDeclaration(ancestor) ||
+        Node.isPropertyAssignment(ancestor)
+      );
+  return member &&
+      (Node.isMethodDeclaration(member) ||
+        Node.isGetAccessorDeclaration(member) ||
+        Node.isPropertyAssignment(member))
+    ? member.getName()
+    : null;
+}
+
+function ownersForCallableMember(
+  implementations: readonly Node[],
+  root: string,
+  member: string,
+): Node[] {
+  const suffix = member === root ? null : member.slice(root.length + 1);
+  return implementations.filter((implementation) =>
+    callableImplementationMember(implementation) === suffix
+  );
+}
+
 function callableMembers(
   type: Type,
   owner: string,
@@ -368,7 +396,11 @@ export function detectMissingTenantParams(
         entries.push({
           name: member.name,
           signatures: member.signatures,
-          owners: implementations,
+          owners: ownersForCallableMember(
+            implementations,
+            declaration.getName(),
+            member.name,
+          ),
         });
         for (const signature of member.signatures) {
           entries.push(...returnedEntries(signature.getDeclaration(), member.name));
@@ -383,7 +415,11 @@ export function detectMissingTenantParams(
         entries.push({
           name: member.name,
           signatures: member.signatures,
-          owners: implementations,
+          owners: ownersForCallableMember(
+            implementations,
+            "default",
+            member.name,
+          ),
         });
         for (const signature of member.signatures) {
           entries.push(...returnedEntries(signature.getDeclaration(), member.name));
@@ -436,9 +472,28 @@ export function detectMissingTenantParams(
         );
       });
     };
-    const unownedSql = sf
+    const sqlCalls = sf
       .getDescendantsOfKind(SyntaxKind.CallExpression)
-      .filter(isSqlExecutorCall)
+      .filter(isSqlExecutorCall);
+    const preBodySql = sqlCalls.filter((call) => {
+      const parameter = call.getFirstAncestorByKind(
+        SyntaxKind.Parameter,
+      );
+      const initializer = parameter?.getInitializer();
+      return Boolean(
+        initializer &&
+        (initializer === call ||
+          call.getAncestors().includes(initializer)),
+      );
+    });
+    for (const call of preBodySql) {
+      out.push({
+        ref: `${normalized}:${call.getStartLineNumber()} :: <pre-body-sql>`,
+        detail: "SQL executor call runs before the callable authority prologue",
+      });
+    }
+    const unownedSql = sqlCalls
+      .filter((call) => !preBodySql.includes(call))
       .filter((call) =>
         !call.getAncestors().some((ancestor) =>
           helperOwned(ancestor, new Set())
@@ -778,6 +833,60 @@ describe("tenant-context-required fence", () => {
         }
       `);
       expect(detectMissingTenantParams(project, new Set())).toEqual([]);
+    });
+
+    it("rejects SQL in an exported object getter even when a guarded sibling is callable", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import {
+          assertTenantContext,
+          type TenantContext,
+        } from "../../contracts/tenant";
+        declare const db: SqlDb;
+        export const repository = {
+          safe(tenant: TenantContext) {
+            assertTenantContext(tenant);
+            return db.query("SELECT 1");
+          },
+          get rows() {
+            return db.query("SELECT email FROM users");
+          },
+        };
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: expect.stringMatching(
+            /^src\/infrastructure\/crm\/subject\.ts:\d+ :: <unowned-sql>$/,
+          ),
+          detail: "SQL executor call is not owned by a checked repository callable or reviewed global escape",
+        },
+      ]);
+    });
+
+    it("rejects SQL in a parameter default before the authority prologue can run", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import {
+          assertTenantContext,
+          type TenantContext,
+        } from "../../contracts/tenant";
+        export function listAll(
+          db: SqlDb,
+          tenant: TenantContext,
+          rows = db.query("SELECT email FROM users"),
+        ) {
+          assertTenantContext(tenant);
+          return rows;
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: expect.stringMatching(
+            /^src\/infrastructure\/crm\/subject\.ts:\d+ :: <pre-body-sql>$/,
+          ),
+          detail: "SQL executor call runs before the callable authority prologue",
+        },
+      ]);
     });
 
     /**
@@ -1171,6 +1280,30 @@ ${body}
           executionGrant: ActionGrant<"execution.initiate">,
           carrier: GrantCarrier,
           flag: boolean,`;
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          ${laterRead}
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it.each([
+      `const later = Object.freeze(carrier).piiGrant;
+          return db.query(later.tenant.orgId);`,
+      `const later = [carrier][0]!.piiGrant;
+          return db.query(later.tenant.orgId);`,
+    ])("rejects authority re-reads through transparent wrappers and fixed containers", (laterRead) => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,`;
       expect(dualAuthorityViolations(`
           const piiGrant = carrier.piiGrant;
           assertActionGrant(executionGrant, "execution.initiate");

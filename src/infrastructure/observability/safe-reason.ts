@@ -1,4 +1,8 @@
-import { isErrorCode, normalizeAppError, type AppError } from "@contracts/errors";
+import {
+  isErrorCode,
+  normalizeAppError,
+  type AppError,
+} from "@contracts/errors";
 import { SQLSTATE_SOURCE } from "@domain/observability/safe-values";
 
 /**
@@ -42,21 +46,22 @@ function readErrorProperty(
 
 export function classifyErrorMetadata(error: unknown): ErrorMetadataClassification {
   if (typeof error !== "object" || error === null) return UNEXPECTED_ERROR_METADATA;
+  if (Object.isFrozen(error)) {
+    const appError = normalizeAppError(error);
+    return appError
+      ? Object.freeze({
+        appError,
+        sqlState: null,
+        piiViolation: false,
+        reason: `app-error:${appError.code}`,
+      })
+      : UNEXPECTED_ERROR_METADATA;
+  }
   const code = readErrorProperty(error, "code");
   if (!code.ok) return UNEXPECTED_ERROR_METADATA;
   const name = readErrorProperty(error, "name");
-  const appCandidate = isErrorCode(code.value)
-    ? {
-      message: readErrorProperty(error, "message"),
-      context: readErrorProperty(error, "context"),
-    }
-    : null;
-  const appError = appCandidate?.message.ok && appCandidate.context.ok
-    ? normalizeAppError({
-      code: code.value,
-      message: appCandidate.message.value,
-      context: appCandidate.context.value,
-    })
+  const appError = isErrorCode(code.value)
+    ? normalizeAppError({ code: code.value })
     : null;
   const sqlState = typeof code.value === "string" && SQLSTATE_RE.test(code.value)
     ? code.value
