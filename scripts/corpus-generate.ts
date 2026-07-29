@@ -14,11 +14,12 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadTaxonomy } from "./corpus/defects";
 import { generateSyntheticCases } from "./corpus/generate";
-import { REAL_DERIVED_DEFERRAL, buildInventory, buildManifest } from "./corpus/manifest";
 import {
-  readRealDerivedFiles,
-  realDerivedCaseProblems,
-} from "./corpus/scrub-contract";
+  buildInventory,
+  buildManifest,
+  generatedSignatureProblems,
+} from "./corpus/manifest";
+import { inspectRealDerivedPartition } from "./corpus/real-derived";
 import { CORPUS_SEED } from "./corpus/seed";
 import { CORPUS_DIR, SYNTHETIC_DIR, loadSpec } from "./corpus/world";
 
@@ -27,27 +28,27 @@ const printDigestOnly = process.argv.includes("--print-digest");
 const spec = loadSpec();
 const taxonomy = loadTaxonomy();
 const files = generateSyntheticCases(spec, CORPUS_SEED);
-const realDerivedFiles = readRealDerivedFiles();
-if (REAL_DERIVED_DEFERRAL !== null && realDerivedFiles.length > 0) {
+const realDerived = inspectRealDerivedPartition(
+  taxonomy,
+  spec.world.corpusVersion,
+);
+if (realDerived.problems.length > 0) {
   throw new Error(
-    `corpus generate: real-derived files are forbidden while ${REAL_DERIVED_DEFERRAL.status} remains active`,
+    `corpus generate: invalid real-derived partition\n${realDerived.problems.join("\n")}`,
   );
 }
-const realDerivedProblems = realDerivedFiles.flatMap((file) =>
-  realDerivedCaseProblems(
-    file.value,
-    new Set(taxonomy.defectClasses.map((entry) => entry.id)),
-    file.relPath,
-  ),
-);
-if (realDerivedProblems.length > 0) {
-  throw new Error(`corpus generate: invalid real-derived partition\n${realDerivedProblems.join("\n")}`);
-}
+const realDerivedFiles = realDerived.inventoryFiles;
 const inventory = [
   ...buildInventory(files),
   ...buildInventory(realDerivedFiles, "real-derived"),
 ];
 const manifest = buildManifest(spec, taxonomy, files, CORPUS_SEED, inventory);
+const signatureProblems = generatedSignatureProblems([...files, manifest]);
+if (signatureProblems.length > 0) {
+  throw new Error(
+    `corpus generate: generated signature fields are forbidden\n${signatureProblems.join("\n")}`,
+  );
+}
 const digest = String((manifest.value as Record<string, unknown>).corpusDigest);
 
 if (printDigestOnly) {

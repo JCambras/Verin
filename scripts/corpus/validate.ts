@@ -11,7 +11,6 @@
  * feed deliberately broken input and prove incomplete work CANNOT pass
  * (charter #4).
  */
-import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadGoldenCases, loadScenarioRefs } from "../golden-cases.lib";
 import { deriveFreshness, diffSeconds, epochMs, isLocalWeekend, isWithinRecentChangeWindow, renderLocal } from "./clock";
@@ -25,41 +24,42 @@ import {
 import { generateSyntheticCases, type GeneratedFile } from "./generate";
 import { evidenceResolutionProblems } from "./graph";
 import {
-  REAL_DERIVED_DEFERRAL,
   buildInventory,
   corpusDigest,
   buildManifest,
+  generatedSignatureProblems,
   generatorDigest,
   taxonomySemanticDigest,
+  type CaseInventoryEntry,
 } from "./manifest";
-import { CORPUS_SEED } from "./seed";
 import {
-  RealDerivedCaseSchema,
-  readRealDerivedFiles,
-  realDerivedCaseProblems,
-} from "./scrub-contract";
+  inspectRealDerivedPartition,
+  realDerivedDeferralProblems,
+  realDerivedProblems,
+} from "./real-derived";
+import { CORPUS_SEED } from "./seed";
 import { loadSignoff, signoffProblems, type CorpusSignoff } from "./signoff";
-import { CORPUS_DIR, REAL_DERIVED_DIR, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
+import { readTree } from "./tree";
+import { CORPUS_DIR, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
 
 export interface CommittedFile {
   readonly relPath: string;
   readonly bytes: string;
 }
 
-const readJsonFiles = (dir: string, prefix: string): CommittedFile[] =>
-  existsSync(dir)
-    ? readdirSync(dir)
-        .filter((name) => name.endsWith(".json"))
-        .sort()
-        .map((name) => ({ relPath: `${prefix}/${name}`, bytes: readFileSync(join(dir, name), "utf8") }))
-    : [];
-
-export const readCommittedCorpus = (root: string = CORPUS_DIR): CommittedFile[] => [
-  ...(existsSync(join(root, "manifest.json"))
-    ? [{ relPath: "manifest.json", bytes: readFileSync(join(root, "manifest.json"), "utf8") }]
-    : []),
-  ...readJsonFiles(join(root, "synthetic"), "synthetic"),
-];
+export const readCommittedCorpus = (
+  root: string = CORPUS_DIR,
+): CommittedFile[] =>
+  readTree(root)
+    .filter(
+      (entry) =>
+        entry.relPath === "manifest.json" ||
+        entry.relPath.startsWith("synthetic/"),
+    )
+    .map((entry) => ({
+      relPath: entry.relPath,
+      bytes: entry.bytes ?? `<${entry.kind}>`,
+    }));
 
 /** (1) Regenerate-and-compare: any hand edit to a generated file fails here.
  * This is the real enforcement of generated-file ownership; the `.gitattributes`
@@ -110,8 +110,12 @@ interface EmittedEvidence {
 /** Only the subgraph rows the clean-control rules interrogate. */
 interface EmittedRecords {
   household: { id: string; advisorRef: string; memberRefs: string[] };
+  referencedHouseholds: Array<{
+    id: string;
+    relationshipReasons: string[];
+  }>;
   parties: Array<{ id: string }>;
-  accounts: Array<{ id: string; ownerRefs: string[] }>;
+  accounts: Array<{ id: string; householdRef: string; ownerRefs: string[] }>;
   beneficiaries: Array<{ accountRef: string; partyRef: string }>;
   authorizedSigners: Array<{
     id: string;
@@ -122,6 +126,7 @@ interface EmittedRecords {
   }>;
   bankInstructions: Array<{
     id: string;
+    householdRef: string;
     titledTo: string;
     accountRefs: string[];
     bank: string;
@@ -131,7 +136,15 @@ interface EmittedRecords {
   plannedWithdrawals: Array<{ id: string; householdRef: string }>;
   restrictions: Array<{ id: string; subjectRef: string; inForceAtAsOf: boolean }>;
   modelAssignments: Array<{ id: string; accountRef: string }>;
-  pendingActions: Array<{ id: string; accountRef: string }>;
+  pendingActions: Array<{
+    id: string;
+    householdRef: string;
+    accountRef: string;
+    direction: "outgoing" | "incoming" | "unknown";
+    liquidityClass: "distribution" | "debit" | "credit" | "unclassified";
+    reducesEffectiveLiquidity: boolean;
+    increasesAvailableLiquidity: boolean;
+  }>;
   legalHolds: Array<{ id: string; subjectRef: string; scope: "account" | "position" }>;
   recentChanges: Array<{ id: string; subjectRef: string }>;
 }
@@ -375,40 +388,6 @@ export function nfcProblems(files: readonly CommittedFile[]): string[] {
     .map((file) => `${file.relPath}: contains non-NFC bytes - two spellings of one name must not be two subjects`);
 }
 
-/** (5) The honestly empty real-derived partition and its fail-closed intake. */
-export function realDerivedProblems(
-  taxonomy: Taxonomy,
-  dir: string = REAL_DERIVED_DIR,
-  files: readonly GeneratedFile[] = readRealDerivedFiles(dir),
-): string[] {
-  const problems: string[] = [];
-  if (!existsSync(join(dir, "README.md"))) {
-    problems.push("real-derived/README.md is missing - the intake contract must ship with the empty partition");
-  }
-  const delivered = existsSync(dir)
-    ? readdirSync(dir).filter((name) => name !== "README.md" && !name.startsWith(".")).sort()
-    : [];
-  problems.push(...realDerivedDeferralProblems(delivered));
-  for (const name of delivered.filter((name) => !name.endsWith(".json"))) {
-    problems.push(`real-derived/${name}: only JSON case files are permitted`);
-  }
-  const classes = defectClassIds(taxonomy);
-  for (const file of files) {
-    problems.push(...realDerivedCaseProblems(file.value, classes, file.relPath));
-  }
-  return problems;
-}
-
-export function realDerivedDeferralProblems(
-  delivered: readonly string[],
-  deferral: typeof REAL_DERIVED_DEFERRAL = REAL_DERIVED_DEFERRAL,
-): string[] {
-  if (deferral === null || delivered.length === 0) return [];
-  return [
-    `real-derived/: ${delivered.length} delivered file(s) present while ${deferral.status} remains active`,
-  ];
-}
-
 export interface CorpusValidation {
   readonly spec: LoadedSpec;
   readonly taxonomy: Taxonomy;
@@ -417,6 +396,7 @@ export interface CorpusValidation {
   readonly cases: readonly EmittedCase[];
   readonly realDerivedCases: readonly Record<string, unknown>[];
   readonly realDerivedFiles: readonly GeneratedFile[];
+  readonly inventory: readonly CaseInventoryEntry[];
   readonly signoff: CorpusSignoff;
   readonly corpusDigest: string;
   readonly problems: readonly string[];
@@ -427,20 +407,22 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   const spec = loadSpec(join(root, "spec"));
   const taxonomy = loadTaxonomy(join(root, "spec"));
   const generated = generateSyntheticCases(spec, seed);
-  const realDerivedFiles = readRealDerivedFiles(join(root, "real-derived"));
-  const validRealDerivedFiles = realDerivedFiles.filter(
-    (file) => RealDerivedCaseSchema.safeParse(file.value).success,
+  const realDerived = inspectRealDerivedPartition(
+    taxonomy,
+    spec.world.corpusVersion,
+    join(root, "real-derived"),
   );
+  const realDerivedFiles = realDerived.inventoryFiles;
   // ONE inventory: the manifest's corpusDigest and the digest recomputed here are
   // then provably over the same object, not two equal-by-coincidence rebuilds.
   const inventory = [
     ...buildInventory(generated),
-    ...buildInventory(validRealDerivedFiles, "real-derived"),
+    ...buildInventory(realDerivedFiles, "real-derived"),
   ];
   const manifest = buildManifest(spec, taxonomy, generated, seed, inventory);
   const committed = readCommittedCorpus(root);
   const cases = generated.map((file) => file.value as unknown as EmittedCase);
-  const realDerivedCases = validRealDerivedFiles.map(
+  const realDerivedCases = realDerivedFiles.map(
     (file) => file.value as unknown as Record<string, unknown>,
   );
   const refs = loadScenarioRefs();
@@ -461,8 +443,9 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     ...timestampProblems(cases, spec),
     ...evidenceResolutionProblems(cases),
     ...cleanControlProblems(cases),
-    ...nfcProblems([...committed, ...realDerivedFiles]),
-    ...realDerivedProblems(taxonomy, join(root, "real-derived"), realDerivedFiles),
+    ...nfcProblems([...committed, ...realDerived.delivery.files]),
+    ...realDerived.problems,
+    ...generatedSignatureProblems([...generated, manifest]),
     ...signoffProblems(signoff, spec.world.corpusVersion, digest),
     ...(generatorDigest(seed, spec.rawBytes).length === 64 ? [] : ["generatorDigest is malformed"]),
   ];
@@ -474,10 +457,15 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     cases,
     realDerivedCases,
     realDerivedFiles,
+    inventory,
     signoff,
     corpusDigest: digest,
     problems,
   };
 }
 
-export { SYNTHETIC_DIR };
+export {
+  realDerivedDeferralProblems,
+  realDerivedProblems,
+  SYNTHETIC_DIR,
+};

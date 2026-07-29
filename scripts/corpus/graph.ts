@@ -1,4 +1,5 @@
 import type { EmittedCase } from "./validate";
+import { REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS } from "./subgraph";
 
 const RECORD_COLLECTIONS = [
   "accounts",
@@ -24,6 +25,29 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
     };
     addId(item.records.household?.id, "records.household");
+    if (!Array.isArray(item.records.referencedHouseholds)) {
+      problems.push(
+        `${item.caseId}/records.referencedHouseholds: required emitted collection is missing`,
+      );
+    }
+    for (const household of item.records.referencedHouseholds ?? []) {
+      addId(household.id, "records.referencedHouseholds");
+      if (
+        household.relationshipReasons.length === 0 ||
+        new Set(household.relationshipReasons).size !==
+          household.relationshipReasons.length ||
+        household.relationshipReasons.some(
+          (reason) =>
+            !REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS.includes(
+              reason as (typeof REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS)[number],
+            ),
+        )
+      ) {
+        problems.push(
+          `${item.caseId}/records.referencedHouseholds.${household.id}.relationshipReasons: expected unique closed relationship reasons`,
+        );
+      }
+    }
     for (const party of item.records.parties ?? []) addId(party.id, "records.parties");
     for (const collection of RECORD_COLLECTIONS) {
       const rows = item.records[collection];
@@ -49,6 +73,10 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       requireOne(ref, "records.household.memberRefs");
     }
     for (const row of item.records.accounts ?? []) {
+      requireOne(
+        row.householdRef,
+        `records.accounts.${row.id}.householdRef`,
+      );
       for (const ref of row.ownerRefs ?? []) {
         requireOne(ref, `records.accounts.${row.id}.ownerRefs`);
       }
@@ -66,6 +94,10 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       requireOne(row.partyRef, `records.authorizedSigners.${row.id}.partyRef`);
     }
     for (const row of item.records.bankInstructions ?? []) {
+      requireOne(
+        row.householdRef,
+        `records.bankInstructions.${row.id}.householdRef`,
+      );
       requireOne(row.titledTo, `records.bankInstructions.${row.id}.titledTo`);
       for (const ref of row.accountRefs ?? []) {
         requireOne(ref, `records.bankInstructions.${row.id}.accountRefs`);
@@ -81,6 +113,10 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       requireOne(row.accountRef, `records.modelAssignments.${row.id}.accountRef`);
     }
     for (const row of item.records.pendingActions ?? []) {
+      requireOne(
+        row.householdRef,
+        `records.pendingActions.${row.id}.householdRef`,
+      );
       requireOne(row.accountRef, `records.pendingActions.${row.id}.accountRef`);
     }
     for (const row of item.records.legalHolds ?? []) {

@@ -41,10 +41,12 @@ fixtures/corpus/
 
 Generated-file ownership is enforced by **regenerate-and-byte-compare** in the blocking `corpus` CI job,
 not by a comment. `.gitattributes` marks the generated trees `linguist-generated` and pins them to LF;
-each directory's README names its owning command.
+each directory's README names its owning command. Inventory is recursive and exact: hidden, nested,
+non-JSON, and unsupported filesystem entries cannot sit outside the comparison.
 
-While the ADR-0034 deferral is active, any delivered file under `real-derived/` fails validation. Once
-the deferral is explicitly lifted, every valid real-derived JSON case is inventoried in the generated
+While the ADR-0034 deferral is active, any delivered entry under `real-derived/` fails validation. Once
+the deferral is explicitly lifted, every case must be a top-level canonical `RD-<16 hex>.json` file with
+a collection-unique case id and the active corpus version before it is inventoried in the generated
 manifest, included in `corpusDigest`, and supplied to the provenance-specific reporter.
 
 ---
@@ -82,6 +84,13 @@ evidence-producing collection is required even when empty, collection keys are u
 destinations named by a case are emitted with their linked accounts and parties, and relationship fields
 such as restriction subjects are preserved. Missing, dangling, or multi-resolving references fail
 validation for defect cases and controls alike.
+
+Accounts and bank instructions retain `householdRef`. A non-primary household referenced by either appears
+exactly once in `records.referencedHouseholds`, carrying only an opaque derived id and closed relationship
+reasons. Pending-action kind is closed and maps to typed direction and liquidity class. Only live unresolved
+outgoing distributions or debits reduce effective liquidity; blocked, cancelled, rejected, incoming,
+credit, unknown, and unclassified actions do not, and incoming value cannot increase availability before
+settlement.
 
 ---
 
@@ -161,6 +170,13 @@ deliberate per-record property.
    comes from pinned tz transitions - checked against the **platform time-zone database** by the fence,
    so a hardcoded `-04:00` cannot survive.
 
+Real-derived cases use the separate closed `verin-real-derived-freshness/1.0.0` policy. Each case records
+`evaluation.asOf` and that policy version. Observed evidence must satisfy
+`observedAt <= retrievedAt <= evaluation.asOf`, and its fresh/stale label is recomputed from the policy's
+per-kind window. `unknown` requires `observationState: "missing"` and `observedAt: null`. Unknown policy
+versions, unsupported kinds, impossible chronology, or inconsistent freshness fail before inventory.
+The policy version and semantic digest are included in the signed corpus preimage.
+
 ---
 
 ## 7. Conflict-key families
@@ -189,9 +205,10 @@ derivation keys on the DECISION: `idem:<caseId>:<scope>-<discriminator>`. The fe
 
 - Synthetic partition's figure: **`syntheticDefectCoverage`**.
 - Real-derived partition's figure: **`detectionRate`**. Different words, deliberately.
-- **No aggregate exists** - no `overall`, no index signature, and an AST rule fails the build on any
-  arithmetic, call, reducer, array, spread, or concatenation that combines both partition measurements,
-  including values laundered through local or imported aliases.
+- **No aggregate exists** - no `overall` and no index signature. Structured numeric measurement is private
+  to `scripts/corpus/report.ts`; shipped callers can import only its string renderer, so destructuring,
+  bracket access, later assignment, parameter flow, return flow, and imported aliases cannot acquire both
+  partition figures.
 - Outcome inputs carry a required provenance literal. Supplying a real-derived outcome to synthetic
   measurement, or the reverse, fails at the measurement boundary.
 - With an empty real-derived partition, `detectionRate` is `null` with
@@ -199,6 +216,9 @@ derivation keys on the DECISION: `idem:<caseId>:<scope>-<discriminator>`. The fe
 - A partially evaluated partition reports both figures as `null` with
   `reasonCode: "detector-outcomes-incomplete"`. Missing outcomes are neither counted as detector failures
   nor omitted to produce a favorable subset.
+- Counts and labels come from the manifest inventory. Reporting recomputes the inventory-bound digest,
+  validates signoff itself, rejects duplicate, unknown, cross-partition, or relabeled outcomes, and
+  interprets a partition only after every inventoried case has exactly one evaluated outcome.
 
 See [`fixtures/corpus/real-derived/README.md`](../fixtures/corpus/real-derived/README.md) and
 [`docs/corpus-scrub-procedure.md`](./corpus-scrub-procedure.md).
@@ -214,13 +234,15 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.1.0` preimage. It covers both partition inventories and
-the versioned semantic digest of defect-taxonomy ids, titles, descriptions, and source citations. Changing
-what a defect class means therefore invalidates the prior captain signoff even when no case bytes change.
+`corpusDigest` uses the versioned `verin-corpus/1.2.0` preimage. It covers both partition inventories,
+the versioned semantic digest of defect-taxonomy ids, titles, descriptions, and source citations, and the
+versioned semantic digest of the real-derived per-kind freshness policy. Changing what a defect class means
+or changing a freshness window therefore invalidates the prior captain signoff even when no case bytes
+change.
 
 **Agents never sign.** No generated file contains a signature: the manifest holds a `signoffRef` pointer,
-a fence proves no corpus code path originates a `signedBy`/`signedAt`/`signedDigest` literal, and the
-generator can emit only into `synthetic/`.
+validation recursively rejects `signedBy`, `signedAt`, and `signedDigest` keys in actual generated
+artifact values, and the generator can emit only into `synthetic/`.
 
 ---
 

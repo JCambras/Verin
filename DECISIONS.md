@@ -4612,3 +4612,34 @@ separate 500-line file ceiling.
 substrate. A favorable evaluated subset, a hidden real-derived case, or an id-shaped PII leak would make
 the resulting claim indefensible.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-082 · 2026-07-28 · captain-decision · Corpus measurement, topology, intake, and freshness authorities are structural
+
+The report derives counts and labels from the manifest inventory, recomputes the signed inventory digest,
+validates signoff internally, and rejects duplicate, unknown, cross-partition, or relabeled outcomes.
+Missing outcomes remain missing and withhold both figures. Structured numeric results stay private to the
+report owner; shipped callers receive only the string-rendering boundary, so syntax-level laundering
+cannot acquire both partition figures.
+
+Pending-action kind is a closed registry with typed direction and liquidity class. Only live unresolved
+outgoing distributions or debits reduce effective liquidity. Incoming value does not increase availability
+until settlement. Accounts and bank instructions retain `householdRef`; every non-primary household
+appears exactly once as an opaque referenced-household node with closed relationship reasons.
+
+Generated and real-derived trees are recursively inventoried. Active deferral rejects every delivered
+entry. After un-deferral, real-derived case ids are collection-unique, filenames are canonical, corpus
+versions are current, and only fully valid files reach inventory. Actual generated artifact values are
+recursively refused if they contain a signature key.
+
+Real-derived evidence records `evaluation.asOf` and the closed
+`verin-real-derived-freshness/1.0.0` policy. Freshness is derived per evidence kind,
+`observedAt <= retrievedAt <= evaluation.asOf`, and `unknown` requires the typed missing-observation arm.
+The `verin-corpus/1.2.0` signed preimage binds the policy version and semantic digest beside the taxonomy
+digest and both partition inventories.
+
+ADR-0034's tooling ceiling rises from 4300 to 4900 against 4818 measured lines, leaving 82 lines of
+headroom for this completed boundary set. The post-prompt-19 ratchet-down point remains unchanged.
+
+**Why:** a signed digest must bind the exact denominator and the policies that interpret it; replay
+topology and freshness cannot depend on caller convention or source-syntax heuristics.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

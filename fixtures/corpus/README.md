@@ -20,8 +20,9 @@ pnpm corpus:report     # provenance-split measurement; refuses to blend
 ## Ownership is enforced, not requested
 
 `pnpm corpus:validate` regenerates from the spec and compares bytes. A hand edit to any generated file
-fails the build with the file name. The `.gitattributes` `linguist-generated` marking and this README are
-signposts; the byte comparison is the mechanism.
+fails the build with the file name. The inventory is recursive, so hidden, nested, and non-JSON files are
+also compared and cannot escape generated ownership. The `.gitattributes` `linguist-generated` marking
+and this README are signposts; the byte comparison is the mechanism.
 
 ## Determinism
 
@@ -39,6 +40,9 @@ became true. The business dates (`effectiveFrom`, `changedAt`, `recordedAt`, `as
 live beside it and are carried into the emitted subgraph. A fact may be years old and freshly observed;
 deriving one from the other makes every long-standing fact stale, which is a defect class in its own
 right (D-078). A control that carries any defect signature fails validation.
+
+Real-derived freshness uses the closed `verin-real-derived-freshness/1.0.0` per-kind policy. Its version
+and semantic digest are part of the captain-signed corpus preimage.
 
 ## Honesty
 

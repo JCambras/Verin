@@ -6,8 +6,10 @@ This directory holds **anonymized real defect history**: NIGO returns, custodian
 operational exceptions that actually happened, scrubbed of PII before entering fixtures. It contains **zero
 cases today, and that is the honest state**, not an oversight.
 
-Any delivered file fails validation while this deferral remains active. After the deferral is explicitly
-lifted, every valid case is inventoried in `manifest.json`, included in `corpusDigest`, and supplied to the
+Any delivered filesystem entry fails validation while this deferral remains active, including hidden,
+nested, non-JSON, and unsupported entries. After the deferral is explicitly lifted, every case must use
+its canonical top-level `RD-<16 hex>.json` filename, a collection-unique case id, and the active corpus
+version before it is inventoried in `manifest.json`, included in `corpusDigest`, and supplied to the
 real-derived measurement path.
 
 ## Why it is empty
@@ -49,6 +51,10 @@ enforced contract. In short, every case must carry:
   `tok:<16 hex>` token, a derived id built from tokens, or a member of a declared vocabulary. An
   unanticipated string is REJECTED, so a scrubbing miss has nowhere to live;
 - a `caseId` of the form `RD-<16 hex>`, disjoint from `CS-` corpus ids and `GC-` signed golden ids.
+- `evaluation.asOf` plus freshness policy `verin-real-derived-freshness/1.0.0`; observed evidence must
+  satisfy `observedAt <= retrievedAt <= evaluation.asOf` and match the derived per-kind freshness.
+  `unknown` is legal only for the typed missing-observation state. The policy version and semantic digest
+  are bound into captain signoff through `corpusDigest`.
 
 Files here are **hand-delivered under the procedure, never generated**. `pnpm corpus:generate` does not
 write to this directory.

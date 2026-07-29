@@ -1,31 +1,23 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { z } from "zod";
 import type { JsonValue } from "../../src/contracts/decision-core/serialization";
 import { CONFLICT_FAMILIES } from "./conflict-keys";
 import type { GeneratedFile } from "./generate";
+import {
+  deriveRealDerivedFreshness,
+  REAL_DERIVED_EVIDENCE_KINDS,
+  REAL_DERIVED_FRESHNESS_POLICY_VERSION,
+} from "./real-derived-policy";
+import { readTree } from "./tree";
 import { REAL_DERIVED_DIR } from "./world";
 
 export const REAL_DERIVED_PROVENANCE = "real-derived-fixture";
 export const REAL_DERIVED_CASE_ID = /^RD-[0-9a-f]{16}$/;
 export const OPAQUE_TOKEN = /^tok:[0-9a-f]{16}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const EVIDENCE_KINDS = [
-  "balance",
-  "bank-instruction",
-  "household-instruction",
-  "planned-withdrawals",
-  "pending-actions",
-  "restriction",
-  "authority",
-  "model-assignment",
-  "legal-hold",
-  "recent-change",
-] as const;
 const TOKEN_COMPONENT = "tok:[0-9a-f]{16}";
 const alternatives = (values: readonly string[]): string => `(?:${values.join("|")})`;
 const EVIDENCE_ID_PATTERN = new RegExp(
-  `^evs:${TOKEN_COMPONENT}:${alternatives(EVIDENCE_KINDS)}$`,
+  `^evs:${TOKEN_COMPONENT}:${alternatives(REAL_DERIVED_EVIDENCE_KINDS)}$`,
 );
 const CONFLICT_KEY_PATTERN = new RegExp(
   `^conflict:${TOKEN_COMPONENT}:${alternatives(CONFLICT_FAMILIES)}$`,
@@ -45,8 +37,9 @@ export const CLOSED_VOCABULARIES: Readonly<Record<string, readonly string[]>> = 
   kind: ["defect", "clean-control"],
   currency: ["USD"],
   freshness: ["fresh", "stale", "unknown"],
+  observationState: ["observed", "missing"],
   family: CONFLICT_FAMILIES,
-  evidenceKind: EVIDENCE_KINDS,
+  evidenceKind: REAL_DERIVED_EVIDENCE_KINDS,
   sourceSystemClass: ["custodian-exception-feed", "crm-case-history", "operations-exception-log"],
   method: ["deterministic-tokenization", "field-suppression", "generalization"],
   controlRationaleId: ["no-defect-present", "defect-class-absent", "resolved-before-execution"],
@@ -79,17 +72,35 @@ export const RealDerivedCaseSchema = z.strictObject({
     }),
   ]),
   occurredAt: z.iso.datetime({ precision: 3 }),
+  evaluation: z.strictObject({
+    asOf: z.iso.datetime({ precision: 3 }),
+    freshnessPolicyVersion: z.literal(
+      REAL_DERIVED_FRESHNESS_POLICY_VERSION,
+    ),
+  }),
   subjects: z.array(z.string().regex(OPAQUE_TOKEN)).min(1),
   evidence: z
     .array(
-      z.strictObject({
-        id: z.string().regex(EVIDENCE_ID_PATTERN),
-        evidenceKind: z.enum(CLOSED_VOCABULARIES.evidenceKind as [string, ...string[]]),
-        subjectRef: z.string().regex(OPAQUE_TOKEN),
-        observedAt: z.iso.datetime({ precision: 3 }),
-        retrievedAt: z.iso.datetime({ precision: 3 }),
-        freshness: z.enum(CLOSED_VOCABULARIES.freshness as [string, ...string[]]),
-      }),
+      z.discriminatedUnion("observationState", [
+        z.strictObject({
+          id: z.string().regex(EVIDENCE_ID_PATTERN),
+          evidenceKind: z.enum(REAL_DERIVED_EVIDENCE_KINDS),
+          subjectRef: z.string().regex(OPAQUE_TOKEN),
+          observationState: z.literal("observed"),
+          observedAt: z.iso.datetime({ precision: 3 }),
+          retrievedAt: z.iso.datetime({ precision: 3 }),
+          freshness: z.enum(["fresh", "stale"]),
+        }),
+        z.strictObject({
+          id: z.string().regex(EVIDENCE_ID_PATTERN),
+          evidenceKind: z.enum(REAL_DERIVED_EVIDENCE_KINDS),
+          subjectRef: z.string().regex(OPAQUE_TOKEN),
+          observationState: z.literal("missing"),
+          observedAt: z.null(),
+          retrievedAt: z.iso.datetime({ precision: 3 }),
+          freshness: z.literal("unknown"),
+        }),
+      ]),
     )
     .min(1),
   reservations: z.array(
@@ -105,6 +116,9 @@ const isClosedString = (key: string, value: string, defectClassIds: ReadonlySet<
   if (key === "defectClassId") return defectClassIds.has(value);
   if (key === "caseId") return REAL_DERIVED_CASE_ID.test(value);
   if (key === "corpusVersion") return /^\d{4}\.\d{2}\.\d+$/.test(value);
+  if (key === "freshnessPolicyVersion") {
+    return value === REAL_DERIVED_FRESHNESS_POLICY_VERSION;
+  }
   return (CLOSED_VOCABULARIES[key] ?? []).includes(value);
 };
 
@@ -182,6 +196,30 @@ export function realDerivedCaseProblems(
     if (!evidence.id.endsWith(`:${evidence.evidenceKind}`)) {
       problems.push(`${where}: evidence ${evidence.id} does not match evidenceKind "${evidence.evidenceKind}"`);
     }
+    if (evidence.retrievedAt > parsed.data.evaluation.asOf) {
+      problems.push(
+        `${where}: evidence ${evidence.id} retrievedAt must not postdate evaluation.asOf`,
+      );
+    }
+    if (
+      evidence.observationState === "observed" &&
+      evidence.observedAt > evidence.retrievedAt
+    ) {
+      problems.push(
+        `${where}: evidence ${evidence.id} observedAt must not postdate retrievedAt`,
+      );
+    }
+    const expectedFreshness = deriveRealDerivedFreshness(
+      parsed.data.evaluation.freshnessPolicyVersion,
+      evidence.evidenceKind,
+      parsed.data.evaluation.asOf,
+      evidence.observedAt,
+    );
+    if (evidence.freshness !== expectedFreshness) {
+      problems.push(
+        `${where}: evidence ${evidence.id} freshness "${evidence.freshness}" does not match derived "${expectedFreshness}"`,
+      );
+    }
   }
   for (const reservation of parsed.data.reservations) {
     if (!reservation.conflictKey.endsWith(`:${reservation.family}`)) {
@@ -196,17 +234,44 @@ export function realDerivedCaseProblems(
   return problems;
 }
 
-export const readRealDerivedFiles = (dir: string = REAL_DERIVED_DIR): GeneratedFile[] =>
-  existsSync(dir)
-    ? readdirSync(dir)
-        .filter((name) => name.endsWith(".json"))
-        .sort()
-        .map((name) => {
-          const bytes = readFileSync(join(dir, name), "utf8");
-          return {
-            relPath: `real-derived/${name}`,
-            bytes,
-            value: JSON.parse(bytes) as JsonValue,
-          };
-        })
-    : [];
+export interface RealDerivedDelivery {
+  readonly deliveredPaths: readonly string[];
+  readonly files: readonly GeneratedFile[];
+  readonly problems: readonly string[];
+}
+
+export function loadRealDerivedDelivery(
+  dir: string = REAL_DERIVED_DIR,
+): RealDerivedDelivery {
+  const entries = readTree(dir, "real-derived").filter(
+    (entry) => entry.relPath !== "real-derived/README.md",
+  );
+  const files: GeneratedFile[] = [];
+  const problems: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind !== "file" || entry.bytes === null) {
+      problems.push(
+        `${entry.relPath}: unsupported filesystem entry in real-derived intake`,
+      );
+      continue;
+    }
+    if (!entry.relPath.endsWith(".json")) {
+      problems.push(`${entry.relPath}: only JSON case files are permitted`);
+      continue;
+    }
+    try {
+      files.push({
+        relPath: entry.relPath,
+        bytes: entry.bytes,
+        value: JSON.parse(entry.bytes) as JsonValue,
+      });
+    } catch {
+      problems.push(`${entry.relPath}: invalid JSON`);
+    }
+  }
+  return {
+    deliveredPaths: entries.map((entry) => entry.relPath),
+    files,
+    problems,
+  };
+}

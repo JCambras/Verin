@@ -10,6 +10,10 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import {
+  PENDING_ACTION_KINDS,
+  PENDING_ACTION_STATES,
+} from "./pending-actions";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 export const CORPUS_DIR = join(REPO_ROOT, "fixtures/corpus");
@@ -153,9 +157,9 @@ const PendingActionSchema = z.strictObject({
   key: Slug,
   householdRef: Slug,
   accountRef: Slug,
-  kind: Slug,
+  kind: z.enum(PENDING_ACTION_KINDS),
   amountMinor: Money,
-  state: z.enum(["pending", "blocked", "settling"]),
+  state: z.enum(PENDING_ACTION_STATES),
   createdAt: Instant,
   observedAt: ObservedAt,
   expectedSettleAt: Instant,

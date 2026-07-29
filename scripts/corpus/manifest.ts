@@ -2,10 +2,14 @@ import { createHash } from "node:crypto";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
 import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
+import {
+  freshnessPolicySemanticDigest,
+  REAL_DERIVED_FRESHNESS_POLICY_VERSION,
+} from "./real-derived-policy";
 import { CORPUS_SEED } from "./seed";
 import { SPEC_FILES, type LoadedSpec } from "./world";
 
-export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.1.0";
+export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.2.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
@@ -27,6 +31,16 @@ export interface CaseInventoryEntry {
   readonly labelId: string;
 }
 
+export interface FreshnessPolicyBinding {
+  readonly version: string;
+  readonly digest: string;
+}
+
+export const currentFreshnessPolicyBinding = (): FreshnessPolicyBinding => ({
+  version: REAL_DERIVED_FRESHNESS_POLICY_VERSION,
+  digest: freshnessPolicySemanticDigest(),
+});
+
 export function taxonomySemanticDigest(taxonomy: Taxonomy): string {
   const semanticProjection: JsonValue = {
     hashKind: "verin-defect-taxonomy",
@@ -47,6 +61,8 @@ export function corpusDigest(
   seed: string,
   taxonomyDigest: string,
   entries: readonly CaseInventoryEntry[],
+  freshnessPolicy: FreshnessPolicyBinding =
+    currentFreshnessPolicyBinding(),
 ): string {
   const preimage: JsonValue = {
     hashKind: "verin-corpus",
@@ -55,6 +71,7 @@ export function corpusDigest(
       corpusVersion,
       seed,
       taxonomyDigest,
+      freshnessPolicy: { ...freshnessPolicy },
       cases: [...entries]
         .sort((left, right) => (left.caseId < right.caseId ? -1 : left.caseId > right.caseId ? 1 : 0))
         .map((entry) => [entry.partition, entry.caseId, entry.digest] as unknown as JsonValue),
@@ -92,6 +109,41 @@ export const buildInventory = (
     };
   });
 
+const SIGNATURE_FIELDS = new Set(["signedBy", "signedAt", "signedDigest"]);
+
+export function generatedSignatureProblems(
+  files: readonly GeneratedFile[],
+): string[] {
+  const problems: string[] = [];
+  for (const file of files) {
+    const pending: Array<{ value: JsonValue; path: string }> = [
+      { value: file.value, path: file.relPath },
+    ];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      if (Array.isArray(current.value)) {
+        current.value.forEach((value, index) =>
+          pending.push({ value, path: `${current.path}[${index}]` }),
+        );
+      } else if (
+        current.value !== null &&
+        typeof current.value === "object"
+      ) {
+        for (const [key, value] of Object.entries(current.value)) {
+          const path = `${current.path}.${key}`;
+          if (SIGNATURE_FIELDS.has(key)) {
+            problems.push(
+              `${path}: generated artifacts cannot contain signature fields`,
+            );
+          }
+          pending.push({ value, path });
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 export const REAL_DERIVED_DEFERRAL: {
   readonly status: string;
   readonly unDeferTrigger: string;
@@ -122,6 +174,7 @@ export function buildManifest(
   const realControls = realDerived.filter((entry) => entry.labelKind === "clean-control");
   const generator = generatorDigest(seed, spec.rawBytes);
   const taxonomyDigest = taxonomySemanticDigest(taxonomy);
+  const freshnessPolicy = currentFreshnessPolicyBinding();
   const value: JsonValue = {
     __generated: {
       generator: "scripts/corpus-generate.ts",
@@ -136,9 +189,17 @@ export function buildManifest(
     asOf: spec.world.clock.asOf,
     timeZone: spec.world.clock.timeZone,
     timeZoneDataVersion: spec.world.clock.timeZoneDataVersion,
-    corpusDigest: corpusDigest(spec.world.corpusVersion, seed, taxonomyDigest, inventory),
+    corpusDigest: corpusDigest(
+      spec.world.corpusVersion,
+      seed,
+      taxonomyDigest,
+      inventory,
+      freshnessPolicy,
+    ),
     taxonomyDigest,
     taxonomyDigestPreimageVersion: TAXONOMY_DIGEST_PREIMAGE_VERSION,
+    freshnessPolicyVersion: freshnessPolicy.version,
+    freshnessPolicyDigest: freshnessPolicy.digest,
     generatorDigest: generator,
     signoffRef: {
       file: "fixtures/corpus/spec/SIGNOFF.md",

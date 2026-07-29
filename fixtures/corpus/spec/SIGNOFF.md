@@ -15,6 +15,7 @@ ADR-0034). Two legal states exist and nothing in between:
 `signed-but-regenerated` rather than carrying a stale attestation forward. Narrative wording outside the
 signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature. The
 digest covers both partition inventories and the versioned semantic digest of the defect taxonomy.
+It also covers the versioned semantic digest of the real-derived per-kind freshness policy.
 
 **What signing means here.** The captain signs the corpus version's **labels**: that each defect case's
 `defectClassId` and each clean control's control status are correct product truth. The labels are the

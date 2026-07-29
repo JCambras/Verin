@@ -11,6 +11,7 @@ import {
   restrictionId,
   subjectId,
 } from "./entities";
+import { pendingActionLiquidityTreatment } from "./pending-actions";
 import { requireLegalHoldSubject, type CaseSpec, type WorldSpec } from "./world";
 
 const nfc = (value: string): string => value.normalize("NFC");
@@ -28,6 +29,11 @@ const evidenceKeys = (corpusCase: CaseSpec, kind: string): Set<string> =>
       return candidateKind === kind && key !== undefined ? [key] : [];
     }),
   );
+
+export const REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS = [
+  "owns-account",
+  "owns-bank-instruction",
+] as const;
 
 export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue {
   const householdKey = corpusCase.householdRef;
@@ -53,6 +59,28 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     ),
     (account) => account.key,
   );
+  const referencedHouseholdReasons = new Map<
+    string,
+    Set<(typeof REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS)[number]>
+  >();
+  const addReferencedHousehold = (
+    ref: string,
+    reason: (typeof REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS)[number],
+  ): void => {
+    if (ref === householdKey) return;
+    const reasons = referencedHouseholdReasons.get(ref) ?? new Set();
+    reasons.add(reason);
+    referencedHouseholdReasons.set(ref, reasons);
+  };
+  for (const account of accounts) {
+    addReferencedHousehold(account.householdRef, "owns-account");
+  }
+  for (const instruction of bankInstructions) {
+    addReferencedHousehold(
+      instruction.householdRef,
+      "owns-bank-instruction",
+    );
+  }
   const beneficiaries = sortedBy(
     world.beneficiaries.filter((row) => householdAccountKeys.has(row.accountRef)),
     (row) => `${row.accountRef}/${row.partyRef}`,
@@ -95,6 +123,16 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       advisorRef: subjectId(household.advisorRef),
       memberRefs: sortedBy(household.memberRefs, (key) => key).map(subjectId),
     },
+    referencedHouseholds: sortedBy(
+      [...referencedHouseholdReasons.entries()].map(([key, reasons]) => ({
+        key,
+        reasons: [...reasons],
+      })),
+      (row) => row.key,
+    ).map((row) => ({
+      id: subjectId(row.key),
+      relationshipReasons: sortedBy(row.reasons, (reason) => reason),
+    })),
     parties: relevantParties.map((party) => ({
       id: subjectId(party.key),
       kind: party.kind,
@@ -103,6 +141,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     })),
     accounts: accounts.map((account) => ({
       id: subjectId(account.key),
+      householdRef: subjectId(account.householdRef),
       registration: account.registration,
       custodian: account.custodian,
       balanceMinor: account.balanceMinor,
@@ -130,6 +169,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     })),
     bankInstructions: bankInstructions.map((row) => ({
       id: bankInstructionId(row.key),
+      householdRef: subjectId(row.householdRef),
       titledTo: subjectId(row.titledTo),
       bank: nfc(row.bank),
       lastFour: row.lastFour,
@@ -181,6 +221,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       (row) => row.key,
     ).map((row) => ({
       id: pendingActionId(row.key),
+      householdRef: subjectId(row.householdRef),
       accountRef: subjectId(row.accountRef),
       kind: row.kind,
       amountMinor: row.amountMinor,
@@ -188,7 +229,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       createdAt: row.createdAt,
       observedAt: row.observedAt,
       expectedSettleAt: row.expectedSettleAt,
-      reducesEffectiveLiquidity: row.state !== "blocked",
+      ...pendingActionLiquidityTreatment(row.kind, row.state),
     })),
     legalHolds: sortedBy(
       world.legalHolds.filter((row) =>

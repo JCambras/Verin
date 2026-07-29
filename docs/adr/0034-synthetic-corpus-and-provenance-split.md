@@ -67,7 +67,14 @@ Every evidence and request reference resolves to exactly one emitted record in i
 Every evidence-producing collection is present, keyed collections reject duplicates, planned withdrawals
 and model assignments carry distinct prefixed derived ids, recent changes are emitted, restriction
 subjects are preserved, and an explicitly named cross-household destination is included with its linked
-account and party records rather than filtered away.
+account and party records rather than filtered away. Accounts and bank instructions preserve their
+`householdRef`; each non-primary referenced household appears exactly once as an opaque id with closed
+relationship reasons, so every household edge resolves without importing another household's PII.
+
+Pending-action direction and liquidity class come from a closed kind registry. Only live unresolved
+outgoing distributions or debits reduce effective liquidity. Blocked, cancelled, rejected, incoming,
+credit, unknown, and unclassified actions do not. Incoming value is excluded until settlement and can
+increase availability only once settled.
 
 ### 2b. Evidence carries three instants, not one (D-078)
 
@@ -83,10 +90,10 @@ property.
 
 ### 3. The provenance split is structural, not editorial
 
-- **No aggregate type exists.** There is no `overall`, no index signature, no accessor that reduces
-  across provenance classes, and an AST rule scans `src/` and `scripts/` for arithmetic, calls, reducers,
-  arrays, spreads, and concatenations that combine both partition measurements through local or imported
-  aliases.
+- **No aggregate type exists.** There is no `overall`, no index signature, and no accessor that reduces
+  across provenance classes. Structured numeric reports are private to `scripts/corpus/report.ts`; shipped
+  callers can import only its string-rendering boundary. This removes destructuring, bracket access,
+  assignment, parameter, return-flow, and imported-alias laundering from the reachable product API.
 - **Measurement inputs are provenance-specific.** Every outcome carries a required partition literal,
   and the measurement boundary rejects an outcome supplied to the wrong partition.
 - **The labels are different words.** `syntheticDefectCoverage` for the synthetic partition;
@@ -95,7 +102,10 @@ property.
   `reasonCode: "real-derived-corpus-absent"` and refuses to substitute the synthetic figure. The
   companion populates the partition and a number appears, so the `null` is a real branch, not a stub.
 - **No favorable subsets.** If any required detector outcome is missing, both figures for that partition
-  are withheld with `reasonCode: "detector-outcomes-incomplete"`.
+  are withheld with `reasonCode: "detector-outcomes-incomplete"`. Counts and labels come from the manifest
+  inventory, not detector outcomes. Reporting recomputes the inventory-bound `corpusDigest`, validates
+  signoff internally, rejects duplicate, unknown, cross-partition, or relabeled outcomes, and requires
+  exactly one evaluated outcome per inventoried case before interpreting a figure.
 
 ### 4. The real-derived partition ships EMPTY, with its intake pipeline (captain ruling)
 
@@ -108,9 +118,13 @@ trigger, cross-checked against `fixtures/corpus/manifest.json` by the fence.
 Until the partition is populated and reviewed: **Phase 1 is not complete, no investor-facing
 detection-rate claim is permitted, and synthetic coverage stays labeled synthetic.**
 
-The deferral is fail-closed: any delivered file fails validation while it remains active. After the
-deferral is explicitly lifted, each valid real-derived case is inventoried in the generated manifest,
-bound into `corpusDigest`, and fed to the real-derived reporting path.
+The deferral is fail-closed: any delivered filesystem entry fails validation while it remains active,
+including hidden, nested, non-JSON, and unsupported entries. Generated-tree ownership uses the same
+recursive inventory, so no nested or hidden file can evade regenerate-and-compare. After the deferral is
+explicitly lifted, files must be top-level canonical `RD-<token>.json` names, case ids must be unique
+across the collection, and every case must name the active corpus version before it can enter inventory.
+Each valid real-derived case is then inventoried in the generated manifest, bound into `corpusDigest`,
+and fed to the real-derived reporting path.
 
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
@@ -124,6 +138,14 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
+Each real-derived case records `evaluation.asOf` and the closed
+`verin-real-derived-freshness/1.0.0` policy version. The policy has one freshness window per supported
+evidence kind. Observed evidence enforces `observedAt <= retrievedAt <= evaluation.asOf` and its supplied
+fresh/stale value must equal the derived value. `unknown` is legal only through the typed
+`observationState: "missing"` arm with `observedAt: null`. Unknown policy versions, unsupported evidence
+kinds, impossible chronology, or inconsistent freshness are rejected before inventory. The policy version
+and semantic digest are bound into `corpusDigest`.
+
 **This ADR invents no defect history.** Every defect class in the taxonomy cites a requirement or a
 signed case that already exists in this repository, and the cited file's existence is validated.
 
@@ -134,16 +156,18 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.1.0` preimage covers both partition inventories and a
-versioned semantic digest of the taxonomy definitions and citations. Redefining a class invalidates the
-prior signoff even if no case bytes change.
+figure the corpus can report. The `verin-corpus/1.2.0` preimage covers both partition inventories, a
+versioned semantic digest of the taxonomy definitions and citations, and the versioned semantic digest of
+the real-derived freshness policy. Redefining a class or changing a freshness window invalidates the prior
+signoff even if no case bytes change.
 
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
 `signedAt` instant.
 
 **Agents never sign.** No generated file carries a signature: the manifest holds a `signoffRef`
-pointer, not a signature block, and a fence proves no code path under `scripts/` originates a
-`signedBy`/`signedAt`/`signedDigest` literal and that the generator can emit only into `synthetic/`.
+pointer, not a signature block, and validation recursively rejects `signedBy`, `signedAt`, or
+`signedDigest` keys in the actual generated artifact values, regardless of how source code constructed
+them. The generator can emit only into `synthetic/`.
 
 ### 6. Labeled clean controls and a false-positive rate are mandatory (captain ruling)
 
@@ -161,7 +185,9 @@ dropping its envelope. D-081 raises the tooling ceiling from 4000 to 4300 for th
 intake, signoff, and measurement boundaries, with 46 lines of measured headroom rather than deleting
 existing design documentation to conceal the growth. **Ratchet-down point:** after the corpus
 generator's first post-prompt-19 simplification pass, once replay has shown which generator surface
-is actually load-bearing.
+is actually load-bearing. D-082 raises the ceiling from 4300 to 4900 against 4818 measured lines, with
+82 lines of headroom, for the inventory-bound report, recursive tree intake, direction-aware actions,
+referenced-household topology, generated-signature scan, and versioned real-derived freshness policy.
 
 ## What this PR explicitly does NOT claim
 

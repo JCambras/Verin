@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDocument } from "yaml";
 import { Node, Project, SyntaxKind } from "ts-morph";
@@ -11,10 +19,26 @@ import {
   buildInventory,
   buildManifest,
   corpusDigest,
+  currentFreshnessPolicyBinding,
+  generatedSignatureProblems,
   taxonomySemanticDigest,
 } from "../../../scripts/corpus/manifest";
 import {
+  PENDING_ACTION_KINDS,
+  PENDING_ACTION_STATES,
+  pendingActionLiquidityTreatment,
+} from "../../../scripts/corpus/pending-actions";
+import {
+  freshnessPolicySemanticDigest,
+  REAL_DERIVED_FRESHNESS_POLICY,
+} from "../../../scripts/corpus/real-derived-policy";
+import {
+  realDerivedCollectionProblems,
+} from "../../../scripts/corpus/real-derived";
+import {
   buildCorpusReport,
+  type RealDerivedCaseOutcome,
+  type ReportInput,
   type SyntheticCaseOutcome,
 } from "../../../scripts/corpus/report";
 import { realDerivedCaseProblems } from "../../../scripts/corpus/scrub-contract";
@@ -27,6 +51,7 @@ import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   cleanControlProblems,
   labelProblems,
+  readCommittedCorpus,
   realDerivedDeferralProblems,
   realDerivedProblems,
   validateCorpus,
@@ -71,113 +96,63 @@ const SCENARIOS = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
 // ── (c) the no-blending rule ───────────────────────────────────────────────────
 
-const PARTITION_ACCESSORS = ["synthetic", "realDerived"] as const;
+const isReportModule = (specifier: string): boolean =>
+  /(?:^|\/)corpus\/report$/.test(specifier.replace(/\\/g, "/"));
 
-export function blendingViolations(project: Project, root = ""): string[] {
+export function measurementBoundaryViolations(
+  project: Project,
+  root = "",
+): string[] {
   const violations: string[] = [];
-  type TrackedSymbol = NonNullable<ReturnType<Node["getSymbol"]>>;
-  const directReads = (text: string): Set<string> =>
-    new Set(
-      PARTITION_ACCESSORS.filter(
-        (accessor) =>
-          new RegExp(`\\.${accessor}\\b`).test(text) ||
-          new RegExp(`\\b${accessor}(Outcomes|PartitionReport)\\b`).test(text),
-      ),
-    );
-  const symbolReads = (symbol: TrackedSymbol): Set<string> => {
-    try {
-      const aliased = symbol.getAliasedSymbol();
-      if (aliased !== undefined) {
-        return directReads(
-          aliased.getDeclarations().map((declaration) => declaration.getText()).join("\n"),
+  for (const sf of project.getSourceFiles()) {
+    const file = sf.getFilePath().replace(/\\/g, "/");
+    const isCli = file.endsWith("/scripts/corpus-report.ts");
+    for (const declaration of sf.getImportDeclarations()) {
+      if (!isReportModule(declaration.getModuleSpecifierValue())) continue;
+      const valueNames = declaration
+        .getNamedImports()
+        .filter((specifier) => !specifier.isTypeOnly())
+        .map((specifier) => specifier.getName());
+      const allowed =
+        isCli &&
+        declaration.getDefaultImport() === undefined &&
+        declaration.getNamespaceImport() === undefined &&
+        valueNames.length === 1 &&
+        valueNames[0] === "renderCorpusReport";
+      if (!allowed) {
+        violations.push(
+          `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: structured corpus measurement is private to scripts/corpus/report.ts`,
         );
       }
-    } catch {
-      return new Set();
     }
-    return new Set();
-  };
-  for (const sf of project.getSourceFiles()) {
-    const taints = new Map<TrackedSymbol, Set<string>>();
-    for (let pass = 0; pass < 8; pass += 1) {
-      let changed = false;
-      for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
-        const symbol = declaration.getNameNode().getSymbol();
-        const initializer = declaration.getInitializer();
-        if (initializer === undefined || symbol === undefined) continue;
-        if (
-          Node.isCallExpression(initializer) &&
-          initializer.getExpression().getText() === "buildCorpusReport"
-        ) {
-          continue;
-        }
-        const reads = directReads(initializer.getText());
-        for (const identifier of initializer.getDescendantsOfKind(SyntaxKind.Identifier)) {
-          const referenced = identifier.getSymbol();
-          if (referenced === undefined) continue;
-          for (const accessor of symbolReads(referenced)) reads.add(accessor);
-          for (const accessor of taints.get(referenced) ?? []) reads.add(accessor);
-        }
-        const before = taints.get(symbol);
-        if (reads.size > 0 && (before === undefined || [...reads].some((entry) => !before.has(entry)))) {
-          taints.set(symbol, new Set([...(before ?? []), ...reads]));
-          changed = true;
-        }
+    for (const declaration of sf.getExportDeclarations()) {
+      const specifier = declaration.getModuleSpecifierValue();
+      if (specifier === undefined || !isReportModule(specifier)) continue;
+      violations.push(
+        `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: corpus measurement cannot be re-exported`,
+      );
+    }
+    for (const declaration of sf.getDescendantsOfKind(
+      SyntaxKind.ImportEqualsDeclaration,
+    )) {
+      if (!/corpus[/\\]report/.test(declaration.getModuleReference().getText())) {
+        continue;
       }
-      if (!changed) break;
+      violations.push(
+        `${sf.getFilePath().replace(root, "")}:${declaration.getStartLineNumber()}: corpus measurement cannot use import-equals`,
+      );
     }
-    const candidates: Node[] = [
-      ...sf.getDescendantsOfKind(SyntaxKind.BinaryExpression),
-      ...sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression),
-      ...sf.getDescendantsOfKind(SyntaxKind.CallExpression),
-      ...sf.getDescendantsOfKind(SyntaxKind.NewExpression),
-      ...sf.getDescendantsOfKind(SyntaxKind.TemplateExpression),
-    ];
-    for (const expression of candidates) {
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const argument = call.getArguments()[0];
       if (
-        Node.isCallExpression(expression) &&
-        expression.getExpression().getText() === "buildCorpusReport"
+        argument === undefined ||
+        !Node.isStringLiteral(argument) ||
+        !isReportModule(argument.getLiteralValue())
       ) {
         continue;
       }
-      const reads = directReads(expression.getText());
-      for (const identifier of expression.getDescendantsOfKind(SyntaxKind.Identifier)) {
-        const referenced = identifier.getSymbol();
-        if (referenced === undefined) continue;
-        for (const accessor of symbolReads(referenced)) reads.add(accessor);
-        for (const accessor of taints.get(referenced) ?? []) reads.add(accessor);
-      }
-      if (PARTITION_ACCESSORS.every((accessor) => reads.has(accessor))) {
-        violations.push(
-          `${sf.getFilePath().replace(root, "")}:${expression.getStartLineNumber()}: combines the synthetic and real-derived partitions into one figure`,
-        );
-      }
-    }
-  }
-  return violations;
-}
-
-/**
- * (f) Agents never sign. A signature is ORIGINATED when a signature field is
- * given a literal value in source; PARSING one out of the hand-owned signoff
- * file (`signedBy: asStringOrNull(data.signedBy)`) is reading, not signing, and
- * stays legal. That distinction is why this is an AST rule over initializers
- * rather than a grep for the field name.
- */
-const SIGNATURE_FIELDS = ["signedBy", "signedAt", "signedDigest"];
-
-export function agentSignatureViolations(project: Project, root = ""): string[] {
-  const violations: string[] = [];
-  const isLiteral = (node: Node): boolean =>
-    Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node) || Node.isTemplateExpression(node);
-  for (const sf of project.getSourceFiles()) {
-    for (const property of sf.getDescendantsOfKind(SyntaxKind.PropertyAssignment)) {
-      const name = property.getName().replace(/["']/g, "");
-      const initializer = property.getInitializer();
-      if (!SIGNATURE_FIELDS.includes(name) || initializer === undefined) continue;
-      if (!isLiteral(initializer)) continue;
       violations.push(
-        `${sf.getFilePath().replace(root, "")}:${property.getStartLineNumber()}: originates ${name} - agents never sign the corpus`,
+        `${sf.getFilePath().replace(root, "")}:${call.getStartLineNumber()}: corpus measurement cannot use dynamic or CommonJS loading`,
       );
     }
   }
@@ -208,12 +183,6 @@ const measuredCodeProject = (): Project => {
   return project;
 };
 
-/** Corpus-owning code only. `signedAt` is a generic field name (the e-sign load
- * harness uses it too), so the signature rule is scoped to the code that owns
- * the corpus rather than flagging every module that happens to share a word. */
-const corpusProject = (): Project =>
-  projectOf((file) => /scripts[/\\]corpus([/\\]|-)/.test(file));
-
 // ── shared fixtures for the companions ─────────────────────────────────────────
 
 const OPAQUE = "tok:0123456789abcdef";
@@ -238,12 +207,17 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
   },
   label: { kind: "defect", defectClassId: "destination-integrity-defect" },
   occurredAt: "2026-04-28T13:00:00.000Z",
+  evaluation: {
+    asOf: "2026-04-28T13:00:05.000Z",
+    freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0",
+  },
   subjects: [OPAQUE],
   evidence: [
     {
       id: "evs:tok:0123456789abcdef:balance",
       evidenceKind: "balance",
       subjectRef: OPAQUE,
+      observationState: "observed",
       observedAt: "2026-04-28T05:00:00.000Z",
       retrievedAt: "2026-04-28T13:00:04.000Z",
       freshness: "fresh",
@@ -268,6 +242,79 @@ const outcomes = (defects: number, controls: number, flagged: boolean | null): S
   })),
 ];
 
+const inventoryOf = (
+  synthetic: readonly SyntheticCaseOutcome[],
+  realDerived: readonly RealDerivedCaseOutcome[] = [],
+) => [
+  ...synthetic.map((outcome) => ({
+    caseId: outcome.caseId,
+    file: `synthetic/${outcome.caseId}.json`,
+    digest: outcome.caseId,
+    partition: "synthetic" as const,
+    labelKind: outcome.labelKind,
+    labelId:
+      outcome.labelKind === "defect" ? "test-defect" : "clean-control",
+  })),
+  ...realDerived.map((outcome) => ({
+    caseId: outcome.caseId,
+    file: `real-derived/${outcome.caseId}.json`,
+    digest: outcome.caseId,
+    partition: "real-derived" as const,
+    labelKind: outcome.labelKind,
+    labelId:
+      outcome.labelKind === "defect" ? "test-defect" : "clean-control",
+  })),
+];
+
+const signedSignoff = (
+  corpusVersion = "x",
+  corpusDigest = "y",
+): CorpusSignoff => ({
+  corpusVersion,
+  status: "signed",
+  signedBy: CAPTAIN_SIGNING_AUTHORITY,
+  signedAt: "2026-07-28T12:00:00.000Z",
+  signedDigest: corpusDigest,
+});
+
+const reportInput = (
+  syntheticOutcomes: readonly SyntheticCaseOutcome[],
+  realDerivedOutcomes: readonly RealDerivedCaseOutcome[] = [],
+  overrides: Partial<ReportInput> = {},
+): ReportInput => {
+  const corpusVersion = overrides.corpusVersion ?? "x";
+  const seed = overrides.seed ?? "test-seed";
+  const taxonomyDigest = overrides.taxonomyDigest ?? "test-taxonomy-digest";
+  const freshnessPolicy =
+    overrides.freshnessPolicy ?? currentFreshnessPolicyBinding();
+  const inventory =
+    overrides.inventory ??
+    inventoryOf(syntheticOutcomes, realDerivedOutcomes);
+  const digest =
+    overrides.corpusDigest ??
+    corpusDigest(
+      corpusVersion,
+      seed,
+      taxonomyDigest,
+      inventory,
+      freshnessPolicy,
+    );
+  return {
+    corpusVersion,
+    corpusDigest: digest,
+    seed,
+    taxonomyDigest,
+    freshnessPolicy,
+    signoff:
+      overrides.signoff ?? signedSignoff(corpusVersion, digest),
+    inventory,
+    syntheticOutcomes:
+      overrides.syntheticOutcomes ?? syntheticOutcomes,
+    realDerivedOutcomes:
+      overrides.realDerivedOutcomes ?? realDerivedOutcomes,
+  };
+};
+
 const real = validateCorpus();
 const refs = loadScenarioRefs();
 const goldenIds = new Set(loadGoldenCases().map((e) => String((e.data as Record<string, unknown>).caseId)));
@@ -281,20 +328,19 @@ describe("corpus-provenance-split fence", () => {
     expect(goldenIds.size).toBe(16);
   });
 
-  it("(c) enforces: no code in src/ or scripts/ blends the two provenance partitions", () => {
-    const violations = blendingViolations(measuredCodeProject(), REPO_ROOT);
-    expect(violations, `blended provenance figures:\n${violations.join("\n")}`).toEqual([]);
+  it("(c) enforces: structured partition measurements stay inside the partition-safe report owner", () => {
+    const violations = measurementBoundaryViolations(
+      measuredCodeProject(),
+      REPO_ROOT,
+    );
+    expect(
+      violations,
+      `measurement boundary violations:\n${violations.join("\n")}`,
+    ).toEqual([]);
   });
 
   it("(c) enforces: the report type has no aggregate key and the two figures have different names", () => {
-    const report = buildCorpusReport({
-      corpusVersion: "x",
-      corpusDigest: "y",
-      signoffStatus: "signed",
-      signed: true,
-      syntheticOutcomes: outcomes(2, 1, true),
-      realDerivedOutcomes: [],
-    });
+    const report = buildCorpusReport(reportInput(outcomes(2, 1, true)));
     for (const banned of ["overall", "blended", "combined", "total", "all", "rate"]) {
       expect(Object.keys(report)).not.toContain(banned);
     }
@@ -305,14 +351,8 @@ describe("corpus-provenance-split fence", () => {
   });
 
   it("(d) enforces: with an empty real-derived partition the reporter withholds detectionRate", () => {
-    const report = buildCorpusReport({
-      corpusVersion: real.spec.world.corpusVersion,
-      corpusDigest: real.corpusDigest,
-      signoffStatus: "signed",
-      signed: true,
-      syntheticOutcomes: outcomes(3, 2, true),
-      realDerivedOutcomes: [],
-    });
+    const synthetic = outcomes(3, 2, true);
+    const report = buildCorpusReport(reportInput(synthetic));
     expect(report.realDerived.detectionRate).toEqual({ value: null, reasonCode: "real-derived-corpus-absent" });
     expect(report.realDerived.interpretable).toBe(false);
     expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
@@ -325,7 +365,9 @@ describe("corpus-provenance-split fence", () => {
     expect(manifest.partitions.realDerived.deferral.status).toBe("deferred-pending-authorized-source");
     expect(String(manifest.partitions.realDerived.deferral.unDeferTrigger).length).toBeGreaterThan(40);
     expect(existsSync(join(REPO_ROOT, manifest.partitions.realDerived.deferral.adr))).toBe(true);
-    expect(realDerivedProblems(real.taxonomy)).toEqual([]);
+    expect(
+      realDerivedProblems(real.taxonomy, real.spec.world.corpusVersion),
+    ).toEqual([]);
   });
 
   it("(d) enforces: every evidence and request reference resolves exactly once in its emitted case graph", () => {
@@ -342,6 +384,25 @@ describe("corpus-provenance-split fence", () => {
     expect(crossHousehold.records.parties.map((row) => row.id)).toContain(
       "subject:mira-smith",
     );
+    expect(crossHousehold.records.referencedHouseholds).toEqual([
+      {
+        id: "subject:smith-mira",
+        relationshipReasons: [
+          "owns-account",
+          "owns-bank-instruction",
+        ],
+      },
+    ]);
+    expect(
+      crossHousehold.records.accounts.find(
+        (row) => row.id === "subject:mira-roth",
+      )?.householdRef,
+    ).toBe("subject:smith-mira");
+    expect(
+      crossHousehold.records.bankInstructions.find(
+        (row) => row.id === "bank-instruction:mira-primary",
+      )?.householdRef,
+    ).toBe("subject:smith-mira");
     const modelCase = real.cases.find(
       (item) => item.caseId === "CS-pending-rebalance-during-evaluation",
     )!;
@@ -359,6 +420,15 @@ describe("corpus-provenance-split fence", () => {
     )!;
     expect(changeCase.records.recentChanges[0]?.id).toBe("change:smiths-bank-change");
     expect(changeCase.records.restrictions.every((row) => row.subjectRef.length > 0)).toBe(true);
+    const cleanLiquidity = real.cases.find(
+      (item) => item.caseId === "CS-clean-ample-liquidity",
+    )!;
+    expect(cleanLiquidity.records.pendingActions[0]).toMatchObject({
+      direction: "incoming",
+      liquidityClass: "credit",
+      reducesEffectiveLiquidity: false,
+      increasesAvailableLiquidity: false,
+    });
   });
 
   it("(d) enforces: real-derived files are rejected while deferred and inventory-ready after un-deferral", () => {
@@ -385,6 +455,87 @@ describe("corpus-provenance-split fence", () => {
     expect((manifest.value as any).corpusDigest).not.toBe(real.corpusDigest);
   });
 
+  it("(d) enforces: real-derived collection identity, version, and filenames are canonical before inventory", () => {
+    const value = realDerivedCase();
+    const canonical = {
+      relPath: "real-derived/RD-00112233445566aa.json",
+      bytes: `${JSON.stringify(value)}\n`,
+      value: value as any,
+    };
+    expect(
+      realDerivedCollectionProblems(
+        [canonical],
+        real.spec.world.corpusVersion,
+      ),
+    ).toEqual([]);
+    const stale = {
+      ...canonical,
+      value: {
+        ...value,
+        corpusVersion: "2026.06.0",
+      } as any,
+    };
+    const duplicate = {
+      ...canonical,
+      relPath: "real-derived/RD-aabbccddeeff0011.json",
+    };
+    const problems = realDerivedCollectionProblems(
+      [stale, duplicate],
+      real.spec.world.corpusVersion,
+    );
+    expect(problems.some((problem) => problem.includes("canonical filename"))).toBe(true);
+    expect(problems.some((problem) => problem.includes("does not match active corpus"))).toBe(true);
+    expect(problems.some((problem) => problem.includes("duplicate caseId"))).toBe(true);
+  });
+
+  it("(d) enforces: generated and real-derived trees are recursively inventoried, including hidden and nested files", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-tree-"));
+    try {
+      mkdirSync(join(root, "synthetic", "nested"), { recursive: true });
+      writeFileSync(join(root, "manifest.json"), "{}\n");
+      writeFileSync(join(root, "synthetic", ".hidden"), "hidden\n");
+      writeFileSync(join(root, "synthetic", "note.txt"), "note\n");
+      writeFileSync(join(root, "synthetic", "nested", "case.json"), "{}\n");
+      expect(readCommittedCorpus(root).map((file) => file.relPath)).toEqual([
+        "manifest.json",
+        "synthetic/.hidden",
+        "synthetic/nested/case.json",
+        "synthetic/note.txt",
+      ]);
+
+      const intake = join(root, "real-derived");
+      mkdirSync(join(intake, "nested"), { recursive: true });
+      writeFileSync(join(intake, "README.md"), "intake\n");
+      writeFileSync(join(intake, ".hidden"), "hidden\n");
+      writeFileSync(
+        join(intake, "nested", "RD-00112233445566aa.json"),
+        `${JSON.stringify(realDerivedCase())}\n`,
+      );
+      const problems = realDerivedProblems(
+        real.taxonomy,
+        real.spec.world.corpusVersion,
+        intake,
+      );
+      expect(
+        problems.some((problem) =>
+          problem.includes("2 delivered file(s) present"),
+        ),
+      ).toBe(true);
+      expect(
+        problems.some((problem) =>
+          problem.includes("real-derived/.hidden: only JSON"),
+        ),
+      ).toBe(true);
+      expect(
+        problems.some((problem) =>
+          problem.includes("canonical filename"),
+        ),
+      ).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("(d) enforces: the signed digest covers versioned defect-taxonomy semantics", () => {
     const changed = structuredClone(real.taxonomy);
     changed.defectClasses[0]!.description = `${changed.defectClasses[0]!.description} changed`;
@@ -398,6 +549,32 @@ describe("corpus-provenance-split fence", () => {
         CORPUS_SEED,
         changedTaxonomyDigest,
         inventory,
+      ),
+    ).not.toBe(real.corpusDigest);
+  });
+
+  it("(d) enforces: the signed digest covers the versioned real-derived freshness policy semantics", () => {
+    const changedPolicy = {
+      ...REAL_DERIVED_FRESHNESS_POLICY,
+      freshnessWindowDays: {
+        ...REAL_DERIVED_FRESHNESS_POLICY.freshnessWindowDays,
+        balance:
+          REAL_DERIVED_FRESHNESS_POLICY.freshnessWindowDays.balance + 1,
+      },
+    };
+    const original = currentFreshnessPolicyBinding();
+    const changed = {
+      version: changedPolicy.version,
+      digest: freshnessPolicySemanticDigest(changedPolicy),
+    };
+    expect(changed.digest).not.toBe(original.digest);
+    expect(
+      corpusDigest(
+        real.spec.world.corpusVersion,
+        CORPUS_SEED,
+        taxonomySemanticDigest(real.taxonomy),
+        real.inventory,
+        changed,
       ),
     ).not.toBe(real.corpusDigest);
   });
@@ -437,11 +614,15 @@ describe("corpus-provenance-split fence", () => {
     expect(real.taxonomy.defectClasses.length).toBeGreaterThanOrEqual(16);
   });
 
-  it("(f) enforces: no corpus code path originates a signature", () => {
-    const project = corpusProject();
-    expect(project.getSourceFiles().length, "the signature scan must cover a non-empty corpus tree").toBeGreaterThanOrEqual(10);
-    const violations = agentSignatureViolations(project, REPO_ROOT);
-    expect(violations, `agent-authored signatures:\n${violations.join("\n")}`).toEqual([]);
+  it("(f) enforces: no actual generated artifact contains a signature field", () => {
+    const violations = generatedSignatureProblems([
+      ...real.generated,
+      real.manifest,
+    ]);
+    expect(
+      violations,
+      `generated signature fields:\n${violations.join("\n")}`,
+    ).toEqual([]);
   });
 
   it("(f) enforces: the generator can only emit into synthetic/ - never spec/ or real-derived/", () => {
@@ -551,6 +732,21 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         problem.includes("records.bankInstructions.bank-instruction:mira-primary.accountRefs"),
       ),
     ).toBe(true);
+    const missingHousehold = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId ===
+          "CS-beneficiary-versus-destination-restriction",
+      )!,
+    );
+    missingHousehold.records.referencedHouseholds = [];
+    expect(
+      evidenceResolutionProblems([missingHousehold]).some((problem) =>
+        problem.includes(
+          "records.accounts.subject:mira-roth.householdRef",
+        ),
+      ),
+    ).toBe(true);
 
     const world = structuredClone(real.spec.world);
     world.modelAssignments.push(structuredClone(world.modelAssignments[0]!));
@@ -559,6 +755,25 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         problem.includes('modelAssignments: duplicate key "smiths-joint-model"'),
       ),
     ).toBe(true);
+  });
+
+  it("pending-action liquidity treatment is closed and direction-aware for every kind and state", () => {
+    for (const kind of PENDING_ACTION_KINDS) {
+      for (const state of PENDING_ACTION_STATES) {
+        const treatment = pendingActionLiquidityTreatment(kind, state);
+        const expectedReduction =
+          (state === "pending" || state === "settling") &&
+          treatment.direction === "outgoing" &&
+          (treatment.liquidityClass === "distribution" ||
+            treatment.liquidityClass === "debit");
+        const expectedIncrease =
+          state === "settled" &&
+          treatment.direction === "incoming" &&
+          treatment.liquidityClass === "credit";
+        expect(treatment.reducesEffectiveLiquidity).toBe(expectedReduction);
+        expect(treatment.increasesAvailableLiquidity).toBe(expectedIncrease);
+      }
+    }
   });
 
   it("a defect class carried by NO case is flagged (an unexercised class is decoration)", () => {
@@ -581,46 +796,57 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   });
 
   it("a POPULATED real-derived partition DOES produce a detectionRate (null is a real branch, not a stub)", () => {
-    const report = buildCorpusReport({
-      corpusVersion: "x",
-      corpusDigest: "y",
-      signoffStatus: "signed",
-      signed: true,
-      syntheticOutcomes: outcomes(2, 1, true),
-      realDerivedOutcomes: [
-        { caseId: "RD-a", labelKind: "defect", flagged: true, provenance: "real-derived-fixture" },
-        { caseId: "RD-b", labelKind: "defect", flagged: false, provenance: "real-derived-fixture" },
-        { caseId: "RD-c", labelKind: "clean-control", flagged: false, provenance: "real-derived-fixture" },
-      ],
-    });
+    const realDerivedOutcomes: RealDerivedCaseOutcome[] = [
+      {
+        caseId: "RD-a",
+        labelKind: "defect",
+        flagged: true,
+        provenance: "real-derived-fixture",
+      },
+      {
+        caseId: "RD-b",
+        labelKind: "defect",
+        flagged: false,
+        provenance: "real-derived-fixture",
+      },
+      {
+        caseId: "RD-c",
+        labelKind: "clean-control",
+        flagged: false,
+        provenance: "real-derived-fixture",
+      },
+    ];
+    const report = buildCorpusReport(
+      reportInput(outcomes(2, 1, true), realDerivedOutcomes),
+    );
     expect(report.realDerived.detectionRate).toEqual({ value: 0.5, reasonCode: null });
     expect(report.realDerived.falsePositiveRate).toEqual({ value: 0, reasonCode: null });
     expect(report.realDerived.interpretable).toBe(true);
   });
 
   it("a detector that flags EVERYTHING cannot claim success: 1.0 coverage arrives with 1.0 false positives", () => {
-    const report = buildCorpusReport({
-      corpusVersion: "x",
-      corpusDigest: "y",
-      signoffStatus: "signed",
-      signed: true,
-      syntheticOutcomes: outcomes(5, 5, true),
-      realDerivedOutcomes: [],
-    });
+    const report = buildCorpusReport(reportInput(outcomes(5, 5, true)));
     expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
     expect(report.synthetic.falsePositiveRate.value).toBe(1);
   });
 
   it("an unsigned corpus and an unevaluated corpus both withhold every figure with a reason code", () => {
-    const unsigned = buildCorpusReport({
-      corpusVersion: "x", corpusDigest: "y", signoffStatus: "pending-captain", signed: false,
-      syntheticOutcomes: outcomes(5, 5, true), realDerivedOutcomes: [],
-    });
+    const evaluated = outcomes(5, 5, true);
+    const unsigned = buildCorpusReport(
+      reportInput(evaluated, [], {
+        signoff: {
+          corpusVersion: "x",
+          status: "pending-captain",
+          signedBy: null,
+          signedAt: null,
+          signedDigest: null,
+        },
+      }),
+    );
     expect(unsigned.synthetic.syntheticDefectCoverage).toEqual({ value: null, reasonCode: "corpus-signoff-pending" });
-    const unevaluated = buildCorpusReport({
-      corpusVersion: "x", corpusDigest: "y", signoffStatus: "signed", signed: true,
-      syntheticOutcomes: outcomes(5, 5, null), realDerivedOutcomes: [],
-    });
+    const unevaluated = buildCorpusReport(
+      reportInput(outcomes(5, 5, null)),
+    );
     expect(unevaluated.synthetic.syntheticDefectCoverage).toEqual({ value: null, reasonCode: "detector-outcomes-absent" });
   });
 
@@ -628,14 +854,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     const partial = outcomes(2, 2, null);
     partial[0] = { ...partial[0]!, flagged: true };
     partial[2] = { ...partial[2]!, flagged: false };
-    const report = buildCorpusReport({
-      corpusVersion: "x",
-      corpusDigest: "y",
-      signoffStatus: "signed",
-      signed: true,
-      syntheticOutcomes: partial,
-      realDerivedOutcomes: [],
-    });
+    const report = buildCorpusReport(reportInput(partial));
     expect(report.synthetic.syntheticDefectCoverage).toEqual({
       value: null,
       reasonCode: "detector-outcomes-incomplete",
@@ -647,111 +866,250 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(report.synthetic.interpretable).toBe(false);
   });
 
-  it("coverage measured with NO clean controls is marked uninterpretable", () => {
-    const report = buildCorpusReport({
-      corpusVersion: "x", corpusDigest: "y", signoffStatus: "signed", signed: true,
-      syntheticOutcomes: outcomes(4, 0, true), realDerivedOutcomes: [],
+  it("omitting unevaluated manifest cases cannot turn a favorable subset into a complete run", () => {
+    const completeInventory = outcomes(2, 2, true);
+    const favorableSubset = [completeInventory[0]!, completeInventory[2]!];
+    const report = buildCorpusReport(
+      reportInput(favorableSubset, [], {
+        inventory: inventoryOf(completeInventory),
+      }),
+    );
+    expect(report.synthetic.totalCases).toBe(4);
+    expect(report.synthetic.evaluatedCases).toBe(2);
+    expect(report.synthetic.syntheticDefectCoverage).toEqual({
+      value: null,
+      reasonCode: "detector-outcomes-incomplete",
     });
+    expect(report.synthetic.falsePositiveRate).toEqual({
+      value: null,
+      reasonCode: "detector-outcomes-incomplete",
+    });
+  });
+
+  it("duplicate or non-inventoried outcomes are rejected at the measurement boundary", () => {
+    const complete = outcomes(1, 1, true);
+    expect(() =>
+      buildCorpusReport(
+        reportInput(
+          [complete[0]!, complete[0]!, complete[1]!],
+          [],
+          { inventory: inventoryOf(complete) },
+        ),
+      ),
+    ).toThrow("duplicate outcome");
+    expect(() =>
+      buildCorpusReport(
+        reportInput(
+          [
+            ...complete,
+            {
+              caseId: "not-in-manifest",
+              labelKind: "defect",
+              flagged: true,
+              provenance: "synthetic-fixture",
+            },
+          ],
+          [],
+          { inventory: inventoryOf(complete) },
+        ),
+      ),
+    ).toThrow("absent from the signed manifest inventory");
+  });
+
+  it("the signed corpus digest binds the exact inventory supplied to reporting", () => {
+    const input = reportInput(outcomes(2, 2, true));
+    expect(() =>
+      buildCorpusReport({
+        ...input,
+        inventory: input.inventory.slice(0, 2),
+        syntheticOutcomes: input.syntheticOutcomes.slice(0, 2),
+      }),
+    ).toThrow("manifest inventory digest");
+  });
+
+  it("the report validates signoff instead of trusting a caller-supplied signed flag", () => {
+    expect(() =>
+      buildCorpusReport(
+        reportInput(outcomes(1, 1, true), [], {
+          signoff: {
+            ...signedSignoff(),
+            signedDigest: "not-the-corpus-digest",
+          },
+        }),
+      ),
+    ).toThrow("invalid signoff");
+  });
+
+  it("coverage measured with NO clean controls is marked uninterpretable", () => {
+    const report = buildCorpusReport(reportInput(outcomes(4, 0, true)));
     expect(report.synthetic.syntheticDefectCoverage.value).toBe(1);
     expect(report.synthetic.falsePositiveRate).toEqual({ value: null, reasonCode: "no-clean-controls" });
     expect(report.synthetic.interpretable).toBe(false);
   });
 
-  it("a blending function is caught by the AST rule", () => {
-    const violations = blendingViolations(
-      inMemoryProject({
-        "/src/contracts/blend.ts":
-          "declare const r: any;\nexport const overall = r.synthetic.defectCases + r.realDerived.defectCases;\n",
-      }),
-    );
-    expect(violations.length).toBe(1);
-    expect(violations[0]).toContain("combines the synthetic and real-derived partitions");
-  });
-
   it.each([
     [
-      "division",
-      "declare const r: any;\nexport const overall = r.synthetic.defectCases / r.realDerived.defectCases;\n",
+      "named alias and later assignment",
+      'import { buildCorpusReport as make } from "../../scripts/corpus/report";\nlet report; report = make({} as any);\nexport const use = report;\n',
     ],
     [
-      "reducer",
-      "declare const r: any;\nexport const overall = [r.synthetic.defectCases, r.realDerived.defectCases].reduce((a, b) => a + b, 0);\n",
+      "namespace and bracket access",
+      'import * as reporting from "../../scripts/corpus/report";\nexport const use = reporting["buildCorpusReport"]({} as any);\n',
     ],
     [
-      "helper aliases",
-      "declare const r: any; declare const combine: (...n: number[]) => number;\nconst s = r.synthetic.defectCases; const d = r.realDerived.defectCases;\nexport const overall = combine(s, d);\n",
+      "dynamic import and destructuring",
+      'export async function use() { const { buildCorpusReport } = await import("../../scripts/corpus/report"); return buildCorpusReport({} as any); }\n',
     ],
     [
-      "array concatenation",
-      "declare const r: any;\nexport const overall = [r.synthetic.defectCases].concat([r.realDerived.defectCases]);\n",
+      "re-export",
+      'export { buildCorpusReport } from "../../scripts/corpus/report";\n',
     ],
-  ])("the blending detector catches %s in product source", (_name, source) => {
-    expect(blendingViolations(inMemoryProject({ "/src/domain/blend.ts": source })).length).toBeGreaterThan(0);
-  });
-
-  it("the blending detector follows partition values through imported aliases", () => {
-    const project = inMemoryProject({
-      "/src/domain/synthetic.ts":
-        "declare const r: any;\nexport const value = r.synthetic.defectCases;\n",
-      "/src/domain/real.ts":
-        "declare const r: any;\nexport const value = r.realDerived.defectCases;\n",
-      "/src/domain/blend.ts":
-        'import { value as left } from "./synthetic";\nimport { value as right } from "./real";\nexport const total = left + right;\n',
-    });
-    expect(blendingViolations(project).length).toBeGreaterThan(0);
-  });
+  ])(
+    "the partition-safe ownership boundary rejects %s",
+    (_name, source) => {
+      expect(
+        measurementBoundaryViolations(
+          inMemoryProject({ "/src/domain/blend.ts": source }),
+        ).length,
+      ).toBeGreaterThan(0);
+    },
+  );
 
   it("the measurement boundary rejects outcomes from the wrong provenance partition", () => {
     expect(() =>
-      buildCorpusReport({
-        corpusVersion: "x",
-        corpusDigest: "y",
-        signoffStatus: "signed",
-        signed: true,
-        syntheticOutcomes: [
+      buildCorpusReport(
+        reportInput(
+          [
           {
             caseId: "RD-wrong",
             labelKind: "defect",
             flagged: true,
             provenance: "real-derived-fixture",
           },
-        ] as any,
-        realDerivedOutcomes: [],
-      }),
+          ] as any,
+        ),
+      ),
     ).toThrow("received 1 outcome(s) from another provenance partition");
   });
 
-  it("the blending rule does NOT flag arithmetic inside one partition", () => {
+  it("the report CLI can import only the string-rendering boundary", () => {
     expect(
-      blendingViolations(
+      measurementBoundaryViolations(
         inMemoryProject({
-          "/src/contracts/ok.ts": "declare const r: any;\nexport const n = r.synthetic.defectCases + r.synthetic.cleanControls;\n",
+          "/scripts/corpus-report.ts":
+            'import { renderCorpusReport } from "./corpus/report";\nexport const output = renderCorpusReport({} as any);\n',
         }),
       ),
     ).toEqual([]);
   });
 
-  it("a code path ORIGINATING a signature is caught; null and a parsed read are allowed", () => {
+  it("recursive signature keys are rejected in actual generated artifacts", () => {
+    const key = "signedBy";
+    const value = {
+      nested: {
+        [key]: "captain",
+        ...{ signedAt: "2026-07-28T12:00:00.000Z" },
+      },
+      signedDigest: null,
+    };
     expect(
-      agentSignatureViolations(
-        inMemoryProject({
-          "/src/contracts/sign.ts":
-            'export const s = { signedBy: "captain", signedAt: "2026-07-28", signedDigest: `${"a".repeat(64)}` };\n',
-        }),
-      ).length,
-    ).toBe(3);
-    expect(
-      agentSignatureViolations(
-        inMemoryProject({
-          "/src/contracts/sign.ts":
-            "declare const read: (k: string) => string | null;\nexport const s = { signedBy: null, signedAt: read('signedAt') };\n",
-        }),
-      ),
-    ).toEqual([]);
+      generatedSignatureProblems([
+        {
+          relPath: "synthetic/CS-signature.json",
+          bytes: JSON.stringify(value),
+          value: value as any,
+        },
+      ]),
+    ).toHaveLength(3);
   });
 
   it("a VALID real-derived case is accepted (the intake contract is not a blanket reject)", () => {
     expect(realDerivedCaseProblems(realDerivedCase(), classes, "real-derived/RD-ok.json")).toEqual([]);
+  });
+
+  it("real-derived freshness is derived from evaluation.asOf and the versioned per-kind policy", () => {
+    const staleLabel = realDerivedCase();
+    (staleLabel.evidence as Array<Record<string, unknown>>)[0]!.freshness =
+      "stale";
+    expect(
+      realDerivedCaseProblems(
+        staleLabel,
+        classes,
+        "real-derived/RD-stale-label.json",
+      ).some((problem) => problem.includes('does not match derived "fresh"')),
+    ).toBe(true);
+
+    const futureRetrieval = realDerivedCase();
+    (futureRetrieval.evidence as Array<Record<string, unknown>>)[0]!.retrievedAt =
+      "2026-04-28T13:00:06.000Z";
+    expect(
+      realDerivedCaseProblems(
+        futureRetrieval,
+        classes,
+        "real-derived/RD-future-retrieval.json",
+      ).some((problem) => problem.includes("must not postdate evaluation.asOf")),
+    ).toBe(true);
+
+    const invertedObservation = realDerivedCase();
+    (invertedObservation.evidence as Array<Record<string, unknown>>)[0]!.observedAt =
+      "2026-04-28T13:00:05.000Z";
+    expect(
+      realDerivedCaseProblems(
+        invertedObservation,
+        classes,
+        "real-derived/RD-inverted-observation.json",
+      ).some((problem) => problem.includes("must not postdate retrievedAt")),
+    ).toBe(true);
+
+    const unknownPolicy = realDerivedCase();
+    (unknownPolicy.evaluation as Record<string, unknown>).freshnessPolicyVersion =
+      "verin-real-derived-freshness/9.9.9";
+    expect(
+      realDerivedCaseProblems(
+        unknownPolicy,
+        classes,
+        "real-derived/RD-unknown-policy.json",
+      ).some((problem) => problem.includes("freshnessPolicyVersion")),
+    ).toBe(true);
+  });
+
+  it("freshness unknown requires the typed missing-observation state", () => {
+    const missing = realDerivedCase();
+    (missing.evidence as Array<Record<string, unknown>>)[0] = {
+      ...(missing.evidence as Array<Record<string, unknown>>)[0],
+      observationState: "missing",
+      observedAt: null,
+      freshness: "unknown",
+    };
+    expect(
+      realDerivedCaseProblems(
+        missing,
+        classes,
+        "real-derived/RD-missing-observation.json",
+      ),
+    ).toEqual([]);
+
+    const untypedUnknown = realDerivedCase();
+    (untypedUnknown.evidence as Array<Record<string, unknown>>)[0]!.freshness =
+      "unknown";
+    expect(
+      realDerivedCaseProblems(
+        untypedUnknown,
+        classes,
+        "real-derived/RD-untyped-unknown.json",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    const unsupportedKind = realDerivedCase();
+    (unsupportedKind.evidence as Array<Record<string, unknown>>)[0]!.evidenceKind =
+      "advisor-note";
+    expect(
+      realDerivedCaseProblems(
+        unsupportedKind,
+        classes,
+        "real-derived/RD-unsupported-kind.json",
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("a real-derived derived id cannot hide a name or use an open suffix", () => {

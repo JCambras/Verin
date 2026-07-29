@@ -49,7 +49,8 @@ stays with the accountable owner outside version control.
 
 **May remain.** Instants in canonical UTC (`YYYY-MM-DDTHH:MM:SS.mmmZ`); integer counts and integer minor
 units; and members of the declared closed vocabularies - defect class ids, evidence kinds, conflict
-families, freshness, scrub methods, source-system classes, control rationales.
+families, freshness, observation states, the current freshness-policy version, scrub methods,
+source-system classes, control rationales.
 
 **Generalized.** Anything that is a quantity but identifies by precision (an exact balance that is
 effectively a fingerprint) is rounded or bucketed, with `method: "generalization"` attested.
@@ -92,10 +93,16 @@ has nowhere to live: it cannot arrive in a new key, because a new key with a str
 Every evidence subject resolves to exactly one opaque subject, and evidence and conflict-key suffixes
 must match their declared kind or family.
 
+The filesystem boundary is recursive and exact. While deferral is active, hidden, nested, non-JSON, and
+unsupported entries all count as delivery and are rejected. After un-deferral, a case must be a top-level
+`RD-<16 hex>.json` file whose filename matches its case id; case ids are unique across the collection and
+every case names the active corpus version before any case enters manifest inventory.
+
 Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; a free-text subject,
 a free-text field under an unanticipated key, a missing attestation, a self-reviewed scrub, an inflated
-record count, a dangling evidence subject, a mismatched derived-id suffix, and a mislabeled provenance
-are each rejected.
+record count, a dangling evidence subject, a mismatched derived-id suffix, a mislabeled provenance, a
+hidden or nested delivery, a duplicate case id, a stale corpus version, an unknown freshness policy,
+inverted chronology, and inconsistent freshness are each rejected.
 
 ---
 
@@ -107,10 +114,19 @@ partition       "real-derived"
 provenance      "real-derived-fixture"
 label           {kind: "defect", defectClassId} | {kind: "clean-control", controlRationaleId}
 occurredAt      canonical UTC instant
+evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [tok:…]
-evidence        [{id, evidenceKind, subjectRef, observedAt, retrievedAt, freshness}]
+evidence        [{id, evidenceKind, subjectRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{family, conflictKey}]
 ```
+
+Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
+`fresh | stale` value. Missing source observation uses `observationState: "missing"`,
+`observedAt: null`, and exactly `freshness: "unknown"`. The validator derives freshness from
+`evaluation.asOf` and the closed per-kind policy, enforces
+`observedAt <= retrievedAt <= evaluation.asOf`, and rejects unknown policy versions, unsupported kinds,
+impossible chronology, or inconsistent freshness before inventory. The policy's version and semantic
+digest are included in the captain-signed corpus preimage.
 
 Clean controls carry a `controlRationaleId` from a closed list, not prose - the same rule that keeps free
 text out of defect cases.
@@ -124,7 +140,8 @@ computable, and a coverage figure without one is reported `interpretable: false`
 
 1. Extractor and scrubber produce candidate cases per §2 and §3.
 2. Reviewer independently re-reads every field of every case and attests.
-3. Lift the recorded deferral, then hand-place files in `fixtures/corpus/real-derived/`.
+3. Lift the recorded deferral, then hand-place canonical top-level files in
+   `fixtures/corpus/real-derived/`.
    **`pnpm corpus:generate` never writes there** - the generator can emit only into `synthetic/`, and a
    fence asserts it. Files delivered while the deferral is active fail validation.
 4. `pnpm corpus:validate` must pass. It runs the whole contract over the delivered files.
