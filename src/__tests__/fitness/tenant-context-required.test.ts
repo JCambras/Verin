@@ -829,6 +829,47 @@ ${body}
       `, params, prelude)).toHaveLength(1);
     });
 
+    it.each([
+      `const { piiGrant: later } = carrier;
+          return db.query(later.tenant.orgId);`,
+      `let later: ActionGrant<"pii.view">;
+          ({ piiGrant: later } = carrier);
+          return db.query(later.tenant.orgId);`,
+    ])("rejects a later destructuring read of a captured authority", (laterRead) => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,`;
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          ${laterRead}
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it.each([
+      `provider: () => ActionGrant<"pii.view">`,
+      `provider: new () => ActionGrant<"pii.view">`,
+      `provider: { grant(): ActionGrant<"pii.view"> }`,
+      `provider: { grant: () => ActionGrant<"pii.view"> }`,
+      `provider: { Grant: new () => ActionGrant<"pii.view"> }`,
+    ])("rejects an authority-producing dynamic carrier: %s", (provider) => {
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          ${provider},`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+    });
+
     it("accepts a closed union only when every arm has the same authority inventory", () => {
       const params = `db: SqlDb,
           executionGrant: ActionGrant<"execution.initiate">,
@@ -1368,6 +1409,33 @@ ${body}
         }
         export function makeRepo(db: SqlDb): Repo {
           return new PrivateRepo(db);
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById.<call>",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("resolves callable getters returned by object-literal factories", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          readonly loadById: (id: string, tenant: TenantContext) => unknown;
+        }
+        export function makeRepo(db: SqlDb): Repo {
+          return {
+            get loadById() {
+              return (id: string, tenant: TenantContext) =>
+                db.query("SELECT 1");
+            },
+          };
         }
       `);
       expect(detectMissingTenantParams(

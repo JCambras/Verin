@@ -1325,6 +1325,25 @@ export function returnedCallableMembers(
         );
         continue;
       }
+      if (Node.isGetAccessorDeclaration(property)) {
+        const returnedMembers = returnedCallableMembers(
+          property,
+          `${owner}.${property.getName()}`,
+        );
+        for (const member of returnedMembers) {
+          addMember(member.name, member.declaration, member.signature);
+        }
+        if (returnedMembers.length === 0) {
+          for (const signature of property.getReturnType().getCallSignatures()) {
+            addMember(
+              `${owner}.${property.getName()}`,
+              property,
+              signature,
+            );
+          }
+        }
+        continue;
+      }
       if (Node.isSpreadAssignment(property)) {
         collectExpression(property.getExpression(), visited);
         continue;
@@ -1624,9 +1643,27 @@ function authorityInventory(signature: Signature): AuthorityInventory {
     if (unions.length > 0) {
       return unions.some((arm) => containsAuthority(arm, nested));
     }
+    if (
+      [...type.getAliasTypeArguments(), ...type.getTypeArguments()].some((argument) =>
+        containsAuthority(argument, nested)
+      )
+    ) return true;
+    const symbol = type.getAliasSymbol() ?? type.getSymbol();
+    if (
+      symbol &&
+      !symbol.getDeclarations().some((declaration) =>
+        Node.isTypeLiteral(declaration) ||
+        normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
+      )
+    ) return false;
     if (SEALED_AUTHORITY_KINDS.some((candidate) =>
       declaredAsType(type, candidate.declaration, candidate.typeName)
     )) return true;
+    if (
+      [...type.getCallSignatures(), ...type.getConstructSignatures()].some((signature) =>
+        containsAuthority(signature.getReturnType(), nested)
+      )
+    ) return true;
     if (type.isTuple()) {
       return type.getTupleElements().some((element) =>
         containsAuthority(element, nested)
@@ -1643,15 +1680,17 @@ function authorityInventory(signature: Signature): AuthorityInventory {
     ) return true;
     return type.getProperties().some((member) => {
       const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
-      if (
-        !declaration ||
-        Node.isMethodDeclaration(declaration) ||
-        Node.isMethodSignature(declaration)
-      ) return false;
+      if (!declaration) return false;
       const memberType = member.getTypeAtLocation(declaration);
-      return memberType.getCallSignatures().length === 0 &&
-        memberType.getConstructSignatures().length === 0 &&
-        containsAuthority(memberType, nested);
+      const signatures = [
+        ...memberType.getCallSignatures(),
+        ...memberType.getConstructSignatures(),
+      ];
+      return signatures.length > 0
+        ? signatures.some((signature) =>
+          containsAuthority(signature.getReturnType(), nested)
+        )
+        : containsAuthority(memberType, nested);
     });
   };
   const collect = (
@@ -1699,6 +1738,22 @@ function authorityInventory(signature: Signature): AuthorityInventory {
         unfenceable: [],
       };
     }
+    const dynamicSignatures = [
+      ...type.getCallSignatures(),
+      ...type.getConstructSignatures(),
+    ];
+    if (
+      dynamicSignatures.some((signature) =>
+        containsAuthority(signature.getReturnType())
+      )
+    ) {
+      return {
+        authorities: [],
+        unfenceable: [
+          `sealed authority carrier '${argument}' can produce authority through a call or construction, so its runtime inventory is not statically fixed`,
+        ],
+      };
+    }
     if (type.isTuple()) {
       return type.getTupleElements().reduce<AuthorityInventory>(
         (inventory, element, index) => {
@@ -1742,16 +1797,26 @@ function authorityInventory(signature: Signature): AuthorityInventory {
     }
     return type.getProperties().reduce<AuthorityInventory>((inventory, member) => {
       const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
-      if (
-        !declaration ||
-        Node.isMethodDeclaration(declaration) ||
-        Node.isMethodSignature(declaration)
-      ) return inventory;
+      if (!declaration) return inventory;
       const memberType = member.getTypeAtLocation(declaration);
+      const signatures = [
+        ...memberType.getCallSignatures(),
+        ...memberType.getConstructSignatures(),
+      ];
       if (
-        memberType.getCallSignatures().length > 0 ||
-        memberType.getConstructSignatures().length > 0
-      ) return inventory;
+        signatures.some((signature) =>
+          containsAuthority(signature.getReturnType())
+        )
+      ) {
+        return {
+          authorities: inventory.authorities,
+          unfenceable: [
+            ...inventory.unfenceable,
+            `sealed authority carrier '${memberExpression(argument, member.getName())}' can produce authority through a call or construction, so its runtime inventory is not statically fixed`,
+          ],
+        };
+      }
+      if (signatures.length > 0) return inventory;
       const found = collect(
         memberType,
         memberExpression(argument, member.getName()),
@@ -1850,7 +1915,7 @@ export function requiredAuthorityPrologue(
       )
       .map((authority) => [
         authority.argument,
-        { source: authority.argument, authorityType: typeKey(authority.type) },
+        { source: authority.argument },
       ]),
   ).values()];
   const scopes = authorities.map((authority) =>
@@ -1881,7 +1946,6 @@ export interface RequiredAuthorityAssertion {
 
 export interface RequiredAuthorityCapture {
   readonly source: string;
-  readonly authorityType: string;
 }
 
 /**
@@ -2042,21 +2106,176 @@ function repeatedAuthorityEvaluations(
 ): string[] {
   const body = functionBody(declaration);
   if (!Node.isBlock(body)) return [];
-  const expressions = [
-    ...body.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
-    ...body.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
-    ...body.getDescendantsOfKind(SyntaxKind.CallExpression),
+  const unwrap = (node: Node | undefined): Node | undefined => {
+    let expression = node;
+    while (
+      Node.isParenthesizedExpression(expression) ||
+      Node.isAsExpression(expression) ||
+      Node.isSatisfiesExpression(expression) ||
+      Node.isTypeAssertion(expression) ||
+      Node.isNonNullExpression(expression) ||
+      Node.isAwaitExpression(expression)
+    ) {
+      expression = expression.getExpression();
+    }
+    return expression;
+  };
+  const memberText = (owner: string, name: string): string =>
+    /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
+      ? `${owner}.${name}`
+      : `${owner}[${JSON.stringify(name)}]`;
+  const propertyText = (node: Node | undefined, fallback: string): string | null => {
+    if (!node) return fallback;
+    if (Node.isIdentifier(node)) return node.getText();
+    if (
+      Node.isStringLiteral(node) ||
+      Node.isNoSubstitutionTemplateLiteral(node) ||
+      Node.isNumericLiteral(node)
+    ) return node.getLiteralText();
+    if (Node.isComputedPropertyName(node)) {
+      const expression = unwrap(node.getExpression());
+      if (
+        Node.isStringLiteral(expression) ||
+        Node.isNoSubstitutionTemplateLiteral(expression) ||
+        Node.isNumericLiteral(expression)
+      ) return expression.getLiteralText();
+    }
+    return null;
+  };
+  const assignments = body.getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter((candidate) =>
+      candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken
+    );
+  const resolvedText = (
+    node: Node | undefined,
+    seen: ReadonlySet<object> = new Set(),
+  ): string | null => {
+    const expression = unwrap(node);
+    if (!expression) return null;
+    if (Node.isPropertyAccessExpression(expression)) {
+      const owner = resolvedText(expression.getExpression(), seen);
+      return owner ? memberText(owner, expression.getName()) : null;
+    }
+    if (Node.isElementAccessExpression(expression)) {
+      const owner = resolvedText(expression.getExpression(), seen);
+      const name = propertyText(expression.getArgumentExpression(), "");
+      return owner && name !== null ? memberText(owner, name) : null;
+    }
+    if (!Node.isIdentifier(expression)) {
+      return canonicalAuthorityText(expression.getText());
+    }
+    if (stableBindings.has(expression.getText())) return expression.getText();
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return expression.getText();
+    const nested = new Set(seen).add(key);
+    const latestAssignment = assignments
+      .filter((candidate) =>
+        candidate.getStart() < expression.getStart() &&
+        Node.isIdentifier(unwrap(candidate.getLeft())) &&
+        unwrap(candidate.getLeft())?.getSymbol() === symbol
+      )
+      .sort((left, right) => right.getStart() - left.getStart())[0];
+    const declaration = symbol?.getDeclarations().find(Node.isVariableDeclaration);
+    const source = latestAssignment?.getRight() ?? declaration?.getInitializer();
+    return source ? resolvedText(source, nested) : expression.getText();
+  };
+  const bindingSource = (element: Node): string | null => {
+    if (!Node.isBindingElement(element)) return null;
+    const pattern = element.getParent();
+    const owner = pattern.getParent();
+    const base = Node.isVariableDeclaration(owner) ||
+        Node.isParameterDeclaration(owner)
+      ? resolvedText(owner.getInitializer())
+      : Node.isBindingElement(owner)
+      ? bindingSource(owner)
+      : null;
+    if (!base) return null;
+    if (Node.isObjectBindingPattern(pattern)) {
+      const name = propertyText(
+        element.getPropertyNameNode(),
+        element.getName(),
+      );
+      return name === null ? null : memberText(base, name);
+    }
+    if (Node.isArrayBindingPattern(pattern)) {
+      const index = pattern.getElements().indexOf(element);
+      return index < 0 ? null : `${base}[${index}]`;
+    }
+    return null;
+  };
+  const authorityRead = (
+    node: Node,
+    source: string | null,
+  ): Array<{ readonly node: Node; readonly source: string }> =>
+    source === null ? [] : [{ node, source }];
+  const reads: Array<{ readonly node: Node; readonly source: string }> = [
+    ...body.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .flatMap((node) => authorityRead(node, resolvedText(node))),
+    ...body.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+      .flatMap((node) => authorityRead(node, resolvedText(node))),
+    ...body.getDescendantsOfKind(SyntaxKind.BindingElement)
+      .flatMap((node) => authorityRead(node, bindingSource(node))),
   ];
+  const collectAssignmentReads = (pattern: Node, base: string): void => {
+    const target = unwrap(pattern);
+    if (Node.isObjectLiteralExpression(target)) {
+      for (const property of target.getProperties()) {
+        if (
+          !Node.isPropertyAssignment(property) &&
+          !Node.isShorthandPropertyAssignment(property)
+        ) continue;
+        const name = propertyText(property.getNameNode(), property.getName());
+        if (name === null) continue;
+        const source = memberText(base, name);
+        const value = Node.isPropertyAssignment(property)
+          ? property.getInitializer()
+          : property.getNameNode();
+        const unwrappedValue = unwrap(value);
+        if (
+          Node.isObjectLiteralExpression(unwrappedValue) ||
+          Node.isArrayLiteralExpression(unwrappedValue)
+        ) {
+          collectAssignmentReads(unwrappedValue, source);
+        } else {
+          reads.push({ node: property, source });
+        }
+      }
+      return;
+    }
+    if (Node.isArrayLiteralExpression(target)) {
+      target.getElements().forEach((element, index) => {
+        const source = `${base}[${index}]`;
+        const value = unwrap(element);
+        if (
+          Node.isObjectLiteralExpression(value) ||
+          Node.isArrayLiteralExpression(value)
+        ) {
+          collectAssignmentReads(value, source);
+        } else {
+          reads.push({ node: element, source });
+        }
+      });
+    }
+  };
+  for (const assignment of assignments) {
+    const left = unwrap(assignment.getLeft());
+    if (
+      !Node.isObjectLiteralExpression(left) &&
+      !Node.isArrayLiteralExpression(left)
+    ) continue;
+    const base = resolvedText(assignment.getRight());
+    if (base) collectAssignmentReads(left, base);
+  }
   return captures.flatMap((capture) => {
     const source = canonicalAuthorityText(capture.source);
     const initializer = initializers.get(source);
-    const repeated = expressions.some((expression) =>
-      typeKey(expression.getType()) === capture.authorityType &&
-      expression.getStart() !== initializer?.getStart() &&
-      !stableBindings.has(
-        expression
-          .getFirstDescendantByKind(SyntaxKind.Identifier)
-          ?.getText() ?? "",
+    const repeated = reads.some((read) =>
+      read.node.getStart() !== initializer?.getStart() &&
+      (
+        read.source === source ||
+        read.source.startsWith(`${source}.`) ||
+        read.source.startsWith(`${source}[`)
       )
     );
     return repeated

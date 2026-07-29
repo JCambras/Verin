@@ -536,24 +536,24 @@ function sealedPositionsOf(
   type: Type,
   steps: readonly PositionStep[] = [],
   out: SealedPosition[] = [],
-  seen = new Set<string>(),
+  ancestors: ReadonlySet<object> = new Set(),
 ): SealedPosition[] {
   if (steps.length > POSITION_DEPTH) return out;
-  const key = `${steps.length} ${typeKey(type)}`;
-  if (seen.has(key)) return out;
-  seen.add(key);
   const sealed = sealedKeyOf(type);
   if (sealed) {
     out.push({ steps, sealed });
     return out;
   }
+  const key = type.compilerType as unknown as object;
+  if (ancestors.has(key)) return out;
+  const nested = new Set(ancestors).add(key);
   for (const member of [...type.getUnionTypes(), ...type.getIntersectionTypes(), ...type.getBaseTypes()]) {
-    sealedPositionsOf(member, steps, out, seen);
+    sealedPositionsOf(member, steps, out, nested);
   }
   const element = type.getArrayElementType();
-  if (element) sealedPositionsOf(element, [...steps, { kind: "element" }], out, seen);
+  if (element) sealedPositionsOf(element, [...steps, { kind: "element" }], out, nested);
   [...type.getAliasTypeArguments(), ...type.getTypeArguments()].forEach((argument, index) =>
-    sealedPositionsOf(argument, [...steps, { kind: "argument", index }], out, seen)
+    sealedPositionsOf(argument, [...steps, { kind: "argument", index }], out, nested)
   );
   if (!projectOwned(type)) return out;
   for (const property of type.getProperties()) {
@@ -563,12 +563,12 @@ function sealedPositionsOf(
         property.getTypeAtLocation(declaration),
         [...steps, { kind: "property", name: property.getName() }],
         out,
-        seen,
+        nested,
       );
     }
   }
   for (const signature of [...type.getCallSignatures(), ...type.getConstructSignatures()]) {
-    sealedPositionsOf(signature.getReturnType(), [...steps, { kind: "return" }], out, seen);
+    sealedPositionsOf(signature.getReturnType(), [...steps, { kind: "return" }], out, nested);
   }
   return out;
 }
@@ -1722,6 +1722,38 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       );
       expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:7"))).toBe(true);
       expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:8"))).toBe(true);
+    });
+
+    it("checks every repeated sibling sealed position in casts and contextual literals", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import { systemTenant, type TenantContext } from "../contracts/tenant";
+          declare const raw: string;
+          declare const source: { primary: TenantContext; secondary: unknown };
+          declare function consume(value: {
+            primary: TenantContext;
+            secondary: TenantContext;
+          }): void;
+          export const forged = source as {
+            primary: TenantContext;
+            secondary: TenantContext;
+          };
+          consume({
+            primary: systemTenant("seed", "org"),
+            secondary: JSON.parse(raw),
+          });
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/evil.ts")
+      );
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:9") && hit.includes("cast")
+      )).toBe(true);
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:13") && hit.includes("unchecked call argument")
+      )).toBe(true);
     });
 
     it("accepts union and intersection reshapes that retain sealed identity in every runtime value", () => {

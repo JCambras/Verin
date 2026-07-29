@@ -2296,3 +2296,50 @@ asserted into authority).
 **Revert path:** revert this changeset to restore destructured reflection gaps,
 carrier re-evaluation, object-literal-only returned-callable discovery, and
 first-matching-arm sealed reshape acceptance.
+
+## D-084 - Structural paths, returned accessors, and authority producers stay visible
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-083,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of three shared traversal gaps.
+
+Sealed-position discovery now uses path-local cycle state. Repeated sibling
+properties with the same sealed type remain distinct complete paths, so a checked
+first sibling cannot hide an unchecked second sibling in either a cast or a
+contextual composite literal.
+
+Returned-callable discovery handles object-literal accessors exactly like class
+accessors. A callable returned from a getter is resolved to its implementation, and
+an unresolved callable return remains a fail-closed execution boundary for both the
+tenant and governed-sink analyzers.
+
+Authority inventory rejects call, construct, method, callable-member, and
+constructable-member returns that can produce sealed authority. Such providers have
+runtime-dependent inventories and cannot satisfy a static prologue. Stable wrapped
+authorities remain supported, but later property reads, binding-pattern reads, and
+destructuring assignments are resolved back to their carrier provenance and refused.
+
+The authoritative line-budget metric remains unchanged because this round changes
+only fitness analyzers and their companions:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed, and no production code or documentation was compressed to
+manufacture room.
+
+**Alternatives rejected:** retain a global type/depth visited set and special-case
+the reported sibling name (another repeated type would disappear); treat an
+object-literal getter as data (its returned function remains executable); enumerate
+provider member names (the next method name reopens the gap); and detect later reads
+only by matching authority types (that loses carrier ownership and can reject an
+unrelated stable authority).
+
+**Revert path:** revert this changeset to restore repeated-sibling suppression,
+object-accessor omission, type-only carrier reread detection, and dynamic authority
+provider acceptance.

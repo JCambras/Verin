@@ -4298,3 +4298,76 @@ pnpm test:e2e                                                # 17 tests passed
 ```
 
 **Date:** 2026-07-28 (twenty-second review-fix round on v3 build-sequence prompt 6).
+
+### PF-124 every repeated sealed sibling remains a distinct structural path
+
+The sealed-position walker deduplicated visits by type text and depth across the
+whole traversal. Two sibling properties with the same sealed type therefore shared
+one visited key, and the second path disappeared.
+
+**Adversarial proof:** a source with checked `primary: TenantContext` and unchecked
+`secondary` was cast to the same shape with both properties sealed. A second case
+passed the same pair through a contextual composite literal. The test-first
+companion reported no cast violation before the change and failed at
+`tokenized-factory-only.test.ts:1753`. Path-local cycle state makes both the cast and
+contextual-literal assertions fail closed while preserving recursive-cycle
+termination.
+
+### PF-125 object-literal callable getters reach both execution fences
+
+Returned-callable discovery handled class accessors but silently skipped the same
+getter declaration in an object literal. A factory could therefore return a callable
+repository getter whose SQL or PII behavior disappeared from analysis.
+
+**Adversarial proof:** tenant and governed-sink companions each returned zero
+violations for an object-literal getter returning an unguarded callable. The initial
+run failed at `tenant-context-required.test.ts:1444` and
+`governed-actions.test.ts:2064`. Both now resolve the returned arrow implementation
+and report its missing authority guard.
+
+### PF-126 later destructuring reads cannot re-evaluate a wrapped authority
+
+Stable capture enforcement inspected property, element, and call expressions but
+not binding elements or destructuring assignments. A stateful carrier getter could
+be captured and asserted in the prologue, then invoked again by destructuring before
+repository work.
+
+**Adversarial proof:** both `const { piiGrant: later } = carrier` and
+`({ piiGrant: later } = carrier)` produced zero violations after an otherwise valid
+captured prologue. Both test-first permutations failed at
+`tenant-context-required.test.ts:854`. The analyzer now resolves each destructured
+read through aliases and nested member paths back to the captured carrier source,
+and both produce the exact once-only violation.
+
+### PF-127 authority-producing dynamic carriers are unfenceable
+
+Authority inventory ignored call signatures, construct signatures, methods, and
+callable or constructable properties. A parameter could therefore mint a second
+runtime grant after the prologue without an exact action assertion or pairwise tenant
+and actor proof.
+
+**Adversarial proof:** five providers - direct call, direct construction, method,
+callable property, and constructable property - all produced zero violations before
+the change and failed at `tenant-context-required.test.ts:870`. Every form now
+produces one unfenceable-inventory violation. Project-owned return shapes and generic
+containers are followed semantically, while library method graphs are not expanded.
+
+### PF-124 - PF-127 verification
+
+```
+pnpm exec vitest run src/__tests__/fitness/tokenized-factory-only.test.ts \
+  src/__tests__/fitness/tenant-context-required.test.ts \
+  src/__tests__/fitness/governed-actions.test.ts            # 237 tests passed
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false # 56 files, 1,021 tests passed
+pnpm lint                                                    # clean
+pnpm typecheck                                               # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 3,998; domain 1,250; infrastructure 3,382
+APP_ENV=development <test-only placeholder env> pnpm build  # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```
+
+**Date:** 2026-07-28 (twenty-third review-fix round on v3 build-sequence prompt 6).

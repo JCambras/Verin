@@ -2038,6 +2038,31 @@ ${body}
       const hits = detectUnguardedGovernedSinks(project);
       expect(hits.filter((hit) => hit.includes(":: makeRepo.list:"))).toHaveLength(2);
     });
+    it("derives PII sinks from callable object-literal getters", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Client extends PIIBearing { email: string }
+          interface Repo {
+            readonly list: (tenant: TenantContext) => Client[];
+          }
+          export function makeRepo(): Repo {
+            return {
+              get list() {
+                return (tenant: TenantContext): Client[] =>
+                  [{ email: tenant.orgId }];
+              },
+            };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project).some((hit) =>
+        hit.includes(":: makeRepo.list.<call>:")
+      )).toBe(true);
+    });
     it("derives audit-export sinks from governed output markers", () => {
       const project = inMemoryProject({
         "/src/contracts/authz.ts": `
