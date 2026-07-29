@@ -9,7 +9,7 @@ import {
   REPO_ROOT,
   type ModuleReference,
 } from "./_fence-utils";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 /**
  * LINE-BUDGET FENCE (ADR-0018, charter #1/#10). PER-LAYER ratchet-down ceilings on
@@ -95,7 +95,8 @@ function isWithinContractsRoot(artifact: string): boolean {
   const withinContracts = relative(CONTRACTS_RUNTIME_DATA_ROOT, artifact);
   return (
     withinContracts !== "" &&
-    !withinContracts.startsWith("..") &&
+    withinContracts !== ".." &&
+    !withinContracts.startsWith(`..${sep}`) &&
     !isAbsolute(withinContracts)
   );
 }
@@ -236,6 +237,14 @@ describe("runtime JSON data-artifact budget", () => {
           specifier,
         ).toEqual([artifact]);
       }
+      expect(
+        runtimeDataArtifactTargets(project, importer, {
+          kind: "import",
+          specifier: "./..registry.json",
+        }),
+      ).toEqual([
+        join(CONTRACTS_RUNTIME_DATA_ROOT, "..registry.json"),
+      ]);
       for (const reference of [
         { kind: "import-type", specifier: "./probe.json" },
         { kind: "import", specifier: "package/probe.json" },

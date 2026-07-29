@@ -353,6 +353,24 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "a conditionally reassigned ambient receiver",
+        [
+          "const local = { getBuiltinModule: (value: string) => value };",
+          "let platform: any = process;",
+          "if (false) platform = local;",
+          `export const value = platform.getBuiltinModule("node:module");`,
+        ].join("\n"),
+      ],
+      [
+        "a closure-visible later ambient reassignment",
+        [
+          "const local = { getBuiltinModule: (value: string) => value };",
+          "let platform: any = local;",
+          `export const value = () => platform.getBuiltinModule("node:module");`,
+          "platform = process;",
+        ].join("\n"),
+      ],
+      [
         "a computed globalThis member",
         [
           `const load = globalThis["process"].getBuiltinModule("node:module").createRequire(import.meta.url);`,
@@ -401,6 +419,9 @@ describe("dependency-rule fence", () => {
             `export const called = process.getBuiltinModule.call(process, "local");`,
             "const { getBuiltinModule } = process;",
             "export const destructured = getBuiltinModule.call(process);",
+            "let platform = process;",
+            "if (false) platform = { getBuiltinModule: (value: string) => value };",
+            `export const conditional = platform.getBuiltinModule("local");`,
           ].join("\n"),
         }),
       );
@@ -661,7 +682,19 @@ describe("dependency-rule fence", () => {
           `export const value = Function("return 1")();`,
         ].join("\n"),
       ],
-    ])("dynamic Function recovery through %s is rejected", (_name, source) => {
+      [
+        "bound ambient Function",
+        `export const value = Function.bind(null)("return 1")();`,
+      ],
+      [
+        "indirect ambient eval",
+        `export const value = (0, eval)("1");`,
+      ],
+      [
+        "ambient Function as a value",
+        "export const factory = Function;",
+      ],
+    ])("dynamic-code recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
       );
@@ -686,6 +719,7 @@ describe("dependency-rule fence", () => {
         "export const value = new Date().toISOString();",
       ],
       ["called clock", "export const value = Date();"],
+      ["called clock with an argument", "export const value = Date(0);"],
       [
         "globalThis-namespaced clock",
         "export const value = globalThis.Date.now();",
@@ -718,6 +752,49 @@ describe("dependency-rule fence", () => {
           "export const value = now();",
         ].join("\n"),
       ],
+      [
+        "conditionally reassigned ambient clock",
+        [
+          "class LocalClock { static now() { return 1; } }",
+          "let Clock = Date;",
+          "if (false) Clock = LocalClock as unknown as DateConstructor;",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "ambient destructuring default",
+        [
+          "const empty = {} as { Date?: DateConstructor };",
+          "const { Date: Clock = Date } = empty;",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "closure-visible later ambient clock",
+        [
+          "class LocalClock { static now() { return 1; } }",
+          "let Clock: DateConstructor | typeof LocalClock = LocalClock;",
+          "export const value = () => Clock.now();",
+          "Clock = Date;",
+        ].join("\n"),
+      ],
+      [
+        "conditional-expression ambient clock",
+        [
+          "class LocalClock { static now() { return 1; } }",
+          "const Clock = false ? LocalClock : Date;",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "logical-assignment ambient clock",
+        [
+          "class LocalClock { static now() { return 1; } }",
+          "let Clock: DateConstructor | typeof LocalClock | undefined = LocalClock;",
+          "Clock ||= Date;",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -732,9 +809,10 @@ describe("dependency-rule fence", () => {
         inMemoryProject({
           "src/contracts/ok.ts": [
             "const Reflect = { get: (_value: unknown, key: string) => key };",
-            "const Date = { now: () => 1 };",
+            "const Date = Object.assign((_value?: unknown) => 'safe', { now: () => 1 });",
             "const Math = { random: () => 0.5 };",
             "const Function = (value: string) => () => value;",
+            "const eval = (value: string) => value;",
             "const model = { constructor: () => 7 };",
             "const globals = {",
             "  Date: { now: () => 2 },",
@@ -755,6 +833,9 @@ describe("dependency-rule fence", () => {
             "  Date.now(),",
             "  Math.random(),",
             `  Function("safe")(),`,
+            `  Function.bind(null)("safe")(),`,
+            `  (0, eval)("safe"),`,
+            "  Date(0),",
             "  model.constructor(),",
             "  now(),",
             "  ctor(),",
@@ -764,6 +845,26 @@ describe("dependency-rule fence", () => {
             "  AssignedClock.now(),",
             `  assignedPlatform.getBuiltinModule("local"),`,
             "];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it("all-local conditional and default provenance remains allowed", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "class FirstClock { static now() { return 1; } }",
+            "class SecondClock { static now() { return 2; } }",
+            "let Clock = FirstClock;",
+            "if (false) Clock = SecondClock;",
+            "let LogicalClock: typeof FirstClock | typeof SecondClock | undefined = FirstClock;",
+            "LogicalClock ||= SecondClock;",
+            "const ConditionalClock = false ? FirstClock : SecondClock;",
+            "const empty = {} as { Date?: typeof FirstClock };",
+            "const { Date: DefaultClock = FirstClock } = empty;",
+            "export const values = [Clock.now(), LogicalClock.now(), ConditionalClock.now(), DefaultClock.now()];",
           ].join("\n"),
         }),
       );

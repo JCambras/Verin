@@ -90,6 +90,58 @@ const unsupportedSchemaType = (definition: SchemaDefinition): never => {
   throw new Error(`unsupported Zod schema type: ${definition.type}`);
 };
 
+const unsupportedSchemaStructure = (
+  definition: SchemaDefinition,
+  detail: string,
+): never => {
+  throw new Error(
+    `unsupported Zod schema structure for ${definition.type}: ${detail}`,
+  );
+};
+
+const schemaPathsIn = (
+  value: unknown,
+  rootPath = "",
+): string[] => {
+  const paths: string[] = [];
+  const pending: Array<{ path: string; value: unknown }> = [
+    { path: rootPath, value },
+  ];
+  const seen = new Set<object>();
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    if (isSchema(next.value)) {
+      paths.push(next.path);
+      continue;
+    }
+    if (next.value === null || typeof next.value !== "object") continue;
+    if (seen.has(next.value)) continue;
+    seen.add(next.value);
+    for (const [key, child] of Object.entries(next.value)) {
+      pending.push({
+        path: next.path === "" ? key : `${next.path}.${key}`,
+        value: child,
+      });
+    }
+  }
+  return paths;
+};
+
+const assertKnownSchemaChildren = (
+  definition: SchemaDefinition,
+  knownPaths: ReadonlySet<string>,
+): void => {
+  const unknownPaths = schemaPathsIn(definition).filter(
+    (path) => !knownPaths.has(path),
+  );
+  if (unknownPaths.length > 0) {
+    unsupportedSchemaStructure(
+      definition,
+      `unrecognized schema children at ${unknownPaths.sort().join(", ")}`,
+    );
+  }
+};
+
 const unwrapSchema = (schema: z.ZodType): z.ZodType => {
   let current = schema;
   const seen = new Set<z.ZodType>();
@@ -98,10 +150,11 @@ const unwrapSchema = (schema: z.ZodType): z.ZodType => {
     const definition = schemaDefinition(current);
     if (!TRANSPARENT_SCHEMA_TYPES.has(definition.type)) break;
     const inner = definition.innerType;
-    if (isSchema(inner)) {
-      current = inner;
+    if (!isSchema(inner)) {
+      unsupportedSchemaStructure(definition, "innerType is not a schema");
     } else {
-      unsupportedSchemaType(definition);
+      assertKnownSchemaChildren(definition, new Set(["innerType"]));
+      current = inner;
     }
   }
   return current;
@@ -109,66 +162,146 @@ const unwrapSchema = (schema: z.ZodType): z.ZodType => {
 
 const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
   const definition = schemaDefinition(unwrapSchema(schema));
-  const edge = (segment: string, value: unknown): SchemaEdge[] =>
-    isSchema(value) ? [{ segment, schema: value }] : [];
+  const knownPaths = new Set<string>();
+  const edge = (
+    path: string,
+    segment: string,
+    value: unknown,
+  ): SchemaEdge => {
+    if (isSchema(value)) {
+      knownPaths.add(path);
+      return { segment, schema: value };
+    }
+    return unsupportedSchemaStructure(definition, `${path} is not a schema`);
+  };
+  const optionalEdge = (
+    path: string,
+    segment: string,
+    value: unknown,
+  ): SchemaEdge[] =>
+    value === null || value === undefined
+      ? []
+      : [edge(path, segment, value)];
+  const array = (path: string, value: unknown): unknown[] => {
+    return Array.isArray(value)
+      ? value
+      : unsupportedSchemaStructure(definition, `${path} is not an array`);
+  };
+  if (definition.checks !== undefined) {
+    for (const [index, check] of array("checks", definition.checks).entries()) {
+      const traits =
+        check !== null &&
+        typeof check === "object" &&
+        "_zod" in check &&
+        typeof check._zod === "object" &&
+        check._zod !== null &&
+        "traits" in check._zod &&
+        check._zod.traits instanceof Set
+          ? check._zod.traits
+          : undefined;
+      if (traits?.has("$ZodCheck") !== true) {
+        unsupportedSchemaStructure(
+          definition,
+          `checks.${index} is not a Zod check`,
+        );
+      }
+      if (isSchema(check)) knownPaths.add(`checks.${index}`);
+    }
+  }
+  let edges: SchemaEdge[];
   switch (definition.type) {
     case "object":
-      return Object.entries(
+      if (
+        definition.shape === null ||
+        typeof definition.shape !== "object" ||
+        Array.isArray(definition.shape) ||
+        isSchema(definition.shape)
+      ) {
+        unsupportedSchemaStructure(definition, "shape is not an object");
+      }
+      edges = Object.entries(
         definition.shape as Record<string, unknown>,
-      ).flatMap(([segment, value]) => edge(segment, value));
+      ).map(([segment, value]) =>
+        edge(`shape.${segment}`, segment, value),
+      );
+      edges.push(...optionalEdge("catchall", "{*}", definition.catchall));
+      break;
     case "array":
-      return edge("[]", definition.element);
+      edges = [edge("element", "[]", definition.element)];
+      break;
     case "record":
-      return [
-        ...edge("{key}", definition.keyType),
-        ...edge("{}", definition.valueType),
+      edges = [
+        edge("keyType", "{key}", definition.keyType),
+        edge("valueType", "{}", definition.valueType),
       ];
+      break;
     case "tuple":
-      return [
-        ...(definition.items as unknown[]).flatMap((value, index) =>
-          edge(`[${index}]`, value),
+      edges = [
+        ...array("items", definition.items).map((value, index) =>
+          edge(`items.${index}`, `[${index}]`, value),
         ),
-        ...edge("[]", definition.rest),
+        ...optionalEdge("rest", "[]", definition.rest),
       ];
+      break;
     case "set":
-      return edge("[]", definition.valueType);
+      edges = [edge("valueType", "[]", definition.valueType)];
+      break;
     case "map":
-      return [
-        ...edge("{}", definition.keyType),
-        ...edge("{}", definition.valueType),
+      edges = [
+        edge("keyType", "{}", definition.keyType),
+        edge("valueType", "{}", definition.valueType),
       ];
+      break;
     case "union":
-      return (definition.options as unknown[]).flatMap((value) =>
-        edge("", value),
+      edges = array("options", definition.options).map((value, index) =>
+        edge(`options.${index}`, "", value),
       );
+      break;
     case "intersection":
-      return [
-        ...edge("", definition.left),
-        ...edge("", definition.right),
+      edges = [
+        edge("left", "", definition.left),
+        edge("right", "", definition.right),
       ];
+      break;
     case "lazy":
-      return edge("", (definition.getter as () => unknown)());
+      if (typeof definition.getter !== "function") {
+        unsupportedSchemaStructure(definition, "getter is not a function");
+      }
+      edges = [edge(
+        "",
+        "",
+        (definition.getter as () => unknown)(),
+      )];
+      break;
     case "pipe":
-      return [
-        ...edge("", definition.in),
-        ...edge("", definition.out),
+      edges = [
+        edge("in", "", definition.in),
+        edge("out", "", definition.out),
       ];
+      break;
     case "promise":
-      return edge("", definition.innerType);
+      edges = [edge("innerType", "", definition.innerType)];
+      break;
     case "function":
-      return [
-        ...edge("input", definition.input),
-        ...edge("output", definition.output),
+      edges = [
+        edge("input", "input", definition.input),
+        edge("output", "output", definition.output),
       ];
+      break;
     case "template_literal":
-      return (definition.parts as unknown[]).flatMap((value, index) =>
-        edge(`[${index}]`, value),
-      );
+      edges = array("parts", definition.parts).flatMap((value, index) => {
+        if (typeof value === "string") return [];
+        return [edge(`parts.${index}`, `[${index}]`, value)];
+      });
+      break;
     default:
-      return LEAF_SCHEMA_TYPES.has(definition.type)
-        ? []
-        : unsupportedSchemaType(definition);
+      if (!LEAF_SCHEMA_TYPES.has(definition.type)) {
+        unsupportedSchemaType(definition);
+      }
+      edges = [];
   }
+  assertKnownSchemaChildren(definition, knownPaths);
+  return edges;
 };
 
 const isScopedReferenceSchema = (schema: z.ZodType): boolean => {
@@ -212,9 +345,15 @@ const schemaContainsScopedReferenceCollection = (
     const current = unwrapSchema(pending.pop()!);
     if (seen.has(current)) continue;
     seen.add(current);
+    const definition = schemaDefinition(current);
+    const catchallContainsScopedReference =
+      definition.type === "object" &&
+      isSchema(definition.catchall) &&
+      schemaContainsScopedReference(definition.catchall);
     if (
-      COLLECTION_SCHEMA_TYPES.has(schemaDefinition(current).type) &&
-      schemaContainsScopedReference(current)
+      (COLLECTION_SCHEMA_TYPES.has(definition.type) &&
+        schemaContainsScopedReference(current)) ||
+      catchallContainsScopedReference
     ) {
       return true;
     }
@@ -678,6 +817,18 @@ describe("decision-core tenant-scope fence", () => {
     ).missing).toEqual(["probe.ts:Added"]);
   });
 
+  it("detects a scoped-reference collection carried by an object catchall", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const Added = z.object({}).catchall(reference);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Added }]],
+      {},
+    ).missing).toEqual(["probe.ts:Added"]);
+  });
+
   it("fails closed on an exported type-changing opaque tenant schema", () => {
     const OpaqueOwner = z
       .any()
@@ -708,6 +859,59 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { SafePromise: z.promise(z.string()) }]],
       {},
     ).unsafe).toEqual([]);
+  });
+
+  it.each([
+    ["object shape", z.object({ value: z.string() }), "shape"],
+    ["array element", z.array(z.string()), "element"],
+    ["record key", z.record(z.string(), z.number()), "keyType"],
+    ["record value", z.record(z.string(), z.number()), "valueType"],
+    ["tuple items", z.tuple([z.string()]), "items"],
+    ["set value", z.set(z.string()), "valueType"],
+    ["map key", z.map(z.string(), z.number()), "keyType"],
+    ["map value", z.map(z.string(), z.number()), "valueType"],
+    ["union options", z.union([z.string(), z.number()]), "options"],
+    ["intersection left", z.intersection(z.string(), z.string()), "left"],
+    ["intersection right", z.intersection(z.string(), z.string()), "right"],
+    ["lazy getter", z.lazy(() => z.string()), "getter"],
+    ["pipe input", z.string().pipe(z.string()), "in"],
+    ["pipe output", z.string().pipe(z.string()), "out"],
+    ["promise inner type", z.promise(z.string()), "innerType"],
+    [
+      "function input",
+      z.function({ input: [z.string()], output: z.number() }),
+      "input",
+    ],
+    [
+      "function output",
+      z.function({ input: [z.string()], output: z.number() }),
+      "output",
+    ],
+    [
+      "template literal parts",
+      z.templateLiteral(["value-", z.string()]),
+      "parts",
+    ],
+  ])("fails closed when the %s representation drifts", (_name, Drifted, key) => {
+    Object.defineProperty(Drifted._zod.def, key, {
+      configurable: true,
+      enumerable: true,
+      value: undefined,
+      writable: true,
+    });
+    expect(() => tenantBoundaryAudit(
+      [["probe.ts", { Drifted }]],
+      {},
+    )).toThrow(/unsupported Zod schema structure/);
+  });
+
+  it("fails closed on an unrecognized schema-valued child of a known node", () => {
+    const DriftedString = z.string();
+    Object.assign(DriftedString._zod.def, { futureChild: z.any() });
+    expect(() => tenantBoundaryAudit(
+      [["probe.ts", { DriftedString }]],
+      {},
+    )).toThrow(/unrecognized schema children/);
   });
 
   it("fails closed on an unknown child-bearing schema node", () => {
