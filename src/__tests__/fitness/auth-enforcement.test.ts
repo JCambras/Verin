@@ -18,7 +18,9 @@ import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
  * Only the explicit UNAUTHENTICATED allowlist may skip it.
  */
 const HTTP_VERBS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
-const SESSION_RESOLVERS = new Set(["requirePrincipal", "requirePrincipalWithRole", "resolveSession"]);
+// requireActionGrant resolves the principal server-side (it wraps requirePrincipal)
+// AND authorizes the specific governed action (v3 §15.3) before returning.
+const SESSION_RESOLVERS = new Set(["requirePrincipal", "requirePrincipalWithRole", "requireActionGrant", "resolveSession"]);
 
 // Deliberately unauthenticated (each documented in the file + threat model):
 const UNAUTHENTICATED = new Set([

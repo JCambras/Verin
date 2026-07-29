@@ -20,8 +20,12 @@ scans file *contents*, Phase B). One Zod schema validates and caches config; `ge
 throws `FATAL: invalid configuration` at boot on any invalid/missing value. Production-specific
 `superRefine` guards refuse to boot when a dangerous config is present (e.g. a placeholder session/e-sign
 secret in production, a non-postgres store driver in production, missing store DSN). No secret has a
-hardcoded fallback. Domain code
-receives config/flags by injection, never by reading env.
+hardcoded fallback. Validation runs on raw values, but the cached `Config` exposes the database URL,
+session secret, and e-sign secret only as `SecretValue`s. Serialization, string conversion, and
+inspection reveal `[REDACTED]`; spread and enumeration expose no raw property. Raw access is the free
+function `revealSecret()`, fence-allowlisted to the exact HMAC consumers. Validation diagnostics contain
+static messages and field paths, never rejected secret values. Domain code receives config/flags by
+injection, never by reading env.
 
 ## Alternatives Rejected
 
@@ -32,7 +36,8 @@ receives config/flags by injection, never by reading env.
 
 ## Trade-offs and Costs
 
-- **Gained:** one validated source of truth; fail-closed production; no scattered env, no secret fallbacks.
+- **Gained:** one validated source of truth; fail-closed production; no scattered env, secret fallbacks,
+  or serializable secret-bearing config objects.
 - **Sacrificed:** config must be threaded/injected rather than read ad hoc.
 
 ## Consequences

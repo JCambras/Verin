@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening } from "@infra/wire";
 import { withSpan, recentSpans } from "@infra/observability/tracer";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
+import { registerTestSpanName } from "@domain/observability/safe-values";
 
 /**
  * OBSERVABILITY-COVERAGE FENCE (ADR-0013, charter #14). Proves flow steps and
@@ -10,7 +12,17 @@ import type { Principal } from "@contracts/principal";
  * modeled. If the engine or the CRM calls were not instrumented, these spans would
  * be absent.
  */
-const advisor: Principal = { userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" };
+// Test-only span vocabulary (the production allowlist carries no test names).
+registerTestSpanName("test.op.ok");
+registerTestSpanName("test.op.fail");
+
+const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
+const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
+if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
+const advisor = advisorAuthorization.value;
+const advisorPiiAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "pii.view");
+if (!advisorPiiAuthorization.ok) throw new Error("advisor should hold pii.view");
+const advisorPii = advisorPiiAuthorization.value;
 
 async function seed(): Promise<SqlDb> {
   const db = await createMemoryDb();
@@ -23,7 +35,7 @@ async function seed(): Promise<SqlDb> {
 describe("observability-coverage fence", () => {
   it("enforces: the account-opening flow emits spans for the flow and its external calls", async () => {
     const db = await seed();
-    await startAccountOpening(db, advisor, { householdName: "H", firstName: "A", lastName: "B", email: null, accountType: "ira-roth" });
+    await startAccountOpening(db, advisor, advisorPii, { householdName: "H", firstName: "A", lastName: "B", email: null, accountType: "ira-roth" });
     const names = new Set(recentSpans().map((s) => s.name));
     expect(names.has("flow.account-opening.start"), "missing flow span").toBe(true);
     expect(names.has("crm.household.create"), "missing external-call span").toBe(true);

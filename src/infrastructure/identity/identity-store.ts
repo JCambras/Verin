@@ -2,13 +2,31 @@
  * Identity store (ADR-0008). Users, credentials, and server-side sessions in the
  * house-CRM store. Behind the identity port so a WorkOS/Auth0 swap is an adapter
  * change (D-002). org_id is always explicit; identity is never client-trusted.
+ * This module sits BELOW the TenantContext seam (v3 §15.2): session/credential
+ * lookups are the tenant-MINTING boundary (the org comes FROM the authenticated
+ * row), so they are reviewed escapes in the tenant-context-required fence;
+ * provisioning writes (createUser) DO require the sealed context.
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
-import type { Role } from "@contracts/roles";
+import { isRole, type Role } from "@contracts/roles";
+import type { PIIBearing } from "@contracts/pii";
+import {
+  assertSameTenant,
+  assertTenantContext,
+  tenantFromIdentity,
+  type TenantContext,
+} from "@contracts/tenant";
+import { assertActionGrant, type ActionGrant } from "@contracts/authz";
+import {
+  principalFromIdentity,
+  type Principal,
+} from "@contracts/principal";
+import { appError } from "@contracts/errors";
 import { hashPassword, verifyPassword } from "./password";
 
-export interface UserRow {
+/** PIIBearing: carries the user's raw email and display name. */
+export interface UserRow extends PIIBearing {
   id: string;
   org_id: string;
   email: string;
@@ -27,6 +45,52 @@ export interface SessionRow {
   revoked_at: string | null;
 }
 
+declare const AuthenticatedUserBrand: unique symbol;
+
+export interface AuthenticatedUser extends PIIBearing {
+  readonly id: string;
+  readonly tenant: TenantContext;
+  readonly email: string;
+  readonly role: Role;
+  readonly [AuthenticatedUserBrand]: "AuthenticatedUser";
+}
+
+/**
+ * Membership in a module-private WeakSet, the same discipline the sealed security
+ * types use (contracts/tenant.ts): this is the value createSession trusts to prove
+ * an identity really authenticated, so the runtime half of the seal must not be
+ * COPYABLE. A marker property - even a non-enumerable own symbol - is readable off
+ * any real instance via Object.getOwnPropertySymbols and can then be stamped onto an
+ * arbitrary object, which would let a forged identity mint a session. WeakSet
+ * membership is only writable here, by `authenticate`.
+ */
+const AUTHENTICATED_USERS = new WeakSet<object>();
+
+function authenticatedUser(row: UserRow): AuthenticatedUser {
+  const value = Object.freeze({
+    id: row.id,
+    tenant: tenantFromIdentity(row.id, row.org_id),
+    email: row.email,
+    role: row.role,
+  });
+  AUTHENTICATED_USERS.add(value);
+  return value as unknown as AuthenticatedUser;
+}
+
+// `unknown`, like every sibling assertX: typing the parameter as the sealed type it
+// is meant to VERIFY makes the compile-time half circular - the only callers that
+// could pass the check are the ones that already satisfied it. It returns void rather
+// than `asserts value is AuthenticatedUser` on purpose: an assertion signature would
+// hand out a sealed TenantContext (AuthenticatedUser.tenant) from an `unknown`, which
+// is a mint the tokenized-factory-only fence refuses outside a factory module, and
+// rightly so. No narrowing is needed here - createSession's parameter is already
+// typed, so this call is purely the runtime half.
+function assertAuthenticatedUser(value: unknown): void {
+  if (typeof value !== "object" || value === null || !AUTHENTICATED_USERS.has(value)) {
+    throw appError("AUTH_FAILED", "Session creation requires an authenticated identity.");
+  }
+}
+
 // Emails are canonicalized (trimmed, lowercased) at write AND lookup: case-variants
 // of one mailbox cannot split into two identities under UNIQUE(org_id, email), and
 // sign-in is not case-fragile.
@@ -36,19 +100,46 @@ function normalizeEmail(email: string): string {
 
 export async function createUser(
   db: SqlDb,
-  input: { orgId: string; email: string; displayName: string; role: Role; password: string },
+  tenant: TenantContext,
+  input: { email: string; displayName: string; role: Role; password: string },
 ): Promise<UserRow> {
+  assertTenantContext(tenant);
   const id = randomUUID();
   const email = normalizeEmail(input.email);
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.query(
       "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')",
-      [id, input.orgId, email, input.displayName, input.role, now],
+      [id, tenant.orgId, email, input.displayName, input.role, now],
     );
     await tx.query("INSERT INTO credentials (user_id, password_hash) VALUES ($1,$2)", [id, await hashPassword(input.password)]);
   });
-  return { id, org_id: input.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
+  return { id, org_id: tenant.orgId, email, display_name: input.displayName, role: input.role, status: "active" };
+}
+
+/** One org user's display identity. PIIBearing: `email` is raw contact PII. */
+export interface OrgUserEmail extends PIIBearing {
+  readonly id: string;
+  readonly email: string;
+}
+
+/**
+ * The org's user emails, keyed by opaque userId — the render-time resolution the
+ * audit export needs to show WHO acted (the chain persists only the userId,
+ * ADR-0006/0007). A raw-PII read, so it is a governed sink in its own right: the
+ * caller's `audit.export` authority does not extend to reading contact PII, and
+ * the grant's sealed tenant is the only org scope this query will accept.
+ */
+export async function listOrgUserEmails(
+  db: SqlDb,
+  grant: ActionGrant<"pii.view">,
+): Promise<OrgUserEmail[]> {
+  assertActionGrant(grant, "pii.view");
+  const res = await db.query<OrgUserEmail>(
+    "SELECT id, email FROM users WHERE org_id = $1",
+    [grant.tenant.orgId],
+  );
+  return res.rows;
 }
 
 export async function findUserByEmail(db: SqlDb, email: string): Promise<UserRow | null> {
@@ -80,35 +171,54 @@ async function dummyHash(): Promise<string> {
  * Verify credentials in constant work (scrypt runs whether or not the user exists),
  * returning the active user on success or null otherwise. Removes the timing oracle.
  */
-export async function authenticate(db: SqlDb, email: string, password: string): Promise<UserRow | null> {
+export async function authenticate(
+  db: SqlDb,
+  email: string,
+  password: string,
+): Promise<AuthenticatedUser | null> {
   const user = await findUserByEmail(db, email);
   const hash = (user ? await getPasswordHash(db, user.id) : null) ?? (await dummyHash());
   const ok = await verifyPassword(password, hash);
-  if (!user || !ok || user.status !== "active") return null;
-  return user;
+  if (!user || !ok || user.status !== "active" || !isRole(user.role)) return null;
+  return authenticatedUser(user);
 }
 
 export async function createSession(
   db: SqlDb,
-  input: { userId: string; orgId: string; role: Role; ttlMinutes: number },
-): Promise<SessionRow> {
+  tenant: TenantContext,
+  user: AuthenticatedUser,
+  ttlMinutes: number,
+): Promise<Principal> {
+  const authenticatedTenant = user.tenant;
+  assertTenantContext(tenant);
+  assertTenantContext(authenticatedTenant);
+  assertSameTenant(tenant, authenticatedTenant);
+  assertAuthenticatedUser(user);
+  // user.tenant is minted from the authenticated ROW (tenantFromIdentity(row.id,
+  // row.org_id)), so "same org, same human actor" is exactly the ownership check this
+  // used to spell out by hand.
   const id = randomUUID();
   const now = new Date();
-  const expires = new Date(now.getTime() + input.ttlMinutes * 60_000);
-  const row: SessionRow = {
-    id,
-    user_id: input.userId,
-    org_id: input.orgId,
-    role: input.role,
-    created_at: now.toISOString(),
-    expires_at: expires.toISOString(),
-    revoked_at: null,
-  };
-  await db.query(
-    "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,$4,$5,$6,NULL)",
-    [row.id, row.user_id, row.org_id, row.role, row.created_at, row.expires_at],
+  const expires = new Date(now.getTime() + ttlMinutes * 60_000);
+  const inserted = await db.query<SessionRow>(
+    `INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at)
+     SELECT $1, u.id, u.org_id, u.role, $2, $3, NULL
+     FROM users u
+     WHERE u.id = $4 AND u.org_id = $5 AND u.role = $6 AND u.status = 'active'
+     RETURNING id,user_id,org_id,role,created_at,expires_at,revoked_at`,
+    [id, now.toISOString(), expires.toISOString(), user.id, tenant.orgId, user.role],
   );
-  return row;
+  const row = inserted.rows[0];
+  if (!row) {
+    throw appError("AUTH_FAILED", "Authenticated identity does not belong to the requested tenant.");
+  }
+  return principalFromIdentity({
+    userId: row.user_id,
+    orgId: row.org_id,
+    role: row.role,
+    actor: user.email,
+    sessionId: row.id,
+  });
 }
 
 export async function revokeSession(db: SqlDb, sessionId: string): Promise<void> {

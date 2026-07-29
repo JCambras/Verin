@@ -8,7 +8,17 @@
  */
 import { trace, SpanStatusCode, type Attributes } from "@opentelemetry/api";
 import { getConfig } from "@infra/config";
+import {
+  isPIIField,
+  REDACTED,
+} from "@contracts/pii";
+import {
+  isSafeObservabilityPrimitive,
+  readObservabilityId,
+  safeSpanName,
+} from "@domain/observability/safe-values";
 import { registerOtelProviderIfConfigured } from "./otel-provider";
+import { safeReason } from "./logger";
 
 export interface RecordedSpan {
   name: string;
@@ -33,18 +43,57 @@ function record(s: RecordedSpan): void {
 registerOtelProviderIfConfigured();
 const tracer = trace.getTracer(getConfig().otel.serviceName);
 
+/**
+ * PII backstop at the trace boundary (v3 §15.4): span attributes are exported
+ * over OTLP, so a PII-shaped string VALUE is replaced wholesale before it can
+ * leave the process, and — mirroring scrub()'s key rule at the log boundary —
+ * any attribute under a PII-named KEY is redacted regardless of value type
+ * ({ phone: 2125550142 } must not survive as a raw number). Callers pass
+ * identifiers (opaque userId, orgId) — this guard exists for the day one doesn't.
+ */
+function scrubAttributes(attributes: Readonly<Record<string, unknown>>): Attributes {
+  const scrub = (field: string, value: unknown): unknown => {
+    const opaqueId = readObservabilityId(value, field);
+    if (opaqueId !== null) return opaqueId;
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "bigint" ||
+      typeof value === "boolean"
+    ) {
+      return isSafeObservabilityPrimitive(field, value) ? value : REDACTED;
+    }
+    return REDACTED;
+  };
+  const out: Record<string, Attributes[string]> = {};
+  for (const [k, v] of Object.entries(attributes)) {
+    out[k] = isPIIField(k)
+      ? REDACTED
+      : ((Array.isArray(v) ? v.map((item) => scrub(k, item)) : scrub(k, v)) as Attributes[string]);
+  }
+  return out;
+}
+
 /** Run `fn` inside a span. Records to OTel and the in-memory ring. */
-export async function withSpan<T>(name: string, attributes: Attributes, fn: () => Promise<T>): Promise<T> {
-  const span = tracer.startSpan(name, { attributes });
+export async function withSpan<T>(
+  name: string,
+  attributes: Readonly<Record<string, unknown>>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const attrs = scrubAttributes(attributes);
+  const operation = safeSpanName(name);
+  const span = tracer.startSpan(operation, { attributes: attrs });
   const started = performance.now();
   try {
     const result = await fn();
     span.setStatus({ code: SpanStatusCode.OK });
-    record({ name, attributes, ok: true, durationMs: performance.now() - started, endedAt: Date.now() });
+    record({ name: operation, attributes: attrs, ok: true, durationMs: performance.now() - started, endedAt: Date.now() });
     return result;
   } catch (e) {
-    span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : "error" });
-    record({ name, attributes, ok: false, durationMs: performance.now() - started, endedAt: Date.now() });
+    // Exception text can quote row values (a driver detail may embed an email);
+    // the status message is PII-scrubbed like every other trace field.
+    span.setStatus({ code: SpanStatusCode.ERROR, message: safeReason(e) });
+    record({ name: operation, attributes: attrs, ok: false, durationMs: performance.now() - started, endedAt: Date.now() });
     throw e;
   } finally {
     span.end();

@@ -8,7 +8,12 @@ import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 import { discardedAuditEventWork } from "@infra/audit/audit-store";
 import { auditEvent } from "@infra/wire";
 import { getConfig } from "@infra/config";
-import { log } from "@infra/observability/logger";
+import { log, safeReason } from "@infra/observability/logger";
+import {
+  delegatedWriteActor,
+  systemWriteActor,
+  writeActorOf,
+} from "@contracts/principal";
 
 export interface LoginState {
   error?: string;
@@ -36,23 +41,27 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     // oracle (the invariant `authenticate` preserves with its dummy scrypt hash).
     const known = await findUserByEmail(db, email);
     if (known) {
-      await auditEvent(db, { orgId: known.org_id, actor: known.id, action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
+      // No session exists on this branch — the login boundary mints a SYSTEM
+      // tenant scoped to the known account's org (the identity module is the
+      // tenant-minting boundary, v3 §15.2).
+      const boundaryActor = systemWriteActor("login-boundary", known.org_id);
+      await auditEvent(db, { actor: delegatedWriteActor(boundaryActor, known.id), action: "session.login_failed", entityType: "User", entityId: known.id, detail: "Failed sign-in attempt" });
     } else {
       await discardedAuditEventWork(db).catch((e: unknown) =>
-        log.warn({ reason: e instanceof Error ? e.message : String(e) }, "constant-work audit mirror failed"),
+        log.warn({ reason: safeReason(e) }, "constant-work audit mirror failed"),
       );
       log.warn({ reason: "unknown-email" }, "failed sign-in attempt for an unknown email");
     }
     return { error: "Incorrect email or password." };
   }
 
-  const session = await createSession(db, {
-    userId: user.id,
-    orgId: user.org_id,
-    role: user.role,
-    ttlMinutes: getConfig().session.ttlMinutes,
-  });
-  await auditEvent(db, { orgId: user.org_id, actor: user.id, action: "session.create", entityType: "Session", entityId: session.id, detail: "Signed in" });
-  (await cookies()).set(SESSION_COOKIE, signSessionCookie(session.id), sessionCookieOptions());
+  const principal = await createSession(
+    db,
+    user.tenant,
+    user,
+    getConfig().session.ttlMinutes,
+  );
+  await auditEvent(db, { actor: writeActorOf(principal), action: "session.create", entityType: "Session", entityId: principal.sessionId, detail: "Signed in" });
+  (await cookies()).set(SESSION_COOKIE, signSessionCookie(principal.sessionId), sessionCookieOptions());
   redirect("/app");
 }

@@ -2,18 +2,20 @@
  * Generic workflow engine with suspend / await-external-input / resume (ADR-0011,
  * charter #6) — Iris's admitted largest gap, in the core contract before any flow
  * is authored. A step may `suspend` (returning a resume token) instead of running
- * to completion; the engine persists the continuation and returns. An external
- * event (a webhook) calls resumeFlow(token, payload) to run the remaining steps.
- * Resume is idempotent at the write layer (auditedWrite), so a doubly-fired
- * webhook has exactly-once effect (charter #16).
+ * to completion; the engine persists the continuation and returns. Resume takes
+ * a sealed TenantContext, validates it before the capability load, then checks
+ * row ownership. Write-layer idempotency gives replay exactly-once effect.
  */
-import { isAppError, type AppError } from "@contracts/errors";
+import { appError, normalizeAppError, type AppError } from "@contracts/errors";
+import type { ActionGrant } from "@contracts/authz";
+import type { PIIBearing } from "@contracts/pii";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
-export type FlowData = Record<string, unknown>;
+export type FlowData = Record<string, unknown> & PIIBearing;
 
 export type ExecutionStatus = "running" | "suspended" | "completed" | "failed";
 
-export interface ExecutionState {
+export interface ExecutionState extends PIIBearing {
   id: string;
   orgId: string;
   flowId: string;
@@ -23,11 +25,17 @@ export interface ExecutionState {
   data: FlowData;
 }
 
-/** Port: persist/load flow continuations (implemented in infrastructure). */
-export interface ExecutionStore {
-  create(state: ExecutionState): Promise<void>;
-  save(state: ExecutionState): Promise<void>;
-  loadById(id: string): Promise<ExecutionState | null>;
+/**
+ * Port: persist/load flow continuations (implemented in infrastructure).
+ * Every call carries sealed tenant authority (TenantContext or a pii.view grant)
+ * except loadByToken. That webhook path is capability-keyed by the unguessable
+ * token; resumeFlow validates its context before loading, then checks the row's
+ * organization before any step or write.
+ */
+export interface ExecutionStore extends PIIBearing {
+  create(state: ExecutionState, tenant: TenantContext): Promise<void>;
+  save(state: ExecutionState, tenant: TenantContext): Promise<void>;
+  loadById(id: string, grant: ActionGrant<"pii.view">): Promise<ExecutionState | null>;
   loadByToken(token: string): Promise<ExecutionState | null>;
 }
 
@@ -36,10 +44,10 @@ export type StepResult =
   | { kind: "suspend"; token: string; awaiting: string; patch?: FlowData }
   | { kind: "fail"; error: AppError };
 
-export interface FlowStep<D> {
+export interface FlowStep<D> extends PIIBearing {
   id: string;
   name: string;
-  execute(ctx: FlowData, deps: D): Promise<StepResult>;
+  execute(ctx: FlowData, deps: D, tenant: TenantContext): Promise<StepResult>;
 }
 
 export interface FlowDefinition<D> {
@@ -48,7 +56,7 @@ export interface FlowDefinition<D> {
   steps: FlowStep<D>[];
 }
 
-export interface FlowRunResult {
+export interface FlowRunResult extends PIIBearing {
   executionId: string;
   status: ExecutionStatus;
   token?: string;
@@ -62,25 +70,27 @@ async function drive<D>(
   store: ExecutionStore,
   deps: D,
   state: ExecutionState,
+  tenant: TenantContext,
 ): Promise<FlowRunResult> {
   let { cursor, data } = state;
   while (cursor < def.steps.length) {
     const step = def.steps[cursor]!;
     let result: StepResult;
     try {
-      result = await step.execute(data, deps);
+      result = await step.execute(data, deps, tenant);
     } catch (e) {
       // Only a real AppError (in-taxonomy code) passes through; anything else —
       // driver errors with a `code` like '23505'/'ENOENT' included — becomes a
       // vetted INTERNAL so downstream statusFor/toResponse never sees an unknown
       // code or leaks an unvetted message.
-      const error: AppError = isAppError(e) ? e : { code: "INTERNAL", message: "Step threw" };
+      const error: AppError = normalizeAppError(e) ??
+        appError("INTERNAL", "Step threw");
       result = { kind: "fail", error };
     }
 
     if (result.kind === "fail") {
       const failed: ExecutionState = { ...state, status: "failed", cursor, data };
-      await store.save(failed);
+      await store.save(failed, tenant);
       return { executionId: state.id, status: "failed", error: result.error, data };
     }
 
@@ -89,7 +99,7 @@ async function drive<D>(
 
     if (result.kind === "suspend") {
       const suspended: ExecutionState = { ...state, status: "suspended", resumeToken: result.token, cursor, data };
-      await store.save(suspended);
+      await store.save(suspended, tenant);
       return { executionId: state.id, status: "suspended", token: result.token, awaiting: result.awaiting, data };
     }
   }
@@ -97,7 +107,7 @@ async function drive<D>(
   // Keep resumeToken so a replayed webhook still resolves this (now completed)
   // execution and returns its status idempotently instead of "not-found".
   const completed: ExecutionState = { ...state, status: "completed", cursor, data };
-  await store.save(completed);
+  await store.save(completed, tenant);
   return { executionId: state.id, status: "completed", data };
 }
 
@@ -105,19 +115,19 @@ export async function startFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,
   deps: D,
-  input: { executionId: string; orgId: string; data: FlowData },
+  input: { executionId: string; tenant: TenantContext; data: FlowData },
 ): Promise<FlowRunResult> {
   const state: ExecutionState = {
     id: input.executionId,
-    orgId: input.orgId,
+    orgId: input.tenant.orgId,
     flowId: def.id,
     status: "running",
     resumeToken: null,
     cursor: 0,
     data: input.data,
   };
-  await store.create(state);
-  return drive(def, store, deps, state);
+  await store.create(state, input.tenant);
+  return drive(def, store, deps, state, input.tenant);
 }
 
 /**
@@ -132,19 +142,34 @@ export async function retryFlow<D>(
   store: ExecutionStore,
   deps: D,
   state: ExecutionState,
+  tenant: TenantContext,
 ): Promise<FlowRunResult> {
-  return drive(def, store, deps, { ...state, status: "running" });
+  assertTenantContext(tenant);
+  if (state.orgId !== tenant.orgId) {
+    return {
+      executionId: state.id,
+      status: "failed",
+      error: appError("AUTH_FAILED", "Execution does not belong to this tenant"),
+      data: {},
+    };
+  }
+  return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
-
 export async function resumeFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,
   deps: D,
   token: string,
   payload: FlowData,
+  tenant: TenantContext,
 ): Promise<FlowRunResult | { status: "not-found" }> {
+  assertTenantContext(tenant);
   const state = await store.loadByToken(token);
   if (!state) return { status: "not-found" };
+  // The token is the capability, but the caller's tenant (derived from the
+  // application row) must agree with the execution row — a cross-tenant
+  // token/application mismatch reads as absent, never as another org's state.
+  if (state.orgId !== tenant.orgId) return { status: "not-found" };
   if (state.status === "completed") {
     // Already finalized (idempotent): report without re-running.
     return { executionId: state.id, status: "completed", data: state.data };
@@ -152,11 +177,10 @@ export async function resumeFlow<D>(
   if (state.status !== "suspended" && state.status !== "failed") {
     return { executionId: state.id, status: state.status, data: state.data };
   }
-  // A "failed" execution is RETRIED from its saved cursor (Vale V7): the per-write
-  // idempotency keys make the already-committed writes replay safely, so a transient
-  // mid-finalize error is recoverable instead of permanently wedged.
+  // Failed resumes share retryFlow's saved-cursor, idempotent-write contract
+  // (D-027), so transient mid-finalize errors remain recoverable.
   // Trusted flow context takes precedence over the (HMAC-token-authed but
   // unsigned) webhook payload, so a payload cannot override accountType/actor (Vale V18).
   const resumed: ExecutionState = { ...state, status: "running", data: { ...payload, ...state.data } };
-  return drive(def, store, deps, resumed);
+  return drive(def, store, deps, resumed, tenant);
 }

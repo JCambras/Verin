@@ -3,10 +3,18 @@ import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken, esignCallback, computeEsignSignature } from "@infra/wire";
 import { verifyOrgChain } from "@infra/audit/audit-store";
 import { recentSpans } from "@infra/observability/tracer";
-import type { Principal } from "@contracts/principal";
+import { principalFromIdentity } from "@contracts/principal";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 
 const ORG = "org-1";
-const advisor: Principal = { userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" };
+const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" });
+const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
+if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
+const advisor = advisorAuthorization.value;
+const advisorPiiAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "pii.view");
+if (!advisorPiiAuthorization.ok) throw new Error("advisor should hold pii.view");
+const advisorPii = advisorPiiAuthorization.value;
+const cco = principalFromIdentity({ userId: "u-cco", orgId: ORG, role: "cco", actor: "cco@firm.test", sessionId: "s-cco" });
 
 async function seedOrg(db: SqlDb) {
   const now = new Date().toISOString();
@@ -26,8 +34,75 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     await seedOrg(db);
   });
 
+  it("refuses a sealed Principal without an execution.initiate grant at the execution boundary", async () => {
+    await expect(startAccountOpening(db, cco as never, cco as never, {
+      householdName: "Unauthorized Household",
+      firstName: "Una",
+      lastName: "Authorized",
+      email: null,
+      accountType: "individual",
+    })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await db.query("SELECT id FROM flow_executions")).rows).toEqual([]);
+  });
+
+  it("refuses execution and PII grants from different tenants before exposing replay state", async () => {
+    const otherOrg = "org-2";
+    const now = new Date().toISOString();
+    await db.query(
+      "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Other Firm',$2,'verin-crm',$2,'high')",
+      [otherOrg, now],
+    );
+    await db.query(
+      "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('u2',$1,'other@firm.test','Other','advisor','active',$2,'verin-crm',$2,'high')",
+      [otherOrg, now],
+    );
+    const otherPrincipal = principalFromIdentity({
+      userId: "u2",
+      orgId: otherOrg,
+      role: "advisor",
+      actor: "other@firm.test",
+      sessionId: "s2",
+    });
+    const otherExecution = authorizeGovernedAction(actorRefOf(otherPrincipal), "execution.initiate");
+    const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
+    if (!otherExecution.ok || !otherPii.ok) throw new Error("other advisor should hold both grants");
+    const input = {
+      householdName: "Other Household",
+      firstName: "Other",
+      lastName: "Owner",
+      email: null,
+      accountType: "individual",
+      clientRequestId: "11111111-1111-4111-8111-111111111111",
+    };
+    const otherStarted = await startAccountOpening(db, otherExecution.value, otherPii.value, input);
+    await expect(startAccountOpening(db, advisor, otherPii.value, input))
+      .rejects.toMatchObject({ code: "AUTH_FAILED" });
+    expect(otherStarted.status).toBe("suspended");
+    expect((await db.query("SELECT id FROM households WHERE org_id = $1", [ORG])).rows).toEqual([]);
+  });
+
+  it("refuses execution and PII grants from different actors in the same tenant", async () => {
+    const otherPrincipal = principalFromIdentity({
+      userId: "u2",
+      orgId: ORG,
+      role: "advisor",
+      actor: "other@firm.test",
+      sessionId: "s2",
+    });
+    const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
+    if (!otherPii.ok) throw new Error("other advisor should hold pii.view");
+    await expect(startAccountOpening(db, advisor, otherPii.value, {
+      householdName: "Mixed Authority Household",
+      firstName: "Mixed",
+      lastName: "Authority",
+      email: null,
+      accountType: "individual",
+    })).rejects.toMatchObject({ code: "AUTH_FAILED" });
+    expect((await db.query("SELECT id FROM flow_executions")).rows).toEqual([]);
+  });
+
   it("suspends at e-sign, then finalizes on resume with a verifiable audit chain", async () => {
-    const started = await startAccountOpening(db, advisor, {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: "Okafor Household",
       firstName: "Ada",
       lastName: "Okafor",
@@ -59,7 +134,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // Audit chain intact end-to-end and attributes to the initiating advisor's
     // opaque userId (ADR-0006/0007: never the raw email at the audit boundary).
-    const verdict = await verifyOrgChain(db, ORG);
+    const verdict = await verifyOrgChain(db, advisor.tenant);
     expect(verdict.ok).toBe(true);
     const chain = await db.query<{ actor: string; action: string }>("SELECT actor, action FROM audit_log WHERE org_id=$1 ORDER BY sequence", [ORG]);
     expect(chain.rows.some((r) => r.action === "financial_account.create" && r.actor === "u1")).toBe(true);
@@ -71,7 +146,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
   });
 
   it("a doubly-fired webhook has EXACTLY-ONCE effect (charter #16)", async () => {
-    const started = await startAccountOpening(db, advisor, {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: "Replay Household", firstName: "Rey", lastName: "Play", email: null, accountType: "individual",
     });
     const token = started.token!;
@@ -87,7 +162,51 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(await accountCount(db)).toBe(1); // exactly once, not twice
     const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE org_id=$1", [ORG]);
     expect(Number(tasks.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
+  });
+
+  it("a MIXED-case client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
+    // Regression: the observability id predicate refuses a `Lu`-then-`Ll` pair as
+    // a person-name shape, which mixed-case hex carries ("...3Ab5..."), while the
+    // route accepts a case-insensitive UUID. The flow committed the
+    // household/contact/application writes and THEN threw PII_VIOLATION out of
+    // the log line — an unenveloped 500 with side effects already durable. The id
+    // is now canonicalized to lowercase before it becomes the executionId.
+    const clientRequestId = "3Ab504e0-4f89-11d3-9a0c-0305E82c3301";
+    const started = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Mixed Case Household", firstName: "Mixed", lastName: "Case", email: null,
+      accountType: "individual", clientRequestId,
+    });
+    expect(started.status).toBe("suspended");
+    expect(started.executionId).toBe(clientRequestId.toLowerCase());
+    const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(households.rows[0]!.n)).toBe(1);
+    // The replay path (which logs the same identifier again) also survives, and a
+    // case variant of the same uuid replays instead of duplicating the household.
+    const replayed = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Mixed Case Household", firstName: "Mixed", lastName: "Case", email: null,
+      accountType: "individual", clientRequestId: clientRequestId.toUpperCase(),
+    });
+    expect(replayed.executionId).toBe(clientRequestId.toLowerCase());
+    expect(replayed.status).toBe("suspended");
+    expect(Number((await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG])).rows[0]!.n)).toBe(1);
+  });
+
+  it("a request id that could never be logged is refused BEFORE any write commits", async () => {
+    // The executionId is emitted inside the flow's span, so an id the
+    // observability predicate refuses must fail as a typed VALIDATION error —
+    // never by throwing out of a log line whose writes are already durable.
+    const result = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Refused Household", firstName: "Refused", lastName: "Start", email: null,
+      accountType: "individual", clientRequestId: "Adaeze Okonkwo-Blackwood",
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("VALIDATION");
+    const households = await db.query<{ n: string }>(
+      "SELECT count(*) AS n FROM households WHERE org_id = $1 AND name = $2",
+      [ORG, "Refused Household"],
+    );
+    expect(Number(households.rows[0]!.n)).toBe(0);
   });
 
   it("a DOUBLE-SUBMITTED flow start (same client request id) replays the same execution — no duplicate households (D-027)", async () => {
@@ -96,8 +215,8 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       householdName: "Dupe Household", firstName: "Do", lastName: "Uble", email: null,
       accountType: "individual", clientRequestId,
     };
-    const first = await startAccountOpening(db, advisor, input);
-    const second = await startAccountOpening(db, advisor, input); // double-submit (retry / second tab)
+    const first = await startAccountOpening(db, advisor, advisorPii, input);
+    const second = await startAccountOpening(db, advisor, advisorPii, input); // double-submit (retry / second tab)
 
     expect(first.status).toBe("suspended");
     expect(second.status).toBe("suspended");
@@ -109,7 +228,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // Companion (charter #4): a DIFFERENT request id is a genuinely new submission
     // and does start a second execution — dedup is by the minted id, not always-once.
-    const third = await startAccountOpening(db, advisor, { ...input, clientRequestId: "9d8c7b6a-5f4e-4d3c-9b1a-0f9e8d7c6b5a" });
+    const third = await startAccountOpening(db, advisor, advisorPii, { ...input, clientRequestId: "9d8c7b6a-5f4e-4d3c-9b1a-0f9e8d7c6b5a" });
     expect(third.executionId).not.toBe(first.executionId);
     const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(after.rows[0]!.n)).toBe(2);
@@ -124,7 +243,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     // Transient mid-flow failure: the application step's table vanishes, so the
     // execution persists as 'failed' AFTER the household/contact writes committed.
     await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
-    const first = await startAccountOpening(db, advisor, input);
+    const first = await startAccountOpening(db, advisor, advisorPii, input);
     expect(first.status).toBe("failed");
     const households = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(households.rows[0]!.n)).toBe(1);
@@ -132,7 +251,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
 
     // The user resubmits the SAME form session: the replay re-drives from the
     // saved cursor instead of dead-ending on the persisted failure.
-    const second = await startAccountOpening(db, advisor, input);
+    const second = await startAccountOpening(db, advisor, advisorPii, input);
     expect(second.status).toBe("suspended");
     expect(second.token).toBeTruthy();
     expect(second.executionId).toBe(clientRequestId);
@@ -140,7 +259,33 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     // No duplicated pre-failure writes: still exactly one household.
     const after = await db.query<{ n: string }>("SELECT count(*) AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(after.rows[0]!.n)).toBe(1);
-    expect((await verifyOrgChain(db, ORG)).ok).toBe(true);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
+  });
+
+  it("a human resubmit recovers a failed webhook finalization after the dependency returns", async () => {
+    const clientRequestId = "5d4c3b2a-1908-47f6-85e4-d3c2b1a09876";
+    const input = {
+      householdName: "Finalize Retry Household",
+      firstName: "Final",
+      lastName: "Retry",
+      email: null,
+      accountType: "individual",
+      clientRequestId,
+    };
+    const started = await startAccountOpening(db, advisor, advisorPii, input);
+    expect(started.status).toBe("suspended");
+
+    await db.query("ALTER TABLE financial_accounts RENAME TO accounts_offline");
+    const failed = await resumeAccountOpeningByToken(db, started.token!, {
+      signedAt: "2026-07-27T10:00:00.000Z",
+    });
+    expect("status" in failed && failed.status).toBe("failed");
+    await db.query("ALTER TABLE accounts_offline RENAME TO financial_accounts");
+
+    const retried = await startAccountOpening(db, advisor, advisorPii, input);
+    expect(retried.status).toBe("completed");
+    expect(await accountCount(db)).toBe(1);
+    expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
   it("an EDITED resubmit under the same client request id is rejected with a typed CONFLICT — never a silent replay of stale input (D-027)", async () => {
@@ -149,11 +294,11 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       householdName: "Original Household", firstName: "Or", lastName: "Iginal", email: null,
       accountType: "individual", clientRequestId,
     };
-    const first = await startAccountOpening(db, advisor, input);
+    const first = await startAccountOpening(db, advisor, advisorPii, input);
     expect(first.status).toBe("suspended");
 
     // The user edits a field and resubmits under the SAME id: refused, not replayed.
-    const edited = await startAccountOpening(db, advisor, { ...input, householdName: "Corrected Household" });
+    const edited = await startAccountOpening(db, advisor, advisorPii, { ...input, householdName: "Corrected Household" });
     expect(edited.status).toBe("failed");
     expect(edited.error?.code).toBe("CONFLICT");
     expect(edited.token).toBeUndefined(); // the original session's resume token never leaks on a refusal
@@ -170,13 +315,13 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       accountType: "individual", clientRequestId,
     };
     await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
-    const first = await startAccountOpening(db, advisor, input);
+    const first = await startAccountOpening(db, advisor, advisorPii, input);
     expect(first.status).toBe("failed");
     await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
 
     // The user fixes the form and resubmits under the same id: the persisted
     // failed execution must NOT be re-driven with its stale input.
-    const edited = await startAccountOpening(db, advisor, { ...input, householdName: "Fixed Household" });
+    const edited = await startAccountOpening(db, advisor, advisorPii, { ...input, householdName: "Fixed Household" });
     expect(edited.status).toBe("failed");
     expect(edited.error?.code).toBe("CONFLICT");
 
@@ -193,7 +338,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       accountType: "individual", clientRequestId,
     };
     await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
-    expect((await startAccountOpening(db, advisor, input)).status).toBe("failed");
+    expect((await startAccountOpening(db, advisor, advisorPii, input)).status).toBe("failed");
     await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
 
     // The identical resubmit re-drives, but persisting the re-driven state blows
@@ -203,7 +348,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       query: <T,>(sql: string, params?: unknown[]) =>
         sql.startsWith("UPDATE flow_executions") ? Promise.reject(new Error("disk full")) : db.query<T>(sql, params),
     };
-    const retried = await startAccountOpening(failing, advisor, input);
+    const retried = await startAccountOpening(failing, advisor, advisorPii, input);
     expect(retried.status).toBe("failed");
     expect(retried.error?.code).toBe("INTERNAL");
     expect(retried.token).toBeUndefined();
@@ -216,7 +361,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       accountType: "individual", clientRequestId,
     };
     await db.query("ALTER TABLE account_opening_applications RENAME TO applications_offline");
-    expect((await startAccountOpening(db, advisor, input)).status).toBe("failed");
+    expect((await startAccountOpening(db, advisor, advisorPii, input)).status).toBe("failed");
     await db.query("ALTER TABLE applications_offline RENAME TO account_opening_applications");
 
     // Simulate the concurrent-race loser: its pre-check load misses (the winner
@@ -234,7 +379,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
         return db.query<T>(sql, params);
       },
     };
-    const result = await startAccountOpening(racing, advisor, input);
+    const result = await startAccountOpening(racing, advisor, advisorPii, input);
     expect(result.status).toBe("failed");
     expect(result.error?.code).toBe("INTERNAL");
     expect(result.token).toBeUndefined();
@@ -248,7 +393,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       query: <T,>(sql: string, params?: unknown[]) =>
         sql.startsWith("UPDATE flow_executions") ? Promise.reject(new Error("disk full")) : db.query<T>(sql, params),
     };
-    const result = await startAccountOpening(failing, advisor, {
+    const result = await startAccountOpening(failing, advisor, advisorPii, {
       householdName: "Mask Household", firstName: "Ma", lastName: "Sk", email: null,
       accountType: "individual", clientRequestId: "5e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b",
     });
@@ -257,16 +402,51 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(result.token).toBeUndefined();
   });
 
+  it("a hostile driver-code accessor cannot escape double-submit classification", async () => {
+    let codeReads = 0;
+    const hostile = new Proxy({}, {
+      get(_target, property) {
+        if (property === "code") {
+          codeReads += 1;
+          throw new Error("alice@example.test");
+        }
+        return undefined;
+      },
+    });
+    const failing: SqlDb = {
+      ...db,
+      query: <T,>(sql: string, params?: unknown[]) =>
+        sql.startsWith("UPDATE flow_executions")
+          ? Promise.reject(hostile)
+          : db.query<T>(sql, params),
+    };
+    const result = await startAccountOpening(failing, advisor, advisorPii, {
+      householdName: "Guarded Household",
+      firstName: "Gu",
+      lastName: "Arded",
+      email: null,
+      accountType: "individual",
+      clientRequestId: "7e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b",
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INTERNAL");
+    expect(codeReads).toBe(1);
+  });
+
   it("a client request id colliding with ANOTHER org's execution fails clean and leaks nothing", async () => {
     const clientRequestId = "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e";
-    const started = await startAccountOpening(db, advisor, {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: "Victim Household", firstName: "Vi", lastName: "Ctim", email: null,
       accountType: "individual", clientRequestId,
     });
     expect(started.status).toBe("suspended");
 
-    const intruder: Principal = { userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" };
-    const result = await startAccountOpening(db, intruder, {
+    const intruder = principalFromIdentity({ userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" });
+    const intruderAuthorization = authorizeGovernedAction(actorRefOf(intruder), "execution.initiate");
+    if (!intruderAuthorization.ok) throw new Error("intruder advisor should hold execution.initiate");
+    const intruderPiiAuthorization = authorizeGovernedAction(actorRefOf(intruder), "pii.view");
+    if (!intruderPiiAuthorization.ok) throw new Error("intruder advisor should hold pii.view");
+    const result = await startAccountOpening(db, intruderAuthorization.value, intruderPiiAuthorization.value, {
       householdName: "Intruder Household", firstName: "E", lastName: "Ve", email: null,
       accountType: "individual", clientRequestId, // the PK conflict is a 23505, but not the caller's own execution
     });
@@ -276,7 +456,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
   });
 
   it("a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)", async () => {
-    const started = await startAccountOpening(db, advisor, {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
       householdName: "Sig Household", firstName: "S", lastName: "T", email: null, accountType: "individual",
     });
     const token = started.token!;

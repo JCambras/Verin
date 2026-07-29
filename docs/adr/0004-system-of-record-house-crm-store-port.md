@@ -24,8 +24,10 @@ absence of any external-CRM adapter code; a dedicated CRM-type-leak fence lands 
 external-CRM adapter). The house CRM is the
 port's first real adapter: genuine persistence, real CRUD, canonical schema as its schema. The store is
 **PostgreSQL** — **PGlite** (real Postgres, WASM, durable) in dev/CI behind that interface, managed Postgres
-via `node-postgres` in production (D-006); DDL/triggers are portable Postgres. Every query filters by
-`org_id` (fence: org-id-required). No global custodian switch; no hardcoded firm identity. Provenance
+via `node-postgres` in production (D-006); DDL/triggers are portable Postgres. Tenant-row queries filter by
+`org_id`; exact capability-keyed, pre-auth identity, and deployment-readiness escapes are registered in the
+fences and validate ownership at their appropriate boundary. No global custodian switch; no hardcoded
+firm identity. Provenance
 `source=verin-crm` (ADR-0005). **No Salesforce adapter code now** (charter #5 forbids unshipped code); the
 SF object-graph read/write mapping is maintained as documentation so wiring SF later is adapter work, not
 a remodel.
@@ -55,10 +57,17 @@ first real schema change - hardening every temporal column to `timestamptz`, add
 `contacts`/`financial_accounts` → `households` and `sessions` → `orgs` foreign keys, and the household_id
 / user_id lookup indexes - fired that trigger. `migrations.ts` is now an ordered `MIGRATIONS` list with a
 `runMigrations` runner and a `schema_migrations` ledger (version 1 = the hardened baseline); future schema
-changes append a versioned migration rather than editing shipped DDL in place. Portable Postgres DDL still
-runs identically on PGlite (dev/CI) and managed Postgres (prod). The app boundary keeps ISO strings on
-both read and write - the driver serializes them and a `timestamptz` read-parser normalizes reads back to
-canonical UTC ISO - so nothing above the store changed.
+changes append a versioned migration rather than editing shipped DDL in place. Startup verifies recorded
+`(version, name)` rows are an exact contiguous prefix of the shipped plan. A missing or empty ledger must
+first prove the managed schema is virgin. All pending versions run in one transaction, with each
+read-only preflight immediately before its DDL; migration 3 reports tenant-edge orphan classes for
+operator repair and never deletes, rewrites, or re-points user data. Its composite foreign keys make
+session-user, household, contact, account, application, and task ownership tenant-qualified in Postgres,
+not only in application predicates. Failure diagnostics name the stage and migration but retain only a
+closed application-error code or fixed-shape SQLSTATE, never driver prose or row values. Portable
+Postgres DDL still runs identically on PGlite (dev/CI) and managed Postgres (prod). The app boundary keeps
+ISO strings on both read and write - the driver serializes them and a `timestamptz` read-parser normalizes
+reads back to canonical UTC ISO - so nothing above the store changed.
 
 ## Revisit When
 

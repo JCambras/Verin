@@ -7,13 +7,15 @@
  */
 import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import { getConfig } from "@infra/config";
+import { revealSecret } from "@contracts/secret";
 
 export function newEsignToken(): string {
   return randomUUID();
 }
 
 export function signCallback(token: string): string {
-  return createHmac("sha256", getConfig().esign.webhookSecret).update(token).digest("hex");
+  // revealSecret is the explicit, fence-allowlisted secret read (v3 §15.4).
+  return createHmac("sha256", revealSecret(getConfig().esign.webhookSecret)).update(token).digest("hex");
 }
 
 export function verifyCallback(token: string, signature: string): boolean {

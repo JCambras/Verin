@@ -2,15 +2,30 @@
  * Structured logging (ADR-0013, charter #14). pino with PII redaction — the ONLY
  * sanctioned log path (raw console.* is banned by the no-console fence because only
  * this scrubs PII). Level and service name come from config (ADR-0003).
+ * Exception reasons are sanitized before logging (v3 §15.4).
  */
 import pino from "pino";
 import { getConfig } from "@infra/config";
+import {
+  isPIIField,
+  REDACTED,
+} from "@contracts/pii";
+import {
+  isSafeObservabilityPrimitive,
+  readObservabilityId,
+  safeLogMessage,
+} from "@domain/observability/safe-values";
+export { classifyErrorMetadata, safeReason } from "./safe-reason";
 
 const cfg = getConfig();
 
-const PII_LOG_FIELDS = ["ssn", "password", "email", "phone", "dob", "firstName", "lastName", "name", "displayName"];
+const PII_LOG_FIELDS = [
+  "ssn", "password", "email", "phone", "dob", "firstName", "lastName", "name", "displayName",
+  "accountNumber", "account_number", "routingNumber", "routing_number", "taxId", "tax_id",
+];
 
-export const log = pino({
+/** Exported so the logs-and-traces PII tests exercise the REAL redaction options, never a copy. */
+export const loggerOptions: pino.LoggerOptions = {
   level: cfg.log.level,
   base: { service: cfg.otel.serviceName },
   redact: {
@@ -23,4 +38,50 @@ export const log = pino({
     paths: PII_LOG_FIELDS.flatMap((f) => [f, `*.${f}`, `*.*.${f}`, `*.*.*.${f}`]),
     censor: "[REDACTED]",
   },
-});
+  formatters: {
+    log(object) {
+      return scrubStructuredLog(object) as Record<string, unknown>;
+    },
+  },
+  hooks: {
+    logMethod(args, method) {
+      const safeArgs = args.map((arg) =>
+        typeof arg === "string" ? safeLogMessage(arg) : arg
+      ) as Parameters<pino.LogFn>;
+      method.apply(this, safeArgs);
+    },
+  },
+};
+
+export const log = pino(loggerOptions);
+
+function scrubStructuredLog(
+  value: unknown,
+  field?: string,
+  forceRedact = false,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (value == null) return value;
+  const opaqueId = readObservabilityId(value, field);
+  if (opaqueId !== null) return forceRedact ? REDACTED : opaqueId;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    typeof value === "boolean"
+  ) {
+    return forceRedact || !isSafeObservabilityPrimitive(field, value) ? REDACTED : value;
+  }
+  if (typeof value !== "object") return REDACTED;
+  if (seen.has(value)) return REDACTED;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubStructuredLog(item, field, forceRedact, seen));
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      scrubStructuredLog(item, key, forceRedact || isPIIField(key), seen),
+    ]),
+  );
+}

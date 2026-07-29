@@ -3,9 +3,9 @@
  * Result instead of throwing (Iris ADR-0003). Adapter boundaries may THROW a
  * typed AppError (never a bare Error — enforced by the no-bare-throw fence).
  *
- * Each code maps to an HTTP status, a log level, a category, and whether it is
- * safe to retry. toResponse() produces a client-safe body with no stack traces
- * or internal detail (defense against error-message info leaks — retro #14).
+ * appError() freezes and authenticates trusted messages in a private WeakSet.
+ * normalizeAppError() snapshots untrusted code-shaped failures with a static
+ * message. toResponse() therefore emits no accessor text, stack, or context.
  */
 export type ErrorCode =
   | "VALIDATION"
@@ -59,27 +59,48 @@ const ERROR_MAP: Record<ErrorCode, CodeMeta> = {
   INTERNAL: { status: 500, logLevel: "error", category: "permanent", retryable: false },
 };
 
+const APP_ERRORS = new WeakSet<object>();
+const UNTRUSTED_APP_ERROR_MESSAGE = "The request could not be completed.";
+
 export function appError(
   code: ErrorCode,
   message: string,
   context?: AppError["context"],
 ): AppError {
-  return context ? { code, message, context } : { code, message };
+  const error: AppError = context
+    ? { code, message, context: Object.freeze({ ...context }) }
+    : { code, message };
+  APP_ERRORS.add(error);
+  return Object.freeze(error);
 }
 
 export function validationError(message: string, context?: AppError["context"]): AppError {
   return appError("VALIDATION", message, context);
 }
 
-export function isAppError(value: unknown): value is AppError {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "message" in value &&
-    typeof (value as { code: unknown }).code === "string" &&
-    (value as { code: string }).code in ERROR_MAP
-  );
+export function isErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === "string" && Object.hasOwn(ERROR_MAP, value);
+}
+
+function isAppError(value: unknown): value is AppError {
+  return typeof value === "object" && value !== null && APP_ERRORS.has(value);
+}
+
+export function normalizeAppError(
+  value: unknown,
+  policy: "accept-recognized-code" | "trusted-only" = "accept-recognized-code",
+): AppError | null {
+  if (isAppError(value)) return value;
+  if (policy === "trusted-only") return null;
+  if (typeof value !== "object" || value === null) return null;
+  try {
+    const code = Reflect.get(value, "code");
+    return isErrorCode(code)
+      ? appError(code, UNTRUSTED_APP_ERROR_MESSAGE)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function statusFor(code: ErrorCode): number {
@@ -91,9 +112,11 @@ export function logLevelFor(code: ErrorCode): CodeMeta["logLevel"] {
 }
 
 /** Client-safe HTTP response body — no stack traces, no internal context. */
-export function toResponse(error: AppError): { status: number; body: { error: { code: ErrorCode; message: string } } } {
+export function toResponse(error: unknown): { status: number; body: { error: { code: ErrorCode; message: string } } } {
+  const normalized = normalizeAppError(error) ??
+    appError("INTERNAL", "An internal error occurred.");
   return {
-    status: ERROR_MAP[error.code].status,
-    body: { error: { code: error.code, message: error.message } },
+    status: ERROR_MAP[normalized.code].status,
+    body: { error: { code: normalized.code, message: normalized.message } },
   };
 }

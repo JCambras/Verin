@@ -49,7 +49,7 @@ const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedu
 // The RATCHET (e): every invariant id that has shipped as 'active'. Flipping one
 // back to 'not-yet-active' would un-enforce it silently; removal needs an ADR
 // AND an edit here, where review sees it.
-export const ACTIVE_RATCHET = [2, 5, 7, 8, 9];
+export const ACTIVE_RATCHET = [1, 2, 5, 7, 8, 9];
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
 export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciText: string }): string[] {
@@ -126,7 +126,7 @@ describe("v3-invariant registry fence", () => {
       invariants: Array.from({ length: 30 }, (_, k) => inv(k + 1, over.get(k + 1))),
     });
     const deps = { exists: () => true, ciText: "jobs: v3-invariants audit-chain-verify" };
-    // Ratcheted ids (2, 5) must be active in fixtures that test OTHER failure classes.
+    // Ratcheted ids (1, 2, 5) must be active in fixtures that test OTHER failure classes.
     const ratchetActive: Array<[number, Partial<Invariant>]> = ACTIVE_RATCHET.map((id) => [
       id,
       { status: "active", mechanisms: [{ type: "fitness", ref: "src/__tests__/fitness/x.test.ts" }] },
@@ -156,7 +156,7 @@ describe("v3-invariant registry fence", () => {
       expect(problems.some((p) => p.includes("not found in the BLOCKING"))).toBe(true);
     });
     it("flags a ratcheted invariant regressing to not-yet-active, and a missing invariant", () => {
-      const regressed = full(); // ids 2 and 5 default to not-yet-active here
+      const regressed = full(); // the ratcheted ids default to not-yet-active here
       expect(validateRegistry(regressed, deps).some((p) => p.includes("ratchet is monotonic"))).toBe(true);
       const twentyNine = full(new Map(ratchetActive));
       twentyNine.invariants = twentyNine.invariants.filter((i) => i.id !== 17);

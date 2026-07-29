@@ -5,6 +5,7 @@ import {
   detectContractsExternalImportViolations,
   detectLayerViolations,
   isShippedSourceFilePath,
+  moduleReferences,
   realProject,
   inMemoryProject,
   SRC_ROOT,
@@ -205,13 +206,87 @@ describe("dependency-rule fence", () => {
       `const nodeModule = require("node:module");\nconst load = nodeModule["createRequire"](import.meta.url);\nexport const value = load("@infra/store");`,
       `const nodeModule = await import("node:module");\nconst load = nodeModule.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `const nodeModule = await import("node:module");\nconst key = "createRequire";\nconst load = nodeModule[key](import.meta.url);\nexport const value = load("@infra/store");`,
-    ])("createRequire loaders fail closed", (source) => {
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst { get } = Reflect;\nconst load = get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst reflection = globalThis.Reflect;\nconst { get } = reflection;\nconst load = get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet read: typeof Reflect.get;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet read = Object.getOwnPropertyDescriptor;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst read = Reflect.get.bind(Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get.call(Reflect, nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get.apply(Reflect, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst args = Math.random() ? [nodeModule, "createRequire"] : [];\nconst load = Reflect.get.apply(Reflect, args)(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst copy = { ...nodeModule };\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst copy = Object.assign({}, nodeModule);\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet copy: unknown = nodeModule;\nif (Math.random()) copy = {};\nconst load = (copy as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst copy = Object.fromEntries(Object.entries(nodeModule));\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = { mod: nodeModule };\nconst load = holder.mod.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = { nested: { mod: nodeModule } };\nconst load = holder.nested.mod.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = [nodeModule] as const;\nconst load = holder[0].createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst [held] = [nodeModule] as const;\nconst load = held.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst held = Object.freeze(nodeModule);\nconst load = held.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst [read] = [Reflect.get] as const;\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = [{}, nodeModule] as const;\nlet index = 0;\nif (Math.random()) index = 1;\nconst load = (holder[index] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: Record<string, unknown> = {};\nholder.mod = nodeModule;\nconst load = (holder.mod as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = { mod: nodeModule, safe: {} };\nlet key = "mod";\nif (Math.random()) key = "safe";\nconst load = (holder[key as keyof typeof holder] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst { getOwnPropertyDescriptor: read } = Object;\nconst load = read(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst read = Object.getOwnPropertyDescriptor.bind(Object);\nconst load = read(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor.call(Object, nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor.apply(Object, [nodeModule, "createRequire"])!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptors(nodeModule).createRequire.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst key = Math.random() ? "createRequire" : "other";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, key)!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+    ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
       );
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
         "domain->unresolved",
       );
+    });
+
+    it("uses the latest write when a destructured reflection binding is overwritten", () => {
+      const project = inMemoryProject({
+        "src/domain/fine.ts": `
+          import * as nodeModule from "node:module";
+          let read: Function;
+          ({ get: read } = Reflect);
+          read = Object.getPrototypeOf;
+          read(nodeModule, "createRequire");
+        `,
+      });
+      const source = project.getSourceFileOrThrow("src/domain/fine.ts");
+      expect(moduleReferences(source).filter((reference) =>
+        reference.kind === "create-require"
+      )).toEqual([]);
+    });
+
+    it("fails closed when a reflected accessor has a conditionally reaching safe replacement", () => {
+      const project = inMemoryProject({
+        "src/domain/evil.ts": `
+          import * as nodeModule from "node:module";
+          let read: Function = Reflect.get;
+          if (Math.random()) read = Object.getPrototypeOf;
+          const load = read(nodeModule, "createRequire")(import.meta.url);
+          export const value = load("@infra/store");
+        `,
+      });
+      const source = project.getSourceFileOrThrow("src/domain/evil.ts");
+      expect(moduleReferences(source).some((reference) =>
+        reference.kind === "create-require"
+      )).toBe(true);
+    });
+
+    it("does not classify a statically different node:module property as createRequire", () => {
+      const project = inMemoryProject({
+        "src/domain/fine.ts": `
+          import * as nodeModule from "node:module";
+          Object.getOwnPropertyDescriptor(nodeModule, "builtinModules");
+        `,
+      });
+      expect(moduleReferences(project.getSourceFileOrThrow("src/domain/fine.ts"))
+        .filter((reference) => reference.kind === "create-require")).toEqual([]);
     });
 
     it("type-asserted node:module loaders cannot evade createRequire detection", () => {
@@ -369,6 +444,29 @@ describe("dependency-rule fence", () => {
       expect(v.some((violation) =>
         violation.specifier.startsWith("<ambient-declaration "),
       )).toBe(true);
+    });
+
+    it("a type-only `unique symbol` brand is not a platform dependency, but a USED one still is", () => {
+      const branded = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/brand.ts": [
+            "declare const TenantBrand: unique symbol;",
+            "export interface Tenant { readonly orgId: string; readonly [TenantBrand]: 'Tenant' }",
+          ].join("\n"),
+        }),
+      );
+      expect(branded).toEqual([]);
+      // The SAME declaration referenced as a VALUE is the thing the rule refuses:
+      // the exemption is about having no runtime surface, not about the type node.
+      const used = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/leak.ts": [
+            "declare const TenantBrand: unique symbol;",
+            "export const key = TenantBrand;",
+          ].join("\n"),
+        }),
+      );
+      expect(used.some((v) => v.specifier === "<ambient-declaration TenantBrand>")).toBe(true);
     });
 
     it("locally declared platform-like names do not trip contracts isolation", () => {

@@ -11,6 +11,9 @@ import { createDb } from "../src/infrastructure/store/db";
 import { createUser, findUserByEmail } from "../src/infrastructure/identity/identity-store";
 import { auditedWrite } from "../src/infrastructure/audit/audited-write";
 import { getConfig } from "../src/infrastructure/config";
+import { systemTenant } from "../src/contracts/tenant";
+import { systemWriteActor } from "../src/contracts/principal";
+import { errorMessage } from "./error-message";
 
 export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
@@ -28,6 +31,7 @@ export async function seed(): Promise<void> {
     throw new Error("db-seed: refusing to run against APP_ENV=production (demo users carry a publicly committed password)");
   }
   const db = await createDb();
+  const tenant = systemTenant("seed", DEMO_ORG_ID);
   const now = new Date().toISOString();
   await db.query(
     "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,'verin-crm',$3,'high') ON CONFLICT (id) DO NOTHING",
@@ -35,14 +39,13 @@ export async function seed(): Promise<void> {
   );
   for (const u of DEMO_USERS) {
     if (await findUserByEmail(db, u.email)) continue;
-    await createUser(db, { orgId: DEMO_ORG_ID, email: u.email, displayName: u.displayName, role: u.role, password: DEMO_PASSWORD });
+    await createUser(db, tenant, { email: u.email, displayName: u.displayName, role: u.role, password: DEMO_PASSWORD });
   }
   // Exactly-once (idempotency key): re-running the seed replays the cached result
   // instead of appending another entry.
   const audited = await auditedWrite({
     db,
-    orgId: DEMO_ORG_ID,
-    actor: "seed",
+    actor: systemWriteActor("seed", DEMO_ORG_ID),
     action: "org.seed",
     entityType: "Org",
     entityId: DEMO_ORG_ID,
@@ -59,6 +62,6 @@ seed()
     process.stdout.write(`seeded org ${DEMO_ORG_ID} with ${DEMO_USERS.length} demo users\n`);
   })
   .catch((e) => {
-    process.stderr.write(`seed failed: ${e instanceof Error ? e.message : String(e)}\n`);
+    process.stderr.write(`seed failed: ${errorMessage(e)}\n`);
     process.exit(1);
   });

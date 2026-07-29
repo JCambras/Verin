@@ -9,15 +9,26 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
-import { appError, isAppError } from "@contracts/errors";
-import { log } from "@infra/observability/logger";
+import { appError, normalizeAppError } from "@contracts/errors";
+import { assertTenantContext, systemTenant, type TenantContext } from "@contracts/tenant";
+import {
+  assertActionGrant,
+  type ActionGrant,
+} from "@contracts/authz";
+import { log, safeReason } from "@infra/observability/logger";
+import { keyedObservabilityId } from "@infra/observability/record-id";
+import {
+  authorityObservabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 import { GENESIS_HASH, computeEntryHash, verifyChain, type ChainRow, type ChainVerdict } from "./hash-chain";
 
 export interface AuditIntent {
   orgId: string;
   actor: string;
-  action: string;
-  entityType: string;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId: string | null;
   before?: unknown;
   after?: unknown;
@@ -27,8 +38,8 @@ export interface AuditIntent {
 interface OutboxPayload {
   orgId: string;
   actor: string;
-  action: string;
-  entityType: string;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId: string | null;
   beforeJson: string | null;
   afterJson: string | null;
@@ -89,8 +100,10 @@ const CLAIM_TIMEOUT_MS = 5 * 60_000;
  */
 const MAX_DELIVERY_ATTEMPTS = 5;
 
-/** Drain pending outbox rows for an org into the append-only, hash-chained log. */
-export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
+/** Drain pending outbox rows for a tenant into the append-only, hash-chained log. */
+export async function drainOutbox(db: SqlDb, tenant: TenantContext): Promise<number> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   // Reclaim stale claims first: a crash between claim and delete must not leave a
   // committed business write permanently unaudited.
   await db.query(
@@ -122,7 +135,12 @@ export async function drainOutbox(db: SqlDb, orgId: string): Promise<number> {
         .catch(() => null);
       if (updated?.rows[0]?.status === "parked") {
         log.error(
-          { outboxRowId: row.id, orgId, attempts: Number(updated.rows[0].attempts), reason: err instanceof Error ? err.message : String(err) },
+          {
+            outboxRowId: keyedObservabilityId("outboxRowId", tenant, row.id),
+            orgId: authorityObservabilityId("orgId", tenant),
+            attempts: Number(updated.rows[0].attempts),
+            reason: safeReason(err),
+          },
           "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
         );
       }
@@ -224,13 +242,15 @@ export async function discardedAuditEventWork(db: SqlDb): Promise<void> {
     .catch((e: unknown) => {
       if (e !== DISCARD) throw e;
     });
-  await drainOutbox(db, CONSTANT_WORK_ORG);
+  await drainOutbox(db, systemTenant("login-constant-work", CONSTANT_WORK_ORG));
   await db.query(
     "UPDATE audit_outbox SET status = 'claimed', claimed_at = $2 WHERE id = $1 AND status = 'pending' RETURNING id",
     [randomUUID(), new Date().toISOString()],
   );
   await deliverClaimedRow(db, CONSTANT_WORK_ORG, randomUUID(), p).catch((e: unknown) => {
-    if (!isAppError(e) || e.code !== "CONFLICT") throw e;
+    const error = normalizeAppError(e);
+    if (!error) throw e;
+    if (error.code !== "CONFLICT") throw error;
   });
 }
 
@@ -266,10 +286,16 @@ function toChainRow(r: AuditLogRow): ChainRow {
   };
 }
 
-/** Load an org's audit chain (examiner export / console). */
-export async function listOrgChain(db: SqlDb, orgId: string): Promise<ChainRow[]> {
-  const res = await db.query<AuditLogRow>("SELECT * FROM audit_log WHERE org_id = $1 ORDER BY sequence ASC", [orgId]);
-  return res.rows.map(toChainRow);
+export async function countOrgChain(
+  db: SqlDb,
+  tenant: TenantContext,
+): Promise<number> {
+  assertTenantContext(tenant);
+  const result = await db.query<{ count: string | number }>(
+    "SELECT count(*) AS count FROM audit_log WHERE org_id = $1",
+    [tenant.orgId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; entry_count: number | string } | undefined): ChainVerdict {
@@ -301,7 +327,12 @@ function verdictFor(rows: ChainRow[], anchor: { max_sequence: number | string; e
  * not two: internal hash-chain consistency plus agreement with the out-of-band
  * anchor, so tail-truncation or full deletion is DETECTED (Vale V1 / Sable F4).
  */
-export async function verifyAndListOrgChain(db: SqlDb, orgId: string): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+async function readAndVerifyOrgChain(
+  db: SqlDb,
+  tenant: TenantContext,
+): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   // Chain rows and the anchor are read in ONE transaction: a drain committing
   // between two separate reads would otherwise raise a false "rows removed /
   // truncated" tamper alarm (anchor ahead of the rows snapshot).
@@ -316,6 +347,15 @@ export async function verifyAndListOrgChain(db: SqlDb, orgId: string): Promise<{
   return { verdict: verdictFor(rows, anchor), rows };
 }
 
-export async function verifyOrgChain(db: SqlDb, orgId: string): Promise<ChainVerdict> {
-  return (await verifyAndListOrgChain(db, orgId)).verdict;
+export async function verifyAndListOrgChain(
+  db: SqlDb,
+  grant: ActionGrant<"audit.export">,
+): Promise<{ verdict: ChainVerdict; rows: ChainRow[] }> {
+  assertActionGrant(grant, "audit.export");
+  return readAndVerifyOrgChain(db, grant.tenant);
+}
+
+export async function verifyOrgChain(db: SqlDb, tenant: TenantContext): Promise<ChainVerdict> {
+  assertTenantContext(tenant);
+  return (await readAndVerifyOrgChain(db, tenant)).verdict;
 }

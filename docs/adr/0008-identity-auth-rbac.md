@@ -21,8 +21,13 @@ WorkOS/Auth0 swap later is an adapter change. Passwords hashed with Node `crypto
 are server-side records keyed by an opaque id in a **secure, httpOnly, SameSite** cookie HMAC-signed
 with `SESSION_SECRET` (32+ chars, no fallback); sessions have server-enforced **expiry**, a **revocation**
 list (logout), and **sliding renewal with id rotation** (below). Identity is resolved in exactly one place
-(`resolveSession`) from the cookie, never from a client-supplied role/identity header. **RBAC is enforced
-server-side at the port**: the roles enum lives in `contracts/roles.ts`; port calls check `requireRole`.
+(the shared session-row resolver, exposed as read-only `resolveSession` and rotating
+`resolveAndRenewSession`) from the cookie, never from a client-supplied role/identity header. Each
+`NextRequest` memoizes one in-flight principal resolution so a route that binds several grants cannot
+re-read a cookie whose session id was already rotated. **RBAC is enforced server-side at the port**: the
+roles enum lives in `contracts/roles.ts`; ordinary CRUD gates use `requireRole`. Governed actions use
+`authorizeGovernedAction` to mint a sealed, action-specific `ActionGrant` from the authenticated human,
+and the exact grant must reach and be asserted by its sink; system actors are categorically refused.
 Design is SSO/OIDC-ready (the port abstracts credential vs. federated identity).
 
 ### Session lifecycle: expiry + revocation + sliding renewal with rotation (charter #12 "rotation")
@@ -47,6 +52,9 @@ identity-read chokepoint now does all three:
   `resolveAndRenewSession`, which returns the rotated cookie for the app layer to persist on the response
   (`cookies().set`, valid in a Route Handler / Server Action). Renewal + rotation stay entirely inside the
   identity chokepoint, so the auth-enforcement / org-id-required / audited-write fences hold unchanged.
+- **One identity per request.** `requirePrincipal` memoizes its in-flight result by `NextRequest`.
+  Multi-grant routes such as `/api/audit` therefore resolve and possibly rotate once, then derive both
+  `audit.export` and `pii.view` grants from the same principal.
 - **Opportunistic cleanup.** A rotation also sweeps sessions that expired or were revoked more than one TTL
   ago (`deleteDeadSessions`, backed by the `sessions(expires_at)` index, migration v2), so dead rows do
   not accumulate forever. Cleanup rides the (infrequent) rotation event rather than every request.
@@ -67,7 +75,8 @@ identity-read chokepoint now does all three:
 ## Consequences
 
 Fences (Phase B/E): auth-enforcement (every exported HTTP handler AND Server Action resolves a session;
-no fallback role), no-client-role-header, org-id-required. Sliding renewal + rotation + cleanup are locked
+no fallback role), no-client-role-header, org-id-required, and governed-actions (every governed request
+surface binds the exact per-action grant and threads it to the sink). Sliding renewal + rotation + cleanup are locked
 by `src/__tests__/integration/session-lifecycle.test.ts` (real PGlite; adversarial proof PF-022). Step-up
 auth for sensitive actions is a later flow concern. SSO/OIDC adapter is deferred with a trigger.
 

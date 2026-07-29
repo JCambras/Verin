@@ -82,7 +82,11 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `db.ts` serializes all ops with a mutex.
 - **Schema = versioned migrations (D-016/D-029), not in-place DDL.** `migrations.ts` is an ordered
   `MIGRATIONS` list applied by `runMigrations` (records each version in `schema_migrations`). A schema
-  change APPENDS `{version, name, sql}`; never edit a shipped migration's DDL. Temporal columns are
+  change APPENDS `{version, name, sql}`; never edit a shipped migration's DDL. Before mutation, the
+  runner proves the ledger is an exact contiguous `(version, name)` prefix of that list and proves a
+  missing/empty ledger belongs to a virgin managed schema. All pending versions share one transaction;
+  each read-only preflight runs immediately before its DDL, and tenant-edge orphans are reported for
+  operator repair, never silently rewritten. Temporal columns are
   `timestamptz`, but the app boundary stays ISO strings BOTH ways: writers emit `toISOString()`; a read
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
@@ -93,6 +97,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
 - **Auth uses a Server Action** (`src/app/login/actions.ts`): it sets the cookie + redirects atomically,
   avoiding the client Set-Cookie/navigate race and hydration race. Client forms are uncontrolled
   (FormData) and gate submit on `useHydrated()` so a pre-hydration click can't do a native submit.
+- **One identity per request:** `requirePrincipal` memoizes its in-flight promise on a `WeakMap` keyed
+  by the `NextRequest`. A route may bind several grants (`/api/audit` holds `audit.export` AND
+  `pii.view`), and a second resolution would re-read the cookie the client SENT after renewal already
+  rotated that id away - a 401 that only appears once the session passes its half-life.
 - **Session lifecycle: renewal/rotation happens ONLY in `requirePrincipal`, never `resolveSession`**
   (ADR-0008, D-030). `resolveAndRenewSession` slides an active session past its half-life (extends
   `expires_at`) and rotates the id, returning a cookie the app layer re-sets via `cookies().set()` - valid
@@ -118,6 +126,79 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
+- **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
+  `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
+  (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;
+  `authorizeGovernedAction`/`actorRefOf` in
+  `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
+  `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`;
+  `authorityObservabilityId`/`generatedObservabilityId`/`keyedDigestObservabilityId`/
+  `observabilityIdOrRedacted` in `domain/observability/safe-values.ts`). A cast,
+  literal, sub-interface that merely EXTENDS one, type predicate, a type argument the call YIELDS
+  (explicit OR inferred, whenever the signature INVENTS that parameter - names it in the return and in
+  no parameter), or a sealed annotation/return/class property/assignment/parameter default filled from
+  an `any`/`unknown` (a `JSON.parse`, an awaited `Promise<any>`) fails the `tokenized-factory-only`
+  fence. Merely NAMING a sealed type in a generic position is fine (`new Map<string, TenantContext>()`
+  mints nothing), and so is `const p: Principal | null = null` - null is a CHECKED value. The ESLint mirror is the edit-time cast/literal SUBSET only: its `SEALED_TYPES`/
+  `SEALED_FACTORY_FILES` must match that fence's registry AND the rule must stay wired into every shipped
+  layer - the fence asserts both, resolving the real config for representative files.
+  Every repository/port call requires a TenantContext (`tenant-context-required` fence; capability-keyed
+  loads are exact-match escapes IN the fence). Nothing under `src/infrastructure/llm/` may (transitively)
+  import a PIIBearing-marked type or a PII-shaped exported VALUE (`llm-pii-boundary` fence - a new
+  interface with a raw PII-named field must extend `PIIBearing` or be reviewed into that fence's escapes).
+  LLM request text comes only from `trustedStaticProjectionText`: the factory owns the reviewed literal
+  template and exact sensitive spans. Account references use `sensitiveAccountReferences` for extraction,
+  masking, and residual refusal, including space-separated and hyphenated forms.
+  Config secrets are `SecretValue`s: the raw string leaves only through the free function `revealSecret()`
+  (there is no `.reveal()` member), and only in the fence-allowlisted HMAC consumers.
+- **Governed sinks are reachable only from a REQUEST-HANDLING surface**, which calls
+  `requireActionGrant(req, "<action>")` rather than a bare role check. That hook needs the framework's
+  `NextRequest` and calls `requirePrincipal` (which writes a rotated cookie), so a Server Action
+  (`"use server"`), a reserved App Router component file (`page`/`layout`/…), or any default-exported
+  component can never satisfy it - reaching a governed sink from one is its own fail-closed
+  `governed-actions` violation. A plain app-layer helper that takes the request IS supported (the rule
+  keys on what the surface is, not on the file name); a request-less authorization entry point is later
+  architecture, not an escape. The authorization PROLOGUE may bind several grants - `/api/audit` holds
+  `audit.export` AND `pii.view` - but every (bind, fail-closed guard) pair comes before any route work,
+  and the authorized value must reach the sink's own `ActionGrant` PARAMETER. A sink handed to another
+  function as a value is refused: there is no call site left to authorize.
+- **Authority assertions live in ONE contiguous prologue, not in a fixed statement slot.**
+  `authorityPrologueViolations` (`_fence-utils.ts`) is shared by the governed-actions and
+  tenant-context-required fences, so they cannot disagree: the prologue is the maximal contiguous
+  LEADING run of sealed-authority assertions, and any required assertion outside it fails. Order is
+  free; anything else (a db call, a branch, a side effect) ENDS the prologue. Every `ActionGrant` owes
+  its exact action assertion. Every grant pair owes `assertSameTenant(left.tenant, right.tenant)`, and
+  each explicit `TenantContext` must be compared with every grant. A wrapped authority is read exactly
+  once into a `const` binding before those assertions and is never re-read from its carrier.
+  `assertSameTenant` checks both org and actor identity, so authorities that disagree on either cannot
+  reach work. Closed unions and fixed
+  tuples are accepted only when every arm exposes one identical complete authority inventory; optional
+  authorities, arrays, open records, and index signatures are refused as runtime-dynamic. Demanding a literal
+  statement #1 in each fence separately is what made dual-authority signatures unbuildable.
+- **The app layer holds NO raw SQL.** A resolved `db.query(...)`/`tx.exec(...)` anywhere under `src/app/`
+  fails the build (`detectAppLayerSqlAccess`, asserted by BOTH the governed-actions and
+  tenant-context-required fences). Both derivations read repository signatures under
+  `src/infrastructure/`, so an inline query has no signature to carry an `ActionGrant` or a sealed
+  `TenantContext` - it is outside both fences, not a smaller version of a repository call. The executor
+  is resolved by the name it is DECLARED under, so `const { query } = db` and `db["query"](...)` are the
+  same violation. A repository is exempt from `pii.view` only when it is a WRITE boundary and nothing
+  else - DML whose only reads are the locking pre-image reads it takes; adding an audit INSERT to a
+  plain read does not buy it an exemption.
+- **Audit actions and entity types are TYPES, not strings**: `ObservabilityAction` /
+  `ObservabilityEntityType` (`domain/observability/safe-values.ts`) are what `auditedWrite`/`auditEvent`
+  accept. A `string` there is a build failure - an unlisted value degrades to `[REDACTED]` in the very
+  log line an operator needs, and the vocabulary fence flags a dynamic attribute value the same way it
+  flags a dynamic span name. Client-supplied record IDs parse through `parseMachineRecordId` before
+  repository work. Log/trace record ids do NOT trust UUID shape alone: direct cryptographic mints use
+  `generatedObservabilityId`, while request-derived UUIDs pass through `keyedObservabilityId`, which
+  emits a tenant- and field-scoped HMAC digest under a domain-separated purpose key. A failed mint
+  redacts rather than aborting failure reporting; the governed audit chain retains the raw record id.
+- **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
+  `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
+  (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an
+  aliased import cannot evade it. The observability vocabularies (span names, log messages, actions,
+  enums, numeric fields, id fields) are derived from real call sites BOTH ways by
+  `observability-vocabulary` - an unregistered value would silently log as `[REDACTED]`.
 
 ## Maintaining this file
 

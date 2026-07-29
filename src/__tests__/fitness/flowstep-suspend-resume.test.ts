@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { startFlow, resumeFlow, type FlowDefinition, type ExecutionStore, type ExecutionState } from "@domain/workflow/engine";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * FLOWSTEP SUSPEND/RESUME FENCE (ADR-0011, charter #6). Proves the engine actually
@@ -41,18 +44,20 @@ const flow: FlowDefinition<Deps> = {
   ],
 };
 
+const TENANT = systemTenant(TEST_SYSTEM_ACTOR, "o");
+
 describe("flowstep suspend/resume fence", () => {
   it("enforces: the engine suspends at a suspend step and resumes the rest", async () => {
     const store = makeStore();
     const deps: Deps = { hits: [] };
 
-    const started = await startFlow(flow, store, deps, { executionId: "e1", orgId: "o", data: {} });
+    const started = await startFlow(flow, store, deps, { executionId: "e1", tenant: TENANT, data: {} });
     // Suspended BEFORE step c ran (step c must not have executed yet).
     expect(started.status).toBe("suspended");
     expect(started.token).toBe("tok-1");
     expect(deps.hits).toEqual(["a", "b"]); // c NOT yet run
 
-    const resumed = await resumeFlow(flow, store, deps, "tok-1", { signed: true });
+    const resumed = await resumeFlow(flow, store, deps, "tok-1", { signed: true }, TENANT);
     expect("status" in resumed && resumed.status).toBe("completed");
     expect(deps.hits).toEqual(["a", "b", "c"]); // c ran on resume
   });
@@ -77,10 +82,10 @@ describe("flowstep suspend/resume fence", () => {
         },
       ],
     };
-    await startFlow(flaky, store, deps, { executionId: "ef", orgId: "o", data: {} });
-    const first = await resumeFlow(flaky, store, deps, "tk", {});
+    await startFlow(flaky, store, deps, { executionId: "ef", tenant: TENANT, data: {} });
+    const first = await resumeFlow(flaky, store, deps, "tk", {}, TENANT);
     expect("status" in first && first.status).toBe("failed");
-    const retry = await resumeFlow(flaky, store, deps, "tk", {}); // retried, not wedged
+    const retry = await resumeFlow(flaky, store, deps, "tk", {}, TENANT); // retried, not wedged
     expect("status" in retry && retry.status).toBe("completed");
     expect(attempts).toBe(2);
   });
@@ -93,14 +98,14 @@ describe("flowstep suspend/resume fence", () => {
         id: "n", name: "n",
         steps: [{ id: "x", name: "x", async execute(_c, d) { d.hits.push("x"); return { kind: "continue" }; } }],
       };
-      const r = await startFlow(noSuspend, store, deps, { executionId: "e2", orgId: "o", data: {} });
+      const r = await startFlow(noSuspend, store, deps, { executionId: "e2", tenant: TENANT, data: {} });
       expect(r.status).toBe("completed"); // proves suspension is conditional, not always
       expect(r.token).toBeUndefined();
     });
 
     it("resuming an unknown token is not-found (no silent completion)", async () => {
       const store = makeStore();
-      const r = await resumeFlow(flow, store, { hits: [] }, "nope", {});
+      const r = await resumeFlow(flow, store, { hits: [] }, "nope", {}, TENANT);
       expect("status" in r && r.status).toBe("not-found");
     });
   });

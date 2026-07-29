@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser, renewSession, deleteDeadSessions } from "@infra/identity/identity-store";
 import { resolveSession, resolveAndRenewSession, signSessionCookie, parseSignedCookie } from "@infra/identity/session";
 import { unwrap } from "@contracts/result";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * SESSION LIFECYCLE HARDENING (deep-review r6 finding #8, ADR-0008, charter #12).
@@ -15,6 +18,7 @@ import { unwrap } from "@contracts/result";
  */
 
 const ORG = "org-1";
+const TENANT = systemTenant(TEST_SYSTEM_ACTOR, ORG);
 const TTL_MINUTES = 60; // config default in the test env (vitest.config.ts)
 const MIN = 60_000;
 
@@ -25,7 +29,7 @@ async function seed(db: SqlDb): Promise<void> {
     ORG,
     new Date().toISOString(),
   ]);
-  const user = await createUser(db, { orgId: ORG, email: "advisor@firm.test", displayName: "A Vaez", role: "advisor", password: "correct-horse-battery" });
+  const user = await createUser(db, TENANT, { email: "advisor@firm.test", displayName: "A Vaez", role: "advisor", password: "correct-horse-battery" });
   userId = user.id;
 }
 

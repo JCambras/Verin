@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, requirePrincipalWithRole, readJsonBody, errorResponse } from "@app/_server/context";
-import { startAccountOpening } from "@infra/wire";
+import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
+import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
 import { appError } from "@contracts/errors";
 import { ACCOUNT_TYPES, isAccountType } from "@domain/schema/entities";
 
@@ -10,11 +10,14 @@ function requiredString(value: unknown, maxLength: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const p = await requirePrincipalWithRole(req, ["advisor", "ops", "principal", "admin"]);
-  if (!p.ok) return errorResponse(p.error);
+  // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
+  // the allowed roles (advisor/ops/principal/admin) are unchanged from the
+  // original RBAC gate.
+  const auth = await requireActionGrant(req, "execution.initiate");
+  if (!auth.ok) return errorResponse(auth.error);
+  const pii = await requireActionGrant(req, "pii.view");
+  if (!pii.ok) return errorResponse(pii.error);
 
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return errorResponse(parsed.error);
@@ -29,13 +32,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return errorResponse(appError("VALIDATION", `Account type must be one of: ${ACCOUNT_TYPES.join(", ")}.`));
   }
   // Double-submit protection (D-027): the client mints one UUID per form session;
-  // it becomes the executionId, so a retry/second tab replays the same execution.
-  if (typeof b.clientRequestId !== "string" || !UUID_RE.test(b.clientRequestId)) {
+  // it becomes the lowercase canonical executionId, so case variants and a
+  // retry/second tab replay the same execution.
+  if (typeof b.clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(b.clientRequestId)) {
     return errorResponse(appError("VALIDATION", "clientRequestId is required (a UUID minted once per form session)."));
   }
 
   const db = await getDb();
-  const result = await startAccountOpening(db, p.value, {
+  const result = await startAccountOpening(db, auth.value, pii.value, {
     householdName: b.householdName,
     firstName: b.firstName,
     lastName: b.lastName,

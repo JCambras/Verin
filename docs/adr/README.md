@@ -45,6 +45,15 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0027](./0027-demo-first-wave0-labeled-fakes.md) | Demo-first Wave 0 on labeled fakes — charter #5 extension, no mock theater | Accepted (charter amendment) |
 | [0028](./0028-demo-design-language.md) | Demo design language — the established Verin design system is normative | Accepted |
 | [0029](./0029-decision-core-contracts.md) | Decision-core canonical contracts (v3 prompt 5) as Zod schemas in `contracts/`; ceiling re-baseline 600→3500 | Accepted (amends ADR-0018) |
+| [0030](./0030-line-budget-prompt-6-review-hardening.md) | Line-budget amendment for prompt-6 review hardening | Accepted (amends ADR-0018) |
+| [0031](./0031-llm-projection-boundary-ahead-of-first-caller.md) | The evidence-to-LLM projection boundary lands ahead of its first caller — a reviewed charter #5 exception | Accepted |
+| [0032](./0032-line-budget-wave-a-security-boundaries.md) | Line-budget amendment for Wave A security boundaries (prompt 6) | Accepted (amends ADR-0018) |
+| [0033](./0033-line-budget-honest-headroom.md) | Line-budget ceilings carry bounded, measured headroom; ADR-0030's stated basis corrected | Accepted (amends ADR-0030/0032) |
+| [0034](./0034-line-budget-infrastructure-headroom.md) | Infrastructure ceiling 3,300→3,400 on a re-measured baseline; the fence's own headroom comment corrected | Accepted (amends ADR-0033) |
+| [0035](./0035-line-budget-contracts-error-snapshots.md) | Contracts ceiling 4,000 to 4,050 for normalized error snapshots | Accepted (amends ADR-0033) |
+| [0036](./0036-line-budget-infrastructure-provenance-snapshots.md) | Infrastructure ceiling 3,400 to 3,450 for provenance and failure snapshots | Accepted (amends ADR-0034) |
+| [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
+| [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

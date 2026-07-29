@@ -32,11 +32,11 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | CC3.1 | Risk assessment | STRIDE model | red-team persona round | `docs/security/threat-model.md` | audit-round findings in `docs/reviews/` |
 | CC4.1 | Monitoring | OTel + health/ready | `observability-coverage` | ADR-0013 | traces + structured logs; audit-chain-verify job log |
 | CC5.x | Control activities | the fitness-fence suite | `pnpm test:fitness` | ADR-0016 | CI gate results + `docs/fences/proof-log.md` |
-| **CC6.1** | Logical access | auth + RBAC at port | `auth-enforcement` | ADR-0008 | session records; CI |
+| **CC6.1** | Logical access | auth + RBAC + per-action grants at port | `auth-enforcement`, `governed-actions` | ADR-0008 | session records; CI |
 | CC6.2/6.3 | Access provisioning/removal | session revocation, RBAC | `auth-enforcement` | ADR-0008 | revoked-sessions store |
 | CC6.6 | Boundary protection | security headers, CSRF | none yet (explicit gap below) | `next.config.ts` | CI |
-| CC6.7 | Confidentiality of data | PII boundary | PII fences | ADR-0006 | scrub coverage; CI |
-| CC7.1/7.2 | Detect anomalies | OTel trace spans + pino logs | `observability-coverage` | ADR-0013 | telemetry |
+| CC6.7 | Confidentiality of data | PII boundary, secret containment | PII fences, `llm-pii-boundary`, `tokenized-factory-only`, `no-secret-fallback` | ADR-0006, ADR-0031 | scrub coverage; CI |
+| CC7.1/7.2 | Detect anomalies | OTel trace spans + pino logs | `observability-coverage`, `observability-vocabulary` | ADR-0013 | telemetry |
 | **CC7.4** | Records integrity | append-only + hash chain | `audited-write-required`, `audit-chain-verify` | ADR-0007 | scheduled chain-verify evidence |
 | CC8.1 | Change management | protected main, PR template, CODEOWNERS | CI gates block merge | this doc; `.github/` | PR/merge history; no-mistakes runs |
 | CC9.1 | Risk mitigation (vendors/supply chain) | pinned lockfile, scanners | `secret-scan`, `sast`, `dependency-audit` | ADR-0017 | CI; SBOM on release |
@@ -53,7 +53,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 
 | TSC | Requirement | Code | Test | Doc | Op / Evidence |
 |-----|-------------|------|------|-----|---------------|
-| C1.x | Confidential data protected | PII boundary, org scoping | PII + `org-id-required` fences | ADR-0006 | CI |
+| C1.x | Confidential data protected | PII boundary, sealed tenant scoping, tenant-qualified foreign keys | PII + `org-id-required` + `tenant-context-required`; tenant-isolation and migration-preflight integration tests | ADR-0004, ADR-0006 | CI |
 | P1-P8 | Privacy (notice, retention, disposal) | retention hold, DSAR contract | retention design | ADR-0019 | retention schedule (design contract) |
 
 ## Explicit gaps (owner + date)

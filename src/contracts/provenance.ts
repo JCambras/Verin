@@ -62,16 +62,12 @@ export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenanc
 }
 
 // ── Charter #3 EXTENSION (ADR-0022): derived compliance artifacts ────────────────
-// A value DERIVED from one or more inputs is only as trustworthy as its
-// least-trustworthy input. If ANY input is synthetic, the derived value is itself
-// synthetic — a "demonstration" artifact (a health score or compliance-scan result
-// computed over a labeled-synthetic/demo household). It must render/record as a
-// demonstration (watermarked, demo audit class, excluded from the real
-// examiner-export) and can never feed a real compliance decision. This makes charter
-// #3's displayed-metric->source trace run end-to-end THROUGH derived artifacts,
-// closing the hole the charter's prose leaves open. It is an EXTENSION, never a
-// weakening: a NEW class of value is brought under the existing rule; nothing
-// previously forbidden is now permitted.
+// A derived value is only as trustworthy as its least-trustworthy input: if ANY
+// input is synthetic the result is itself synthetic — a "demonstration" artifact
+// that must render watermarked, record under the demo audit class, stay out of
+// the examiner-export, and never feed a real compliance decision. That runs
+// charter #3's displayed-metric->source trace end-to-end THROUGH derivations.
+// An EXTENSION, never a weakening: nothing previously forbidden is now permitted.
 
 /** The visible label a demonstration-derived artifact must carry (charter #3 / ADR-0022). */
 export const DEMO_WATERMARK = "Demonstration - not a compliance record" as const;
@@ -99,12 +95,10 @@ function isDerived(p: RecordProvenance): p is DerivedProvenance {
 }
 
 /**
- * Provenance of a value computed from `inputs` (ADR-0022). source = "computed";
- * `demonstration` is true iff ANY input is synthetic OR itself a demonstration, so
- * the flag is TRANSITIVE through chained derivations: a value derived, at any depth,
- * from even one labeled-synthetic/demo input is itself a demonstration artifact that
- * `canFeedComplianceDecision` refuses. `derivedFrom` flattens nested traces so the
- * displayed-metric->source trace always reaches leaf sources.
+ * Provenance of a value computed from `inputs` (ADR-0022). `demonstration` is
+ * TRANSITIVE — true iff any input, at any depth, is synthetic or itself a
+ * demonstration — so canFeedComplianceDecision refuses a chained derivation too;
+ * `derivedFrom` flattens nested traces so the trace always reaches leaf sources.
  */
 export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {
   const demonstration = inputs.some((i) => isSyntheticSource(i.source) || isDemonstration(i));

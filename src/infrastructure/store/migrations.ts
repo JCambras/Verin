@@ -1,29 +1,30 @@
 /**
- * House-CRM store schema (ADR-0004/0007). Portable PostgreSQL DDL — runs on PGlite
- * (dev/CI) and managed Postgres (prod) unchanged. The audit_log is append-only
- * (BEFORE UPDATE/DELETE triggers RAISE EXCEPTION) and hash-chained per org; the
- * outbox delivers audit entries at-least-once; crm_write_cache gives idempotency.
+ * Portable PostgreSQL schema and ordered VERSIONED migrations (ADR-0004/0007,
+ * D-016/D-029). `MIGRATIONS` is an ordered list applied by `runMigrations`, which
+ * records each version in `schema_migrations`; the complete pending plan commits in
+ * one transaction, with each preflight immediately before its DDL. A schema change
+ * APPENDS a `{version, name, sql}` entry. Never edit a shipped entry's DDL: stores
+ * that already recorded that version will never re-run it, so the edit reaches new
+ * stores only and the two silently diverge.
  *
- * VERSIONED MIGRATIONS (D-016 executed by deep-review r6 finding #6). The schema is
- * an ORDERED list of migrations, each recorded in `schema_migrations` once applied,
- * so a schema change is an APPENDED migration rather than an in-place DDL edit that
- * silently no-ops on an already-initialized dataDir. `runMigrations` applies every
- * not-yet-recorded version in order, each in its own transaction (DDL is
- * transactional in Postgres), recording the version in the SAME transaction - a
- * crash mid-migration leaves neither a half-applied schema nor a
- * recorded-but-unapplied version. There is no production store yet (dev/CI stores
- * are ephemeral / reseedable), so version 1 is a hardened baseline rather than a
- * text→timestamptz data conversion; the mechanism is what future prod changes ride.
+ * TEMPORAL COLUMNS ARE `timestamptz`, BUT THE APPLICATION BOUNDARY STAYS ISO STRINGS
+ * IN BOTH DIRECTIONS. Writers emit `toISOString()`; a read parser in `db.ts`
+ * (OID 1184, `new Date(v).toISOString()`) normalizes every read back to canonical UTC
+ * ISO. So callers never receive `Date` objects, and - the reason this matters beyond
+ * ergonomics - the round-trip is BYTE-EXACT. The audit hash chain hashes `created_at`
+ * as text, so a write-read cycle that changed the rendering by even one character
+ * (a space instead of `T`, a `+00` instead of `Z`, microseconds instead of millis)
+ * would break `verifyChain` on rows nobody touched. Adding a temporal column means
+ * adding it as `timestamptz` and leaving the boundary alone.
  *
- * Every temporal column is `timestamptz` (not `text`): the app boundary keeps ISO
- * strings on BOTH sides (writers emit `toISOString()`; the driver serializes the
- * string and the `timestamptz` read-parser in `db.ts` normalizes back to a canonical
- * UTC ISO-8601 string), so ordering and `<`/`>` comparisons are instant-correct
- * instead of lexicographic on whatever offset a writer happened to emit - closing the
- * `claimed_at < $2` foot-gun in `audit-store.ts`.
+ * Adding a table also means classifying it in the `org-id-required` fence, which
+ * DERIVES its table list from this DDL: an unclassified table fails the build rather
+ * than defaulting to unscoped.
  */
-import { appError } from "@contracts/errors";
-import type { SqlDb } from "./db";
+import { appError, normalizeAppError } from "@contracts/errors";
+import type { SqlDb, SqlQueryable } from "./db";
+import { migrationFailure } from "./migration-errors";
+import { migrationLedgerExists } from "./migration-support";
 
 export interface Migration {
   /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
@@ -31,6 +32,21 @@ export interface Migration {
   /** Stable slug (kebab-case) - documents intent in `schema_migrations` and logs. */
   readonly name: string;
   /** Idempotent-where-possible DDL for this version. Runs as one transaction. */
+  readonly sql: string;
+  /** READ-ONLY probes run before this version's DDL; a non-zero count refuses the upgrade. */
+  readonly preflight?: readonly PreflightProbe[];
+}
+
+/**
+ * A pre-migration data check. `sql` MUST be read-only and return one `orphans` count:
+ * an unsatisfiable constraint is REPORTED, never repaired - no shipped migration
+ * deletes, rewrites, or re-points a row a human put there.
+ */
+export interface PreflightProbe {
+  /** The constraint this probe stands in for - the diagnostic names it. */
+  readonly relationship: string;
+  /** Child -> parent columns, so the diagnostic is actionable without the source. */
+  readonly subject: string;
   readonly sql: string;
 }
 
@@ -274,10 +290,63 @@ const SESSIONS_EXPIRES_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
 `;
 
+/**
+ * Version 3's tenant-qualified parent edges, as DATA: each entry generates BOTH the
+ * composite foreign key and the read-only orphan PREFLIGHT below, so a relationship
+ * can never ship a constraint the migration cannot first check for. Every edge names
+ * a column shipped code actually populates - an FK on an always-NULL column is
+ * skipped by MATCH SIMPLE forever, so no companion could trip it (charter #4).
+ */
+interface TenantEdge {
+  readonly constraint: string;
+  readonly child: string;
+  readonly childColumns: readonly string[];
+  readonly parent: string;
+  readonly parentColumns: readonly string[];
+}
+
+const TENANT_EDGES: readonly TenantEdge[] = [
+  { constraint: "sessions_user_org_fk", child: "sessions", childColumns: ["user_id", "org_id"], parent: "users", parentColumns: ["id", "org_id"] },
+  { constraint: "households_advisor_org_fk", child: "households", childColumns: ["advisor_user_id", "org_id"], parent: "users", parentColumns: ["id", "org_id"] },
+  { constraint: "contacts_household_org_fk", child: "contacts", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "financial_accounts_household_org_fk", child: "financial_accounts", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "applications_household_org_fk", child: "account_opening_applications", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+  { constraint: "applications_contact_household_org_fk", child: "account_opening_applications", childColumns: ["contact_id", "household_id", "org_id"], parent: "contacts", parentColumns: ["id", "household_id", "org_id"] },
+  { constraint: "tasks_household_org_fk", child: "tasks", childColumns: ["household_id", "org_id"], parent: "households", parentColumns: ["id", "org_id"] },
+];
+
+/**
+ * The orphan probe for one edge, mirroring MATCH SIMPLE exactly: a row with ANY
+ * NULL key column is skipped by the constraint, so it is skipped here too - the
+ * preflight must not refuse an upgrade the constraint would have accepted.
+ */
+const orphanProbeSql = (e: TenantEdge) =>
+  `SELECT count(*)::int AS orphans FROM ${e.child} c WHERE ${e.childColumns.map((col) => `c.${col} IS NOT NULL`).join(" AND ")} AND NOT EXISTS (SELECT 1 FROM ${e.parent} p WHERE ${e.childColumns.map((col, i) => `p.${e.parentColumns[i]} = c.${col}`).join(" AND ")});`;
+
+const TENANT_QUALIFIED_RELATIONSHIPS_SQL = `
+CREATE UNIQUE INDEX users_id_org_unique ON users(id, org_id);
+CREATE UNIQUE INDEX households_id_org_unique ON households(id, org_id);
+CREATE UNIQUE INDEX contacts_id_household_org_unique ON contacts(id, household_id, org_id);
+
+${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
+  ADD CONSTRAINT ${e.constraint}
+  FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
+`;
+
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
   { version: 2, name: "sessions-expires-index", sql: SESSIONS_EXPIRES_INDEX_SQL },
+  {
+    version: 3,
+    name: "tenant-qualified-relationships",
+    sql: TENANT_QUALIFIED_RELATIONSHIPS_SQL,
+    preflight: TENANT_EDGES.map((e) => ({
+      relationship: e.constraint,
+      subject: `${e.child}(${e.childColumns.join(", ")}) -> ${e.parent}(${e.parentColumns.join(", ")})`,
+      sql: orphanProbeSql(e),
+    })),
+  },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free
@@ -303,25 +372,126 @@ for (const [i, m] of MIGRATIONS.entries()) {
 export const MIGRATION_SQL = [SCHEMA_MIGRATIONS_DDL, ...MIGRATIONS.map((m) => m.sql)].join("\n");
 
 /**
- * Apply every not-yet-recorded migration version in order. Idempotent: an already
- * up-to-date store runs no DDL. Each version's DDL and its `schema_migrations` record
- * commit in ONE transaction, so the applied set and the actual schema never diverge.
+ * Run every read-only probe for one version and report all orphan classes.
  */
+async function assertPreflightClean(db: SqlQueryable, m: Migration): Promise<void> {
+  try {
+    const blocked: string[] = [];
+    for (const probe of m.preflight ?? []) {
+      const { rows } = await db.query<{ orphans: number }>(probe.sql);
+      const orphans = Number(rows[0]?.orphans ?? 0);
+      if (orphans > 0) blocked.push(`${probe.relationship}: ${orphans} row(s) in ${probe.subject} reference a parent in another tenant (or no parent at all)`);
+    }
+    if (blocked.length > 0) {
+      throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
+    }
+  } catch (cause) {
+    const error = normalizeAppError(cause);
+    if (error) throw error;
+    throw migrationFailure("preflight", cause, m);
+  }
+}
+
+/**
+ * Every database object this schema OWNS, derived from the shipped DDL rather than
+ * re-listed by hand, so a new table or index cannot be added without also being
+ * covered by the virginity proof below. Columns need no separate entry: a managed
+ * column can only exist inside a managed table, which this already names.
+ */
+const MANAGED_OBJECT_RE =
+  /CREATE\s+(?:(?:OR\s+REPLACE\s+)?FUNCTION|TRIGGER|(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?|TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+([a-z_][a-z0-9_]*)/gi;
+const MANAGED_OBJECT_NAMES: ReadonlySet<string> = new Set(
+  [...MIGRATION_SQL.matchAll(MANAGED_OBJECT_RE)].map((match) => match[1]!.toLowerCase()),
+);
+
+const LEDGER_TABLE = "schema_migrations";
+
+// Names only, never row data: every value here is one of OUR identifiers, and EVERY
+// clause is scoped to current_schema() - triggers included, or a neighbour schema in a
+// shared Postgres owning an `audit_log_no_update` refuses a correct virgin bootstrap.
+const MANAGED_OBJECT_PROBE_SQL = `
+SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
+UNION SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+  JOIN pg_namespace n ON n.oid = c.relnamespace WHERE NOT t.tgisinternal AND n.nspname = current_schema()
+UNION SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = current_schema();
+`;
+
+/**
+ * An EMPTY ledger is a claim ("this store has never been migrated"), not a fact, and
+ * the bootstrap path below trusts it enough to apply version 1 and record it before
+ * any later preflight has run. That is safe on a genuinely virgin store - there are
+ * no rows to orphan - and unsafe on a store whose tables exist while the ledger does
+ * not: a dump restored without its schema_migrations rows, or a dropped ledger table.
+ * There, versions would be RECORDED against a schema nobody verified, so the
+ * "a failed preflight leaves the recorded version exactly unchanged" guarantee would
+ * not hold. So the claim is PROVEN before the first mutation: if any object this
+ * schema owns already exists, refuse, and leave the store byte-for-byte as found.
+ */
+async function assertManagedSchemaEmpty(db: SqlQueryable): Promise<void> {
+  let existing: string[];
+  try {
+    const { rows } = await db.query<{ name: string }>(MANAGED_OBJECT_PROBE_SQL);
+    existing = rows
+      .map((row) => String(row.name).toLowerCase())
+      .filter((name) => name !== LEDGER_TABLE && MANAGED_OBJECT_NAMES.has(name))
+      .sort();
+  } catch (cause) {
+    throw migrationFailure("virginity-check", cause);
+  }
+  if (existing.length === 0) return;
+  throw appError(
+    "INTERNAL",
+    `the migration ledger is empty but this store already contains ${existing.length} object(s) this schema owns; no schema change was made and no version was recorded. This is the shape of a restored dump whose schema_migrations rows were not restored, or a dropped ledger. Restore the ledger to the version the data was written at (or adopt the store deliberately by recording the applied versions), then restart. Objects found: ${existing.join(", ")}`,
+    { stage: "virginity-check", existingCount: existing.length },
+  );
+}
+
 export async function runMigrations(db: SqlDb): Promise<void> {
-  // Bootstrap the ledger so a virgin store can be queried for its applied versions.
-  await db.exec(SCHEMA_MIGRATIONS_DDL);
-  const recorded = await db.query<{ version: number }>("SELECT version FROM schema_migrations");
-  const applied = new Set(recorded.rows.map((r) => Number(r.version)));
-  for (const m of MIGRATIONS) {
-    if (applied.has(m.version)) continue;
-    // The migration's DDL and its ledger record commit as ONE transaction: a crash
-    // mid-migration leaves neither a half-applied schema nor a recorded-but-unapplied
-    // version, so re-running always resumes cleanly (safe even for a future
-    // non-idempotent ALTER). The version record is a PARAMETERIZED write - no SQL is
-    // built by interpolation.
+  let stage: Parameters<typeof migrationFailure>[0] = "virginity-check";
+  let activeMigration: Migration | undefined;
+  try {
     await db.transaction(async (tx) => {
-      await tx.exec(m.sql);
-      await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
+      const ledgerExisted = await migrationLedgerExists(tx);
+      if (!ledgerExisted) await assertManagedSchemaEmpty(tx);
+      stage = "ledger-bootstrap";
+      await tx.exec(SCHEMA_MIGRATIONS_DDL);
+      stage = "applied-version-read";
+      const recorded = await tx.query<{ version: number; name: string }>(
+        "SELECT version, name FROM schema_migrations ORDER BY version",
+      );
+      if (recorded.rows.length === 0 && ledgerExisted) {
+        stage = "virginity-check";
+        await assertManagedSchemaEmpty(tx);
+      }
+      const mismatch = recorded.rows.findIndex((row, index) =>
+        Number(row.version) !== MIGRATIONS[index]?.version ||
+        String(row.name) !== MIGRATIONS[index]?.name
+      );
+      if (mismatch >= 0) {
+        throw appError(
+          "INTERNAL",
+          "the migration ledger is not an exact contiguous prefix of the shipped migration plan; no schema change was made",
+          { stage: "applied-version-read", recordedCount: recorded.rows.length },
+        );
+      }
+      const pending = MIGRATIONS.slice(recorded.rows.length);
+      for (const migration of pending) {
+        activeMigration = migration;
+        stage = "preflight";
+        await assertPreflightClean(tx, migration);
+        stage = "mutation";
+        await tx.exec(migration.sql);
+        await tx.query(
+          "INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())",
+          [migration.version, migration.name],
+        );
+      }
     });
+  } catch (cause) {
+    const error = normalizeAppError(cause);
+    if (error) throw error;
+    throw migrationFailure(stage, cause, activeMigration);
   }
 }

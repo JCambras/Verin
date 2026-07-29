@@ -6,8 +6,9 @@ It is written so the **independent falsification session (Part 2)** can reproduc
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
-> `pnpm typecheck` · `pnpm lint` · `pnpm test` (unit, integration, and fitness on a non-UTC clock) ·
-> `pnpm knip` · `pnpm build` · `pnpm exec playwright install chromium && pnpm test:e2e` ·
+> `pnpm typecheck` · `pnpm lint` · `pnpm test` (the unit/integration/fitness suite; the command reports the
+> live count, non-UTC clock) · `pnpm knip` · `pnpm build` ·
+> `pnpm exec playwright install chromium && pnpm test:e2e` (the Playwright + axe browser specs) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
 > `pnpm golden:validate` (the 16-case golden truth set, D-035). Every
@@ -24,6 +25,13 @@ rule, and a walking skeleton that runs end-to-end in a browser.
 **Platform & discipline (Iris lineage, ported):** dependency rule; `Result<T,E>` + typed `AppError`; one
 Zod config module that fails closed at boot; PII boundary (`assertNoPIIValues` + scrub); a build-failing
 fitness-fence suite; ratchet-down line budgets + a separate presentation budget.
+
+**v3 security boundaries (prompt 6, D-061..D-096):** every repository and port receives a runtime-sealed
+`TenantContext`; governed request surfaces mint action-specific `ActionGrant`s that reach their sinks;
+write attribution uses sealed `WriteActor`s; PII can enter `src/infrastructure/llm/` only as scrubber-minted,
+deeply frozen `Tokenized<T>` values; and config secrets leave the config boundary only through
+fence-allowlisted HMAC consumers. Operational telemetry uses closed vocabularies, and request-derived
+record UUIDs become tenant- and field-scoped keyed digests instead of being emitted verbatim.
 
 **v3 decision-core contracts (`src/contracts/decision-core`, ADR-0029, D-040):** the canonical decision
 type system as Zod strict schemas with derived types - proceed requires authority + a non-empty execution
@@ -51,13 +59,14 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Observability:** OpenTelemetry spans on every flow step + external call, exported over OTLP/HTTP
   when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (ADR-0013); pino structured logs; `/health` + `/ready`.
 - **House-CRM store:** PGlite (real Postgres) behind the store interface (`SqlDb`) in dev/CI; managed Postgres in prod
-  (D-006); serialization mutex + `globalThis` singleton.
+  (D-006); serialization mutex + `globalThis` singleton. Migration startup proves an exact ledger prefix
+  and managed-schema virginity, then applies all pending DDL and read-only orphan preflights atomically.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Four Playwright spec files** covering smoke, happy walkthrough, failure/access-control, and console
-  CRUD plus axe, green on a non-UTC clock.
+- **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey)
+  plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
-**Governance:** 29 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 38 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -72,7 +81,8 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-029).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-187; every PF id names exactly one
+proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -81,7 +91,7 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
-| `no-secret-fallback` / no-live-org-domain / placeholder-.env | config hygiene (#7) | PF-006 |
+| `no-secret-fallback` / no-live-org-domain / placeholder-.env / `SecretValue` containment | config hygiene + secret containment (#7, v3 §15.4) | PF-006, PF-034 |
 | `line-budget` (platform ratchet + separate presentation) / `max-file-size` | budgets (#1,#10) | companions |
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
@@ -105,6 +115,18 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 | `decision-core-illegal-states` | proceed requires usable authority with future expiration + a non-empty plan; blocked/prohibited carry neither; a prohibition has no resolving condition - all parse-level (v3 invariants 7-9, prompt 5, ADR-0029, D-040) | PF-027 + companions |
 | `decision-core-tenant-scope` | registered prompt-5 reference boundaries reject cross-tenant values; an exact schema-derived inventory follows aliases, wrappers, and composites and fails on any unregistered scoped-reference collection (v3 invariant 2, ADR-0029, D-045-D-058) | PF-028 + companions |
 | `decision-core-external-action-safety` | execution steps and compensation require retry-safe action metadata, one tenant, and evidence-targeted revalidation at standalone and plan boundaries; idempotency keys cannot alias; set-like execution references are duplicate-free and canonical (#16, ADR-0029, D-047-D-058) | PF-029 + companions |
+| `tenant-context-required` (ts-morph: sealed tenant authority on ordinary repository/port signatures; exact capability-keyed escapes registered) | ordinary calls cannot compile or parse without tenant authority; registered capability loads derive or re-check tenant scope before work (#7, v3 §15.2, invariant 2) | PF-030 + companions |
+| `tokenized-factory-only` (AST: `Tokenized<T>` + the seven sealed security types construct only via their factories) | PII leaves for a model only as scrubber-minted `Tokenized<T>` (#3, #13, v3 §15) | PF-031 + companions |
+| `llm-pii-boundary` (import-reachability: no `PIIBearing`-marked type reachable from `src/infrastructure/llm/`) | no PII-bearing type reaches a model surface (#3, #13, v3 invariant 1, ADR-0031) | PF-032 + companions |
+| `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-033 + companions |
+| `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-035 + companions |
+
+**Current prompt-6 line-budget PR evidence:** contracts 4,021/4,050 (29
+headroom), domain 1,298/1,350 (52), infrastructure 3,484/3,550 (66), and
+presentation 918/6,000 (5,082). ADR-0038 is the latest ceiling amendment.
+Later digest-provenance corrections changed only fitness and decision evidence,
+so these remain the final fence measurements. No useful implementation or
+documentation was removed or compressed.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
@@ -133,7 +155,8 @@ reports: [`docs/reviews/01-vale-foundation.md`](./docs/reviews/01-vale-foundatio
 **28 findings; 22 fixed in this pass, 6 explicitly deferred with a trigger.** The audit was materially
 valuable — it caught issues the walkthrough could not, including two false-passes in my own fences.
 
-**Highest-impact fixes (re-verified: typecheck / lint / test 202 / knip / e2e 12 green):**
+**Highest-impact fixes (all re-verified green at the self-audit pass — typecheck / lint / test / knip / e2e;
+re-derive the live suite with `pnpm test` and `pnpm test:e2e`):**
 - **Audit-chain truncation (Vale V1 / Sable F4, Critical):** the chain couldn't detect tail-truncation or
   full deletion. Added a `BEFORE TRUNCATE` trigger + an out-of-band `audit_anchor` (expected count +
   max-sequence) that `verifyChain` checks — now detected and tested.
@@ -185,7 +208,7 @@ date/trigger), never omitted:
 | Content-Security-Policy (nonce strategy) | CC6.6 | founder | before first real deployment (ADR-0021 / D-020) |
 | Login rate limiting / lockout (failed logins ARE audited) | CC6.1 | red-team | before first pilot with real users (ADR-0008 / D-015) |
 | SHA/digest-pinned CI actions + semgrep image | CC8.1 | founder | SOC 2 Type II window or first production deploy (ADR-0017 / D-019) |
-| Versioned schema-migration mechanism - **CLOSED** (`runMigrations` + `schema_migrations` ledger; D-016 executed via D-029, deep-review #6) | CC8.1 | - | done |
+| Versioned schema-migration mechanism - **CLOSED** (`runMigrations` validates the exact ledger prefix and virgin schema, then applies the pending preflight/DDL plan atomically; D-016/D-029, D-075..D-088) | CC8.1 | - | done |
 | Scheduled chain-verify against a PERSISTENT store (today: seeded per-run) | CC7.4 | founder | managed Postgres lands (D-017) |
 | Flow compensation + retry-by-execution-id recovery | CC7.1 | founder | first flow with external obligations / first manual-recovery incident (ADR-0011 / D-021) |
 
@@ -200,6 +223,11 @@ logged with rationale + revert path. Review-round captain decisions (D-014..D-02
 opaque userId; failed-login auditing now with rate limiting deferred; schema versioning, persistent-store
 chain verification, nightly load scale-up, action/image pinning, and CSP recorded as triggered deferrals;
 pre-suspend idempotency keys with compensation deferred.
+
+Prompt-6 security decisions (D-061..D-096) add the sealed tenant, actor, grant, token, secret,
+observability, and authenticated-error boundaries. The review entries harden their semantic fences,
+make migration history and orphan checks fail before mutation, and replace shape-trusted telemetry
+record IDs with secret-derived keyed correlation while retaining the audit record.
 
 ---
 

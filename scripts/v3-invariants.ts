@@ -97,11 +97,23 @@ if (fitnessFiles.length > 0) {
   // Invoke vitest through the current Node binary (no package-manager shim needed:
   // `pnpm` reaches dev shells only via corepack, but node_modules is always here).
   const vitestEntry = join(ROOT, "node_modules/vitest/vitest.mjs");
-  const run = spawnSync(process.execPath, [vitestEntry, "run", "--reporter=json", `--outputFile=${outFile}`, ...fitnessFiles], {
-    cwd: ROOT,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const run = spawnSync(
+    process.execPath,
+    [
+      vitestEntry,
+      "run",
+      "--maxWorkers=1",
+      "--fileParallelism=false",
+      "--reporter=json",
+      `--outputFile=${outFile}`,
+      ...fitnessFiles,
+    ],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   try {
     interface VitestJson {
       testResults: Array<{ name: string; status: string }>;

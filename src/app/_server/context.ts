@@ -1,8 +1,8 @@
 /**
  * App-layer server helpers. The app layer may import anything (ADR-0001). Every
- * mutating route resolves the principal from the signed session cookie here — the
- * single identity read (charter #12; auth-enforcement fence). org_id and role come
- * from the session, never from the request body or a header.
+ * authenticated request resolves its principal from the signed session cookie
+ * here, once per NextRequest even when several grants are bound (charter #12;
+ * auth-enforcement fence). org_id and role come from the session, never a body or header.
  */
 import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -13,10 +13,31 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, toResponse, type AppError } from "@contracts/errors";
 import type { Principal } from "@contracts/principal";
 import type { Role } from "@contracts/roles";
+import { actorRefOf, authorizeGovernedAction, type ActionGrant, type GovernedAction } from "@contracts/authz";
 
 export { getDb, requireRole };
 
-export async function requirePrincipal(req: NextRequest): Promise<Result<Principal, AppError>> {
+/**
+ * ONE identity resolution per request. Sliding renewal ROTATES the session id and
+ * writes the new cookie to the RESPONSE store, while `req.cookies` keeps the id the
+ * client presented — so a second resolution on the same request would look up an id
+ * that renewal has already deleted and fail AUTH_FAILED. A route that binds two
+ * grants (`/api/audit` holds audit.export AND pii.view) does exactly that, and it
+ * only breaks once the session passes its half-life. Memoizing the in-flight promise
+ * keeps the fence-required prologue shape (one `requireActionGrant` per action) while
+ * leaving rotation exactly where ADR-0008/D-030 put it: inside requirePrincipal.
+ */
+const REQUEST_PRINCIPAL = new WeakMap<NextRequest, Promise<Result<Principal, AppError>>>();
+
+export function requirePrincipal(req: NextRequest): Promise<Result<Principal, AppError>> {
+  const inFlight = REQUEST_PRINCIPAL.get(req);
+  if (inFlight) return inFlight;
+  const resolving = resolvePrincipalOnce(req);
+  REQUEST_PRINCIPAL.set(req, resolving);
+  return resolving;
+}
+
+async function resolvePrincipalOnce(req: NextRequest): Promise<Result<Principal, AppError>> {
   const cookie = req.cookies.get(SESSION_COOKIE)?.value;
   if (!cookie) return err(appError("AUTH_FAILED", "Not signed in."));
   const db = await getDb();
@@ -38,6 +59,24 @@ export async function requirePrincipalWithRole(req: NextRequest, allowed: readon
   const p = await requirePrincipal(req);
   if (!p.ok) return p;
   return requireRole(p.value, allowed);
+}
+
+/**
+ * The per-action authorization hook for GOVERNED actions (v3 §15.3): resolves
+ * the principal server-side, then authorizes the specific action, returning the
+ * sealed ActionGrant whose tenant scopes every downstream repository call. Route
+ * handlers for governed surfaces call THIS (governed-actions fence) — plain
+ * requirePrincipalWithRole stays for non-governed CRUD gates.
+ */
+export async function requireActionGrant<A extends GovernedAction>(
+  req: NextRequest,
+  action: A,
+): Promise<Result<ActionGrant<A>, AppError>> {
+  const p = await requirePrincipal(req);
+  if (!p.ok) return p;
+  const grant = authorizeGovernedAction(actorRefOf(p.value), action);
+  if (!grant.ok) return grant;
+  return ok(grant.value);
 }
 
 export function errorResponse(error: AppError): NextResponse {

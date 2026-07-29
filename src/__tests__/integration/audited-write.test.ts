@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { REDACTED } from "@contracts/pii";
+import { systemWriteActor } from "@contracts/principal";
+import { registerTestSystemActor } from "@contracts/tenant";
 import { log } from "@infra/observability/logger";
+
+const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
 /**
  * Failure-path contract of the audited-write helper (finding #3; charter #4
@@ -20,7 +23,7 @@ async function seed(): Promise<SqlDb> {
   return db;
 }
 
-const base = { orgId: "o", actor: "u1", action: "task.create", entityType: "Task", entityId: "task-1", detail: "d" } as const;
+const base = { actor: systemWriteActor(TEST_SYSTEM_ACTOR, "o"), action: "task.create", entityType: "Task", entityId: "task-1", detail: "d" } as const;
 
 const insertTask = (id: string) =>
   `INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ('${id}','o',NULL,'s','not-started',NULL,NULL,'2026-01-01T00:00:00.000Z','verin-crm','2026-01-01T00:00:00.000Z','high')`;
@@ -79,6 +82,47 @@ describe("auditedWrite failure paths (finding #3)", () => {
     if (!result.ok) expect(result.error.code).toBe("STORE_CONSTRAINT");
   });
 
+  it("classifies stateful and throwing driver metadata from one guarded snapshot", async () => {
+    const db = await seed();
+    let codeReads = 0;
+    const stateful = {
+      get code() {
+        codeReads += 1;
+        return codeReads === 1 ? "23505" : "alice@example.test";
+      },
+      name: "DriverError",
+      message: "safe",
+    };
+    const constraint = await auditedWrite<{ id: string }>({
+      db, ...base,
+      perform: async () => {
+        throw stateful;
+      },
+    });
+    expect(constraint.ok).toBe(false);
+    if (!constraint.ok) expect(constraint.error.code).toBe("STORE_CONSTRAINT");
+    expect(codeReads).toBe(1);
+
+    let throwingReads = 0;
+    const throwing = {
+      get code(): string {
+        throwingReads += 1;
+        throw new Error("alice@example.test");
+      },
+      name: "DriverError",
+      message: "safe",
+    };
+    const internal = await auditedWrite<{ id: string }>({
+      db, ...base,
+      perform: async () => {
+        throw throwing;
+      },
+    });
+    expect(internal.ok).toBe(false);
+    if (!internal.ok) expect(internal.error.code).toBe("INTERNAL");
+    expect(throwingReads).toBe(1);
+  });
+
   it("a typed AppError thrown by perform passes through unchanged", async () => {
     const db = await seed();
     const result = await auditedWrite<{ id: string }>({
@@ -100,10 +144,10 @@ describe("auditedWrite failure paths (finding #3)", () => {
         throw new TypeError("boom-visible");
       },
     });
-    const call = errorSpy.mock.calls.find(
-      (c) => typeof c[0] === "object" && c[0] !== null && String((c[0] as { reason?: unknown }).reason).includes("boom-visible"),
-    );
-    expect(call, "expected a log.error carrying the real underlying error").toBeTruthy();
+    const call = errorSpy.mock.calls.find((c) => c[1] === "audited write failed");
+    expect(call, "expected a structured failure log").toBeTruthy();
+    expect((call![0] as { reason?: unknown }).reason).toBe("unexpected-error");
+    expect(JSON.stringify(call![0])).not.toContain("boom-visible");
     expect(call![1]).toBe("audited write failed");
   });
 
@@ -118,6 +162,35 @@ describe("auditedWrite failure paths (finding #3)", () => {
     });
     const call = errorSpy.mock.calls.find((c) => c[1] === "audited write failed");
     expect(call, "expected the chokepoint failure log").toBeTruthy();
-    expect((call![0] as { reason?: unknown }).reason).toBe(REDACTED);
+    expect((call![0] as { reason?: unknown }).reason).toBe("unexpected-error");
+    expect(JSON.stringify(call![0])).not.toContain("ada@example.test");
+  });
+
+  it.each(["Smith", "alice"])("a client-shaped entityId %s still yields the typed error and failure-audit entry", async (entityId) => {
+    const db = await seed();
+    const spies = [vi.spyOn(log, "error"), vi.spyOn(log, "warn"), vi.spyOn(log, "info")];
+    const result = await auditedWrite<{ id: string }>({
+      db,
+      ...base,
+      entityId,
+      perform: async () => {
+        throw { code: "NOT_FOUND", message: "Household not found." };
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("NOT_FOUND");
+
+    const entries = await db.query<{ action: string; entity_id: string }>(
+      "SELECT action, entity_id FROM audit_log WHERE org_id = 'o' ORDER BY sequence",
+    );
+    expect(entries.rows.map((row) => row.action)).toContain("task.create.failed");
+
+    const call = spies
+      .flatMap((spy) => spy.mock.calls)
+      .find((c) => c[1] === "audited write failed");
+    expect(call, "expected the chokepoint failure log").toBeTruthy();
+    expect(JSON.stringify(call![0])).not.toContain(entityId);
+    expect(entries.rows.some((row) => row.entity_id === entityId)).toBe(true);
   });
 });

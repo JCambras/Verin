@@ -1,6 +1,6 @@
 /**
  * The audited-write helper (ADR-0007/0009, charter #13/#16). EVERY house-CRM
- * mutation routes through here. It:
+ * mutation routes through here with a sealed WriteActor for tenant/actor attribution. It:
  *  - enforces idempotency: a repeated idempotencyKey returns the cached result
  *    (exactly-once effect under timeout-replay);
  *  - performs the business write and enqueues the audit entry in ONE transaction
@@ -11,38 +11,24 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
-import { looksLikePIIValue, REDACTED } from "@contracts/pii";
-import { log } from "@infra/observability/logger";
+import { appError, logLevelFor, type AppError } from "@contracts/errors";
+import { assertWriteActor, type WriteActor } from "@contracts/principal";
+import { classifyErrorMetadata, log, safeReason } from "@infra/observability/logger";
+import { keyedObservabilityId } from "@infra/observability/record-id";
+import {
+  authorityObservabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
 
-/**
- * Driver/exception text can quote row values (a unique-violation detail may embed
- * an email); the pino redaction is field-NAME-based and cannot see into free text,
- * so a PII-shaped reason is replaced wholesale before it reaches the log.
- */
-function logSafeReason(e: unknown): string {
-  const raw = e instanceof Error ? `${e.name}: ${e.message}` : isAppError(e) ? e.message : String(e);
-  return looksLikePIIValue(raw) ? REDACTED : raw;
-}
-
-/** SQLSTATE class 23 = integrity constraint violation (23502/23503/23505/23514…). */
-function isDriverConstraintError(e: unknown): boolean {
-  return (
-    typeof e === "object" && e !== null && "code" in e &&
-    typeof (e as { code: unknown }).code === "string" &&
-    /^23\d{3}$/.test((e as { code: string }).code)
-  );
-}
-
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
-  orgId: string;
-  actor: string;
-  action: string;
-  entityType: string;
+  actor: WriteActor;
+  action: ObservabilityAction;
+  entityType: ObservabilityEntityType;
   entityId?: string | null;
   idempotencyKey?: string;
   before?: unknown;
@@ -63,7 +49,13 @@ async function cachedResult<T>(db: SqlDb, orgId: string, key: string): Promise<T
 }
 
 export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result<T>> {
-  const { db, orgId, idempotencyKey } = opts;
+  const actor = opts.actor;
+  assertWriteActor(actor);
+  const { db, idempotencyKey } = opts;
+  // The write chokepoint refuses an impostor context before any SQL runs
+  // ("missing tenant context cannot parse", v3 §15.2).
+  const tenant = actor.tenant;
+  const orgId = tenant.orgId;
   const now = new Date().toISOString();
 
   // Fast path: a known replay returns the cached result without touching the DB.
@@ -95,7 +87,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       }
       const intent: AuditIntent = {
         orgId,
-        actor: opts.actor,
+        actor: actor.actorUserId,
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId ?? null,
@@ -106,7 +98,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
       await enqueueAudit(tx, intent, "success", now);
       return r;
     });
-    await drainOutbox(db, orgId).catch(() => undefined);
+    await drainOutbox(db, tenant).catch(() => undefined);
     return ok(result);
   } catch (e) {
     // Any path where the key already resolved to a cached result is a replay → exactly-once.
@@ -117,18 +109,27 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // Genuine failure: business rolled back. Log the REAL error before mapping —
     // this helper is the single write chokepoint, the worst place to fly blind
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
-    const known: AppError | null = isAppError(e) ? e : null;
+    const metadata = classifyErrorMetadata(e);
+    const known: AppError | null = metadata.appError;
+    // Request-controlled entity IDs use the non-throwing keyed boundary. A failure
+    // there redacts instead of escaping before the failure-audit entry is enqueued,
+    // which preserves both the log line and the "[attempt failed]" chain entry.
     log[known ? logLevelFor(known.code) : "error"](
       {
-        orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null,
+        orgId: authorityObservabilityId("orgId", tenant),
+        action: opts.action,
+        entityType: opts.entityType,
+        entityId: opts.entityId
+          ? keyedObservabilityId("entityId", tenant, opts.entityId)
+          : null,
         code: known?.code ?? null,
-        reason: logSafeReason(e),
+        reason: metadata.reason,
       },
       "audited write failed",
     );
     const failIntent: AuditIntent = {
       orgId,
-      actor: opts.actor,
+      actor: actor.actorUserId,
       action: opts.action,
       entityType: opts.entityType,
       entityId: opts.entityId ?? null,
@@ -137,12 +138,20 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     };
     await db
       .transaction(async (tx) => enqueueAudit(tx, failIntent, "failure", now))
-      .then(() => drainOutbox(db, orgId))
+      .then(() => drainOutbox(db, tenant))
       .catch((auditErr: unknown) => {
         // The business failure is already being reported; the audit-of-failure loss
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
-          { orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId ?? null, reason: logSafeReason(auditErr) },
+          {
+            orgId: authorityObservabilityId("orgId", tenant),
+            action: opts.action,
+            entityType: opts.entityType,
+            entityId: opts.entityId
+              ? keyedObservabilityId("entityId", tenant, opts.entityId)
+              : null,
+            reason: safeReason(auditErr),
+          },
           "failure-audit entry could not be recorded",
         );
       });
@@ -151,9 +160,9 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // perform is never mislabeled as a client-resolvable conflict.
     const error: AppError = known
       ? known
-      : e instanceof Error && e.name === "PIIViolation"
+      : metadata.piiViolation
         ? appError("PII_VIOLATION", "write refused: PII would have reached the audit boundary")
-        : isDriverConstraintError(e)
+        : metadata.sqlState?.startsWith("23")
           ? appError("STORE_CONSTRAINT", "write failed: store constraint violated")
           : appError("INTERNAL", "write failed");
     return err(error);

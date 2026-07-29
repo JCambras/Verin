@@ -5,9 +5,22 @@
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
-import { writeActorOf, type Principal, type WriteActor } from "@contracts/principal";
-import { type Result } from "@contracts/result";
-import { appError, isAppError, type AppError } from "@contracts/errors";
+import {
+  delegatedWriteActor,
+  assertWriteActor,
+  systemWriteActor,
+  type WriteActor,
+} from "@contracts/principal";
+import {
+  assertActionGrant,
+  type ActionGrant,
+  type GovernedOutput,
+} from "@contracts/authz";
+import { assertSameTenant, assertTenantContext, type TenantContext } from "@contracts/tenant";
+import type { PIIBearing } from "@contracts/pii";
+import { type Result, ok, err } from "@contracts/result";
+import { appError, normalizeAppError, type AppError } from "@contracts/errors";
+import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
 import { makeExecutionStore } from "@infra/store/execution-store";
@@ -16,17 +29,20 @@ import { createHousehold, createContact, createFinancialAccount, createTask } fr
 import { createApplication, setEsignRequested, completeApplication, getApplicationByToken } from "@infra/crm/application-store";
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
-import { log } from "@infra/observability/logger";
+import { keyedObservabilityId } from "@infra/observability/record-id";
+import { classifyErrorMetadata, log } from "@infra/observability/logger";
+import {
+  authorityObservabilityId,
+  generatedObservabilityId,
+  type ObservabilityId,
+  type ObservabilityAction,
+  type ObservabilityEntityType,
+} from "@domain/observability/safe-values";
 
 /** Unwrap a Result inside a step; on error, throw the typed AppError (the engine catches it). */
 function must<T>(r: Result<T>): T {
   if (r.ok) return r.value;
   throw r.error as AppError;
-}
-
-/** SQLSTATE 23505 unique_violation — the flow_executions PK conflict of a double-submit race. */
-function isUniqueViolation(e: unknown): boolean {
-  return typeof e === "object" && e !== null && "code" in e && (e as { code: unknown }).code === "23505";
 }
 
 /**
@@ -38,24 +54,32 @@ function isUniqueViolation(e: unknown): boolean {
  * running-with-NULL-token crash window remains a recorded ADR-0011 deferral.
  */
 function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
+  const actorFor = (tenant: TenantContext): WriteActor => {
+    assertTenantContext(tenant);
+    assertSameTenant(tenant, starter.tenant);
+    return starter;
+  };
   return {
-    createHousehold: (name) =>
-      withSpan("crm.household.create", { orgId: starter.orgId }, async () => must(await createHousehold(db, starter, { name }, `household:${executionId}`))),
-    createContact: (input) =>
-      withSpan("crm.contact.create", { orgId: starter.orgId }, async () => must(await createContact(db, starter, input, `contact:${executionId}`))),
-    createApplication: (input) =>
-      withSpan("crm.application.create", { orgId: starter.orgId }, async () => must(await createApplication(db, starter, input, `application:${executionId}`))),
-    requestEsign: (applicationId) =>
-      withSpan("esign.request", { orgId: starter.orgId }, async () => {
+    createHousehold: (name, tenant) =>
+      withSpan("crm.household.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
+    createContact: (input, tenant) =>
+      withSpan("crm.contact.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
+    createApplication: (input, tenant) =>
+      withSpan("crm.application.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
+    requestEsign: (applicationId, tenant) =>
+      withSpan("esign.request", { orgId: authorityObservabilityId("orgId", tenant) }, async () => {
         const token = newEsignToken();
-        return must(await setEsignRequested(db, starter, applicationId, token, `esign:${executionId}`));
+        return must(await setEsignRequested(db, actorFor(tenant), applicationId, token, `esign:${executionId}`));
       }),
-    finalize: (input) =>
-      withSpan("account-opening.finalize", { orgId: starter.orgId, applicationId: input.applicationId }, async () => {
-        // Typed truth (finding #13): this write was driven by an external event
-        // on behalf of the initiating advisor — a narrow WriteActor, never a
-        // fabricated Principal with an invented role/session.
-        const actor: WriteActor = { orgId: starter.orgId, actorUserId: input.actor };
+    finalize: (input, tenant) =>
+      withSpan("account-opening.finalize", {
+        orgId: authorityObservabilityId("orgId", tenant),
+        applicationId: keyedObservabilityId("applicationId", tenant, input.applicationId),
+      }, async () => {
+        const starterActor = actorFor(tenant);
+        const actor = starterActor.actorUserId === input.actor
+          ? starterActor
+          : delegatedWriteActor(starterActor, input.actor);
         // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
         // Per-write keys derive from the application's minted idempotency key
         // (threaded through the flow context), so the key the application row
@@ -69,7 +93,8 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
   };
 }
 
-export interface StartAccountOpeningInput {
+/** PIIBearing: household/contact names and email are client PII. */
+export interface StartAccountOpeningInput extends PIIBearing {
   householdName: string;
   firstName: string;
   lastName: string;
@@ -82,6 +107,10 @@ export interface StartAccountOpeningInput {
    */
   clientRequestId?: string;
 }
+
+type AccountOpeningStartResult =
+  & FlowRunResult
+  & GovernedOutput<"execution.initiate">;
 
 /** Report an already-started execution's current state (double-submit replay). */
 function replayedRunResult(state: ExecutionState): FlowRunResult {
@@ -115,26 +144,76 @@ function editedReplayConflict(executionId: string): FlowRunResult {
   };
 }
 
+/**
+ * THE shape of a client-minted request id (D-027) — the account-opening route
+ * validates against this same constant, so the surface and the flow can never
+ * disagree about what it accepts. UUIDs are minted in either case.
+ */
+export const CLIENT_REQUEST_ID_RE = MACHINE_RECORD_ID_RE;
+
+/**
+ * The request id becomes the persisted executionId. Server-generated IDs carry
+ * direct mint provenance; client IDs are canonicalized for persistence and use
+ * a tenant-scoped keyed observability value. Invalid input is refused before any
+ * household, contact, or application write commits.
+ */
+function canonicalExecutionId(
+  clientRequestId: string | undefined,
+  tenant: TenantContext,
+): Result<{ readonly id: string; readonly observable: ObservabilityId }, AppError> {
+  if (clientRequestId === undefined) {
+    const generated = generatedObservabilityId("executionId", randomUUID());
+    return ok({
+      id: generated.value,
+      observable: generated,
+    });
+  }
+  const id = parseMachineRecordId("execution", clientRequestId);
+  if (!id) {
+    return err(appError("VALIDATION", "A client request id must be an opaque machine identifier (a UUID minted once per form session)."));
+  }
+  return ok({
+    id,
+    observable: keyedObservabilityId("executionId", tenant, id),
+  });
+}
+
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
-async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState): Promise<FlowRunResult> {
+async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
   try {
-    return await retryFlow(accountOpeningFlow, store, deps, existing);
+    return await retryFlow(accountOpeningFlow, store, deps, existing, tenant);
   } catch (e) {
-    const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be retried.");
+    const error = normalizeAppError(e) ??
+      appError("INTERNAL", "The account-opening flow could not be retried.");
     return { executionId: existing.id, status: "failed", error, data: {} };
   }
 }
 
-export async function startAccountOpening(db: SqlDb, principal: Principal, input: StartAccountOpeningInput): Promise<FlowRunResult> {
+export async function startAccountOpening(
+  db: SqlDb,
+  grant: ActionGrant<"execution.initiate">,
+  piiGrant: ActionGrant<"pii.view">,
+  input: StartAccountOpeningInput,
+): Promise<AccountOpeningStartResult> {
+  assertActionGrant(grant, "execution.initiate");
+  assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(grant.tenant, piiGrant.tenant);
+  const tenant = grant.tenant;
+  const canonical = canonicalExecutionId(input.clientRequestId, tenant);
+  if (!canonical.ok) {
+    return { executionId: "", status: "failed", error: canonical.error, data: {} };
+  }
   const store = makeExecutionStore(db);
-  const executionId = input.clientRequestId ?? randomUUID();
-  const deps = makeDeps(db, writeActorOf(principal), executionId);
+  const executionId = canonical.value.id;
+  const observableExecutionId = canonical.value.observable;
+  const deps = makeDeps(db, grant.writeActor, executionId);
   // A client-minted id that already started is a double-submit: report the
-  // existing execution's state instead of starting a duplicate. Org-checked so a
-  // (guessed) foreign execution id can never leak another tenant's state.
+  // existing execution's state instead of starting a duplicate. The tenant-scoped
+  // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
+  // leak another tenant's state.
   const loadOwnExecution = async (): Promise<ExecutionState | null> => {
-    const existing = await store.loadById(executionId);
-    return existing && existing.orgId === principal.orgId && existing.flowId === accountOpeningFlow.id ? existing : null;
+    const existing = await store.loadById(executionId, piiGrant);
+    return existing && existing.flowId === accountOpeningFlow.id ? existing : null;
   };
   if (input.clientRequestId) {
     const existing = await loadOwnExecution();
@@ -145,40 +224,60 @@ export async function startAccountOpening(db: SqlDb, principal: Principal, input
       // (resumeFlow's Vale V7 retry, applied to the start path): the per-write
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
-      return withSpan("flow.account-opening.retry", { orgId: principal.orgId, actor: principal.userId }, async () => {
-        const result = await retryFailedStart(store, deps, existing);
-        log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow retried");
+      return withSpan("flow.account-opening.retry", {
+        orgId: authorityObservabilityId("orgId", tenant),
+        actor: authorityObservabilityId("actor", tenant),
+      }, async () => {
+        const result = await retryFailedStart(store, deps, existing, tenant);
+        log.info({
+          orgId: authorityObservabilityId("orgId", tenant),
+          flow: "account-opening",
+          status: result.status,
+          executionId: observableExecutionId,
+        }, "flow retried");
         return result;
       });
     }
   }
   // Span attribution is the opaque userId, never the email — OTel attributes are
   // exported to the OTLP endpoint and must not carry PII (ADR-0006/0013).
-  return withSpan("flow.account-opening.start", { orgId: principal.orgId, actor: principal.userId }, async () => {
+  return withSpan("flow.account-opening.start", {
+    orgId: authorityObservabilityId("orgId", tenant),
+    actor: authorityObservabilityId("actor", tenant),
+  }, async () => {
     let result: FlowRunResult;
     try {
       result = await startFlow(accountOpeningFlow, store, deps, {
         executionId,
-        orgId: principal.orgId,
-        data: { ...input, initiatedBy: principal.userId },
+        tenant,
+        data: { ...input, initiatedBy: grant.actorId },
       });
     } catch (e) {
       // Two concurrent submits can both miss the pre-check; ONLY the loser's
       // INSERT hitting the flow_executions PK (SQLSTATE 23505) resolves as the
       // same replay. Any other throw is a real storage failure and surfaces as a
       // typed failure — never masked as a started flow, never an unenveloped 500.
-      const raced = input.clientRequestId && isUniqueViolation(e) ? await loadOwnExecution() : null;
+      const metadata = classifyErrorMetadata(e);
+      const raced = input.clientRequestId && metadata.sqlState === "23505"
+        ? await loadOwnExecution()
+        : null;
       if (raced && !inputMatchesExecution(input, raced)) {
         result = editedReplayConflict(executionId);
       } else if (raced) {
-        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced) : replayedRunResult(raced);
+        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced, tenant) : replayedRunResult(raced);
       } else {
-        const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be started.");
+        const error = metadata.appError ??
+          appError("INTERNAL", "The account-opening flow could not be started.");
         result = { executionId, status: "failed", error, data: {} };
       }
     }
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.
-    log.info({ orgId: principal.orgId, flow: "account-opening", status: result.status, executionId: result.executionId }, "flow started");
+    log.info({
+      orgId: authorityObservabilityId("orgId", tenant),
+      flow: "account-opening",
+      status: result.status,
+      executionId: observableExecutionId,
+    }, "flow started");
     return result;
   });
 }
@@ -192,11 +291,17 @@ export async function resumeAccountOpeningByToken(
   if (!app) return { status: "not-found" };
   const store = makeExecutionStore(db);
   // The starter here is the reserved SYSTEM actor id (typed truth, finding #13:
-  // no fabricated Principal/role); finalize attributes its audit to the initiating
+  // no fabricated Principal/role) with a system-minted tenant scoped to the
+  // application row's org; finalize attributes its audit to the initiating
   // advisor's userId threaded through the flow context (ctx.initiatedBy).
   // Resume only runs post-suspend steps, so the pre-suspend key scope is inert.
-  const deps = makeDeps(db, { orgId: app.org_id, actorUserId: "esign-webhook" }, `resume:${token}`);
-  return withSpan("flow.account-opening.resume", { orgId: app.org_id }, () => resumeFlow(accountOpeningFlow, store, deps, token, payload));
+  const starter = systemWriteActor("esign-webhook", app.org_id);
+  const deps = makeDeps(db, starter, `resume:${token}`);
+  return withSpan("flow.account-opening.resume", {
+    orgId: authorityObservabilityId("orgId", starter.tenant),
+  }, () =>
+    resumeFlow(accountOpeningFlow, store, deps, token, payload, starter.tenant),
+  );
 }
 
 /**
@@ -227,17 +332,27 @@ export function computeEsignSignature(token: string): string {
  */
 export async function auditEvent(
   db: SqlDb,
-  opts: { orgId: string; actor: string; action: string; entityType: string; entityId: string; detail: string },
+  opts: { actor: WriteActor; action: ObservabilityAction; entityType: ObservabilityEntityType; entityId: string; detail: string },
 ): Promise<void> {
+  const actor = opts.actor;
+  assertWriteActor(actor);
   const recorded = await auditedWrite({
-    db, orgId: opts.orgId, actor: opts.actor, action: opts.action, entityType: opts.entityType,
+    db, actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
   });
   if (!recorded.ok) {
     // The auth operation proceeds (availability over completeness — an explicit
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
-      { orgId: opts.orgId, action: opts.action, entityType: opts.entityType, entityId: opts.entityId, code: recorded.error.code },
+      {
+        // A request-controlled entity ID hashes or redacts without throwing, so a
+        // digest failure cannot silence the lost-audit report or fail its caller.
+        orgId: authorityObservabilityId("orgId", actor.tenant),
+        action: opts.action,
+        entityType: opts.entityType,
+        entityId: keyedObservabilityId("entityId", actor.tenant, opts.entityId),
+        code: recorded.error.code,
+      },
       "security-event audit could not be recorded",
     );
   }

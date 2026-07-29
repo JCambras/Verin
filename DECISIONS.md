@@ -1101,3 +1101,1930 @@ hazards must fail at the standalone step boundary, and valid input depth must no
 call stack.
 **Revert path:** none while prompt-5 tenant, execution, replay, and dependency boundaries remain
 supported.
+### D-061 · 2026-07-26 · reversible · Security boundaries landed (v3 build sequence, prompt 6): sealed TenantContext, governed-action authz, Tokenized factory + llm/ boundary, secret containment
+**What:** Implemented v3 §15 as structural seams over the existing substrate (marriage-map §6: EXTEND the
+org-id fence / PII scrub / RBAC / no-secret-fallback, displace nothing).
+**Rebase note:** This decision was D-036, then D-039, on the topic branch. Prompt-6 implementation
+references to either number refer to this entry; origin/main had already assigned D-036 through D-060.
+- **TenantContext** (`contracts/tenant.ts`): compile-time unique-symbol brand + runtime module-private
+  seal; minted ONLY by `tenantOf(principal)` / `systemTenant(systemId, orgId)`. Every repository and port
+  call requires it (writes carry it inside `WriteActor`); capability-keyed loads (session id, e-sign
+  token, resume token) and the identity-provider internals are exact-match reviewed escapes, mirroring the
+  org-id fence's NON_TENANT classification. Missing context cannot compile (TS2741) or parse (repository
+  asserts reject casts/spreads/JSON impostors with `INTERNAL`). Fence: `tenant-context-required` (PF-030).
+- **Per-action authorization** (`contracts/authz.ts`): `ActorRef` (human role-holder | system actor) +
+  the seven v3 §15.3 permission points (eight actions - policy drafting and approval are distinct) with
+  Phase 1 role allowlists. Surfaced actions mirror the previous
+  route allowlists EXACTLY (no behavior change): `pii.view` = all roles (households GET), `execution.initiate`
+  = advisor/ops/principal/admin (account-opening POST), `audit.export` = ops/cco/principal/admin (audit GET).
+  Unsurfaced actions drafted per v3 §11 semantics with separation of duties: compliance authority
+  (`policy.draft/approve`, `decision.approve`, `decision.override`) EXCLUDES the IT-admin role, approval
+  actions exclude the requesting-advisor role, and `evidence.supply`/`cco` are separated (review vs doing).
+  System actors are refused every governed action (machines never approve; policy-automatic paths arrive
+  with their own typed authority in prompt 18, which also brings quorum/actor-distinctness — these
+  allowlists are the role-level floor, not the authority machinery). Fence: `governed-actions` (PF-033).
+- **Tokenized + llm/ boundary**: `Tokenized<T>` lands with the ratified shape (verin-core-contracts.ts)
+  and is constructible only via the scrubber factory `infrastructure/pii/tokenize.ts` (runtime-sealed,
+  scrub-by-construction); `infrastructure/llm/` holds the ONLY LLM-bound shapes (masked request schema +
+  evidence-to-LLM projection with deterministic known-entity masking) and no model client (first LLM
+  surface = prompt 13; charter #5's no-dead-scaffolding is honored by keeping the boundary to the seam the
+  ratified invariant 1 requires — v3 invariant 1 is ACTIVATED by this PR, per its registry activation
+  clause). Fences: `tokenized-factory-only` (PF-031) + `llm-pii-boundary` (PF-032) + an ESLint edit-time
+  mirror.
+- **Secret containment** (`contracts/secret.ts`): config secrets become closure-held `SecretValue`s
+  (every coercion path redacts; the free function `revealSecret()` allowlisted to the two HMAC consumers — PF-034). Span
+  attributes and span error messages are PII-scrubbed at the trace boundary (values by pattern, keys by
+  the same field-name rule as the log scrubber); pino redact list extended to account/routing numbers;
+  `safeReason` is the sanctioned exception-text log helper (a free-form deep-scrub helper lands with its
+  first real consumer at the prompt-13 LLM logging surface, per charter #5).
+- **ADR-0032** (`docs/adr/0032-line-budget-wave-a-security-boundaries.md`): line-budget amendment
+  (contracts 600→1000, infrastructure 2500→3000 against the pre-decision-core base) — the sanctioned
+  ADR path for growth scheduled by the ratified sequence; ratchet-down at wave gates unchanged.
+  Composed on rebase with main's decision-core raise (3500), the shipped contracts ceiling is 3900.
+**Why:** v3 prompt 6's acceptance is that the security seams are structural even though Phase 1 uses a
+simplified identity provider — the seams are types + factories + fences, so swapping the identity provider
+or landing the real LLM surface later cannot move the boundary.
+**Alternatives:** naming-convention discipline (rejected: reviewer discipline is what §15.1 forbids
+relying on); Zod-only runtime checks without compile brands (rejected: an impostor should fail to
+compile, not merely 500); marking PII types by hand-maintained list (rejected: the fence DERIVES the
+marked set from field names, so a new PII type cannot ship unmarked).
+**Revert path:** delete `contracts/{tenant,authz,tokenized,secret}.ts`, `infrastructure/pii/tokenize.ts`,
+`infrastructure/llm/`, the four fences + the reveal-allowlist checks, the ESLint mirror; restore
+`WriteActor{orgId}` signatures and plain-orgId repository params; flip v3 invariant 1 back to
+not-yet-active and drop invariant 2's added mechanism; restore ADR-0018 ceilings (delete ADR-0032);
+remove PF-030..PF-034 and this entry.
+
+### D-062 · 2026-07-26 · reversible · Prompt-6 security boundaries hardened after adversarial review
+
+All eleven review findings were legitimate manifestations of four deeper gaps:
+security identities could be minted at untrusted call sites, relational
+ownership was scoped in queries but not in foreign keys, free text and
+credential-bearing configuration remained serializable, and several
+authoritative fences matched syntax rather than semantics.
+
+- `Principal` and authenticated identity results are runtime-sealed and
+  compile-time branded. Only credential verification and signed-session
+  resolution mint principals. Session creation accepts a sealed authenticated
+  user plus its tenant and uses an ownership-qualified `INSERT ... SELECT`;
+  session reads join user and organization as one key. System tenant ids are a
+  closed registry, retained in `TenantContext`, and mint call sites are
+  semantically allowlisted across shipped source and operational scripts. The
+  load smoke now authenticates and creates a real session instead of minting a
+  principal.
+- Migration 3 appends tenant-qualified composite foreign keys for session users,
+  household parents and advisors, contacts, financial accounts, applications,
+  tasks, and assignees. Repository integration tests prove crossed references
+  fail in real PGlite, not only in application predicates.
+- Raw evidence projection contracts moved from `infrastructure/llm` to
+  `infrastructure/pii`. Known sensitive values are deterministically replaced
+  with typed slots before `Tokenized` sealing, and unresolved name/account text
+  fails closed. The llm boundary derivation floor now recognizes raw request
+  and evidence names and rejects a PII-bearing declaration inside `llm/`.
+- Secret bytes moved behind a module-private `WeakMap` plus a semantically
+  fenced `revealSecret` function. Database URLs are sealed alongside HMAC
+  secrets. Exception reasons are static codes; logs and traces scrub ambiguous
+  names, bare account numbers, and PII-named fields instead of forwarding
+  exception text.
+- PF-030 through PF-034 now use semantic type/call resolution where syntax-only
+  matching admitted aliases, shorthand literals, classes, computed access, or
+  another handler's authorization call. Exact escapes and liveness checks stay
+  intact. Executed adversarial proofs are recorded in
+  `docs/fences/proof-log.md`.
+
+**Why:** the prompt-6 contract requires these seams to survive ordinary refactors
+and hostile input. A query predicate or naming convention alone cannot prove
+tenant ownership, authenticated provenance, PII removal, or secret
+non-observability.
+
+**Alternatives:** add one-off ownership lookups in each adapter (rejected because
+new write paths could omit them and checks could race); broaden regex fences
+(rejected because aliases and inferred types remain false green); allow raw
+exception messages after more pattern matching (rejected because names and
+credentials have no complete safe regex).
+
+**Revert path:** revert this review-fix changeset, remove migration 3 only if it
+has not shipped to a persistent store, and restore the prior PF-030 through
+PF-034 implementations. D-039 remains the underlying prompt-6 decision.
+
+### D-063 · 2026-07-26 · reversible · Prompt-6 authority, token immutability, and semantic boundary fences hardened
+
+All six second-round review findings were legitimate instances of three
+remaining structural gaps: authorization and masking still accepted
+caller-assembled metadata, sealed wrappers did not make their payloads
+immutable, and two completeness fences classified contracts by declaration
+names or direct properties instead of their semantic callable shape.
+
+- `ActorRef` is now compile-time branded, runtime-sealed, frozen, and derived
+  only from a sealed `Principal`. `authorizeGovernedAction` rejects unsealed
+  actors before consulting the role allowlist, so a caller cannot combine a
+  valid tenant with a fabricated elevated role. `ActorRef` construction is
+  included in the sealed-security-types fence.
+- Evidence projection accepts sealed `EntityMaskBinding` values rather than
+  caller-declared masks. Binding and tokenization factories are semantically
+  callsite-fenced, with token creation owned by the projection boundary and no
+  shipped entity-binding mint site until deterministic resolution lands.
+- `Tokenized<T>.value` is deeply readonly in the contract. The scrubbed clone is
+  recursively frozen before the wrapper is sealed, so neither the source object
+  nor nested arrays or records can mutate a valid token afterward.
+- The tenant-context fence now inspects every callable member and direct call
+  signature on exported domain interfaces, independent of `Port`, `Store`, or
+  `Deps` naming. The flow step contract and every `AccountOpeningDeps` method
+  receive the sealed tenant explicitly; the adapter rejects a scope that does
+  not match its bound actor.
+- Observability exposes only allowlisted PostgreSQL SQLSTATE categories.
+  Caller-controlled five-character codes fall back to `unexpected-error`.
+- The PII marker floor now resolves `PIIBearing` and `Tokenized` by declaration
+  identity and inspects method parameters, callable properties, call
+  signatures, inline objects, and return types. A locally named `Tokenized`
+  cannot create an exemption.
+
+**Alternatives:** authorize directly from `Principal` and remove `ActorRef`
+(rejected because the ratified contracts retain actor references beyond the
+authorization seam); expand name and account regexes again (rejected because
+mask ownership, not probabilistic text recognition, is the durable boundary);
+add `Deps` to the port-name regex (rejected because the next naming variation
+would recreate the false green).
+
+**Revert path:** revert this changeset and restore the prior `ActorRef`,
+projection input, shallow token contract, flow dependency signatures, driver
+code pattern, and PF-030 through PF-032 implementations. D-039 and D-062 remain
+the underlying prompt-6 decisions.
+
+### D-064 · 2026-07-27 · reversible · Prompt-6 execution proof, write attribution, workflow PII, and declaration-form fences hardened
+
+All five third-round findings were legitimate instances of three deeper gaps:
+authorization proof stopped at the HTTP route, actor attribution was not sealed
+at the audit chokepoint, and semantic fences still depended on declaration
+syntax.
+
+- Account opening now requires a sealed, action-parameterized
+  `ActionGrant<"execution.initiate">` at the execution boundary. The runtime
+  verifies the exact action and derives both tenant and write actor from the
+  grant.
+- `WriteActor` is branded, WeakSet-sealed, and frozen. `auditedWrite` accepts
+  the actor object rather than independent tenant and actor strings, then
+  validates it before SQL. Direct actors must match the identity retained by
+  their tenant; e-sign and failed-login attribution use an explicit delegated
+  factory restricted to reviewed system actors and call sites.
+- Prompt-6 runtime seals now verify factory-minted object identity through
+  module-private WeakSets. Prototype-derived or reflected-symbol copies cannot
+  inherit authority from a valid principal, tenant, actor, grant, token, or
+  entity-mask binding.
+- Workflow data, persisted execution state, and flow results retain the
+  `PIIBearing` marker. The PII fence resolves mapped, union, and intersection
+  alias properties. The tenant fence resolves exported callable objects,
+  interfaces, type aliases, and classes while ignoring inherited standard
+  library methods, including bindings exported in a separate declaration.
+
+**Alternatives:** keep authorization as a route-only convention (rejected
+because internal callers could bypass it); validate actor strings independently
+at every repository (rejected because the next write path could omit the
+check); reject type aliases and object repositories entirely (rejected because
+their semantic callable shape is enforceable).
+
+**Revert path:** revert this review changeset and restore Principal-based flow
+start, tuple-shaped audited-write attribution, unmarked workflow state, and the
+prior declaration-form-specific PF-030/PF-032 implementations. D-039 and D-062 through
+D-063 remain the underlying security-boundary decisions.
+
+### D-065 · 2026-07-27 · reversible · Prompt-6 recovery and completeness fences hardened
+
+All eight fourth-round findings were legitimate instances of five remaining
+structural gaps: retry attribution did not distinguish the initiating human
+from the webhook system actor, LLM slot labels admitted free text, PII and
+tenant fences did not close over all executable forms, governed-route coverage
+was manually enumerated, and secret reveals were trusted at file scope.
+
+- Failed webhook finalization now reuses the matching sealed human
+  `WriteActor` on an identical form resubmit. Only the webhook-owned path
+  delegates from the reviewed `esign-webhook` system actor.
+- LLM placeholders use generated opaque ids in the closed
+  `slot_0001` through `slot_9999` format. Projection bindings and adapter
+  parsing use `slotId`, so a name cannot be carried in placeholder metadata.
+- The PII fence recursively inspects nested project types, mapped utilities,
+  and exported callables. It treats `Tokenized` and `SecretValue` as the two
+  sanctioned sealed wrappers and rejects nonliteral module loads anywhere in
+  the LLM import closure.
+- Repository directories are closed by default: every exported callable must
+  carry `TenantContext` or `WriteActor`, with exact reviewed escapes and exact
+  non-repository module exclusions. This covers internal `getDb`, captured
+  handles, and future repository files without relying on exposed SQL types.
+- Governed route entries are derived from semantically resolved governed-sink
+  calls. Authorization and fail-closed helpers resolve to
+  `app/_server/context.ts`; local shadows do not count. Secret access is
+  restricted to direct `revealSecret` arguments at the exact reviewed
+  `createHmac` calls, not merely their containing files.
+
+**Alternatives:** preserve friendly slot labels and scan them for names
+(rejected because single-token names remain ambiguous); detect hidden database
+use through body dataflow only (rejected because closed repository directories
+are simpler and cover future capture forms); retain manual route entries or
+file-level secret allowlists (rejected because both fail open when call sites
+move).
+
+**Revert path:** revert this changeset and restore the prior retry actor
+selection, slot-name schema, SQL-signature repository classification, manual
+surface table, and file-level reveal allowlist. D-039 and D-062 through D-064 remain the
+underlying security-boundary decisions.
+
+### D-066 · 2026-07-27 · reversible · Prompt-6 trusted-set, sink-authority, and compiler-resolution boundaries hardened
+
+All six fifth-round findings were legitimate instances of four remaining
+structural gaps: entity masks were sealed individually without a complete-set
+proof, privileged factory modules could be reflected through namespace access,
+governed authorization stopped at the route, and repository and LLM fences
+derived coverage from hand-maintained paths or partial module resolution.
+
+- LLM projection now accepts one sealed `CompleteEntityMaskSet`, verifies exact
+  sensitive-slot coverage, masks every trusted value, proves none remains, and
+  fails closed on unresolved embedded proper names.
+- Privileged identity, tenant, actor, entity-set, tokenization, and secret
+  modules reject namespace imports, re-exports, dynamic access, and
+  unverifiable module loads. Exact named factory and HMAC consumers remain
+  semantically allowlisted.
+- PII reads and audit-row exports require and validate action-specific grants
+  inside their repository functions. Operational audit verification and counts
+  retain tenant-scoped, non-exporting paths.
+- Tenant repository coverage is derived from the transitive SQL module graph
+  across infrastructure and includes exported domain function and variable
+  callables. LLM reachability resolves modules through the TypeScript compiler,
+  including `.js` specifiers that substitute to `.ts`.
+
+**Alternatives:** expand residual PII regexes while retaining caller-assembled
+bindings (rejected because ownership, not pattern count, proves completeness);
+analyze every route-to-helper call graph (rejected because action proof at the
+sink is simpler and survives refactoring); add more adapter directories and
+extension candidates to manual lists (rejected because both recreate false
+green coverage).
+
+**Revert path:** revert this changeset and restore individual entity bindings,
+route-only governed authorization, directory-scoped tenant discovery, manual
+LLM path resolution, and direct-symbol-only privileged access checks. D-039 and
+D-062 through D-065 remain the underlying prompt-6 decisions.
+
+### D-067 · 2026-07-27 · reversible · Prompt-6 completeness proofs and governed repository entry guards hardened
+
+All five sixth-round findings were legitimate instances of four remaining
+false assurances: a caller could label an arbitrary entity list complete,
+evidence keys were outside residual scanning, privileged factory review was
+file-scoped, and repository governance checked declarations without deriving
+runtime behavior.
+
+- LLM projection no longer exposes a factory that seals caller-assembled
+  completeness. It validates resolved entities against their slot kinds and
+  the complete request-plus-evidence payload, admits only a closed residual
+  vocabulary after tokenization, and includes evidence keys in both residual
+  entity scans.
+- Privileged factory consumers are allowlisted by exact containing function.
+  A new wrapper in a reviewed module is rejected unless that function is itself
+  a reviewed authority boundary.
+- Governed sinks are derived from action-grant parameters, PII-bearing return
+  types, and action-marked export return types. Audit chain rows and account
+  opening start results carry semantic action markers, so new PII or audit
+  exports cannot depend on a manually updated sink table.
+- Every non-exempt SQL-backed repository entry must call the canonical runtime
+  assertion for its TenantContext, WriteActor, or ActionGrant as its first
+  statement. Write adapters now assert actor seals at their own entry points in
+  addition to the audited-write chokepoint.
+
+**Alternatives:** preserve the public complete-set seal and add more residual
+regexes (rejected because the seal would still certify caller intent); add
+wrapper names and governed functions to manual registries (rejected because
+new declarations would remain fail-open); trust compile-time tenant brands at
+repository entries (rejected because casts and deserialization cross runtime
+boundaries).
+
+**Revert path:** revert this changeset and restore the public complete-set
+factory, file-level privileged factory allowances, manual governed sink table,
+and signature-only tenant fence. D-039 and D-062 through D-066 remain the underlying
+prompt-6 security decisions.
+
+### D-068 · 2026-07-27 · reversible · Prompt-6 resolver, observability, and callable-boundary proofs hardened
+
+All five seventh-round findings were legitimate instances of three remaining
+false assurances: projection trusted caller-supplied entity bindings,
+observability treated some arbitrary strings as safe, and semantic fences
+stopped at exported function declarations instead of executable boundaries.
+
+- Sensitive entities are now derived by a deterministic domain resolver from
+  the complete request and evidence payload. Callers cannot provide bindings.
+  Subject names, account references, evidence keys, strings, and primitive
+  leaves are classified before the projection can be sealed. Unknown keys,
+  unclassified numbers, unmatched entity counts, and residual text fail closed.
+- Logs and traces admit dynamic primitives only through field-specific closed
+  vocabularies for opaque identifiers, statuses, error categories, actions,
+  entity types, and operational counts. Generic strings, including a single
+  name in any position, are redacted.
+- The tenant fence inspects callable methods returned by repository factories
+  and requires their runtime seal assertion. The governed-action fence derives
+  sinks from exported functions, arrows, object methods, and class methods.
+  The LLM reachability fence rejects unwrapped `any` and `unknown` on exported
+  callables, with exact live escapes for reviewed scrub-and-parse ingress
+  functions.
+
+**Alternatives:** add more residual-safe words while retaining caller bindings
+(rejected because the caller would still define completeness); redact only
+title-cased strings (rejected because lowercase names and arbitrary free text
+remain untrusted); ban repository factories and callable objects (rejected
+because their runtime implementations are semantically inspectable).
+
+**Revert path:** revert this changeset and restore caller-provided
+`resolvedEntities`, heuristic observability values, function-declaration-only
+governed sinks, signature-only returned ports, and opaque types as safe leaves.
+D-039 and D-062 through D-067 remain the underlying prompt-6 security decisions.
+
+### D-069 · 2026-07-27 · reversible · Prompt-6 typed evidence, observability identity, and wrapper analysis hardened
+
+All seven eighth-round findings were legitimate instances of three remaining
+boundary gaps: evidence shape was inferred from key names, observability trusted
+identifier-shaped strings, and declaration-module or transparent-wrapper
+callables escaped semantic review.
+
+- LLM evidence is checked against a closed masked schema. Sensitive-length
+  numeric leaves are classified as account references regardless of their key,
+  so a long account number under `plannedWithdrawals` is refused before sealing.
+- Observability actions use a closed value set. Identifiers cross the log and
+  trace boundary only through runtime-sealed, field-bound `ObservabilityId`
+  values; raw action-like names and account-like identifiers are redacted.
+- The secret module is scanned and limited to its reviewed exports. Privileged
+  factory declaration modules are inspected for wrapper calls and exported
+  sealed-result laundering.
+- Tenant, governed-action, and LLM fences inspect callable members through
+  transparent wrappers such as `Object.freeze`. Factory-returned repository
+  methods retain their first-statement runtime assertion requirement.
+- ADR-0030 raises the infrastructure line budget from 3,000 to 3,200 lines so
+  the reviewed boundary code remains readable. The next wave gate still
+  ratchets the ceiling down to actual plus buffer.
+
+**Alternatives:** allow long numbers under amount-shaped keys (rejected because
+keys do not prove data identity); preserve regex-trusted observability strings
+(rejected because names and account numbers can match); ban transparent
+wrappers (rejected because their semantic callable shape is inspectable);
+compress boundary code under the old ceiling (rejected because auditability
+would suffer).
+
+**Revert path:** revert this changeset, restore raw observability primitives and
+syntax-only wrapper discovery, remove ADR-0030, and restore the 3,000-line
+infrastructure ceiling. D-039 and D-062 through D-068 remain the underlying prompt-6
+security decisions.
+
+### D-070 · 2026-07-27 · reversible · Ninth-round review: structural resolution, derived observability vocabulary, and boundary-honest fences
+
+The ninth adversarial round found one live crash path and a set of checks whose
+authority came from enumerated vocabularies rather than from structure.
+
+- **`observabilityId` no longer aborts committed work.** The account-opening
+  route validates `clientRequestId` with a CASE-INSENSITIVE UUID regex and that
+  value becomes the `executionId`, while the observability predicate was
+  case-sensitive: an uppercase-hex request id committed the household, contact,
+  and application writes and then threw `PII_VIOLATION` out of the "flow
+  started" log line as an unenveloped 500. The opaque-id pattern is now
+  case-insensitive, and the blanket "purely alphabetic" refusal — which also
+  rejected registered machine tokens such as `org` and `seed` — is replaced by a
+  person-name SHAPE rule (a capital immediately followed by a lowercase letter).
+  Whitespace was already impossible under the opaque pattern, so a multi-word
+  name still cannot reach the helper. `"running"` joins the status enum so a
+  double-submit replay stops logging `[REDACTED]` for the one field that
+  explains it.
+- **LLM projection resolution is structural.** `SAFE_WORDS`, `SAFE_TITLES`,
+  `SAFE_ACRONYMS`, `SAFE_NUMERIC_KEYS`, `SAFE_KEYS`, and `TEXT_EVIDENCE_KEYS`
+  are gone. A value is RESOLVED when every structurally sensitive span has been
+  replaced by a factory-minted slot placeholder or the redaction sentinel, judged
+  by `contracts/pii.ts`'s own predicates — the same ones guarding the audit, log,
+  and trace boundaries. Candidate extraction is derived from those predicates, so
+  anything the residual check would refuse was already required to be bound.
+  Arbitrary prose now passes; raw names, account numbers, and 9-18 digit runs
+  still do not. The shared digit-run predicate and title-case word shape are
+  hoisted into `contracts/pii.ts` so masking and residual detection cannot drift.
+- **Observability vocabulary is derived and fenced.** The six test-only span
+  names left production domain code for `registerTestSpanName`, a `test.`-namespaced
+  injection point with no shipped caller. The new
+  `observability-vocabulary` fence derives the span and log inventory from the
+  AST of real `withSpan` / `log.*` call sites and checks it both ways
+  (unregistered value, stale entry, dynamic identity).
+- **Fences stopped trusting text and nearest ancestors.** Governed-sink mutation
+  classification reads SQL passed as call ARGUMENTS, not raw declaration text
+  (a comment saying "nothing to update" no longer exempts a PII read); governed
+  surface discovery covers every `src/app/**` file, so a Server Action or server
+  component reaching a governed sink fails instead of being invisible, and the
+  authorization must bind the handler's OWN request parameter; LLM escapes key on
+  the full dotted path the detector emits and must be load-bearing; the
+  domain-port escape liveness check applies the detector's own domain filter; the
+  config-hygiene fence has a non-vacuity floor and a detector that takes its
+  input so it can be fed a synthetic violation.
+- **Smaller boundary corrections.** The ESLint sealed-type override now matches
+  the fence exactly (`src/infrastructure/pii/tokenize.ts` only, not the whole
+  `pii/` tree); the dead `listOrgChain` export is gone and its tests read the
+  chain through `verifyAndListOrgChain`, the function `/api/audit` really uses;
+  a persisted role outside the taxonomy resolves to a typed `AUTH_FAILED`
+  instead of throwing out of the read-only `/app` guard.
+- **ADR-0031** records why the evidence-to-LLM projection layer stays despite
+  having no production caller until prompt 13, and how that differs from the
+  `piiSafe` helper deleted earlier on this branch.
+
+**Alternatives:** normalize the request id to lowercase at the route (rejected —
+it hides the mismatch and the next id source repeats it); keep the word lists and
+extend them (rejected — a vocabulary fitted to its own fixtures proves only that
+the fixtures were enumerated); leave span names undetected at build time
+(rejected — silent loss of trace identity is exactly what charter #14 exists to
+prevent); delete the projection layer (rejected by the supervising authority —
+see ADR-0031).
+
+**Revert path:** revert this changeset to restore the case-sensitive
+observability predicate, the enumerated projection vocabularies, the text-regex
+mutation classifier, the route-only governed surface scan, and `listOrgChain`.
+ADR-0031 would be withdrawn with it. D-039 and D-062 through D-069 remain the underlying
+prompt-6 security decisions.
+
+### D-071 · 2026-07-27 · reversible · Tenth-round review: leading-name binding, the account shape, and semantic fence keys
+
+D-070 replaced two enumerated vocabularies with structural rules; the tenth round
+found that both structures were drawn slightly off the predicate they claimed to
+derive from, and that the D-070 crash fix had been narrowed rather than closed.
+
+- **A multi-word name that OPENS the prose is bound whole.** Dropping the first
+  word of every leading title-case run left a given name raw in the text a model
+  would see (`"Adaeze {{slot_0001}} wants to open an account"`), and nothing
+  downstream caught it: masking the surname destroys the two-adjacent-words shape
+  `TITLE_CASE_PERSON_RE` needs, and `looksLikeAmbiguousSensitiveText` exempts a
+  title-case word at index 0. The sentence-opener rationale holds for a LONE
+  capitalized word, not for a run — a multi-word run is the person-name shape
+  itself, so only a single-word leading run is treated as grammar. The cost is
+  over-binding a leading verb + name ("Review Alice"), which is fail-closed.
+- **Account references are exactly the runs the residual check refuses.**
+  Extraction moved from `\b\d{3,18}\b` to `SENSITIVE_DIGIT_RUN_SOURCE`
+  (9-18 digits) read from the text AFTER pattern redaction, so a year no longer
+  demands an account-ref slot and a long digit run beside a redactable phone is
+  no longer an unsatisfiable refusal. `redactPIIValues` is hoisted into
+  `contracts/pii.ts` as the ONE authority for what redaction removes; `scrub()`
+  delegates to it. The blanket "intent-shaping must declare a slot" rule is gone
+  — it guarded caller-supplied masks in an earlier round, and per-type count
+  matching subsumes it now that masks are derived.
+- **The request id is canonical BEFORE it becomes an `executionId`.** Making the
+  opaque-id pattern case-insensitive left `NAME_SHAPED_RE` refusing any
+  `[A-F][a-f]` adjacency, so a mixed-case UUID still committed its writes and then
+  threw out of the log line. `startAccountOpening` now lowercases a UUID-shaped
+  request id and PROVES it is a loggable observability id before any write, so
+  every caller — route, script, or a future Server Action — gets a typed
+  `VALIDATION` refusal instead of an unenveloped 500 with durable side effects.
+  The route validates against the same exported `CLIENT_REQUEST_ID_RE`, so the two
+  validators cannot drift.
+- **Fence keys are semantic, not textual.** The test-only span injection point is
+  matched by resolved symbol alone, so an aliased import cannot smuggle a call
+  past it; `literalText` reads a string-LITERAL type, so a hoisted `const MSG`
+  message is checked like an inline literal instead of being skipped entirely.
+
+**Alternatives:** reject uppercase UUIDs at the route (rejected — it breaks
+clients that mint them, and the next id source repeats the mismatch); weaken
+`NAME_SHAPED_RE` so hex always passes (rejected — that trades a real PII guard
+for a canonicalization bug); keep the leading-word shift and add a downstream
+detector (rejected — the detector would have to treat every leading title-case
+word as a name, which refuses ordinary prose).
+
+**Revert path:** revert this changeset to restore the leading-word shift, the
+3-18 digit account shape, the text-keyed injection-point filter, and the
+uncanonicalized `executionId`. D-070 and ADR-0031 stand independently.
+
+## D-072 — Sealed types, governed sinks, and observability vocabularies are closed structurally
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.3/§15.4, charter #1/#4/#14,
+ADR-0018, ADR-0031, D-036, D-070, D-071
+
+The prompt-6 boundaries held at runtime, but several of the fences that BACK them
+up could be walked around in one line. Closed as one story rather than
+line-by-line:
+
+- **A sealed type is sealed against every way to produce one, not just a named
+  cast.** `sealedType()` now walks base types (so `interface X extends
+  TenantContext {}` cannot launder), and construction detection covers type
+  predicates / assertion signatures, explicit generic type arguments, and a
+  sealed ANNOTATION filled by a call from outside the factory (superseded by
+  D-073, which decides that case from the initializer's TYPE rather than its
+  callee). The ESLint mirror now seals all seven types and its two lists are asserted
+  equal to the fence's registry, so it cannot drift narrower unnoticed.
+- **The write exemption keys on a real DML statement reaching a resolved SQL
+  executor.** The old unanchored regex matched the `FOR UPDATE` row lock already
+  live in `house-crm.ts`, and any `auditedWrite` call — meaning the more
+  auditable a PII read was, the less authorization it owed. Both are gone; genuine
+  writers still reach an anchored `INSERT/UPDATE/DELETE` inside `perform`.
+- **Governed-sink wiring is symbol-resolved end to end**: local aliases are
+  followed into discovery, the authorized value is tracked by declaration symbol
+  (a client-supplied `body.value.grant` no longer counts), the fail-closed return
+  must be a direct statement of the guard, and the sink is matched by symbol
+  rather than by a text form that never matches `owner.property` members.
+- **A governed sink on a surface that cannot authorize is its own violation.**
+  Server Actions and server components have no `NextRequest`, so they can never
+  satisfy `requireActionGrant`. Rather than leave them unfenced or invent a
+  request-less entry point in prompt 6, reaching a sink from one now fails the
+  build with a message naming the rule and the remedy.
+- **Test vocabulary and test AUTHORITY both enter through injection seams.**
+  `"test"` left `SYSTEM_ACTOR_IDS` (a production security allowlist whose entries
+  are load-bearing authority) for `registerTestSystemActor`, fenced — like
+  `registerTestSpanName` — to have no shipped caller, keyed on resolved symbol so
+  an alias cannot evade it.
+- **The observability vocabularies are derived BOTH ways.** Span names and log
+  messages already were; actions, enums, numeric fields, and id fields now are
+  too, from the same call sites plus the audit intents that feed them. That
+  surfaced three dead `OBSERVABILITY_ID_FIELDS` entries, a dead `status:
+  "pending"`, and a genuinely missing `entityType: "Org"` (the seed's audited
+  write would have logged `[REDACTED]`).
+- **Account-ref candidates are extracted on the SAME basis the residual check
+  reads.** Masking a name inserts slot digits that break the labeled-SSN
+  proximity window, so a run redaction removed pre-mask survived post-mask:
+  `"ssn Bob 123456789"` produced zero candidates and one refusing digit run — a
+  refusal with nothing to declare. Extraction now runs over the subject-masked
+  text, so the refusal is satisfiable (D-071's claim now holds in both directions).
+
+**Line budgets:** contracts measured 1019 and domain 1201 after these fixes. The
+ceilings were NOT raised (charter #1: platform ceilings only ratchet down);
+duplicated prose and one duplicated doc block were consolidated instead, leaving
+contracts at 980/1000 (20 lines of headroom) and domain at 1187/1200. Behaviour
+is unchanged by every one of those edits.
+
+**Alternatives:** require a `WriteActor` for the mutation exemption (rejected —
+it misclassifies the pre-authentication identity writes `createUser`/
+`createSession`, which legitimately hold only a `TenantContext`); add a
+request-less authorization entry point so Server Actions can host governed sinks
+(rejected — that is later architecture, and inventing it here would be designing
+an authority surface with no consumer); raise the contracts ceiling by ADR
+(rejected — the ratchet only goes down).
+
+**Revert path:** revert this changeset. The narrower fences and the previous
+vocabularies return; ADR-0031 and D-070/D-071 stand independently.
+
+## D-073 — The app layer holds no SQL, and every mint is decided by type
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: v3 §15.1/§15.2/§15.3/§15.4,
+charter #4/#7/#13/#14, ADR-0018, ADR-0031, D-036, D-072
+
+D-072 closed the sealed-type and governed-sink stories against named evasions.
+This round closes them against the SHAPES those detectors could not see, and
+against the one place a persistence read could avoid both derivations entirely.
+
+- **Raw SQL is an infrastructure privilege.** Governed-sink derivation and
+  tenant-scope derivation both read repository SIGNATURES under
+  `src/infrastructure/`, so an inline `db.query("SELECT id, email FROM users
+  WHERE org_id = $1")` in a route is not a smaller repository call — it is
+  outside both fences, with no signature to carry an `ActionGrant` or a sealed
+  `TenantContext`. One shared detector (`detectAppLayerSqlAccess`) now fails the
+  build on a resolved SQL-executor call anywhere under `src/app/`, and BOTH
+  fences assert it so the two halves cannot drift apart. Two call sites moved:
+  the audit export's actor-email lookup (below) and the readiness probe, now
+  `readStoreReadiness` — a reviewed cross-tenant escape, since it reads no
+  tenant rows.
+- **The audit export needs TWO grants.** Exporting the chain is `audit.export`;
+  resolving actor userIds to raw emails is a PII read that owes `pii.view`.
+  `listOrgUserEmails` is a governed sink asserting its own grant, scoped by that
+  grant's sealed tenant. Every role that could already export
+  (ops/cco/principal/admin) also holds `pii.view`, so the ROLE taxonomy is
+  unchanged; an advisor is still refused at the first grant.
+  `detectUnwiredGovernedRoutes` therefore reads an authorization PROLOGUE — a
+  sequence of (bind, fail-closed guard) pairs before any route work — instead of
+  exactly one pair. (CORRECTED by D-074: "no authorized caller sees a behaviour
+  change" was true of roles and false of SESSIONS — a second grant meant a second
+  identity resolution, which 401s once the session passes its half-life.)
+- **A mint is decided by the initializer's TYPE, never its callee.** The
+  annotation rule keyed on "is this a call into the factory?", which missed the
+  whole `any`-sourced class (`function tenantFromCache(raw): TenantContext {
+  return JSON.parse(raw) }`, a class property, a bare `body.grant`) and inverted
+  into a false positive on ordinary propagation, which only compiles when the
+  right-hand side is ALREADY sealed. It now flags a sealed annotation, RETURN
+  type, or class property filled from anything that is not already that sealed
+  type. With that in place the `consultsFactory` escape had no remaining caller
+  and was deleted — a dead escape is worse than none.
+- **Naming a sealed type is not minting one.** Type-argument detection now keys
+  on what a call YIELDS, so `new Map<string, TenantContext>()` and
+  `useState<Principal | null>(null)` no longer fail the build while minting
+  nothing, and `coerce<TenantContext>(raw)` still does.
+- **A closed observability vocabulary is a TYPE.** `AuditedWriteOpts.action` and
+  `.entityType` were `string`, so the two log lines carrying them derived nothing
+  and flagged nothing. They are now `ObservabilityAction` /
+  `ObservabilityEntityType` unions, and an attribute whose type is merely
+  `string` is a build failure (as a dynamic span name already was). Attribute
+  derivation also reads a hoisted bag, a resolvable spread, and a shorthand
+  audit intent, refuses an unresolvable spread, and checks that an
+  `observabilityId` mint's field matches the key it is logged under.
+- **Sink discovery follows values, and refuses the ones it cannot follow.** A
+  sink held in a literal bag, a conditional, or an array element is discovered
+  and checked; one handed to another function as a value has no call site to
+  authorize and is refused outright.
+- **The unsupported-surface rule keys on what the surface IS** — a `"use server"`
+  module, a reserved App Router component file name, a default-exported
+  component — not on "not named route.ts", which rejected an ordinary app-layer
+  handler helper whose remedy text it already satisfied. `src/app/route.ts` and
+  the `export const GET = async (req) => …` form are now supported shapes.
+- **Companions are measured against what they plant.** The shared sealed-type
+  fixture no longer violates its own detector (it built a `TenantContext` from an
+  object literal), so no companion in that file can pass on a baseline hit it did
+  not plant; the two counting companions now assert per-branch messages.
+
+**Line budgets:** contracts 980/1000 (20 lines of headroom, unchanged), domain
+1189/1200, infrastructure 3146/3200. No ceiling was raised.
+
+**Alternatives:** narrow the app-layer SQL rule to PII-shaped queries only
+(rejected — "which columns are PII" is exactly the judgement a fence should not
+be making at a call site with no boundary to declare); keep `consultsFactory` as
+a guarded escape (rejected — with the type-based annotation rule nothing needed
+it, and an escape with no caller cannot be proven load-bearing); substitute
+`pii.view` for `audit.export` on the audit route (rejected — the ruling requires
+both, and they authorize different things).
+
+**Revert path:** revert this changeset. `listOrgUserEmails`/`readStoreReadiness`
+fold back into their routes, the audit export returns to a single grant, and the
+detectors return to their D-072 shapes.
+
+---
+
+## D-074 — One identity per request, and detectors that read shapes rather than spellings
+
+**Date:** 2026-07-27 · **Reversible** · Relates to: ADR-0008, ADR-0018, ADR-0031,
+v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#12/#13/#14, D-030, D-072, D-073
+
+D-073 landed the audit export's second grant and decided mints from types. This
+round fixes the two REACHABLE regressions that came with it, closes the compile
+bypass under v3 invariant 1's activation, and stops five detectors from keying on
+how code is spelled instead of what it does.
+
+- **A request resolves its principal ONCE.** Two `requireActionGrant` calls meant
+  two `requirePrincipal` calls, and sliding renewal ROTATES the session id while
+  writing the new cookie to the RESPONSE — `req.cookies` still holds the id the
+  client presented, so the second lookup found a row renewal had already deleted
+  and returned 401. Reachable on `/api/audit` for any session past its half-life
+  (30 minutes of a 60-minute TTL), where `/app/audit` shows only "Could not load
+  the audit trail." The in-flight promise is memoized on a `WeakMap` keyed by the
+  request, so BOTH grants stay required and fail-closed, the prologue shape the
+  governed-actions fence reads is unchanged, and rotation stays exactly where
+  ADR-0008/D-030 put it. D-073's "no authorized caller sees a behaviour change"
+  is corrected in place: it held for roles, not for sessions.
+- **A logging helper never decides whether a write reports its own failure.**
+  `observabilityId` throws on a non-opaque value, and `entityId` is CLIENT-SUPPLIED
+  on `updateHouseholdName` (`PATCH /api/crm/households` validates only "non-empty
+  string ≤100 chars"). Inside `auditedWrite`'s catch that throw escaped BEFORE the
+  `[attempt failed]` entry was enqueued: `{"id":"Smith"}` returned an unenveloped
+  500 instead of the typed 404 and silently lost the chain entry that exists to
+  record the attempt (charter #13). `observabilityIdOrRedacted` degrades to
+  `[REDACTED]` instead — the answer the log formatter would have given anyway —
+  while the audit chain still records the real id for the examiner.
+- **The sealed-annotation rule reads the VALUE, not the syntax.** It is a mint when
+  the checker has stopped reasoning about what fills a sealed annotation (`any` /
+  `unknown` / `never`), which is the only thing assignable to a `unique symbol`
+  brand without a cast. That is two-sided: it catches `Promise<TenantContext>`
+  returning `JSON.parse` (the normal async laundering shape) and the four positions
+  the scan never visited (declare-then-assign, get accessor, parameter default,
+  container annotation), while `const p: Principal | null = null` — flagged by the
+  old "source is not already sealed" test — is a checked value, not a laundered
+  one. Separately, a call mints when the sealed type came from a type parameter the
+  signature INVENTS (named in the return, named by no parameter), so the inferred
+  `const t: TenantContext = coerce(raw)` fails exactly like the explicit
+  `coerce<TenantContext>(raw)`, while `unwrap<T>(r: Result<T>): T` — whose T was
+  already sealed on the way in — does not. v3 invariant 1 was active on the
+  explicit-only rule; it is now active on one that holds.
+- **Five detectors moved from spelling to shape.** A SQL executor is recognized by
+  the name it is DECLARED under, so `const { query } = db; query(sql)`,
+  `const { query: run } = db`, and `db["query"](sql)` are the same app-layer
+  persistence violation as `db.query(sql)`. The write exemption requires a write
+  BOUNDARY — DML whose only reads are the locking pre-image reads it takes — so a
+  PII read can no longer buy its exemption by writing an access record first, and a
+  quoted VALUE (`WHERE detail = 'update household name'`) is data, not a DML head.
+  PII reaches derivation through index signatures, alias arguments, and class-field
+  arrows. The authorized value must BE the authorized payload or a projection of it
+  at EVERY call site, not merely be mentioned near one at some call site. And a
+  message-less `log.error({ status })` carries a checked attribute bag, while an
+  attribute that is only SOMETIMES an opaque id is refused.
+- **Three shapes stopped being unsatisfiable.** A repository annotated with its
+  domain port is checked against its ADAPTER (the port's `MethodSignature` has no
+  body and could never hold the assertion the fence demanded); a route-local helper
+  is ordinary decomposition, resolved to the exported handler that calls it; and a
+  sink INVOKED inside a callback argument has a call site to authorize, so it has
+  not escaped. Each narrowing keeps its negative companion: the genuinely escaped
+  `runReport({ load: repo.listClients })` still fails.
+- **`ObservabilityAction` is typed, not sealed.** The claim that the union makes an
+  out-of-vocabulary action "unrepresentable" was overstated — plain string unions
+  have no factory and no brand, `raw as ObservabilityAction` still launders, and the
+  persisted chain is wider still (`audit-store` suffixes a failed write's action
+  with `.failed`). The comment now says what is true: the type closes the
+  honest-caller case, and the vocabulary fence keeps both directions honest.
+
+**Line budgets:** contracts 980/1000 (20 lines of headroom, unchanged), domain
+1186/1200 (up from 1189's 11 lines of headroom to 14), infrastructure 3153/3200.
+No ceiling was raised (charter #1). The two new domain mints were paid for by
+consolidating prose and single-use branches in the same file; behaviour is
+unchanged by every one of those edits.
+
+**Alternatives:** drop one of the audit route's two grants to avoid the second
+resolution (rejected — the ruling requires both, and they authorize different
+things); move renewal out of `requirePrincipal` (rejected — ADR-0008/D-030 makes
+that the single rotation point, and duplicating it is how the sharp edge in
+CLAUDE.md was earned); make `observabilityId` itself non-throwing (rejected — where
+an id is machine-generated a loud refusal is right, and it is what the account-
+opening route's canonicalization is proven against); raise the domain ceiling by
+ADR (rejected — the additions fit under it once duplicated prose was consolidated).
+
+**Revert path:** revert this changeset. `requirePrincipal` resolves per call again
+(and `/api/audit` 401s past the half-life), the error-path mints throw again, and
+the detectors return to their D-073 shapes.
+
+---
+
+## D-075 — Migrations report rather than repair, and the fence suite finishes
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0018, ADR-0030, ADR-0032,
+D-016, v3 §15.1/§15.2/§15.3, charter #1/#4/#5/#7/#13
+
+Captain ruling `prompt6-opus5-round4` decided sixteen review findings. Three of
+them turned out to be the visible edge of a rebase collision: prompt 5's
+decision-core contracts landed on main UNDER prompt 6's new fences, and
+`llm-pii-boundary` had not completed a run since — 689 seconds, three assertions
+past the 20s timeout, so the failures beneath them had never been read.
+
+- **A migration REPORTS a store it cannot upgrade; it never repairs one.** Version
+  3's tenant-qualified edges are data now (`TENANT_EDGES`), generating both the
+  composite foreign keys and a read-only orphan PREFLIGHT that runs before any DDL
+  and names the migration and every violating relationship at once. The
+  `households.advisor_user_id` UPDATE it used to run is gone: silently NULLing a
+  column a human populated is data loss dressed as an upgrade. `runMigrations` also
+  rethrows with `{version, name}`, so a constraint abort at boot is no longer
+  indistinguishable from a dataDir lock. Two constraints
+  (`households_primary_contact_org_fk`, `tasks_assignee_org_fk`) were REMOVED: they
+  reference columns shipped code writes as literal NULL, so MATCH SIMPLE skips them
+  forever and no companion could ever trip them (charter #4/#5).
+- **The `pii.view` exemption for a read outside a tenant boundary is now written
+  down.** A repository returning raw PII with neither a boundary nor a grant derived
+  no sink at all — no grant required AND invisible to the unsupported-surface rule.
+  Eight callables take that shape and every one is genuinely pre-authorization,
+  capability-keyed, or not a read; each is an exact-match entry with its reason, and
+  the registry is derived complete both ways.
+- **Four fence bypasses closed:** a data-modifying CTE could merge an audit INSERT
+  into a PII read and collect the write-boundary exemption; a `createRequire` loader
+  in `llm/` walked past the reachability check; the scrubber's file-wide exemption
+  covered all seven sealed types instead of its own; and a module that renamed the
+  logger (`const l = log`) or took a child logger dropped out of the vocabulary
+  rules entirely. Route work decomposed into a same-file helper — the shape the
+  governed-actions fence DOCUMENTS as supported — was reported as unwired, and a
+  helper shared by GET and POST left the second verb's prologue unchecked.
+- **Three rebase-induced fence failures fixed at the source, not by exemption.**
+  `callablePIIExposures` read `String.prototype` members off branded primitives
+  (27 findings about `anchor(name)`); the `piiFree` rule fired on Zod schemas that
+  merely VALIDATE the flag; and `dependency-rule` read `declare const Brand: unique
+  symbol` — the nominal-brand idiom every sealed type is built from — as a restored
+  platform dependency. The 36 decision-core `evidence*` REFERENCES that remained are
+  reviewed escapes with reasons, not a narrowed PII rule.
+- **The suite finishes.** Every fence type walk keyed its visited set on
+  `type.getText()`, which PRINTS the type. The key is unchanged — memoized on the
+  interned compiler type — and companion fixtures stopped carrying `lib.dom.d.ts`.
+  `llm-pii-boundary` 689s → 4s; the full suite now runs 54 files / 851 tests in 40s.
+
+**Line budgets:** contracts **3892/3900**, domain 1189/1200, infrastructure
+3198/3200, presentation 918/6000. The contracts ceiling came DOWN from 4000 to the
+3,900 the ADRs actually authorize (3,500 from ADR-0029 + 400 from ADR-0032, with
+ADR-0030 leaving contracts at 1,000); the headroom that paid for it came from
+deleting six `Symbol(...)` seals that no code ever read — the WeakSets are what
+`isTenantContext`/`isPrincipal`/… actually check, and the docblocks now say so.
+No ceiling was raised (charter #1).
+
+**Governance:** the prompt-6 line-budget ADR was renumbered **0029 → 0032** (the
+number was already main's decision-core ADR) and every reference updated; the
+prompt-6 proof-log entries were renumbered to continue monotonically from PF-030,
+so each PF id names exactly one proof.
+
+**Alternatives:** automatic repair of the orphan rows (rejected, and forbidden by
+the ruling — the operator decides what the right owner is); narrowing `evidence` to
+`\bevidence\b` in `PII_FIELD_RE` to clear 36 findings in one line (rejected — that
+regex is also the runtime scrubber's authority, so narrowing it weakens a security
+boundary to satisfy a fence); an identity-keyed visited set (rejected as a silent
+behaviour change, though it was run first and reported the same findings, which is
+how the text key was confirmed equivalent); raising the contracts ceiling to fit
+(rejected — charter #1 ceilings only ratchet down).
+
+**Revert path:** revert this changeset. Migration 3 returns to its NULLing UPDATE
+and nine constraints, the `pii.view` inference goes back to requiring a tenant
+parameter, the four bypasses reopen, and the fence suite stops finishing.
+
+---
+
+## D-076 - Exact projection trust and preflight-before-mutation upgrades
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, v3 §15.1/§15.2/§15.3,
+charter #3/#4/#5/#7/#13
+
+Leading title-case projection text now fails closed unless an exact identity span
+binds it to a declared slot or a narrow static-template factory mints the exact safe
+span. The identity path masks the span; the static-template path may leave only its
+registered text visible. Caller booleans, caller-provided safe strings, forged spans,
+and stale spans carry no authority.
+
+The shared module-reference and structural PII walkers now supply sealed-factory,
+secret, LLM, and governed-sink checks. Contextual callable returns are inspected for
+sealed authority, and resolved structural SQL calls classify repository modules even
+without a database-adapter import.
+
+Every pending migration preflight runs before the first mutation in an existing
+store. A virgin store applies the baseline alone, then re-enters the same upgrade
+path so later preflights can query the schema. Migration failures expose only the
+migration identity and the existing PII-safe error category.
+
+**Alternatives:** a caller safe-text boolean and a harmless-word vocabulary were
+rejected because neither binds authority to an exact span and provenance. Per-file
+loader and PII scans were rejected because they drift from the shared semantic
+walkers. Per-migration preflight was rejected because a later refusal could follow
+an earlier committed schema mutation.
+
+**Revert path:** revert this changeset to restore positional leading-token trust,
+direct-loader-only scans, marker-only PII sinks, adapter-import-only repository
+discovery, and per-migration preflight ordering.
+
+---
+
+## D-077 - Semantic security walkers and migration diagnostics fail closed
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, D-076, v3 §15.1/§15.2/§15.3,
+charter #1/#4/#7/#13
+
+Five shared roots closed the eight review findings. Module-reference analysis now
+recognizes `Reflect.get` access to `createRequire`. Structural PII analysis exempts
+only an exact `Tokenized` or `SecretValue`, traverses unsafe union siblings, and
+treats opaque ungoverned outputs as PII. The only opaque exceptions are exact,
+reasoned configuration, scrubber, database-capability, and resume-token boundaries.
+
+Sealed construction walks project-owned containers and callable returns while
+contextual object and implemented class methods are checked against their declared
+contracts. One shared returned-callable walker supplies tenant and governed-sink
+discovery for function, arrow, object, and class factories.
+
+`ExecutionStore.loadById` now requires and asserts `ActionGrant<"pii.view">`.
+`loadByToken` is the sole capability-keyed PII escape. Account-opening binds both
+`execution.initiate` and `pii.view` before route work and threads each exact grant to
+its sink.
+
+Migration ledger bootstrap, applied-version reads, preflight probes, and mutations
+all convert driver failures to PII-safe `AppError` categories. Intentional preflight
+`AppError`s retain their actionable orphan report. Line ceilings remain unchanged at
+contracts 3892/3900, domain 1200/1200, and infrastructure 3200/3200.
+
+**Alternatives:** per-fence loader and PII scans were rejected because they drift.
+Treating capability factories as tenant-record reads was rejected in favor of exact
+reviewed opaque boundaries. Keeping `loadById` tenant-only was rejected because the
+returned state is PII-bearing and needs the exact viewing capability.
+
+**Revert path:** revert this changeset to restore direct-only reflected loading,
+union-wide wrapper exemptions, opaque-output trust, syntax-limited factory discovery,
+tenant-only continuation reads, and raw driver failures outside mutation transactions.
+
+## D-078 - Case-insensitive PII shapes, proven-virgin bootstrap, and one authority prologue
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-075, D-076, D-077, ADR-0030,
+ADR-0033, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+Fifteen review findings resolved to six roots.
+
+**A detector keyed on one case is a detector with a hole.** Every sensitive-text
+check composed a title-case shape (`\p{Lu}\p{Ll}`), which structurally cannot see an
+ALL-CAPS name. "SMITH, JOHN" is an ordinary CRM rendering, so the candidate walk, the
+masker, the residual check, and the LLM adapter's ingress gate were all blind at
+once and `projectForLlm` would seal a raw name into a `Tokenized` value claiming
+`piiFree: true`. The shape is now `PERSON_WORD_SOURCE` (title-case OR all-caps),
+composed once and consumed by all four, and an unclassified all-caps run fails closed
+through the SAME span-specific trusted-identity or safe-template contract the
+title-case ruling established. No acronym allowlist, no caller-supplied safe flag, no
+word vocabulary. The redaction sentinel is neutralized before shape-testing because
+`[REDACTED]` is itself all-caps.
+
+**An empty ledger is a claim, not a fact.** The bootstrap path trusted an empty
+`schema_migrations` enough to apply and RECORD migration 1 before evaluating later
+preflights. A dump restored without its ledger presents identically while holding
+real rows, so versions were recorded against a schema nobody verified.
+`assertManagedSchemaEmpty` proves the claim before the first mutation, against a
+managed-object set derived from the shipped DDL.
+
+**Two fences demanding the same statement slot make correct code unbuildable.** The
+tenant fence and the governed-actions fence each required their own assertion be
+literally statement #1, so a repository carrying both authorities as explicit
+parameters could satisfy neither. Both now derive one shared authority-prologue rule:
+required assertions run before anything else, in any order, and a dual-authority
+signature additionally proves the two name the same scope. `assertSameTenant` ships
+with a real caller (`createSession` had always written that comparison by hand).
+
+**A runtime seal must not be copyable.** `AuthenticatedUser` used a non-enumerable
+own symbol, readable off any real instance via `Object.getOwnPropertySymbols` and
+stampable onto a forged object that would then mint a session. It now uses the
+module-private WeakSet discipline the sealed security types already use, and its
+assertion takes `unknown`. It deliberately does NOT use an assertion signature: that
+would hand out a sealed `TenantContext` from an `unknown`, which the
+tokenized-factory-only fence refuses, correctly.
+
+**A shape is containment; an allowlist is just lost signal.** `safeReason` carried a
+ten-entry SQLSTATE allowlist that omitted exactly the classes a migration failure
+needs (42P01, 42703, 42P07, 42501, 3D000, 28P01), collapsing each to
+"unexpected-error" in the one diagnostic that names what went wrong. The rule is now
+the SQLSTATE shape itself, keyed on the two-character class, so a driver `code` of
+"ALICE" is still refused. Producer and validator share one exported source fragment.
+
+**Fences that fail open or key on the wrong thing.** App-layer SQL detection now
+fails closed on an executor the checker cannot narrow; the governed non-PII escape is
+keyed to the exact reviewed structural path rather than any same-named field nested
+inside the declaration; the test-only authority registries and the reviewed factory
+module list are existence-checked so a rename or typo breaks the build instead of
+silently disabling a rule; a sealed-type cast hidden inside a typed container is a
+mint; and the `llm-pii-boundary` module index is built once per project instead of
+rescanning every source file per specifier.
+
+**Registry and documentation truth.** Sixteen duplicate decision ids (D-040..D-055
+appeared twice) were renumbered monotonically to D-062..D-077 with every exact
+cross-reference updated. The proof-log range, the `revealSecret` accessor
+description, and the D-036/D-061 citations were reconciled to the code. ADR-0030's
+stated basis ("3,067 lines" against a 3,200 ceiling that shipped full) is corrected,
+and ADR-0033 records the measured baseline, the new ceilings, and what this round's
+own required corrections consumed.
+
+**Alternatives rejected:** an acronym allowlist for all-caps text (it is the word
+vocabulary the standing ruling forbids, and "IRA" and "SMITH" are indistinguishable
+to it); keeping the SQLSTATE allowlist and adding six codes (the next migration needs
+the seventh); making `assertSameTenant` fence-only scaffolding (charter #5 - it ships
+with `createSession` or not at all); and raising the infrastructure ceiling past the
+3,300 the amendment names to buy back the headroom this round spent.
+
+**Revert path:** revert this changeset to restore title-case-only PII detection, the
+trusting empty-ledger bootstrap, the two conflicting first-statement rules, the
+copyable `AuthenticatedUser` marker, the SQLSTATE allowlist, the fail-open SQL
+detector, and the duplicated decision ids.
+
+## D-079 - Sealed positions, order-free authority, and value-resolved SQL
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-078, ADR-0033, ADR-0034,
+v3 §15.1/§15.2/§15.3, charter #1/#4/#7/#13/#14
+
+Fifteen findings from the eighteenth review round, two of which were regressions the
+seventeenth round introduced. They resolve to five roots.
+
+**"Mentions it somewhere" is not "delivers it here."** The sealed-cast rule exempted a
+cast whose SOURCE type reached the target sealed type anywhere in its graph. An
+`ActionGrant` carries both a `TenantContext` and a `WriteActor`, so every governed
+route handler holds a value that mentions three sealed types, and `grant as unknown as
+TenantContext` - the only compile-legal cast form past a `unique symbol` brand, i.e.
+the mainline laundering shape - passed with zero violations while the ESLint mirror
+still flagged it. Source and target are now compared at the same STRUCTURAL POSITION,
+with the sealed key carrying its type arguments, so re-shaping an authorized value
+still passes and `ActionGrant<"pii.view">` cannot become
+`ActionGrant<"decision.approve">`. The same position walk closes the mint nested one
+property inside a composite literal argument.
+
+**Neutralizing a sentinel must not neutralize the signal around it.** Blanking
+`[REDACTED]` to whitespace before shape-testing also erased the "there is preceding
+content" fact the embedded-name check reads, so caller-supplied text of the form
+`[REDACTED] Alice` sealed as `piiFree: true` with the raw name intact - while the
+identical `wire to Alice` was refused. The stand-in is now a non-letter,
+non-whitespace mark: content, never a word.
+
+**The all-caps gap had a second site.** `NAME_SHAPED_RE` in the observability
+predicate was still title-case only, so `observabilityId("entityId", "SMITH-JOHN")`
+succeeded and the value went verbatim into the log line and out over OTLP - and
+`entityId` is client-supplied. It now composes the same `PERSON_WORD_SOURCE`, gated on
+the value carrying no digit, which is what keeps uppercase-hex ids working.
+
+**Authority is a set, not a first parameter.** The prologue derivation returned on the
+FIRST sealed parameter, so declaring the grant before the tenant dropped both the
+tenant assertion and the same-tenant proof; wrapping the tenant in an object escaped
+both fences; and widening the grant's action to a union removed every requirement at
+once. One shared derivation now collects EVERY sealed authority a signature carries,
+recognizes one carried inside an object parameter where none is named directly, and
+refuses a grant whose action is not a single literal rather than silently dropping the
+cross-check. Action arguments compare by VALUE again, so quote style cannot reject a
+correct boundary.
+
+**Fail closed on the value, not on the spelling.** The app-layer SQL detector's
+fail-closed arm keyed on the WRITTEN callee name, so renaming a widened local walked
+through the very evasion the arm was added to close. It now follows an unresolvable
+callee back to what it was bound from, and treats a SQL statement handed to an
+unresolvable callee as persistence under any name. The reviewed non-PII escape
+registry became existence- and staleness-checked, the governed-sink and unbounded-read
+derivations are memoized per project (five full type-checker passes to two), and the
+managed-object probe's trigger clause is scoped to `current_schema()` so a neighbour
+schema's same-named trigger can no longer refuse a correct virgin bootstrap.
+
+**Alternatives rejected:** keeping "reachable anywhere" and adding a target-is-container
+guard only (the recast-to-another-action hole survives, since matching was by symbol
+name); requiring the grant assertion for every member of a union action (no single
+assertion proves a union - the signature is refused instead); demanding an assertion on
+every structurally carried tenant (`createSession` takes both a `TenantContext` and an
+`AuthenticatedUser` that carries one, and that has one scope, not two); and raising the
+domain ceiling speculatively alongside infrastructure (ADR-0034: each layer moves on
+its own measurement).
+
+**Revert path:** revert this changeset to restore the reachable-anywhere cast
+exemption, the whitespace sentinel stand-in, title-case-only observability ids, the
+order-dependent authority prologue, and the name-keyed SQL fail-closed arm.
+
+## D-080 - Grant pairs, migration bootstrap, and LLM projection fail before mutation
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-076, D-078, D-079,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of four shared-boundary gaps.
+
+Every `ActionGrant` in a callable now owes its own exact literal action assertion,
+and every pair of grants must prove equal tenant and actor scope in the contiguous
+authority prologue. An explicit `TenantContext` is compared with every grant as
+well. `startAccountOpening` performs the execution and PII grant comparison before
+request validation, replay loading, or writes. Cross-tenant replay and same-tenant
+cross-actor integration cases both fail with `AUTH_FAILED`.
+
+Migration bootstrap now discovers the ledger with a read-only, current-schema
+probe. If the ledger is absent, managed-schema virginity is proven before any DDL
+creates or changes the ledger. An existing empty ledger retains the post-bootstrap
+virginity check. A real PGlite regression drops the ledger from a populated store
+and proves the complete schema, indexes, and rows remain unchanged after refusal.
+
+Sensitive projection values are replaced only at complete Unicode letter, number,
+or underscore-delimited occurrences. Masking and the post-mask residual check use
+the same occurrence rule, so a binding for `Ann` masks `Ann` but leaves `annual`
+intact. Evidence must satisfy the plain-data contract before masking and again
+after masking; `Date`, `Map`, and class instances can no longer be flattened into
+apparently trusted plain objects.
+
+The line-budget fence measures contracts 3,944/4,000, domain 1,231/1,250,
+infrastructure 3,344/3,400, and presentation 918/6,000 after these corrections.
+No ceiling changes, so the ADR amendment process is preserved without a new
+amendment.
+
+**Alternatives rejected:** compare only the first grant (a third grant reopens the
+same hole); create the ledger and rely on refusal afterward (the refusal mutates the
+schema it claims unchanged); keep substring replacement and special-case short
+names (the next short value repeats the corruption); and trust post-mask validation
+alone (object flattening destroys the evidence needed to reject the input).
+
+**Revert path:** revert this changeset to restore first-grant-only prologue
+derivation, mutation-before-virginity proof, unbounded substring masking, and
+post-mask-only evidence validation.
+
+## D-081 - Recursive authority discovery, lowercase identity provenance, and atomic migration plans
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-076, D-078, D-080,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Authority discovery now recursively walks every non-callable member path and keeps
+all direct and wrapped sealed authorities in declaration order. The tenant-scope
+fence uses that same derivation instead of a second name-limited prefilter. Every
+grant owes its exact action assertion, and every pair of discovered authority scopes
+owes `assertSameTenant`, which compares organization and actor identity before work.
+
+Lowercase leading actor-shaped text is now a projection candidate and a residual
+failure. It can be masked only when exact identity-span metadata binds the complete
+word to a declared subject slot. The same shape in untyped evidence is refused,
+while ordinary lowercase request prose remains accepted without a harmless-word
+vocabulary or caller safe flag.
+
+The migration runner now executes ledger bootstrap, applied-version discovery, and
+each pending preflight followed by its DDL and ledger row inside one outer
+transaction. A later preflight can query objects created by an earlier pending
+migration, and any later refusal rolls back every earlier pending mutation,
+including creation of the migration ledger on a virgin store. Missing-ledger
+virginity is still proven before ledger DDL.
+
+The line-budget fence measures contracts 3,944/4,000, domain 1,250/1,250,
+infrastructure 3,343/3,400, and presentation 918/6,000. No ceiling changed.
+
+**Alternatives rejected:** preserve one-level wrapper names and add `piiGrant`
+to the list (the next wrapper name or nesting level reopens the gap); classify
+lowercase names with a harmless-word vocabulary (caller prose would define its own
+safety); and commit each migration separately after a global preflight phase
+(dependency order and all-or-nothing rollback cannot both hold).
+
+**Revert path:** revert this changeset to restore name-limited authority discovery,
+lowercase identity pass-through, and phase-separated migration execution.
+
+## D-082 - Closed authority inventories, reviewed projection text, and canonical record identities
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-081,
+ADR-0031, ADR-0034, v3 §15.1/§15.3/§15.4, charter #1/#4/#7/#13
+
+Five review findings were legitimate symptoms of shared boundary gaps.
+
+Authority discovery now enumerates closed union and fixed-tuple arms only when
+every arm yields one identical, complete authority-path inventory. Conditional
+absence, arrays, open records, and index signatures are refused because their
+runtime authority set cannot be proven statically. Direct and nested authorities
+remain in one inventory and owe every exact action assertion and pairwise tenant
+and actor comparison before work.
+
+Unrestricted request text can no longer receive a zero-PII seal. A narrow reviewed
+static-template factory owns the complete literal structure and exact sensitive
+placeholder spans. Copies, stale or caller-constructed provenance, unused or
+overlapping spans, and unbound lowercase names are refused. One separator-aware
+account classifier drives candidate extraction, complete masking, and residual
+validation for unbroken, space-separated, and hyphenated forms.
+
+Workflow dependencies now compare the complete sealed tenant and actor identity
+supplied by the engine with the starter before deriving write attribution.
+Same-organization different-human, human-versus-system, and delegated-actor
+mismatches fail with `AUTH_FAILED` before repository work.
+
+Machine record IDs have family-typed canonical parsers backed by one
+case-insensitive UUID shape. The household PATCH boundary parses and lowercases
+its client ID before lookup, preserving legacy mixed-case UUID compatibility while
+rejecting lowercase slugs. Observability application, entity, execution, and
+outbox-row ID fields accept only that same machine shape; invalid failure-path IDs
+degrade to `[REDACTED]` without losing the failure audit.
+
+The line-budget fence measures contracts 3,998/4,000, domain 1,250/1,250,
+infrastructure 3,379/3,400, and presentation 918/6,000. No ceiling changed, so no
+line-budget ADR amendment was required.
+
+**Alternatives rejected:** infer unrestricted lowercase prose from suffixes (no
+heuristic proves PII absence); enumerate another wrapper name (dynamic carriers
+remain unprovable); compare only organization IDs at dependency calls (write
+attribution can name another actor); and keep generic slug identifiers in
+observability (client names remain loggable).
+
+**Revert path:** revert this changeset to restore conditional authority carriers,
+heuristic free-text provenance, unformatted-only account detection, organization-only
+dependency checks, and generic slug record identities.
+
+## D-083 - Loader provenance, stable authority captures, callable returns, and sealed unions fail closed
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-082,
+ADR-0034, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of shared semantic-walker gaps.
+
+Destructured and assignment-bound `Reflect.get` values now retain their receiver
+and property provenance. A reflected `createRequire` loader is therefore reported
+by the shared module-reference walker before it can bypass the layer, LLM PII,
+sealed-factory, or secret-containment fences. An unresolved reflected property
+fails closed when it is invoked over the Node module namespace.
+
+Every wrapped sealed authority is captured once into a `const` binding at the
+start of the shared authority prologue. Assertions and pairwise tenant-and-actor
+proofs must use that binding, and a later re-read of the carrier is refused. The
+three shipped wrapped-authority boundaries now follow the same rule.
+
+Returned-callable discovery recursively resolves object literals, transparent
+wrappers, fixed conditionals, local variables, private class instances, inherited
+public methods, callable fields, and callable accessors. When a statically typed callable return has
+no resolvable implementation, the returned method is represented as unresolved
+and fails its execution-boundary checks. SQL database capability factories remain
+outside repository-method discovery by their exact `SqlDb`/`SqlTx`/`SqlQueryable`
+return contracts, not by a filename allowlist.
+
+A sealed reshape across a union is valid only when every possible arm exposes the
+same sealed key at the same structural position. Intersections are evaluated as
+simultaneous constraints rather than alternative runtime arms. Direct and nested
+`TenantContext | string` laundering now fail while same-key union and intersection
+reshapes remain valid.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. The fixes added no contracts or domain production lines, and
+no useful code or documentation was deleted or compressed to manufacture room.
+Infrastructure grew only by the stable authority bindings required at live
+boundaries. Any subsequent contracts or domain growth requires a new measured ADR
+amendment before it can pass the fence.
+
+**Alternatives rejected:** enumerate another loader spelling (destructuring and
+assignment aliases would drift again); reject all wrapped authority carriers
+(closed carriers are statically enforceable once captured); inspect exported
+classes only (private implementations returned by public factories remain live);
+and accept a union when any arm is sealed (an unsealed runtime arm can still be
+asserted into authority).
+
+**Revert path:** revert this changeset to restore destructured reflection gaps,
+carrier re-evaluation, object-literal-only returned-callable discovery, and
+first-matching-arm sealed reshape acceptance.
+
+## D-084 - Structural paths, returned accessors, and authority producers stay visible
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-083,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of three shared traversal gaps.
+
+Sealed-position discovery now uses path-local cycle state. Repeated sibling
+properties with the same sealed type remain distinct complete paths, so a checked
+first sibling cannot hide an unchecked second sibling in either a cast or a
+contextual composite literal.
+
+Returned-callable discovery handles object-literal accessors exactly like class
+accessors. A callable returned from a getter is resolved to its implementation, and
+an unresolved callable return remains a fail-closed execution boundary for both the
+tenant and governed-sink analyzers.
+
+Authority inventory rejects call, construct, method, callable-member, and
+constructable-member returns that can produce sealed authority. Such providers have
+runtime-dependent inventories and cannot satisfy a static prologue. Stable wrapped
+authorities remain supported, but later property reads, binding-pattern reads, and
+destructuring assignments are resolved back to their carrier provenance and refused.
+
+The authoritative line-budget metric remains unchanged because this round changes
+only fitness analyzers and their companions:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed, and no production code or documentation was compressed to
+manufacture room.
+
+**Alternatives rejected:** retain a global type/depth visited set and special-case
+the reported sibling name (another repeated type would disappear); treat an
+object-literal getter as data (its returned function remains executable); enumerate
+provider member names (the next method name reopens the gap); and detect later reads
+only by matching authority types (that loses carrier ownership and can reject an
+unrelated stable authority).
+
+**Revert path:** revert this changeset to restore repeated-sibling suppression,
+object-accessor omission, type-only carrier reread detection, and dynamic authority
+provider acceptance.
+
+## D-085 - Complete semantic security paths and pre-work retry ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-079, D-080, D-083,
+D-084, ADR-0034, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13
+
+Seven review findings were legitimate symptoms of shared semantic-analysis and
+workflow-ownership gaps.
+
+The shared module-reference walker now resolves direct, destructured, bound,
+`call`-wrapped, and `apply`-wrapped `Reflect.get` access. A statically unresolved
+`apply` argument list fails closed, so reflective `createRequire` construction
+cannot disappear from the layer, LLM PII, sealed-factory, or secret-containment
+scans.
+
+Sealed-position discovery now reports whether its complete structural inventory
+was proven. Recursive cycles and paths beyond the reviewed depth are refusals
+rather than silent truncations, and every call and construct overload has its own
+indexed return position. The same source-versus-target comparison now protects
+annotations, assignments, returns, parameter defaults, contextual literals, and
+call arguments when `any`, `unknown`, or `never` appears at a sealed position.
+
+Every direct or captured sealed authority binding is immutable after its prologue
+assertion. Assignment, destructuring assignment, update, and loop-target writes
+are resolved by symbol, without confusing nested shadow bindings. Callable
+parameters that can return or receive `TenantContext`, `ActionGrant`, `ActorRef`,
+`Principal`, `AuthenticatedUser`, or `WriteActor` are runtime-dynamic authority
+carriers and cannot claim a fixed prologue inventory.
+
+Governed-sink and reviewed pre-auth PII classification now reuse the shared
+recursive authority inventory. Nested tenant or grant parameters therefore derive
+the same boundary as direct parameters, and unfenceable dynamic carriers cannot
+retain a pre-auth escape.
+
+`retryFlow` validates the runtime tenant seal and compares execution ownership
+before calling `drive`. A cross-tenant failed execution returns `AUTH_FAILED`
+without running a step or writing through a dependency. The duplicate failed-resume
+explanation now points to `retryFlow` as the single saved-cursor contract owner.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. Domain remains at its ratified ceiling. One duplicated
+failed-resume explanation was consolidated under the adjacent `retryFlow`
+contract, preserving the operational guidance while making ownership explicit.
+
+**Alternatives rejected:** enumerate only the reported reflection spellings
+(another wrapper reopens loader construction); keep the first overload or truncate
+deep sealed paths (unexamined runtime values can mint authority); reject only
+whole-value `any` and `unknown` (nested unchecked members remain mints); trust a
+mutable parameter after its assertion (rebinding creates a time-of-check/time-of-use
+gap); and rely on the execution store's eventual ownership refusal (a step can
+write before the save).
+
+**Revert path:** revert this changeset to restore wrapped reflection gaps,
+incomplete sealed inventories, nested unchecked mints, mutable authority bindings,
+callback authority carriers, direct-only governed classification, and post-step
+retry ownership checks.
+
+## D-086 - Failure boundaries disclose no foreign state and semantic guards read once
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-079, D-083, D-085,
+ADR-0034, v3 §15.1/§15.2/§15.4, charter #1/#4/#7/#13/#14
+
+Four review findings were legitimate symptoms of shared failure-boundary and
+semantic-analysis gaps.
+
+`retryFlow` now returns an empty payload when execution ownership disagrees with
+the sealed tenant. The ownership refusal still occurs before `drive`, and the real
+PGlite regression proves sentinel foreign PII cannot cross the result while step
+and execution-store write counters remain zero.
+
+The shared module-reference walker treats `Reflect.get`,
+`Object.getOwnPropertyDescriptor`, and `Object.getOwnPropertyDescriptors` as
+property-read authorities, including the matching Reflect descriptor API. Direct,
+destructured, assigned, bound, call-wrapped, apply-wrapped, and statically unresolved
+keys are resolved through one accessor path. A descriptor cannot obtain
+`node:module.createRequire` without producing the same fail-closed reference
+consumed by the layer, LLM PII, sealed-factory, and secret-containment fences. A
+statically different property remains clean.
+
+Sealed annotation enforcement now inventories every structural sealed position
+with its exact owning factory. A factory exemption applies only to positions that
+factory owns, so `Tokenized` ownership inside `tokenize.ts` cannot hide a sibling
+`TenantContext` forged from unchecked input. Incomplete inventories still fail
+closed for every foreign sealed type they may contain.
+
+Error-code classification now reads an untrusted `code` property once behind a
+guarded access. The captured value alone is checked against the shared closed
+`ErrorCode` set and the SQLSTATE shape. Stateful getters cannot swap a safe code
+for PII between checks, and a throwing getter degrades to `unexpected-error`
+without replacing the original failure.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,000 | 4,000 | 0 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,383 | 3,400 | 17 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. Contracts gained one shared closed-code predicate and reused
+it from both error validation paths. Domain changed one returned value without
+growing. Infrastructure retained readable guarded access with 17 lines of bounded
+headroom. No useful code or documentation was removed or compressed to manufacture
+room.
+
+**Alternatives rejected:** return the foreign state on an authorization error
+(ownership refusal would still disclose PII); special-case only the written
+descriptor expression (aliases and wrappers would remain invisible); exempt a
+whole factory module when it owns any sealed type (a local seal would continue to
+hide foreign mints); and validate a getter separately for app and driver errors
+(each validation would invoke attacker-controlled code again).
+
+**Revert path:** revert this changeset to restore foreign retry payloads,
+descriptor-based loader gaps, first-seal factory exemptions, and repeated
+untrusted error-code reads.
+
+## D-087 - Semantic copies and failure values preserve security provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-086,
+ADR-0035, v3 §15.1/§15.2/§15.4, charter #1/#4/#7/#13/#14
+
+All six review findings were legitimate symptoms of shared semantic-provenance
+and failure-boundary gaps.
+
+SQL executor calls now normalize direct calls plus `call`, `apply`, `bind`, and
+`Reflect.apply`. The normalized form retains the executor, receiver, effective
+arguments, and whether an argument list was statically resolved. App-layer SQL
+refusal, SQL-backed repository discovery, tenant enforcement, and governed-action
+classification all consume that one result.
+
+Authority reads now preserve carrier provenance through object spread, object
+rest, `Object.assign`, `Object.entries`, `Object.values`, and
+`structuredClone`. Copying an ancestor carrier after a stable authority capture
+therefore counts as another evaluation, while independent sibling captures remain
+valid.
+
+The module-reference walker preserves `node:module` namespace provenance through
+object spread, `Object.assign`, and `Reflect.apply` accessor invocation. The
+dependency, LLM PII, sealed-factory, and secret-containment fences share the
+result. Escaped repository factories also fail closed when an opaque declared
+return prevents their returned callable inventory from being proven.
+
+Every observability identifier now uses the shared separator-aware account
+classifier before sealing. Uninterrupted, space-separated, and hyphenated account
+references therefore receive the same refusal at LLM and observability boundaries.
+
+`normalizeAppError` replaces accessor-backed accepted errors with a frozen
+snapshot built from guarded single reads of `code`, `message`, and optional
+primitive context. Response, audit, workflow, store, identity, wiring, and script
+paths consume only the snapshot. Throwing accessors degrade to the existing
+closed INTERNAL response.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,390 | 3,400 | 10 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0035 raises only contracts from 4,000 to 4,050. Domain stays at its measured
+ceiling without removing useful code or documentation. Infrastructure stays under
+its existing ceiling.
+
+**Alternatives rejected:** enumerate only the reported wrapper spellings
+(equivalent invocation forms remain open); treat carrier copies as fresh trusted
+values (stateful getters can change authority); allow opaque escaped factory
+returns (repository methods disappear from analysis); keep a second account regex
+(boundaries drift); and return a recognized hostile object unchanged (later reads
+can leak or throw).
+
+**Revert path:** revert this changeset to restore wrapped SQL, carrier-copy,
+namespace-copy, opaque-factory, formatted-account, and accessor-backed error gaps.
+
+## D-088 - Migration, authority, and failure provenance remains structural
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-087,
+ADR-0036, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+All seven review findings were legitimate symptoms of shared history-validation,
+semantic-provenance, and failure-boundary gaps.
+
+Migration startup now proves the applied version and name rows are an exact
+contiguous prefix of `MIGRATIONS` before any pending preflight, DDL, or ledger
+write. Gapped, extra, renamed, and reordered restored ledgers fail without
+changing managed relations, indexes, triggers, routines, constraints, rows, or
+ledger contents.
+
+Governed sink discovery retains one requirement for every distinct
+`ActionGrant` and governed-output action. Route matching and deduplication preserve
+the action, so `startAccountOpening` requires both `execution.initiate` and
+`pii.view`, and each authorized value must reach its own grant position.
+
+The shared module walker uses every potentially reaching source for aliases across
+conditional and logical control flow. Namespace provenance survives spread,
+`Object.assign`, and `Object.fromEntries(Object.entries(...))` copies. The layer,
+LLM PII, sealed-factory, and secret-containment fences therefore refuse each
+indirect `node:module.createRequire` path.
+
+SQL executor normalization follows direct, destructured, and later-assigned
+aliases for both executors and ambient `Reflect.apply`. App-layer SQL refusal,
+repository discovery, tenant enforcement, and governed-action classification all
+consume the normalized call.
+
+Repeated-authority analysis preserves every potentially reaching carrier source
+through conditional, logical, copy, destructuring, and later-assignment aliases.
+A stateful wrapped authority cannot be read again under a binding that inherited
+the original prologue's trust.
+
+Unknown-error metadata is captured once behind guarded reads. Audited writes,
+safe reasons, and duplicate-submit handling share one frozen classification, so
+proxy traps and throwing or stateful accessors cannot escape or replace the typed
+failure. Raw captured fields never leave that boundary; callers receive only a
+normalized AppError, validated SQLSTATE, boolean PII-violation classification,
+and safe reason.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0036 raises only infrastructure from 3,400 to 3,450. The new exact-prefix
+validation and shared read-once failure boundary account for the measured growth.
+No useful code or documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** trust ledger versions without names or ordering
+(restored history can silently skip tenant constraints); collapse a multi-action
+sink to one action (the second authority disappears from route enforcement);
+choose only the latest textual alias assignment (conditional reaching sources are
+lost); enumerate reported loader and SQL spellings (equivalent aliases remain
+open); and classify hostile errors separately at each catch site (implementations
+drift and attacker-controlled accessors are reread).
+
+**Revert path:** revert this changeset to restore non-prefix migration acceptance,
+single-action sink derivation, ambiguous alias provenance, and repeated hostile
+error metadata reads.
+
+## D-089 - Executable security work retains semantic ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-088,
+v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+All five review findings were legitimate symptoms of incomplete semantic
+ownership and provenance analysis.
+
+Every infrastructure SQL executor call must now belong to a checked exported
+callable, a returned repository implementation, an exported class method, or a
+local helper whose every call is recursively owned by one of those boundaries.
+Exact reviewed global escapes remain callable-scoped. Module initializers, IIFEs,
+static blocks, exported data or promise initializers, and helpers that escape as
+values fail as unowned SQL.
+
+Ambient builtin resolution follows aliases and every potentially reaching
+assignment. SQL normalization therefore recognizes `Reflect.apply` independent
+of receiver spelling, and all app-layer SQL, repository, tenant, and
+governed-action consumers receive the same normalized result.
+
+The module-reference walker carries `node:module` namespace provenance through
+named and nested object members plus later property assignments. The dependency,
+LLM PII, sealed-factory, and secret-containment fences continue to consume that
+single result.
+
+Repeated-authority analysis normalizes `Reflect.get`, property-descriptor reads,
+and their `call`, `apply`, `bind`, and `Reflect.apply` forms. Literal key
+provenance retains exact member paths; unresolved keys expand conservatively to
+the carrier, so a stateful authority getter cannot be read after its stable
+prologue capture.
+
+Governed callee discovery traverses every value-producing conditional and
+logical arm. Node identities include kind, start, and end positions so a compound
+expression cannot collide with its leftmost child. A known governed sink paired
+with an unresolved callable arm fails closed.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+Only fitness analyzers, adversarial companions, and their decision evidence
+changed. The platform layer counts and ADR ceilings therefore remain exact and
+unchanged. No useful code or documentation was removed or compressed to
+manufacture room.
+
+**Alternatives rejected:** check only exported signatures without proving SQL
+call ownership (module execution remains invisible); recognize only the literal
+`Reflect` receiver (aliases bypass every SQL consumer); enumerate one object
+holder spelling (nested and assigned members remain open); add separate regexes
+for each reflective authority form (invocation wrappers drift); and treat a
+compound callee as one node keyed only by its start offset (its left arm
+disappears).
+
+**Revert path:** revert this changeset to restore unowned SQL execution, ambient
+builtin and namespace-member provenance gaps, repeated reflective authority
+reads, and incomplete governed-callee traversal.
+
+## D-090 - Resume and semantic provenance boundaries fail before work
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-089,
+ADR-0037, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#3/#4/#7/#12
+
+All six review findings were legitimate. The resume finding was a local
+validation-order defect at an intentionally unscoped capability load. The other
+five findings shared incomplete ownership or provenance traversal in security
+fitness analyzers.
+
+`resumeFlow` now validates the runtime `TenantContext` seal before
+`loadByToken`. A forged context with a matching organization can no longer load
+or expose PII-bearing state, start a workflow step, or perform a write. The
+integration companion runs against PGlite and asserts zero loads, saves, step
+runs, and durable household writes while sentinel foreign data stays absent from
+the typed failure.
+
+Module-reference provenance now follows fixed array and tuple members, exact
+element access, and array destructuring. Unresolved indexes expand
+conservatively. Ambient builtin accessor aliases retain every potentially
+reaching source after the latest guaranteed assignment, so a conditional safe
+replacement cannot erase a reachable `Reflect.get`.
+
+Sealed construction analyzes every structural position independently. A
+factory-owned `Tokenized<T>` position no longer exempts a sibling
+`TenantContext` or other foreign seal in casts, contextual literals,
+annotations, assignments, returns, parameter defaults, or call arguments.
+Incomplete inventories emit every foreign sealed owner instead of selecting one.
+
+Governed call resolution follows later local assignments and values returned by
+statically resolved helpers. Both wired and missing-authorization companions
+prove that the exact sink action remains attached to the route. SQL normalization
+resolves `Reflect.apply` through fixed-array destructuring and exact array member
+aliases, and the normalized call is shared by app-layer refusal, repository,
+tenant, and governed-action analysis.
+
+The runtime seal check added one domain line to a layer that had no headroom.
+ADR-0037 raises only domain to the smallest rounded envelope. No useful code or
+documentation was removed or compressed:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,251 | 1,300 | 49 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+**Alternatives rejected:** validate the runtime seal after the capability load
+(foreign state can already escape); enumerate only the reported array spellings
+(equivalent aliases remain open); select the latest textual alias assignment
+(conditional writes are not guaranteed); exempt a whole composite by its first
+sealed position (foreign sibling seals disappear); and inspect only declaration
+initializers for governed callees (later assignments and helper returns remain
+unowned).
+
+**Revert path:** revert this changeset to restore pre-validation continuation
+loads, array and conditional provenance gaps, whole-composite factory
+exemptions, and incomplete governed sink ownership.
+
+## D-091 - Security boundaries retain trusted provenance through wrappers
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-089,
+D-090, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#3/#4/#7/#12/#14
+
+All seven review findings were legitimate. The error finding exposed an
+authentication flaw at the contract boundary. The remaining findings shared
+incomplete semantic ownership or provenance traversal in security fitness
+analyzers.
+
+`AppError` instances now carry module-private WeakSet provenance and are frozen
+with copied, frozen context. Only errors created through `appError` retain their
+message. Unknown recognized-code lookalikes normalize to a static safe message
+without reading attacker-controlled message or context accessors. Observability
+classification reads unknown driver code once and consumes only the normalized
+snapshot.
+
+Module-reference provenance treats `Object.freeze`, `Object.seal`, and
+`Object.preventExtensions` as transparent namespace wrappers. Fixed-array
+builtin aliases use the shared conservative resolver, so array-destructured
+`Reflect.get` reaches the same loader analysis as direct and object-destructured
+forms without weakening guaranteed overwrite handling.
+
+Repeated-authority analysis carries exact carrier provenance through fixed
+arrays and transparent wrappers. Unresolved transparent invocation arguments
+expand to the complete captured authority inventory. A stateful getter cannot
+be read again after the stable authority capture under a new trusted spelling.
+
+Governed call discovery resolves getter-returned callables and normalizes
+`bind`, `call`, `apply`, and `Reflect.apply` to the underlying sink. The same
+normalization supplies effective argument positions to helper and grant wiring,
+and a `Reflect.apply` target is treated as an invocation rather than an escaped
+value.
+
+Invented generic returns are checked at every sealed position in explicit
+objects, tuples, arrays, unions, project-owned wrappers, and overloads.
+Factory ownership is applied per sealed owner, so an allowed `Tokenized<T>`
+position cannot hide a foreign `TenantContext`. Foreign generic validators that
+only name a sealed type remain ordinary validation containers rather than
+construction sites.
+
+SQL ownership now maps each exported object callable to its exact method,
+accessor, or property implementation. A guarded sibling cannot claim SQL in an
+effectful non-callable getter. SQL in parameter default initializers is rejected
+as pre-body execution because no function-body authority prologue can authorize
+work that already ran.
+
+The authoritative line-budget metric remains within the existing measured ADR
+ceilings:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,259 | 1,300 | 41 |
+| infrastructure | 3,442 | 3,450 | 8 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. No useful code or documentation was removed or compressed
+to manufacture room.
+
+**Alternatives rejected:** trust recognized error codes as message provenance
+(attacker text reaches responses); enumerate only direct loader syntax
+(transparent and fixed-container aliases remain open); compare authority source
+text (equivalent carrier spellings evade capture ownership); flag wrapper calls
+without normalizing arguments (authorization checks the wrong position); exempt
+a whole generic result by its first sealed owner (foreign sibling seals
+disappear); assign every object implementation to every callable signature
+(guarded siblings claim unguarded effects); and let a body prologue authorize
+parameter defaults retroactively (the SQL already ran).
+
+**Revert path:** revert this changeset to restore untrusted AppError messages,
+transparent loader and authority gaps, incomplete governed invocation
+normalization, nested generic seal exemptions, sibling SQL ownership, and
+pre-body SQL execution.
+
+## D-092 - Security provenance survives bound and pre-body execution
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-085, D-089, D-091,
+ADR-0035, ADR-0036, ADR-0037, v3 §15.1/§15.2/§15.3/§15.4,
+charter #1/#3/#4/#7/#12/#14
+
+All five review findings were legitimate. The observability finding was a local
+misuse of frozen state as authentication. The other four exposed incomplete
+semantic provenance across callable binding, inferred generic results, fixed
+carrier aliases, and execution reached from parameter defaults.
+
+Error classification now asks the existing reviewed normalization boundary for
+module-authenticated `AppError` provenance in a restrictive trusted-only mode.
+Unknown objects are handled only through guarded single reads. A frozen
+SQLSTATE-shaped object retains driver classification, while a proxy whose
+extensibility trap throws cannot replace the original failure.
+
+Governed sink discovery retains exact sink actions through bound callable
+values, later aliases, helper returns, getters, and fixed containers. Bound
+argument prefixes compose across nested `bind`, `call`, and direct invocation,
+so authorization is checked at the effective sink parameter rather than the
+wrapper call's local position.
+
+Invented generic analysis now runs the complete sealed-position inventory for
+inferred results as well as explicit type arguments. Nested objects, tuples,
+arrays, and unions cannot mint a `TenantContext` merely because the generic
+argument was inferred from a contextual target.
+
+Repeated-authority analysis resolves fixed array and object members through
+declaration initializers and every potentially reaching assignment. An
+`as const` container cannot hide a second read from an accessor-backed carrier
+after the stable prologue capture.
+
+Pre-body SQL ownership follows statically resolved helper calls transitively
+from parameter default initializers. SQL reached through one or more helpers is
+still rejected before a body authority prologue because that prologue has not
+executed.
+
+Full end-to-end validation exposed a separate machine-identity collision. A
+generated user UUID whose leading numeric groups resembled a formatted account
+reference was rejected as an observability actor. The identifier boundary now
+recognizes the complete canonical machine UUID before applying partial
+account-reference refusal. Formatted accounts remain rejected because they do
+not satisfy the complete machine shape.
+
+The authoritative line-budget metric remains within the existing measured ADR
+ceilings:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,021 | 4,050 | 29 |
+| domain | 1,260 | 1,300 | 40 |
+| infrastructure | 3,440 | 3,450 | 10 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. The correction reused shared semantic analyzers and the
+existing reviewed opaque normalization boundary. No useful code or
+documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** treat `Object.isFrozen` as error provenance (frozen
+driver metadata is misclassified and proxy traps can escape); track only an
+immediately invoked `bind` (aliases lose both the sink and its effective
+arguments); inspect only explicit generic arguments (contextual inference mints
+nested seals); compare fixed-container source text (initializer and assignment
+aliases evade capture ownership); and inspect only SQL syntax physically inside
+a default initializer (called helpers execute in the same pre-body phase).
+Treating every account-like UUID substring as PII was also rejected because it
+makes generated machine identity nondeterministically unobservable.
+
+**Revert path:** revert this changeset to restore frozen-state trust,
+bound-callable authorization gaps, inferred nested seal construction,
+fixed-container authority rereads, and transitive pre-body SQL execution.
+
+## D-093 - Observability record identifiers require explicit provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-089, D-092, ADR-0013,
+ADR-0038, v3 §15.1/§15.2/§15.4, charter #1/#3/#4/#7/#14
+
+All three review findings were legitimate. The reason vocabulary accepted
+arbitrary uppercase suffixes as if they were reviewed error codes. Record
+identifier safety treated UUID shape as trust provenance. The evidence candidate
+walker used a global visited set and rejected shared acyclic evidence as a cycle.
+
+Observability reasons now accept an `app-error:` value only when its suffix is
+an exact `ErrorCode`. Record identifiers carry a runtime-sealed generated or
+keyed-digest provenance value. Only direct cryptographic UUID generation may
+create the generated form. Client-supplied canonical UUIDs pass through a
+domain-separated HMAC keyed from the validated application secret and scoped by
+organization, field, and value. Values that cannot be classified or hashed are
+redacted. Failure logging still runs, while the tamper-evident audit chain keeps
+the governed record identifier needed by examiners.
+
+Evidence traversal now tracks the current ancestor chain rather than every
+previously visited object. Shared DAG nodes are valid, while a node reached
+through its own ancestor path remains a cycle.
+
+The default full-suite command now runs one test file at a time. Concurrent
+ts-morph semantic projects exhausted local CPU and pushed five otherwise-green
+fitness checks past their per-test timeout. The bounded runner completed all
+1,208 tests without weakening that timeout or changing individual assertions.
+
+The authoritative line-budget metric requires a measured ADR amendment:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,021 | 4,050 | 29 |
+| domain | 1,298 | 1,350 | 52 |
+| infrastructure | 3,484 | 3,550 | 66 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0038 raises only the affected domain and infrastructure envelopes. No useful
+code or documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** trust complete UUID shape as provenance; redact all
+client identifiers and lose stable operational correlation; use an unkeyed
+digest that becomes a recovery oracle; suppress failure auditing when digest
+generation fails; keep a global traversal set that conflates shared evidence
+with recursion; or retain nearly exhausted ceilings that pressure future
+corrections into documentation deletion.
+
+**Revert path:** revert this changeset to restore open-ended app-error reasons,
+shape-authorized request identifiers, and false cycle rejection for shared
+evidence DAGs.
+
+## D-094 - Keyed record correlation proves normalized input ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, ADR-0013,
+ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The observability provenance fence now traces the receiver of the emitted
+hex digest back to the imported `node:crypto` HMAC. That same receiver must
+consume a canonical JSON tuple containing the digest version, tenant
+organization, observability field, and lowercase record value. A nested or
+unrelated HMAC call no longer proves the emitted digest.
+
+The runtime companion compares two distinct canonical record identifiers in
+the same tenant and field. It keeps the existing stability, tenant-separation,
+field-separation, non-recovery, and redaction assertions, so removing any
+scoping component has a direct behavioral failure.
+
+Only fitness, integration, decision, and proof evidence changed. Platform line
+measurements and their ADR ceilings remain unchanged.
+
+**Alternatives rejected:** search the digest initializer for any HMAC call
+(the record value can be omitted while the fence stays green); inspect only for
+a `value.toLowerCase()` descendant (an unrelated expression can satisfy it);
+and rely only on tenant and field separation (every record in one tenant and
+field can still collapse to one correlation value).
+
+**Revert path:** revert this changeset to restore descendant-only HMAC
+detection and omit the same-tenant, same-field distinct-value companion.
+
+## D-095 - Emitted record digests retain secret key provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, D-094,
+ADR-0013, ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The keyed-record provenance fence now traces the key argument of the exact
+SHA-256 HMAC receiver whose hex digest is emitted. That key must resolve to a
+single-use immutable purpose key derived by a second SHA-256 HMAC over the
+validated session secret and the exact observability record-id domain separator.
+The emitted receiver must still consume the canonical tuple containing version,
+tenant, field, and lowercase record value.
+
+A public emitted key with an otherwise valid but unused secret-derived HMAC now
+fails the observability fence, as does reassignment after valid derivation. The
+secret-containment fence remains responsible for limiting raw secret access,
+while this fence proves that the access governs the emitted digest rather than
+unrelated work in the same function.
+
+Only the fitness analyzer, its adversarial companion, decision evidence, and
+proof evidence changed. Runtime behavior and platform line measurements remain
+unchanged.
+
+**Alternatives rejected:** accept any SHA-256 HMAC key when the function also
+reveals a secret (an unused secret HMAC leaves the emitted digest recoverable);
+make the secret-containment fence infer emitted dataflow (it owns access
+containment, not observability provenance); and rely only on runtime separation
+tests (a public constant can preserve tenant and field separation while creating
+a recovery oracle).
+
+**Revert path:** revert this changeset to restore input-only emitted-digest
+tracing and remove the public-key companion.
+
+## D-096 - Emitted record digest bindings are immutable and single-use
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, D-094, D-095,
+ADR-0013, ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The emitted keyed-record digest now passes through the same immutable,
+single-use binding proof as its secret-derived purpose key. The shared analysis
+requires one variable definition, a `const` declaration, and exactly one
+resolved reference at the inspected use before it trusts the initializer. A
+valid HMAC initializer can therefore no longer authenticate a later reassigned
+or ambiguously reused value.
+
+One adversarial companion initializes a mutable digest with the complete
+secret-derived HMAC, reassigns it to an unkeyed SHA-256 digest, and emits that
+replacement. It failed before the correction because the analyzer inspected
+only the initializer and passes only when the reassigned value is refused. A
+second companion proves that an otherwise immutable digest with another
+consumer also fails.
+
+Only the fitness analyzer, its adversarial companions, decision evidence, and
+proof evidence changed. Runtime behavior and platform line measurements remain
+unchanged.
+
+**Alternatives rejected:** trace every reaching assignment through arbitrary
+control flow when the reviewed boundary needs no mutation; require only `const`
+without proving the inspected use is the binding's sole consumer; or special
+case the reported reassignment while leaving equivalent mutable bindings open.
+
+**Revert path:** restore initializer-only digest validation and remove the two
+digest-binding companions.
+
+## D-097 - CI security gates use deterministic execution and nonliteral credentials
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-012, D-093,
+v3 §15.4, charter #4/#7/#15
+
+The v3 invariant runner now uses the same single-worker, file-serial Vitest
+execution policy as the default test command. Its seven mapped semantic fitness
+files build large ts-morph projects, so running them concurrently made the
+`tokenized-factory-only` file exceed its per-test timeout on a shared CI runner
+even though the serialized blocking test job passed the same file. Assertions
+and timeouts remain unchanged.
+
+The load smoke creates its throwaway advisor credential at runtime instead of
+committing a password literal. Two fitness-test source-file handles no longer
+use credential-shaped variable names, preventing the SAST heuristic from
+misclassifying repository paths and AST nodes as embedded secrets.
+
+**Alternatives rejected:** increase the test timeout while retaining resource
+contention; weaken or skip the mapped security fence; suppress the real
+hardcoded load credential finding; or disable the blocking njsscan rules.
+
+**Revert path:** restore parallel v3 fence execution, the literal load
+credential, and the prior AST handle names.

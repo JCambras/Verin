@@ -1,20 +1,12 @@
 /**
  * Displayed-metric vocabulary (charter #3; ADR-0022; closes Vale V12 — the
- * displayed-metric->source provenance trace). A `DisplayMetric` binds a
- * numeric/derived value (a health score, a balance, a count) to its provenance and
- * a display format. It is the ONLY shape a "metric-class" UI surface renders:
- *
- *  - TYPE-SYSTEM HALF: a `DisplayMetric` cannot be constructed without provenance,
- *    and it is deliberately NOT a `ReactNode` — React cannot render the object, so a
- *    metric can only reach the screen through `<Metric>` (which requires the
- *    provenance). Extracting `.value` to render it naked is exactly what the
- *    metric-provenance fence catches.
- *  - CI-TRACE HALF: the metric-provenance fence (run in the `provenance-trace` CI
- *    job) fails the build on any metric field rendered without going through a
- *    sanctioned provenance-carrying surface, so every displayed metric traces to a
- *    source/asOf.
- *
- * Dependency-free (contracts layer): imports only sibling provenance vocabulary.
+ * displayed-metric->source trace). A DisplayMetric binds a value to its
+ * provenance and a display format; it is the ONLY shape a metric-class surface
+ * renders. TYPE-SYSTEM HALF: it cannot be built without provenance and is
+ * deliberately not a ReactNode, so it reaches the screen only through <Metric>.
+ * CI-TRACE HALF: the metric-provenance fence (provenance-trace job) fails the
+ * build on a metric field rendered outside a provenance-carrying surface —
+ * extracting `.value` to render it naked is exactly what it catches.
  */
 import { type RecordProvenance, type DerivedProvenance, isDemonstration, DEMO_WATERMARK } from "./provenance";
 
@@ -39,10 +31,7 @@ export function metric<T extends number | string>(
 
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-/**
- * Format a metric's raw value for display (value only — the source/asOf label is
- * added by `<Metric>`). Money is stored in minor units (cents) and rendered as USD.
- */
+/** Value only — <Metric> adds the source/asOf label. Money is stored in minor units. */
 export function formatMetricValue(m: DisplayMetric): string {
   switch (m.format) {
     case "currency-minor":
@@ -58,10 +47,7 @@ export function formatMetricValue(m: DisplayMetric): string {
   }
 }
 
-/**
- * The watermark a metric must show when it is a demonstration artifact derived from
- * synthetic input (charter #3 / ADR-0022), or null when it may render plainly.
- */
+/** The watermark a demonstration-derived metric must show, or null (charter #3 / ADR-0022). */
 export function metricWatermark(m: DisplayMetric): string | null {
   return isDemonstration(m.provenance) ? DEMO_WATERMARK : null;
 }
