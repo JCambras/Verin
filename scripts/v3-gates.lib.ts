@@ -79,12 +79,27 @@ export interface Invariant {
   activatesWhen?: string;
   activationPrompts?: number[];
   activationArtifacts?: string[];
+  activationMechanisms?: Array<{ type: "fitness"; ref: string }>;
+  mechanisms?: Array<{ type: string; ref: string; command?: string }>;
 }
 
 export interface Registry {
   gates: Record<string, Gate>;
   invariants: Invariant[];
 }
+
+export const INVARIANT_THREE_ACTIVATION_REQUIREMENTS = {
+  artifacts: [
+    "config/domains/account-opening.yaml",
+    "config/domains/money-movement.yaml",
+  ],
+  mechanisms: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/domain-configuration.test.ts",
+    },
+  ],
+} as const;
 
 export const isMechanized = (r: GateRequirement): boolean => (MECHANIZED_KINDS as readonly string[]).includes(r.kind);
 
@@ -358,13 +373,21 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
 }
 
 /**
- * True only when `ref` is a declared job that will actually fail the build. This is
- * the weakest ci-gate claim the repo makes - the charter map names blocking jobs
- * without naming a command, so nothing there may be invented for them.
+ * True only when `ref` is a declared job with at least one valid executable step
+ * whose failure is not neutralized.
  */
 export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
   const job = jobs.get(ref);
-  return job !== undefined && job.neutralizedBy === undefined;
+  return (
+    job !== undefined &&
+    job.neutralizedBy === undefined &&
+    job.steps.some(
+      (step) =>
+        step.neutralizedBy === undefined &&
+        step.unsupportedShell === undefined &&
+        step.blockingCommand !== undefined,
+    )
+  );
 }
 
 export type CiCommandStatus =
@@ -594,6 +617,18 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     if (!gate || !Array.isArray(gate.prompts)) continue;
     const tag = `invariant ${inv.id} (${inv.name})`;
 
+    if (inv.id === 3) {
+      const actual = {
+        artifacts: inv.activationArtifacts ?? [],
+        mechanisms: inv.activationMechanisms ?? [],
+      };
+      if (JSON.stringify(actual) !== JSON.stringify(INVARIANT_THREE_ACTIVATION_REQUIREMENTS)) {
+        problems.push(
+          `${tag}: activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0030`,
+        );
+      }
+    }
+
     const declared = inv.activationPrompts;
     if (declared !== undefined) {
       if (!Array.isArray(declared) || declared.length === 0) {
@@ -613,10 +648,58 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       problems.push(`${tag}: not-yet-active but declares no activationPrompts - its prerequisite cannot be ordered against gate ${inv.gate}`);
     }
 
-    // (g) HONESTY: an artifact-gated invariant cannot be declared implemented before its artifacts exist
-    for (const artifact of inv.activationArtifacts ?? []) {
-      if (inv.status === "active" && !exists(artifact)) {
-        problems.push(`${tag}: marked 'active' but its activation artifact ${artifact} does not exist - claiming an unimplemented invariant (ADR-0030)`);
+    // (g) HONESTY: activation prerequisites must be well formed, and an invariant
+    // cannot be declared implemented until every declared artifact and exact
+    // activation mechanism exists and is mapped to that invariant.
+    const artifacts = inv.activationArtifacts;
+    if (artifacts !== undefined) {
+      if (!Array.isArray(artifacts) || artifacts.length === 0 || artifacts.some((artifact) => typeof artifact !== "string" || artifact.length === 0)) {
+        problems.push(`${tag}: activationArtifacts must be a non-empty array of artifact paths`);
+      } else if (new Set(artifacts).size !== artifacts.length) {
+        problems.push(`${tag}: activationArtifacts contains duplicate artifact paths`);
+      } else if (inv.status === "active") {
+        for (const artifact of artifacts) {
+          if (!exists(artifact)) {
+            problems.push(`${tag}: marked 'active' but its activation artifact ${artifact} does not exist - claiming an unimplemented invariant (ADR-0030)`);
+          }
+        }
+      }
+    }
+
+    const activationMechanisms = inv.activationMechanisms;
+    if (activationMechanisms !== undefined) {
+      if (
+        !Array.isArray(activationMechanisms) ||
+        activationMechanisms.length === 0 ||
+        activationMechanisms.some(
+          (mechanism) =>
+            mechanism === null ||
+            typeof mechanism !== "object" ||
+            mechanism.type !== "fitness" ||
+            typeof mechanism.ref !== "string" ||
+            mechanism.ref.length === 0,
+        )
+      ) {
+        problems.push(`${tag}: activationMechanisms must be a non-empty array of exact fitness mechanisms`);
+      } else if (new Set(activationMechanisms.map((mechanism) => mechanism.ref)).size !== activationMechanisms.length) {
+        problems.push(`${tag}: activationMechanisms contains duplicate fitness mechanisms`);
+      } else if (inv.status === "active") {
+        for (const required of activationMechanisms) {
+          const mapped = (inv.mechanisms ?? []).some(
+            (mechanism) => mechanism.type === required.type && mechanism.ref === required.ref,
+          );
+          if (!mapped) {
+            problems.push(
+              `${tag}: marked 'active' without required activation mechanism ${required.type}:${required.ref} - ` +
+                `an unrelated fitness mechanism cannot prove this activation boundary (ADR-0030)`,
+            );
+          } else if (!exists(required.ref)) {
+            problems.push(
+              `${tag}: marked 'active' but required activation mechanism ${required.type}:${required.ref} does not exist - ` +
+                `claiming an unimplemented invariant (ADR-0030)`,
+            );
+          }
+        }
       }
     }
   }

@@ -6281,11 +6281,22 @@ assertion over unmodified violations; and **(4)** required Playwright tests must
 or directly inside an enabled module-scope `test.describe`, then await the helper outside any caught or
 dead path. Focused companions and real injections extend PF-030 and PF-031.
 
+The captain-approved false-green boundary review (2026-07-28) amended ADR-0030 in place an eighth time:
+**(1)** every enforced charter CI mapping now binds and ratchets its exact command, while the weakest
+name-only job query still requires a valid non-neutralized executable step, so malformed, empty,
+unsupported-shell, and fully skipped jobs prove nothing; **(2)** required Axe specifications reject
+module/file/describe scope skip and fixme annotations plus `test.fail`; **(3)** the sanctioned helper
+accepts only the exact non-mutating document-animation settlement before analysis, so a DOM-clearing
+`page.evaluate` cannot mask the scan; and **(4)** invariant 3 pins both domain YAML artifacts and the
+exact future `domain-configuration` fitness mechanism as activation prerequisites, so an unrelated
+naming-only fence cannot produce `active-pass`. Focused companions and real injections extend PF-030
+and PF-031.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
 list - of any requirement kind, including deleting an `evidence` clause - its `wave`, `entryGates`,
 `entryCondition`, `outcome`, or any
-invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all four ratchets in
+invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all five ratchets in
 `src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.

@@ -192,15 +192,19 @@ than attempting to model GitHub's transitive job-result semantics.
 **One structural CI authority, three call sites** (same ruling). `charter-map.json`'s enforced `ci-gate`
 mechanisms were still proven by `ci.includes(ref)` in the charter-drift fence, so a deleted job matched
 its own leftover comment (proved: injection 24). Check (a') now goes through the same `parseCiJobs`.
-Name-only charter-map entries prove the weaker claim that the job exists and blocks. Command-bearing
-entries prove the dedicated command too. Charter rule 9 now names `e2e` plus `pnpm test:e2e` and maps an
+Every enforced charter-map entry names and ratchets its exact command. The lower-level
+`ciJobBlocks` query still fails unless a job contains at least one valid non-neutralized executable
+step, so an empty job cannot satisfy even the weaker job-level claim. Charter rule 9 now names `e2e`
+plus `pnpm test:e2e` and maps an
 Axe-specific fitness fence that proves the public, authenticated, and demo E2E specifications execute
 Axe through an enabled and reachable Playwright test. The required specifications await one sanctioned
-helper, and the fence pins that helper to a complete WCAG-tagged analysis followed by a direct assertion
-over the unmodified `results.violations` array. The assertion cannot be caught, filtered, mapped, emptied,
-or hidden behind extra statements. Test registration is accepted only at module scope or directly inside
-an enabled module-scope `test.describe` callback. Skipped descriptions, runtime skips, statically dead
-branches, unawaited helper calls, caught helper calls, and tests inside uncalled functions prove nothing.
+helper, and the fence pins that helper to the exact non-mutating document-animation settlement, a complete
+WCAG-tagged analysis, and a direct assertion over the unmodified `results.violations` array. The assertion
+cannot be caught, filtered, mapped, emptied, or hidden behind extra statements. Test registration is
+accepted only at module scope or directly inside an enabled module-scope `test.describe` callback.
+Skipped descriptions, file or describe scope skip/fixme annotations, expected failures, runtime skips,
+statically dead branches, unawaited helper calls, caught helper calls, and tests inside uncalled
+functions prove nothing.
 Keeping an ordinary Playwright job while deleting or neutralizing every Axe scan can no longer leave
 charter-drift green. Both v3 governance mappings are ratcheted to the exact blocking
 `pnpm v3:invariants` command, so either mapping cannot regress to a name-only job check.
@@ -230,6 +234,15 @@ ordering rule) left the report free to make claims about activation artifacts an
 nothing verified. The runner computes per-gate readiness from the typed requirements: **green only when
 every requirement is met, every requirement is decidable here, AND every structural predecessor is
 green.**
+
+**The activation and enforcement boundaries fail closed.** Invariant 3 declares the two prompt-10
+domain YAML files and the exact future `src/__tests__/fitness/domain-configuration.test.ts` mechanism as
+activation prerequisites. Marking it active requires that exact fitness mechanism to exist and appear in
+the invariant's live mechanism list, so an unrelated naming fence cannot produce `active-pass`.
+Charter CI mappings all name and ratchet their exact commands; malformed, empty, unsupported-shell, or
+fully skipped jobs prove nothing. Required Axe tests reject module- and describe-scope skip/fixme
+annotations and `test.fail`, while the sanctioned helper pins the exact non-mutating document-animation
+settlement before its complete WCAG scan.
 
 **Reading key for the ratified documents.** `docs/v3/verin-prompt-sequence-v3.md:186` still reads
 "Gate A: Foundation invariants 1-5 are active and green." The ratified v3 documents are committed
@@ -266,6 +279,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Resolve a charter-map `ci-gate` ref against job DISPLAY names, so `axe` and `unit` keep matching | A display name is text, not a gate: deleting the axe scans while keeping the job title "e2e (Playwright + axe)" would still pass. Naming the blocking job key that runs them is the honest form, and the entry titles still record which capability each gate is mapped for. |
 | Treat a dependency-bearing evidence job as blocking by inspecting only its own steps | A skipped or failed dependency can prevent the mapped command from running. Modeling every transitive GitHub job-result rule is broader than this evidence parser; the stricter contract is simple and fail-closed. |
 | Infer arbitrary per-spec Axe result transformations and assertions | Dataflow inference admitted filters that erased every violation and assertions swallowed by `catch`. One sanctioned helper makes the executable accessibility contract small enough to fence structurally. |
+| Let a name-only charter CI mapping prove an empty job | A job key with no executable blocking step says nothing about enforcement, and setup commands do not prove the named control. Every enforced mapping now binds and ratchets the exact command it claims. |
+| Let any awaited `page.evaluate` count as animation settlement | An evaluate callback can clear or rewrite the DOM before Axe scans it. The helper has one sanctioned, non-mutating settlement expression, so masking callbacks fail structurally. |
 
 ## Trade-offs and Costs
 
@@ -283,7 +298,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 ## Consequences
 
 - `v3-invariants.json`: all TEN gates of the ratified sequence are registered with typed requirement
-  lists; invariant 3 moves to gate B with `activationArtifacts`; invariant 4's `activatesWhen` now names
+  lists; invariant 3 moves to gate B with pinned `activationArtifacts` and `activationMechanisms`;
+  invariant 4's `activatesWhen` now names
   its Wave A activation subjects (prompts 5-7) explicitly, since Gate A requires it - later waves extend
   the same §16 fence family without re-gating it (ADR-0026).
 - Gate A owns invariants `{1, 2, 4, 5}` and additionally requires the prompt-5 structural guarantees
@@ -295,11 +311,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   (26, 28, 30) and Gate H (27, 29) plus timing, measured-results, and cold-review evidence. Beyond that split, no
   invariant changed ACTIVATION ownership: 16 is owned by E, 11 by D, and 18 and 19 by F, each additionally
   required at the earlier gate that can prove it.
-- Four RATCHETS live in the fence file, where review sees the edit: the complete 30-invariant
-  activation-ownership map, the exact prompt-5 proof points for invariants 7, 8, and 9, complete gate
-  metadata (`wave`, predecessor chain, `entryCondition`, `outcome`), and every gate's COMPLETE TYPED
-  requirement set - `kind` plus id/ref and proof prompt, and the `command` for a `ci-gate`, not invariant
-  ids alone. Changing any of them fails CI until the ratchet, this
+- Five RATCHETS live in the fence file, where review sees the edit: the complete 30-invariant
+  activation-ownership map, the exact prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
+  exact activation artifacts and fitness mechanism, complete gate metadata (`wave`, predecessor chain,
+  `entryCondition`, `outcome`), and every gate's COMPLETE TYPED requirement set - `kind` plus id/ref and
+  proof prompt, and the `command` for a `ci-gate`, not invariant ids alone. Changing any of them fails CI
+  until the ratchet, this
   ADR, ADR-0023 where applicable, and the proof evidence are amended together. Deleting an `evidence`
   clause is therefore a governance amendment, not a registry edit.
 - Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
@@ -312,9 +329,13 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   workflow yields no jobs, so every `ci-gate` reads unmet rather than passing on a file nothing could read.
 - `parseCiJobs` is the repo's one structured CI authority, read by three call sites - the gate
   requirements, the invariant mechanisms (`v3-invariants.test.ts`), and charter-drift check (a'). The
-  charter rule 9 additionally names `pnpm test:e2e` and the Axe-specific fitness fence. All required
-  surface specifications await `e2e/axe.ts`, whose complete scan and direct unmodified-violations
-  assertion are structurally pinned by that fence. The
+  charter mappings all name and ratchet their exact commands. The weakest `ciJobBlocks` query also
+  requires at least one valid non-neutralized executable step, so malformed, empty, unsupported-shell,
+  and fully skipped jobs are not blocking evidence. Charter rule 9 additionally names `pnpm test:e2e`
+  and the Axe-specific fitness fence. All required surface specifications await `e2e/axe.ts`, whose
+  non-mutating animation settlement, complete scan, and direct unmodified-violations assertion are
+  structurally pinned by that fence. Module/file/describe scope annotations and expected-failure tests
+  cannot neutralize the required scans. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm v3:invariants`.
 - A gate's `awaiting:` line lists EVERY requirement holding it back, undecidable ones included, with a
@@ -345,9 +366,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   completes in another): the ordering fence's single `max(activationPrompts) <= gate.lastPrompt` rule
   needs a per-invariant partial-activation model rather than a wider tolerance.
 - Prompt 10 lands: invariant 3 flips to `active` with its naming fence in the same PR, its
-  `activationArtifacts` become real, and Gate B is evaluated for green. The fence asserts no invariant's
-  CURRENT status - it asserts that `active` requires the declared artifacts to exist - so the flip needs
-  no test edit. If the fence cannot be written without domain-named exceptions, the primitive vocabulary
+  `activationArtifacts` and pinned `activationMechanisms` become real, and Gate B is evaluated for green.
+  The exact `domain-configuration` fitness must adversarially prove schema validation and shared-engine
+  binding for both YAML files. The fence asserts no invariant's CURRENT status, so the flip needs no
+  ratchet edit. If the fence cannot be written without domain-named exceptions, the primitive vocabulary
   is overfit and ADR-0025's revisit trigger fires first.
 - A mechanism lands that decides an `evidence` requirement (gate 0's §4 surface-completeness clause,
   gate B's domain-schema/shared-engine binding or stable-corpus clauses, gate C's validated-bundle
@@ -356,7 +378,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   is a named gap, never a permanent excuse.
 - Any gate's `requires` list - of ANY requirement kind - its `wave`, `entryGates`, `entryCondition`,
   `outcome`, or any invariant's `gate`, is proposed for
-  change: that is an amendment to this ADR, to ADR-0023's phase-gated commitment, and to all four ratchets in
+  change: that is an amendment to this ADR, to ADR-0023's phase-gated commitment, and to all five ratchets in
   `src/__tests__/fitness/v3-gate-ordering.test.ts`, with fresh proof-log evidence - never a registry edit
   alone. A registry-only edit fails CI (proved: PF-030).
 - A blocking job legitimately needs a condition or `continue-on-error` (a matrix leg, a fork-PR guard):
@@ -369,8 +391,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A blocking job needs a runner or shell outside the supported implicit Ubuntu/macOS, `bash`, or `sh`
   semantics: extend the restricted parser to decide that exact execution model and add adversarial
   companions before using it as evidence. Unsupported custom shells remain non-evidence.
-- A `charter-map.json` `ci-gate` entry needs to prove a specific command: give that mechanism a `command`
-  field. Name-only mappings continue to prove only that the job exists and blocks.
+- A `charter-map.json` `ci-gate` entry changes its command: update the mapping, its exact-command ratchet,
+  and the proof evidence in the same PR. Name-only enforced mappings are invalid.
 - An invariant that has been referenced by an earlier gate is activated: keep its `activationPrompts`.
   They are the permanent record of the prompt at which it landed, and the ordering rule falls back to its
   owner gate's close without them, which would make the earlier gate's requirement illegal. If a future

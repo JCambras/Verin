@@ -16,7 +16,9 @@ G, H, I) declare `{wave, prompts, requires, entryGates, entryCondition, outcome}
 which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
 gate must require every invariant it owns and may reference one another gate owns when it is fully proven
 by the time this gate closes. Gate B explicitly awaits prompt-10 schema validation and shared-engine
-binding for both domain YAML files; file existence alone proves nothing. One shared rule
+binding for both domain YAML files; file existence alone proves nothing. Invariant 3 pins both YAML
+artifacts and `src/__tests__/fitness/domain-configuration.test.ts` as activation prerequisites, so an
+unrelated naming fence cannot activate it. One shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
 rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
@@ -32,12 +34,15 @@ Unsupported runners, custom shells, and evidence jobs with non-empty `needs` dep
 nothing. Declared `activationPrompts` are validated for every status, and the prompt-5 proof points for
 invariants 7, 8, and 9 are pinned exactly.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
-`ci-gate` mechanisms through it too, with both v3 mappings pinned to `pnpm v3:invariants`. Readiness computes every gate's structural `entryGates`, so a later
-gate cannot report green while a predecessor is non-green. Four ratchets in the fence pin the
-30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, complete gate
-metadata (wave, predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED requirement
-set including each non-invariant proof prompt: moving one, including deleting an `evidence` clause, is an
-ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
+`ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
+empty, unsupported-shell, and fully skipped jobs prove nothing. Both v3 mappings pin
+`pnpm v3:invariants`. Readiness computes every gate's structural `entryGates`, so a later
+gate cannot report green while a predecessor is non-green. Five ratchets in the fence pin the
+30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
+activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
+condition, outcome), and every gate's COMPLETE TYPED requirement set including each non-invariant proof
+prompt: moving one, including deleting an `evidence` clause, is an ADR-0030 + ADR-0023 amendment, never a
+registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new
 ratified document must be registered in the PR that adds it - but a conflict between v3's letter and this
@@ -234,8 +239,9 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   amber badge lands ~4.1:1 and fails), and secondary text inside a faded block must be slate-800+
   (slate-600 at 0.7 is ~3.5:1). E2E axe scans settle animations first
   (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
-  contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins its
-  complete WCAG scan and direct unmodified-violations assertion.
+  contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins the
+  exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
+  assertion, and rejects scope skips and expected failures.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

@@ -9,6 +9,7 @@ import {
   gateOrderingProblems,
   gateReadiness,
   gatesNamedInProse,
+  INVARIANT_THREE_ACTIVATION_REQUIREMENTS,
   parseCiJobs,
   promptsNamedInProse,
   requiredInvariantIds,
@@ -32,10 +33,11 @@ import {
  * report - the report is itself a document bound by ruling clause 5, so it may
  * not emit a claim this fence would reject. One core, two callers, no drift.
  * This file owns the ADVERSARIAL half (charter #4: detection is not
- * verification) plus the captain's ruled requirement sets and the four ratchets
+ * verification) plus the captain's ruled requirement sets and the five ratchets
  * that keep those sets from moving by a registry edit alone: the 30-invariant
  * activation-ownership map, the prompt-5 proof points for invariants 7-9,
- * complete gate metadata, and every gate's COMPLETE typed requirement set.
+ * invariant 3's activation prerequisites, complete gate metadata, and every
+ * gate's COMPLETE typed requirement set.
  *
  * The rules:
  *  (a) every gate is well-formed - an integer prompt range inside the 30-prompt
@@ -66,10 +68,9 @@ import {
  *      in `activatesWhen` must appear in `activationPrompts`, so the ordering
  *      rule cannot be dodged by understating the prerequisite in the
  *      machine-readable field while the human-readable one names a later wave;
- *  (g) HONESTY: an invariant naming `activationArtifacts` may not be flipped to
- *      'active' until those artifacts exist on disk - the mechanical form of "no
- *      document, proof, or UI may claim invariant 3 is implemented before prompt
- *      10 exists" (ADR-0030);
+ *  (g) HONESTY: an invariant naming `activationArtifacts` or
+ *      `activationMechanisms` may not be flipped to 'active' until every exact
+ *      prerequisite exists and every mechanism is mapped to the invariant;
  *  (h) an `entryCondition` naming another gate must name a REGISTERED gate that
  *      closes first - "Gate C is green" is only a requirement if Gate C exists.
  *
@@ -124,6 +125,19 @@ const EARLIEST_PROOF_PROMPTS_RATCHET: Record<string, number[]> = {
   8: [5],
   9: [5],
 };
+
+const INVARIANT_THREE_ACTIVATION_RATCHET = {
+  artifacts: [
+    "config/domains/account-opening.yaml",
+    "config/domains/money-movement.yaml",
+  ],
+  mechanisms: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/domain-configuration.test.ts",
+    },
+  ],
+} as const;
 
 type RatchetedGateMetadata = Pick<Gate, "wave" | "entryGates" | "entryCondition" | "outcome">;
 
@@ -284,6 +298,13 @@ const earliestProofPromptsOf = (reg: Registry): Record<string, number[]> =>
       .filter((invariant) => Object.hasOwn(EARLIEST_PROOF_PROMPTS_RATCHET, String(invariant.id)))
       .map((invariant) => [String(invariant.id), invariant.activationPrompts ?? []]),
   );
+const invariantThreeActivationOf = (reg: Registry) => {
+  const invariant = reg.invariants.find((candidate) => candidate.id === 3);
+  return {
+    artifacts: invariant?.activationArtifacts ?? [],
+    mechanisms: invariant?.activationMechanisms ?? [],
+  };
+};
 const metadataOf = (reg: Registry): Record<string, RatchetedGateMetadata> =>
   Object.fromEntries(
     Object.entries(reg.gates).map(([key, gate]) => [
@@ -313,7 +334,8 @@ describe("v3 gate-ordering fence", () => {
     // Invariant 3 may only be claimed implemented once prompt 10's artifacts exist,
     // whatever its status is at the time - the durable form of ruling clause 5.
     const three = registry.invariants.find((i) => i.id === 3)!;
-    expect(three.activationArtifacts?.length ?? 0).toBeGreaterThan(0);
+    expect(INVARIANT_THREE_ACTIVATION_REQUIREMENTS).toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
+    expect(invariantThreeActivationOf(registry)).toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
     if (three.status === "active") {
       for (const artifact of three.activationArtifacts ?? []) expect(existsSync(root + artifact), `${artifact} must exist`).toBe(true);
     }
@@ -382,7 +404,18 @@ describe("v3 gate-ordering fence", () => {
       },
       invariants: [
         { id: 1, gate: "A", name: "one", status: "not-yet-active", activatesWhen: "the surface lands (Wave A prompt 6)", activationPrompts: [6] },
-        { id: 3, gate: "B", name: "three", status: "not-yet-active", activatesWhen: "account opening becomes config (Wave B prompt 10)", activationPrompts: [10] },
+        {
+          id: 3,
+          gate: "B",
+          name: "three",
+          status: "not-yet-active",
+          activatesWhen: "account opening becomes config (Wave B prompt 10)",
+          activationPrompts: [10],
+          activationArtifacts: [...INVARIANT_THREE_ACTIVATION_RATCHET.artifacts],
+          activationMechanisms: INVARIANT_THREE_ACTIVATION_RATCHET.mechanisms.map((mechanism) => ({
+            ...mechanism,
+          })),
+        },
         { id: 7, gate: "D", name: "seven", status: "active", activationPrompts: [5] },
         { id: 16, gate: "D", name: "sixteen", status: "not-yet-active", activatesWhen: "the closed policy AST lands (Wave B prompt 9)", activationPrompts: [9] },
       ],
@@ -745,6 +778,40 @@ describe("v3 gate-ordering fence", () => {
       for (const ref of ["e2e", "golden-cases", "audit-chain-verify", "v3-invariants", "test"]) expect(ciJobBlocks(ciJobs, ref), ref).toBe(true);
     });
 
+    it("does not treat malformed, empty, unsupported, or fully skipped jobs as blocking", () => {
+      const jobs = parseCiJobs(
+        [
+          "jobs:",
+          "  malformed: null",
+          "  empty:",
+          "    runs-on: ubuntu-latest",
+          "    steps: []",
+          "  uses-only:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v7",
+          "  unsupported:",
+          "    runs-on: windows-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "  skipped:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - if: false",
+          "        run: pnpm lint",
+          "  blocking:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "",
+        ].join("\n"),
+      );
+      for (const ref of ["malformed", "empty", "uses-only", "unsupported", "skipped"]) {
+        expect(ciJobBlocks(jobs, ref), ref).toBe(false);
+      }
+      expect(ciJobBlocks(jobs, "blocking")).toBe(true);
+    });
+
     it("refuses an evidence job with a needs dependency that can prevent it from running", () => {
       const jobs = parseCiJobs(
         [
@@ -823,6 +890,18 @@ describe("v3 gate-ordering fence", () => {
       const falsifiedEarlyProof = clone(registry);
       falsifiedEarlyProof.invariants.find((i) => i.id === 7)!.activationPrompts = [1];
       expect(earliestProofPromptsOf(falsifiedEarlyProof)).not.toEqual(EARLIEST_PROOF_PROMPTS_RATCHET);
+      const weakenedActivation = clone(registry);
+      weakenedActivation.invariants.find((i) => i.id === 3)!.activationMechanisms = [
+        { type: "fitness", ref: "src/__tests__/fitness/no-bare-throw.test.ts" },
+      ];
+      expect(invariantThreeActivationOf(weakenedActivation)).not.toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
+      const droppedActivationArtifact = clone(registry);
+      droppedActivationArtifact.invariants.find((i) => i.id === 3)!.activationArtifacts = [
+        "config/domains/account-opening.yaml",
+      ];
+      expect(invariantThreeActivationOf(droppedActivationArtifact)).not.toEqual(
+        INVARIANT_THREE_ACTIVATION_RATCHET,
+      );
       const relinked = clone(registry);
       relinked.gates.B!.entryGates = [];
       relinked.gates.B!.entryCondition = "None.";
@@ -840,6 +919,39 @@ describe("v3 gate-ordering fence", () => {
       expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
       expect(metadataOf(registry)).toEqual(GATE_METADATA_RATCHET);
       expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
+    });
+
+    it("refuses to activate invariant 3 with an unrelated or missing domain-configuration proof", () => {
+      const unpinned = clone(registry);
+      delete unpinned.invariants.find((invariant) => invariant.id === 3)!.activationMechanisms;
+      expect(gateOrderingProblems(unpinned, () => true)).toContain(
+        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0030",
+      );
+
+      const unrelated = clone(registry);
+      const three = unrelated.invariants.find((invariant) => invariant.id === 3)!;
+      three.status = "active";
+      three.mechanisms = [
+        { type: "fitness", ref: "src/__tests__/fitness/no-bare-throw.test.ts" },
+      ];
+      expect(gateOrderingProblems(unrelated, () => true)).toContain(
+        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' without required activation mechanism fitness:src/__tests__/fitness/domain-configuration.test.ts - an unrelated fitness mechanism cannot prove this activation boundary (ADR-0030)",
+      );
+
+      const missing = clone(registry);
+      const activeThree = missing.invariants.find((invariant) => invariant.id === 3)!;
+      activeThree.status = "active";
+      activeThree.mechanisms = [
+        {
+          type: "fitness",
+          ref: "src/__tests__/fitness/domain-configuration.test.ts",
+        },
+      ];
+      const problems = gateOrderingProblems(
+        missing,
+        (path) => path !== "src/__tests__/fitness/domain-configuration.test.ts",
+      );
+      expect(problems.some((problem) => problem.includes("required activation mechanism") && problem.includes("does not exist"))).toBe(true);
     });
 
     it("holds Gate B below green until both domain files are schema-valid and bound through the shared engine", () => {

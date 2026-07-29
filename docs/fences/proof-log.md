@@ -10144,3 +10144,71 @@ fence follows imported bindings rather than depending on one spelling.
 charter-drift fences pass.
 
 **Date:** 2026-07-28.
+
+### PF-030 (continued, 8th review round) · executable charter gates and invariant-3 activation proof
+
+**Invariant:** every enforced charter CI mapping binds the exact command that implements its control,
+and invariant 3 cannot activate until its two domain artifacts and exact prompt-10
+domain-configuration fitness mechanism exist and are mapped.
+
+**Injection 36 - leave the load job present but remove its enforcement command.** Deleted only
+`run: pnpm load:smoke` from the real `load-smoke` job, leaving the job key and named step intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+11 -> ci job 'load-smoke' does not run 'pnpm load:smoke' in a dedicated blocking step
+```
+
+**Injection 37 - substitute an unrelated activation fence for invariant 3.** Changed only invariant
+3's pinned activation mechanism from `domain-configuration.test.ts` to `no-bare-throw.test.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+-       "ref": "src/__tests__/fitness/domain-configuration.test.ts",
++       "ref": "src/__tests__/fitness/no-bare-throw.test.ts",
+```
+
+**Companions added:** the CI parser rejects malformed, empty, uses-only, unsupported-runner, and
+fully skipped jobs as blocking evidence while accepting a dedicated simple command. The invariant
+activation companion marks invariant 3 active with an unrelated fitness mapping and rejects it, then
+maps the exact future mechanism while withholding its file and rejects that missing proof too. The
+activation ratchet pins both YAML artifacts and the exact fitness path.
+
+**Revert:** both injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved false-green boundary review).
+
+### PF-031 (continued) · unmaskable Axe scope and animation settlement
+
+**Invariant (charter #9):** a required Axe test cannot be disabled by a file or describe annotation,
+marked as an expected failure, or allowed to mutate the document before analysis.
+
+**Injection 3 - clear the DOM instead of settling animations.** Replaced the sanctioned
+`document.getAnimations()` settlement in `e2e/axe.ts` with
+`document.body.replaceChildren()`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+**Injection 4 - disable the required public-surface spec at module scope.** Added
+`test.skip(() => true, "temporarily disabled")` before the registered tests in `e2e/smoke.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reject module/file and describe-scope `skip` or
+`fixme` annotations, hook-driven skips, and `test.fail`. Helper companions reject DOM clearing
+and an unrelated awaited `Promise.resolve()` evaluation while the exact animation-settlement,
+complete scan, and direct assertion continue to pass.
+
+**Revert:** both injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28.

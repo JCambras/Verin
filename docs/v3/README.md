@@ -86,11 +86,18 @@ An unsupported runner, custom shell, or evidence job carrying a non-empty `needs
 non-evidence because its execution or reachability semantics are not proven. Every declared
 `activationPrompts` array is validated regardless of activation status.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
-`ci-gate` mechanisms through it too. A gate's
-`awaiting:` line names every requirement holding it back, undecidable ones included. Four ratchets in
+`ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
+Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
+Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
+`domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
+an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
+domain schema and bind through the shared engine.
+A gate's
+`awaiting:` line names every requirement holding it back, undecidable ones included. Five ratchets in
 the fence pin the complete 30-invariant gate-assignment map, the prompt-5 proof points for invariants
-7, 8, and 9, complete gate metadata (wave, structural predecessor chain, entry condition, outcome), and
-every gate's COMPLETE TYPED requirement set including each non-invariant proof prompt. Readiness
+7, 8, and 9, invariant 3's exact activation artifacts and fitness mechanism, complete gate metadata
+(wave, structural predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED
+requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered gate 0
 green. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's

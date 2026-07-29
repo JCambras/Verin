@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ciJobBlocks, ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
+import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
@@ -75,19 +75,37 @@ const RATCHETED_ENFORCED_IDS = [
 ];
 
 const RATCHETED_CI_COMMANDS = [
+  {
+    entryId: "3",
+    ref: "provenance-trace",
+    command:
+      "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts",
+  },
+  { entryId: "5", ref: "knip", command: "pnpm knip" },
+  { entryId: "8", ref: "e2e", command: "pnpm test:e2e" },
+  { entryId: "9", ref: "e2e", command: "pnpm test:e2e" },
+  { entryId: "11", ref: "load-smoke", command: "pnpm load:smoke" },
+  { entryId: "13", ref: "audit-chain-verify", command: "pnpm audit:chain" },
+  { entryId: "14", ref: "test", command: "pnpm test" },
+  {
+    entryId: "15",
+    ref: "secret-scan",
+    command: "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 .",
+  },
+  {
+    entryId: "15",
+    ref: "sast",
+    command:
+      "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error",
+  },
+  { entryId: "15", ref: "dependency-audit", command: "pnpm audit --audit-level=high" },
+  { entryId: "15", ref: "dependency-audit", command: "pnpm license:audit" },
   { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm v3:invariants" },
   { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm v3:invariants" },
+  { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm golden:validate" },
 ] as const;
 
 function blockingCiJobs(): Map<string, CiJob> {
-  // ONLY the blocking workflow counts: gate names also appear in the non-blocking
-  // scheduled.yml, so a whole-directory scan would stay green after a gate is
-  // deleted from ci.yml. And the workflow is PARSED, through the one structured CI
-  // authority the gate rules use (scripts/v3-gates.lib.ts) - a substring search
-  // matched a deleted job's own leftover comment, and could not see a job left
-  // unable to fail the build (ADR-0030, ruling `gatea-fix-review-3`). charter-map
-  // Command-bearing mappings prove a dedicated blocking step; name-only mappings
-  // prove the weaker claim that the job exists and blocks.
   const f = p(".github/workflows/ci.yml");
   return parseCiJobs(existsSync(f) ? readFileSync(f, "utf8") : "");
 }
@@ -106,19 +124,19 @@ describe("charter-drift fence", () => {
     expect(missing, `enforced mappings point at missing mechanisms:\n${missing.join("\n")}`).toEqual([]);
   });
 
-  it("(a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command", () => {
+  it("(a') every enforced ci-gate binds an exact command in a dedicated blocking step", () => {
     const jobs = blockingCiJobs();
     const missing: string[] = [];
     for (const entry of allEntries) {
       for (const m of entry.mechanisms) {
         if (effectiveStatus(entry, m) !== "enforced") continue;
         if (m.type !== "ci-gate") continue;
-        if (m.command !== undefined) {
-          const problem = ciJobRunProblem(jobs, m.ref, m.command);
-          if (problem !== undefined) missing.push(`${entry.id} -> ${problem}`);
-        } else if (!ciJobBlocks(jobs, m.ref)) {
-          missing.push(`${entry.id} -> ci-gate:${m.ref}`);
+        if (m.command === undefined || m.command.trim() === "") {
+          missing.push(`${entry.id} -> ci-gate:${m.ref} does not bind an exact command`);
+          continue;
         }
+        const problem = ciJobRunProblem(jobs, m.ref, m.command);
+        if (problem !== undefined) missing.push(`${entry.id} -> ${problem}`);
       }
     }
     expect(missing, `enforced CI gates are not proven by .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);

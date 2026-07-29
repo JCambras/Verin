@@ -129,31 +129,54 @@ function callbackOf(call: CallExpression): Callback | undefined {
   return call.getArguments().find((argument): argument is Callback => Node.isArrowFunction(argument) || Node.isFunctionExpression(argument));
 }
 
-function isRegisteredTest(call: CallExpression, sourceFile: SourceFile): boolean {
+function registrationScopeOf(call: CallExpression, sourceFile: SourceFile): SourceFile | Callback | undefined {
   const directContainer = directCallContainer(call);
-  if (directContainer === sourceFile) return true;
+  if (directContainer === sourceFile) return sourceFile;
   const callback = nearestFunction(call);
-  if (callback === undefined || Node.isFunctionDeclaration(callback) || !Node.isBlock(callback.getBody())) return false;
-  if (directContainer !== callback.getBody()) return false;
+  if (callback === undefined || Node.isFunctionDeclaration(callback) || !Node.isBlock(callback.getBody())) return undefined;
+  if (directContainer !== callback.getBody()) return undefined;
   const describeCall = callback.getParent();
-  if (!Node.isCallExpression(describeCall) || !describeCall.getArguments().includes(callback)) return false;
-  return (
-    isNamedImportMemberCall(describeCall, "@playwright/test", "test", "describe") &&
+  if (!Node.isCallExpression(describeCall) || !describeCall.getArguments().includes(callback)) return undefined;
+  return isNamedImportMemberCall(describeCall, "@playwright/test", "test", "describe") &&
     directCallContainer(describeCall) === sourceFile
+    ? callback
+    : undefined;
+}
+
+function isNeutralizingAnnotation(call: CallExpression): boolean {
+  return ["skip", "fixme", "fail"].some((member) =>
+    isNamedImportMemberCall(call, "@playwright/test", "test", member),
   );
 }
 
+function scopeHasNeutralizingAnnotation(scope: SourceFile | Callback): boolean {
+  if (Node.isSourceFile(scope)) {
+    return scope
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some(isNeutralizingAnnotation);
+  }
+  const container = scope.getBody();
+  if (!Node.isBlock(container)) return true;
+  return container
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) => directCallContainer(call) === container && isNeutralizingAnnotation(call));
+}
+
 function testIsDisabled(callback: Callback): boolean {
-  return ownedCalls(callback).some(
-    (call) =>
-      isNamedImportMemberCall(call, "@playwright/test", "test", "skip") ||
-      isNamedImportMemberCall(call, "@playwright/test", "test", "fixme"),
-  );
+  return ownedCalls(callback).some(isNeutralizingAnnotation);
 }
 
 function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
   return sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
-    if (!isNamedImportCall(call, "@playwright/test", "test") || !isRegisteredTest(call, sourceFile)) return false;
+    if (!isNamedImportCall(call, "@playwright/test", "test")) return false;
+    const scope = registrationScopeOf(call, sourceFile);
+    if (
+      scope === undefined ||
+      scopeHasNeutralizingAnnotation(sourceFile) ||
+      (scope !== sourceFile && scopeHasNeutralizingAnnotation(scope))
+    ) {
+      return false;
+    }
     const callback = callbackOf(call);
     if (callback === undefined || testIsDisabled(callback)) return false;
     return ownedCalls(callback).some(
@@ -201,6 +224,18 @@ function configuredAxeAnalysis(
     : undefined;
 }
 
+function isUnshadowedGlobal(node: Node, name: string): boolean {
+  return (
+    Node.isIdentifier(node) &&
+    node.getText() === name &&
+    (node
+      .getSymbol()
+      ?.getDeclarations()
+      .every((declaration) => declaration.getSourceFile() !== node.getSourceFile()) ??
+      true)
+  );
+}
+
 function isAnimationSettlement(statement: Node, pageName: string): boolean {
   if (!Node.isExpressionStatement(statement)) return false;
   const awaited = statement.getExpression();
@@ -208,7 +243,49 @@ function isAnimationSettlement(statement: Node, pageName: string): boolean {
   const call = awaited.getExpression();
   if (!Node.isCallExpression(call)) return false;
   const expression = call.getExpression();
-  return Node.isPropertyAccessExpression(expression) && expression.getName() === "evaluate" && expression.getExpression().getText() === pageName;
+  if (
+    !Node.isPropertyAccessExpression(expression) ||
+    expression.getName() !== "evaluate" ||
+    expression.getExpression().getText() !== pageName ||
+    call.getArguments().length !== 1
+  ) {
+    return false;
+  }
+  const callback = call.getArguments()[0];
+  if (!Node.isArrowFunction(callback) || callback.getParameters().length !== 0) return false;
+  const promiseAll = callback.getBody();
+  if (!Node.isCallExpression(promiseAll) || promiseAll.getArguments().length !== 1) return false;
+  const all = promiseAll.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(all) ||
+    all.getName() !== "all" ||
+    !isUnshadowedGlobal(all.getExpression(), "Promise")
+  ) {
+    return false;
+  }
+  const map = promiseAll.getArguments()[0];
+  if (!Node.isCallExpression(map) || map.getArguments().length !== 1) return false;
+  const mapExpression = map.getExpression();
+  if (!Node.isPropertyAccessExpression(mapExpression) || mapExpression.getName() !== "map") return false;
+  const getAnimations = mapExpression.getExpression();
+  if (!Node.isCallExpression(getAnimations) || getAnimations.getArguments().length !== 0) return false;
+  const getAnimationsExpression = getAnimations.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(getAnimationsExpression) ||
+    getAnimationsExpression.getName() !== "getAnimations" ||
+    !isUnshadowedGlobal(getAnimationsExpression.getExpression(), "document")
+  ) {
+    return false;
+  }
+  const animationCallback = map.getArguments()[0];
+  if (!Node.isArrowFunction(animationCallback) || animationCallback.getParameters().length !== 1) return false;
+  const animationName = animationCallback.getParameters()[0]!.getName();
+  const finished = animationCallback.getBody();
+  return (
+    Node.isPropertyAccessExpression(finished) &&
+    finished.getName() === "finished" &&
+    finished.getExpression().getText() === animationName
+  );
 }
 
 function isDirectViolationAssertion(statement: Node, resultName: string): boolean {
@@ -263,7 +340,9 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
   if (helper === undefined) {
     problems.push(`${AXE_HELPER_PATH}:1 sanctioned Axe assertion helper is missing`);
   } else if (!helperIsSanctioned(helper)) {
-    problems.push(`${AXE_HELPER_PATH}:1 must directly await the complete WCAG Axe scan and assert its unmodified violations`);
+    problems.push(
+      `${AXE_HELPER_PATH}:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations`,
+    );
   }
   for (const path of REQUIRED_AXE_SPECS) {
     const sourceFile = sourceFiles.get(path);
@@ -327,14 +406,18 @@ check.describe("group", () => {
       expect(axeCoverageProblems(completeSources(describeSpec))).toEqual([]);
     });
 
-    it("rejects unreachable, disabled, unawaited, and caught helper calls", () => {
+    it("rejects unreachable, disabled, expected-failure, unawaited, and caught helper calls", () => {
       const wrap = (body: string) =>
         `import { test } from "@playwright/test";\nimport { assertNoAxeViolations } from "./axe";\n${body}`;
       const invalid = [
         wrap(`function neverCalled() { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); }`),
         wrap(`if (false) { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); }`),
         wrap(`test.${"describe" + ".skip"}("off", () => { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
+        wrap(`test.${"skip"}(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test.describe("group", () => { test.${"fixme"}(() => true, "suite disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
+        wrap(`test.describe("group", () => { test.beforeEach(() => test.${"skip"}()); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
         wrap(`test("axe", async ({ page }) => { test.${"skip"}(); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { test.${"fail"}(); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
@@ -352,10 +435,18 @@ check.describe("group", () => {
         VALID_HELPER.replace("expect(results.violations, context)", "results.violations.length = 0;\n  expect(results.violations, context)"),
         VALID_HELPER.replace("const results = await", "const results ="),
         VALID_HELPER.replace(".withTags(", '.exclude("body").withTags('),
+        VALID_HELPER.replace(
+          "await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));",
+          'await page.evaluate(() => { document.body.replaceChildren(); });',
+        ),
+        VALID_HELPER.replace(
+          "await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));",
+          "await page.evaluate(() => Promise.resolve());",
+        ),
       ];
       for (const helper of invalid) {
         expect(axeCoverageProblems(completeSources(VALID_SPEC, helper)), helper).toContain(
-          "e2e/axe.ts:1 must directly await the complete WCAG Axe scan and assert its unmodified violations",
+          "e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations",
         );
       }
     });

@@ -105,7 +105,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "provenance-trace"
+          "ref": "provenance-trace",
+          "command": "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts"
         }
       ]
     },
@@ -129,7 +130,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "knip"
+          "ref": "knip",
+          "command": "pnpm knip"
         },
         {
           "type": "config",
@@ -201,7 +203,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "e2e"
+          "ref": "e2e",
+          "command": "pnpm test:e2e"
         },
         {
           "type": "config",
@@ -257,7 +260,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "load-smoke"
+          "ref": "load-smoke",
+          "command": "pnpm load:smoke"
         },
         {
           "type": "procedure",
@@ -305,7 +309,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "audit-chain-verify"
+          "ref": "audit-chain-verify",
+          "command": "pnpm audit:chain"
         },
         {
           "type": "fitness",
@@ -340,7 +345,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "test"
+          "ref": "test",
+          "command": "pnpm test"
         }
       ]
     },
@@ -352,15 +358,23 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "secret-scan"
+          "ref": "secret-scan",
+          "command": "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 ."
         },
         {
           "type": "ci-gate",
-          "ref": "sast"
+          "ref": "sast",
+          "command": "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error"
         },
         {
           "type": "ci-gate",
-          "ref": "dependency-audit"
+          "ref": "dependency-audit",
+          "command": "pnpm audit --audit-level=high"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "dependency-audit",
+          "command": "pnpm license:audit"
         },
         {
           "type": "config",
@@ -561,7 +575,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "golden-cases"
+          "ref": "golden-cases",
+          "command": "pnpm golden:validate"
         }
       ]
     },
