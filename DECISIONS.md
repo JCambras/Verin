@@ -3593,3 +3593,25 @@ must not leak driver exceptions, and immutable reservation authority must remain
 bounded as tenant history grows.
 **Revert path:** none while Prompt 7 promises deterministic replay, typed repository
 failures, and immutable reservation authority.
+
+### D-118 · 2026-07-29 · reversible · Ledger producer provenance and SQL fences fail closed
+
+Ledger producer provenance is an exact boundary containing only `source`, `asOf`,
+and `confidence`. Its public type excludes the known derived-provenance fields, and
+both write paths reject every additional runtime field instead of silently dropping
+metadata that the chain does not hash. A demonstration derived from fixture input
+therefore cannot be persisted as ordinary computed producer provenance.
+
+The tenant SQL fence treats `org_id IN (...)` as scoped only when the list contains
+bound parameters. The two forward-only migrations that intentionally operate across
+all existing tenants are reviewed as exact full-SQL escapes, so a changed or enlarged
+statement is checked again. The immutable-row ownership fence treats a dynamic
+element-access selector as a possible SQL sink when its receiver exposes `query` or
+`exec`, or when the receiver type is unknown, while leaving typed non-SQL dispatch
+alone.
+
+**Why:** a cryptographic ledger cannot discard trust metadata before hashing, and a
+security fence cannot infer tenant scope or immutable-row ownership from an
+unbounded subquery or an unresolved SQL method selector.
+**Revert path:** none while Prompt 7 promises least-trust provenance, tenant isolation,
+and one immutable write owner.

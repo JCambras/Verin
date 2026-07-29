@@ -1085,6 +1085,15 @@ function hasSqlCallableRoot(
   ) {
     return hasSqlCallableRoot(node.getExpression(), before, seen);
   }
+  if (Node.isElementAccessExpression(node) && callTarget(node) === null) {
+    const receiverType = node.getExpression().getType();
+    if (
+      receiverType.isAny() ||
+      receiverType.isUnknown() ||
+      receiverType.getProperty("query") !== undefined ||
+      receiverType.getProperty("exec") !== undefined
+    ) return true;
+  }
   const target = callTarget(node);
   if (target?.name === "query" || target?.name === "exec") return true;
   if (Node.isCallExpression(node)) {
@@ -1490,6 +1499,23 @@ describe("decision-ledger append-only fence", () => {
           `function sql() { return "INSERT INTO decision_ledger"; }\n` +
           `export const run = (db: { query(s: string): unknown }) => ` +
           `db.query(sql());`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
+    });
+
+    it("fails closed for unresolved element-access SQL sinks", () => {
+      const project = inMemoryProject({
+        "/scripts/unresolved-element.ts":
+          `export const run = (` +
+          `db: { query(s: string): unknown }, method: "query") => ` +
+          `db[method]("INSERT INTO decision_ledger (id) VALUES ('x')");`,
+        "/scripts/non-sql-element.ts":
+          `export const run = (` +
+          `log: { error(s: string): unknown }, method: "error") => ` +
+          `log[method]("INSERT INTO decision_ledger was refused");`,
+        "/scripts/untyped-element.ts":
+          `export const run = (db: any, method: string) => ` +
+          `db[method]("INSERT INTO decision_records (id) VALUES ('x')");`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
     });

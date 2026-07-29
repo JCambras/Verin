@@ -6283,3 +6283,43 @@ projection, schema, ownership, tenant, registry, line-budget, typecheck, and lin
 suites pass.
 
 **Date:** 2026-07-29 (review corrections R1-R3, ADR-0033, D-117).
+
+## Derived provenance and fail-closed SQL selectors (D-118)
+
+**Invariants:** ledger producer provenance cannot discard a derivation trace before
+hashing; `org_id IN (...)` proves tenant scope only through bound values; unresolved
+element-access calls on SQL-capable receivers remain inside immutable-row ownership.
+
+The four permanent companions first ran against the pre-fix implementation:
+
+```text
+× rejects derived provenance when recording a decision
+  expected true to be false
+
+× rejects derived provenance when appending later events
+  promise resolved instead of rejecting
+
+× requires org_id IN values to be bound
+  expected false to be true
+
+× fails closed for unresolved element-access SQL sinks
+  expected [] to have a length of 1
+```
+
+The ledger boundary now exposes `LedgerProducerProvenance`, which statically excludes
+derived fields, and its runtime parser requires exactly the three fields covered by
+the recorded chain codec. Both decision recording and later-event append reject a
+cast derived demonstration before writing a row.
+
+The tenant fence accepts only non-empty parameter lists on the right side of `IN`.
+Migration 5 and migration 7 retain their intentional all-tenant backfills through
+exact full-statement escapes; appending an unscoped query to either reviewed string
+fails the companion. The immutable-row fence classifies an unresolved element
+selector from the receiver type. SQL-capable and unknown receivers fail closed, while
+a typed logger using the same syntax remains outside the SQL fence.
+
+**Revert:** all planted SQL cases are in-memory fence fixtures, and the provenance
+cases use isolated PGlite transactions. The focused ledger integration, tenant,
+append-only, line-budget, typecheck, and lint checks pass.
+
+**Date:** 2026-07-29 (review corrections S1-S3, D-118).

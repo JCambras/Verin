@@ -16,6 +16,7 @@ import {
   appendDecisionEvents,
   rebuildDecisionProjections,
   recordDecision,
+  type LedgerProducerProvenance,
 } from "@infra/ledger/ledger-store";
 import {
   verifyAndListDecisionLedger,
@@ -56,6 +57,9 @@ import {
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import { DecisionRecordV1_7_0Schema } from "@contracts/decision-core/v1-7/decision";
 import { DecisionInputBundleV1_7_0Schema } from "@contracts/decision-core/v1-7/evidence";
+import {
+  deriveArtifactProvenance,
+} from "@contracts/provenance";
 import {
   bundleHashPreimageV1_7_0,
   canonicalJsonV1_0_0,
@@ -2260,6 +2264,40 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(failed.ok).toBe(false);
     // A bug or an outage must never be reported as a client-resolvable conflict.
     expect(failed.ok ? null : failed.error.code).toBe("INTERNAL");
+  });
+
+  it("rejects derived provenance when recording a decision", async () => {
+    const provenance = deriveArtifactProvenance([LEDGER_PROVENANCE], TS);
+    expect(provenance.demonstration).toBe(true);
+    expectTypeOf(provenance).not.toMatchTypeOf<LedgerProducerProvenance>();
+    const result = await recordDecision(db, {
+      ...decisionRecordingInput(),
+      provenance: provenance as unknown as LedgerProducerProvenance,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("VALIDATION");
+    expect(await listDecisionLedger(db, LEDGER_ORG)).toEqual([]);
+  });
+
+  it("rejects derived provenance when appending later events", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:append:derived-provenance",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    const provenance = deriveArtifactProvenance([LEDGER_PROVENANCE], TS);
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [event],
+      provenance as unknown as LedgerProducerProvenance,
+    ))).rejects.toMatchObject({ code: "VALIDATION" });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
   });
 
   it("maps later-append driver failures after rolling back the savepoint", async () => {

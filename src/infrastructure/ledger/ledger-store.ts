@@ -68,13 +68,17 @@ import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
 
 export { rebuildDecisionProjections } from "./ledger-rebuild";
 
+export type LedgerProducerProvenance = RecordProvenance & {
+  readonly demonstration?: never;
+  readonly derivedFrom?: never;
+};
 export interface RecordDecisionInput {
   readonly evidenceSnapshots: readonly EvidenceSnapshotRef[];
   readonly inputBundle: DecisionInputBundle;
   readonly decisionRecord: DecisionRecord;
   readonly events: readonly LedgerEntry[];
   /** Provenance of the producer appending these facts (charter #4). */
-  readonly provenance: RecordProvenance;
+  readonly provenance: LedgerProducerProvenance;
 }
 export interface AppendedLedgerEntry {
   readonly id: string;
@@ -87,6 +91,17 @@ interface PreparedEvent {
   readonly actorJson: string;
 }
 
+function parseLedgerProducerProvenance(
+  value: unknown,
+): LedgerProducerProvenance | null {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    Reflect.ownKeys(value).some((key) =>
+      key !== "source" && key !== "asOf" && key !== "confidence")
+  ) return null;
+  return parseRecordProvenance(value);
+}
 function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   const parsed = LedgerEntrySchema.safeParse(input);
   if (!parsed.success) return err(appError("VALIDATION", "ledger event is invalid"));
@@ -297,7 +312,7 @@ function validateDecisionInput(
   events: PreparedEvent[];
   provenance: RecordProvenance;
 }, AppError> {
-  const provenance = parseRecordProvenance(input.provenance);
+  const provenance = parseLedgerProducerProvenance(input.provenance);
   if (!provenance) {
     return err(appError("VALIDATION", "decision ledger provenance is invalid"));
   }
@@ -418,14 +433,14 @@ export async function appendDecisionEvents(
   tx: SqlTx,
   orgId: string,
   inputs: readonly LedgerEntry[],
-  provenance: RecordProvenance,
+  provenance: LedgerProducerProvenance,
   evidenceSnapshots: readonly EvidenceSnapshotRef[] = [],
 ): Promise<AppendedLedgerEntry[]> {
   if (inputs.length === 0 && evidenceSnapshots.length === 0) return [];
   if (!isSqlTransaction(tx)) {
     throw appError("VALIDATION", "decision events require an active transaction");
   }
-  const normalizedProvenance = parseRecordProvenance(provenance);
+  const normalizedProvenance = parseLedgerProducerProvenance(provenance);
   if (!normalizedProvenance) {
     throw appError("VALIDATION", "decision ledger provenance is invalid");
   }

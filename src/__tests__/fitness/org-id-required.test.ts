@@ -3,6 +3,10 @@ import { relative } from "node:path";
 import { SyntaxKind, type SourceFile } from "ts-morph";
 import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
 import { MIGRATION_SQL, MIGRATIONS, type PreflightProbe } from "@infra/store/migrations";
+import {
+  DECISION_LEDGER_GENERATIONS_SQL,
+  DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
+} from "@infra/store/decision-ledger-migration";
 
 /**
  * ORG-ID-REQUIRED FENCE (ADR-0004, charter #7). Every SELECT/UPDATE/DELETE on a
@@ -58,6 +62,14 @@ export function unclassifiedTables(ddl: string, dataTables: readonly string[], n
 // any superset query (e.g. the login query grown an "OR role = $2" arm).
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
   {
+    sql: normalizeSql(DECISION_LEDGER_GENERATIONS_SQL),
+    why: "forward-only migration 5 validates and backfills every existing tenant",
+  },
+  {
+    sql: normalizeSql(DECISION_REPLAY_SOURCE_PROVENANCE_SQL),
+    why: "forward-only migration 7 backfills and validates every existing tenant",
+  },
+  {
     sql:
       "SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at, " +
       "u.id AS user_id, u.email, u.status AS user_status " +
@@ -109,6 +121,12 @@ function normalizeSqlIdentifiers(sql: string): string {
     value.replace(/""/g, "\"").toLowerCase());
 }
 
+const BOUND_TENANT_VALUE = "(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*)";
+const TENANT_EQUAL_VALUE =
+  `(?:${BOUND_TENANT_VALUE}|'[^']*'|\\d+)`;
+const BOUND_TENANT_LIST =
+  `\\(\\s*${BOUND_TENANT_VALUE}(?:\\s*,\\s*${BOUND_TENANT_VALUE})*\\s*\\)`;
+
 function tenantTableAliases(sql: string): string[] {
   const normalized = normalizeSqlIdentifiers(sql);
   const references =
@@ -144,11 +162,11 @@ function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<strin
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (
       new RegExp(
-        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*|'[^']*'|\\d+)|\\bin\\b)`,
+        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*${TENANT_EQUAL_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
         "i",
       ).test(sql) ||
       new RegExp(
-        `(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*|'[^']*')\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
+        `(?:${BOUND_TENANT_VALUE}|'[^']*')\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
         "i",
       ).test(sql)
     ) {
@@ -157,9 +175,10 @@ function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<strin
   }
   if (
     governed.size === 1 &&
-    /\b(?:where|on)\b[\s\S]*?\borg_id\s*(?:=\s*(?:\$\d+|\?|:[a-z_][a-z0-9_$]*|'[^']*'|\d+)|\bin\b)/i.test(
-      sql,
-    )
+    new RegExp(
+      `\\b(?:where|on)\\b[\\s\\S]*?\\borg_id\\s*(?:=\\s*${TENANT_EQUAL_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
+      "i",
+    ).test(sql)
   ) {
     scoped.add(aliases[0]!);
   }
@@ -313,6 +332,35 @@ describe("org-id-required fence", () => {
     });
     it("allows a query that filters by org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE org_id = $1 AND id = $2")).toBe(false);
+    });
+    it("requires org_id IN values to be bound", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id IN (SELECT id FROM orgs)",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id IN ($1, $2)",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id IN ('firm-a')",
+        ),
+      ).toBe(true);
+    });
+    it("limits migration-wide org_id escapes to the exact reviewed SQL", () => {
+      expect(detectMissingOrgId(DECISION_LEDGER_GENERATIONS_SQL)).toBe(false);
+      expect(
+        detectMissingOrgId(DECISION_REPLAY_SOURCE_PROVENANCE_SQL),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          `${DECISION_LEDGER_GENERATIONS_SQL}
+SELECT * FROM decision_ledger`,
+        ),
+      ).toBe(true);
     });
     it("flags org_id in the projection but NOT the filter (Vale V4 evasion)", () => {
       expect(detectMissingOrgId("SELECT id, org_id FROM households WHERE id = $1")).toBe(true);
