@@ -227,7 +227,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
   resumes from 3500; later contract-layer prompts
   (8–9: primitives, policy AST) re-baseline by their own ADRs when their scope lands. The headroom
   is a budget for finishing prompt 5's contract, NOT standing permission to grow `contracts/`.
-- **Runtime registry data budget (D-062):** the two runtime-imported 2026b IANA JSON registries are
+- **Runtime registry data budget (D-099):** the two runtime-imported 2026b IANA JSON registries are
   generated release data, not executable contract source. Their 602 physical lines have a separate
   620-line ceiling with 18 lines of headroom. Import discovery and the ceiling are blocking in the
   `line-budget` fence. The contracts-source ceiling remains 3500.
@@ -258,7 +258,7 @@ parse time, not by reviewer discipline. Three constraints meet here:
 ## Consequences
 
 - `line-budget` fence: contracts-source ceiling 3500 plus a separate 620-line runtime JSON
-  data-artifact ceiling (D-062).
+  data-artifact ceiling (D-099).
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
   their executable mixed-tenant probes and the registry exactly matches every exported Zod value

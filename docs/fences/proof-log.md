@@ -5337,3 +5337,413 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+## F101-F104 · ambient capability and opaque-schema convergence corrections (D-098)
+
+**Invariants:** inner layers cannot acquire an ambient builtin-module loader; contracts cannot recover
+dynamic code or ambient nondeterminism; exported tenant schemas cannot hide meaning behind an opaque
+or type-changing Zod node.
+
+Each exact adversarial companion was first run against a clean archive of current `origin/main`.
+The existing detectors returned no violation:
+```
+expected [] to include '<non-literal get-builtin-module>'
+expected [] to include '<dynamic-code capability>'
+expected [] to include '<nondeterministic platform-global>'
+expected [] to deeply equal [ 'probe.ts:OpaqueOwner' ]
+```
+The dynamic-code reproduction covered an alias of ambient `Reflect.get` and
+`(class {}).constructor`, so both callable and construct-only recovery paths were live. The
+nondeterminism reproduction covered `Date.now()` and `Math.random()`. The tenant reproduction exported
+`z.any().transform((value): ScopedRef => value as ScopedRef)` and also asserted that the former scoped
+collection inventory stayed empty, proving the new failure comes from the opaque-schema authority.
+
+The retained companions additionally exercise `getBuiltinModule.call`, destructured time access,
+aliased randomness, direct and global ambient Function recovery, and an exact node-identity allowlist.
+Local members named `getBuiltinModule`, `Reflect`, `Date`, `Math`, `Function`, or `constructor` remain
+green. A type-preserving Zod `overwrite` remains green, while an intentional JSON transform fails
+without its exact node in the supplied allowlist and passes with only that node allowed.
+
+Current main's existing 12,000-level decision parse and preimage companion passed before this work, so
+the deep-preimage finding was already protected and no duplicate change was made. Runtime JSON artifact
+budgeting remains an unresolved captain decision and is not changed here.
+
+**Revert:** the planted companions remain as continuous tests. Removing the ambient member acquisition,
+contract capability scan, or opaque-node audit makes its exact companion fail while its lookalike
+control remains green. No production contract or recorded fixture changed. The focused companion suite
+(109), fitness (374), full suite (542), Playwright (17), typecheck, lint, knip, production build,
+v3:invariants, golden:validate, and the 3413/3500 contracts budget all pass.
+
+**Date:** 2026-07-28 (bounded convergence corrections F101-F104, D-098).
+
+## F105 · runtime JSON data-artifact budget (D-099)
+
+**Invariant:** runtime-imported contract JSON registries are measured explicitly, cannot disappear
+from the budget, and cannot grow without a reviewed data-artifact ceiling change. Generated registry
+lines never consume or raise the executable contracts-source ceiling.
+
+The subject authority walks the shipped contracts module graph and resolves local runtime JSON
+references. It discovers exactly the two 2026b IANA artifacts. Their physical baseline is 602 lines:
+343 Zone-registry lines plus 259 Link-registry lines. The separate ceiling is 620, leaving 18 lines of
+measured headroom. Close lookalikes are excluded: type-only references, external package JSON,
+non-JSON modules, and paths outside `src/contracts`.
+
+Replacing the real budget authority with an unconditional empty result failed both adversarial
+companions:
+```
+× fails a planted artifact total above the separate ceiling
+  expected [] to deeply equal [ StringContaining "exceed ceiling" ]
+× fails an empty discovery result instead of passing vacuously
+  expected [] to deeply equal [ StringContaining "discovery went stale" ]
+```
+The original authority was restored immediately after observing both failures. A separate companion
+proves that `one\ntwo\n` measures two physical lines, so final newlines do not inflate generated-data
+accounting.
+
+**Revert:** every planted incomplete form was removed. The contracts-source measurement and 3500-line
+ceiling are unchanged, and no runtime registry byte or recorded fixture hash changed. The focused
+budget fence (10), full suite (547), typecheck, lint, knip, v3:invariants, and golden:validate pass.
+
+**Date:** 2026-07-28 (runtime JSON budget decision, D-099).
+
+## F106 · single-provenance capability resolution and a pinned opaque inventory (D-100)
+
+**Invariants:** a contract capability cannot be acquired through a spelling only one scan covers; an
+opaque Zod node cannot join the tenant allowlist merely by being added inside an already-seeded graph;
+a platform-global companion cannot pass on an unrelated detector.
+
+Each bypass was first reproduced against the pre-fix fences, which returned no violation:
+```
+PROBE computed-destructure-clock    => []
+PROBE assignment-destructure-clock  => []
+PROBE aliased-key-constructor       => []
+PROBE new-date                      => []
+PROBE date-call                     => []
+PROBE globalthis-date-now           => []
+PROBE globalthis-math-random        => []
+```
+After the corrections, each planted form was injected into real contracts source
+(`src/contracts/decision-core/ids.ts`) and failed the live fence with `file:line`:
+```
+src/contracts/decision-core/ids.ts:348 (<dynamic-code capability>)
+src/contracts/decision-core/ids.ts:347 (<nondeterministic platform-global>)   # computed destructure
+src/contracts/decision-core/ids.ts:348 (<nondeterministic platform-global>)   # assignment destructure
+src/contracts/decision-core/ids.ts:347 (<nondeterministic platform-global>)   # globalThis.Date.now()
+src/contracts/decision-core/ids.ts:347 (<nondeterministic platform-global>)   # Date()
+src/contracts/decision-core/ids.ts:347 (<nondeterministic platform-global>)   # new Date()
+```
+The opaque-node pin was proved by adding `injected: z.unknown()` inside the seeded
+`TokenizedPayloadSchema`, which the derived allowlist would previously have auto-blessed:
+```
+× pins the exact opaque nodes the allowlist blesses
++   "TokenizedPayloadSchema.injected",
+    "TokenizedPayloadSchema.value.{}"
+```
+The strengthened platform-global companion was proved non-vacuous by disabling the
+`getBuiltinModule` detector alone. The relaxed `some(line === 1)` form passed on the surviving
+`<platform-global process>` violation; the exact-specifier form fails:
+```
+× implicit platform global process.getBuiltinModule('fs') cannot evade contracts isolation
+-   "<non-literal get-builtin-module>"
+```
+Lookalike controls stay green: local `Reflect` / `Date` / `Math` / `Function` / `constructor` members,
+a locally destructured `{ now }` and `{ constructor: ctor }`, a plain `({ left, right } = …)`
+destructuring assignment, and a pinned-instant `new Date("2020-01-01T00:00:00.000Z")`.
+
+The runtime JSON data-artifact scan was additionally restricted to files whose text contains `.json`.
+A specifier is spelled literally in its file and only a `.json` specifier can resolve to an artifact,
+so the discovery result is unchanged (it still resolves to exactly the two 2026b registries and still
+fails closed on an empty inventory) while the fence no longer re-runs whole-program symbol resolution.
+
+**Revert:** every injected form and every disabled detector was restored immediately after observing
+its focused failure; `git status` reports no change under `src/contracts/`. No production contract,
+schema, fixture byte, or recorded hash changed. Fitness (391), the full suite (559), typecheck, lint,
+knip, `v3:invariants` (5 active-pass · 0 active-fail), and `golden:validate` (16 signed cases) pass.
+
+**Date:** 2026-07-28 (single-provenance capability resolution, D-100).
+
+## F107 · one resolution authority for specifiers, ambient globals, and destructured members (D-101)
+
+**Invariants:** a runtime registry cannot escape the data-artifact budget by being imported under an
+alias; an ambient loader capability cannot be acquired through a spelling only one scan covers; a
+shorthand destructuring cannot suppress the capability it acquires.
+
+Each bypass was first reproduced against the pre-fix fences, which returned no violation:
+```
+PROBE globalthis-namespaced-getBuiltinModule => []
+PROBE aliased-globalthis-process-receiver    => []
+PROBE destructured-getBuiltinModule          => []
+PROBE shorthand-destructured-constructor     => []
+PROBE shorthand-assignment-constructor       => []
+```
+The budget bypass was reproduced against the REAL tree: a 702-line
+`src/contracts/zz-scratch-big.json` plus an importer spelled `@contracts/zz-scratch-big.json` left the
+budget fence entirely green (10 passed), while the same artifact imported as `./zz-scratch-big.json`
+failed it. After the correction both alias spellings fail the live fence and name the artifact:
+```
+× enforces: imported contracts registries are explicit and within 620 lines [now 1304]
++   "src/contracts/zz-scratch-big.json"
+```
+The planted registry and its importer were deleted immediately after observing both failures;
+`git status` reports no change under `src/contracts/`.
+
+The new companions were proved non-vacuous by reverting `_fence-utils.ts` alone (`git stash`) and
+re-running the suite - 7 of the 8 planted spellings failed against the pre-fix detector:
+```
+× ambient getBuiltinModule cannot bypass the layer fence through the globalThis namespace
+× ambient getBuiltinModule cannot bypass the layer fence through an aliased globalThis-namespaced receiver
+× ambient getBuiltinModule cannot bypass the layer fence through a computed globalThis member
+× ambient getBuiltinModule cannot bypass the layer fence through destructuring
+× ambient getBuiltinModule cannot bypass the layer fence through aliased destructuring
+× dynamic Function recovery through shorthand destructured constructor is rejected
+× dynamic Function recovery through shorthand assignment-destructured constructor is rejected
+```
+(`const { Function } = globalThis` already failed closed - its rule never consulted the member node -
+and is recorded as covered, not as newly fixed.)
+
+Lookalike controls stay green and were widened in the same pass, so the corrections cannot pass by
+firing on everything: a project-declared `process.getBuiltinModule` reached by `.bind`, `.call`, AND
+destructuring; `const { constructor } = model` in its shorthand spelling beside the aliased one; and,
+for discovery, `import type`, `package/probe.json`, `./probe.ts`, `../probe.json`, and
+`@app/probe.json` still resolve to no artifact while `./probe.json`, `@contracts/probe.json`, and
+`@/contracts/probe.json` all resolve to the same one.
+
+**Revert:** every planted file, spelling, and reverted detector was restored immediately after
+observing its focused failure. No production contract, schema, fixture byte, or recorded hash changed;
+the contracts measurement remains 3413/3500 and the registry inventory 602/620. Fitness (400), the
+full suite (568), typecheck, lint, knip, `v3:invariants` (5 active-pass · 0 active-fail), and
+`golden:validate` (16 signed cases) pass.
+
+**Date:** 2026-07-28 (single resolution authority, D-101).
+
+## F108 · hidden provenance, package mappings, and Zod children fail closed (D-102)
+
+**Invariants:** ambient capabilities retain provenance through destructuring aliases; every
+runtime-imported contracts JSON artifact is discovered regardless of source spelling; every exported
+schema graph is either fully traversed or rejected as unsupported.
+
+The nine adversarial companions were added first and run against the pre-fix authorities. All nine
+failed:
+```
+× ambient getBuiltinModule cannot bypass the layer fence through a destructured globalThis-namespaced receiver
+× ambient getBuiltinModule cannot bypass the layer fence through an assignment-destructured globalThis-namespaced receiver
+× ambient nondeterminism is rejected: destructured globalThis clock
+× ambient nondeterminism is rejected: assignment-destructured globalThis clock
+× discovers extension-hidden JSON through package imports
+× discovers extension-hidden JSON through package self-references
+× finds opaque nodes inside a promise schema
+× finds opaque nodes inside a function schema
+× fails closed on an unknown child-bearing schema node
+```
+
+The retained controls prove the corrections do not fire indiscriminately. A project-owned object with
+`Date` and `process` members remains allowed through declaration and assignment destructuring. A package
+mapping to JSON outside `src/contracts` is not charged to the contracts data envelope. A recognized
+promise with a string child remains safe, while an invented child-bearing Zod node fails as unsupported.
+
+After the shared authorities were corrected, the focused suite passed 150 tests, the full fitness suite
+passed 410, and the full Vitest suite passed 578. Typecheck, lint, knip, the production build,
+`v3:invariants`, and `golden:validate` also pass. No source file under `src/contracts/` changed, the two
+runtime registries still measure 602/620 lines, and the contracts source measurement remains 3413/3500.
+
+**Revert:** the adversarial companions remain as continuous tests. Restoring any of the three false-pass
+paths fails its exact companion while the corresponding lookalike control remains green.
+
+**Date:** 2026-07-29 (review corrections, D-102).
+
+## F109 · possible-source provenance, required Zod edges, and exact path containment (D-103)
+
+**Invariants:** control flow or a destructuring default cannot erase ambient capability provenance;
+ambient dynamic-code acquisition and every ambient `Date()` call are refused; each known
+child-bearing Zod representation is complete or rejected; an in-root filename beginning with two
+dots remains inside the runtime-data budget.
+
+The reported bypass companions were added first and run against the pre-fix authorities. Nine tests
+failed while 150 retained controls passed:
+```
+× ambient getBuiltinModule cannot bypass the layer fence through a conditionally reassigned ambient receiver
+× dynamic-code recovery through bound ambient Function is rejected
+× dynamic-code recovery through indirect ambient eval is rejected
+× dynamic-code recovery through ambient Function as a value is rejected
+× ambient nondeterminism is rejected: called clock with an argument
+× ambient nondeterminism is rejected: conditionally reassigned ambient clock
+× ambient nondeterminism is rejected: ambient destructuring default
+× fails closed when a recognized child-bearing schema representation drifts
+× discovers a runtime JSON import through EVERY spelling that reaches contracts
+```
+
+Two closure companions were then added against the still-lexically-bounded source collector. Both
+failed before the collector was corrected to retain every source:
+```
+× ambient getBuiltinModule cannot bypass the layer fence through a closure-visible later ambient reassignment
+× ambient nondeterminism is rejected: closure-visible later ambient clock
+```
+
+Two choice-form companions then failed against the source collector until conditional expressions
+and logical assignments joined the same possible-source authority:
+```
+× ambient nondeterminism is rejected: conditional-expression ambient clock
+× ambient nondeterminism is rejected: logical-assignment ambient clock
+```
+
+The Zod representation matrix removes every required child field in turn from object, array, record,
+tuple, set, map, union, intersection, lazy, pipe, promise, function, and template-literal nodes. All
+eighteen mutations must fail with the controlled `unsupported Zod schema structure` refusal. A
+separate known-leaf mutation adds an unrecognized opaque child and must fail by naming that hidden
+schema path. The retained safe controls prove ordinary Zod checks and transparent children remain
+traversable.
+
+Traversing object catchalls exposed one more false-pass in collection classification. The planted
+`z.object({}).catchall(ScopedReferenceSchema)` boundary initially produced no required behavioral
+probe; the collection authority now classifies the catchall itself and the companion stays green.
+
+Lookalike controls remain green: every source in an all-local conditional or destructuring default;
+local `Function`, `eval`, callable `Date`, `process.getBuiltinModule`, and similarly named members; and
+a pinned-instant `new Date("2020-01-01T00:00:00.000Z")`. Runtime JSON outside contracts remains
+excluded, while `src/contracts/..registry.json` is now included.
+
+**Revert:** the adversarial companions remain as continuous tests. Restoring lexical-source selection,
+call-only dynamic-code detection, zero-argument-only `Date` detection, optional Zod edges, or the broad
+two-dot prefix check fails its exact companion while the corresponding safe control remains green.
+No production contract, schema, fixture byte, registry byte, or recorded hash changed.
+
+The focused suite passes 182 tests. Full fitness, full Vitest, typecheck, lint, knip, the production
+build under the CI environment, `v3:invariants` (5 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) also pass.
+
+**Date:** 2026-07-29 (review corrections, D-103).
+
+## F110 · recursive provenance, pinned Date shapes, and schema checks fail closed (D-104)
+
+**Invariants:** ambient capability provenance survives every supported binding form; dynamic code
+cannot hide behind an unprovable constructor receiver; an ambient Date construction proves one pinned
+instant; schema-valued checks remain visible to the opaque-node audit.
+
+The adversarial companions were added before the detector changes. The focused run failed at
+`dependency-rule.test.ts:610`, `dependency-rule.test.ts:763`, and
+`decision-core-tenant-scope.test.ts:869` with ten concrete false negatives:
+```
+× dynamic-code recovery through unprovable constructor receiver is rejected
+× ambient getBuiltinModule cannot bypass the layer fence through a parameter default
+× ambient nondeterminism is rejected: array-bound ambient clock
+× ambient nondeterminism is rejected: nested-bound ambient clock
+× ambient nondeterminism is rejected: array-assigned ambient clock
+× ambient nondeterminism is rejected: nested-assigned ambient clock
+× ambient nondeterminism is rejected: shorthand assignment-default ambient clock
+× ambient nondeterminism is rejected: empty-spread constructed clock
+× ambient nondeterminism is rejected: local-time component constructed clock
+× finds an opaque schema used as a check
+```
+
+The parameter-default probe still produced the independent `<platform-global process>` diagnostic,
+which proved that the missing result belonged specifically to the loader-provenance authority. The
+expected `<non-literal get-builtin-module>` result was absent until parameter declarations joined the
+recursive binding resolver.
+
+The retained controls prevent indiscriminate failure. Parameter, array, nested, and assignment
+bindings sourced entirely from project-owned clocks stay allowed. A project-declared `constructor`
+member stays ordinary application code. `new Date(0)`, a zone-qualified ISO literal, and a const alias
+of that literal remain allowed, while an unzoned local-time string does not. A type-preserving
+`z.minLength` check remains safe, and a newly allocated `z.custom` check remains outside the exact
+29-node allowlist.
+
+The focused dependency and tenant suites pass 182 tests. No production contract, runtime schema,
+fixture byte, registry byte, or recorded hash changed; the contracts measurement remains 3413/3500
+and the runtime registry inventory remains 602/620.
+
+Full fitness passes 455 tests and the complete Vitest suite passes 623. Typecheck, lint, knip, the
+production build under the CI environment, `v3:invariants` (5 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) also pass.
+
+**Revert:** the adversarial companions remain as continuous tests. Restoring shallow binding
+provenance, callable-only constructor detection, argument-count-only Date detection, or non-traversed
+schema checks fails its exact companion while the corresponding safe control remains green.
+
+**Date:** 2026-07-29 (review corrections, D-104).
+
+## F111 · exact provenance, opaque paths, tenant edges, and module inventory (D-105)
+
+**Invariants:** every possible computed key and unresolved call boundary remains visible to capability
+fences; nested destructuring keeps its receiver path; opaque allowances bind an exact path to an exact
+node; every scoped-reference edge is mutation-tested; every shipped decision-core TypeScript module is
+inventoried recursively.
+
+The companions were added before the authorities changed. The focused run failed with eleven concrete
+false negatives:
+```
+× ambient getBuiltinModule cannot bypass the layer fence through a parameter supplied at a call site
+× ambient getBuiltinModule cannot bypass the layer fence through a returned ambient receiver
+× ambient getBuiltinModule cannot bypass the layer fence through a conditionally reassigned computed member
+× ambient getBuiltinModule cannot bypass the layer fence through an unresolved computed member
+× ambient getBuiltinModule cannot bypass the layer fence through nested destructuring
+× ambient nondeterminism is rejected: conditionally reassigned computed clock member
+× ambient nondeterminism is rejected: unresolved computed clock member
+× ambient nondeterminism is rejected: supplied ambient clock parameter
+× ambient nondeterminism is rejected: returned ambient clock
+× does not extend an opaque allowance to a second exported path
+× mutates every scoped-reference edge in a boundary probe
+```
+
+The module bypass was proved against the real source tree. Temporary
+`src/contracts/decision-core/review-probe.tsx` and
+`src/contracts/decision-core/review-probe/nested.ts` files left the pre-fix inventory green. With the
+recursive inventory in place, the same injection failed and named both unregistered paths. Both files
+were removed immediately after each observation.
+
+The retained controls keep project-owned parameters, returned values, nested declaration and assignment
+destructuring, and all-local computed keys legal. Type aliases of `DateConstructor` and `typeof process`
+remain ambient rather than borrowing the alias declaration's locality. A resolved ambient computed key
+set containing only deterministic `Date` members remains legal. The exact opaque occurrence already
+registered at its path remains allowed, and a fully constrained multi-collection tenant boundary rejects
+every generated mutation.
+
+The focused dependency and tenant suites pass 203 tests. No production contract, runtime schema, fixture
+byte, registry byte, or recorded hash changed; the contracts measurement remains 3413/3500 and the runtime
+registry inventory remains 602/620.
+
+**Revert:** the adversarial companions remain continuous tests. Restoring lexical key selection,
+parameter or return fail-open behavior, shallow destructuring, node-only opaque allowances, sampled tenant
+mutation, or top-level-only module discovery fails its paired companion while the corresponding safe
+control remains green.
+
+**Date:** 2026-07-29 (review corrections, D-105).
+
+## F112 · runtime provenance and schema occurrences fail closed (D-106)
+
+**Invariants:** every supported TypeScript module is inventoried; runtime sources cannot borrow safety
+from structural typing; container members and namespace aliases retain every possible source; dynamic
+constructor reflection, implicit formatter clocks, and hidden platform globals remain governed; every
+scoped-reference shape and opaque-schema occurrence remains visible.
+
+The companions were added before the shared authorities changed. The focused red run failed 15 tests.
+The missing results covered MTS and CTS source discovery, structurally typed loader and Date parameters,
+object and array members, later property writes, a conditional `node:module` namespace,
+constructor-descriptor reflection, direct Date calls across a call boundary, both implicit
+`Intl.DateTimeFormat` clock methods, diagnostic-suppressed `process` access, a scoped reference with an
+additional `kind` field, and a shared opaque Zod node at two sibling paths.
+
+The detector changes then made each planted form fail at its semantic authority. Parameters are resolved
+from every direct call and remain unknown when externally supplied. Returned expressions and selected
+container members feed the same provenance set, including later assignments. Date candidates are carried
+through those sources, while an explicit formatter instant remains deterministic. Non-ES globals are
+classified from the platform declaration scope before compiler diagnostics are consulted.
+
+The retained controls prove the fence is not a spelling ban. Fully local structural loader and clock
+values remain allowed when every call source is known. Local object, reflection, `Intl`, `Function`,
+`eval`, and process-like members remain ordinary project code. A real formatter with an explicit instant
+stays allowed. Path-local ancestor tracking emits a shared non-cyclic opaque node twice but terminates a
+recursive lazy schema without hiding its safe sibling.
+
+The focused dependency, tenant-scope, and line-budget suites pass 237 tests. Full fitness passes 497
+tests, the complete Vitest suite passes 665, and production-server Playwright passes 17 tests. Typecheck,
+lint, knip, the CI-configured production build, `v3:invariants` (5 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) also pass.
+
+No production contract, runtime schema, fixture byte, registry byte, or recorded hash changed. The
+contracts measurement remains 3413/3500 and the runtime registry inventory remains 602/620.
+
+**Revert:** the adversarial companions remain continuous tests. Restoring the narrower module predicate,
+type-based locality, shallow container provenance, single-expression namespace resolution, suppressible
+platform diagnostics, exact-two-key scoped references, or global Zod deduplication fails its paired
+companion while the corresponding safe control remains green.
+
+**Date:** 2026-07-29 (review corrections, D-106).

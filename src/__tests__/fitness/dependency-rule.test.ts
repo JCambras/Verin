@@ -489,11 +489,13 @@ describe("dependency-rule fence", () => {
             "let platform = process;",
             "if (false) platform = { getBuiltinModule: (value: string) => value };",
             `export const conditional = platform.getBuiltinModule("local");`,
-            "export function parameter(local = process) { return local.getBuiltinModule.call(process); }",
+            "function parameter(local = process) { return local.getBuiltinModule.call(process); }",
             "type LocalPlatform = { getBuiltinModule(value: string): string };",
-            "export function supplied(local: LocalPlatform) { return local.getBuiltinModule('local'); }",
+            "function supplied(local: LocalPlatform) { return local.getBuiltinModule('local'); }",
             "export function returned(): LocalPlatform { return { getBuiltinModule: (value) => value }; }",
             "export const returnedValue = returned().getBuiltinModule('local');",
+            "export const parameterValue = parameter();",
+            "export const suppliedValue = supplied(process);",
             "const nested = { process };",
             "const { process: { getBuiltinModule: nestedAcquire } } = nested;",
             "export const nestedValue = nestedAcquire.call(process);",
@@ -501,6 +503,77 @@ describe("dependency-rule fence", () => {
         }),
       );
       expect(v).toEqual([]);
+    });
+
+    it("traces structurally typed loader parameters to every call source", () => {
+      const violations = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": [
+            "type Platform = { getBuiltinModule(name: string): unknown };",
+            "function load(platform: Platform) {",
+            `  return platform.getBuiltinModule("node:module");`,
+            "}",
+            "export const value = load(process);",
+          ].join("\n"),
+        }),
+      );
+      expect(violations.map((violation) => violation.specifier)).toContain(
+        "<non-literal get-builtin-module>",
+      );
+    });
+
+    it("fails closed on an externally supplied structural loader", () => {
+      const violations = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": [
+            "type Platform = { getBuiltinModule(name: string): unknown };",
+            "export function load(platform: Platform) {",
+            `  return platform.getBuiltinModule("node:module");`,
+            "}",
+          ].join("\n"),
+        }),
+      );
+      expect(violations.map((violation) => violation.specifier)).toContain(
+        "<non-literal get-builtin-module>",
+      );
+    });
+
+    it("retains loader provenance through object, array, and property writes", () => {
+      const violations = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": [
+            "const holder = { platform: process };",
+            "const values = [process] as const;",
+            "const reassigned = { platform: { getBuiltinModule: (name: string) => name } };",
+            "reassigned.platform = process;",
+            `export const one = holder.platform.getBuiltinModule("node:module");`,
+            `export const two = values[0].getBuiltinModule("node:module");`,
+            `export const three = reassigned.platform.getBuiltinModule("node:module");`,
+          ].join("\n"),
+        }),
+      );
+      expect(
+        violations.filter(
+          (violation) =>
+            violation.specifier === "<non-literal get-builtin-module>",
+        ),
+      ).toHaveLength(3);
+    });
+
+    it("uses every possible namespace source for createRequire", () => {
+      const violations = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/evil.ts": [
+            "const flag = Boolean(0);",
+            "const local = { createRequire: (_url: URL) => (value: string) => value };",
+            `const api = flag ? local : require("node:module");`,
+            "export const load = api.createRequire(import.meta.url);",
+          ].join("\n"),
+        }),
+      );
+      expect(violations.map((violation) => violation.specifier)).toContain(
+        "<non-literal create-require>",
+      );
     });
 
     it("clean inner->inner imports do NOT trip the fence", () => {
@@ -793,6 +866,16 @@ describe("dependency-rule fence", () => {
           `export const value = Ctor("return 1")();`,
         ].join("\n"),
       ],
+      [
+        "ambient constructor descriptor",
+        [
+          "const descriptor = Object.getOwnPropertyDescriptor(",
+          "  Object.getPrototypeOf(async function () {}),",
+          `  "constructor",`,
+          ");",
+          `export const value = descriptor!.value("return 1")();`,
+        ].join("\n"),
+      ],
     ])("dynamic-code recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1009,6 +1092,65 @@ describe("dependency-rule fence", () => {
           "export const value = clockMember;",
         ].join("\n"),
       ],
+      [
+        "structurally typed ambient clock parameter",
+        [
+          "type LocalClock = { now(): number };",
+          "function read(Clock: LocalClock) { return Clock.now(); }",
+          "export const value = read(Date);",
+        ].join("\n"),
+      ],
+      [
+        "unresolved structurally typed clock parameter",
+        [
+          "type LocalClock = { now(): number };",
+          "export function read(Clock: LocalClock) { return Clock.now(); }",
+        ].join("\n"),
+      ],
+      [
+        "direct call through an ambient clock parameter",
+        [
+          "function read(Clock: DateConstructor) { return Clock(0); }",
+          "export const value = read(Date);",
+        ].join("\n"),
+      ],
+      [
+        "direct call through an unresolved clock parameter",
+        "export function read(Clock: DateConstructor) { return Clock(0); }",
+      ],
+      [
+        "clock retained in an object",
+        [
+          "const holder = { Clock: Date };",
+          "export const value = holder.Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock retained in an array",
+        [
+          "const values = [Date] as const;",
+          "export const value = values[0].now();",
+        ].join("\n"),
+      ],
+      [
+        "clock written to a property",
+        [
+          "const holder = { Clock: class { static now() { return 1; } } };",
+          "holder.Clock = Date;",
+          "export const value = holder.Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "implicit Intl format instant",
+        "export const value = new Intl.DateTimeFormat().format();",
+      ],
+      [
+        "implicit Intl formatToParts instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "export const value = formatter.formatToParts(undefined);",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1031,6 +1173,9 @@ describe("dependency-rule fence", () => {
             "type LocalClock = { now(): number };",
             "function suppliedClock(Clock: LocalClock) { return Clock.now(); }",
             "function returnedClock(): LocalClock { return { now: () => 3 }; }",
+            "type CallableClock = ((value: number) => string) & { now(): number };",
+            "function callClock(Clock: CallableClock) { return Clock(0); }",
+            "const callableClock = Object.assign((value: number) => String(value), { now: () => 4 });",
             `let localMember: "now" | "parse" = "now";`,
             `if (false) localMember = "parse";`,
             "const globals = {",
@@ -1072,11 +1217,53 @@ describe("dependency-rule fence", () => {
             "  nestedRandom(),",
             "  nestedAssignedRandom(),",
             "  Date[localMember],",
+            "  callClock(callableClock),",
+            "  new Intl.DateTimeFormat().format(0),",
             "];",
           ].join("\n"),
         }),
       );
       expect(v).toEqual([]);
+    });
+
+    it("local reflection and Intl lookalikes remain allowed", () => {
+      const violations = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "const Object = {",
+            "  getPrototypeOf: (value: unknown) => value,",
+            "  getOwnPropertyDescriptor: (_value: unknown, _key: string) => ({ value: () => 1 }),",
+            "};",
+            "const Intl = {",
+            "  DateTimeFormat: class {",
+            "    format() { return 'safe'; }",
+            "    formatToParts() { return []; }",
+            "  },",
+            "};",
+            `export const descriptor = Object.getOwnPropertyDescriptor({}, "constructor")!.value();`,
+            "export const formatted = new Intl.DateTimeFormat().format();",
+          ].join("\n"),
+        }),
+      );
+      expect(violations).toEqual([]);
+    });
+
+    it("non-ES globals cannot be hidden from contracts diagnostics", () => {
+      const violations = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/evil.ts": [
+            "export const first = (globalThis as any).process.cwd();",
+            "// @ts-ignore",
+            "export const second = process.cwd();",
+          ].join("\n"),
+        }),
+      );
+      expect(
+        violations.filter(
+          (violation) =>
+            violation.specifier === "<platform-global process>",
+        ),
+      ).toHaveLength(2);
     });
 
     it("all-local conditional and default provenance remains allowed", () => {
@@ -1175,9 +1362,15 @@ describe("dependency-rule fence", () => {
       expect(v[0]).toMatchObject({ line: 1, specifier: "react" });
     });
 
-    it("source-local declaration files remain shipped and dependency-enforced", () => {
+    it("every supported source extension remains shipped and dependency-enforced", () => {
       expect(
         isShippedSourceFilePath(join(SRC_ROOT, "contracts", "evil.d.ts")),
+      ).toBe(true);
+      expect(
+        isShippedSourceFilePath(join(SRC_ROOT, "contracts", "evil.mts")),
+      ).toBe(true);
+      expect(
+        isShippedSourceFilePath(join(SRC_ROOT, "contracts", "evil.cts")),
       ).toBe(true);
       expect(
         isShippedSourceFilePath(join(SRC_ROOT, "__tests__", "evil.d.ts")),

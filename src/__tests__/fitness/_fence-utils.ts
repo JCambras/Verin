@@ -5,7 +5,19 @@
  * these also ships a co-located "detects" companion that feeds a synthetic
  * violation and asserts it is caught (charter #4: detection is not verification).
  */
-import { Node, Project, SyntaxKind, ts, type CallExpression, type CompilerOptions, type Signature, type SourceFile, type Type, type VariableDeclaration } from "ts-morph";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  ts,
+  type CallExpression,
+  type CompilerOptions,
+  type Signature,
+  type SourceFile,
+  type Symbol as MorphSymbol,
+  type Type,
+  type VariableDeclaration,
+} from "ts-morph";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -519,38 +531,98 @@ const parameterArgumentSourcesIn = (
       unresolved ||= parameter.getInitializer() === undefined;
       continue;
     }
-    return null;
-  };
-  const destructuredMembers = (): Array<{
-    readonly name: string | null;
-    readonly receiver: Node;
-    readonly line: number;
-  }> => {
-    const members: Array<{
-      readonly name: string | null;
-      readonly receiver: Node;
-      readonly line: number;
-    }> = [];
-    for (const binding of sf.getDescendantsOfKind(
-      SyntaxKind.ObjectBindingPattern,
-    )) {
-      const declaration = binding.getParent();
-      const receiver =
-        Node.isVariableDeclaration(declaration) ||
-        Node.isParameterDeclaration(declaration)
-          ? declaration.getInitializer()
-          : undefined;
-      if (receiver === undefined) continue;
-      for (const element of binding.getElements()) {
-        const name = propertyName(
-          element.getPropertyNameNode(),
-          element.getName(),
-        );
-        members.push({
-          name,
+    if (Node.isSpreadElement(argument)) {
+      unresolved = true;
+      continue;
+    }
+    sources.push({
+      at: call.getStart(),
+      receiver: argument,
+      selectors: [],
+    });
+  }
+  if (calls.length === 0) unresolved = true;
+  return { sources, unresolved };
+};
+
+const bindingElementSourcesIn = (
+  sf: SourceFile,
+  declaration: Node,
+  at: number,
+): AmbientAliasSource[] => {
+  const sources: AmbientAliasSource[] = [];
+  let current = declaration;
+  let selectors: ProvenanceSelector[] = [];
+  let uncertain = false;
+  while (Node.isBindingElement(current)) {
+    const fallback = current.getInitializer();
+    if (fallback !== undefined) {
+      sources.push({
+        at,
+        receiver: fallback,
+        selectors,
+        uncertain,
+      });
+    }
+    const pattern = current.getParent();
+    let selector: ProvenanceSelector;
+    if (Node.isObjectBindingPattern(pattern)) {
+      const name = propertyNameIn(
+        sf,
+        current.getPropertyNameNode(),
+        current.getName(),
+      );
+      selector = { kind: "property", name };
+      uncertain ||= name === null || current.getDotDotDotToken() !== undefined;
+    } else if (Node.isArrayBindingPattern(pattern)) {
+      const index = pattern.getElements().findIndex(
+        (element) => element.compilerNode === current.compilerNode,
+      );
+      selector = { kind: "index", index };
+      uncertain ||= index < 0 || current.getDotDotDotToken() !== undefined;
+    } else {
+      return [
+        ...sources,
+        {
+          at,
+          receiver: current,
+          selectors: [],
+          uncertain: true,
+        },
+      ];
+    }
+    selectors = [selector, ...selectors];
+    const owner = pattern.getParent();
+    if (
+      Node.isVariableDeclaration(owner) ||
+      Node.isParameterDeclaration(owner)
+    ) {
+      const receiver = owner.getInitializer();
+      if (receiver !== undefined) {
+        sources.push({
+          at,
           receiver,
-          line: element.getStartLineNumber(),
+          selectors,
+          uncertain,
         });
+      }
+      if (Node.isParameterDeclaration(owner)) {
+        const arguments_ = parameterArgumentSourcesIn(sf, owner);
+        sources.push(
+          ...arguments_.sources.map((source) => ({
+            ...source,
+            selectors: [...source.selectors, ...selectors],
+            uncertain: source.uncertain === true || uncertain,
+          })),
+        );
+        if (arguments_.unresolved) {
+          sources.push({
+            at,
+            receiver: owner,
+            selectors,
+            uncertain: true,
+          });
+        }
       }
       return sources;
     }
@@ -1404,45 +1476,185 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
           nameNode,
           property.getName(),
         );
-        members.push({
-          name,
-          receiver: assignment.getRight(),
-          line: property.getStartLineNumber(),
-        });
+        const receiver = receiverSources[0]?.receiver;
+        if (receiver === undefined) continue;
+        for (const name of names.names) {
+          members.push({
+            name,
+            member: declaredMemberNode(
+              Node.isPropertyAssignment(property) ? nameNode : undefined,
+              receiver,
+              name,
+            ),
+            ambientReceiverNames,
+            receiver,
+            line: property.getStartLineNumber(),
+          });
+        }
+        if (names.unresolved) {
+          members.push({
+            name: null,
+            member: () => undefined,
+            ambientReceiverNames,
+            receiver,
+            line: property.getStartLineNumber(),
+          });
+        }
+        if (!Node.isPropertyAssignment(property)) continue;
+        const selectedSources = receiverSources.flatMap((source) => [
+          ...[...names.names].map((name) => ({
+            ...source,
+            selectors: [
+              ...source.selectors,
+              { kind: "property" as const, name },
+            ],
+          })),
+          ...(names.unresolved
+            ? [{
+                ...source,
+                selectors: [
+                  ...source.selectors,
+                  { kind: "property" as const, name: null },
+                ],
+                uncertain: true,
+              }]
+            : []),
+        ]);
+        collect(property.getInitializerOrThrow(), selectedSources);
       }
+    };
+    collect(binding, [{
+      at: assignment.getStart(),
+      receiver: assignment.getRight(),
+      selectors: [],
+    }]);
+  }
+  return members;
+};
+
+/** Every module reference, including non-literal dynamic import/require calls. */
+export function moduleReferences(sf: SourceFile): ModuleReference[] {
+  const refs: ModuleReference[] = [];
+  const isDeclaredLocally = (node: Node): boolean =>
+    node.getSymbol()?.getDeclarations().some(
+      (declaration) => declaration.getSourceFile() === sf,
+    ) ?? false;
+  /**
+   * An identifier spelled `require` only names a loader in VALUE position. A member
+   * name (`cfg.require`), an object key, a declared member, or a destructuring
+   * property name is an ordinary property that merely shares the spelling - and it
+   * resolves into whichever module declares that property, so a "declared in THIS
+   * file?" test reports every cross-module one as a CommonJS loader.
+   */
+  const isMemberNamePosition = (identifier: Node): boolean => {
+    const parent = identifier.getParent();
+    if (parent === undefined || Node.isShorthandPropertyAssignment(parent)) return false;
+    if (Node.isQualifiedName(parent)) return parent.getRight() === identifier;
+    if (Node.isBindingElement(parent)) {
+      return parent.getPropertyNameNode() === identifier || parent.getNameNode() === identifier;
     }
-    return members;
+    if (Node.isPropertyAccessExpression(parent)) return parent.getNameNode() === identifier;
+    return Node.isPropertyNamed(parent) && parent.getNameNode() === identifier;
   };
+  const destructuredMembers = (): DestructuredMember[] =>
+    destructuredMembersIn(sf);
+  const propertyKeyCandidates = (
+    node: Node | undefined,
+  ): PropertyKeyCandidates => propertyKeyCandidatesIn(sf, node);
+  /**
+   * A name this project never declares - `module`, `globalThis`, an ambient
+   * global - reached as a bare name OR through the `globalThis` namespace. Shared
+   * with the contracts capability scan so the two cannot disagree on a spelling.
+   */
+  const isAmbientGlobalReference = (node: Node | undefined): boolean =>
+    ambientGlobalNamesIn(sf, node).size > 0;
+  const hasAmbientGlobalName = (
+    node: Node | undefined,
+    name: string,
+    knownNames?: ReadonlySet<string>,
+  ): boolean => {
+    const names = knownNames ?? ambientGlobalNamesIn(sf, node);
+    return names.has(name) || names.has(UNKNOWN_AMBIENT_GLOBAL);
+  };
+  /**
+   * A `require` MEMBER is the CommonJS loader only when it hangs off an ambient
+   * global, or when the member itself is declared ambiently (`const m = module;
+   * m.require(…)`). A member declared by project source - or none at all, which is
+   * every access through a receiver typed `any` - is somebody's own property.
+   */
+  const isAmbientRequireMember = (
+    receiver: Node | undefined,
+    member: () => Node | undefined,
+    ambientReceiverNames?: ReadonlySet<string>,
+  ): boolean => {
+    if (
+      ambientReceiverNames?.size !== undefined
+        ? ambientReceiverNames.size > 0
+        : isAmbientGlobalReference(receiver)
+    ) {
+      return true;
+    }
+    const declarations = member()?.getSymbol()?.getDeclarations() ?? [];
+    return (
+      declarations.length > 0 &&
+      declarations.every((declaration) => declaration.getSourceFile().isDeclarationFile())
+    );
+  };
+  const loaderSpecifier = (node: Node | undefined): string | null => {
+    const expression = unwrapExpression(node);
+    if (!Node.isCallExpression(expression)) return null;
+    const callee = unwrapExpression(expression.getExpression());
+    if (callee === undefined) return null;
+    if (
+      callee.getKind() !== SyntaxKind.ImportKeyword &&
+      (callee.getText() !== "require" || isDeclaredLocally(callee))
+    ) {
+      return null;
+    }
+    const argument = expression.getArguments()[0];
+    return argument &&
+      (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+      ? argument.getLiteralText()
+      : null;
+  };
+  const isNodeModuleSpecifier = (specifier: string | null): boolean =>
+    specifier === "module" || specifier === "node:module";
+  for (const imp of sf.getImportDeclarations()) {
+    refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
+  }
+  const createRequireNamespaces = new Set<string>();
+  for (const imp of sf.getImportDeclarations()) {
+    if (!isNodeModuleSpecifier(imp.getModuleSpecifierValue())) continue;
+    const namespace = imp.getNamespaceImport();
+    const defaultImport = imp.getDefaultImport();
+    if (namespace) createRequireNamespaces.add(namespace.getText());
+    if (defaultImport) createRequireNamespaces.add(defaultImport.getText());
+    for (const named of imp.getNamedImports()) {
+      if (named.getName() !== "createRequire") continue;
+      refs.push({
+        specifier: null,
+        line: named.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
+  }
   const expressionProvenance = (
     node: Node | undefined,
     seen: Set<Node> = new Set(),
-  ): Node | undefined => {
-    const expression = unwrapExpression(node);
-    if (!Node.isIdentifier(expression) || seen.has(expression)) {
-      return expression;
-    }
-    seen.add(expression);
-    const declaration = expression
-      .getSymbol()
-      ?.getDeclarations()
-      .find(Node.isVariableDeclaration);
-    const assignment = sf
-      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
-      .filter(
-        (candidate) =>
-          candidate.getOperatorToken().getKind() ===
-            SyntaxKind.EqualsToken &&
-          candidate.getStart() < expression.getStart() &&
-          Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
-          unwrapExpression(candidate.getLeft())?.getSymbol() ===
-            expression.getSymbol(),
-      )
-      .sort((left, right) => right.getStart() - left.getStart())[0];
-    const source = assignment?.getRight() ?? declaration?.getInitializer();
-    return source === undefined
-      ? expression
-      : expressionProvenance(source, seen);
+  ): Node | undefined => expressionProvenanceIn(sf, node, seen);
+  const literalPropertyKey = (node: Node | undefined): string | null =>
+    literalPropertyKeyIn(sf, node);
+  const mayBePropertyKey = (
+    node: Node | undefined,
+    expected: string,
+  ): boolean => {
+    const candidates = propertyKeyCandidatesIn(sf, node);
+    return candidates.unresolved || candidates.names.has(expected);
   };
+  const propertyName = (
+    node: Node | undefined,
+    fallback: string,
+  ): string | null => propertyNameIn(sf, node, fallback);
   const expressionSources = (
     node: Node | undefined,
     seen: ReadonlySet<object> = new Set(),
@@ -1570,126 +1782,69 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
       ? sources.flatMap((source) => expressionSources(source, nested))
       : [expression];
   };
-  const literalPropertyKeys = (node: Node | undefined): string[] | null => {
-    const keys: string[] = [];
-    const sources = expressionSources(node);
-    if (sources.length === 0) return null;
-    for (const expression of sources) {
-      if (
-        Node.isStringLiteral(expression) ||
-        Node.isNoSubstitutionTemplateLiteral(expression)
-      ) {
-        keys.push(expression.getLiteralText());
-        continue;
-      }
-      if (Node.isNumericLiteral(expression)) {
-        keys.push(expression.getLiteralText());
-        continue;
-      }
-      const type = expression.getType();
-      if (
-        type.isNumber() ||
-        type.isNumberLiteral() ||
-        (type.getFlags() & ts.TypeFlags.ESSymbolLike) !== 0
-      ) continue;
-      return null;
+  const isCreateRequireNamespaceByProvenance = (
+    node: Node | undefined,
+    seen: ReadonlySet<MorphSymbol> = new Set(),
+    failOnUnknown = false,
+  ): boolean => {
+    const expression = unwrapExpression(node);
+    if (isNodeModuleSpecifier(loaderSpecifier(expression))) return true;
+    if (Node.isConditionalExpression(expression)) {
+      return (
+        isCreateRequireNamespaceByProvenance(
+          expression.getWhenTrue(),
+          seen,
+          failOnUnknown,
+        ) ||
+        isCreateRequireNamespaceByProvenance(
+          expression.getWhenFalse(),
+          seen,
+          failOnUnknown,
+        )
+      );
     }
-    return [...new Set(keys)];
-  };
-  const literalPropertyKey = (node: Node | undefined): string | null => {
-    const keys = literalPropertyKeys(node);
-    return keys?.length === 1 ? keys[0]! : null;
-  };
-  const mayBePropertyKey = (
-    node: Node | undefined,
-    expected: string,
-  ): boolean => {
-    const keys = literalPropertyKeys(node);
-    return keys === null || keys.includes(expected);
-  };
-  const destructuredMembers = (): DestructuredMember[] =>
-    destructuredMembersIn(sf);
-  const propertyKeyCandidates = (
-    node: Node | undefined,
-  ): PropertyKeyCandidates => propertyKeyCandidatesIn(sf, node);
-  /**
-   * A name this project never declares - `module`, `globalThis`, an ambient
-   * global - reached as a bare name OR through the `globalThis` namespace. Shared
-   * with the contracts capability scan so the two cannot disagree on a spelling.
-   */
-  const isAmbientGlobalReference = (node: Node | undefined): boolean =>
-    ambientGlobalNamesIn(sf, node).size > 0;
-  const hasAmbientGlobalName = (
-    node: Node | undefined,
-    name: string,
-    knownNames?: ReadonlySet<string>,
-  ): boolean => {
-    const names = knownNames ?? ambientGlobalNamesIn(sf, node);
-    return names.has(name) || names.has(UNKNOWN_AMBIENT_GLOBAL);
-  };
-  /**
-   * A `require` MEMBER is the CommonJS loader only when it hangs off an ambient
-   * global, or when the member itself is declared ambiently (`const m = module;
-   * m.require(…)`). A member declared by project source - or none at all, which is
-   * every access through a receiver typed `any` - is somebody's own property.
-   */
-  const isAmbientRequireMember = (
-    receiver: Node | undefined,
-    member: () => Node | undefined,
-    ambientReceiverNames?: ReadonlySet<string>,
-  ): boolean => {
     if (
-      ambientReceiverNames?.size !== undefined
-        ? ambientReceiverNames.size > 0
-        : isAmbientGlobalReference(receiver)
+      Node.isBinaryExpression(expression) &&
+      PROVENANCE_CHOICE_OPERATORS.has(
+        expression.getOperatorToken().getKind(),
+      )
+    ) {
+      return (
+        isCreateRequireNamespaceByProvenance(
+          expression.getLeft(),
+          seen,
+          failOnUnknown,
+        ) ||
+        isCreateRequireNamespaceByProvenance(
+          expression.getRight(),
+          seen,
+          failOnUnknown,
+        )
+      );
+    }
+    if (!Node.isIdentifier(expression)) return false;
+    if (createRequireNamespaces.has(expression.getText())) return true;
+    const symbol = expression.getSymbol();
+    if (symbol === undefined || seen.has(symbol)) return false;
+    const sources = ambientAliasSourcesIn(sf, symbol);
+    if (
+      failOnUnknown &&
+      sources.some((source) => source.uncertain === true)
     ) {
       return true;
     }
-    const declarations = member()?.getSymbol()?.getDeclarations() ?? [];
-    return (
-      declarations.length > 0 &&
-      declarations.every((declaration) => declaration.getSourceFile().isDeclarationFile())
+    const nextSeen = new Set(seen).add(symbol);
+    return sources.some(
+      (source) =>
+        (failOnUnknown && source.selectors.length > 0) ||
+        isCreateRequireNamespaceByProvenance(
+          source.receiver,
+          nextSeen,
+          failOnUnknown,
+        ),
     );
   };
-  const loaderSpecifier = (node: Node | undefined): string | null => {
-    const expression = unwrapExpression(node);
-    if (!Node.isCallExpression(expression)) return null;
-    const callee = unwrapExpression(expression.getExpression());
-    if (callee === undefined) return null;
-    if (
-      callee.getKind() !== SyntaxKind.ImportKeyword &&
-      (callee.getText() !== "require" || isDeclaredLocally(callee))
-    ) {
-      return null;
-    }
-    const argument = expression.getArguments()[0];
-    return argument &&
-      (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
-      ? argument.getLiteralText()
-      : null;
-  };
-  const isNodeModuleSpecifier = (specifier: string | null): boolean =>
-    specifier === "module" || specifier === "node:module";
-  for (const imp of sf.getImportDeclarations()) {
-    refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
-  }
-  const createRequireNamespaces = new Set<string>();
-  for (const imp of sf.getImportDeclarations()) {
-    if (!isNodeModuleSpecifier(imp.getModuleSpecifierValue())) continue;
-    const namespace = imp.getNamespaceImport();
-    const defaultImport = imp.getDefaultImport();
-    if (namespace) createRequireNamespaces.add(namespace.getText());
-    if (defaultImport) createRequireNamespaces.add(defaultImport.getText());
-    for (const named of imp.getNamedImports()) {
-      if (named.getName() !== "createRequire") continue;
-      refs.push({
-        specifier: null,
-        line: named.getStartLineNumber(),
-        kind: "create-require",
-      });
-    }
-  }
-  const isCreateRequireNamespace = (
+  const upstreamCreateRequireNamespace = (
     node: Node | undefined,
     seen: ReadonlySet<Node> = new Set(),
   ): boolean => {
@@ -1813,21 +1968,21 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
         const sources = memberSources(receiver, member);
         return sources.length > 0
           ? sources.some((source) =>
-            isCreateRequireNamespace(source, visited)
+            upstreamCreateRequireNamespace(source, visited)
           )
           : member === null &&
-            isCreateRequireNamespace(receiver, visited);
+            upstreamCreateRequireNamespace(receiver, visited);
       }
       if (Node.isObjectLiteralExpression(expression)) {
         return expression.getProperties().some((property) =>
           Node.isSpreadAssignment(property) &&
-          isCreateRequireNamespace(property.getExpression(), visited)
+          upstreamCreateRequireNamespace(property.getExpression(), visited)
         );
       }
       if (Node.isArrayLiteralExpression(expression)) {
         return expression.getElements().some((element) =>
           !Node.isOmittedExpression(element) &&
-          isCreateRequireNamespace(element, visited)
+          upstreamCreateRequireNamespace(element, visited)
         );
       }
       if (Node.isCallExpression(expression)) {
@@ -1838,24 +1993,32 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
         );
         if (transparent) {
           return transparent.arguments === null ||
-            isCreateRequireNamespace(transparent.arguments[0], visited);
+            upstreamCreateRequireNamespace(transparent.arguments[0], visited);
         }
         if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")) {
           return expression.getArguments().slice(1).some((argument) =>
-            isCreateRequireNamespace(argument, visited)
+            upstreamCreateRequireNamespace(argument, visited)
           );
         }
         if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "fromEntries")) {
           return expressionSources(expression.getArguments()[0]).some((entries) =>
             Node.isCallExpression(entries) &&
             isAmbientBuiltinMethod(entries.getExpression(), "Object", "entries") &&
-            isCreateRequireNamespace(entries.getArguments()[0], visited)
+            upstreamCreateRequireNamespace(entries.getArguments()[0], visited)
           );
         }
       }
       return false;
     });
   };
+  const isCreateRequireNamespace = (
+    node: Node | undefined,
+    seen: ReadonlySet<MorphSymbol> = new Set(),
+    failOnUnknown = false,
+  ): boolean =>
+    isCreateRequireNamespaceByProvenance(node, seen, failOnUnknown) ||
+    upstreamCreateRequireNamespace(node);
+
   const isAmbientBuiltinReference = (
     node: Node | undefined,
     builtin: "Object" | "Reflect",
@@ -2118,14 +2281,17 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
     ambientReceiverNames?: ReadonlySet<string>,
   ): ModuleReference["kind"] | null => {
     if (
-      (member.name === null || member.name === "createRequire") &&
-      isCreateRequireNamespace(member.receiver)
+      (name === "getBuiltinModule" || name === null) &&
+      (name === null
+        ? (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+            .has("process")
+        : hasAmbientGlobalName(receiver, "process", ambientReceiverNames))
     ) {
       return "get-builtin-module";
     }
     if (
-      (member.name === null || member.name === "require") &&
-      isAmbientGlobalReference(member.receiver)
+      name === "createRequire" &&
+      isCreateRequireNamespace(receiver, new Set(), true)
     ) {
       return "create-require";
     }
@@ -2277,20 +2443,29 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
   }
   for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
     const argument = access.getArgumentExpression();
-    if (
-      isCreateRequireNamespace(access.getExpression()) &&
-      mayBePropertyKey(argument, "createRequire")
-    ) {
-      refs.push({
-        specifier: null,
-        line: access.getStartLineNumber(),
-        kind: "create-require",
-      });
+    const members = propertyKeyCandidates(argument);
+    for (const memberName of members.names) {
+      const kind = loaderMemberKind(
+        memberName,
+        access.getExpression(),
+        () => argument,
+      );
+      if (kind !== null) {
+        refs.push({ specifier: null, line: access.getStartLineNumber(), kind });
+      }
     }
-    if (
-      mayBePropertyKey(argument, "require") &&
-      isAmbientRequireMember(access.getExpression(), argument)
-    ) {
+    if (members.unresolved) {
+      const kind = loaderMemberKind(
+        null,
+        access.getExpression(),
+        () => argument,
+      );
+      if (kind !== null) {
+        refs.push({ specifier: null, line: access.getStartLineNumber(), kind });
+      }
+    }
+    // An UNRESOLVABLE key on a node:module namespace is createRequire-or-worse.
+    if (members.unresolved && isCreateRequireNamespace(access.getExpression())) {
       refs.push({
         specifier: null,
         line: access.getStartLineNumber(),

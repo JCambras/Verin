@@ -3229,3 +3229,267 @@ below high.
 
 **Revert path:** each selector deletes independently once its consumer bumps past
 the advisory range, at which point the range matches nothing.
+
+### D-098 · 2026-07-28 · captain-decision · Contract capabilities and opaque schemas fail closed
+
+Inner layers treat acquisition of the ambient `process.getBuiltinModule` member as an unresolved
+loader reference. This closes `bind` and `call` flows before they can recover `createRequire`, while a
+project-declared member with the same spelling remains ordinary application code. Contract isolation
+also rejects ambient dynamic-code capabilities and nondeterministic clock or randomness APIs. The
+detector follows local aliases and assignments through the same provenance authority as the module
+loader fence, recognizes callable and construct-only receivers, and leaves local `Reflect`, `Date`,
+`Math`, `Function`, and `constructor` members alone.
+
+The tenant completeness audit separately fails every exported schema graph containing `any`,
+`unknown`, `custom`, or type-changing `transform` nodes. Three pre-existing behaviors that JSON Schema
+cannot express are allowed by exact Zod-node identity: validated tokenized JSON is deep-frozen,
+explanation recursion is checked iteratively, and time-zone spelling is canonicalized before its enum
+check. The allowance cannot cover a newly created transform or opaque wrapper. Type-preserving
+`overwrite` normalization remains visible to the ordinary schema graph and requires no exception.
+
+These are fence-only corrections. No runtime contract, schema, projection, fixture byte, or recorded
+hash changes. The contracts measurement remains 3413/3500, with 87 measured lines of headroom, and the
+iterative 12,000-level production preimage protection from D-059 remains unchanged.
+
+**Why:** a dependency fence must stop ambient loader capabilities before higher-order invocation, pure
+contracts cannot depend on ambient code generation, time, or randomness, and a completeness inventory
+cannot infer a type-changing transform from its opaque input schema.
+**Revisit-When:** a contract intentionally needs one of these ambient capabilities or a new opaque Zod
+node; introduce the narrow authority and its behavioral proof before adding an exception.
+**Revert path:** none while contracts remain dependency-free, deterministic values and every exported
+tenant boundary remains completeness-tested.
+
+### D-099 · 2026-07-28 · captain-decision · Runtime JSON registries have a separate data-artifact budget
+
+The 2026b IANA Zone and Link JSON registries are runtime-imported contract artifacts, but they are
+generated release data rather than maintained executable source. They now have a separate blocking
+budget: 602 physical lines against a 620-line ceiling, leaving 18 lines of measured headroom. The
+fitness authority discovers local runtime JSON imports from the shipped contracts module graph,
+requires the current registry inventory explicitly, counts a trailing newline as line termination
+rather than an extra empty line, and fails both an empty inventory and a total above the ceiling.
+
+The contracts TypeScript and TSX measurement remains 3413/3500, with 87 lines of source headroom.
+Neither ADR-0018 nor ADR-0029 is re-baselined to absorb generated JSON. A future IANA release remains
+additive for replay and must explicitly review the data-artifact envelope when it adds its registries.
+
+**Why:** executable-source growth reflects implementation complexity and should remain ratcheted
+independently. Registry growth follows upstream IANA vocabulary and additive replay retention, so
+combining both signals would make neither budget honest.
+**Revisit-When:** an imported contract registry changes or a supported release is added; set the
+smallest reviewed data-artifact ceiling with nonzero headroom without changing source ceilings.
+**Revert path:** none while runtime-imported generated registries remain part of the decision replay
+contract.
+
+### D-100 · 2026-07-28 · reversible · Capability and opaque-node authorities resolve through one provenance path
+
+The contract-capability scan and the opaque-schema allowlist each had a second, weaker resolution path
+that the primary one already closed elsewhere.
+
+The capability scan now shares the module-loader fence's `destructuredMembers` authority instead of
+reading a binding key's raw text, so a computed key (`const { ["now"]: n } = Date`) and an assignment
+pattern (`({ now: n } = Date)`) resolve exactly as a declaration pattern does. Member identity for an
+element access resolves through the same provenance the member NAME resolves through, so an aliased
+key (`const key = "constructor"; obj[key]`) can no longer look project-declared and suppress its own
+record. One shared rule table now serves member access and destructuring, so a capability cannot be
+acquired through whichever spelling a single scan omitted. The ambient-global test accepts the
+`globalThis.Date` / `globalThis["Math"]` namespaced spelling as well as the bare name, and an
+argument-less `Date()` or `new Date()` is treated as the clock read it is. A pinned-instant
+`new Date("2020-01-01T00:00:00.000Z")` and every local lookalike remain allowed.
+
+The decision-core opaque-node allowlist is still derived from its three seed schemas, but the resolved
+inventory is now PINNED by shape path. Because the seed graphs are shared, a traversal-only allowlist
+auto-blessed any opaque node added anywhere inside them; the pin makes such an addition fail loudly
+instead. `ExplanationNodeSchema` is retained as a seed and recorded as contributing no opaque node
+today rather than being described as if it did.
+
+These are fence-only corrections. No runtime contract, schema, fixture byte, or recorded hash changes,
+and the contracts measurement remains 3413/3500 with 87 lines of headroom.
+
+**Why:** a fence with two resolution paths enforces the weaker one, and an allowlist that grows by
+traversal cannot fail closed on the growth it is supposed to review.
+**Revisit-When:** a contract intentionally needs an ambient capability, or a seed schema gains an
+opaque node; extend the pinned path list deliberately with its behavioral proof.
+**Revert path:** none while contracts remain deterministic and every exported tenant boundary remains
+completeness-tested.
+
+### D-101 · 2026-07-28 · reversible · Fences resolve a name once: specifiers, ambient globals, and destructured members
+
+D-100 removed three second resolution paths but left four, each of which the same fence file already
+closed under a different spelling.
+
+The runtime data-artifact budget classified a specifier by its TEXT (`startsWith(".")`), so an aliased
+registry (`@contracts/registry.json`, `@/contracts/registry.json`) was invisible to discovery: its
+lines were counted nowhere AND the pinned inventory still matched, which is exactly the silent growth
+D-099 exists to refuse. Specifiers now resolve through the dependency rule's own authority - shared as
+`localSpecifierTargets`, TypeScript resolution first and configured `paths` second - and only the
+`src/contracts` containment test remains. Discovery skips a file with no `.json` text only while no
+alias maps directly onto a `.json` target, so the shortcut stays exact instead of trusting a spelling.
+
+The module-loader scan and the contract-capability scan each resolved their own ambient global. Only
+the capability one accepted the `globalThis.process` / `globalThis["process"]` namespaced spelling, so
+bound `getBuiltinModule` acquisition - the capability D-098 closed for contracts - was undetected in
+`domain/` and `infrastructure/`. Both now ask one `ambientGlobalNameIn` authority. The loader scan's
+member table was likewise duplicated three ways and had drifted: destructuring recognized
+`createRequire` and `require` but not `getBuiltinModule`. One shared `loaderMemberKind` table now
+serves property access, element access, and destructuring, as `capabilityOf` already does for
+capabilities.
+
+A destructured member's identity came from the binding's name node, which for the SHORTHAND spelling
+(`const { constructor } = fn`, `({ constructor } = fn)`) declares a new local rather than naming the
+source property - so the project-declared test read its own binding and suppressed the record, while
+the aliased spelling was caught. The source property now resolves through the receiver's type, lazily,
+so a project-owned `constructor` stays an allowed lookalike and an ambient one stays refused.
+
+These are fence-only corrections. No runtime contract, schema, fixture byte, or recorded hash changes;
+the contracts measurement remains 3413/3500 and the registries 602/620.
+
+**Why:** a fence that matches a name by text enforces one spelling of it, and every spelling it forgot
+is a capability or an artifact that silently stopped being governed.
+**Revisit-When:** a fence needs to classify a specifier, an ambient global, or a destructured member;
+call the shared authority rather than adding a fourth local copy.
+**Revert path:** none while the budget must see every runtime registry and inner layers must refuse
+ambient loader capabilities.
+
+### D-102 · 2026-07-29 · reversible · Fence discovery and traversal fail closed across hidden structure
+
+Ambient-global provenance now follows aliased object bindings and destructuring assignments through
+the same authority used by loader and contract-capability scans. The latest preceding source wins,
+including assignment defaults, while project-owned objects with `Date` or `process` members remain
+ordinary values.
+
+Runtime JSON discovery scans every source file before resolving module references. The removed source
+text shortcut could account for TypeScript `paths`, but not package imports or package self-references
+whose source spelling hides the `.json` extension.
+
+The decision-core schema walker explicitly traverses promises, function inputs and outputs, template
+literal schema parts, and record keys. Its supported leaf vocabulary is closed, so an unknown Zod node
+fails the fence instead of contributing an empty edge set.
+
+These are fence-only corrections. No runtime contract, fixture byte, recorded hash, source ceiling, or
+runtime JSON envelope changed. The contracts measurement remains 3413/3500 and the registry inventory
+remains 602/620.
+
+**Why:** provenance, artifact discovery, and schema coverage must follow semantic structure instead of
+the spellings and node kinds already anticipated by a fence.
+**Revisit-When:** a new Zod node type is adopted; classify its children or its leaf semantics in the
+closed schema walker before exporting it.
+**Revert path:** none while ambient capabilities, runtime registries, and opaque schema nodes must remain
+fully governed.
+
+### D-103 · 2026-07-29 · reversible · Fence provenance and schema structure preserve every possible source
+
+Ambient-global provenance is now a set, not one lexically selected value. Every declaration,
+assignment, destructuring receiver, and destructuring fallback contributes a possible source,
+including writes after a closure is defined. Control-flow ambiguity therefore cannot erase an
+ambient `process` or `Date`, while all-local conditional and default sources remain allowed. An
+unresolved member selected from `globalThis` fails closed as unknown ambient provenance.
+
+Ambient `Function` and `eval` are refused whenever acquired in value position, including bound and
+comma-expression forms. Every call to ambient `Date` is a clock read regardless of its arguments;
+only `new Date(...)` with a pinned argument remains allowed.
+
+The decision-core schema walker requires every child in each known child-bearing Zod representation,
+recognizes type-preserving checks separately from schema children, traverses object catchalls, and
+rejects any unrecognized schema-valued structure. The runtime-registry containment check now rejects
+only an actual parent path segment, so an in-root file whose name begins with two dots stays governed.
+
+These are fence-only corrections. No runtime contract, fixture byte, recorded hash, source ceiling,
+or runtime JSON envelope changed. The contracts measurement remains 3413/3500 and the registry
+inventory remains 602/620.
+
+**Why:** lexical ordering, call syntax, optional child extraction, and string prefixes are not semantic
+authorities for control flow, capabilities, schema graphs, or filesystem containment.
+**Revisit-When:** a new assignment form or Zod representation is adopted; extend the shared authority
+and its adversarial matrix before relying on it.
+**Revert path:** none while ambient capabilities, opaque schema nodes, and runtime registries must fail
+closed under ambiguity.
+
+### D-104 · 2026-07-29 · reversible · Binding provenance, pinned instants, and schema checks fail closed
+
+Ambient provenance now carries a recursive selector path from parameter, object, array, nested, and
+assignment bindings back to every possible receiver and fallback. Unsupported selectors and rest
+bindings become unknown ambient provenance instead of silently local provenance, while project-owned
+lookalikes remain allowed. The resolver caches each source-file symbol inventory so the stronger
+analysis stays within the dependency fence's timeout.
+
+An undeclared `constructor` member on an `any` or otherwise unprovable receiver is treated as dynamic
+code. Ambient `new Date(...)` is allowed only for exactly one non-spread argument whose type proves a
+number or a zone-qualified ISO timestamp literal; empty-capable spreads, local-time component forms,
+and unzoned strings remain nondeterministic.
+
+Schema-valued Zod checks are traversal edges. The 29 existing opaque validation and normalization
+nodes are pinned by exact exported shape path and node identity, so a new `z.custom` check fails the
+allowlist instead of disappearing behind the parent schema's `checks` array. Ordinary
+type-preserving checks remain transparent.
+
+These are fence-only corrections. No runtime contract, schema, fixture byte, recorded hash, source
+ceiling, or runtime JSON envelope changed. The contracts measurement remains 3413/3500 and the
+registry inventory remains 602/620.
+
+**Why:** a binding shape, receiver type, constructor overload, or validation container cannot be a
+spelling-based escape from a charter-critical fence.
+**Revisit-When:** a contract intentionally needs a broader Date input, an untyped constructor
+receiver, a new binding form, or a new opaque Zod check; add the narrow authority and its behavioral
+proof before widening the allowlist.
+**Revert path:** none while contracts remain deterministic and every exported tenant boundary remains
+completeness-tested.
+
+### D-105 · 2026-07-29 · reversible · Fence completeness follows every key, receiver, path, edge, and module
+
+Computed member resolution now retains every literal supplied by declarations, conditionals, logical
+choices, and assignments. An unresolved computed member fails closed only when its receiver is proven
+ambient, while an exact capability member on unresolved receiver provenance still fails closed.
+Parameters and returned values without a sound source are unknown unless their underlying structural
+type is project-owned; a local type alias cannot rebrand `DateConstructor` or `typeof process` as safe.
+
+Nested declaration and assignment destructuring retain the complete selector path back to every
+possible receiver, so nested `Math.random`, `Reflect.get`, and `process.getBuiltinModule` acquisitions
+share the same ambient authority as direct access.
+
+The opaque-schema allowance is an exact occurrence-path to canonical-node registry. Reusing an allowed
+opaque node at a second export path is unsafe until that exact pair is reviewed. Tenant probes mutate
+every scoped-reference edge independently. Decision-core source inventory recursively covers every
+shipped TypeScript and TSX module, so a nested module or TSX module cannot sit outside the export audit.
+
+These are fence-only corrections. No runtime contract, schema, fixture byte, recorded hash, source
+ceiling, or runtime JSON envelope changed. The contracts measurement remains 3413/3500 and the registry
+inventory remains 602/620.
+
+**Why:** a completeness fence cannot choose one key assignment, trust one call boundary, collapse
+path-specific allowances to identity, sample one tenant edge, or inventory only one directory level.
+**Revisit-When:** a new provenance form, intentional opaque occurrence, or decision-core module form is
+introduced; extend the exact authority and its adversarial companion in the same change.
+**Revert path:** none while ambient capabilities and every exported tenant boundary must remain fully
+governed.
+
+### D-106 · 2026-07-29 · reversible · Fence completeness follows runtime provenance and schema occurrences
+
+Every shipped TypeScript module extension accepted by the project is governed by the shared source
+predicate: TS, TSX, MTS, and CTS, including their declaration forms. Decision-core inventory, source
+budgets, dependency checks, and contract capability checks therefore use one module boundary.
+
+Ambient provenance is established from runtime sources rather than structural type ownership. Direct
+call arguments, returned expressions, object and array members, and later property assignments all
+contribute possible sources. An externally supplied parameter or unresolved return stays unknown, while
+a fully local value with proven call sites remains local. Node module namespace detection uses the same
+set of possible alias sources instead of selecting one expression.
+
+Ambient constructor-descriptor reflection is a dynamic-code capability. Direct ambient Date calls retain
+their Date candidate across call boundaries, and `Intl.DateTimeFormat.format` or `formatToParts` without
+a proven explicit instant is a clock read. Non-ES platform globals are discovered independently of
+suppressible TypeScript diagnostics, including bare and `globalThis` access.
+
+A scoped reference is any object schema carrying schema-valued `firmId` and `id` fields, even when it
+has additional owned fields. Opaque schema traversal uses path-local ancestors for cycle detection, so a
+shared non-cyclic node is emitted at every occurrence path while recursive schemas still terminate.
+
+These are fence-only corrections. No runtime contract, schema, fixture byte, recorded hash, source
+ceiling, or runtime JSON envelope changed. The contracts measurement remains 3413/3500 and the registry
+inventory remains 602/620.
+
+**Why:** a completeness fence must govern every supported module and every possible runtime source,
+clock path, platform capability, scoped-reference shape, and opaque-schema occurrence.
+**Revisit-When:** the compiler accepts another shipped module form, a new provenance container is
+introduced, or Zod changes its graph representation; extend the shared authority and its adversarial
+matrix before relying on it.
+**Revert path:** none while contract purity and tenant-boundary completeness must fail closed.

@@ -331,7 +331,6 @@ const isScopedReferenceSchema = (schema: z.ZodType): boolean => {
   if (definition.type !== "object") return false;
   const shape = definition.shape as Record<string, unknown>;
   return (
-    Object.keys(shape).length === 2 &&
     isSchema(shape.firmId) &&
     isSchema(shape.id)
   );
@@ -405,20 +404,23 @@ const opaqueSchemaNodeEntries = (
   const pending: Array<{ schema: z.ZodType; path: string }> = [
     { schema, path: rootPath },
   ];
-  const seen = new Set<z.ZodType>();
+  const pendingAncestors: Array<ReadonlySet<z.ZodType>> = [new Set()];
   while (pending.length > 0) {
     const next = pending.pop()!;
+    const ancestors = pendingAncestors.pop()!;
     const current = unwrapSchema(next.schema);
-    if (seen.has(current)) continue;
-    seen.add(current);
+    if (ancestors.has(current)) continue;
     if (OPAQUE_SCHEMA_TYPES.has(schemaDefinition(current).type)) {
       entries.push({ path: next.path, node: current });
     }
-    pending.push(
-      ...schemaEdges(current).map((edge) => ({
+    const nextAncestors = new Set(ancestors).add(current);
+    const children = schemaEdges(current).map((edge) => ({
         schema: edge.schema,
         path: edge.segment === "" ? next.path : `${next.path}.${edge.segment}`,
-      })),
+      }));
+    pending.push(...children);
+    pendingAncestors.push(
+      ...children.map(() => nextAncestors),
     );
   }
   return [...entries].sort((left, right) => left.path.localeCompare(right.path));
@@ -489,7 +491,9 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
   ],
   "authority.ts:EscalationStepSchema.after.check[0]": [
     "authority.ts:ApprovalStageSchema.escalationPath.[].after.check[0]",
+    "authority.ts:ApprovalStageTemplateSchema.escalationPath.[].after.check[0]",
     "authority.ts:ApprovalStageTemplateSchema.expiresAfter.check[0]",
+    "authority.ts:ApprovalTemplateSchema.stages.[].escalationPath.[].after.check[0]",
     "authority.ts:ApprovalTemplateSchema.stages.[].expiresAfter.check[0]",
     "authority.ts:AuthorityRequirementSchema.stages.[].escalationPath.[].after.check[0]",
     "authority.ts:EscalationStepSchema.after.check[0]",
@@ -500,25 +504,47 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
   "authority.ts:EscalationStepSchema.roleIds.check[1]": [
     "authority.ts:ApprovalRequirementSchema.eligibleRoleIds.check[1]",
     "authority.ts:ApprovalStageSchema.escalationPath.[].roleIds.check[1]",
+    "authority.ts:ApprovalStageSchema.requirements.[].eligibleRoleIds.check[1]",
     "authority.ts:ApprovalStageTemplateSchema.escalationPath.[].roleIds.check[1]",
+    "authority.ts:ApprovalStageTemplateSchema.requirements.[].eligibleRoleIds.check[1]",
     "authority.ts:ApprovalTemplateSchema.stages.[].escalationPath.[].roleIds.check[1]",
+    "authority.ts:ApprovalTemplateSchema.stages.[].requirements.[].eligibleRoleIds.check[1]",
     "authority.ts:AuthorityRequirementSchema.stages.[].escalationPath.[].roleIds.check[1]",
+    "authority.ts:AuthorityRequirementSchema.specialistRoleIds.check[1]",
+    "authority.ts:AuthorityRequirementSchema.stages.[].requirements.[].eligibleRoleIds.check[1]",
     "authority.ts:EscalationStepSchema.roleIds.check[1]",
+    "decision.ts:DecisionRecordSchema.result.authority.specialistRoleIds.check[1]",
     "decision.ts:DecisionRecordSchema.result.authority.stages.[].escalationPath.[].roleIds.check[1]",
+    "decision.ts:DecisionRecordSchema.result.authority.stages.[].requirements.[].eligibleRoleIds.check[1]",
+    "decision.ts:DecisionResultSchema.authority.specialistRoleIds.check[1]",
     "decision.ts:DecisionResultSchema.authority.stages.[].escalationPath.[].roleIds.check[1]",
+    "decision.ts:DecisionResultSchema.authority.stages.[].requirements.[].eligibleRoleIds.check[1]",
+    "decision.ts:ProceedDecisionSchema.authority.specialistRoleIds.check[1]",
     "decision.ts:ProceedDecisionSchema.authority.stages.[].escalationPath.[].roleIds.check[1]",
+    "decision.ts:ProceedDecisionSchema.authority.stages.[].requirements.[].eligibleRoleIds.check[1]",
     "ids.ts:NonEmptyRoleRefSetSchema.check[1]",
   ],
   "authority.ts:EscalationStepSchema.roleIds.check[2]": [
     "authority.ts:ApprovalRequirementSchema.eligibleRoleIds.check[2]",
     "authority.ts:ApprovalStageSchema.escalationPath.[].roleIds.check[2]",
+    "authority.ts:ApprovalStageSchema.requirements.[].eligibleRoleIds.check[2]",
     "authority.ts:ApprovalStageTemplateSchema.escalationPath.[].roleIds.check[2]",
+    "authority.ts:ApprovalStageTemplateSchema.requirements.[].eligibleRoleIds.check[2]",
     "authority.ts:ApprovalTemplateSchema.stages.[].escalationPath.[].roleIds.check[2]",
+    "authority.ts:ApprovalTemplateSchema.stages.[].requirements.[].eligibleRoleIds.check[2]",
     "authority.ts:AuthorityRequirementSchema.stages.[].escalationPath.[].roleIds.check[2]",
+    "authority.ts:AuthorityRequirementSchema.specialistRoleIds.check[2]",
+    "authority.ts:AuthorityRequirementSchema.stages.[].requirements.[].eligibleRoleIds.check[2]",
     "authority.ts:EscalationStepSchema.roleIds.check[2]",
+    "decision.ts:DecisionRecordSchema.result.authority.specialistRoleIds.check[2]",
     "decision.ts:DecisionRecordSchema.result.authority.stages.[].escalationPath.[].roleIds.check[2]",
+    "decision.ts:DecisionRecordSchema.result.authority.stages.[].requirements.[].eligibleRoleIds.check[2]",
+    "decision.ts:DecisionResultSchema.authority.specialistRoleIds.check[2]",
     "decision.ts:DecisionResultSchema.authority.stages.[].escalationPath.[].roleIds.check[2]",
+    "decision.ts:DecisionResultSchema.authority.stages.[].requirements.[].eligibleRoleIds.check[2]",
+    "decision.ts:ProceedDecisionSchema.authority.specialistRoleIds.check[2]",
     "decision.ts:ProceedDecisionSchema.authority.stages.[].escalationPath.[].roleIds.check[2]",
+    "decision.ts:ProceedDecisionSchema.authority.stages.[].requirements.[].eligibleRoleIds.check[2]",
     "ids.ts:NonEmptyRoleRefSetSchema.check[2]",
   ],
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].check[0]": [
@@ -558,14 +584,19 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
     "explanation.ts:ExplanationNodeSchema.evidenceSnapshotRefs.check[0]",
   ],
   "decision.ts:ExplanationNodeSchema.sourceRefs.[].check[0]": [
+    "decision.ts:DecisionRecordSchema.precedenceTrace.[].left.check[0]",
+    "decision.ts:DecisionRecordSchema.precedenceTrace.[].right.check[0]",
+    "decision.ts:DecisionRecordSchema.result.prohibition.source.check[0]",
     "decision.ts:DecisionRecordSchema.explanationTrace.[].sourceRefs.[].check[0]",
     "decision.ts:DecisionResultSchema.prohibition.source.check[0]",
     "decision.ts:ExplanationNodeSchema.sourceRefs.[].check[0]",
+    "decision.ts:PrecedenceStepSchema.left.check[0]",
     "decision.ts:PrecedenceStepSchema.right.check[0]",
     "decision.ts:ProhibitedDecisionSchema.prohibition.source.check[0]",
     "decision.ts:ProhibitionSchema.source.check[0]",
     "decision.ts:VersionedSourceRefSchema.check[0]",
     "explanation.ts:ExplanationNodeSchema.sourceRefs.[].check[0]",
+    "explanation.ts:PrecedenceStepSchema.left.check[0]",
     "explanation.ts:PrecedenceStepSchema.right.check[0]",
     "explanation.ts:VersionedSourceRefSchema.check[0]",
   ],
@@ -575,49 +606,74 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
     "explanation.ts:ExplanationNodeSchema.sourceRefs.check[0]",
   ],
   "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.conflictKeys.check[1]": [
+    "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].conflictKeys.check[1]",
     "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].compensatingAction.conflictKeys.check[1]",
+    "decision.ts:DecisionResultSchema.executionPlan.steps.[].conflictKeys.check[1]",
     "decision.ts:DecisionResultSchema.executionPlan.steps.[].compensatingAction.conflictKeys.check[1]",
+    "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].conflictKeys.check[1]",
     "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.conflictKeys.check[1]",
     "execution.ts:CompensatingActionSchema.conflictKeys.check[1]",
+    "execution.ts:ExecutionPlanSchema.steps.[].conflictKeys.check[1]",
     "execution.ts:ExecutionPlanSchema.steps.[].compensatingAction.conflictKeys.check[1]",
+    "execution.ts:ExecutionStepSchema.conflictKeys.check[1]",
     "execution.ts:ExecutionStepSchema.compensatingAction.conflictKeys.check[1]",
     "execution.ts:RetrySafeExternalActionSchema.conflictKeys.check[1]",
   ],
   "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]": [
+    "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
+    "decision.ts:DecisionResultSchema.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "decision.ts:DecisionResultSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
+    "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "execution.ts:CompensatingActionSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
+    "execution.ts:ExecutionPlanSchema.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "execution.ts:ExecutionPlanSchema.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "execution.ts:ExecutionPreconditionSchema.requiredEvidenceSnapshotRefs.check[1]",
+    "execution.ts:ExecutionStepSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "execution.ts:ExecutionStepSchema.compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
     "execution.ts:RetrySafeExternalActionSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
   ],
   "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]": [
+    "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
+    "decision.ts:DecisionResultSchema.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "decision.ts:DecisionResultSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
+    "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "execution.ts:CompensatingActionSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
+    "execution.ts:ExecutionPlanSchema.steps.[].preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "execution.ts:ExecutionPlanSchema.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "execution.ts:ExecutionPreconditionSchema.requiredEvidenceSnapshotRefs.check[2]",
+    "execution.ts:ExecutionStepSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "execution.ts:ExecutionStepSchema.compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
     "execution.ts:RetrySafeExternalActionSchema.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
   ],
   "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.check[1]": [
+    "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].preconditions.check[1]",
     "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].compensatingAction.preconditions.check[1]",
+    "decision.ts:DecisionResultSchema.executionPlan.steps.[].preconditions.check[1]",
     "decision.ts:DecisionResultSchema.executionPlan.steps.[].compensatingAction.preconditions.check[1]",
+    "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].preconditions.check[1]",
     "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.check[1]",
     "execution.ts:CompensatingActionSchema.preconditions.check[1]",
+    "execution.ts:ExecutionPlanSchema.steps.[].preconditions.check[1]",
     "execution.ts:ExecutionPlanSchema.steps.[].compensatingAction.preconditions.check[1]",
+    "execution.ts:ExecutionStepSchema.preconditions.check[1]",
     "execution.ts:ExecutionStepSchema.compensatingAction.preconditions.check[1]",
     "execution.ts:RetrySafeExternalActionSchema.preconditions.check[1]",
   ],
   "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.reservationRefs.check[0]": [
+    "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].reservationRefs.check[0]",
     "decision.ts:DecisionRecordSchema.result.executionPlan.steps.[].compensatingAction.reservationRefs.check[0]",
+    "decision.ts:DecisionResultSchema.executionPlan.steps.[].reservationRefs.check[0]",
     "decision.ts:DecisionResultSchema.executionPlan.steps.[].compensatingAction.reservationRefs.check[0]",
+    "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].reservationRefs.check[0]",
     "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.reservationRefs.check[0]",
     "execution.ts:CompensatingActionSchema.reservationRefs.check[0]",
+    "execution.ts:ExecutionPlanSchema.steps.[].reservationRefs.check[0]",
     "execution.ts:ExecutionPlanSchema.steps.[].compensatingAction.reservationRefs.check[0]",
+    "execution.ts:ExecutionStepSchema.reservationRefs.check[0]",
     "execution.ts:ExecutionStepSchema.compensatingAction.reservationRefs.check[0]",
     "execution.ts:RetrySafeExternalActionSchema.reservationRefs.check[0]",
   ],
@@ -1071,6 +1127,8 @@ describe("decision-core tenant-scope fence", () => {
   it.each([
     "nested/probe.ts",
     "probe.tsx",
+    "probe.mts",
+    "nested/probe.cts",
   ])("rejects an unregistered shipped module at %s", (added) => {
     const registered = DECISION_CORE_SCHEMA_MODULES.map(([file]) => file);
     expect(moduleInventoryMismatch(
@@ -1098,6 +1156,19 @@ describe("decision-core tenant-scope fence", () => {
       id: z.string(),
     });
     const Added = z.object({}).catchall(reference);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Added }]],
+      {},
+    ).missing).toEqual(["probe.ts:Added"]);
+  });
+
+  it("detects scoped references with additional owned fields", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+      kind: z.string(),
+    });
+    const Added = z.array(reference);
     expect(tenantBoundaryAudit(
       [["probe.ts", { Added }]],
       {},
@@ -1218,6 +1289,14 @@ describe("decision-core tenant-scope fence", () => {
   });
 
   it("pins the exact opaque nodes the allowlist blesses", () => {
+    const allowedPaths = new Set(
+      Object.values(ALLOWED_OPAQUE_SCHEMA_OCCURRENCES).flat(),
+    );
+    expect(
+      [...opaqueSchemaEntriesByPath.keys()]
+        .filter((path) => !allowedPaths.has(path))
+        .sort(),
+    ).toEqual([]);
     expect(
       ALLOWED_OPAQUE_SCHEMA_ENTRIES.map((entry) => entry.path).sort(),
     ).toEqual(
@@ -1284,6 +1363,37 @@ describe("decision-core tenant-scope fence", () => {
         "probe.ts:First",
       ),
     )).toEqual(["probe.ts:Second"]);
+  });
+
+  it("does not deduplicate shared opaque nodes within one export", () => {
+    const opaque = z.any();
+    const Reused = z.strictObject({
+      added: opaque,
+      allowed: opaque,
+    });
+    expect(unsafeOpaqueSchemaBoundaries(
+      [["probe.ts", { Reused }]],
+      [{
+        path: "probe.ts:Reused.allowed",
+        node: opaque,
+      }],
+    )).toEqual(["probe.ts:Reused"]);
+  });
+
+  it("terminates cyclic schema traversal without hiding safe siblings", () => {
+    const opaque = z.any();
+    const Recursive: z.ZodType = z.lazy(() =>
+      z.strictObject({
+        next: Recursive.optional(),
+        value: opaque,
+      }),
+    );
+    expect(opaqueSchemaNodeEntries(
+      Recursive,
+      "probe.ts:Recursive",
+    ).map((entry) => entry.path)).toEqual([
+      "probe.ts:Recursive.value",
+    ]);
   });
 
   it("does not confuse a type-preserving overwrite with an opaque transform", () => {
