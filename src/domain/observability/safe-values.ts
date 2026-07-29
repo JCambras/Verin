@@ -1,4 +1,5 @@
 import {
+  hasSensitiveAccountReference,
   isPIIField,
   looksLikePIIValue,
   PERSON_WORD_SOURCE,
@@ -112,7 +113,6 @@ const NAME_SHAPED_RE = /\p{Lu}\p{Ll}/u;
 // the two cannot drift, and gated on the value carrying NO digit - that is what keeps
 // uppercase hex ids working ("3F2504E0-4F89-…", which the account-opening route
 // accepts and a bare `\p{Lu}{2,}` would refuse). Names carry no digits; ids do.
-const DIGIT_RE = /\d/;
 const ALL_CAPS_NAME_RE = new RegExp(PERSON_WORD_SOURCE, "u");
 /**
  * A well-formed SQLSTATE: a two-character CLASS followed by three subclass
@@ -138,8 +138,8 @@ function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
   return ID_FIELDS.has(field) && typeof value === "string" &&
     value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
     !NAME_SHAPED_RE.test(value) &&
-    !(!DIGIT_RE.test(value) && ALL_CAPS_NAME_RE.test(value)) &&
-    !/^\d{9,18}$/.test(value) && !looksLikePIIValue(value);
+    !(!/\d/.test(value) && ALL_CAPS_NAME_RE.test(value)) &&
+    !hasSensitiveAccountReference(value) && !looksLikePIIValue(value);
 }
 
 function sealId(field: ObservabilityIdField, value: string): ObservabilityId {

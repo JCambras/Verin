@@ -83,6 +83,7 @@ function normalizedPath(path: string): string {
 interface RepositoryEntry {
   readonly name: string;
   readonly signatures: Signature[];
+  readonly unresolved?: boolean;
 }
 
 function callableMembers(
@@ -259,19 +260,21 @@ export function detectMissingTenantParams(
     if (!repositoryModules.has(normalized)) continue;
 
     const entries: RepositoryEntry[] = [];
+    const returnedEntries = (declaration: Node, owner: string): RepositoryEntry[] =>
+      returnedCallableMembers(declaration, owner, {
+        failOpaqueReturn: escapes.has(`${normalized} :: ${owner}`),
+      }).map((member) => ({
+        name: member.name,
+        signatures: member.signature ? [member.signature] : [],
+        unresolved: member.signature === null,
+      }));
     for (const fn of sf.getFunctions()) {
       if (fn.isExported()) {
         entries.push({
           name: fn.getName() ?? "<anonymous>",
           signatures: [fn.getSignature()],
         });
-        entries.push(...returnedCallableMembers(
-          fn,
-          fn.getName() ?? "<anonymous>",
-        ).map((member) => ({
-          name: member.name,
-          signatures: [member.signature],
-        })));
+        entries.push(...returnedEntries(fn, fn.getName() ?? "<anonymous>"));
       }
     }
     for (const declaration of sf.getVariableDeclarations()) {
@@ -282,13 +285,7 @@ export function detectMissingTenantParams(
           signatures: member.signatures,
         });
         for (const signature of member.signatures) {
-          entries.push(...returnedCallableMembers(
-            signature.getDeclaration(),
-            member.name,
-          ).map((returned) => ({
-            name: returned.name,
-            signatures: [returned.signature],
-          })));
+          entries.push(...returnedEntries(signature.getDeclaration(), member.name));
         }
       }
     }
@@ -301,13 +298,7 @@ export function detectMissingTenantParams(
           signatures: member.signatures,
         });
         for (const signature of member.signatures) {
-          entries.push(...returnedCallableMembers(
-            signature.getDeclaration(),
-            member.name,
-          ).map((returned) => ({
-            name: returned.name,
-            signatures: [returned.signature],
-          })));
+          entries.push(...returnedEntries(signature.getDeclaration(), member.name));
         }
       }
     }
@@ -318,19 +309,23 @@ export function detectMissingTenantParams(
           name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
           signatures: [method.getSignature()],
         });
-        entries.push(...returnedCallableMembers(
+        entries.push(...returnedEntries(
           method,
           `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
-        ).map((returned) => ({
-          name: returned.name,
-          signatures: [returned.signature],
-        })));
+        ));
       }
     }
 
     for (const entry of entries) {
       const ref = `${normalized} :: ${entry.name}`;
       if (escapes.has(ref)) continue;
+      if (entry.unresolved) {
+        out.push({
+          ref,
+          detail: "returned callable implementation cannot be proven",
+        });
+        continue;
+      }
       const unscoped = entry.signatures.some((signature) =>
         sealedAuthorityParameters(signature).length === 0
       );
@@ -517,6 +512,26 @@ describe("tenant-context-required fence", () => {
           }
         `,
       }))).toEqual([]);
+    });
+
+    it.each([
+      `db.query.call(db, "SELECT email FROM users")`,
+      `db.query.apply(db, ["SELECT email FROM users"])`,
+      `db.query.bind(db)("SELECT email FROM users")`,
+      `Reflect.apply(db.query, db, ["SELECT email FROM users"])`,
+    ])("discovers SQL repositories through normalized executor wrappers: %s", (statement) => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export function listAll(db: SqlDb) {
+          return ${statement};
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
     });
 
     /**
@@ -839,6 +854,40 @@ ${body}
           ({ piiGrant: later } = carrier);
           return db.query(later.tenant.orgId);`,
     ])("rejects a later destructuring read of a captured authority", (laterRead) => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,`;
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          ${laterRead}
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it.each([
+      `const copy = { ...carrier };
+          return db.query(copy.piiGrant.tenant.orgId);`,
+      `const copy = Object.assign({}, carrier);
+          return db.query(copy.piiGrant.tenant.orgId);`,
+      `const assign = Object.assign;
+          const copy = assign({}, carrier);
+          return db.query(copy.piiGrant.tenant.orgId);`,
+      `const { assign } = Object;
+          const copy = assign({}, carrier);
+          return db.query(copy.piiGrant.tenant.orgId);`,
+      `const copy = structuredClone(carrier);
+          return db.query(copy.piiGrant.tenant.orgId);`,
+      `const { ...copy } = carrier;
+          return db.query(copy.piiGrant.tenant.orgId);`,
+    ])("rejects copying a captured authority carrier", (laterRead) => {
       const prelude = `
         class GrantCarrier {
           get piiGrant(): ActionGrant<"pii.view"> {
@@ -1369,6 +1418,24 @@ ${body}
         {
           ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
           detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+    it("fails closed when an escaped SQL factory returns an opaque helper result", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        declare function buildRepo(db: SqlDb): any;
+        export function makeRepo(db: SqlDb): any {
+          return buildRepo(db);
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.<unresolved>",
+          detail: "returned callable implementation cannot be proven",
         },
       ]);
     });

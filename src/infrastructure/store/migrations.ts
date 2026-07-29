@@ -21,7 +21,7 @@
  * DERIVES its table list from this DDL: an unclassified table fails the build rather
  * than defaulting to unscoped.
  */
-import { appError, isAppError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
@@ -386,7 +386,8 @@ async function assertPreflightClean(db: SqlQueryable, m: Migration): Promise<voi
       throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
     }
   } catch (cause) {
-    if (isAppError(cause)) throw cause;
+    const error = normalizeAppError(cause);
+    if (error) throw error;
     throw migrationFailure("preflight", cause, m);
   }
 }
@@ -479,7 +480,8 @@ export async function runMigrations(db: SqlDb): Promise<void> {
       }
     });
   } catch (cause) {
-    if (isAppError(cause)) throw cause;
+    const error = normalizeAppError(cause);
+    if (error) throw error;
     throw migrationFailure(stage, cause, activeMigration);
   }
 }

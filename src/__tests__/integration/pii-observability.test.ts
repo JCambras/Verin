@@ -153,6 +153,9 @@ describe("logs never carry raw names or account numbers", () => {
     expect(() =>
       observabilityId("entityId", FIXTURES.accountNumber)
     ).toThrow(/opaque/);
+    for (const field of ["orgId", "actor"] as const) {
+      expect(() => observabilityId(field, "1234-5678-9012")).toThrow(/opaque/);
+    }
     const { lines, logger } = makeSink();
     logger.info(
       {

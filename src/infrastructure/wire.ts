@@ -19,7 +19,7 @@ import {
 import { assertSameTenant, assertTenantContext, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, isAppError, type AppError } from "@contracts/errors";
+import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
@@ -180,7 +180,8 @@ async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps,
   try {
     return await retryFlow(accountOpeningFlow, store, deps, existing, tenant);
   } catch (e) {
-    const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be retried.");
+    const error = normalizeAppError(e) ??
+      appError("INTERNAL", "The account-opening flow could not be retried.");
     return { executionId: existing.id, status: "failed", error, data: {} };
   }
 }
@@ -258,7 +259,8 @@ export async function startAccountOpening(
       } else if (raced) {
         result = raced.status === "failed" ? await retryFailedStart(store, deps, raced, tenant) : replayedRunResult(raced);
       } else {
-        const error = isAppError(e) ? e : appError("INTERNAL", "The account-opening flow could not be started.");
+        const error = normalizeAppError(e) ??
+          appError("INTERNAL", "The account-opening flow could not be started.");
         result = { executionId, status: "failed", error, data: {} };
       }
     }

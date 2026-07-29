@@ -4,9 +4,10 @@
  * on the audit-chain-verify CI gate and the dated backup-restore drill hides the
  * one line naming the fix (e.g. "use VERIN_STORE_DRIVER=pglite for dev/CI").
  */
-import { isAppError } from "@contracts/errors";
+import { normalizeAppError } from "@contracts/errors";
 
 export function errorMessage(e: unknown): string {
-  if (isAppError(e)) return `${e.code}: ${e.message}`;
+  const normalized = normalizeAppError(e);
+  if (normalized) return `${normalized.code}: ${normalized.message}`;
   return e instanceof Error ? e.message : String(e);
 }

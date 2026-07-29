@@ -428,13 +428,33 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  const isCreateRequireNamespace = (node: Node | undefined): boolean => {
+  const isCreateRequireNamespace = (
+    node: Node | undefined,
+    seen: ReadonlySet<Node> = new Set(),
+  ): boolean => {
     const expression = expressionProvenance(node);
-    return (
+    if (!expression || seen.has(expression)) return false;
+    if (
       (Node.isIdentifier(expression) &&
         createRequireNamespaces.has(expression.getText())) ||
       isNodeModuleSpecifier(loaderSpecifier(expression))
-    );
+    ) return true;
+    const visited = new Set(seen).add(expression);
+    if (Node.isObjectLiteralExpression(expression)) {
+      return expression.getProperties().some((property) =>
+        Node.isSpreadAssignment(property) &&
+        isCreateRequireNamespace(property.getExpression(), visited)
+      );
+    }
+    if (
+      Node.isCallExpression(expression) &&
+      isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")
+    ) {
+      return expression.getArguments().slice(1).some((argument) =>
+        isCreateRequireNamespace(argument, visited)
+      );
+    }
+    return false;
   };
   const isAmbientBuiltinReference = (
     node: Node | undefined,
@@ -569,6 +589,16 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   ): readonly [Node | undefined, Node | undefined, boolean] | null => {
     const direct = call.getArguments();
     if (isAccessor(call.getExpression())) return [direct[0], direct[1], false];
+    if (
+      isAmbientBuiltinMethod(call.getExpression(), "Reflect", "apply") &&
+      isAccessor(direct[0])
+    ) {
+      const applied = expressionProvenance(direct[2]);
+      if (!Node.isArrayLiteralExpression(applied)) {
+        return [undefined, undefined, true];
+      }
+      return [applied.getElements()[0], applied.getElements()[1], false];
+    }
     const callee = expressionProvenance(call.getExpression());
     if (
       Node.isPropertyAccessExpression(callee) ||
@@ -1241,12 +1271,13 @@ export function structuralPiiExposures(
 export interface ReturnedCallableMember {
   readonly name: string;
   readonly declaration: Node;
-  readonly signature: Signature;
+  readonly signature: Signature | null;
 }
 
 export function returnedCallableMembers(
   declaration: Node,
   owner: string,
+  options: { readonly failOpaqueReturn?: boolean } = {},
 ): ReturnedCallableMember[] {
   const body = Node.isFunctionDeclaration(declaration) ||
       Node.isFunctionExpression(declaration) ||
@@ -1329,6 +1360,12 @@ export function returnedCallableMembers(
     memberKeys.add(key);
     members.push({ name, declaration: implementation, signature });
   };
+  const addUnresolvedMember = (name: string, expression: Node): void => {
+    const key = `${name}:${expression.getSourceFile().getFilePath()}:${expression.getStart()}:unresolved`;
+    if (memberKeys.has(key)) return;
+    memberKeys.add(key);
+    members.push({ name, declaration: expression, signature: null });
+  };
   const callableProperties = (
     type: Type,
   ): Array<{ name: string; signature: Signature }> => {
@@ -1355,12 +1392,29 @@ export function returnedCallableMembers(
     return found;
   };
   const addUnresolved = (expression: Node): void => {
-    for (const callable of callableProperties(expression.getType())) {
+    const callables = callableProperties(expression.getType());
+    for (const callable of callables) {
       addMember(
         `${owner}.${callable.name}`,
         expression,
         callable.signature,
       );
+    }
+    const type = expression.getType();
+    const mayReturnCallable = returnType &&
+      (
+        returnType.isAny() ||
+        returnType.isUnknown() ||
+        callableProperties(returnType).length > 0
+      );
+    if (
+      callables.length === 0 &&
+      options.failOpaqueReturn === true &&
+      (Node.isCallExpression(expression) || Node.isNewExpression(expression)) &&
+      (type.isAny() || type.isUnknown()) &&
+      mayReturnCallable
+    ) {
+      addUnresolvedMember(`${owner}.<unresolved>`, expression);
     }
   };
   const collectObject = (
@@ -1387,7 +1441,11 @@ export function returnedCallableMembers(
           `${owner}.${property.getName()}`,
         );
         for (const member of returnedMembers) {
-          addMember(member.name, member.declaration, member.signature);
+          if (member.signature) {
+            addMember(member.name, member.declaration, member.signature);
+          } else {
+            addUnresolvedMember(member.name, member.declaration);
+          }
         }
         if (returnedMembers.length === 0) {
           for (const signature of property.getReturnType().getCallSignatures()) {
@@ -1491,7 +1549,11 @@ export function returnedCallableMembers(
         `${owner}.${accessor.getName()}`,
       );
       for (const member of returnedMembers) {
-        addMember(member.name, member.declaration, member.signature);
+        if (member.signature) {
+          addMember(member.name, member.declaration, member.signature);
+        } else {
+          addUnresolvedMember(member.name, member.declaration);
+        }
       }
       if (returnedMembers.length === 0) {
         for (const signature of accessor.getReturnType().getCallSignatures()) {
@@ -2277,6 +2339,7 @@ function repeatedAuthorityEvaluations(
       ? bindingSource(owner)
       : null;
     if (!base) return null;
+    if (element.getDotDotDotToken()) return base;
     if (Node.isObjectBindingPattern(pattern)) {
       const name = propertyText(
         element.getPropertyNameNode(),
@@ -2293,20 +2356,118 @@ function repeatedAuthorityEvaluations(
   const authorityRead = (
     node: Node,
     source: string | null,
-  ): Array<{ readonly node: Node; readonly source: string }> =>
-    source === null ? [] : [{ node, source }];
-  const reads: Array<{ readonly node: Node; readonly source: string }> = [
+    expands = false,
+  ): Array<{ readonly node: Node; readonly source: string; readonly expands: boolean }> =>
+    source === null ? [] : [{ node, source, expands }];
+  const ambientCopyMethod = (
+    node: Node,
+    builtin: "Object" | "structuredClone",
+    methods: readonly string[],
+    seen: ReadonlySet<object> = new Set(),
+  ): string | null => {
+    const expression = unwrap(node);
+    if (!expression) return null;
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return null;
+    const visited = new Set(seen).add(key);
+    if (Node.isIdentifier(expression)) {
+      if (
+        builtin === "structuredClone" &&
+        expression.getText() === builtin &&
+        (symbol?.getDeclarations() ?? []).every((declaration) =>
+          declaration.getSourceFile().isDeclarationFile()
+        )
+      ) return builtin;
+      for (const source of bindingSources(expression)) {
+        const method = ambientCopyMethod(source, builtin, methods, visited);
+        if (method) return method;
+      }
+      const binding = symbol?.getDeclarations().find(Node.isBindingElement);
+      const pattern = binding?.getParent();
+      const owner = pattern?.getParent();
+      if (
+        binding &&
+        Node.isObjectBindingPattern(pattern) &&
+        Node.isVariableDeclaration(owner)
+      ) {
+        const method = propertyText(
+          binding.getPropertyNameNode(),
+          binding.getName(),
+        );
+        const receiver = unwrap(owner.getInitializer());
+        if (
+          method &&
+          methods.includes(method) &&
+          Node.isIdentifier(receiver) &&
+          receiver.getText() === builtin &&
+          (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
+            declaration.getSourceFile().isDeclarationFile()
+          )
+        ) return method;
+      }
+      return null;
+    }
+    if (!Node.isPropertyAccessExpression(expression)) return null;
+    const receiver = unwrap(expression.getExpression());
+    return methods.includes(expression.getName()) &&
+      Node.isIdentifier(receiver) &&
+      receiver.getText() === builtin &&
+      (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
+        declaration.getSourceFile().isDeclarationFile()
+      )
+      ? expression.getName()
+      : null;
+  };
+  const copyCallSources = (call: CallExpression): Node[] => {
+    const method = ambientCopyMethod(
+      call.getExpression(),
+      "Object",
+      ["assign", "entries", "values"],
+    );
+    if (method === "assign") return call.getArguments().slice(1);
+    if (method === "entries" || method === "values") {
+      return call.getArguments().slice(0, 1);
+    }
+    if (ambientCopyMethod(
+      call.getExpression(),
+      "structuredClone",
+      ["structuredClone"],
+    )) return call.getArguments().slice(0, 1);
+    return [];
+  };
+  const reads: Array<{
+    readonly node: Node;
+    readonly source: string;
+    readonly expands: boolean;
+  }> = [
     ...body.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
       .flatMap((node) => authorityRead(node, resolvedText(node))),
     ...body.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
       .flatMap((node) => authorityRead(node, resolvedText(node))),
     ...body.getDescendantsOfKind(SyntaxKind.BindingElement)
-      .flatMap((node) => authorityRead(node, bindingSource(node))),
+      .flatMap((node) =>
+        authorityRead(node, bindingSource(node), node.getDotDotDotToken() !== undefined)
+      ),
+    ...body.getDescendantsOfKind(SyntaxKind.SpreadAssignment)
+      .flatMap((node) =>
+        authorityRead(node, resolvedText(node.getExpression()), true)
+      ),
+    ...body.getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) =>
+        copyCallSources(call).flatMap((source) =>
+          authorityRead(call, resolvedText(source), true)
+        )
+      ),
   ];
   const collectAssignmentReads = (pattern: Node, base: string): void => {
     const target = unwrap(pattern);
     if (Node.isObjectLiteralExpression(target)) {
       for (const property of target.getProperties()) {
+        if (Node.isSpreadAssignment(property)) {
+          reads.push({ node: property, source: base, expands: true });
+          continue;
+        }
         if (
           !Node.isPropertyAssignment(property) &&
           !Node.isShorthandPropertyAssignment(property)
@@ -2324,7 +2485,7 @@ function repeatedAuthorityEvaluations(
         ) {
           collectAssignmentReads(unwrappedValue, source);
         } else {
-          reads.push({ node: property, source });
+          reads.push({ node: property, source, expands: false });
         }
       }
       return;
@@ -2339,7 +2500,7 @@ function repeatedAuthorityEvaluations(
         ) {
           collectAssignmentReads(value, source);
         } else {
-          reads.push({ node: element, source });
+          reads.push({ node: element, source, expands: false });
         }
       });
     }
@@ -2431,7 +2592,9 @@ function repeatedAuthorityEvaluations(
       (
         read.source === source ||
         read.source.startsWith(`${source}.`) ||
-        read.source.startsWith(`${source}[`)
+        read.source.startsWith(`${source}[`) ||
+        (read.expands && source.startsWith(`${read.source}.`)) ||
+        (read.expands && source.startsWith(`${read.source}[`))
       )
     );
     return repeated
@@ -2537,34 +2700,6 @@ const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);
  * makes all three resolve alike; an unrelated `.query()` that takes no SQL string is
  * still not mistaken for persistence.
  */
-/**
- * The name a call is WRITTEN under, for the fail-closed arm below only. `db.query(…)`,
- * `db["query"](…)`, and a bare `query(…)` all answer "query".
- */
-function syntacticCalleeName(call: CallExpression): string | undefined {
-  // `(query as (sql: string) => unknown)(…)` is the same call as `query(…)`: the cast
-  // supplies an anonymous signature, so the wrapper has to come off first or the
-  // fail-closed arm never sees a name at all.
-  let expression: Node = call.getExpression();
-  while (
-    Node.isParenthesizedExpression(expression) ||
-    Node.isAsExpression(expression) ||
-    Node.isTypeAssertion(expression) ||
-    Node.isSatisfiesExpression(expression)
-  ) {
-    expression = expression.getExpression();
-  }
-  if (Node.isPropertyAccessExpression(expression)) return expression.getName();
-  if (Node.isIdentifier(expression)) return expression.getText();
-  if (Node.isElementAccessExpression(expression)) {
-    const argument = expression.getArgumentExpression();
-    return argument && Node.isStringLiteral(argument)
-      ? argument.getLiteralValue()
-      : undefined;
-  }
-  return undefined;
-}
-
 /** Does this type's own signature declare it an executor (`query(sql: string, …)`)? */
 function declaresExecutorSignature(type: Type): boolean {
   return type.getCallSignatures().some((signature) => {
@@ -2625,8 +2760,8 @@ function accessedName(node: Node): string | undefined {
 const SQL_STATEMENT_RE =
   /^\s*\(?\s*(?:WITH|SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|COPY|GRANT|REVOKE|LOCK|COMMENT|REFRESH|EXPLAIN|VACUUM|ANALYZE|DO|BEGIN|COMMIT|ROLLBACK|SAVEPOINT)\b/i;
 
-function issuesSqlLiteral(call: CallExpression): boolean {
-  const [first] = call.getArguments();
+function issuesSqlLiteral(arguments_: readonly Node[]): boolean {
+  const [first] = arguments_;
   if (!first) return false;
   const text = Node.isStringLiteral(first) || Node.isNoSubstitutionTemplateLiteral(first)
     ? first.getLiteralValue()
@@ -2636,43 +2771,184 @@ function issuesSqlLiteral(call: CallExpression): boolean {
   return Boolean(text && SQL_STATEMENT_RE.test(text));
 }
 
-export function isSqlExecutorCall(call: CallExpression): boolean {
-  const calleeType = call.getExpression().getType();
+function unwrapSqlExpression(node: Node): Node {
+  let expression = node;
+  while (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isNonNullExpression(expression)
+  ) expression = expression.getExpression();
+  return expression;
+}
+
+function isSqlExecutorExpression(
+  source: Node,
+  arguments_: readonly Node[],
+): boolean {
+  const expression = unwrapSqlExpression(source);
+  const calleeType = expression.getType();
   if (declaresExecutorSignature(calleeType)) return true;
-  // A callee whose signatures DID resolve but name something other than an executor
-  // is a genuine non-SQL call and stays clean, so an unrelated `.query()` taking no
-  // SQL string is still not mistaken for persistence.
   if (declaredCalleeNames(calleeType).length > 0) return false;
-  // FAIL CLOSED on a callee the checker cannot narrow. Resolving the executor through
-  // its SIGNATURE is what makes destructured and computed callsites resolve alike, but
-  // a callee widened past SqlDb - a `Function`-typed local, a `(sql: string) => …`
-  // alias, a value behind an `any` - yields ZERO declared signatures, and returning
-  // false there made this whole rule a one-line evasion: `const run: Function =
-  // db.query; run("SELECT … FROM users …")` issues exactly the same SQL from exactly
-  // the same place. Both fences that stand behind this derivation (governed-sink and
-  // tenant-scope) treat an unresolvable type as a violation everywhere else.
-  const written = syntacticCalleeName(call);
+  const written = accessedName(expression);
   if (written && SQL_EXECUTOR_METHODS.has(written)) return true;
-  // A SQL statement handed to a callee nobody can resolve is persistence under any
-  // name, so the identifier text is never the last word.
-  if (issuesSqlLiteral(call)) return true;
-  // ...and when the statement arrives in a variable, the callee is resolved by VALUE:
-  // the widened local is followed back to what it was BOUND from, so renaming it
-  // changes nothing. Gated on the call actually taking SQL-shaped TEXT, because
-  // following bindings is the one expensive step here and an executor always does.
-  const [argument] = call.getArguments();
+  if (issuesSqlLiteral(arguments_)) return true;
+  const [argument] = arguments_;
   if (!argument || !Node.isExpression(argument)) return false;
   const argumentType = argument.getType();
   if (!argumentType.isString() && !argumentType.isStringLiteral()) return false;
-  let expression: Node = call.getExpression();
-  while (
-    Node.isParenthesizedExpression(expression) || Node.isAsExpression(expression) ||
-    Node.isTypeAssertion(expression) || Node.isSatisfiesExpression(expression)
-  ) expression = expression.getExpression();
   return bindingSources(expression).some((source) =>
     declaresExecutorSignature(source.getType()) ||
     SQL_EXECUTOR_METHODS.has(accessedName(source) ?? "")
   );
+}
+
+function sqlMember(node: Node): string | undefined {
+  const expression = unwrapSqlExpression(node);
+  if (Node.isPropertyAccessExpression(expression)) return expression.getName();
+  if (Node.isElementAccessExpression(expression)) {
+    const argument = unwrapSqlExpression(expression.getArgumentExpression() ?? expression);
+    return Node.isStringLiteral(argument) ||
+      Node.isNoSubstitutionTemplateLiteral(argument)
+      ? argument.getLiteralValue()
+      : undefined;
+  }
+  return undefined;
+}
+
+function staticArrayElements(node: Node | undefined): readonly Node[] | null {
+  if (!node) return null;
+  const expression = unwrapSqlExpression(node);
+  if (Node.isArrayLiteralExpression(expression)) {
+    return expression.getElements().some(Node.isSpreadElement)
+      ? null
+      : expression.getElements();
+  }
+  if (Node.isIdentifier(expression)) {
+    for (const source of bindingSources(expression)) {
+      const elements = staticArrayElements(source);
+      if (elements) return elements;
+    }
+  }
+  return null;
+}
+
+function isAmbientReflectApply(node: Node): boolean {
+  const expression = unwrapSqlExpression(node);
+  if (Node.isIdentifier(expression)) {
+    return bindingSources(expression).some(isAmbientReflectApply);
+  }
+  if (
+    !Node.isPropertyAccessExpression(expression) ||
+    expression.getName() !== "apply"
+  ) return false;
+  const receiver = unwrapSqlExpression(expression.getExpression());
+  return Node.isIdentifier(receiver) &&
+    receiver.getText() === "Reflect" &&
+    (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
+      declaration.getSourceFile().isDeclarationFile()
+    );
+}
+
+export interface NormalizedSqlExecutorCall {
+  readonly executor: Node;
+  readonly receiver: Node | undefined;
+  readonly arguments: readonly Node[];
+  readonly argumentsResolved: boolean;
+}
+
+function boundSqlExecutor(node: Node): Omit<NormalizedSqlExecutorCall, "argumentsResolved"> | null {
+  const expression = unwrapSqlExpression(node);
+  if (Node.isIdentifier(expression)) {
+    for (const source of bindingSources(expression)) {
+      const bound = boundSqlExecutor(source);
+      if (bound) return bound;
+    }
+    return null;
+  }
+  if (!Node.isCallExpression(expression)) return null;
+  const binder = unwrapSqlExpression(expression.getExpression());
+  if (
+    (!Node.isPropertyAccessExpression(binder) &&
+      !Node.isElementAccessExpression(binder)) ||
+    sqlMember(binder) !== "bind"
+  ) return null;
+  const executor = binder.getExpression();
+  const arguments_ = expression.getArguments().slice(1);
+  if (!isSqlExecutorExpression(executor, arguments_)) return null;
+  return {
+    executor,
+    receiver: expression.getArguments()[0],
+    arguments: arguments_,
+  };
+}
+
+export function normalizeSqlExecutorCall(
+  call: CallExpression,
+): NormalizedSqlExecutorCall | null {
+  const callee = unwrapSqlExpression(call.getExpression());
+  const direct = call.getArguments();
+  if (
+    Node.isPropertyAccessExpression(callee) ||
+    Node.isElementAccessExpression(callee)
+  ) {
+    const member = sqlMember(callee);
+    const executor = callee.getExpression();
+    if (member === "call" && isSqlExecutorExpression(executor, direct.slice(1))) {
+      return {
+        executor,
+        receiver: direct[0],
+        arguments: direct.slice(1),
+        argumentsResolved: true,
+      };
+    }
+    if (member === "apply" && isSqlExecutorExpression(executor, [])) {
+      const arguments_ = staticArrayElements(direct[1]);
+      return {
+        executor,
+        receiver: direct[0],
+        arguments: arguments_ ?? [],
+        argumentsResolved: arguments_ !== null,
+      };
+    }
+  }
+  if (
+    isAmbientReflectApply(callee) &&
+    direct[0] &&
+    isSqlExecutorExpression(direct[0], [])
+  ) {
+    const arguments_ = staticArrayElements(direct[2]);
+    return {
+      executor: direct[0]!,
+      receiver: direct[1],
+      arguments: arguments_ ?? [],
+      argumentsResolved: arguments_ !== null,
+    };
+  }
+  const bound = boundSqlExecutor(callee);
+  if (bound) {
+    return {
+      ...bound,
+      arguments: [...bound.arguments, ...direct],
+      argumentsResolved: true,
+    };
+  }
+  if (!isSqlExecutorExpression(callee, direct)) return null;
+  const receiver = Node.isPropertyAccessExpression(callee) ||
+      Node.isElementAccessExpression(callee)
+    ? callee.getExpression()
+    : undefined;
+  return {
+    executor: callee,
+    receiver,
+    arguments: direct,
+    argumentsResolved: true,
+  };
+}
+
+export function isSqlExecutorCall(call: CallExpression): boolean {
+  return normalizeSqlExecutorCall(call) !== null;
 }
 
 /**

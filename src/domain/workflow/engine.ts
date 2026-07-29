@@ -6,7 +6,7 @@
  * event (a webhook) calls resumeFlow(token, payload) to run the remaining steps.
  * Resume is idempotent at the write layer, so replay has exactly-once effect.
  */
-import { isAppError, type AppError } from "@contracts/errors";
+import { normalizeAppError, type AppError } from "@contracts/errors";
 import type { ActionGrant } from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
@@ -83,7 +83,7 @@ async function drive<D>(
       // driver errors with a `code` like '23505'/'ENOENT' included — becomes a
       // vetted INTERNAL so downstream statusFor/toResponse never sees an unknown
       // code or leaks an unvetted message.
-      const error: AppError = isAppError(e) ? e : { code: "INTERNAL", message: "Step threw" };
+      const error: AppError = normalizeAppError(e) ?? { code: "INTERNAL", message: "Step threw" };
       result = { kind: "fail", error };
     }
 

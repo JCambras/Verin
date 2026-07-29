@@ -15,6 +15,7 @@ import {
   inMemoryProject,
   detectAppLayerSqlAccess,
   isSqlExecutorCall,
+  normalizeSqlExecutorCall,
   normalizedPath,
   REPO_ROOT,
   grantAction,
@@ -399,7 +400,7 @@ function sqlStatementTexts(declaration: Node): string[] {
   return declaration.getDescendantsOfKind(SyntaxKind.CallExpression)
     .filter(isSqlExecutorCall)
     .flatMap((call) => {
-      const argument = call.getArguments()[0];
+      const argument = normalizeSqlExecutorCall(call)?.arguments[0];
       if (!argument) return [];
       if (
         Node.isStringLiteral(argument) ||
@@ -595,14 +596,40 @@ function exportedCallables(sf: SourceFile): ExportedCallable[] {
     );
   }
   const returned = callables.flatMap((callable) =>
-    returnedCallableMembers(callable.declaration, callable.name).map((member) => ({
-      name: member.name,
-      declaration: member.declaration,
-      signature: member.signature,
-      anchors: [...callable.anchors, member.declaration],
-    }))
+    returnedCallableMembers(callable.declaration, callable.name).flatMap((member) =>
+      member.signature
+        ? [{
+          name: member.name,
+          declaration: member.declaration,
+          signature: member.signature,
+          anchors: [...callable.anchors, member.declaration],
+        }]
+        : []
+    )
   );
   return [...callables, ...returned];
+}
+
+function unresolvedReturnedCallableViolations(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!file.startsWith("src/infrastructure/")) continue;
+    for (const callable of exportedCallables(sf)) {
+      for (const member of returnedCallableMembers(
+        callable.declaration,
+        callable.name,
+        { failOpaqueReturn: true },
+      )) {
+        if (member.signature === null) {
+          out.push(
+            `${file} :: ${member.name}: returned callable implementation cannot be proven`,
+          );
+        }
+      }
+    }
+  }
+  return [...new Set(out)];
 }
 
 /**
@@ -772,7 +799,7 @@ export function detectUnreviewedPreAuthPiiReads(
 }
 
 export function detectUnguardedGovernedSinks(project: Project): string[] {
-  const out: string[] = [];
+  const out = unresolvedReturnedCallableViolations(project);
   for (const sink of deriveGovernedSinks(project)) {
     const grant = sealedAuthorityParameters(sink.signature).find((authority) =>
       authority.kind === "grant" && grantAction(authority) === sink.action
@@ -2021,6 +2048,19 @@ ${body}
       const hits = detectUnguardedGovernedSinks(project);
       expect(hits.filter((hit) => hit.includes(":: makeRepo.list:"))).toHaveLength(2);
     });
+    it("fails closed when an exported factory returns an opaque helper result", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/new-adapter/repository.ts": `
+          declare function buildRepo(): any;
+          export function makeRepo(): any {
+            return buildRepo();
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([
+        "src/infrastructure/new-adapter/repository.ts :: makeRepo.<unresolved>: returned callable implementation cannot be proven",
+      ]);
+    });
     it("derives PII sinks from callable object-literal getters", () => {
       const project = inMemoryProject({
         "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
@@ -2334,6 +2374,28 @@ ${body}
       });
       expect(detectUnguardedGovernedSinks(project)).toEqual([]);
     });
+    it.each([
+      `db.query.call(db, "UPDATE contacts SET full_name = $1")`,
+      `db.query.apply(db, ["UPDATE contacts SET full_name = $1"])`,
+      `db.query.bind(db)("UPDATE contacts SET full_name = $1")`,
+      `Reflect.apply(db.query, db, ["UPDATE contacts SET full_name = $1"])`,
+    ])("classifies wrapped SQL mutation arguments: %s", (statement) => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query(sql: string): Promise<void> };
+          export async function renameContact(tenant: TenantContext): Promise<Contact> {
+            await ${statement};
+            return { fullName: tenant.orgId };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([]);
+    });
     it("discovers a governed sink called from a Server Action, not just route.ts", () => {
       const project = inMemoryProject({
         "/src/contracts/authz.ts": `
@@ -2519,6 +2581,31 @@ ${body}
       const hits = detectAppLayerSqlAccess(project);
       expect(hits).toHaveLength(3);
       for (const line of [7, 8, 9]) {
+        expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}`).toBe(true);
+      }
+    });
+
+    it("catches app-layer SQL issued through call, apply, bind, and Reflect.apply", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            await db.query.call(db, "SELECT email FROM users");
+            await db.query.apply(db, ["SELECT email FROM users"]);
+            await db.query.bind(db)("SELECT email FROM users");
+            await Reflect.apply(db.query, db, ["SELECT email FROM users"]);
+            return null;
+          }
+        `,
+      });
+      const hits = detectAppLayerSqlAccess(project);
+      expect(hits, hits.join("\n")).toHaveLength(4);
+      for (const line of [5, 6, 7, 8]) {
         expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}`).toBe(true);
       }
     });

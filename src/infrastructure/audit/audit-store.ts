@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { scrub } from "@infra/pii/scrub";
 import { assertNoPIIValues } from "@contracts/pii";
-import { appError, isAppError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import { assertTenantContext, systemTenant, type TenantContext } from "@contracts/tenant";
 import {
   assertActionGrant,
@@ -247,7 +247,9 @@ export async function discardedAuditEventWork(db: SqlDb): Promise<void> {
     [randomUUID(), new Date().toISOString()],
   );
   await deliverClaimedRow(db, CONSTANT_WORK_ORG, randomUUID(), p).catch((e: unknown) => {
-    if (!isAppError(e) || e.code !== "CONFLICT") throw e;
+    const error = normalizeAppError(e);
+    if (!error) throw e;
+    if (error.code !== "CONFLICT") throw error;
   });
 }
 

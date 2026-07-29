@@ -11,7 +11,7 @@ import type { SqlDb } from "@infra/store/db";
 import { getConfig } from "@infra/config";
 import { revealSecret } from "@contracts/secret";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, isAppError, type AppError } from "@contracts/errors";
+import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { type Role, isAllowedRole } from "@contracts/roles";
 import {
   principalFromIdentity,
@@ -93,7 +93,8 @@ function principalFromRow(input: {
   try {
     return ok(principalFromIdentity(input));
   } catch (e) {
-    return err(isAppError(e) ? e : appError("AUTH_FAILED", "Session identity is not usable."));
+    return err(normalizeAppError(e) ??
+      appError("AUTH_FAILED", "Session identity is not usable."));
   }
 }
 

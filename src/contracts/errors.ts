@@ -75,12 +75,27 @@ export function isErrorCode(value: unknown): value is ErrorCode {
   return typeof value === "string" && Object.hasOwn(ERROR_MAP, value);
 }
 
-export function isAppError(value: unknown): value is AppError {
-  if (typeof value !== "object" || value === null) return false;
+export function normalizeAppError(value: unknown): AppError | null {
+  if (typeof value !== "object" || value === null) return null;
   try {
-    return "message" in value && isErrorCode(Reflect.get(value, "code"));
+    const code = Reflect.get(value, "code");
+    const message = Reflect.get(value, "message");
+    const rawContext = Reflect.get(value, "context");
+    if (!isErrorCode(code) || typeof message !== "string") return null;
+    if (rawContext === undefined) return Object.freeze({ code, message });
+    if (
+      typeof rawContext !== "object" ||
+      rawContext === null ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(rawContext))
+    ) return null;
+    const entries = Object.entries(rawContext);
+    if (entries.some(([, entry]) =>
+      !["string", "number", "boolean"].includes(typeof entry)
+    )) return null;
+    const context = Object.freeze(Object.fromEntries(entries)) as AppError["context"];
+    return Object.freeze({ code, message, context });
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -93,9 +108,11 @@ export function logLevelFor(code: ErrorCode): CodeMeta["logLevel"] {
 }
 
 /** Client-safe HTTP response body — no stack traces, no internal context. */
-export function toResponse(error: AppError): { status: number; body: { error: { code: ErrorCode; message: string } } } {
+export function toResponse(error: unknown): { status: number; body: { error: { code: ErrorCode; message: string } } } {
+  const normalized = normalizeAppError(error) ??
+    appError("INTERNAL", "An internal error occurred.");
   return {
-    status: ERROR_MAP[error.code].status,
-    body: { error: { code: error.code, message: error.message } },
+    status: ERROR_MAP[normalized.code].status,
+    body: { error: { code: normalized.code, message: normalized.message } },
   };
 }

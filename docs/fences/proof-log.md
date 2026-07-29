@@ -4551,3 +4551,94 @@ pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
 APP_ENV=development <test-only placeholder env> pnpm build    # compiled and generated all routes
 pnpm test:e2e                                                 # 17 tests passed
 ```
+
+**Date:** 2026-07-29 (twenty-fifth review-fix round on v3 build-sequence prompt 6).
+
+### PF-139 SQL executor wrappers retain persistence semantics
+
+SQL discovery inspected the outer `call`, `apply`, or `bind` signature and could
+return clean before reaching the underlying executor. App-layer refusal,
+repository discovery, and governed read/write classification could therefore
+disagree about the same database operation.
+
+**Adversarial proof:** test-first `db.query.call`, `db.query.apply`,
+`db.query.bind`, and `Reflect.apply(db.query, ...)` fixtures initially produced no
+app-layer or tenant violations. The shared normalizer now recovers the executor,
+receiver, effective argument list, and resolution state. Separate wrapped UPDATE
+fixtures prove governed classification consumes the effective SQL argument and
+retains the write-only exemption.
+
+### PF-140 authority carrier copies are repeated evaluations
+
+Authority stability tracked direct member and destructuring reads but not copying
+an ancestor carrier. Object copies invoke accessor properties again and could
+produce a different grant after the prologue.
+
+**Adversarial proof:** test-first object spread, object rest, and
+`Object.assign` copies of a stateful getter carrier initially produced zero
+violations. The regression now covers direct, assigned, destructured-assigned,
+and aliased copy helpers plus `structuredClone`. Every copy is tied back to the
+captured authority path, while independent sibling captures remain valid.
+
+### PF-141 node:module namespace copies cannot hide createRequire
+
+Loader provenance followed direct identifiers but stopped at copied module
+namespace objects and top-level `Reflect.apply` accessor invocation.
+
+**Adversarial proof:** test-first object spread, `Object.assign`, and
+`Reflect.apply(Reflect.get, ..., [nodeModule, "createRequire"])` loaders initially
+passed the dependency, LLM PII, sealed-factory, and secret-containment companions.
+All four fences now consume the shared copied-namespace and accessor provenance,
+and each planted loader emits a `create-require` reference.
+
+### PF-142 opaque factory returns cannot erase repository members
+
+Returned-callable discovery emitted nothing when an escaped factory delegated to
+a helper whose declared result was `any` or `unknown`. The escape could therefore
+hide every returned repository method.
+
+**Adversarial proof:** test-first escaped SQL and governed factories returned
+opaque helper results. Both initially produced no returned member violation. An
+opaque declared factory return now emits an explicit unresolved callable finding;
+ordinary opaque repository results continue through their existing tenant or
+governed-output checks without being misclassified as factories.
+
+### PF-143 observability identifiers share account classification
+
+The observability boundary used an uninterrupted-digit regex while the LLM
+boundary used the shared separator-aware account classifier. A hyphenated or
+space-separated account reference could therefore be sealed and emitted as an
+identifier.
+
+**Adversarial proof:** a test-first `1234-5678-9012` organization and actor value
+was accepted by `observabilityId`. Both now throw because every identifier passes
+through `hasSensitiveAccountReference`, the same classifier used for extraction,
+masking, and residual LLM refusal.
+
+### PF-144 accepted errors become read-once snapshots
+
+`isAppError` validated one `code` read and returned the original object.
+Downstream response and audit paths could reread stateful or throwing accessors,
+changing the code, leaking a message, or replacing the original failure.
+
+**Adversarial proof:** test-first stateful `code` and `message` accessors showed
+multiple reads, while a throwing message accessor escaped response mapping.
+`normalizeAppError` now performs guarded single reads and returns a new frozen
+snapshot. Stateful values are read once, throwing values degrade to the closed
+INTERNAL response, and accepted non-conflict audit errors rethrow the snapshot
+rather than the hostile source.
+
+### PF-139 - PF-144 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false  # 56 files, 1,085 tests passed
+pnpm typecheck                                               # clean
+pnpm lint                                                    # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 4,017/4,050; domain 1,250/1,250; infrastructure 3,390/3,400
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```

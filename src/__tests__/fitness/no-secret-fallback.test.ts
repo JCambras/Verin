@@ -765,6 +765,23 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
         hit.startsWith("src/app/evil.ts:3")
       )).toBe(true);
     });
+    it.each([
+      `const copy = Object.assign({}, nodeModule);
+          const created = copy.createRequire(import.meta.url);`,
+      `const created = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
+    ])("catches copied or applied node:module provenance before secret access", (loader) => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/app/evil.ts": `
+          import * as nodeModule from "node:module";
+          ${loader}
+          created("../contracts/secret");
+        `,
+      });
+      expect(detectUnsanctionedReveal(project).some((hit) =>
+        hit.includes("src/app/evil.ts")
+      )).toBe(true);
+    });
     it("catches computed and destructured access if a raw accessor is reintroduced", () => {
       const project = inMemoryProject({
         "/src/contracts/secret.ts": `export class SecretValue { reveal(): string { return ""; } }`,

@@ -50,6 +50,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0032](./0032-line-budget-wave-a-security-boundaries.md) | Line-budget amendment for Wave A security boundaries (prompt 6) | Accepted (amends ADR-0018) |
 | [0033](./0033-line-budget-honest-headroom.md) | Line-budget ceilings carry bounded, measured headroom; ADR-0030's stated basis corrected | Accepted (amends ADR-0030/0032) |
 | [0034](./0034-line-budget-infrastructure-headroom.md) | Infrastructure ceiling 3,300→3,400 on a re-measured baseline; the fence's own headroom comment corrected | Accepted (amends ADR-0033) |
+| [0035](./0035-line-budget-contracts-error-snapshots.md) | Contracts ceiling 4,000 to 4,050 for normalized error snapshots | Accepted (amends ADR-0033) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

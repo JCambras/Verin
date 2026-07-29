@@ -2467,3 +2467,62 @@ hide foreign mints); and validate a getter separately for app and driver errors
 **Revert path:** revert this changeset to restore foreign retry payloads,
 descriptor-based loader gaps, first-seal factory exemptions, and repeated
 untrusted error-code reads.
+
+## D-087 - Semantic copies and failure values preserve security provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-086,
+ADR-0035, v3 §15.1/§15.2/§15.4, charter #1/#4/#7/#13/#14
+
+All six review findings were legitimate symptoms of shared semantic-provenance
+and failure-boundary gaps.
+
+SQL executor calls now normalize direct calls plus `call`, `apply`, `bind`, and
+`Reflect.apply`. The normalized form retains the executor, receiver, effective
+arguments, and whether an argument list was statically resolved. App-layer SQL
+refusal, SQL-backed repository discovery, tenant enforcement, and governed-action
+classification all consume that one result.
+
+Authority reads now preserve carrier provenance through object spread, object
+rest, `Object.assign`, `Object.entries`, `Object.values`, and
+`structuredClone`. Copying an ancestor carrier after a stable authority capture
+therefore counts as another evaluation, while independent sibling captures remain
+valid.
+
+The module-reference walker preserves `node:module` namespace provenance through
+object spread, `Object.assign`, and `Reflect.apply` accessor invocation. The
+dependency, LLM PII, sealed-factory, and secret-containment fences share the
+result. Escaped repository factories also fail closed when an opaque declared
+return prevents their returned callable inventory from being proven.
+
+Every observability identifier now uses the shared separator-aware account
+classifier before sealing. Uninterrupted, space-separated, and hyphenated account
+references therefore receive the same refusal at LLM and observability boundaries.
+
+`normalizeAppError` replaces accessor-backed accepted errors with a frozen
+snapshot built from guarded single reads of `code`, `message`, and optional
+primitive context. Response, audit, workflow, store, identity, wiring, and script
+paths consume only the snapshot. Throwing accessors degrade to the existing
+closed INTERNAL response.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,390 | 3,400 | 10 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0035 raises only contracts from 4,000 to 4,050. Domain stays at its measured
+ceiling without removing useful code or documentation. Infrastructure stays under
+its existing ceiling.
+
+**Alternatives rejected:** enumerate only the reported wrapper spellings
+(equivalent invocation forms remain open); treat carrier copies as fresh trusted
+values (stateful getters can change authority); allow opaque escaped factory
+returns (repository methods disappear from analysis); keep a second account regex
+(boundaries drift); and return a recognized hostile object unchanged (later reads
+can leak or throw).
+
+**Revert path:** revert this changeset to restore wrapped SQL, carrier-copy,
+namespace-copy, opaque-factory, formatted-account, and accessor-backed error gaps.

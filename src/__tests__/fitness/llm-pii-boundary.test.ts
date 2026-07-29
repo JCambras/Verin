@@ -100,8 +100,9 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
 ];
 const ESCAPE_SET = new Set(NON_PII_ESCAPES.map((e) => e.ref));
 const OPAQUE_LLM_INGRESS_ESCAPES = [
-  "src/contracts/errors.ts :: isAppError(value)",
+  "src/contracts/errors.ts :: normalizeAppError(value)",
   "src/contracts/errors.ts :: isErrorCode(value)",
+  "src/contracts/errors.ts :: toResponse(error)",
   "src/contracts/pii.ts :: assertNoAmbiguousSensitiveText(payload)",
   "src/contracts/pii.ts :: assertNoPIIValues(payload)",
   "src/infrastructure/llm/request-schema.ts :: parseMaskedLlmRequest(input)",
@@ -1122,6 +1123,26 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
         "/src/infrastructure/llm/evil.ts": `
           import * as nodeModule from "node:module";
           const req = Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);
+          export const load = () => req("../../domain/schema/entities") as unknown;
+        `,
+      });
+      const violations = detectPIIReachableFromLlm(project);
+      expect(violations.some((violation) =>
+        violation.includes("unresolvable") && violation.includes("src/infrastructure/llm/evil.ts")
+      ), violations.join("\n")).toBe(true);
+    });
+
+    it.each([
+      `const copy = { ...nodeModule };
+          const req = copy.createRequire(import.meta.url);`,
+      `const req = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
+    ])("rejects createRequire reached through copied or applied module provenance", (loader) => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/schema/entities.ts": `import type { PIIBearing } from "@contracts/pii"; export interface Contact extends PIIBearing { firstName: string }`,
+        "/src/infrastructure/llm/evil.ts": `
+          import * as nodeModule from "node:module";
+          ${loader}
           export const load = () => req("../../domain/schema/entities") as unknown;
         `,
       });

@@ -2301,6 +2301,24 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toBe(true);
     });
 
+    it.each([
+      `const copy = { ...nodeModule };
+          const created = copy.createRequire(import.meta.url);`,
+      `const created = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
+    ])("catches copied or applied node:module provenance before factory access", (loader) => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as nodeModule from "node:module";
+          ${loader}
+          created("../contracts/tenant");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.includes("unverifiable module load")
+      )).toBe(true);
+    });
+
     it("catches system tenant and system write factories outside reviewed boundaries", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",

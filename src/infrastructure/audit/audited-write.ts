@@ -11,7 +11,7 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
+import { appError, normalizeAppError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { log, safeReason } from "@infra/observability/logger";
 import {
@@ -117,7 +117,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // Genuine failure: business rolled back. Log the REAL error before mapping —
     // this helper is the single write chokepoint, the worst place to fly blind
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
-    const known: AppError | null = isAppError(e) ? e : null;
+    const known: AppError | null = normalizeAppError(e);
     // EVERY id minted on this path degrades rather than throws: a throw would escape
     // before the failure-audit entry below is enqueued, costing the write both its log
     // line and its "[attempt failed]" chain entry. entityId is the obvious case
@@ -131,7 +131,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
           ? observabilityIdOrRedacted("entityId", opts.entityId)
           : null,
         code: known?.code ?? null,
-        reason: safeReason(e),
+        reason: safeReason(known ?? e),
       },
       "audited write failed",
     );
