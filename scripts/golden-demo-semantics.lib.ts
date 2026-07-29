@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { MetricFormat } from "@contracts/metric";
 import {
   EXECUTION_RECEIPT_IDS,
@@ -96,7 +97,8 @@ export interface DisplayedDecision {
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
-  reserveFloorMinor: number;
+  plannedWithdrawalMonthlyMinor: number | null;
+  reserveFloorMinor: number | null;
   headroomMinor: number | null;
   revalidationAvailableCashMinor: number | null;
   revalidationPendingActivityMinor: number | null;
@@ -125,6 +127,13 @@ export interface SourceTimeline {
 export interface DemoSemanticSnapshot {
   requestAmountMinor: number;
   canonicalRequestAt: string;
+  canonicalRequest: {
+    text: string;
+    amountMinor: number;
+    purpose: string;
+    deadline: string;
+    requestedAt: string;
+  };
   plannedWithdrawalMonthlyMinor: number;
   /** Every distinct format the demo's money metrics actually carry. */
   moneyUnits: MetricFormat[];
@@ -135,7 +144,20 @@ export interface DemoSemanticSnapshot {
   firms: Array<{
     id: string;
     reserveMonths: number;
-    reserveFloorMinor: number;
+    dualApprovalThresholdMinor: number;
+    approvalsRequired: number;
+    distinctActorsRequired: boolean;
+    eligibleRole: string | null;
+    requesterConstraint: string | null;
+    bankChangeHandling: string;
+    policyVersion: string;
+  }>;
+  renderedFirmPolicies: Array<{
+    firmId: string;
+    reserveFloorMinor: number | null;
+    dualApprovalThresholdMinor: number | null;
+    quorum: string | null;
+    bankChangeHandling: string | null;
   }>;
   signedCaseVariants: unknown[];
   decisions: DisplayedDecision[];
@@ -484,7 +506,12 @@ function exactSourceCandidates(
       signed.currency !== demo.currency ||
       signed.cadence !== demo.cadence ||
       firmConfiguration?.cashReserveMonths !== demoFirm.reserveMonths ||
-      (floorMinor !== null && floorMinor !== demoFirm.reserveFloorMinor)
+      (floorMinor !== null &&
+        floorMinor !==
+          tryReserveFloorMinor(
+            signedScheduleEvidenceMinor(data) ?? -1,
+            demoFirm.reserveMonths,
+          ))
     ) {
       continue;
     }
@@ -495,6 +522,22 @@ function exactSourceCandidates(
     ]);
   }
   return candidates;
+}
+
+function signedScheduleEvidenceMinor(
+  data: Record<string, unknown> | undefined,
+): number | null {
+  const rows = Array.isArray(data?.householdEvidence)
+    ? data.householdEvidence.filter(isObj).filter(
+        (entry) =>
+          entry.evidenceKind === "planned-withdrawals" &&
+          isObj(entry.displayValue) &&
+          entry.displayValue.unit === "USD/month",
+      )
+    : [];
+  if (rows.length !== 1) return null;
+  const display = rows[0]!.displayValue;
+  return isObj(display) ? minorFromMajor(display.value) : null;
 }
 
 function expectedSignedCaseVariant(
@@ -674,6 +717,133 @@ function validateSignedCaseVariants(
     }
   }
   return problems;
+}
+
+type RecordIdentity = DemoSemanticSnapshot["recordIdentities"][number];
+
+function independentDigest(kind: string, value: unknown): string {
+  return createHash("sha256")
+    .update(kind)
+    .update("\u0000")
+    .update(JSON.stringify(value))
+    .digest("hex");
+}
+
+export function deriveIndependentDemoBinding(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+  record: RecordIdentity,
+  pass: "initial" | "revalidated",
+): { decisionHash: string; bundleHash: string } | null {
+  const raw = record.routeSourceCaseId
+    ? caseData(cases, record.routeSourceCaseId)
+    : undefined;
+  const sourceCase = raw ? expectedSignedCaseVariant(raw) : null;
+  if (raw && !sourceCase) return null;
+  const firm = demo.firms.find(
+    (candidate) => candidate.id === record.routeFirmId,
+  );
+  const decision = demo.decisions.find(
+    (candidate) =>
+      candidate.scenarioId === record.routeScenarioId &&
+      candidate.firmId === record.routeFirmId &&
+      candidate.sourceCaseId === record.routeSourceCaseId &&
+      candidate.decisionRole === "primary",
+  );
+  const passRecord = demo.recordIdentities.find(
+    (candidate) =>
+      candidate.routeScenarioId === record.routeScenarioId &&
+      candidate.routeFirmId === record.routeFirmId &&
+      candidate.routeSourceCaseId === record.routeSourceCaseId &&
+      candidate.routePass === pass,
+  );
+  if (!firm || !decision || !passRecord) return null;
+  const identity = {
+    scenarioId: record.routeScenarioId,
+    firmId: record.routeFirmId,
+    sourceCaseId: record.routeSourceCaseId,
+    pass,
+  };
+  const evidence = Array.isArray(sourceCase?.evidence)
+    ? sourceCase.evidence
+        .filter(isObj)
+        .filter(
+          (entry) =>
+            entry.liquidityPhase === null ||
+            entry.liquidityPhase ===
+              (pass === "revalidated"
+                ? "pre-execution-revalidation"
+                : "initial-decision"),
+        )
+        .map((entry) => ({
+          evidenceKind: entry.evidenceKind,
+          subjectRef: entry.subjectRef,
+          observedAt: entry.observedAt,
+          retrievedAt: entry.retrievedAt,
+          freshness: entry.freshness,
+          source: entry.source,
+          provenance: entry.provenance,
+          summary: entry.summary,
+          liquidityPhase: entry.liquidityPhase,
+          observedAbsent: entry.observedAbsent,
+          displayValue: entry.displayValue,
+          freshnessWindowDays: entry.freshnessWindowDays,
+        }))
+        .sort((left, right) =>
+          JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        )
+    : [];
+  const policyVersions = isObj(sourceCase?.policyVersions)
+    ? sourceCase.policyVersions
+    : {
+        domainConfigVersionId: null,
+        firmPolicyVersionId: firm.policyVersion,
+        householdInstructionVersionIds: [],
+        regulatoryVersionId: null,
+      };
+  const householdInstructions = Array.isArray(
+    sourceCase?.householdInstructions,
+  )
+    ? sourceCase.householdInstructions.filter(isObj).sort((left, right) =>
+        String(left.versionId).localeCompare(String(right.versionId)),
+      )
+    : [];
+  const bundleHash = independentDigest(
+    "verin-demo-input-bundle-v1",
+    {
+      identity,
+      request: demo.canonicalRequest,
+      signedTrigger: sourceCase?.trigger ?? null,
+      evidence,
+      policyVersions,
+      householdInstructions,
+      firmConfiguration: {
+        reserveMonths: firm.reserveMonths,
+        dualApprovalThresholdMinor:
+          firm.dualApprovalThresholdMinor,
+        approvalsRequired: firm.approvalsRequired,
+        distinctActorsRequired: firm.distinctActorsRequired,
+        eligibleRole: firm.eligibleRole,
+        requesterConstraint: firm.requesterConstraint,
+        bankChangeHandling: firm.bankChangeHandling,
+      },
+    },
+  );
+  return {
+    bundleHash,
+    decisionHash: independentDigest("verin-demo-decision-v1", {
+      identity,
+      decisionId: passRecord.decisionId,
+      createdAt: passRecord.headerCreatedAtIso,
+      bundleHash,
+      disposition: decision.disposition,
+      prohibition: sourceCase?.prohibition ?? null,
+      authority: sourceCase?.authority ?? null,
+      executionEligibility:
+        sourceCase?.executionEligibility ?? null,
+      explanations: sourceCase?.explanations ?? [],
+    }),
+  };
 }
 
 /**
@@ -1150,6 +1320,38 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
         );
       }
     }
+    const expectedPlannedMonthly =
+      signedScheduleEvidenceMinor(source);
+    const demoFirm = demo.firms.find(
+      (firm) => firm.id === d.firmId,
+    );
+    const expectedFloor =
+      expectedPlannedMonthly !== null && demoFirm
+        ? tryReserveFloorMinor(
+            expectedPlannedMonthly,
+            demoFirm.reserveMonths,
+          )
+        : null;
+    if (
+      d.plannedWithdrawalMonthlyMinor !== expectedPlannedMonthly ||
+      d.reserveFloorMinor !== expectedFloor
+    ) {
+      problems.push(
+        `${at}: planned-withdrawal schedule or reserve floor is not bound to the exact signed schedule evidence`,
+      );
+    }
+    if (
+      expectedPlannedMonthly === null &&
+      (d.reserveFloorMinor !== null ||
+        d.headroomMinor !== null ||
+        d.simulatedFloorMinor !== null ||
+        d.simulatedHeadroomMinor !== null ||
+        d.simulatedDisposition !== null)
+    ) {
+      problems.push(
+        `${at}: missing planned-withdrawal evidence must leave reserve and policy simulation unavailable`,
+      );
+    }
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
     if (availableMinor === null || pendingMinor === null) {
@@ -1188,10 +1390,7 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
         `${at}: pre-execution revalidation drift, ${d.sourceCaseId}=${revalidationAvailableMinor}/${revalidationPendingMinor}, demo=${d.revalidationAvailableCashMinor}/${d.revalidationPendingActivityMinor}`,
       );
     }
-    const expectedFloor = demo.firms.find((firm) => firm.id === d.firmId)?.reserveFloorMinor;
-    if (d.reserveFloorMinor !== expectedFloor) {
-      problems.push(`${at}: reserve floor ${d.reserveFloorMinor} is not this firm's derived floor ${expectedFloor ?? "(unknown firm)"}`);
-    }
+    if (expectedFloor === null) continue;
     // Guard with the SAME predicate the shared arithmetic throws on, so a malformed
     // figure is reported here rather than crashing the run and discarding every
     // diagnostic already collected.
@@ -1202,7 +1401,7 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     const expectedHeadroom = tryHeadroomMinor(
       d.availableCashMinor!,
       d.pendingActivityMinor!,
-      d.reserveFloorMinor,
+      d.reserveFloorMinor!,
     );
     if (expectedHeadroom === null) {
       problems.push(`${at}: displayed headroom derivation exceeds the safe integer range`);
@@ -1611,6 +1810,28 @@ function validateRecordIdentities(
       const bindingPass =
         binding.kind === "derived" ? "revalidated" : "initial";
       const owner = `${record.routeScenarioId}/${record.routeFirmId}/${record.routeSourceCaseId ?? "unsigned"}/${bindingPass}`;
+      const expected = deriveIndependentDemoBinding(
+        cases,
+        demo,
+        record,
+        bindingPass,
+      );
+      if (!expected) {
+        problems.push(
+          `${at}: binding inputs cannot be independently projected`,
+        );
+      } else {
+        if (binding.bundleHash !== expected.bundleHash) {
+          problems.push(
+            `${at}: input-bundle hash does not match independently projected exact inputs`,
+          );
+        }
+        if (binding.decisionHash !== expected.decisionHash) {
+          problems.push(
+            `${at}: decision hash does not match independently projected exact inputs`,
+          );
+        }
+      }
       for (const [label, hash, owners] of [
         ["decision", binding.decisionHash, decisionHashOwners],
         ["input-bundle", binding.bundleHash, bundleHashOwners],
@@ -1667,6 +1888,97 @@ function validateRecordIdentities(
   return problems;
 }
 
+function validateFirmPolicyInputs(
+  cases: LoadedCase[],
+  refs: ScenarioRefs,
+  demo: DemoSemanticSnapshot,
+): string[] {
+  const problems: string[] = [];
+  for (const [firmId, configured] of refs.firmPolicies) {
+    const actual = demo.firms.find((firm) => firm.id === firmId);
+    const rendered = demo.renderedFirmPolicies.find(
+      (firm) => firm.firmId === firmId,
+    );
+    const thresholdMinor = minorFromMajor(
+      configured.dualApprovalThresholdUsd,
+    );
+    if (
+      !actual ||
+      actual.reserveMonths !== configured.cashReserveMonths ||
+      actual.dualApprovalThresholdMinor !== thresholdMinor ||
+      actual.approvalsRequired !== configured.approvalsRequired ||
+      actual.distinctActorsRequired !==
+        configured.distinctActorsRequired ||
+      actual.eligibleRole !== configured.eligibleRole ||
+      actual.requesterConstraint !== configured.requesterConstraint ||
+      actual.bankChangeHandling !==
+        configured.bankInstructionChangeHandling
+    ) {
+      problems.push(
+        `${firmId}: demo firm policy inputs drift from scenarios.yaml`,
+      );
+      continue;
+    }
+    const expectedFloor = tryReserveFloorMinor(
+      demo.plannedWithdrawalMonthlyMinor,
+      actual.reserveMonths,
+    );
+    const displayName =
+      firmId === "firm-a"
+        ? "Firm A"
+        : firmId === "firm-b"
+          ? "Firm B"
+          : firmId;
+    const expectedQuorum =
+      demo.requestAmountMinor <= actual.dualApprovalThresholdMinor
+        ? `No dual approval at this amount; ${displayName} states ${actual.requesterConstraint === null ? "no requester rule" : actual.requesterConstraint}`
+        : `${actual.approvalsRequired} ${actual.distinctActorsRequired ? "distinct " : ""}${actual.eligibleRole ?? "eligible"} approvers - ${actual.requesterConstraint === "may-not-satisfy-both-approvals" ? "requester excluded" : "no requester constraint"}`;
+    const expectedBankHandling =
+      actual.bankChangeHandling === "specialist-review"
+        ? "Specialist review before execution"
+        : "Blocked until independently verified";
+    if (
+      !rendered ||
+      rendered.reserveFloorMinor !== expectedFloor ||
+      rendered.dualApprovalThresholdMinor !==
+        actual.dualApprovalThresholdMinor ||
+      rendered.quorum !== expectedQuorum ||
+      rendered.bankChangeHandling !== expectedBankHandling
+    ) {
+      problems.push(
+        `${firmId}: rendered comparison drifts from structured firm policy inputs`,
+      );
+    }
+  }
+  for (const { data } of cases) {
+    if (!isObj(data) || !isObj(data.firmConfiguration)) continue;
+    const firmId = data.firm;
+    const actual =
+      typeof firmId === "string"
+        ? demo.firms.find((firm) => firm.id === firmId)
+        : undefined;
+    const config = data.firmConfiguration;
+    if (
+      !actual ||
+      config.cashReserveMonths !== actual.reserveMonths ||
+      minorFromMajor(config.dualApprovalThresholdUsd) !==
+        actual.dualApprovalThresholdMinor ||
+      config.approvalsRequired !== actual.approvalsRequired ||
+      config.distinctActorsRequired !==
+        actual.distinctActorsRequired ||
+      config.eligibleRole !== actual.eligibleRole ||
+      config.requesterConstraint !== actual.requesterConstraint ||
+      config.bankInstructionChangeHandling !==
+        actual.bankChangeHandling
+    ) {
+      problems.push(
+        `${String(data.caseId)}: signed firm policy inputs drift from the demo configuration`,
+      );
+    }
+  }
+  return problems;
+}
+
 /** Cross-artifact signed truth fence. The fixtures supply the numbers. */
 export function validateGoldenDemoSemantics(
   cases: LoadedCase[],
@@ -1699,6 +2011,7 @@ export function validateGoldenDemoSemantics(
   problems.push(...validateSignedCaseVariants(cases, demo));
   problems.push(...validateSourceTimelines(cases, demo));
   problems.push(...validateRecordIdentities(cases, demo));
+  problems.push(...validateFirmPolicyInputs(cases, refs, demo));
 
   for (const [caseId, firmId] of canonicalCases) {
     const c = caseData(cases, caseId);
@@ -1750,9 +2063,6 @@ export function validateGoldenDemoSemantics(
     } else if (derivedFloor !== expectedFloorMinor) {
       problems.push(`${caseId}: signed reserve floor is not monthly withdrawal times reserve horizon`);
     }
-    if (demoFirm.reserveFloorMinor !== expectedFloorMinor) {
-      problems.push(`${caseId}: derived reserve floor drift, fixture=${expectedFloorMinor}, demo=${demoFirm.reserveFloorMinor}`);
-    }
     // The branch THIS case maps to, rendered under THIS case's firm, must show this
     // case's own arithmetic end to end: its liquidity, its floor, the headroom that
     // follows, and the disposition it signs. The fixture picks the branch (via its
@@ -1780,6 +2090,15 @@ export function validateGoldenDemoSemantics(
       } else {
       if (rendered.availableCashMinor !== expectedAvailable || rendered.pendingActivityMinor !== expectedPending) {
         problems.push(`${caseId}: rendered liquidity drift, fixture=${expectedAvailable}/${expectedPending}, demo=${rendered.availableCashMinor}/${rendered.pendingActivityMinor}`);
+      }
+      if (
+        rendered.plannedWithdrawalMonthlyMinor !==
+          expectedMonthlyMinor ||
+        rendered.reserveFloorMinor !== expectedFloorMinor
+      ) {
+        problems.push(
+          `${caseId}: derived reserve floor drift, fixture=${expectedFloorMinor}, demo=${rendered.reserveFloorMinor}`,
+        );
       }
       if (rendered.headroomMinor !== headroom) {
         problems.push(`${caseId}: rendered headroom drift, fixture arithmetic=${headroom}, demo=${rendered.headroomMinor}`);

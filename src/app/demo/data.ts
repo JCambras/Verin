@@ -94,7 +94,9 @@ export interface FirmData {
   readonly reserveMonths: number;
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
   readonly eligibleRole: string | null;
+  readonly requesterConstraint: "may-not-satisfy-both-approvals" | null;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
   readonly policyVersion: string;
   readonly policyActiveSince: string;
@@ -106,7 +108,9 @@ export const FIRMS: Record<string, FirmData> = {
     reserveMonths: 6,
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
+    distinctActorsRequired: true,
     eligibleRole: "operations",
+    requesterConstraint: "may-not-satisfy-both-approvals",
     bankChangeHandling: "specialist-review",
     policyVersion: "FA-4.2",
     policyActiveSince: "2026-05-01",
@@ -117,7 +121,9 @@ export const FIRMS: Record<string, FirmData> = {
     reserveMonths: 12,
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
+    distinctActorsRequired: true,
     eligibleRole: null, // contract silence - not invented (scenarios.yaml firms note)
+    requesterConstraint: null, // contract silence - not invented
     bankChangeHandling: "block-until-independently-verified",
     policyVersion: "FB-2.1",
     policyActiveSince: "2026-06-18",
@@ -335,6 +341,29 @@ export function requestFor(
   void scenario;
   void firmId;
   return CANONICAL_REQUEST;
+}
+export function plannedWithdrawalEvidenceFor(
+  scenario: ScenarioData,
+  firmId: string,
+  pass: JourneyPass = "initial",
+) {
+  const sourceCase = sourceCaseFor(scenario, firmId);
+  const candidates = evidenceForPass(sourceCase, pass).filter(
+    (entry) =>
+      entry.evidenceKind === "planned-withdrawals" &&
+      entry.displayValue?.unit === "USD/month",
+  );
+  if (candidates.length !== 1) return null;
+  const evidence = candidates[0]!;
+  const statedMonthly = sourceCase?.money.plannedWithdrawalMonthlyMinor;
+  if (
+    statedMonthly !== null &&
+    statedMonthly !== undefined &&
+    statedMonthly !== evidence.displayValue!.valueMinor
+  ) {
+    return null;
+  }
+  return evidence;
 }
 export function decisionIdentityFor(
   scenario: ScenarioData,

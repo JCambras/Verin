@@ -2,18 +2,12 @@ import type { RecordProvenance } from "@contracts/provenance";
 import type { BlockerVM, WhyVM } from "./model";
 import { prov } from "./provenance";
 import {
-  OBSERVED_RECENT,
   evidenceForPass,
   sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
 } from "./data";
-
-const DEFAULT_LIQUIDITY_INPUTS = [
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("synthetic-fixture", OBSERVED_RECENT),
-];
 
 export function liquidityInputs(
   scenario: ScenarioData,
@@ -29,11 +23,9 @@ export function liquidityInputs(
         entry.evidenceKind === "pending-actions" ||
         entry.evidenceKind === "planned-withdrawals"),
   );
-  return selected.length
-    ? selected.map((entry) =>
-        prov("synthetic-fixture", entry.observedAt),
-      )
-    : DEFAULT_LIQUIDITY_INPUTS;
+  return selected.map((entry) =>
+    prov("synthetic-fixture", entry.observedAt),
+  );
 }
 
 function ageInDays(observedAt: string, asOf: string): number {

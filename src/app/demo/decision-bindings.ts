@@ -92,7 +92,9 @@ export function decisionBindingFor(
       reserveMonths: firm.reserveMonths,
       dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
       approvalsRequired: firm.approvalsRequired,
+      distinctActorsRequired: firm.distinctActorsRequired,
       eligibleRole: firm.eligibleRole,
+      requesterConstraint: firm.requesterConstraint,
       bankChangeHandling: firm.bankChangeHandling,
     },
   });

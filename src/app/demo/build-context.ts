@@ -17,10 +17,10 @@ import {
   DEMO_NOW,
   HOUSEHOLD,
   OBSERVED_RECENT,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
   evidenceForPass,
   liquidityAuthorityFor,
+  plannedWithdrawalEvidenceFor,
   requestFor,
   sourceCaseFor,
   type FirmData,
@@ -108,8 +108,10 @@ export function buildWorkspace(
     : refreshed
       ? formatDemoInstant(timeline.revalidatedAt)
       : RETRIEVED_AT;
-  const plannedEvidence = selectedEvidence.find(
-    (entry) => entry.evidenceKind === "planned-withdrawals",
+  const plannedEvidence = plannedWithdrawalEvidenceFor(
+    scenario,
+    firm.id,
+    pass,
   );
   const accountEvidence =
     selectedEvidence.filter(
@@ -134,13 +136,17 @@ export function buildWorkspace(
     liquidity: liquidity
       ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt)
       : null,
-    plannedMonthlyWithdrawal: fixtureMetric(
-      plannedEvidence?.displayValue?.valueMinor ??
-        PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-      "currency-minor",
-      "synthetic-fixture",
-      plannedEvidence?.observedAt ?? OBSERVED_RECENT,
-    ),
+    plannedMonthlyWithdrawal: plannedEvidence
+      ? fixtureMetric(
+          plannedEvidence.displayValue!.valueMinor,
+          "currency-minor",
+          "synthetic-fixture",
+          plannedEvidence.observedAt,
+        )
+      : null,
+    plannedWithdrawalAuthorityMissing: plannedEvidence
+      ? null
+      : `No exact signed planned-withdrawal schedule covers ${scenario.id} for ${firm.id}`,
     pendingActivity: liquidity
       ? fact(liquidity.pendingNote, "synthetic-fixture", liquidityObservedAt, liquidityRetrievedAt)
       : null,

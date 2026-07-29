@@ -13,7 +13,8 @@ import type { DecisionJourneyVM } from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
-import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
+import { buildPolicyAuthoring } from "./build-policy-authoring";
+import { buildComparison, buildRecord } from "./build-summary";
 import {
   bindExactSourceCase,
   dispositionFor,

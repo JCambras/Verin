@@ -14,7 +14,11 @@ import {
   reserveFloorMinor,
   buildStages,
 } from "../src/app/demo/build-decision";
-import { DRAFT_RESERVE_MONTHS, buildPolicyAuthoring } from "../src/app/demo/build-summary";
+import {
+  DRAFT_RESERVE_MONTHS,
+  buildPolicyAuthoring,
+} from "../src/app/demo/build-policy-authoring";
+import { buildComparison } from "../src/app/demo/build-summary";
 import {
   CANONICAL_REQUEST,
   FIRMS,
@@ -25,6 +29,7 @@ import {
   hasSignedInvalidationAuthority,
   launcherVariantsFor,
   liquidityAuthorityFor,
+  plannedWithdrawalEvidenceFor,
   requestFor,
   sourceCaseFor,
   sourceCaseIdsFor,
@@ -172,7 +177,11 @@ function displayedDecisions(): DisplayedDecision[] {
         : null;
       const initial = authority.kind === "signed" ? authority.initialDecision : null;
       const revalidation = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
-      const reserveFloor = reserveFloorMinor(firm);
+      const planned = plannedWithdrawalEvidenceFor(
+        scenario,
+        firm.id,
+      );
+      const reserveFloor = reserveFloorMinor(scenario, firm);
       const primary: DisplayedDecision = {
         scenarioId: scenario.id,
         firmId: firm.id,
@@ -212,6 +221,8 @@ function displayedDecisions(): DisplayedDecision[] {
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
+        plannedWithdrawalMonthlyMinor:
+          planned?.displayValue?.valueMinor ?? null,
         reserveFloorMinor: reserveFloor,
         headroomMinor: headroomMinor(scenario, firm),
         revalidationAvailableCashMinor: revalidation?.availableCashMinor ?? null,
@@ -233,6 +244,19 @@ function displayedDecisions(): DisplayedDecision[] {
               (decision): DisplayedDecision => {
                 const relatedSource = SIGNED_CASE_VARIANTS.find(
                   (variant) => variant.caseId === decision.sourceCaseId,
+                );
+                const relatedScenario = bindExactSourceCase(
+                  baseScenario,
+                  firm.id,
+                  decision.sourceCaseId as SignedCaseVariant["caseId"],
+                );
+                const relatedPlanned = plannedWithdrawalEvidenceFor(
+                  relatedScenario,
+                  firm.id,
+                );
+                const relatedFloor = reserveFloorMinor(
+                  relatedScenario,
+                  firm,
                 );
                 return {
                   scenarioId: scenario.id,
@@ -279,12 +303,17 @@ function displayedDecisions(): DisplayedDecision[] {
                     decision.initialDecision.availableCashMinor,
                   pendingActivityMinor:
                     decision.initialDecision.pendingActivityMinor,
-                  reserveFloorMinor: reserveFloor,
-                  headroomMinor: calculateHeadroomMinor(
-                    decision.initialDecision.availableCashMinor,
-                    decision.initialDecision.pendingActivityMinor,
-                    reserveFloor,
-                  ),
+                  plannedWithdrawalMonthlyMinor:
+                    relatedPlanned?.displayValue?.valueMinor ?? null,
+                  reserveFloorMinor: relatedFloor,
+                  headroomMinor:
+                    relatedFloor === null
+                      ? null
+                      : calculateHeadroomMinor(
+                          decision.initialDecision.availableCashMinor,
+                          decision.initialDecision.pendingActivityMinor,
+                          relatedFloor,
+                        ),
                   revalidationAvailableCashMinor: null,
                   revalidationPendingActivityMinor: null,
                   simulatedFloorMinor: null,
@@ -561,9 +590,42 @@ function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
 /** Project the actual demo constants and emitted rows into the pure fence. */
 export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const firms = Object.values(FIRMS);
+  const safeScenario = SCENARIOS.find(
+    (scenario) => scenario.id === "safe-proceed",
+  )!;
+  const comparison = buildComparison(safeScenario);
+  const comparisonRow = (dimension: string) =>
+    comparison.rows.find((row) => row.dimension === dimension);
+  const renderedFirmPolicies = comparison.columns.map(
+    (column, index) => {
+      const side = index === 0 ? "a" : "b";
+      const cell = (dimension: string) =>
+        comparisonRow(dimension)?.[side];
+      const metricValue = (dimension: string) => {
+        const value = cell(dimension)?.metric?.value;
+        return typeof value === "number" ? value : null;
+      };
+      return {
+        firmId: column.firmId,
+        reserveFloorMinor: metricValue("Cash-reserve requirement"),
+        dualApprovalThresholdMinor: metricValue(
+          "Dual-approval threshold",
+        ),
+        quorum: cell("Quorum at this amount")?.display ?? null,
+        bankChangeHandling:
+          cell("Recent bank-change handling")?.display ?? null,
+      };
+    },
+  );
+  const reserveMetrics = SCENARIOS.flatMap((scenario) =>
+    firms.flatMap((firm) => {
+      const floor = reserveFloorMetric(firm, scenario);
+      return floor ? [floor] : [];
+    }),
+  );
   const moneyMetrics = [
-    amountMetric(SCENARIOS.find((scenario) => scenario.id === "safe-proceed")!, FIRMS["firm-a"]!),
-    ...firms.map((firm) => reserveFloorMetric(firm)),
+    amountMetric(safeScenario, FIRMS["firm-a"]!),
+    ...reserveMetrics,
     ...SCENARIOS.flatMap((scenario) =>
       firms.flatMap((firm) => {
         const headroom = headroomMetric(scenario, firm);
@@ -578,7 +640,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const invalidationJourney = getJourney("approval-invalidation", "firm-a");
   const initialSurfaceMoneyMinor = [
     invalidationJourney.workspace.liquidity?.value,
-    invalidationJourney.workspace.plannedMonthlyWithdrawal.value,
+    invalidationJourney.workspace.plannedMonthlyWithdrawal?.value,
     ...invalidationJourney.evidence.rows.flatMap((row) => row.kind === "metric" ? [row.metric.value] : []),
     ...(invalidationJourney.recommendation.disposition.figures ?? []).map((figure) => figure.metric.value),
     ...(invalidationJourney.approvals?.gate.figures ?? []).map((figure) => figure.metric.value),
@@ -694,6 +756,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   return {
     requestAmountMinor: CANONICAL_REQUEST.amountMinor,
     canonicalRequestAt: CANONICAL_REQUEST.requestedAt,
+    canonicalRequest: { ...CANONICAL_REQUEST },
     plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
     moneyUnits: [...new Set(moneyMetrics.map((money) => money.format))],
     moneyRenders: moneyMetrics.map(renderMoney),
@@ -702,8 +765,15 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     firms: firms.map((firm) => ({
       id: firm.id,
       reserveMonths: firm.reserveMonths,
-      reserveFloorMinor: reserveFloorMinor(firm),
+      dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
+      approvalsRequired: firm.approvalsRequired,
+      distinctActorsRequired: firm.distinctActorsRequired,
+      eligibleRole: firm.eligibleRole,
+      requesterConstraint: firm.requesterConstraint,
+      bankChangeHandling: firm.bankChangeHandling,
+      policyVersion: firm.policyVersion,
     })),
+    renderedFirmPolicies,
     signedCaseVariants: SIGNED_CASE_VARIANTS.map((variant) => variant),
     decisions: displayedDecisions(),
     sourceTimelines: sourceTimelines(),

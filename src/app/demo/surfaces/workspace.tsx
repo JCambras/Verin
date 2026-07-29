@@ -81,13 +81,18 @@ export function WorkspaceSurface({
               </dd>
             </div>
           ) : null}
-          <div className="flex flex-col gap-0.5">
-            <dt className="text-xs text-slate-600">Planned monthly withdrawal</dt>
-            <dd className="text-sm">
-              <Metric metric={vm.plannedMonthlyWithdrawal} />
-            </dd>
-          </div>
+          {vm.plannedMonthlyWithdrawal ? (
+            <div className="flex flex-col gap-0.5">
+              <dt className="text-xs text-slate-600">Planned monthly withdrawal</dt>
+              <dd className="text-sm">
+                <Metric metric={vm.plannedMonthlyWithdrawal} />
+              </dd>
+            </div>
+          ) : null}
         </dl>
+        {vm.plannedWithdrawalAuthorityMissing ? (
+          <EvidenceMissing text={vm.plannedWithdrawalAuthorityMissing} />
+        ) : null}
         {vm.pendingActivity ? (
           <p className="text-sm text-slate-700">
             <FreshValue provenance={vm.pendingActivity.provenance}>{vm.pendingActivity.display}</FreshValue>

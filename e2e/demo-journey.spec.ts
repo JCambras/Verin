@@ -158,7 +158,11 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Planned-withdrawal schedule unavailable", {
+      exact: true,
+    }),
+  ).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
   await checkAxe(page, "comparison");
   await snap(page, 10, "comparison");
@@ -1129,6 +1133,82 @@ test("comparison does not claim policy-only causality across an evidence gap", a
       "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy.",
     ),
   ).toBeVisible();
+});
+
+test("exact schedules and cross-firm reruns fail closed", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  for (const route of [
+    {
+      scenario: "recent-bank-change-block",
+      firm: "firm-b",
+      caseId: "GC-04-recent-bank-change-firm-b",
+      reserve: "$96,000.00",
+    },
+    {
+      scenario: "permanent-prohibition",
+      firm: "firm-a",
+      caseId: "GC-06-household-restriction",
+      reserve: "$48,000.00",
+    },
+    {
+      scenario: "permanent-prohibition",
+      firm: "firm-a",
+      caseId: "GC-07-regulatory-prohibition",
+      reserve: "$48,000.00",
+    },
+    {
+      scenario: "ambiguous-instruction",
+      firm: "firm-a",
+      caseId: "GC-08-ambiguous-household",
+      reserve: "$48,000.00",
+    },
+  ]) {
+    const context =
+      `scenario=${route.scenario}&firm=${route.firm}&case=${route.caseId}`;
+    await page.goto(`/app/demo/workspace?${context}`);
+    await expect(
+      page.getByText(
+        `No exact signed planned-withdrawal schedule covers ${route.scenario} for ${route.firm}`,
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("$8,000.00", { exact: true }),
+    ).toHaveCount(0);
+
+    await page.goto(`/app/demo/policy-authoring?${context}`);
+    await expect(
+      page.getByText(
+        "Not simulated without exact signed schedule evidence",
+      ).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText(route.reserve, { exact: true }),
+    ).toHaveCount(0);
+  }
+
+  for (const rerun of [
+    {
+      from:
+        "/app/demo/comparison?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+      name: "Rerun this request under Firm B",
+      href:
+        "/app/demo/decision?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path",
+    },
+    {
+      from:
+        "/app/demo/comparison?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a",
+      name: "Rerun this request under Firm B",
+      href:
+        "/app/demo/decision?scenario=recent-bank-change-block&firm=firm-b&case=GC-04-recent-bank-change-firm-b",
+    },
+  ]) {
+    await page.goto(rerun.from);
+    const link = page.getByRole("link", { name: rerun.name });
+    await expect(link).toHaveAttribute("href", rerun.href);
+    await link.click();
+    await expect(page).toHaveURL(rerun.href);
+  }
 });
 
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {

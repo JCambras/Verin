@@ -20,11 +20,11 @@ import {
   CANONICAL_REQUEST,
   CAST,
   OBSERVED_RECENT,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
   evidenceForPass,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
+  plannedWithdrawalEvidenceFor,
   requestFor,
   sourceCaseFor,
   type FirmData,
@@ -36,26 +36,45 @@ import {
  * demonstrations. The inputs list is the provenance trace, not a calculation cache.
  * Headroom reads the BRANCH's signed liquidity evidence, never a global assumption,
  * so the figure beside "Amount" is the one that branch's golden case states. */
-const DEFAULT_LIQUIDITY_INPUTS = [
-  prov("synthetic-fixture", OBSERVED_RECENT),
-  prov("synthetic-fixture", OBSERVED_RECENT),
-];
-export function reserveFloorMinor(firm: FirmData): number {
-  return calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, firm.reserveMonths);
+export function reserveFloorMinor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): number | null {
+  const planned = plannedWithdrawalEvidenceFor(scenario, firm.id, pass);
+  return planned
+    ? calculateReserveFloorMinor(
+        planned.displayValue!.valueMinor,
+        firm.reserveMonths,
+      )
+    : null;
 }
-export function headroomMinor(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): number | null {
+export function headroomMinor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): number | null {
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  if (authority.kind === "missing") return null;
+  const reserveFloor = reserveFloorMinor(scenario, firm, pass);
+  if (authority.kind === "missing" || reserveFloor === null) return null;
   const snapshot =
     pass === "revalidated"
       ? (authority.preExecutionRevalidation ?? authority.initialDecision)
       : authority.initialDecision;
   const { availableCashMinor, pendingActivityMinor } = snapshot;
-  return calculateHeadroomMinor(availableCashMinor, pendingActivityMinor, reserveFloorMinor(firm));
+  return calculateHeadroomMinor(
+    availableCashMinor,
+    pendingActivityMinor,
+    reserveFloor,
+  );
 }
 /** Whether the branch's signed liquidity covers the canonical request under this
  * firm's reserve floor - the one comparison every proceed claim on screen rests on. */
-export function reserveHolds(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): boolean | null {
+export function reserveHolds(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): boolean | null {
   const headroom = headroomMinor(scenario, firm, pass);
   return headroom === null
     ? null
@@ -63,23 +82,25 @@ export function reserveHolds(scenario: ScenarioData, firm: FirmData, pass: Journ
 }
 export function reserveFloorMetric(
   firm: FirmData,
-  scenario?: ScenarioData,
+  scenario: ScenarioData,
+  pass: JourneyPass = "initial",
 ) {
-  const planned = scenario
-    ? sourceCaseFor(scenario, firm.id)?.evidence.find(
-        (entry) => entry.evidenceKind === "planned-withdrawals",
+  const planned = plannedWithdrawalEvidenceFor(scenario, firm.id, pass);
+  const floor = reserveFloorMinor(scenario, firm, pass);
+  return planned && floor !== null
+    ? derivedMetric(
+        floor,
+        "currency-minor",
+        [prov("synthetic-fixture", planned.observedAt)],
+        planned.observedAt,
       )
-    : undefined;
-  return derivedMetric(
-    reserveFloorMinor(firm),
-    "currency-minor",
-    planned
-      ? [prov("synthetic-fixture", planned.observedAt)]
-      : DEFAULT_LIQUIDITY_INPUTS,
-    planned?.observedAt ?? OBSERVED_RECENT,
-  );
+    : null;
 }
-export function headroomMetric(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial") {
+export function headroomMetric(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+) {
   const headroom = headroomMinor(scenario, firm, pass);
   const inputs = liquidityInputs(scenario, firm, pass);
   return headroom === null

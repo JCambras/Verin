@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT } from "./_fence-utils";
@@ -16,18 +16,14 @@ import {
   type ScenarioRefs,
 } from "../../../scripts/golden-cases.lib";
 import { validateGoldenCaseArtifacts } from "../../../scripts/golden-cases-runner.lib";
-import { loadDemoSemanticSnapshot } from "../../../scripts/golden-demo-snapshot";
 import {
+  deriveIndependentDemoBinding,
   readRenderedMajor,
   rendersAtCanonicalScale,
   validateGoldenDemoSemantics,
   validateStatusVocabularyDocs,
   type DemoSemanticSnapshot,
 } from "../../../scripts/golden-demo-semantics.lib";
-import { approvalPlanSatisfied } from "../../app/demo/build-decision";
-import {
-  parseSignedCaseVariants,
-} from "../../app/demo/signed-cases";
 
 /**
  * GOLDEN-CASES FENCE (v3 build-sequence prompt 2; charter #1/#4). The golden
@@ -60,9 +56,32 @@ import {
 const realCases = loadGoldenCases();
 const realRefs = loadScenarioRefs();
 const realDoc = readFileSync(GOLDEN_DOC, "utf8");
-const realDemo = loadDemoSemanticSnapshot();
 const realContracts = readFileSync(V3_CORE_CONTRACTS, "utf8");
 const realStatusDocs = loadStatusVocabularyDocs();
+let realDemo!: DemoSemanticSnapshot;
+let approvalPlanSatisfied!: typeof import("../../app/demo/build-decision").approvalPlanSatisfied;
+let parseSignedCaseVariants!: typeof import("../../app/demo/signed-cases").parseSignedCaseVariants;
+
+beforeAll(async () => {
+  const rawProblems = validateGoldenCases(
+    realCases,
+    realRefs,
+    realDoc,
+  );
+  if (rawProblems.length > 0) {
+    throw new Error(
+      `raw golden-case validation failed before production parsing:\n${rawProblems.join("\n")}`,
+    );
+  }
+  const [snapshot, decision, signedCases] = await Promise.all([
+    import("../../../scripts/golden-demo-snapshot"),
+    import("../../app/demo/build-decision"),
+    import("../../app/demo/signed-cases"),
+  ]);
+  realDemo = snapshot.loadDemoSemanticSnapshot();
+  approvalPlanSatisfied = decision.approvalPlanSatisfied;
+  parseSignedCaseVariants = signedCases.parseSignedCaseVariants;
+});
 
 describe("golden-cases fence", () => {
   it("enforces: every golden case is complete, aligned, consistent, and signoff-gated", () => {
@@ -381,9 +400,138 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(vacuous.some((p) => p.includes("renders no money value"))).toBe(true);
 
     const floorDrift = demoClone();
-    floorDrift.firms[1]!.reserveFloorMinor = 9_500_000;
+    floorDrift.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-02-firm-b-happy-path",
+    )!.reserveFloorMinor = 9_500_000;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, floorDrift).some((p) => p.includes("derived reserve floor drift")),
+    ).toBe(true);
+  });
+
+  it("fences every structured firm-policy input across fixtures, config, demo, and rendering", () => {
+    for (const [field, value] of [
+      ["cashReserveMonths", 7],
+      ["dualApprovalThresholdUsd", 26_000],
+      ["approvalsRequired", 3],
+      ["distinctActorsRequired", false],
+      ["eligibleRole", "principal"],
+      ["requesterConstraint", null],
+      [
+        "bankInstructionChangeHandling",
+        "block-until-independently-verified",
+      ],
+    ] as const) {
+      const cases = clone();
+      const config = caseById(
+        cases,
+        "GC-01-firm-a-happy-path",
+      ).firmConfiguration as Record<string, unknown>;
+      config[field] = value;
+      expect(
+        run(cases).some((problem) =>
+          problem.includes(
+            `firmConfiguration.${field} does not match scenarios.yaml`,
+          ),
+        ),
+        field,
+      ).toBe(true);
+    }
+
+    for (const mutate of [
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.reserveMonths = 7;
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.dualApprovalThresholdMinor = 2_600_000;
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.approvalsRequired = 3;
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.distinctActorsRequired = false;
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.eligibleRole = "principal";
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.requesterConstraint = null;
+      },
+      (demo: DemoSemanticSnapshot) => {
+        demo.firms[0]!.bankChangeHandling =
+          "block-until-independently-verified";
+      },
+    ]) {
+      const demo = demoClone();
+      mutate(demo);
+      expect(
+        validateGoldenDemoSemantics(
+          clone(),
+          realRefs,
+          demo,
+        ).some((problem) =>
+          problem.includes(
+            "demo firm policy inputs drift from scenarios.yaml",
+          ),
+        ),
+      ).toBe(true);
+    }
+
+    const rendered = demoClone();
+    rendered.renderedFirmPolicies[0]!.dualApprovalThresholdMinor =
+      2_600_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        rendered,
+      ).some((problem) =>
+        problem.includes(
+          "rendered comparison drifts from structured firm policy inputs",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps schedule-less cases from rendering reserve or policy simulations", () => {
+    for (const caseId of [
+      "GC-04-recent-bank-change-firm-b",
+      "GC-06-household-restriction",
+      "GC-07-regulatory-prohibition",
+      "GC-08-ambiguous-household",
+    ]) {
+      const decision = realDemo.decisions.find(
+        (candidate) =>
+          candidate.sourceCaseId === caseId &&
+          candidate.decisionRole === "primary",
+      );
+      expect(decision, caseId).toBeDefined();
+      expect(decision?.plannedWithdrawalMonthlyMinor, caseId).toBeNull();
+      expect(decision?.reserveFloorMinor, caseId).toBeNull();
+      expect(decision?.headroomMinor, caseId).toBeNull();
+      expect(decision?.simulatedFloorMinor, caseId).toBeNull();
+      expect(decision?.simulatedHeadroomMinor, caseId).toBeNull();
+      expect(decision?.simulatedDisposition, caseId).toBeNull();
+    }
+
+    const borrowed = demoClone();
+    const gc06 = borrowed.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-06-household-restriction",
+    )!;
+    gc06.plannedWithdrawalMonthlyMinor = 800_000;
+    gc06.reserveFloorMinor = 4_800_000;
+    gc06.simulatedFloorMinor = 9_600_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        borrowed,
+      ).some((problem) =>
+        problem.includes(
+          "missing planned-withdrawal evidence must leave reserve and policy simulation unavailable",
+        ),
+      ),
     ).toBe(true);
   });
 
@@ -419,7 +567,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const drained = demoClone();
     const decision = drained.decisions.find((d) => d.disposition === "proceed")!;
     decision.availableCashMinor = 10_000_000;
-    decision.headroomMinor = 10_000_000 - decision.pendingActivityMinor! - decision.reserveFloorMinor;
+    decision.headroomMinor = 10_000_000 - decision.pendingActivityMinor! - decision.reserveFloorMinor!;
     const problems = validateGoldenDemoSemantics(clone(), realRefs, drained);
     expect(problems.some((p) => p.includes("available-liquidity drift"))).toBe(true);
 
@@ -437,7 +585,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const simulated = demoClone();
     for (const d of simulated.decisions) {
       if (d.simulatedDisposition !== "proceed") continue;
-      d.simulatedFloorMinor = d.reserveFloorMinor + 1;
+      d.simulatedFloorMinor = d.reserveFloorMinor! + 1;
       d.simulatedHeadroomMinor = null;
     }
     expect(
@@ -705,6 +853,160 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("independently binds evidence, policy, case, firm, scenario, pass, and decision inputs", () => {
+    const baseRecord = realDemo.recordIdentities.find(
+      (record) =>
+        record.routeSourceCaseId ===
+          "GC-01-firm-a-happy-path" &&
+        record.routePass === "initial",
+    )!;
+    const base = deriveIndependentDemoBinding(
+      clone(),
+      realDemo,
+      baseRecord,
+      "initial",
+    )!;
+    const expectBothChanged = (
+      derived: { decisionHash: string; bundleHash: string } | null,
+      label: string,
+    ) => {
+      expect(derived, label).not.toBeNull();
+      expect(derived?.bundleHash, label).not.toBe(base.bundleHash);
+      expect(derived?.decisionHash, label).not.toBe(
+        base.decisionHash,
+      );
+    };
+
+    const evidenceCases = clone();
+    const evidence = (
+      caseById(
+        evidenceCases,
+        "GC-01-firm-a-happy-path",
+      ).householdEvidence as Array<Record<string, unknown>>
+    )[0]!;
+    evidence.summary = `${String(evidence.summary)} changed`;
+    expectBothChanged(
+      deriveIndependentDemoBinding(
+        evidenceCases,
+        realDemo,
+        baseRecord,
+        "initial",
+      ),
+      "evidence",
+    );
+
+    const policyCases = clone();
+    (
+      caseById(
+        policyCases,
+        "GC-01-firm-a-happy-path",
+      ).policyVersions as Record<string, unknown>
+    ).firmPolicyVersionId = "firm-a-policy@changed";
+    expectBothChanged(
+      deriveIndependentDemoBinding(
+        policyCases,
+        realDemo,
+        baseRecord,
+        "initial",
+      ),
+      "policy",
+    );
+
+    for (const axis of ["case", "firm", "scenario"] as const) {
+      const cases = clone();
+      const demo = demoClone();
+      const record = demo.recordIdentities.find(
+        (candidate) =>
+          candidate.routeSourceCaseId ===
+            "GC-01-firm-a-happy-path" &&
+          candidate.routePass === "initial",
+      )!;
+      const decision = demo.decisions.find(
+        (candidate) =>
+          candidate.sourceCaseId ===
+          "GC-01-firm-a-happy-path",
+      )!;
+      if (axis === "case") {
+        (
+          caseById(
+            cases,
+            "GC-01-firm-a-happy-path",
+          ) as Record<string, unknown>
+        ).caseId = "GC-01-firm-a-happy-path-changed";
+        record.routeSourceCaseId =
+          "GC-01-firm-a-happy-path-changed";
+        decision.sourceCaseId =
+          "GC-01-firm-a-happy-path-changed";
+      } else if (axis === "firm") {
+        record.routeFirmId = "firm-changed";
+        demo.firms[0]!.id = "firm-changed";
+        decision.firmId = "firm-changed";
+      } else {
+        record.routeScenarioId = "safe-proceed-changed";
+        decision.scenarioId = "safe-proceed-changed";
+      }
+      expectBothChanged(
+        deriveIndependentDemoBinding(
+          cases,
+          demo,
+          record,
+          "initial",
+        ),
+        axis,
+      );
+    }
+
+    const gc15Initial = realDemo.recordIdentities.find(
+      (record) =>
+        record.routeSourceCaseId ===
+          "GC-15-approval-invalidation" &&
+        record.routePass === "initial",
+    )!;
+    const gc15Revalidated = realDemo.recordIdentities.find(
+      (record) =>
+        record.routeSourceCaseId ===
+          "GC-15-approval-invalidation" &&
+        record.routePass === "revalidated",
+    )!;
+    const initial = deriveIndependentDemoBinding(
+      clone(),
+      realDemo,
+      gc15Initial,
+      "initial",
+    )!;
+    const revalidated = deriveIndependentDemoBinding(
+      clone(),
+      realDemo,
+      gc15Revalidated,
+      "revalidated",
+    )!;
+    expect(revalidated.bundleHash).not.toBe(initial.bundleHash);
+    expect(revalidated.decisionHash).not.toBe(initial.decisionHash);
+
+    const decisionOnly = demoClone();
+    const decision = decisionOnly.decisions.find(
+      (candidate) =>
+        candidate.sourceCaseId ===
+        "GC-01-firm-a-happy-path",
+    )!;
+    decision.disposition = "blocked";
+    const changedDecision = deriveIndependentDemoBinding(
+      clone(),
+      decisionOnly,
+      decisionOnly.recordIdentities.find(
+        (record) =>
+          record.routeSourceCaseId ===
+            "GC-01-firm-a-happy-path" &&
+          record.routePass === "initial",
+      )!,
+      "initial",
+    )!;
+    expect(changedDecision.bundleHash).toBe(base.bundleHash);
+    expect(changedDecision.decisionHash).not.toBe(
+      base.decisionHash,
+    );
+  });
+
   it("flags missing-evidence inference and policy-only comparison claims", () => {
     const inferred = demoClone();
     const gc07 = inferred.decisions.find(
@@ -951,7 +1253,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     for (const d of drifted.decisions) {
       if (d.scenarioId !== "safe-proceed") continue;
       d.availableCashMinor = 20_000_000;
-      d.headroomMinor = 20_000_000 - d.pendingActivityMinor! - d.reserveFloorMinor;
+      d.headroomMinor = 20_000_000 - d.pendingActivityMinor! - d.reserveFloorMinor!;
     }
     const problems = validateGoldenDemoSemantics(clone(), realRefs, drifted);
     expect(problems.some((p) => p.includes("GC-02") && p.includes("rendered liquidity drift"))).toBe(true);

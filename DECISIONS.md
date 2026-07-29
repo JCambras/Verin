@@ -3699,3 +3699,22 @@ so a coordinated pin update cannot reorder it behind a later status.
 when its ownership and refusal rules survive every path that consumes it.
 **Revert path:** none while D-073 through D-078 require exact-case projection and fail-closed signed
 truth across the demo and its gates.
+
+### D-080 · 2026-07-29 · reversible · Schedules, policy inputs, and bindings require exact authority
+
+Planned-withdrawal values now come only from the selected signed case and lifecycle pass. Missing
+schedule evidence leaves the workspace value, reserve floor, headroom, and policy simulation
+unavailable. Comparison reruns bind the exact target firm's signed case instead of selecting a case
+by array order.
+
+The golden-case boundary validates raw fixtures before loading the production projection. Every
+structured firm-policy input is compared across the scenario matrix, signed fixtures, demo
+configuration, and rendered comparison. Record hashes are independently recomputed from raw signed
+inputs, and adversarial companions prove that evidence, policy, case, firm, scenario, and pass each
+affect the required binding.
+
+**Why:** canonical fallback values, implicit route selection, eager production parsing, partial
+policy projection, and shape-only hash checks could all make a gate green while the UI displayed or
+bound different product truth.
+**Revert path:** none while D-073 through D-079 require exact-case authority and fail-closed signed
+truth across every route, surface, record, and validation boundary.

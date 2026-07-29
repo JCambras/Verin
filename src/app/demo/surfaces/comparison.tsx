@@ -19,6 +19,7 @@ export function ComparisonSurface({
 }) {
   const otherFirm = routeContext.firmId === "firm-a" ? "firm-b" : "firm-a";
   const otherName = routeContext.firmId === "firm-a" ? "Firm B" : "Firm A";
+  const target = vm.columns.find((column) => column.firmId === otherFirm);
   return (
     <SurfaceShell
       title="Firm A / Firm B"
@@ -28,16 +29,22 @@ export function ComparisonSurface({
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
       <ComparisonColumns columns={vm.columns} rows={vm.rows} />
-      <SecondaryLink
-        href={demoHref("decision", {
-          ...routeContext,
-          firmId: otherFirm,
-          sourceCaseId: null,
-          pass: "initial",
-        })}
-      >
-        Rerun this request under {otherName}
-      </SecondaryLink>
+      {target?.sourceCaseId ? (
+        <SecondaryLink
+          href={demoHref("decision", {
+            ...routeContext,
+            firmId: otherFirm,
+            sourceCaseId: target.sourceCaseId,
+            pass: "initial",
+          })}
+        >
+          Rerun this request under {otherName}
+        </SecondaryLink>
+      ) : (
+        <p className="text-sm text-slate-600">
+          No exact signed {otherName} case is available for this rerun.
+        </p>
+      )}
       <JourneyNav
         back={{ href: demoHref("verification", routeContext), label: "Back to verification" }}
         forward={{ href: demoHref("policy-authoring", routeContext), label: "Author a policy change" }}

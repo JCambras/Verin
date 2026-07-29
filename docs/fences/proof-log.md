@@ -5979,3 +5979,36 @@ typecheck, lint, knip, v3 invariant report, production build, and diff checks pa
 state.
 
 **Date:** 2026-07-29 (review corrections, D-079).
+
+## F117 · exact schedules, policy projection, and independent bindings
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** a planned-withdrawal value and every dependent reserve calculation require exact
+signed schedule evidence for the selected case and pass; cross-firm navigation binds an explicit
+target case; raw fixture validation precedes production parsing; every structured firm-policy input
+matches across artifacts; and record hashes equal an independent projection of their exact bound
+inputs.
+
+The production browser path first reproduced GC-06 displaying the canonical $8,000 monthly
+withdrawal without signed schedule evidence. The safe-proceed comparison also produced a Firm B
+rerun URL with no case identity. Both failures were captured before the production fix.
+
+Companions now inject canonical schedule values into GC-04, GC-06, GC-07, and GC-08, drift every
+firm-policy field independently in fixtures and demo configuration, drift rendered policy values,
+attempt to load production artifacts after invalid raw input, and mutate each evidence, policy,
+case, firm, scenario, and pass hash input. Each mutation produces its named schedule, policy,
+ordering, or binding diagnostic. Decision-only inputs are also proven not to alter the input-bundle
+hash.
+
+Browser coverage proves all four schedule-less cases render unavailable workspace, reserve, and
+simulation states, and proves safe-proceed and recent-bank-change reruns preserve GC-01/GC-02 and
+GC-03/GC-04 exact identity. The seven-minute journey preserves the same fail-closed comparison.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+All 592 Vitest cases and all 27 Playwright cases with Axe pass. The signed-truth validator,
+typecheck, lint, knip, v3 invariant report, production build, file-size ratchet, and diff checks pass
+on the corrected state.
+
+**Date:** 2026-07-29 (review corrections, D-080).

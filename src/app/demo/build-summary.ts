@@ -9,14 +9,9 @@
  * ADR-0022 - every input here is synthetic, so it is a watermarked demonstration.
  */
 import type { DisplayMetric } from "@contracts/metric";
-import {
-  headroomMinor as calculateHeadroomMinor,
-  reserveFloorMinor as calculateReserveFloorMinor,
-} from "@contracts/money-movement";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
-import type { ComparisonRowVM, ComparisonVM, DispositionKind, PolicyAuthoringVM, RecordVM } from "./model";
-import { derivedMetric, prov, recordProvenance } from "./provenance";
-import { buildSpine } from "./spine";
+import type { ComparisonRowVM, ComparisonVM, RecordVM } from "./model";
+import { prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
   amountMetric,
@@ -27,7 +22,6 @@ import {
   reserveFloorMetric,
   DISPOSITION_BADGES,
 } from "./build-decision";
-import { liquidityInputs } from "./build-decision-truth";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import {
   activeDecisionAt,
@@ -41,12 +35,10 @@ import {
   IDS,
   OBSERVED_RECENT,
   decisionIdentityFor,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
   evidenceForPass,
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
-  liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
   type FirmData,
@@ -54,12 +46,31 @@ import {
   type ScenarioData,
 } from "./data";
 
-/** The reserve horizon the drafted policy proposes (surface 11's simulation). */
-export const DRAFT_RESERVE_MONTHS = 12;
-
 function thresholdMetric(firm: FirmData): DisplayMetric {
   // A policy parameter, not a computed figure: fixture-sourced, labeled sample data.
   return { value: firm.dualApprovalThresholdMinor, format: "currency-minor", provenance: prov("synthetic-fixture", firm.policyActiveSince) };
+}
+
+function quorumAtAmount(
+  firm: FirmData,
+  requestAmountMinor: number,
+): string {
+  if (requestAmountMinor <= firm.dualApprovalThresholdMinor) {
+    return `No dual approval at this amount; ${firm.name} states ${firm.requesterConstraint === null ? "no requester rule" : firm.requesterConstraint}`;
+  }
+  const role = firm.eligibleRole ?? "eligible";
+  const actorRule = firm.distinctActorsRequired ? "distinct " : "";
+  const requesterRule =
+    firm.requesterConstraint === "may-not-satisfy-both-approvals"
+      ? "requester excluded"
+      : "no requester constraint";
+  return `${firm.approvalsRequired} ${actorRule}${role} approvers - ${requesterRule}`;
+}
+
+function bankChangeHandlingLabel(firm: FirmData): string {
+  return firm.bankChangeHandling === "specialist-review"
+    ? "Specialist review before execution"
+    : "Blocked until independently verified";
 }
 
 export function buildComparison(
@@ -72,6 +83,8 @@ export function buildComparison(
   const dispB = dispositionFor(scenario, b.id);
   const headroomA = headroomMetric(scenario, a, pass);
   const headroomB = headroomMetric(scenario, b, pass);
+  const reserveA = reserveFloorMetric(a, scenario, pass);
+  const reserveB = reserveFloorMetric(b, scenario, pass);
   const sourceA = sourceCaseFor(scenario, a.id);
   const sourceB = sourceCaseFor(scenario, b.id);
   const equivalentEvidence = hasEquivalentComparisonEvidence(
@@ -90,8 +103,12 @@ export function buildComparison(
     { dimension: "Requested amount", a: { metric: amountA }, b: { metric: amountB }, differs: amountA.value !== amountB.value },
     {
       dimension: "Cash-reserve requirement",
-      a: { metric: reserveFloorMetric(a, scenario) },
-      b: { metric: reserveFloorMetric(b, scenario) },
+      a: reserveA
+        ? { metric: reserveA }
+        : { display: "Planned-withdrawal schedule unavailable" },
+      b: reserveB
+        ? { metric: reserveB }
+        : { display: "Planned-withdrawal schedule unavailable" },
       differs: true,
       why: { reason: `Firm A preserves six months of planned withdrawals (policy ${policyA}); Firm B preserves twelve (policy ${policyB}).` },
     },
@@ -116,15 +133,15 @@ export function buildComparison(
     },
     {
       dimension: "Quorum at this amount",
-      a: { display: "Two distinct operations approvers - requester excluded" },
-      b: { display: "No dual approval at this amount; Firm B states no requester rule" },
+      a: { display: quorumAtAmount(a, Number(amountA.value)) },
+      b: { display: quorumAtAmount(b, Number(amountB.value)) },
       differs: true,
       why: { reason: `The request sits between the two thresholds: above Firm A's (policy ${policyA}), below Firm B's (policy ${policyB}). Firm B's requester rule is contract silence, not a lighter rule.` },
     },
     {
       dimension: "Recent bank-change handling",
-      a: { display: "Specialist review before execution" },
-      b: { display: "Blocked until independently verified" },
+      a: { display: bankChangeHandlingLabel(a) },
+      b: { display: bankChangeHandlingLabel(b) },
       differs: true,
       why: { reason: `Policy ${policyA} routes a recent change to a specialist; policy ${policyB} blocks execution until independent verification.` },
     },
@@ -150,135 +167,23 @@ export function buildComparison(
       : "The same household and request are shown, but exact signed equivalent evidence is unavailable for one comparison arm.",
     columns: [
       {
+        firmId: a.id,
         firm: a.name,
         policyVersion:
           policyA,
         activeSince: `active since ${a.policyActiveSince}`,
+        sourceCaseId: sourceA?.caseId ?? null,
       },
       {
+        firmId: b.id,
         firm: b.name,
         policyVersion:
           policyB,
         activeSince: `active since ${b.policyActiveSince}`,
+        sourceCaseId: sourceB?.caseId ?? null,
       },
     ],
     rows,
-    fakeClass: "deterministic-engine-output",
-  };
-}
-
-export function buildPolicyAuthoring(
-  scenario: ScenarioData,
-  firm: FirmData,
-  pass: JourneyPass,
-): PolicyAuthoringVM {
-  const isFirmA = firm.id === "firm-a";
-  const twelveMonthFloor = calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, DRAFT_RESERVE_MONTHS);
-  const simulationInputs = liquidityInputs(scenario, firm, pass);
-  const authority = liquidityAuthorityFor(scenario, firm.id);
-  const snapshot =
-    authority.kind === "signed"
-      ? pass === "revalidated"
-        ? (authority.preExecutionRevalidation ?? authority.initialDecision)
-        : authority.initialDecision
-      : null;
-  const newHeadroom = snapshot
-    ? calculateHeadroomMinor(snapshot.availableCashMinor, snapshot.pendingActivityMinor, twelveMonthFloor)
-    : null;
-  const currentHeadroom = headroomMetric(scenario, firm, pass);
-  const disp = dispositionFor(scenario, firm.id);
-  const request = requestFor(scenario, firm.id);
-  // The simulation's own arithmetic decides whether the request survives the drafted
-  // floor. Asserting "still proceeds" as fixed copy is how surface 11 would come to
-  // contradict the figure printed directly above it.
-  const simulatedDisp: DispositionKind | null =
-    newHeadroom === null ? null : disp === "proceed" && newHeadroom < request.amountMinor ? "blocked" : disp;
-  return {
-    spine: buildSpine("Decision", { status: "pending", label: "Draft simulation" }),
-    sentence: "Always preserve twelve months of planned withdrawals in cash.",
-    draft: {
-      rows: [
-        { field: "Effect", value: "Require" },
-        { field: "Subject", value: "Cash reserve" },
-        { field: "Quantity", value: "Twelve months of planned withdrawals" },
-        { field: "Scope", value: "All households" },
-        { field: "Supersedes", value: isFirmA ? `${firm.policyVersion} §2 (six months)` : `${firm.policyVersion} §3 (already twelve months - no change)` },
-      ],
-      label: "Drafted - not yet reviewed",
-      fakeClass: "llm-proposed-draft",
-    },
-    interpretation: "Reserve floor becomes twelve times the planned monthly withdrawal for each household, evaluated before any discretionary movement.",
-    simulationDelta: isFirmA && newHeadroom !== null && currentHeadroom
-      ? [
-          {
-            label: "Smith household reserve floor",
-            before: { metric: reserveFloorMetric(firm, scenario) },
-            after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", simulationInputs, DEMO_NOW) },
-          },
-          {
-            label: "Available after reserve",
-            before: { metric: currentHeadroom },
-            after: { metric: derivedMetric(newHeadroom, "currency-minor", simulationInputs, DEMO_NOW) },
-          },
-          {
-            label: "This request",
-            before: { badge: DISPOSITION_BADGES[disp] },
-            after: { badge: DISPOSITION_BADGES[simulatedDisp ?? disp] },
-          },
-          {
-            label: "Demo-corpus households newly below the floor",
-            before: { metric: derivedMetric(0, "count", simulationInputs, DEMO_NOW) },
-            after: { metric: derivedMetric(3, "count", simulationInputs, DEMO_NOW) },
-          },
-        ]
-      : isFirmA
-        ? [
-            {
-              label: "Smith household reserve floor",
-              before: { metric: reserveFloorMetric(firm, scenario) },
-              after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", simulationInputs, DEMO_NOW) },
-            },
-            {
-              label: "Available after reserve",
-              before: { display: "Missing signed branch-and-firm liquidity authority" },
-              after: { display: "Not simulated without signed numeric authority" },
-            },
-            {
-              label: "This request",
-              before: { badge: DISPOSITION_BADGES[disp] },
-              after: { display: "Not simulated without signed numeric authority" },
-            },
-          ]
-        : [
-          {
-            label: "Smith household reserve floor",
-            before: { metric: reserveFloorMetric(firm, scenario) },
-            after: { metric: reserveFloorMetric(firm, scenario) },
-          },
-          {
-            label: "This request",
-            before: { badge: DISPOSITION_BADGES[disp] },
-            after: { badge: DISPOSITION_BADGES[disp] },
-          },
-        ],
-    gateLabel: isFirmA ? "Approve and activate FA-4.3" : "Approve (no effective change for Firm B)",
-    activation: isFirmA ? { fromVersion: "FA-4.2", toVersion: "FA-4.3" } : { fromVersion: "FB-2.1", toVersion: "FB-2.1" },
-    changedRerunResult: newHeadroom === null
-      ? "Re-run not calculated: this branch and firm have no captain-signed numeric liquidity case, and no unrelated case was substituted."
-      : isFirmA
-      ? {
-          proceed: "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor.",
-          blocked:
-            disp === "proceed"
-              ? "Re-run under FA-4.3: the Smith request no longer proceeds - twelve months of planned withdrawals leave less than this movement needs."
-              : "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
-          prohibited: "Re-run under FA-4.3: the Smith request remains prohibited - the destination restriction is not resolvable by a reserve-policy change.",
-        }[simulatedDisp ?? disp]
-      : {
-          proceed: "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
-          blocked: "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the named conditions still block this request.",
-          prohibited: "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the destination restriction is not resolvable by a reserve-policy change.",
-        }[disp],
     fakeClass: "deterministic-engine-output",
   };
 }

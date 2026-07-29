@@ -118,7 +118,8 @@ export interface WorkspaceVM {
   readonly accounts: readonly AccountVM[];
   readonly accountsUnavailable: string | null;
   readonly liquidity: DisplayMetric | null;
-  readonly plannedMonthlyWithdrawal: DisplayMetric;
+  readonly plannedMonthlyWithdrawal: DisplayMetric | null;
+  readonly plannedWithdrawalAuthorityMissing: string | null;
   readonly pendingActivity: FactVM | null;
   readonly liquidityAuthorityMissing: string | null;
   readonly onRamp: { readonly title: string; readonly description: string };
@@ -404,9 +405,11 @@ export interface ComparisonRowVM {
   readonly why?: WhyVM;
 }
 export interface ComparisonColumnVM {
+  readonly firmId: string;
   readonly firm: string;
   readonly policyVersion: string;
   readonly activeSince: string;
+  readonly sourceCaseId: SignedCaseId | null;
 }
 export interface ComparisonVM {
   readonly description: string;

@@ -161,16 +161,35 @@ export interface ScenarioRefs {
   firmIds: Set<string>;
   canonicalRequestAmountUsd: number | null;
   firmReserveMonths: Map<string, number>;
+  firmPolicies: Map<string, FirmPolicyRef>;
   dispositionStates: Set<string>;
   executionStates: Set<string>;
   provenanceLabels: Set<string>;
   deferralStatus: string | null;
 }
 
+export interface FirmPolicyRef {
+  cashReserveMonths: number | null;
+  dualApprovalThresholdUsd: number | null;
+  approvalsRequired: number | null;
+  distinctActorsRequired: boolean | null;
+  eligibleRole: string | null;
+  requesterConstraint: string | null;
+  bankInstructionChangeHandling: string | null;
+}
+
 interface YamlIdRow {
   id?: unknown;
   class?: unknown;
   cash_reserve?: { months_of_planned_withdrawals?: unknown };
+  dual_approval?: {
+    threshold_usd?: unknown;
+    approvals_required?: unknown;
+    distinct_actors_required?: unknown;
+    eligible_role?: unknown;
+    requester_constraint?: unknown;
+  };
+  bank_instruction_change?: { handling?: unknown };
 }
 interface YamlData {
   canonical_request?: { amount_usd?: unknown };
@@ -190,6 +209,47 @@ export function loadScenarioRefs(text = readFileSync(SCENARIOS_YAML, "utf8")): S
   const data = (parseDocument(text).toJS() ?? {}) as YamlData;
   const states = data.state_vocabulary ?? [];
   const pick = (cls: string) => new Set(states.filter((s) => s.class === cls).map((s) => String(s.id)));
+  const firmPolicies = new Map(
+    (data.firms ?? []).flatMap((firm) =>
+      typeof firm.id === "string"
+        ? [[
+            firm.id,
+            {
+              cashReserveMonths:
+                typeof firm.cash_reserve?.months_of_planned_withdrawals ===
+                "number"
+                  ? firm.cash_reserve.months_of_planned_withdrawals
+                  : null,
+              dualApprovalThresholdUsd:
+                typeof firm.dual_approval?.threshold_usd === "number"
+                  ? firm.dual_approval.threshold_usd
+                  : null,
+              approvalsRequired:
+                typeof firm.dual_approval?.approvals_required === "number"
+                  ? firm.dual_approval.approvals_required
+                  : null,
+              distinctActorsRequired:
+                typeof firm.dual_approval?.distinct_actors_required ===
+                "boolean"
+                  ? firm.dual_approval.distinct_actors_required
+                  : null,
+              eligibleRole:
+                typeof firm.dual_approval?.eligible_role === "string"
+                  ? firm.dual_approval.eligible_role
+                  : null,
+              requesterConstraint:
+                typeof firm.dual_approval?.requester_constraint === "string"
+                  ? firm.dual_approval.requester_constraint
+                  : null,
+              bankInstructionChangeHandling:
+                typeof firm.bank_instruction_change?.handling === "string"
+                  ? firm.bank_instruction_change.handling
+                  : null,
+            },
+          ] as const]
+        : [],
+    ),
+  );
   return {
     scenarioIds: new Set(idsOf(data.scenarios)),
     firmIds: new Set(idsOf(data.firms)),
@@ -202,6 +262,7 @@ export function loadScenarioRefs(text = readFileSync(SCENARIOS_YAML, "utf8")): S
           : [],
       ),
     ),
+    firmPolicies,
     dispositionStates: pick("disposition"),
     executionStates: pick("execution"),
     provenanceLabels: new Set(idsOf(data.provenance_labels)),
@@ -698,6 +759,38 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       if (!("eligibleRole" in fc)) P("firmConfiguration.eligibleRole must be present (string or null - matrix records silence as null)");
       if (!("requesterConstraint" in fc)) P("firmConfiguration.requesterConstraint must be present (string or null)");
       if (!isNonEmptyString(fc.bankInstructionChangeHandling)) P("firmConfiguration.bankInstructionChangeHandling missing or empty");
+      const configured =
+        typeof c.firm === "string"
+          ? refs.firmPolicies.get(c.firm)
+          : undefined;
+      if (!configured) {
+        P("firmConfiguration has no matching scenarios.yaml firm policy");
+      } else {
+        for (const [field, expected] of [
+          ["cashReserveMonths", configured.cashReserveMonths],
+          [
+            "dualApprovalThresholdUsd",
+            configured.dualApprovalThresholdUsd,
+          ],
+          ["approvalsRequired", configured.approvalsRequired],
+          [
+            "distinctActorsRequired",
+            configured.distinctActorsRequired,
+          ],
+          ["eligibleRole", configured.eligibleRole],
+          ["requesterConstraint", configured.requesterConstraint],
+          [
+            "bankInstructionChangeHandling",
+            configured.bankInstructionChangeHandling,
+          ],
+        ] as const) {
+          if (fc[field] !== expected) {
+            P(
+              `firmConfiguration.${field} does not match scenarios.yaml (${String(fc[field])} !== ${String(expected)})`,
+            );
+          }
+        }
+      }
     }
 
     // household evidence
