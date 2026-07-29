@@ -29,6 +29,11 @@ import {
 } from "./build-decision";
 import { liquidityInputs } from "./build-decision-truth";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
+import {
+  activeDecisionAt,
+  recordDecisionBindings,
+} from "./decision-bindings";
+import { hasEquivalentComparisonEvidence } from "./comparison-evidence";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   DEMO_NOW,
@@ -69,6 +74,11 @@ export function buildComparison(
   const headroomB = headroomMetric(scenario, b, pass);
   const sourceA = sourceCaseFor(scenario, a.id);
   const sourceB = sourceCaseFor(scenario, b.id);
+  const equivalentEvidence = hasEquivalentComparisonEvidence(
+    sourceA,
+    sourceB,
+    pass,
+  );
   const policyA =
     sourceA?.policyVersions.firmPolicyVersionId ?? a.policyVersion;
   const policyB =
@@ -124,11 +134,20 @@ export function buildComparison(
       b: { badge: DISPOSITION_BADGES[dispB] },
       differs: dispA !== dispB,
       ...(dispA !== dispB
-        ? { why: { reason: "Same household, same request, same evidence - the outcome differs because the approved policy version differs, with zero code change." } }
+        ? {
+            why: {
+              reason: equivalentEvidence
+                ? "Same household, same request, and exact signed equivalent evidence - the outcome differs because the approved policy version differs, with zero code change."
+                : "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy.",
+            },
+          }
         : {}),
     },
   ];
   return {
+    description: equivalentEvidence
+      ? "The same household and the same request under exact signed equivalent evidence. The differences below are driven by policy provenance, not code."
+      : "The same household and request are shown, but exact signed equivalent evidence is unavailable for one comparison arm.",
     columns: [
       {
         firm: a.name,
@@ -383,14 +402,10 @@ export function buildRecord(
     ],
     DEMO_NOW,
   );
-  const timeline = timelineFor(scenario, firm);
   const proceed = dispositionFor(scenario, firm.id) === "proceed";
   const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
   const revalidated = invalidation && pass === "revalidated";
   const approvals = proceed ? buildApprovals(scenario, firm, pass) : null;
-  const originalApproval = revalidated
-    ? buildApprovals(scenario, firm, "initial")
-    : approvals;
   const safetyReached = approvals?.satisfied === true;
   const execution = safetyReached ? buildExecution(scenario, firm, pass) : null;
   const verification = execution ? buildVerification(scenario, firm, pass) : null;
@@ -412,6 +427,7 @@ export function buildRecord(
           : execution === null
             ? "This journey stopped at Safety because exact signed liquidity authority is unavailable."
             : null;
+  const decisionAt = activeDecisionAt(scenario, firm, pass);
   return {
     header: {
       decisionId: decisionIdentityFor(scenario, firm.id, pass),
@@ -419,8 +435,8 @@ export function buildRecord(
       firmId: firm.id,
       sourceCaseId: sourceCase?.caseId ?? null,
       pass,
-      createdAt: formatDemoInstant(timeline.decisionAt, undefined, true),
-      createdAtIso: timeline.decisionAt,
+      createdAt: formatDemoInstant(decisionAt, undefined, true),
+      createdAtIso: decisionAt,
       provenance,
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
@@ -433,22 +449,7 @@ export function buildRecord(
         "Exact signed source unavailable",
       auditPosition: `${IDS.auditPosition} · ${scenario.id} · ${firm.id} · ${sourceCase?.caseId ?? "unsigned"} · ${pass}`,
     },
-    decisionBindings: [
-      {
-        kind: "original",
-        decisionHash: originalApproval?.binding?.decisionHash ?? IDS.decisionHash,
-        bundleHash: originalApproval?.binding?.bundleHash ?? IDS.bundleHash,
-      },
-      ...(revalidated && approvals?.binding
-        ? [
-            {
-              kind: "derived" as const,
-              decisionHash: approvals.binding.decisionHash,
-              bundleHash: approvals.binding.bundleHash,
-            },
-          ]
-        : []),
-    ],
+    decisionBindings: recordDecisionBindings(scenario, firm, pass),
     intent: buildIntent(scenario, firm),
     evidence: buildEvidence(scenario, firm, pass).rows,
     disposition: buildDisposition(scenario, firm, pass),

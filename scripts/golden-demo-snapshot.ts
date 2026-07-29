@@ -206,6 +206,11 @@ function displayedDecisions(): DisplayedDecision[] {
           recordInstructionVersion:
             journey.record.hashes.instructionVersion,
         },
+        comparisonDescription: journey.comparison.description,
+        comparisonDispositionReason:
+          journey.comparison.rows.find(
+            (row) => row.dimension === "Disposition for this request",
+          )?.why?.reason ?? null,
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
@@ -268,6 +273,8 @@ function displayedDecisions(): DisplayedDecision[] {
                         .householdInstructionVersionIds.join(", ") ||
                       "Exact signed source unavailable",
                   },
+                  comparisonDescription: null,
+                  comparisonDispositionReason: null,
                   liquidityAuthorityMissing: null,
                   availableCashMinor:
                     decision.initialDecision.availableCashMinor,
@@ -519,12 +526,13 @@ function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
             ? ["initial", "revalidated"]
             : ["initial"];
         return passes.map((pass) => {
-          const record = getJourney(
+          const journey = getJourney(
             scenario.id,
             firmId,
             pass,
             sourceCaseId ?? undefined,
-          ).record;
+          );
+          const record = journey.record;
           return {
             routeScenarioId: scenario.id,
             routeFirmId: firmId,
@@ -536,6 +544,14 @@ function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
             headerPass: record.header.pass,
             decisionId: record.header.decisionId,
             auditPosition: record.hashes.auditPosition,
+            headerCreatedAtIso: record.header.createdAtIso,
+            decisionEventInstants: record.lifecycle
+              .filter((event) => event.type === "DecisionRecorded")
+              .map((event) => event.timestampIso),
+            decisionBindings: record.decisionBindings.map((binding) => ({
+              ...binding,
+            })),
+            approvalBinding: journey.approvals?.binding ?? null,
           };
         });
       },

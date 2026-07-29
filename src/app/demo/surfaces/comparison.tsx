@@ -22,7 +22,7 @@ export function ComparisonSurface({
   return (
     <SurfaceShell
       title="Firm A / Firm B"
-      description="The same household and the same request under two approved policy versions. The differences below are driven by policy provenance, not code."
+      description={vm.description}
     >
       <p className="flex items-center gap-2 text-xs text-slate-600">
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />

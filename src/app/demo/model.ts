@@ -409,6 +409,7 @@ export interface ComparisonColumnVM {
   readonly activeSince: string;
 }
 export interface ComparisonVM {
+  readonly description: string;
   readonly columns: readonly [ComparisonColumnVM, ComparisonColumnVM];
   readonly rows: readonly ComparisonRowVM[];
   readonly fakeClass: FakeClass;

@@ -90,6 +90,8 @@ export interface DisplayedDecision {
     recordPolicyVersion: string;
     recordInstructionVersion: string;
   };
+  comparisonDescription: string | null;
+  comparisonDispositionReason: string | null;
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -148,6 +150,17 @@ export interface DemoSemanticSnapshot {
     headerPass: "initial" | "revalidated";
     decisionId: string;
     auditPosition: string;
+    headerCreatedAtIso: string;
+    decisionEventInstants: string[];
+    decisionBindings: Array<{
+      kind: "original" | "derived";
+      decisionHash: string;
+      bundleHash: string;
+    }>;
+    approvalBinding: {
+      decisionHash: string;
+      bundleHash: string;
+    } | null;
   }>;
   draftedReserveMonths: number;
   draftedReserveFloorMinor: number | null;
@@ -347,6 +360,77 @@ const sameMembers = (left: Iterable<string>, right: Iterable<string>): boolean =
 };
 const sourceKey = (scenarioId: string, firmId: string, disposition: string): string =>
   `${scenarioId}\u0000${firmId}\u0000${disposition}`;
+
+const COMPARISON_EVIDENCE_KINDS = [
+  "account-balance",
+  "planned-withdrawals",
+  "bank-instruction",
+  "household-instruction",
+  "pending-actions",
+] as const;
+
+function comparisonEvidenceSignature(
+  source: Record<string, unknown> | undefined,
+): string | null {
+  const trigger = isObj(source?.trigger) ? source.trigger : null;
+  const money = source ? readSignedMoney(source) : null;
+  const evidence = Array.isArray(source?.householdEvidence)
+    ? source.householdEvidence.filter(isObj)
+    : [];
+  if (!trigger || !money) return null;
+  const selected = COMPARISON_EVIDENCE_KINDS.map((evidenceKind) => {
+    const entry = evidence.find(
+      (candidate) =>
+        candidate.evidenceKind === evidenceKind &&
+        (evidenceKind !== "account-balance" ||
+          candidate.subjectRef === "subject:smiths-joint-taxable"),
+    );
+    return entry
+      ? {
+          evidenceKind: entry.evidenceKind,
+          subjectRef: entry.subjectRef,
+          observedAt: entry.observedAt,
+          retrievedAt: entry.retrievedAt,
+          freshness: entry.freshness,
+          displayValue: entry.displayValue ?? null,
+          observedAbsent: entry.observedAbsent ?? false,
+          liquidityPhase: entry.liquidityPhase ?? null,
+        }
+      : null;
+  });
+  return selected.every((entry) => entry !== null)
+    ? JSON.stringify({
+        requestAt: trigger.asOf,
+        requestAmountUsd: money.requestAmountUsd,
+        evidence: selected,
+      })
+    : null;
+}
+
+function comparisonHasEquivalentEvidence(
+  cases: LoadedCase[],
+  decision: DisplayedDecision,
+): boolean {
+  const own = decision.sourceCaseId
+    ? caseData(cases, decision.sourceCaseId)
+    : undefined;
+  const otherFirmId = decision.firmId === "firm-a" ? "firm-b" : "firm-a";
+  const counterpart = cases.find(
+    ({ data }) =>
+      isObj(data) &&
+      data.scenarioRef === decision.scenarioId &&
+      data.firm === otherFirmId,
+  );
+  const ownSignature = comparisonEvidenceSignature(own);
+  const counterpartSignature = comparisonEvidenceSignature(
+    counterpart && isObj(counterpart.data) ? counterpart.data : undefined,
+  );
+  return (
+    ownSignature !== null &&
+    counterpartSignature !== null &&
+    ownSignature === counterpartSignature
+  );
+}
 
 interface ExactSourceCandidate {
   id: string;
@@ -697,6 +781,28 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     const at = `${d.scenarioId}/${d.firmId}/${d.decisionRole}`;
     if (
       d.decisionRole === "primary" &&
+      !comparisonHasEquivalentEvidence(cases, d)
+    ) {
+      if (
+        d.comparisonDescription !==
+        "The same household and request are shown, but exact signed equivalent evidence is unavailable for one comparison arm."
+      ) {
+        problems.push(
+          `${at}: comparison does not disclose its exact signed evidence-authority gap`,
+        );
+      }
+      if (
+        d.comparisonDispositionReason !== null &&
+        d.comparisonDispositionReason !==
+          "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy."
+      ) {
+        problems.push(
+          `${at}: comparison attributes a disposition difference solely to policy despite an evidence-authority gap`,
+        );
+      }
+    }
+    if (
+      d.decisionRole === "primary" &&
       d.requestAmountMinor !== demo.requestAmountMinor
     ) {
       problems.push(
@@ -853,6 +959,20 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       if (JSON.stringify(d.visibleEvidence) !== JSON.stringify(expectedEvidence)) {
         problems.push(
           `${at}: visible evidence projection drifts from exact signed case ${d.sourceCaseId}`,
+        );
+      }
+      const recentChangeRow = d.policyTraceRows.find(
+        (row) => row.rule === "Recent bank-instruction change handling",
+      );
+      if (
+        !expectedEvidence.some(
+          (entry) => entry.evidenceKind === "bank-instruction",
+        ) &&
+        recentChangeRow?.result !==
+          "Not evaluated - exact signed bank-instruction evidence unavailable"
+      ) {
+        problems.push(
+          `${at}: recent-change trace infers a result without exact signed bank-instruction evidence`,
         );
       }
       const expectedWorkspaceAccounts = expectedEvidence
@@ -1355,7 +1475,10 @@ function validateRecordIdentities(
   const problems: string[] = [];
   const decisionIds = new Set<string>();
   const auditPositions = new Set<string>();
+  const decisionHashOwners = new Map<string, string>();
+  const bundleHashOwners = new Map<string, string>();
   for (const record of demo.recordIdentities) {
+    const at = `${record.routeScenarioId}/${record.routeFirmId}/${record.routeSourceCaseId ?? "unsigned"}/${record.routePass}`;
     if (
       record.headerScenarioId !== record.routeScenarioId ||
       record.headerFirmId !== record.routeFirmId ||
@@ -1363,7 +1486,19 @@ function validateRecordIdentities(
       record.headerPass !== record.routePass
     ) {
       problems.push(
-        `${record.routeScenarioId}/${record.routeFirmId}/${record.routeSourceCaseId ?? "unsigned"}/${record.routePass}: printable record header loses exact route context`,
+        `${at}: printable record header loses exact route context`,
+      );
+    }
+    const activeDecisionInstant =
+      record.routePass === "revalidated"
+        ? record.decisionEventInstants.at(-1)
+        : record.decisionEventInstants[0];
+    if (
+      record.routeSourceCaseId !== null &&
+      record.headerCreatedAtIso !== activeDecisionInstant
+    ) {
+      problems.push(
+        `${at}: printable record created-at does not match the active DecisionRecorded event`,
       );
     }
     if (!isNonEmptyString(record.decisionId)) {
@@ -1382,6 +1517,50 @@ function validateRecordIdentities(
     }
     decisionIds.add(record.decisionId);
     auditPositions.add(record.auditPosition);
+    const expectedKinds =
+      record.routePass === "revalidated"
+        ? ["original", "derived"]
+        : ["original"];
+    if (
+      JSON.stringify(record.decisionBindings.map(({ kind }) => kind)) !==
+      JSON.stringify(expectedKinds)
+    ) {
+      problems.push(
+        `${at}: printable record does not carry the active pass's decision bindings`,
+      );
+    }
+    const activeBinding = record.decisionBindings.at(-1);
+    if (
+      record.approvalBinding !== null &&
+      (record.approvalBinding.decisionHash !== activeBinding?.decisionHash ||
+        record.approvalBinding.bundleHash !== activeBinding?.bundleHash)
+    ) {
+      problems.push(
+        `${at}: approvals do not bind the active record decision and input bundle`,
+      );
+    }
+    for (const binding of record.decisionBindings) {
+      const bindingPass =
+        binding.kind === "derived" ? "revalidated" : "initial";
+      const owner = `${record.routeScenarioId}/${record.routeFirmId}/${record.routeSourceCaseId ?? "unsigned"}/${bindingPass}`;
+      for (const [label, hash, owners] of [
+        ["decision", binding.decisionHash, decisionHashOwners],
+        ["input-bundle", binding.bundleHash, bundleHashOwners],
+      ] as const) {
+        if (!/^[0-9a-f]{64}$/.test(hash)) {
+          problems.push(`${at}: ${label} hash is not a full SHA-256 binding`);
+          continue;
+        }
+        const priorOwner = owners.get(hash);
+        if (priorOwner && priorOwner !== owner) {
+          problems.push(
+            `${at}: ${label} hash is reused across exact case or lifecycle inputs`,
+          );
+        } else {
+          owners.set(hash, owner);
+        }
+      }
+    }
   }
   for (const { data } of cases) {
     if (

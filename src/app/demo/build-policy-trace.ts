@@ -2,8 +2,10 @@ import { DISPOSITION_LABELS, type PolicyTraceVM } from "./model";
 import { buildSpine } from "./spine";
 import {
   dispositionFor,
+  evidenceForPass,
   sourceCaseFor,
   type FirmData,
+  type JourneyPass,
   type ScenarioData,
 } from "./data";
 
@@ -21,8 +23,10 @@ export function buildExactPolicyTrace(
   scenario: ScenarioData,
   firm: FirmData,
   reserveHolds: boolean | null,
+  pass: JourneyPass,
 ): PolicyTraceVM {
   const sourceCase = sourceCaseFor(scenario, firm.id);
+  const selectedEvidence = evidenceForPass(sourceCase, pass);
   const prohibition = sourceCase?.prohibition;
   const policy =
     sourceCase?.policyVersions.firmPolicyVersionId ?? firm.policyVersion;
@@ -33,15 +37,18 @@ export function buildExactPolicyTrace(
         .map(({ summary }) => summary)
         .join(" ")
     : "Exact signed source unavailable";
-  const staleEvidence = sourceCase?.evidence.some(
+  const staleEvidence = selectedEvidence.some(
     (entry) => entry.freshness === "stale",
+  );
+  const bankInstructionEvidence = selectedEvidence.find(
+    (entry) => entry.evidenceKind === "bank-instruction",
   );
   const specialistReview = sourceCase?.authority.stages.some(
     (stage) => stage.stageId === "bank-change-specialist-review",
   );
   const blockedBankChange =
     sourceCase?.disposition === "blocked" &&
-    sourceCase.evidence.some(
+    selectedEvidence.some(
       (entry) => entry.evidenceKind === "bank-instruction",
     ) &&
     !staleEvidence;
@@ -106,7 +113,8 @@ export function buildExactPolicyTrace(
         ? "Specialist review required before execution"
         : blockedBankChange
           ? "Blocked until independently verified"
-          : "Not triggered - no recent change",
+          : bankInstructionEvidence?.summary ??
+            "Not evaluated - exact signed bank-instruction evidence unavailable",
       version: policy,
     },
     {

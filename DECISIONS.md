@@ -3640,3 +3640,26 @@ truth.
 **Revert path:** this captain ruling is product truth and is not reversible without a new captain
 decision. The event projection, exact-case binding, record identity, and arithmetic companion are
 isolated to the demo and golden-case gates.
+
+### D-077 · 2026-07-29 · reversible · Active decision bindings and evidence claims fail closed
+
+One demo binding authority now derives the input-bundle and decision SHA-256 values from the exact
+scenario, firm, signed case, lifecycle pass, selected evidence, policy inputs, authority, and
+decision result. Printable records and staged approvals consume the same binding. A revalidated
+record uses its derived `DecisionRecorded` instant, while its original binding remains visible as
+history.
+
+Policy traces no longer turn missing bank-instruction evidence into a negative fact. When the exact
+case supplies no such evidence, both the screen and printable record state that the check was not
+evaluated. When signed evidence exists, its own statement is preserved.
+
+Comparison copy now distinguishes an exact signed equivalent evidence basis from an
+evidence-authority gap. It attributes a disposition difference solely to policy only when the two
+arms carry the same complete signed comparison facts. Otherwise the gap is visible and the causal
+claim is withheld.
+
+**Why:** a pass-specific URL and case-specific record id do not preserve examiner truth when the
+timestamp, immutable hashes, evidence completeness, or causal explanation still come from a
+placeholder or an unsupported inference.
+**Revert path:** replace the demo hashing authority when real contract binding primitives land,
+provided they retain exact case and pass inputs and preserve the same fail-closed evidence claims.

@@ -14,11 +14,11 @@ import {
   liquidityInputs,
 } from "./build-decision-truth";
 import { buildExactPolicyTrace } from "./build-policy-trace";
+import { decisionBindingFor } from "./decision-bindings";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   CANONICAL_REQUEST,
   CAST,
-  IDS,
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
@@ -225,6 +225,7 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: J
     scenario,
     firm,
     reserveHolds(scenario, firm, pass),
+    pass,
   );
 }
 export function approvalPlanSatisfied(stages: readonly ApprovalStageVM[]): boolean {
@@ -404,9 +405,6 @@ export function buildApprovals(
         ? "automatic"
         : "staged";
   const satisfied = mode === "automatic" || approvalPlanSatisfied(stages);
-  const revalidated =
-    hasSignedInvalidationAuthority(scenario, firm.id) &&
-    pass === "revalidated";
   return {
     spine: buildSpine("Authority"),
     mode,
@@ -427,10 +425,7 @@ export function buildApprovals(
         : null,
     binding:
       mode === "staged"
-        ? {
-            decisionHash: revalidated ? IDS.derivedDecisionHash : IDS.decisionHash,
-            bundleHash: revalidated ? IDS.refreshedBundleHash : IDS.bundleHash,
-          }
+        ? decisionBindingFor(scenario, firm, pass)
         : null,
     gate: {
       restatement:

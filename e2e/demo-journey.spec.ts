@@ -36,6 +36,16 @@ async function expectDevBadge(page: Page) {
   expect(await page.getByTestId("dev-provenance-badge").count()).toBeGreaterThan(0);
 }
 
+async function expectFullDecisionBinding(page: Page) {
+  const binding = page.getByTestId("decision-binding").first();
+  await expect(binding).toBeVisible();
+  const values = await binding.locator("dd").allTextContents();
+  expect(values).toHaveLength(2);
+  for (const value of values) {
+    expect(value).toMatch(/^[0-9a-f]{64}$/);
+  }
+}
+
 test("the seven-minute journey is clickable end-to-end on labeled fakes", async ({ page }) => {
   await login(page, PRINCIPAL);
 
@@ -151,7 +161,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // 12 - Printable record: watermark, full hashes, expanded reasoning.
   await page.getByRole("link", { name: "View the printable decision record" }).click();
   await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
-  await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
+  await expectFullDecisionBinding(page);
   await checkAxe(page, "record");
   await snap(page, 12, "record");
 });
@@ -736,7 +746,7 @@ test("print posture: the record's identity header prints complete; app chrome an
       "dec:recent-bank-change-block:firm-a:GC-03-recent-bank-change-firm-a:initial",
     ).first(),
   ).toBeVisible();
-  await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
+  await expectFullDecisionBinding(page);
   // App chrome and interactive controls disappear.
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Print this record" })).toBeHidden();
@@ -927,6 +937,14 @@ test("printable records carry exact route and lifecycle identity", async ({ page
   const initialRecordId = await page
     .getByTestId("record-decision-id")
     .textContent();
+  await expect(page.getByTestId("record-context").locator("time")).toHaveAttribute(
+    "data-event-instant",
+    "2026-07-26T21:45:10.000Z",
+  );
+  await expect(page.getByTestId("decision-binding")).toHaveAttribute(
+    "data-binding-kind",
+    "original",
+  );
   await page.goto(
     "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
   );
@@ -936,6 +954,130 @@ test("printable records carry exact route and lifecycle identity", async ({ page
   await expect(page.getByTestId("record-decision-id")).not.toHaveText(
     initialRecordId ?? "",
   );
+  await expect(page.getByTestId("record-context").locator("time")).toHaveAttribute(
+    "data-event-instant",
+    "2026-07-26T21:58:12.000Z",
+  );
+});
+
+test("record and approval hashes bind exact case inputs and lifecycle pass", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction",
+  );
+  const householdBinding = page.getByTestId("decision-binding");
+  const householdDecisionHash = await householdBinding.locator("dd").nth(0).textContent();
+  const householdBundleHash = await householdBinding.locator("dd").nth(1).textContent();
+
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a&case=GC-07-regulatory-prohibition",
+  );
+  const regulatoryBinding = page.getByTestId("decision-binding");
+  await expect(regulatoryBinding.locator("dd").nth(0)).not.toHaveText(
+    householdDecisionHash ?? "",
+  );
+  await expect(regulatoryBinding.locator("dd").nth(1)).not.toHaveText(
+    householdBundleHash ?? "",
+  );
+
+  await page.goto(
+    "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation",
+  );
+  const initialDecisionHash = await page
+    .getByTestId("decision-binding")
+    .locator("dd")
+    .nth(0)
+    .textContent();
+  const initialBundleHash = await page
+    .getByTestId("decision-binding")
+    .locator("dd")
+    .nth(1)
+    .textContent();
+  await page.goto(
+    "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
+  );
+  const revalidatedBindings = page.getByTestId("decision-binding");
+  await expect(revalidatedBindings).toHaveCount(2);
+  await expect(revalidatedBindings.nth(0).locator("dd").nth(0)).toHaveText(
+    initialDecisionHash ?? "",
+  );
+  await expect(revalidatedBindings.nth(0).locator("dd").nth(1)).toHaveText(
+    initialBundleHash ?? "",
+  );
+  const derivedDecisionHash = await revalidatedBindings
+    .nth(1)
+    .locator("dd")
+    .nth(0)
+    .textContent();
+  const derivedBundleHash = await revalidatedBindings
+    .nth(1)
+    .locator("dd")
+    .nth(1)
+    .textContent();
+  expect(derivedDecisionHash).not.toBe(initialDecisionHash);
+  expect(derivedBundleHash).not.toBe(initialBundleHash);
+  await page.goto(
+    "/app/demo/authority?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
+  );
+  await expect(page.getByText(/Approval binds to decision/)).toContainText(
+    `${derivedDecisionHash?.slice(0, 8)}…`,
+  );
+  await expect(page.getByText(/Approval binds to decision/)).toContainText(
+    `${derivedBundleHash?.slice(0, 8)}…`,
+  );
+});
+
+test("policy trace does not infer no recent change from missing evidence", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  for (const sourceCaseId of [
+    "GC-07-regulatory-prohibition",
+    "GC-08-ambiguous-household",
+  ]) {
+    const scenario =
+      sourceCaseId === "GC-07-regulatory-prohibition"
+        ? "permanent-prohibition"
+        : "ambiguous-instruction";
+    await page.goto(
+      `/app/demo/policy-trace?scenario=${scenario}&firm=firm-a&case=${sourceCaseId}`,
+    );
+    await expect(
+      page.getByText(
+        "Not evaluated - exact signed bank-instruction evidence unavailable",
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Not triggered - no recent change"),
+    ).toHaveCount(0);
+  }
+});
+
+test("comparison does not claim policy-only causality across an evidence gap", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto(
+    "/app/demo/comparison?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first",
+  );
+  await expect(
+    page.getByText(
+      "Exact signed equivalent evidence is unavailable for one comparison arm.",
+    ),
+  ).toBeVisible();
+  const dispositionRow = page
+    .getByText("Disposition for this request")
+    .locator("..")
+    .locator("..");
+  await dispositionRow
+    .getByRole("button", { name: "Why did Verin do this?" })
+    .click();
+  await expect(
+    dispositionRow.getByText(/same evidence - the outcome differs because/i),
+  ).toHaveCount(0);
+  await expect(
+    dispositionRow.getByText(
+      "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy.",
+    ),
+  ).toBeVisible();
 });
 
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {

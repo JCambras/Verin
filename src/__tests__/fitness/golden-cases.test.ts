@@ -626,6 +626,132 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("flags inactive record timestamps, reused hashes, and stale approval bindings", () => {
+    const inactive = demoClone();
+    const revalidated = inactive.recordIdentities.find(
+      ({ routeSourceCaseId, routePass }) =>
+        routeSourceCaseId === "GC-15-approval-invalidation" &&
+        routePass === "revalidated",
+    )!;
+    revalidated.headerCreatedAtIso =
+      revalidated.decisionEventInstants[0]!;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, inactive).some((problem) =>
+        problem.includes(
+          "printable record created-at does not match the active DecisionRecorded event",
+        ),
+      ),
+    ).toBe(true);
+
+    const reused = demoClone();
+    const gc06 = reused.recordIdentities.find(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId === "GC-06-household-restriction",
+    )!;
+    const gc07 = reused.recordIdentities.find(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId === "GC-07-regulatory-prohibition",
+    )!;
+    gc07.decisionBindings[0]!.decisionHash =
+      gc06.decisionBindings[0]!.decisionHash;
+    gc07.decisionBindings[0]!.bundleHash =
+      gc06.decisionBindings[0]!.bundleHash;
+    const reusedProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      reused,
+    );
+    expect(
+      reusedProblems.some((problem) =>
+        problem.includes(
+          "decision hash is reused across exact case or lifecycle inputs",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      reusedProblems.some((problem) =>
+        problem.includes(
+          "input-bundle hash is reused across exact case or lifecycle inputs",
+        ),
+      ),
+    ).toBe(true);
+
+    const staleApproval = demoClone();
+    const staleRecord = staleApproval.recordIdentities.find(
+      ({ routeSourceCaseId, routePass }) =>
+        routeSourceCaseId === "GC-15-approval-invalidation" &&
+        routePass === "revalidated",
+    )!;
+    const originalBinding = staleRecord.decisionBindings[0]!;
+    staleRecord.approvalBinding = {
+      decisionHash: originalBinding.decisionHash,
+      bundleHash: originalBinding.bundleHash,
+    };
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        staleApproval,
+      ).some((problem) =>
+        problem.includes(
+          "approvals do not bind the active record decision and input bundle",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags missing-evidence inference and policy-only comparison claims", () => {
+    const inferred = demoClone();
+    const gc07 = inferred.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-07-regulatory-prohibition" &&
+        decisionRole === "primary",
+    )!;
+    gc07.policyTraceRows.find(
+      ({ rule }) => rule === "Recent bank-instruction change handling",
+    )!.result = "Not triggered - no recent change";
+    gc07.recordPrecedenceRows = gc07.policyTraceRows.map((row) => ({
+      ...row,
+    }));
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, inferred).some((problem) =>
+        problem.includes(
+          "recent-change trace infers a result without exact signed bank-instruction evidence",
+        ),
+      ),
+    ).toBe(true);
+
+    const overstated = demoClone();
+    const gc10 = overstated.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-10-simultaneous-distributions-first" &&
+        decisionRole === "primary",
+    )!;
+    gc10.comparisonDescription =
+      "The differences below are driven by policy provenance, not code.";
+    gc10.comparisonDispositionReason =
+      "Same evidence - the outcome differs because policy differs.";
+    const overstatedProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      overstated,
+    );
+    expect(
+      overstatedProblems.some((problem) =>
+        problem.includes(
+          "comparison does not disclose its exact signed evidence-authority gap",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      overstatedProblems.some((problem) =>
+        problem.includes(
+          "attributes a disposition difference solely to policy",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("flags source-bound visible events that precede or misorder the signed request", () => {
     const beforeRequest = demoClone();
     const duplicate = beforeRequest.sourceTimelines.find(

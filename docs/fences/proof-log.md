@@ -5907,3 +5907,40 @@ All 576 Vitest cases, all 22 Playwright cases with Axe, the golden validator, ty
 the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
 
 **Date:** 2026-07-29 (review corrections, D-076).
+
+## F115 · active decision bindings and fail-closed evidence claims
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** a printable record uses the active pass's `DecisionRecorded` instant. Decision and
+input-bundle hashes bind the exact scenario, firm, signed case, lifecycle pass, selected evidence,
+policy, authority, and result, and staged approvals bind the active pair. Missing
+bank-instruction evidence cannot establish that no recent change occurred. A comparison cannot
+attribute a disposition difference solely to policy unless both arms carry exact signed equivalent
+evidence.
+
+An explicit adversarial production injection forced every record to use the original decision
+instant. The targeted browser companion failed at `e2e/demo-journey.spec.ts:909` with:
+
+```text
+Expected: "2026-07-26T21:58:12.000Z"
+Received: "2026-07-26T21:45:10.000Z"
+```
+
+The injection was reverted immediately, and the same browser path passed. Semantic companions
+replace the revalidated timestamp with the original event, reuse GC-06 hashes for GC-07, bind a
+revalidated approval to the original pair, infer no recent change without evidence, and restore a
+policy-only comparison claim across an authority gap. Each mutation produces its named active
+event, binding, evidence, or comparison diagnostic.
+
+Browser coverage proves distinct GC-06 and GC-07 bindings, distinct original and derived GC-15
+bindings, approval alignment with the derived pair, fail-closed policy trace copy for GC-07 and
+GC-08, evidence-gap comparison copy for GC-10, and complete hashes in screen and print layouts.
+
+**Revert:** the production injection was removed. All remaining adversarial mutations live only in
+companion tests.
+
+All 578 Vitest cases, all 25 Playwright cases with Axe, the golden validator, typecheck, lint, knip,
+the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
+
+**Date:** 2026-07-29 (review corrections, D-077).
