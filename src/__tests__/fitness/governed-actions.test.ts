@@ -91,7 +91,12 @@ function callResolvesTo(
 }
 
 function nodeKey(node: Node): string {
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}`;
+  return [
+    node.getSourceFile().getFilePath(),
+    node.getKind(),
+    node.getStart(),
+    node.getEnd(),
+  ].join(":");
 }
 
 /**
@@ -124,6 +129,19 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
   ) {
     return resolveCallTargets(expression.getRight(), seen);
   }
+  if (Node.isBinaryExpression(expression)) {
+    const operator = expression.getOperatorToken().getKind();
+    if (
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      return [
+        ...resolveCallTargets(expression.getLeft(), seen),
+        ...resolveCallTargets(expression.getRight(), seen),
+      ];
+    }
+  }
   if (Node.isConditionalExpression(expression)) {
     return [
       ...resolveCallTargets(expression.getWhenTrue(), seen),
@@ -155,6 +173,79 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
     }
   }
   return out;
+}
+
+function callTargetResolutionComplete(
+  expression: Node,
+  seen = new Set<string>(),
+): boolean {
+  const key = nodeKey(expression);
+  if (seen.has(key)) return false;
+  seen.add(key);
+  if (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isNonNullExpression(expression)
+  ) {
+    return callTargetResolutionComplete(expression.getExpression(), seen);
+  }
+  if (Node.isBinaryExpression(expression)) {
+    const operator = expression.getOperatorToken().getKind();
+    if (operator === SyntaxKind.CommaToken) {
+      return callTargetResolutionComplete(expression.getRight(), seen);
+    }
+    if (
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      return callTargetResolutionComplete(expression.getLeft(), seen) &&
+        callTargetResolutionComplete(expression.getRight(), seen);
+    }
+  }
+  if (Node.isConditionalExpression(expression)) {
+    return callTargetResolutionComplete(expression.getWhenTrue(), seen) &&
+      callTargetResolutionComplete(expression.getWhenFalse(), seen);
+  }
+  if (Node.isElementAccessExpression(expression)) {
+    const receiver = expression.getExpression();
+    if (Node.isArrayLiteralExpression(receiver)) {
+      return receiver.getElements().every((element) =>
+        callTargetResolutionComplete(element, seen)
+      );
+    }
+  }
+  if (
+    Node.isFunctionExpression(expression) ||
+    Node.isArrowFunction(expression)
+  ) return true;
+  const symbol = expression.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  const declarations = target?.getDeclarations() ?? [];
+  if (declarations.length === 0) return false;
+  return declarations.every((declaration) => {
+    if (
+      Node.isFunctionDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration) ||
+      Node.isMethodDeclaration(declaration) ||
+      Node.isGetAccessorDeclaration(declaration)
+    ) return true;
+    if (
+      Node.isVariableDeclaration(declaration) ||
+      Node.isPropertyAssignment(declaration)
+    ) {
+      const initializer = declaration.getInitializer();
+      return initializer !== undefined &&
+        callTargetResolutionComplete(initializer, seen);
+    }
+    if (Node.isShorthandPropertyAssignment(declaration)) {
+      return callTargetResolutionComplete(declaration.getNameNode(), seen);
+    }
+    return false;
+  });
 }
 
 function governedSinksForCall(
@@ -1113,7 +1204,16 @@ export function discoverGovernedRoutes(
     const unsupported = unsupportedSurfaceKind(sf, file);
     violations.push(...detectEscapedGovernedSinks(sf, file, sinks));
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      for (const sink of governedSinksForCall(call, sinks)) {
+      const callSinks = governedSinksForCall(call, sinks);
+      if (
+        callSinks.length > 0 &&
+        !callTargetResolutionComplete(call.getExpression())
+      ) {
+        violations.push(
+          `${file}:${call.getStartLineNumber()}: governed callee has an unresolved value-producing arm`,
+        );
+      }
+      for (const sink of callSinks) {
         if (unsupported) {
           violations.push(
             `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' on an unsupported surface (${unsupported}) - ${UNSUPPORTED_SURFACE_RULE}`,
@@ -2670,6 +2770,46 @@ ${body}
       }
     });
 
+    it("catches Reflect.apply through ambient receiver aliases and reaching assignments", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            const R = Reflect;
+            await R.apply(db.query, db, ["SELECT email FROM users"]);
+            let later: typeof Reflect;
+            later = Reflect;
+            await later.apply(db.query, db, ["SELECT email FROM users"]);
+            const R1 = Reflect;
+            const R2 = R1;
+            const R3 = R2;
+            const R4 = R3;
+            const R5 = R4;
+            const R6 = R5;
+            await R6.apply(db.query, db, ["SELECT email FROM users"]);
+            let branch: unknown = Reflect;
+            if (Math.random()) branch = { apply() { return null; } };
+            await (branch as typeof Reflect).apply(
+              db.query,
+              db,
+              ["SELECT email FROM users"],
+            );
+            return null;
+          }
+        `,
+      });
+      const hits = detectAppLayerSqlAccess(project);
+      expect(hits, hits.join("\n")).toHaveLength(4);
+      for (const line of [6, 9, 16, 19]) {
+        expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}`).toBe(true);
+      }
+    });
+
     it("does not mistake a same-named non-SQL method for persistence", () => {
       const project = inMemoryProject({
         "/src/app/api/audit/route.ts": `
@@ -2939,6 +3079,39 @@ ${body}
       expect(leak.entries).toEqual([]);
       expect(leak.violations).toHaveLength(1);
       expect(leak.violations[0]).toContain("passed as a VALUE");
+    });
+
+    it.each([
+      "verifyAndListOrgChain && fallback",
+      "fallback || verifyAndListOrgChain",
+      "fallback ?? verifyAndListOrgChain",
+    ])("discovers governed sinks in every logical callee arm", (callee) => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        const fallback = () => null;
+        export async function GET(req: Request) {
+          return (${callee})({}, {} as never);
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries).toHaveLength(1);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it("fails closed when a governed logical callee has an unresolved arm", () => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        declare const maybe: typeof verifyAndListOrgChain | undefined;
+        export async function GET(req: Request) {
+          return (maybe ?? verifyAndListOrgChain)({}, {} as never);
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries).toHaveLength(1);
+      expect(discovered.violations).toEqual([
+        expect.stringContaining("unresolved value-producing arm"),
+      ]);
     });
 
     it("discovers an arrow-function handler and a root-level src/app/route.ts", () => {

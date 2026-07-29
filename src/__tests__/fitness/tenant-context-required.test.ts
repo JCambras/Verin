@@ -83,7 +83,86 @@ function normalizedPath(path: string): string {
 interface RepositoryEntry {
   readonly name: string;
   readonly signatures: Signature[];
+  readonly owners: Node[];
   readonly unresolved?: boolean;
+}
+
+function callableImplementations(
+  expression: Node,
+  seen = new Set<string>(),
+): Node[] {
+  const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
+  if (seen.has(key)) return [];
+  seen.add(key);
+  if (
+    Node.isParenthesizedExpression(expression) ||
+    Node.isAsExpression(expression) ||
+    Node.isSatisfiesExpression(expression) ||
+    Node.isTypeAssertion(expression) ||
+    Node.isNonNullExpression(expression)
+  ) {
+    return callableImplementations(expression.getExpression(), seen);
+  }
+  if (Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)) {
+    return [expression];
+  }
+  if (Node.isObjectLiteralExpression(expression)) {
+    return expression.getProperties().flatMap((property) => {
+      if (
+        Node.isMethodDeclaration(property) ||
+        Node.isGetAccessorDeclaration(property)
+      ) return [property];
+      if (Node.isPropertyAssignment(property)) {
+        const initializer = property.getInitializer();
+        return initializer ? callableImplementations(initializer, seen) : [];
+      }
+      if (Node.isShorthandPropertyAssignment(property)) {
+        return callableImplementations(property.getNameNode(), seen);
+      }
+      return [];
+    });
+  }
+  if (Node.isConditionalExpression(expression)) {
+    return [
+      ...callableImplementations(expression.getWhenTrue(), seen),
+      ...callableImplementations(expression.getWhenFalse(), seen),
+    ];
+  }
+  if (Node.isBinaryExpression(expression)) {
+    const operator = expression.getOperatorToken().getKind();
+    if (
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      return [
+        ...callableImplementations(expression.getLeft(), seen),
+        ...callableImplementations(expression.getRight(), seen),
+      ];
+    }
+  }
+  if (Node.isCallExpression(expression)) {
+    const callee = expression.getExpression();
+    if (
+      Node.isPropertyAccessExpression(callee) &&
+      callee.getExpression().getText() === "Object" &&
+      callee.getName() === "freeze"
+    ) {
+      const argument = expression.getArguments()[0];
+      return argument ? callableImplementations(argument, seen) : [];
+    }
+  }
+  if (Node.isIdentifier(expression)) {
+    return expression.getDefinitionNodes().flatMap((declaration) => {
+      if (Node.isFunctionDeclaration(declaration)) return [declaration];
+      if (Node.isVariableDeclaration(declaration)) {
+        const initializer = declaration.getInitializer();
+        return initializer ? callableImplementations(initializer, seen) : [];
+      }
+      return [];
+    });
+  }
+  return [];
 }
 
 function callableMembers(
@@ -266,6 +345,7 @@ export function detectMissingTenantParams(
       }).map((member) => ({
         name: member.name,
         signatures: member.signature ? [member.signature] : [],
+        owners: [member.declaration],
         unresolved: member.signature === null,
       }));
     for (const fn of sf.getFunctions()) {
@@ -273,16 +353,22 @@ export function detectMissingTenantParams(
         entries.push({
           name: fn.getName() ?? "<anonymous>",
           signatures: [fn.getSignature()],
+          owners: [fn],
         });
         entries.push(...returnedEntries(fn, fn.getName() ?? "<anonymous>"));
       }
     }
     for (const declaration of sf.getVariableDeclarations()) {
       if (!declaration.isExported()) continue;
+      const initializer = declaration.getInitializer();
+      const implementations = initializer
+        ? callableImplementations(initializer)
+        : [];
       for (const member of callableMembers(declaration.getType(), declaration.getName())) {
         entries.push({
           name: member.name,
           signatures: member.signatures,
+          owners: implementations,
         });
         for (const signature of member.signatures) {
           entries.push(...returnedEntries(signature.getDeclaration(), member.name));
@@ -292,10 +378,12 @@ export function detectMissingTenantParams(
     for (const assignment of sf.getExportAssignments()) {
       const expression = assignment.getExpression();
       if (Node.isIdentifier(expression)) continue;
+      const implementations = callableImplementations(expression);
       for (const member of callableMembers(expression.getType(), "default")) {
         entries.push({
           name: member.name,
           signatures: member.signatures,
+          owners: implementations,
         });
         for (const signature of member.signatures) {
           entries.push(...returnedEntries(signature.getDeclaration(), member.name));
@@ -308,12 +396,59 @@ export function detectMissingTenantParams(
         entries.push({
           name: `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
           signatures: [method.getSignature()],
+          owners: [method],
         });
         entries.push(...returnedEntries(
           method,
           `${cls.getName() ?? "<anonymous>"}.${method.getName()}`,
         ));
       }
+    }
+
+    const ownerDeclarations = new Set(
+      entries.flatMap((entry) => [
+        ...entry.owners,
+        ...entry.signatures.map((signature) => signature.getDeclaration()),
+      ]),
+    );
+    const helperOwned = (declaration: Node, seen: ReadonlySet<string>): boolean => {
+      if (ownerDeclarations.has(declaration)) return true;
+      if (declaration.getAncestors().some((ancestor) => ownerDeclarations.has(ancestor))) {
+        return true;
+      }
+      if (!Node.isFunctionDeclaration(declaration)) return false;
+      const name = declaration.getNameNode();
+      if (!name) return false;
+      const key = `${normalized}:${declaration.getStart()}`;
+      if (seen.has(key)) return false;
+      const nextSeen = new Set(seen).add(key);
+      const references = name.findReferencesAsNodes().filter((reference) =>
+        reference.getSourceFile() === sf &&
+        reference.getStart() !== name.getStart()
+      );
+      return references.length > 0 && references.every((reference) => {
+        const parent = reference.getParent();
+        if (!Node.isCallExpression(parent) || parent.getExpression() !== reference) {
+          return false;
+        }
+        return parent.getAncestors().some((ancestor) =>
+          helperOwned(ancestor, nextSeen)
+        );
+      });
+    };
+    const unownedSql = sf
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .filter(isSqlExecutorCall)
+      .filter((call) =>
+        !call.getAncestors().some((ancestor) =>
+          helperOwned(ancestor, new Set())
+        )
+      );
+    for (const call of unownedSql) {
+      out.push({
+        ref: `${normalized}:${call.getStartLineNumber()} :: <unowned-sql>`,
+        detail: "SQL executor call is not owned by a checked repository callable or reviewed global escape",
+      });
     }
 
     for (const entry of entries) {
@@ -553,6 +688,77 @@ describe("tenant-context-required fence", () => {
           detail: "repository callable has no sealed tenant context",
         },
       ]);
+    });
+
+    it.each([
+      `const R = Reflect;
+          return R.apply(db.query, db, ["SELECT email FROM users"]);`,
+      `let R: typeof Reflect;
+          R = Reflect;
+          return R.apply(db.query, db, ["SELECT email FROM users"]);`,
+    ])("discovers SQL repositories through ambient builtin receiver aliases", (body) => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export function listAll(db: SqlDb) {
+          ${body}
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
+    it.each([
+      `declare const db: SqlDb;
+        db.query("SELECT email FROM users");`,
+      `declare const db: SqlDb;
+        export const rows = db.query("SELECT email FROM users");`,
+      `declare const db: SqlDb;
+        export const rows = (() => db.query("SELECT email FROM users"))();`,
+      `declare const db: SqlDb;
+        export const rows = Promise.resolve().then(() =>
+          db.query("SELECT email FROM users")
+        );`,
+      `declare const db: SqlDb;
+        export class Bootstrap {
+          static {
+            db.query("SELECT email FROM users");
+          }
+        }`,
+    ])("rejects SQL that is not owned by a checked callable", (source) => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        ${source}
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: expect.stringMatching(
+            /^src\/infrastructure\/crm\/subject\.ts:\d+ :: <unowned-sql>$/,
+          ),
+          detail: "SQL executor call is not owned by a checked repository callable or reviewed global escape",
+        },
+      ]);
+    });
+
+    it("accepts a local SQL helper reached only from a checked scoped callable", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import {
+          assertTenantContext,
+          type TenantContext,
+        } from "../../contracts/tenant";
+        function load(db: SqlDb, orgId: string) {
+          return db.query("SELECT email FROM users WHERE org_id = $1", [orgId]);
+        }
+        export function listAll(db: SqlDb, tenant: TenantContext) {
+          assertTenantContext(tenant);
+          return load(db, tenant.orgId);
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([]);
     });
 
     /**
@@ -936,6 +1142,53 @@ ${body}
           if (flag) alias = carrier;
           return db.query(alias.piiGrant.tenant.orgId);`,
     ])("rejects authority re-reads through conditional, logical, and assigned aliases", (laterRead) => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,
+          flag: boolean,`;
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          ${laterRead}
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it.each([
+      `const later = Reflect.get(carrier, "piiGrant");
+          return db.query(later.tenant.orgId);`,
+      `const R = Reflect;
+          const later = R.get(carrier, "piiGrant");
+          return db.query(later.tenant.orgId);`,
+      `const { get } = Reflect;
+          const later = get(carrier, "piiGrant");
+          return db.query(later.tenant.orgId);`,
+      `const key = "piiGrant";
+          const later = Reflect.get(carrier, key);
+          return db.query(later.tenant.orgId);`,
+      `const later = Object.getOwnPropertyDescriptor(carrier, "piiGrant")?.value;
+          return db.query(later.tenant.orgId);`,
+      `const descriptors = Object.getOwnPropertyDescriptors(carrier);
+          return db.query(descriptors.piiGrant.value.tenant.orgId);`,
+      `const later = Reflect.get.call(Reflect, carrier, "piiGrant");
+          return db.query(later.tenant.orgId);`,
+      `const later = Reflect.get.apply(Reflect, [carrier, "piiGrant"]);
+          return db.query(later.tenant.orgId);`,
+      `const later = Reflect.apply(Reflect.get, Reflect, [carrier, "piiGrant"]);
+          return db.query(later.tenant.orgId);`,
+      `const later = Reflect.get.bind(Reflect)(carrier, "piiGrant");
+          return db.query(later.tenant.orgId);`,
+      `const key = flag ? "piiGrant" : "other";
+          const later = Reflect.get(carrier, key);
+          return db.query(later.tenant.orgId);`,
+    ])("rejects reflective reads of a captured authority carrier", (laterRead) => {
       const prelude = `
         class GrantCarrier {
           get piiGrant(): ActionGrant<"pii.view"> {

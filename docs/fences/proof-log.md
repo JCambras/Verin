@@ -4744,3 +4744,95 @@ pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
 APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
 pnpm test:e2e                                                # 17 tests passed
 ```
+
+### PF-152 every SQL call has a checked callable owner
+
+SQL-backed infrastructure discovery checked exported callable signatures but did
+not prove that each executor call belonged to one. Module initialization, IIFEs,
+static blocks, and exported promise or data initializers could therefore execute
+SQL without any callable boundary carrying sealed authority.
+
+**Adversarial proof:** test-first fixtures planted SQL in each of those five
+unowned forms. All initially produced no tenant violation. The fence now maps
+every executor call to an actual exported, returned, or class callable
+implementation, or recursively proves that every call to a local helper is owned
+by one. Each planted form emits exactly one `<unowned-sql>` violation, while a
+scoped exported boundary and its solely reached local helper remain accepted.
+
+### PF-153 ambient builtin aliases retain every reaching source
+
+SQL wrapper normalization recognized only the literal `Reflect` receiver.
+Aliases initialized or assigned from the ambient builtin could invoke
+`Reflect.apply` while disappearing from app-layer SQL, repository, tenant, and
+governed-action analysis.
+
+**Adversarial proof:** test-first app and repository fixtures invoked SQL through
+a constant alias, a later-assigned alias, a six-link alias chain, and an alias
+with a conditional safe replacement. The app calls initially emitted no raw-SQL
+finding. Shared ambient-builtin resolution now follows every potentially
+reaching initializer and assignment source, and each call is normalized
+identically to direct `Reflect.apply`.
+
+### PF-154 node module provenance survives named members
+
+The module-reference walker retained namespace provenance through copies but not
+through named object properties. A holder could therefore store `node:module`
+under a nested member and expose `createRequire` without a module reference.
+
+**Adversarial proof:** test-first direct, nested, later-assigned, and
+conditionally keyed holder fixtures initially bypassed dependency analysis.
+Named member resolution now follows object literal values and every potentially
+reaching property assignment, expanding unresolved keys conservatively. The
+dependency, LLM PII, sealed-factory, and secret-containment companions all reject
+the indirect loader.
+
+### PF-155 reflective authority reads retain carrier provenance
+
+Repeated-authority analysis tracked direct property, element, destructuring, and
+copy reads but not reflective property access. A stateful getter could be invoked
+again after a valid prologue capture and return a different tenant or actor.
+
+**Adversarial proof:** test-first fixtures reread a captured `piiGrant` through
+direct and aliased `Reflect.get`, constant and unresolved keys, property
+descriptors, and `call`, `apply`, `bind`, and `Reflect.apply` wrappers. Every form
+initially escaped the repeat-evaluation finding. One normalized builtin
+invocation now retains exact literal paths and expands unresolved keys to the
+carrier, so every planted reread fails.
+
+### PF-156 governed logical callees retain every arm
+
+Governed call target discovery traversed conditionals but not logical operators.
+Its traversal identity also used only a source offset, causing a compound
+expression to collide with its leftmost child and silently discard that arm.
+
+**Adversarial proof:** test-first `&&`, `||`, and `??` callees placed a governed
+sink in each arm permutation. The affected arm initially produced no route
+entry. Traversal now visits every value-producing arm with kind, start, and end
+identity, so all three produce the expected route requirement. A known sink
+combined with an unresolved callable arm produces an explicit fail-closed
+violation.
+
+### PF-157 line-budget evidence remains exact
+
+The correction changes fitness analyzers, adversarial companions, and evidence,
+not platform-layer implementation.
+
+**Adversarial proof:** the authoritative real measurement and its synthetic
+over-budget and empty-bucket companions pass at contracts 4,017/4,050 (33
+headroom), domain 1,250/1,250 (0), infrastructure 3,437/3,450 (13), and
+presentation 918/6,000 (5,082). No ceiling amendment is needed.
+
+### PF-152 - PF-157 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false  # 56 files, 1,139 tests passed
+pnpm typecheck                                               # clean
+pnpm lint                                                    # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 4,017/4,050; domain 1,250/1,250; infrastructure 3,437/3,450
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```

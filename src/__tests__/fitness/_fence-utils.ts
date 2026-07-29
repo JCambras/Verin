@@ -265,12 +265,12 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     return null;
   };
   const destructuredMembers = (): Array<{
-    readonly name: string;
+    readonly name: string | null;
     readonly receiver: Node;
     readonly line: number;
   }> => {
     const members: Array<{
-      readonly name: string;
+      readonly name: string | null;
       readonly receiver: Node;
       readonly line: number;
     }> = [];
@@ -289,13 +289,11 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           element.getPropertyNameNode(),
           element.getName(),
         );
-        if (name !== null) {
-          members.push({
-            name,
-            receiver,
-            line: element.getStartLineNumber(),
-          });
-        }
+        members.push({
+          name,
+          receiver,
+          line: element.getStartLineNumber(),
+        });
       }
     }
     for (const assignment of sf.getDescendantsOfKind(
@@ -320,13 +318,11 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           property.getNameNode(),
           property.getName(),
         );
-        if (name !== null) {
-          members.push({
-            name,
-            receiver: assignment.getRight(),
-            line: property.getStartLineNumber(),
-          });
-        }
+        members.push({
+          name,
+          receiver: assignment.getRight(),
+          line: property.getStartLineNumber(),
+        });
       }
     }
     return members;
@@ -413,12 +409,39 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       ? sources.flatMap((source) => expressionSources(source, nested))
       : [expression];
   };
+  const literalPropertyKeys = (node: Node | undefined): string[] | null => {
+    const keys: string[] = [];
+    const sources = expressionSources(node);
+    if (sources.length === 0) return null;
+    for (const expression of sources) {
+      if (
+        Node.isStringLiteral(expression) ||
+        Node.isNoSubstitutionTemplateLiteral(expression)
+      ) {
+        keys.push(expression.getLiteralText());
+        continue;
+      }
+      const type = expression.getType();
+      if (
+        Node.isNumericLiteral(expression) ||
+        type.isNumber() ||
+        type.isNumberLiteral() ||
+        (type.getFlags() & ts.TypeFlags.ESSymbolLike) !== 0
+      ) continue;
+      return null;
+    }
+    return [...new Set(keys)];
+  };
   const literalPropertyKey = (node: Node | undefined): string | null => {
-    const expression = expressionProvenance(node);
-    return Node.isStringLiteral(expression) ||
-      Node.isNoSubstitutionTemplateLiteral(expression)
-      ? expression.getLiteralText()
-      : null;
+    const keys = literalPropertyKeys(node);
+    return keys?.length === 1 ? keys[0]! : null;
+  };
+  const mayBePropertyKey = (
+    node: Node | undefined,
+    expected: string,
+  ): boolean => {
+    const keys = literalPropertyKeys(node);
+    return keys === null || keys.includes(expected);
   };
   /** A bare name this project never declares - `module`, `globalThis`, an ambient global. */
   const isAmbientGlobalReference = (node: Node | undefined): boolean => {
@@ -492,6 +515,102 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           createRequireNamespaces.has(expression.getText())) ||
         isNodeModuleSpecifier(loaderSpecifier(expression))
       ) return true;
+      if (
+        Node.isPropertyAccessExpression(expression) ||
+        Node.isElementAccessExpression(expression)
+      ) {
+        const receiver = expression.getExpression();
+        const member = Node.isPropertyAccessExpression(expression)
+          ? expression.getName()
+          : literalPropertyKey(expression.getArgumentExpression());
+        const sameReceiver = (left: Node, right: Node): boolean => {
+          const leftExpression = unwrapExpression(left);
+          const rightExpression = unwrapExpression(right);
+          if (
+            Node.isIdentifier(leftExpression) &&
+            Node.isIdentifier(rightExpression)
+          ) {
+            return leftExpression.getSymbol() === rightExpression.getSymbol();
+          }
+          return leftExpression?.getText() === rightExpression?.getText();
+        };
+        const memberSources = (
+          owner: Node,
+          requested: string | null,
+        ): Node[] => {
+          const sources: Node[] = [];
+          for (const source of expressionSources(owner)) {
+            if (
+              Node.isPropertyAccessExpression(source) ||
+              Node.isElementAccessExpression(source)
+            ) {
+              const nestedMember = Node.isPropertyAccessExpression(source)
+                ? source.getName()
+                : literalPropertyKey(source.getArgumentExpression());
+              for (const nestedSource of memberSources(
+                source.getExpression(),
+                nestedMember,
+              )) {
+                sources.push(
+                  ...memberSources(nestedSource, requested),
+                );
+              }
+              continue;
+            }
+            if (!Node.isObjectLiteralExpression(source)) continue;
+            for (const property of source.getProperties()) {
+              if (
+                !Node.isPropertyAssignment(property) &&
+                !Node.isShorthandPropertyAssignment(property)
+              ) continue;
+              const name = propertyName(
+                property.getNameNode(),
+                property.getName(),
+              );
+              if (
+                requested !== null &&
+                name !== null &&
+                name !== requested
+              ) continue;
+              sources.push(
+                Node.isPropertyAssignment(property)
+                  ? property.getInitializerOrThrow()
+                  : property.getNameNode(),
+              );
+            }
+          }
+          for (const assignment of sf.getDescendantsOfKind(
+            SyntaxKind.BinaryExpression,
+          )) {
+            if (
+              assignment.getOperatorToken().getKind() !==
+                SyntaxKind.EqualsToken ||
+              assignment.getStart() >= expression.getStart()
+            ) continue;
+            const left = unwrapExpression(assignment.getLeft());
+            if (
+              !Node.isPropertyAccessExpression(left) &&
+              !Node.isElementAccessExpression(left)
+            ) continue;
+            const name = Node.isPropertyAccessExpression(left)
+              ? left.getName()
+              : literalPropertyKey(left.getArgumentExpression());
+            if (
+              !sameReceiver(left.getExpression(), owner) ||
+              (requested !== null && name !== null && name !== requested)
+            ) continue;
+            sources.push(assignment.getRight());
+          }
+          return sources;
+        };
+        const sources = memberSources(receiver, member);
+        return sources.length > 0
+          ? sources.some((source) =>
+            isCreateRequireNamespace(source, visited)
+          )
+          : member === null &&
+            isCreateRequireNamespace(receiver, visited);
+      }
       if (Node.isObjectLiteralExpression(expression)) {
         return expression.getProperties().some((property) =>
           Node.isSpreadAssignment(property) &&
@@ -534,7 +653,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       return isAmbientGlobalReference(expression.getExpression());
     }
     if (Node.isElementAccessExpression(expression)) {
-      return literalPropertyKey(expression.getArgumentExpression()) === builtin &&
+      return mayBePropertyKey(expression.getArgumentExpression(), builtin) &&
         isAmbientGlobalReference(expression.getExpression());
     }
     return false;
@@ -630,8 +749,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         isAmbientBuiltinReference(expression.getExpression(), builtin);
     }
     if (Node.isElementAccessExpression(expression)) {
-      const name = literalPropertyKey(expression.getArgumentExpression());
-      return (name === null || name === method) &&
+      return mayBePropertyKey(expression.getArgumentExpression(), method) &&
         isAmbientBuiltinReference(expression.getExpression(), builtin);
     }
     return false;
@@ -667,10 +785,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         ? callee.getName()
         : literalPropertyKey(callee.getArgumentExpression());
       const receiver = callee.getExpression();
-      if (member === "call" && isAccessor(receiver)) {
+      if ((member === null || member === "call") && isAccessor(receiver)) {
         return [direct[1], direct[2], false];
       }
-      if (member === "apply" && isAccessor(receiver)) {
+      if ((member === null || member === "apply") && isAccessor(receiver)) {
         const applied = expressionProvenance(direct[1]);
         if (!Node.isArrayLiteralExpression(applied)) {
           return [undefined, undefined, true];
@@ -687,7 +805,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const member = Node.isPropertyAccessExpression(binder)
       ? binder.getName()
       : literalPropertyKey(binder.getArgumentExpression());
-    if (member !== "bind" || !isAccessor(binder.getExpression())) return null;
+    if (
+      (member !== null && member !== "bind") ||
+      !isAccessor(binder.getExpression())
+    ) return null;
     const effective = [...callee.getArguments().slice(1), ...direct];
     return [effective[0], effective[1], false];
   };
@@ -706,7 +827,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   }
   for (const member of destructuredMembers()) {
     if (
-      member.name === "createRequire" &&
+      (member.name === null || member.name === "createRequire") &&
       isCreateRequireNamespace(member.receiver)
     ) {
       refs.push({
@@ -716,7 +837,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
     if (
-      member.name === "require" &&
+      (member.name === null || member.name === "require") &&
       isAmbientGlobalReference(member.receiver)
     ) {
       refs.push({
@@ -865,10 +986,9 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   }
   for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
     const argument = access.getArgumentExpression();
-    const memberName = literalPropertyKey(argument);
     if (
       isCreateRequireNamespace(access.getExpression()) &&
-      (memberName === null || memberName === "createRequire")
+      mayBePropertyKey(argument, "createRequire")
     ) {
       refs.push({
         specifier: null,
@@ -877,7 +997,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
     if (
-      memberName === "require" &&
+      mayBePropertyKey(argument, "require") &&
       isAmbientRequireMember(access.getExpression(), argument)
     ) {
       refs.push({
@@ -2523,6 +2643,102 @@ function repeatedAuthorityEvaluations(
     )) return call.getArguments().slice(0, 1);
     return [];
   };
+  const literalKeys = (
+    node: Node | undefined,
+    seen: ReadonlySet<object> = new Set(),
+  ): string[] | null => {
+    const expression = unwrap(node);
+    if (!expression) return null;
+    if (
+      Node.isStringLiteral(expression) ||
+      Node.isNoSubstitutionTemplateLiteral(expression) ||
+      Node.isNumericLiteral(expression)
+    ) return [expression.getLiteralText()];
+    if (Node.isConditionalExpression(expression)) {
+      const left = literalKeys(expression.getWhenTrue(), seen);
+      const right = literalKeys(expression.getWhenFalse(), seen);
+      return left && right ? [...new Set([...left, ...right])] : null;
+    }
+    if (Node.isBinaryExpression(expression)) {
+      const operator = expression.getOperatorToken().getKind();
+      if (operator === SyntaxKind.CommaToken) {
+        return literalKeys(expression.getRight(), seen);
+      }
+      if (
+        operator === SyntaxKind.BarBarToken ||
+        operator === SyntaxKind.AmpersandAmpersandToken ||
+        operator === SyntaxKind.QuestionQuestionToken
+      ) {
+        const left = literalKeys(expression.getLeft(), seen);
+        const right = literalKeys(expression.getRight(), seen);
+        return left && right ? [...new Set([...left, ...right])] : null;
+      }
+    }
+    if (!Node.isIdentifier(expression)) return null;
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return null;
+    const nested = new Set(seen).add(key);
+    const sources = [
+      ...(symbol?.getDeclarations() ?? []).flatMap((candidate) =>
+        Node.isVariableDeclaration(candidate) && candidate.getInitializer()
+          ? [candidate.getInitializerOrThrow()]
+          : []
+      ),
+      ...assignments
+        .filter((candidate) =>
+          candidate.getStart() < expression.getStart() &&
+          Node.isIdentifier(unwrap(candidate.getLeft())) &&
+          unwrap(candidate.getLeft())?.getSymbol() === symbol
+        )
+        .map((candidate) => candidate.getRight()),
+    ];
+    if (sources.length === 0) return null;
+    const keys = sources.map((source) => literalKeys(source, nested));
+    return keys.every((candidate): candidate is string[] => candidate !== null)
+      ? [...new Set(keys.flat())]
+      : null;
+  };
+  const reflectedAuthoritySources = (call: CallExpression): Array<{
+    readonly node: Node;
+    readonly source: string;
+    readonly expands: boolean;
+  }> => {
+    const reflected = normalizedAmbientBuiltinCall(
+      call,
+      "Reflect",
+      ["get", "getOwnPropertyDescriptor"],
+    );
+    const described = normalizedAmbientBuiltinCall(
+      call,
+      "Object",
+      ["getOwnPropertyDescriptor", "getOwnPropertyDescriptors"],
+    );
+    const invocation = reflected ?? described;
+    if (!invocation) return [];
+    if (invocation.arguments === null) {
+      return captures.map((capture) => ({
+        node: call,
+        source: canonicalAuthorityText(capture.source),
+        expands: true,
+      }));
+    }
+    const [receiver, key] = invocation.arguments;
+    if (!receiver) return [];
+    const bases = resolvedTexts(receiver);
+    if (invocation.method === "getOwnPropertyDescriptors") {
+      return authorityRead(call, bases, true);
+    }
+    const keys = literalKeys(key);
+    return keys === null
+      ? authorityRead(call, bases, true)
+      : keys.flatMap((name) =>
+        authorityRead(
+          call,
+          bases.map((base) => memberText(base, name)),
+        )
+      );
+  };
   const reads: Array<{
     readonly node: Node;
     readonly source: string;
@@ -2542,9 +2758,12 @@ function repeatedAuthorityEvaluations(
       ),
     ...body.getDescendantsOfKind(SyntaxKind.CallExpression)
       .flatMap((call) =>
-        copyCallSources(call).flatMap((source) =>
-          authorityRead(call, resolvedTexts(source), true)
-        )
+        [
+          ...copyCallSources(call).flatMap((source) =>
+            authorityRead(call, resolvedTexts(source), true)
+          ),
+          ...reflectedAuthoritySources(call),
+        ]
       ),
   ];
   const collectAssignmentReads = (pattern: Node, base: string): void => {
@@ -2813,9 +3032,15 @@ function declaredCalleeNames(type: Type): string[] {
 }
 
 /** The expression a widened local was BOUND from: `const run: Function = db.query`. */
-function bindingSources(expression: Node, depth = 0): Node[] {
-  if (depth > 4 || !Node.isIdentifier(expression)) return [];
+function bindingSources(
+  expression: Node,
+  seen: ReadonlySet<object> = new Set(),
+): Node[] {
+  if (!Node.isIdentifier(expression)) return [];
   const symbol = expression.getSymbol();
+  const key = (symbol ?? expression) as unknown as object;
+  if (seen.has(key)) return [];
+  const nested = new Set(seen).add(key);
   const direct: Node[] = [];
   for (const declaration of symbol?.getDeclarations() ?? []) {
     if (!Node.isVariableDeclaration(declaration)) continue;
@@ -2851,7 +3076,7 @@ function bindingSources(expression: Node, depth = 0): Node[] {
         operator === SyntaxKind.QuestionQuestionToken
       ) return [...expand(source.getLeft()), ...expand(source.getRight())];
     }
-    return [source, ...bindingSources(source, depth + 1)];
+    return [source, ...bindingSources(source, nested)];
   };
   return direct.flatMap(expand);
 }
@@ -3004,28 +3229,150 @@ function staticArrayElements(node: Node | undefined): readonly Node[] | null {
   return null;
 }
 
-function isAmbientReflectApply(node: Node): boolean {
+function isAmbientBuiltinObject(
+  node: Node,
+  builtin: "Object" | "Reflect",
+  seen: ReadonlySet<object> = new Set(),
+): boolean {
   const expression = unwrapSqlExpression(node);
+  const symbol = expression.getSymbol();
+  const key = (symbol ?? expression) as unknown as object;
+  if (seen.has(key)) return false;
+  const nested = new Set(seen).add(key);
   if (Node.isIdentifier(expression)) {
-    return bindingSources(expression).some(isAmbientReflectApply) ||
-      bindingMemberSources(expression).some(({ receiver, member }) =>
-        member === "apply" && isAmbientReflect(receiver)
-      );
+    if (
+      expression.getText() === builtin &&
+      (symbol?.getDeclarations() ?? []).every((declaration) =>
+        declaration.getSourceFile().isDeclarationFile()
+      )
+    ) return true;
+    return bindingSources(expression).some((source) =>
+      isAmbientBuiltinObject(source, builtin, nested)
+    );
   }
-  if (
-    !Node.isPropertyAccessExpression(expression) ||
-    expression.getName() !== "apply"
-  ) return false;
-  return isAmbientReflect(expression.getExpression());
+  if (Node.isPropertyAccessExpression(expression)) {
+    return expression.getName() === builtin &&
+      Node.isIdentifier(unwrapSqlExpression(expression.getExpression())) &&
+      unwrapSqlExpression(expression.getExpression()).getText() ===
+        "globalThis";
+  }
+  return false;
 }
 
-function isAmbientReflect(node: Node): boolean {
-  const receiver = unwrapSqlExpression(node);
-  return Node.isIdentifier(receiver) &&
-    receiver.getText() === "Reflect" &&
-    (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>
-      declaration.getSourceFile().isDeclarationFile()
+function ambientBuiltinMethodName(
+  node: Node,
+  builtin: "Object" | "Reflect",
+  methods: readonly string[],
+  seen: ReadonlySet<object> = new Set(),
+): string | null {
+  const expression = unwrapSqlExpression(node);
+  const symbol = expression.getSymbol();
+  const key = (symbol ?? expression) as unknown as object;
+  if (seen.has(key)) return null;
+  const nested = new Set(seen).add(key);
+  if (Node.isIdentifier(expression)) {
+    for (const source of bindingSources(expression)) {
+      const method = ambientBuiltinMethodName(
+        source,
+        builtin,
+        methods,
+        nested,
+      );
+      if (method) return method;
+    }
+    for (const source of bindingMemberSources(expression)) {
+      if (
+        methods.includes(source.member) &&
+        isAmbientBuiltinObject(source.receiver, builtin)
+      ) return source.member;
+    }
+    return null;
+  }
+  if (Node.isPropertyAccessExpression(expression)) {
+    return methods.includes(expression.getName()) &&
+      isAmbientBuiltinObject(expression.getExpression(), builtin)
+      ? expression.getName()
+      : null;
+  }
+  if (Node.isElementAccessExpression(expression)) {
+    const member = sqlMember(expression);
+    return member &&
+      methods.includes(member) &&
+      isAmbientBuiltinObject(expression.getExpression(), builtin)
+      ? member
+      : null;
+  }
+  return null;
+}
+
+function normalizedAmbientBuiltinCall(
+  call: CallExpression,
+  builtin: "Object" | "Reflect",
+  methods: readonly string[],
+): { readonly method: string; readonly arguments: readonly Node[] | null } | null {
+  const callee = unwrapSqlExpression(call.getExpression());
+  const direct = ambientBuiltinMethodName(callee, builtin, methods);
+  if (direct) return { method: direct, arguments: call.getArguments() };
+  if (
+    Node.isPropertyAccessExpression(callee) ||
+    Node.isElementAccessExpression(callee)
+  ) {
+    const wrapper = sqlMember(callee);
+    const target = callee.getExpression();
+    const method = ambientBuiltinMethodName(target, builtin, methods);
+    if (method && wrapper === "call") {
+      return { method, arguments: call.getArguments().slice(1) };
+    }
+    if (method && wrapper === "apply") {
+      return {
+        method,
+        arguments: staticArrayElements(call.getArguments()[1]),
+      };
+    }
+  }
+  if (Node.isCallExpression(callee)) {
+    const binder = unwrapSqlExpression(callee.getExpression());
+    if (
+      (
+        Node.isPropertyAccessExpression(binder) ||
+        Node.isElementAccessExpression(binder)
+      ) &&
+      sqlMember(binder) === "bind"
+    ) {
+      const method = ambientBuiltinMethodName(
+        binder.getExpression(),
+        builtin,
+        methods,
+      );
+      if (method) {
+        return {
+          method,
+          arguments: [
+            ...callee.getArguments().slice(1),
+            ...call.getArguments(),
+          ],
+        };
+      }
+    }
+  }
+  if (isAmbientReflectApply(callee)) {
+    const method = ambientBuiltinMethodName(
+      call.getArguments()[0] ?? callee,
+      builtin,
+      methods,
     );
+    if (method) {
+      return {
+        method,
+        arguments: staticArrayElements(call.getArguments()[2]),
+      };
+    }
+  }
+  return null;
+}
+
+function isAmbientReflectApply(node: Node): boolean {
+  return ambientBuiltinMethodName(node, "Reflect", ["apply"]) === "apply";
 }
 
 export interface NormalizedSqlExecutorCall {

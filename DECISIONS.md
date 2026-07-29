@@ -2593,3 +2593,65 @@ drift and attacker-controlled accessors are reread).
 **Revert path:** revert this changeset to restore non-prefix migration acceptance,
 single-action sink derivation, ambiguous alias provenance, and repeated hostile
 error metadata reads.
+
+## D-089 - Executable security work retains semantic ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-088,
+v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+All five review findings were legitimate symptoms of incomplete semantic
+ownership and provenance analysis.
+
+Every infrastructure SQL executor call must now belong to a checked exported
+callable, a returned repository implementation, an exported class method, or a
+local helper whose every call is recursively owned by one of those boundaries.
+Exact reviewed global escapes remain callable-scoped. Module initializers, IIFEs,
+static blocks, exported data or promise initializers, and helpers that escape as
+values fail as unowned SQL.
+
+Ambient builtin resolution follows aliases and every potentially reaching
+assignment. SQL normalization therefore recognizes `Reflect.apply` independent
+of receiver spelling, and all app-layer SQL, repository, tenant, and
+governed-action consumers receive the same normalized result.
+
+The module-reference walker carries `node:module` namespace provenance through
+named and nested object members plus later property assignments. The dependency,
+LLM PII, sealed-factory, and secret-containment fences continue to consume that
+single result.
+
+Repeated-authority analysis normalizes `Reflect.get`, property-descriptor reads,
+and their `call`, `apply`, `bind`, and `Reflect.apply` forms. Literal key
+provenance retains exact member paths; unresolved keys expand conservatively to
+the carrier, so a stateful authority getter cannot be read after its stable
+prologue capture.
+
+Governed callee discovery traverses every value-producing conditional and
+logical arm. Node identities include kind, start, and end positions so a compound
+expression cannot collide with its leftmost child. A known governed sink paired
+with an unresolved callable arm fails closed.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+Only fitness analyzers, adversarial companions, and their decision evidence
+changed. The platform layer counts and ADR ceilings therefore remain exact and
+unchanged. No useful code or documentation was removed or compressed to
+manufacture room.
+
+**Alternatives rejected:** check only exported signatures without proving SQL
+call ownership (module execution remains invisible); recognize only the literal
+`Reflect` receiver (aliases bypass every SQL consumer); enumerate one object
+holder spelling (nested and assigned members remain open); add separate regexes
+for each reflective authority form (invocation wrappers drift); and treat a
+compound callee as one node keyed only by its start offset (its left arm
+disappears).
+
+**Revert path:** revert this changeset to restore unowned SQL execution, ambient
+builtin and namespace-member provenance gaps, repeated reflective authority
+reads, and incomplete governed-callee traversal.

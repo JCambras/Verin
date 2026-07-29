@@ -773,6 +773,8 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
           const created = copy.createRequire(import.meta.url);`,
       `const copy = Object.fromEntries(Object.entries(nodeModule));
           const created = copy.createRequire(import.meta.url);`,
+      `const holder = { mod: nodeModule };
+          const created = holder.mod.createRequire(import.meta.url);`,
       `const created = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
     ])("catches copied or applied node:module provenance before secret access", (loader) => {
       const project = inMemoryProject({
