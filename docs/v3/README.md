@@ -95,7 +95,7 @@ complete proof metadata is ratcheted, so matching prose cannot fabricate an earl
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
-Effective workflow, job, and step environments are resolved together; non-literal environment maps and
+Effective workflow, job, job-container, and step environments are resolved together; non-literal environment maps and
 overrides of execution-affecting shell, loader, package-manager, or runtime variables are non-evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
@@ -159,12 +159,15 @@ transitively invoked local neutralizer helpers,
 and unresolved local callable
 indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
-login helper is pinned to the uninstrumented browser flow. Required specifications may register no
+login helper is pinned to exactly two plain required parameters and the uninstrumented browser flow;
+authenticated scans pass the stable principal explicitly. Required specifications may register no
 Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. Their
 complete runtime local import graph, including the named roots, is inspected through side-effect imports,
 re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
 module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
 unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
+Ambient `process.getBuiltinModule("module")` construction is likewise non-evidence. Static computed
+Playwright members are resolved, and unresolved computed members rooted at the imported API fail closed.
 Playwright hook provenance follows callable values stored in object properties, member assignments, and
 direct or aliased `Object.assign` mutations through object aliases. Reflective property writes through
 `Object.defineProperty` and `Reflect.set`, including stable aliases and invocation wrappers, are followed,
@@ -180,7 +183,8 @@ disabled or focused Vitest fences through symbol-aware AST registration analysis
 members, aliases, the `suite` registration alias, unshadowed Vitest globals, `globalThis`, and Node
 `global` paths, neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while
 preserving locally shadowed application callables. Parameterized `.each` and `.for` registrations must
-carry statically non-empty case collections. Fitness registrations must also be direct reachable
+carry immediate literal or direct frozen, statically non-empty case collections, and registration
+options follow the same immutable-input rule. Fitness registrations must also be direct reachable
 module-scope statements or direct statements inside an enabled reachable module-scope `describe` /
 `suite` callback; dead control flow and uncalled registration helpers are non-evidence.
 Per

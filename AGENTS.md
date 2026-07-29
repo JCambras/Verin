@@ -266,14 +266,16 @@ or exclude configuration drifts.
   required tests and their registered hooks, requires stable positive helper provenance, follows
   neutralizers invoked through `bind`, `call`, `apply`, or direct and bound `Reflect.apply` values and
   transitively invoked local helpers, and
-  fails closed on unresolved local callable indirection, proves Playwright forbids focused exclusion and
+  fails closed on unresolved local callable indirection and unresolved computed Playwright members,
+  proves Playwright forbids focused exclusion and
   selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
   authenticated, and demo route to its loaded-state
-  scan. Required callbacks admit only their typed loops and canonical uninstrumented login call.
+  scan. Required callbacks admit only their typed loops and canonical uninstrumented login call with
+  explicit `PRINCIPAL`; the login helper has exactly two plain required parameters.
   Required specifications may register no Playwright hooks. The same hook and Axe-runtime prohibitions
   cover every named root and their complete runtime local import graph, including side-effect imports and
   TypeScript path aliases; unresolved, unclassified, non-literal, and indirect CommonJS runtime imports
-  are non-evidence. Required route collections cannot be supplied
+  are non-evidence, as is ambient `process.getBuiltinModule("module")` loader construction. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
   Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
   executable instrumentation, executable parameter defaults, or anything but exactly two plain
@@ -281,7 +283,8 @@ or exclude configuration drifts.
   aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
   preserving locally shadowed application callables. Registration option objects and unshadowed
   `globalThis` and Node `global` paths are included, and `.each`/`.for` case collections must be
-  statically non-empty. Fitness registrations must be reachable at module scope or directly inside an
+  immediate literal or direct frozen and statically non-empty; registration option inputs follow the
+  same immutable rule. Fitness registrations must be reachable at module scope or directly inside an
   enabled reachable module-scope suite callback. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
   callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`

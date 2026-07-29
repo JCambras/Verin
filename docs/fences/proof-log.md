@@ -11855,3 +11855,97 @@ TypeScript runners, package managers, and safe application variables.
 **Revert:** removed the workflow override. The restored four-fence focused run passed all 108 tests.
 
 **Date:** 2026-07-29.
+
+### PF-001 (continued) · immutable Vitest registration inputs
+
+**Invariant (charter operating model / ADR-0030):** registration options and parameterized case
+collections must be immediate literals whose registration meaning cannot change before Vitest consumes
+them. Mutable aliases are non-evidence even when their initializer was safe.
+
+**Injection:** added a safe-looking options alias, changed `skip` to `true`, and registered a suite with
+it in the real charter-drift fence. Added a one-element case alias, emptied it with `pop()`, and
+registered a parameterized suite with it.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/charter-drift.test.ts:886 disabled/focused Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:889 disabled/focused Vitest registration describe.each
+```
+
+The pre-fix companion returned no problem for either input. Continuous companions cover member
+assignment and array mutation, while immediate object and array literals and direct `Object.freeze`
+literals remain accepted.
+
+**Revert:** removed both injected registrations. The restored focused companion passed.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · computed Playwright members and ambient builtin loaders
+
+**Invariant (charter #9 / ADR-0030):** every reachable Axe evidence module must expose statically
+decidable Playwright member access and a complete runtime local import graph. Computed hook or
+neutralizer names and ambient `process.getBuiltinModule("module")` loader construction cannot escape
+the graph.
+
+**Injection:** added an executable top-level `test[hookName](...)` hook whose stable `hookName` was
+`"before" + "Each"`, then constructed and invoked a
+`process.getBuiltinModule("module").createRequire(...)` loader in the real required
+`e2e/smoke.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable Axe evidence modules require literal runtime module references
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The pre-fix companions accepted both forms. Continuous companions resolve concatenated and stable
+computed Playwright keys, reject unresolved computed members rooted at the imported Playwright API, and
+reject direct or aliased ambient builtin-module loader construction. A locally shadowed application
+loader remains outside this authority.
+
+**Revert:** removed the injected hook and loader construction. The restored full Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · exact login parameters and explicit credentials
+
+**Invariant (charter #9 / ADR-0030):** the canonical Axe login helper has exactly two plain parameters
+with no executable defaults, and every authenticated route scan passes the stable principal explicitly.
+
+**Injection:** changed the real login helper's credentials parameter to default through
+`(test.skip(), PRINCIPAL)`.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 required Axe login setup must use the uninstrumented canonical browser flow
+```
+
+The pre-fix companion accepted the default and accepted `login(page)` at authenticated scan sites.
+Continuous companions reject defaults, optional, rest, destructured, missing, and implicit credential
+forms while the exact two-parameter helper and `login(page, PRINCIPAL)` remain accepted.
+
+**Revert:** restored the plain required credentials parameter. The restored focused Axe companions
+passed.
+
+**Date:** 2026-07-29.
+
+### PF-030 (continued) · job-container execution environment
+
+**Invariant (ADR-0030):** an exact governed command is blocking evidence only when its complete inherited
+workflow, job, job-container, and step environment cannot redirect or instrument execution.
+
+**Injection:** ran the real `e2e` job in a declared container carrying
+`NODE_OPTIONS: --require=./injected-runtime.js`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci job 'e2e' command 'pnpm exec playwright test' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+```
+
+The pre-fix companion reported `proven` for the same container environment. Continuous companions cover
+all four inherited scopes for shell startup variables, executable search paths, loader preloads,
+language runtimes, and package managers, while safe application variables remain accepted.
+
+**Revert:** removed the injected container. The restored focused CI-environment companion passed.
+
+**Date:** 2026-07-29.

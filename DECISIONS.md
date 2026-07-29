@@ -6501,6 +6501,18 @@ content masking is non-evidence; and **(4)** governed CI commands reject non-lit
 environment maps and execution-affecting workflow, job, or step overrides. PF-001, PF-030, PF-031, and
 PF-032 record the real red injections, focused companions, and restored green proofs.
 
+The captain-approved registration-input, computed-member, login, builtin-loader, and
+container-environment review (2026-07-29) amended ADR-0030 in place a twenty-ninth time: **(1)** Vitest
+registration options and parameterized case collections must be immediate literal or direct frozen
+inputs, so member assignments and array mutators cannot invalidate initializer-only evidence; **(2)**
+Playwright member access resolves static concatenation and stable literal aliases, while unresolved
+computed members rooted at the imported API are non-evidence; **(3)** the canonical login helper has
+exactly two plain required parameters and authenticated scan sites pass `PRINCIPAL` explicitly; **(4)**
+ambient `process.getBuiltinModule("module")` construction is rejected throughout the required Axe
+runtime graph, including stable aliases; and **(5)** CI execution-environment validation includes
+`job.container.env` between job and step scope. PF-001, PF-030, and PF-031 record the real red
+injections, focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

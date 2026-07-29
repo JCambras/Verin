@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, and the captain-approved callable-member, helper-syntax, and parameterized-registration review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, and the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -276,6 +276,19 @@ Configuration property names are normalized across direct and computed literal s
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
 
+**Registration and execution inputs are immutable and explicit.** Vitest registration option objects and
+parameterized case collections are accepted only as immediate literals or direct frozen literals, so a
+later member assignment or array mutation cannot change the registration after the fence has read its
+initializer. Playwright member names resolve static concatenation and stable literal aliases, while an
+unresolved computed member rooted at the imported Playwright API makes the complete Axe graph
+non-evidence. The canonical login helper has exactly two plain required parameters with no defaults,
+rest, optional, or destructured form, and every authenticated route scan passes the stable principal
+explicitly. Ambient `process.getBuiltinModule("module")` construction, including stable aliases, is
+rejected anywhere in the required runtime graph because it can manufacture an untracked `createRequire`
+loader. Governed CI commands resolve environment configuration across workflow, job, job-container, and
+step scope; an execution-affecting container environment override is non-evidence under the same rule as
+the other inherited scopes.
+
 **Gate 0 surface completeness is executable.** The prompt-3 evidence gap is replaced by
 `demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
 `docs/demo-contract.md` section 4 list, and both are ratcheted to the exact twelve identities in the
@@ -383,8 +396,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Inspect only the directly named Axe files | A side-effect import can patch `AxeBuilder.prototype.analyze` or register a Playwright hook before the required scan. The complete runtime local import graph is part of the evidence boundary. |
 | Exempt named Axe graph roots from imported-runtime and hook checks | The shared login helper is a root, but only its function body was pinned. A module-scope hook or Axe patch beside that function could still run before every required scan. |
 | Follow only direct CommonJS `require()` calls | `const load = require; load("./poison")` and ambient `module.require("./poison")` execute the same module while leaving the direct-call graph unchanged. Unresolved loader provenance must fail closed. |
+| Ignore `process.getBuiltinModule("module")` because it is not CommonJS syntax | The returned module namespace constructs `createRequire`, so an untracked local module executes with the same authority as direct CommonJS loading. |
 | Inventory only `.test.ts` fitness files | Vitest also admits `.test.tsx`, `.spec.ts`, and `.spec.tsx`; a second matcher silently drops those files from execution completeness, disabled-registration checks, and companion enforcement. |
 | Resolve disabled Vitest registrations only through imports | `globals: true` makes unshadowed `describe`, `suite`, `test`, and `it` registration authorities. Import-only provenance lets a global `suite.skip` disable a fence without detection. |
+| Trust a mutable registration alias because its initializer was safe | `opts.skip = true` and `cases.pop()` change what Vitest registers after the initializer was inspected. Immediate literal inputs keep the proof boundary small and deterministic. |
+| Allow implicit login credentials or executable parameter defaults | A default can call `test.skip()` before the pinned body executes. Explicit `login(page, PRINCIPAL)` binds the authenticated scan to the reviewed identity. |
+| Inspect workflow, job, and step environments but not `job.container.env` | A job-container environment is inherited by the governed command and can preload or redirect its runtime exactly like the other scopes. |
 
 ## Trade-offs and Costs
 
@@ -437,7 +454,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
   effective shell, any missing, dynamic, invalid, or unsupported runner regardless of an explicit
   shell, a job carrying a non-empty `needs` dependency, or an evidence job using `strategy.matrix`.
-  Workflow, job, and step environment maps are resolved together. Non-literal maps and overrides of
+  Workflow, job, job-container, and step environment maps are resolved together. Non-literal maps and overrides of
   execution-affecting shell, loader, package-manager, or runtime variables are non-evidence, including
   `BASH_ENV`, `ENV`, `PATH`, `NODE_OPTIONS`, loader preload paths, and equivalent language-tool options.
   An unparseable
@@ -464,12 +481,15 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   imported provenance. Neutralizers invoked through `bind`, `call`, or `apply`, plus local helpers that
   invoke neutralizers, are followed transitively, while unresolved local callable indirection is
   non-evidence. Required route callbacks admit only their typed loops and stable canonical login call;
-  the login helper itself is pinned to the uninstrumented browser flow, and required specifications may
+  the login helper itself is pinned to exactly two plain required parameters and the uninstrumented
+  browser flow, every authenticated scan passes `PRINCIPAL` explicitly, and required specifications may
   register no Playwright hooks. The same prohibition applies to every named graph root and extends
   through the complete runtime local import graph of required specifications and sanctioned helpers.
   No reachable module may import the Axe runtime outside `e2e/axe.ts`, register a Playwright hook, hide
   behind a side-effect import, or depend on an unresolved, unclassified, non-literal, or indirect
-  CommonJS runtime import. Hook provenance includes object-member assignments, `Object.assign`,
+  CommonJS runtime import. Ambient `process.getBuiltinModule("module")` loader construction is rejected.
+  Static computed Playwright members are resolved, and unresolved computed members rooted at the imported
+  Playwright API make the graph non-evidence. Hook provenance includes object-member assignments, `Object.assign`,
   `Object.defineProperty`, and `Reflect.set` through stable aliases and `bind` / `call` / `apply`
   wrappers. Unresolved reflective property writes fail closed.
   Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
@@ -490,7 +510,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   Vitest provenance graph. The same provenance follows unshadowed `globalThis` and Node `global` member paths and inspects
   registration option objects for `skip`, `only`, `todo`, and `fails`. Dynamic option keys, spreads, and
   neutralizing values that are not statically false are non-evidence. Unknown conditional state is
-  non-evidence. Parameterized `.each` and `.for` registrations require a statically non-empty collection;
+  non-evidence. Registration options and parameterized inputs must be immediate literals or direct frozen
+  literals, so mutable aliases are non-evidence. Parameterized `.each` and `.for` registrations require a statically non-empty collection;
   empty, spread-derived, or unresolved collections are non-evidence, while tagged tables require a
   header and at least one static row. Registrations must be direct reachable module-scope statements or
   direct statements inside an enabled reachable module-scope `describe` / `suite` callback. Registrations
@@ -599,6 +620,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A required Axe specification or sanctioned helper needs a non-literal runtime local import or an
   indirect CommonJS loader: extend the import-graph resolver with a complete, adversarially proven
   execution model before admitting it.
+- A required Axe module legitimately needs `process.getBuiltinModule("module")`, a runtime-computed
+  Playwright member, or implicit login credentials: extend the relevant provenance model and its
+  adversarial companions before admitting the form. Do not weaken the current fail-closed boundary.
+- A governed CI job legitimately needs an execution-affecting `job.container.env` override: isolate the
+  mapped command in a clean blocking job or add a typed, adversarially proven allowance for that exact
+  variable. Do not exempt container scope from inherited environment validation.
 - A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
   PR and keep the required command in a dedicated simple step. The structural check reads the workflow,
   so a stale or compound form fails rather than silently matching.

@@ -14,6 +14,7 @@ import {
   Node,
   Project,
   SyntaxKind,
+  type BinaryExpression,
   type SourceFile,
 } from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
@@ -415,18 +416,32 @@ function staticRegistrationMember(
   };
 }
 
+const registrationAssignmentsByFile = new WeakMap<
+  SourceFile,
+  BinaryExpression[]
+>();
+
 function precedingRegistrationAssignments(node: Node): Node[] {
   if (!Node.isIdentifier(node)) return [];
   const symbol = node.getSymbol();
   if (symbol === undefined) return [];
-  return node
-    .getSourceFile()
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+  const file = node.getSourceFile();
+  let assignments = registrationAssignmentsByFile.get(file);
+  if (assignments === undefined) {
+    assignments = file
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .filter(
+        (candidate) =>
+          candidate.getOperatorToken().getKind() ===
+            SyntaxKind.EqualsToken &&
+          Node.isIdentifier(candidate.getLeft()),
+      );
+    registrationAssignmentsByFile.set(file, assignments);
+  }
+  return assignments
     .filter(
       (candidate) =>
-        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
         candidate.getStart() < node.getStart() &&
-        Node.isIdentifier(candidate.getLeft()) &&
         candidate.getLeft().getSymbol() === symbol,
     )
     .map((candidate) => candidate.getRight());
@@ -669,29 +684,7 @@ function staticRegistrationCaseCollection(
     }
     return undefined;
   }
-  if (!Node.isIdentifier(normalized)) return undefined;
-  const sources = [
-    ...(normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .flatMap((declaration) => {
-        if (!Node.isVariableDeclaration(declaration)) return [];
-        const initializer = declaration.getInitializer();
-        return initializer === undefined ? [] : [initializer];
-      }) ?? []),
-    ...precedingRegistrationAssignments(normalized),
-  ];
-  const values = sources.map((source) =>
-    staticRegistrationCaseCollection(source, new Set(seen)),
-  );
-  if (
-    values.length === 0 ||
-    values.some((value) => value === undefined) ||
-    new Set(values).size !== 1
-  ) {
-    return undefined;
-  }
-  return values[0];
+  return undefined;
 }
 
 function registrationOptionPropertyName(node: Node): string | undefined {
@@ -740,6 +733,27 @@ function registrationOptionsState(
     }
     return "safe";
   }
+  if (Node.isCallExpression(normalized)) {
+    const member = staticRegistrationMember(normalized.getExpression());
+    if (
+      member?.name === "freeze" &&
+      Node.isIdentifier(member.receiver) &&
+      member.receiver.getText() === "Object" &&
+      !member.receiver
+        .getSymbol()
+        ?.getDeclarations()
+        .some(
+          (declaration) =>
+            declaration.getSourceFile() === normalized.getSourceFile(),
+        )
+    ) {
+      const frozen = normalized.getArguments()[0];
+      return frozen === undefined
+        ? "unknown"
+        : registrationOptionsState(frozen, new Set(seen));
+    }
+    return "unknown";
+  }
   if (!Node.isIdentifier(normalized)) return "unknown";
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   if (declarations.some(Node.isFunctionDeclaration)) return "not-options";
@@ -751,12 +765,14 @@ function registrationOptionsState(
     }),
     ...precedingRegistrationAssignments(normalized),
   ];
-  if (sources.length === 0) return "unknown";
-  const states = sources.map((source) =>
-    registrationOptionsState(source, new Set(seen)),
-  );
-  if (states.some((state) => state === "unsafe")) return "unsafe";
-  return new Set(states).size === 1 ? states[0]! : "unknown";
+  return sources.length > 0 &&
+    sources.every(
+      (source) =>
+        registrationOptionsState(source, new Set(seen)) ===
+        "not-options",
+    )
+    ? "not-options"
+    : "unknown";
 }
 
 function registrationOptionsAreUnsafe(call: Node): boolean {
@@ -885,16 +901,26 @@ function disabledVitestRegistrationProblemsInFile(
     );
 }
 
+const registrationAnalysisProject = new Project({
+  useInMemoryFileSystem: true,
+  skipAddingFilesFromTsConfig: true,
+});
+let registrationAnalysisSequence = 0;
+
 export function disabledVitestRegistrationProblems(
   source: string,
   fileName = "fitness.test.ts",
 ): string[] {
-  const project = new Project({
-    useInMemoryFileSystem: true,
-    skipAddingFilesFromTsConfig: true,
-  });
-  const file = project.createSourceFile(`/${fileName}`, source);
-  return disabledVitestRegistrationProblemsInFile(file, fileName);
+  registrationAnalysisSequence += 1;
+  const file = registrationAnalysisProject.createSourceFile(
+    `/fitness-${registrationAnalysisSequence}.test.ts`,
+    source,
+  );
+  try {
+    return disabledVitestRegistrationProblemsInFile(file, fileName);
+  } finally {
+    registrationAnalysisProject.removeSourceFile(file);
+  }
 }
 
 describe("charter-drift fence", () => {
@@ -953,16 +979,9 @@ jobs:
   });
 
   it("(b) no fitness fence is disabled or focused (this file included)", () => {
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      skipAddingFilesFromTsConfig: true,
-    });
     const offenders = fitnessFiles.flatMap((file) =>
-      disabledVitestRegistrationProblemsInFile(
-        project.createSourceFile(
-          `/${file}`,
-          readFileSync(p(file), "utf8"),
-        ),
+      disabledVitestRegistrationProblems(
+        readFileSync(p(file), "utf8"),
         file,
       ),
     );
@@ -1031,6 +1050,16 @@ suite.each(cases)("empty aliased cases", () => {});`,
 it.each([...cases])("spread cases", () => {});`,
       `const cases = Math.random() > 0.5 ? [1] : [];
 test.for(cases)("dynamic parameterized test", () => {});`,
+      `const options = { skip: false };
+options.skip = true;
+describe("mutated options", options, () => {});`,
+      `const cases = [1];
+cases.pop();
+describe.each(cases)("mutated cases", () => {});`,
+      `const options = { skip: false };
+describe("mutable option alias", options, () => {});`,
+      `const cases = [1];
+describe.each(cases)("mutable case alias", () => {});`,
       "describe.each``(\"empty tagged suite\", () => {});",
       `if (false) {
   describe("dead suite", () => {
@@ -1065,6 +1094,13 @@ test.runIf(true)("runs too", () => {});`,
     expect(
       disabledVitestRegistrationProblems(
         `describe("enabled", { skip: false, only: false, todo: false, fails: false }, () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `describe("enabled", Object.freeze({ skip: false, only: false, todo: false, fails: false }), () => {});
+const callback = () => {};
+test("enabled callback alias", callback);`,
       ),
     ).toEqual([]);
     expect(

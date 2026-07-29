@@ -863,6 +863,8 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
     const defaultShell = jobShell === undefined ? workflowShell : jobShell;
     const jobDirectory = configuredRunWorkingDirectory(job);
     const defaultDirectory = jobDirectory === undefined ? workflowDirectory : jobDirectory;
+    const jobContainer = (job as { container?: unknown } | null)
+      ?.container;
     const runsOn = (job as { "runs-on"?: unknown } | null)?.["runs-on"];
     const unsupportedRunner = runnerProblem(runsOn);
     const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
@@ -874,7 +876,12 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
       const stepDirectory = (step as { "working-directory"?: unknown } | null)?.["working-directory"];
       const effectiveDirectory = stepDirectory === undefined ? defaultDirectory : stepDirectory;
       const unsupportedWorkingDirectory = workingDirectoryProblem(effectiveDirectory);
-      const unsafeEnvironment = environmentProblem(doc, job, step);
+      const unsafeEnvironment = environmentProblem(
+        doc,
+        job,
+        jobContainer,
+        step,
+      );
       const simple =
         unsupportedRunner === undefined &&
         unsupportedShell === undefined &&

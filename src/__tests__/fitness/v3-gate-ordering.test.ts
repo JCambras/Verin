@@ -781,6 +781,7 @@ describe("v3 gate-ordering fence", () => {
       const workflow = (
         workflowEnv: string,
         jobEnv: string,
+        containerEnv: string,
         stepEnv: string,
       ) =>
         parseCiJobs(
@@ -798,6 +799,14 @@ describe("v3 gate-ordering fence", () => {
             ...(jobEnv === ""
               ? []
               : ["    env:", `      ${jobEnv}: injected`]),
+            ...(containerEnv === ""
+              ? []
+              : [
+                  "    container:",
+                  "      image: node:22",
+                  "      env:",
+                  `        ${containerEnv}: injected`,
+                ]),
             "    steps:",
             ...(stepEnv === ""
               ? ["      - run: pnpm audit:chain"]
@@ -826,13 +835,19 @@ describe("v3 gate-ordering fence", () => {
         "PNPM_CONFIG_SCRIPT_SHELL",
       ]) {
         for (const scopes of [
-          [variable, "", ""],
-          ["", variable, ""],
-          ["", "", variable],
+          [variable, "", "", ""],
+          ["", variable, "", ""],
+          ["", "", variable, ""],
+          ["", "", "", variable],
         ] as const) {
           expect(
             ciJobCommandStatus(
-              workflow(scopes[0], scopes[1], scopes[2]),
+              workflow(
+                scopes[0],
+                scopes[1],
+                scopes[2],
+                scopes[3],
+              ),
               "audit-chain-verify",
               "pnpm audit:chain",
             ),
@@ -845,7 +860,7 @@ describe("v3 gate-ordering fence", () => {
       }
       expect(
         ciJobCommandStatus(
-          workflow("TZ", "APP_ENV", "LOG_LEVEL"),
+          workflow("TZ", "APP_ENV", "LOG_LEVEL", "TRACE_ID"),
           "audit-chain-verify",
           "pnpm audit:chain",
         ),

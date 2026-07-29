@@ -9,6 +9,7 @@ import {
   ts,
   VariableDeclarationKind,
   type ArrowFunction,
+  type BinaryExpression,
   type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
@@ -216,6 +217,23 @@ function runtimeModuleReferences(sourceFile: SourceFile): RuntimeModuleReference
     SyntaxKind.CallExpression,
   )) {
     const expression = call.getExpression();
+    if (
+      isGlobalStaticCallable(
+        expression,
+        "process",
+        "getBuiltinModule",
+      )
+    ) {
+      const builtin = staticStringValue(call.getArguments()[0]);
+      if (
+        builtin === undefined ||
+        builtin === "module" ||
+        builtin === "node:module"
+      ) {
+        references.push({ display: "<process.getBuiltinModule>" });
+      }
+      continue;
+    }
     const isDynamicImport =
       expression.getKind() === SyntaxKind.ImportKeyword;
     const isRequire =
@@ -663,13 +681,26 @@ function isDirectNamespaceImportIdentifier(node: Node, moduleName: string): bool
   );
 }
 
+const BINARY_EXPRESSION_CACHE = new WeakMap<
+  SourceFile,
+  BinaryExpression[]
+>();
+
+function binaryExpressions(sourceFile: SourceFile): BinaryExpression[] {
+  const cached = BINARY_EXPRESSION_CACHE.get(sourceFile);
+  if (cached !== undefined) return cached;
+  const expressions = sourceFile.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  );
+  BINARY_EXPRESSION_CACHE.set(sourceFile, expressions);
+  return expressions;
+}
+
 function latestPrecedingAssignment(node: Node): Node | undefined {
   if (!Node.isIdentifier(node)) return undefined;
   const symbol = node.getSymbol();
   if (symbol === undefined) return undefined;
-  return node
-    .getSourceFile()
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+  return binaryExpressions(node.getSourceFile())
     .filter(
       (candidate) =>
         candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
@@ -685,9 +716,7 @@ function precedingAssignmentValues(node: Node): Node[] {
   if (!Node.isIdentifier(node)) return [];
   const symbol = node.getSymbol();
   if (symbol === undefined) return [];
-  return node
-    .getSourceFile()
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+  return binaryExpressions(node.getSourceFile())
     .filter(
       (candidate) =>
         candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
@@ -849,14 +878,65 @@ function memberAccess(
   }
   if (Node.isElementAccessExpression(normalized)) {
     const argument = normalized.getArgumentExpression();
-    if (Node.isStringLiteral(argument)) {
+    const name = staticStringValue(argument);
+    if (name !== undefined) {
       return {
         receiver: normalized.getExpression(),
-        name: argument.getLiteralText(),
+        name,
       };
     }
   }
   return undefined;
+}
+
+function staticStringValue(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): string | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (
+    Node.isStringLiteral(normalized) ||
+    Node.isNoSubstitutionTemplateLiteral(normalized)
+  ) {
+    return normalized.getLiteralText();
+  }
+  if (
+    Node.isBinaryExpression(normalized) &&
+    normalized.getOperatorToken().getKind() === SyntaxKind.PlusToken
+  ) {
+    const left = staticStringValue(normalized.getLeft(), new Set(seen));
+    const right = staticStringValue(
+      normalized.getRight(),
+      new Set(seen),
+    );
+    return left === undefined || right === undefined
+      ? undefined
+      : `${left}${right}`;
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingAssignmentValues(normalized),
+  ];
+  const values = sources.map((source) =>
+    staticStringValue(source, new Set(seen)),
+  );
+  return values.length > 0 &&
+    values.every(
+      (value) => value !== undefined && value === values[0],
+    )
+    ? values[0]
+    : undefined;
 }
 
 function indirectCallableTarget(node: Node): Node | undefined {
@@ -876,10 +956,7 @@ function staticPropertyName(node: Node): string | undefined {
     return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
   }
   if (Node.isComputedPropertyName(node)) {
-    const expression = node.getExpression();
-    return Node.isStringLiteral(expression)
-      ? expression.getLiteralText()
-      : undefined;
+    return staticStringValue(node.getExpression());
   }
   return undefined;
 }
@@ -1199,8 +1276,7 @@ function objectPropertyMutationIndex(
 ): ObjectPropertyMutationIndex {
   const cached = OBJECT_PROPERTY_MUTATION_CACHE.get(sourceFile);
   if (cached !== undefined) return cached;
-  const assignments = sourceFile
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+  const assignments = binaryExpressions(sourceFile)
     .flatMap((candidate) => {
       if (
         candidate.getOperatorToken().getKind() !== SyntaxKind.EqualsToken
@@ -1642,6 +1718,27 @@ function hasRegisteredPlaywrightHook(
           member,
         ),
       ),
+    );
+}
+
+function hasUnresolvedComputedPlaywrightMember(
+  sourceFile: SourceFile,
+): boolean {
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+    .some(
+      (access) =>
+        staticStringValue(access.getArgumentExpression()) ===
+          undefined &&
+        (couldBeNamedImportIdentifier(
+          access.getExpression(),
+          "@playwright/test",
+          "test",
+        ) ||
+          couldBeNamespaceImportIdentifier(
+            access.getExpression(),
+            "@playwright/test",
+          )),
     );
 }
 
@@ -2135,6 +2232,24 @@ function awaitedCall(
   return Node.isCallExpression(call) && predicate(call);
 }
 
+function isSanctionedLoginCall(
+  call: CallExpression,
+  pageName: string,
+): boolean {
+  const [page, principal] = call.getArguments();
+  return (
+    call.getArguments().length === 2 &&
+    isStableNamedImportCall(call, "./helpers", "login") &&
+    page?.getText() === pageName &&
+    principal !== undefined &&
+    isStableNamedImportIdentifier(
+      principal,
+      "./helpers",
+      "PRINCIPAL",
+    )
+  );
+}
+
 function routeLoopIsSanctioned(
   loop: Node,
   callback: Callback,
@@ -2212,8 +2327,7 @@ function routeLoopIsSanctioned(
   return callbackBody.getStatements().slice(0, loopIndex).some(
     (statement) =>
       awaitedCall(statement, (call) =>
-        isNamedImportCall(call, "./helpers", "login") &&
-        call.getArguments()[0]?.getText() === pageName,
+        isSanctionedLoginCall(call, pageName),
       ),
   );
 }
@@ -2239,25 +2353,9 @@ function routeScanCallbackIsSanctioned(callback: Callback): boolean {
           ),
       );
     }
-    return awaitedCall(statement, (call) => {
-      if (
-        !isStableNamedImportCall(call, "./helpers", "login") ||
-        call.getArguments()[0]?.getText() !== pageName
-      ) {
-        return false;
-      }
-      const principal = call.getArguments()[1];
-      return (
-        call.getArguments().length === 1 ||
-        (call.getArguments().length === 2 &&
-          principal !== undefined &&
-          isStableNamedImportIdentifier(
-            principal,
-            "./helpers",
-            "PRINCIPAL",
-          ))
-      );
-    });
+    return awaitedCall(statement, (call) =>
+      isSanctionedLoginCall(call, pageName),
+    );
   });
 }
 
@@ -2351,8 +2449,7 @@ function identifierIsMutatedBefore(node: Node): boolean {
   if (symbol === undefined) return true;
   const sourceFile = node.getSourceFile();
   const before = (candidate: Node) => candidate.getStart() < node.getStart();
-  const assigned = sourceFile
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+  const assigned = binaryExpressions(sourceFile)
     .some((candidate) => {
       if (
         !before(candidate) ||
@@ -2741,12 +2838,20 @@ function loginHelperIsSanctioned(sourceFile: SourceFile): boolean {
   if (helpers.length !== 1) return false;
   const helper = helpers[0]!;
   const body = helper.getBody();
+  const parameters = helper.getParameters();
   if (
     !Node.isBlock(body) ||
-    helper
-      .getParameters()
+    parameters.length !== 2 ||
+    parameters
       .map((parameter) => parameter.getName())
-      .join(",") !== "page,creds"
+      .join(",") !== "page,creds" ||
+    parameters.some(
+      (parameter) =>
+        !Node.isIdentifier(parameter.getNameNode()) ||
+        parameter.getInitializer() !== undefined ||
+        parameter.isRestParameter() ||
+        parameter.hasQuestionToken(),
+    )
   ) {
     return false;
   }
@@ -2821,6 +2926,11 @@ function importedAxeGraphProblems(
     ) {
       problems.push(
         `${path}:1 reachable local Axe evidence module must not import the Axe runtime outside ${AXE_HELPER_PATH}`,
+      );
+    }
+    if (hasUnresolvedComputedPlaywrightMember(sourceFile)) {
+      problems.push(
+        `${path}:1 reachable local Axe evidence module must not use unresolved computed Playwright members`,
       );
     }
     if (hasRegisteredPlaywrightHook(sourceFile)) {
@@ -2977,14 +3087,14 @@ test("axe", async ({ page }) => {
   "e2e/walkthrough.spec.ts": `import { expect, test } from "@playwright/test";
 import { assertNoAxeViolations } from "./axe";
 import { AUTHENTICATED_AXE_ROUTES, LOGIN_AXE_ROUTES } from "./axe-routes";
-import { login } from "./helpers";
+import { login, PRINCIPAL } from "./helpers";
 test("axe", async ({ page }) => {
   for (const route of LOGIN_AXE_ROUTES) {
     await page.goto(route.path);
     await expect(page.locator(route.readySelector)).toBeVisible();
     await assertNoAxeViolations(page, route.path);
   }
-  await login(page);
+  await login(page, PRINCIPAL);
   for (const route of AUTHENTICATED_AXE_ROUTES) {
     await page.goto(route.path);
     await expect(page.locator(route.readySelector)).toBeVisible();
@@ -2994,9 +3104,9 @@ test("axe", async ({ page }) => {
   "e2e/demo-journey.spec.ts": `import { expect, test } from "@playwright/test";
 import { assertNoAxeViolations } from "./axe";
 import { DEMO_AXE_ROUTES } from "./axe-routes";
-import { login } from "./helpers";
+import { login, PRINCIPAL } from "./helpers";
 test("axe", async ({ page }) => {
-  await login(page);
+  await login(page, PRINCIPAL);
   for (const route of DEMO_AXE_ROUTES) {
     await page.goto(route.path);
     await expect(page.locator(route.readySelector)).toBeVisible();
@@ -3216,6 +3326,13 @@ load("./axe-poison");`,
         `let load: typeof require;
 load = require;
 load("./axe-poison");`,
+        `const nodeModule = process.getBuiltinModule("module");
+const load = nodeModule.createRequire(import.meta.url);
+load("./axe-poison");`,
+        `const getBuiltinModule = process.getBuiltinModule;
+const nodeModule = getBuiltinModule("module");
+const load = nodeModule.createRequire(import.meta.url);
+load("./axe-poison");`,
       ];
       for (const loader of loaders) {
         const fixture = completeSources();
@@ -3248,6 +3365,23 @@ module.require("./application-operation");
           ),
         ),
       ).toEqual([]);
+
+      const localProcessProject = new Project({
+        useInMemoryFileSystem: true,
+        skipAddingFilesFromTsConfig: true,
+      });
+      expect(
+        runtimeModuleReferences(
+          localProcessProject.createSourceFile(
+            "/e2e/local-process.ts",
+            `const process = {
+  getBuiltinModule: (_name: string) => ({ createRequire: () => () => undefined }),
+};
+const getBuiltinModule = process.getBuiltinModule;
+getBuiltinModule("module").createRequire()("./application-operation");`,
+          ),
+        ),
+      ).toEqual([]);
     });
 
     it("rejects process-dependent or empty route collections", () => {
@@ -3276,6 +3410,7 @@ export const DEMO_AXE_ROUTES = routes;`;
       const wrappers = [
         `const hooks = { install: test.beforeEach };
 hooks.install(() => undefined);`,
+        `test["before" + "Each"](() => undefined);`,
         `const base = { install: test.beforeEach };
 const hooks = { ...base };
 const alias = hooks;
@@ -3361,6 +3496,41 @@ ${VALID_AXE_ROUTES}`;
           "e2e/axe-routes.ts:1 reachable local Axe evidence module must not register Playwright hooks",
         );
       }
+    });
+
+    it("fails closed on unresolved computed Playwright members", () => {
+      const fixture = completeSources();
+      fixture["e2e/axe-routes.ts"] =
+        `import { test } from "@playwright/test";
+const member = Math.random() > 0.5 ? "beforeEach" : "noop";
+test[member](() => undefined);
+${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(fixture)).toContain(
+        "e2e/axe-routes.ts:1 reachable local Axe evidence module must not use unresolved computed Playwright members",
+      );
+      const namespaceFixture = completeSources();
+      namespaceFixture["e2e/axe-routes.ts"] =
+        `import * as playwright from "@playwright/test";
+const member = Math.random() > 0.5 ? "test" : "expect";
+playwright[member];
+${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(namespaceFixture)).toContain(
+        "e2e/axe-routes.ts:1 reachable local Axe evidence module must not use unresolved computed Playwright members",
+      );
+      const project = new Project({
+        useInMemoryFileSystem: true,
+        skipAddingFilesFromTsConfig: true,
+      });
+      expect(
+        hasUnresolvedComputedPlaywrightMember(
+          project.createSourceFile(
+            "/e2e/application.ts",
+            `const test = { beforeEach: () => undefined };
+const member = Math.random() > 0.5 ? "beforeEach" : "noop";
+void test[member];`,
+          ),
+        ),
+      ).toBe(false);
     });
 
     it("rejects an unclassified or unscanned Next page route", () => {
@@ -3557,6 +3727,7 @@ test("axe", async ({ page }) => {
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
         wrap(`test.describe("group", () => { const test = (...args: unknown[]) => args; test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
         wrap(`test["skip"](() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test["sk" + "ip"](() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`const skip = test.${"skip"}; skip(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`const { fixme: disable } = test; disable(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`const disable = test["skip"]; disable(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
@@ -3976,6 +4147,32 @@ test("axe"`,
       );
       expect(axeCoverageProblems(sources)).toContain(
         "e2e/helpers.ts:1 required Axe login setup must use the uninstrumented canonical browser flow",
+      );
+
+      const defaulted = completeSources();
+      defaulted[E2E_HELPERS_PATH] = VALID_LOGIN_HELPER
+        .replace(
+          'import { expect, type Page } from "@playwright/test";',
+          `import { expect, test, type Page } from "@playwright/test";
+const PRINCIPAL = { email: "principal@verin.test", password: "secret" };`,
+        )
+        .replace(
+          "creds: { email: string; password: string }",
+          "creds: { email: string; password: string } = (test.skip(), PRINCIPAL)",
+        );
+      expect(axeCoverageProblems(defaulted)).toContain(
+        "e2e/helpers.ts:1 required Axe login setup must use the uninstrumented canonical browser flow",
+      );
+
+      const implicitCredentials = completeSources({
+        "e2e/walkthrough.spec.ts":
+          VALID_SPECS["e2e/walkthrough.spec.ts"].replace(
+            "await login(page, PRINCIPAL);",
+            "await login(page);",
+          ),
+      });
+      expect(axeCoverageProblems(implicitCredentials)).toContain(
+        "e2e/walkthrough.spec.ts:1 must scan every required authenticated route after its loaded-state assertion",
       );
     });
 
