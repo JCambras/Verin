@@ -436,28 +436,35 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       isNodeModuleSpecifier(loaderSpecifier(expression))
     );
   };
-  const isAmbientReflectReference = (node: Node | undefined): boolean => {
+  const isAmbientBuiltinReference = (
+    node: Node | undefined,
+    builtin: "Object" | "Reflect",
+  ): boolean => {
     const expression = expressionProvenance(node);
     if (
       Node.isIdentifier(expression) &&
-      expression.getText() === "Reflect" &&
+      expression.getText() === builtin &&
       isAmbientGlobalReference(expression)
     ) {
       return true;
     }
     if (
       Node.isPropertyAccessExpression(expression) &&
-      expression.getName() === "Reflect"
+      expression.getName() === builtin
     ) {
       return isAmbientGlobalReference(expression.getExpression());
     }
     if (Node.isElementAccessExpression(expression)) {
-      return literalPropertyKey(expression.getArgumentExpression()) === "Reflect" &&
+      return literalPropertyKey(expression.getArgumentExpression()) === builtin &&
         isAmbientGlobalReference(expression.getExpression());
     }
     return false;
   };
-  const isReflectGet = (node: Node | undefined): boolean => {
+  const isAmbientBuiltinMethod = (
+    node: Node | undefined,
+    builtin: "Object" | "Reflect",
+    method: string,
+  ): boolean => {
     const raw = unwrapExpression(node);
     if (Node.isIdentifier(raw)) {
       const symbol = raw.getSymbol();
@@ -503,8 +510,8 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           (Node.isPropertyAssignment(property) ||
             Node.isShorthandPropertyAssignment(property)) &&
           (propertyName(property.getNameNode(), property.getName()) === null ||
-            propertyName(property.getNameNode(), property.getName()) === "get") &&
-          isAmbientReflectReference(assignment.getRight())
+            propertyName(property.getNameNode(), property.getName()) === method) &&
+          isAmbientBuiltinReference(assignment.getRight(), builtin)
         );
       }
       if (!latestSimpleAssignment) {
@@ -524,8 +531,8 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           );
           if (
             receiver &&
-            (name === null || name === "get") &&
-            isAmbientReflectReference(receiver)
+            (name === null || name === method) &&
+            isAmbientBuiltinReference(receiver, builtin)
           ) {
             return true;
           }
@@ -540,21 +547,28 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       expression = expressionProvenance(expression.getRight());
     }
     if (Node.isPropertyAccessExpression(expression)) {
-      return expression.getName() === "get" &&
-        isAmbientReflectReference(expression.getExpression());
+      return expression.getName() === method &&
+        isAmbientBuiltinReference(expression.getExpression(), builtin);
     }
     if (Node.isElementAccessExpression(expression)) {
       const name = literalPropertyKey(expression.getArgumentExpression());
-      return (name === null || name === "get") &&
-        isAmbientReflectReference(expression.getExpression());
+      return (name === null || name === method) &&
+        isAmbientBuiltinReference(expression.getExpression(), builtin);
     }
     return false;
   };
-  const reflectedGetArguments = (
+  const isReflectGet = (node: Node | undefined): boolean =>
+    isAmbientBuiltinMethod(node, "Reflect", "get");
+  const isPropertyDescriptorRead = (node: Node | undefined): boolean =>
+    isAmbientBuiltinMethod(node, "Object", "getOwnPropertyDescriptor") ||
+    isAmbientBuiltinMethod(node, "Object", "getOwnPropertyDescriptors") ||
+    isAmbientBuiltinMethod(node, "Reflect", "getOwnPropertyDescriptor");
+  const accessorArguments = (
     call: CallExpression,
+    isAccessor: (node: Node | undefined) => boolean,
   ): readonly [Node | undefined, Node | undefined, boolean] | null => {
     const direct = call.getArguments();
-    if (isReflectGet(call.getExpression())) return [direct[0], direct[1], false];
+    if (isAccessor(call.getExpression())) return [direct[0], direct[1], false];
     const callee = expressionProvenance(call.getExpression());
     if (
       Node.isPropertyAccessExpression(callee) ||
@@ -564,10 +578,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         ? callee.getName()
         : literalPropertyKey(callee.getArgumentExpression());
       const receiver = callee.getExpression();
-      if (member === "call" && isReflectGet(receiver)) {
+      if (member === "call" && isAccessor(receiver)) {
         return [direct[1], direct[2], false];
       }
-      if (member === "apply" && isReflectGet(receiver)) {
+      if (member === "apply" && isAccessor(receiver)) {
         const applied = expressionProvenance(direct[1]);
         if (!Node.isArrayLiteralExpression(applied)) {
           return [undefined, undefined, true];
@@ -584,7 +598,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const member = Node.isPropertyAccessExpression(binder)
       ? binder.getName()
       : literalPropertyKey(binder.getArgumentExpression());
-    if (member !== "bind" || !isReflectGet(binder.getExpression())) return null;
+    if (member !== "bind" || !isAccessor(binder.getExpression())) return null;
     const effective = [...callee.getArguments().slice(1), ...direct];
     return [effective[0], effective[1], false];
   };
@@ -624,20 +638,22 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const reflected = reflectedGetArguments(call);
-    if (!reflected) continue;
-    const [receiver, key, unresolved] = reflected;
-    const memberName = literalPropertyKey(key);
-    if (
-      unresolved ||
-      (isCreateRequireNamespace(receiver) &&
-        (memberName === null || memberName === "createRequire"))
-    ) {
-      refs.push({
-        specifier: null,
-        line: call.getStartLineNumber(),
-        kind: "create-require",
-      });
+    for (const accessor of [isReflectGet, isPropertyDescriptorRead]) {
+      const propertyRead = accessorArguments(call, accessor);
+      if (!propertyRead) continue;
+      const [receiver, key, unresolved] = propertyRead;
+      const memberName = literalPropertyKey(key);
+      if (
+        unresolved ||
+        (isCreateRequireNamespace(receiver) &&
+          (memberName === null || memberName === "createRequire"))
+      ) {
+        refs.push({
+          specifier: null,
+          line: call.getStartLineNumber(),
+          kind: "create-require",
+        });
+      }
     }
   }
   for (const exp of sf.getExportDeclarations()) {

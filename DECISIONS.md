@@ -2407,3 +2407,63 @@ write before the save).
 incomplete sealed inventories, nested unchecked mints, mutable authority bindings,
 callback authority carriers, direct-only governed classification, and post-step
 retry ownership checks.
+
+## D-086 - Failure boundaries disclose no foreign state and semantic guards read once
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-079, D-083, D-085,
+ADR-0034, v3 §15.1/§15.2/§15.4, charter #1/#4/#7/#13/#14
+
+Four review findings were legitimate symptoms of shared failure-boundary and
+semantic-analysis gaps.
+
+`retryFlow` now returns an empty payload when execution ownership disagrees with
+the sealed tenant. The ownership refusal still occurs before `drive`, and the real
+PGlite regression proves sentinel foreign PII cannot cross the result while step
+and execution-store write counters remain zero.
+
+The shared module-reference walker treats `Reflect.get`,
+`Object.getOwnPropertyDescriptor`, and `Object.getOwnPropertyDescriptors` as
+property-read authorities, including the matching Reflect descriptor API. Direct,
+destructured, assigned, bound, call-wrapped, apply-wrapped, and statically unresolved
+keys are resolved through one accessor path. A descriptor cannot obtain
+`node:module.createRequire` without producing the same fail-closed reference
+consumed by the layer, LLM PII, sealed-factory, and secret-containment fences. A
+statically different property remains clean.
+
+Sealed annotation enforcement now inventories every structural sealed position
+with its exact owning factory. A factory exemption applies only to positions that
+factory owns, so `Tokenized` ownership inside `tokenize.ts` cannot hide a sibling
+`TenantContext` forged from unchecked input. Incomplete inventories still fail
+closed for every foreign sealed type they may contain.
+
+Error-code classification now reads an untrusted `code` property once behind a
+guarded access. The captured value alone is checked against the shared closed
+`ErrorCode` set and the SQLSTATE shape. Stateful getters cannot swap a safe code
+for PII between checks, and a throwing getter degrades to `unexpected-error`
+without replacing the original failure.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,000 | 4,000 | 0 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,383 | 3,400 | 17 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. Contracts gained one shared closed-code predicate and reused
+it from both error validation paths. Domain changed one returned value without
+growing. Infrastructure retained readable guarded access with 17 lines of bounded
+headroom. No useful code or documentation was removed or compressed to manufacture
+room.
+
+**Alternatives rejected:** return the foreign state on an authorization error
+(ownership refusal would still disclose PII); special-case only the written
+descriptor expression (aliases and wrappers would remain invisible); exempt a
+whole factory module when it owns any sealed type (a local seal would continue to
+hide foreign mints); and validate a getter separately for app and driver errors
+(each validation would invoke attacker-controlled code again).
+
+**Revert path:** revert this changeset to restore foreign retry payloads,
+descriptor-based loader gaps, first-seal factory exemptions, and repeated
+untrusted error-code reads.

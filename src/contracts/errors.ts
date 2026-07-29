@@ -71,15 +71,17 @@ export function validationError(message: string, context?: AppError["context"]):
   return appError("VALIDATION", message, context);
 }
 
+export function isErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === "string" && Object.hasOwn(ERROR_MAP, value);
+}
+
 export function isAppError(value: unknown): value is AppError {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    "message" in value &&
-    typeof (value as { code: unknown }).code === "string" &&
-    (value as { code: string }).code in ERROR_MAP
-  );
+  if (typeof value !== "object" || value === null) return false;
+  try {
+    return "message" in value && isErrorCode(Reflect.get(value, "code"));
+  } catch {
+    return false;
+  }
 }
 
 export function statusFor(code: ErrorCode): number {

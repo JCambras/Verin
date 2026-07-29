@@ -144,7 +144,7 @@ export async function retryFlow<D>(
   tenant: TenantContext,
 ): Promise<FlowRunResult> {
   assertTenantContext(tenant);
-  if (state.orgId !== tenant.orgId) return { executionId: state.id, status: "failed", error: { code: "AUTH_FAILED", message: "Execution does not belong to this tenant" }, data: state.data };
+  if (state.orgId !== tenant.orgId) return { executionId: state.id, status: "failed", error: { code: "AUTH_FAILED", message: "Execution does not belong to this tenant" }, data: {} };
   return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
 export async function resumeFlow<D>(

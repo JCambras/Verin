@@ -67,6 +67,36 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
     expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
+    let appCodeReads = 0;
+    const statefulAppError = {
+      get code() {
+        appCodeReads += 1;
+        return appCodeReads === 1 ? "INTERNAL" : FIXTURES.email;
+      },
+      message: "safe",
+    };
+    expect(safeReason(statefulAppError)).toBe("app-error:INTERNAL");
+    expect(appCodeReads).toBe(1);
+    let driverCodeReads = 0;
+    const statefulDriverError = {
+      get code() {
+        driverCodeReads += 1;
+        return driverCodeReads === 1 ? "23505" : FIXTURES.email;
+      },
+      message: "safe",
+    };
+    expect(safeReason(statefulDriverError)).toBe("driver-error:23505");
+    expect(driverCodeReads).toBe(1);
+    let throwingCodeReads = 0;
+    const throwingCode = {
+      get code(): string {
+        throwingCodeReads += 1;
+        throw new Error(FIXTURES.email);
+      },
+      message: "safe",
+    };
+    expect(safeReason(throwingCode)).toBe("unexpected-error");
+    expect(throwingCodeReads).toBe(1);
     // The SQLSTATE classes an operator most needs during a migration. Every one of
     // these used to collapse to "unexpected-error", so the diagnostic that named the
     // failing migration could not also name what actually went wrong.

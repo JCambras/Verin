@@ -4477,3 +4477,77 @@ pnpm test:e2e                                                # 17 tests passed
 ```
 
 **Date:** 2026-07-29 (twenty-fourth review-fix round on v3 build-sequence prompt 6).
+
+### PF-135 cross-tenant retry refusals return no foreign state
+
+The pre-work ownership check stopped execution and writes but returned the
+foreign execution's PII-bearing data in its `AUTH_FAILED` result.
+
+**Adversarial proof:** the real PGlite regression persisted a failed organization-A
+execution containing a sentinel foreign client name, then retried it with
+organization B's sealed tenant. The test-first assertion failed at
+`tenant-isolation.test.ts:229` because the sentinel was returned. The refusal now
+returns an empty payload, and independent step and execution-store save counters
+both remain zero.
+
+### PF-136 property descriptors cannot hide a module loader
+
+The shared module-reference walker recognized direct and reflected
+`node:module.createRequire` reads but not descriptor-based property reads.
+
+**Adversarial proof:** a test-first
+`Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value` loader
+produced no layer violation and no unresolved loader finding. The four consuming
+companions failed at `dependency-rule.test.ts:223`,
+`llm-pii-boundary.test.ts:1130`, `no-secret-fallback.test.ts:766`, and
+`tokenized-factory-only.test.ts:2283`. The shared accessor analysis now catches
+direct, destructured, bound, call, apply, Object and Reflect descriptor,
+plural-descriptor, and unresolved-key forms. A statically different descriptor
+property remains clean.
+
+### PF-137 factory ownership is checked at every sealed position
+
+Sealed annotation analysis selected the first reachable sealed type and exempted
+the complete target when the current module owned that one factory. A locally
+owned `Tokenized` position could therefore hide a forged sibling
+`TenantContext`.
+
+**Adversarial proof:** inside the tokenization factory, a test-first composite
+annotation filled both `Tokenized<string>` and `TenantContext` from `JSON.parse`.
+The expected foreign-seal finding was absent and failed at
+`tokenized-factory-only.test.ts:1528`. The position inventory now carries exact
+factory ownership, exempts only `Tokenized`, and reports the unchecked
+`TenantContext`.
+
+### PF-138 untrusted error codes are captured once
+
+`safeReason` called `isAppError` and then re-read `error.code` for interpolation
+or SQLSTATE classification. A stateful getter could change the emitted value, and
+a throwing getter could replace the original failure.
+
+**Adversarial proof:** a test-first getter returned `INTERNAL` once and a sentinel
+PII value afterward. It failed at `pii-observability.test.ts:78` because repeated
+reads changed the classification. The regression now proves app and driver codes
+are each read exactly once, while a throwing getter returns
+`unexpected-error` after one guarded read.
+
+### PF-135 - PF-138 verification
+
+```
+pnpm exec vitest run src/__tests__/integration/tenant-isolation.test.ts \
+  src/__tests__/integration/pii-observability.test.ts \
+  src/__tests__/fitness/dependency-rule.test.ts \
+  src/__tests__/fitness/llm-pii-boundary.test.ts \
+  src/__tests__/fitness/no-secret-fallback.test.ts \
+  src/__tests__/fitness/tokenized-factory-only.test.ts        # 257 tests passed
+pnpm test -- --maxWorkers=1 --fileParallelism=false           # 56 files, 1,057 tests passed
+pnpm typecheck                                                # clean
+pnpm lint                                                     # clean
+pnpm knip                                                     # clean
+pnpm v3:invariants                                            # 6 active-pass, 0 active-fail
+pnpm golden:validate                                          # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                              # contracts 4,000; domain 1,250; infrastructure 3,383
+APP_ENV=development <test-only placeholder env> pnpm build    # compiled and generated all routes
+pnpm test:e2e                                                 # 17 tests passed
+```

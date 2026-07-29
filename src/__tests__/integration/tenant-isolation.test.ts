@@ -19,7 +19,12 @@ import {
   authorizeGovernedAction,
 } from "@contracts/authz";
 import { makeExecutionStore } from "@infra/store/execution-store";
-import { resumeFlow, retryFlow, type FlowDefinition } from "@domain/workflow/engine";
+import {
+  resumeFlow,
+  retryFlow,
+  type ExecutionStore,
+  type FlowDefinition,
+} from "@domain/workflow/engine";
 import { auditedWrite } from "@infra/audit/audited-write";
 import {
   verifyAndListOrgChain,
@@ -189,10 +194,20 @@ describe("tenant isolation (integration)", () => {
       status: "failed" as const,
       resumeToken: null,
       cursor: 0,
-      data: {},
+      data: { foreignName: "Sentinel Foreign Client" },
     };
     await store.create(state, tenantA);
     let stepRuns = 0;
+    let saveCalls = 0;
+    const trackingStore: ExecutionStore = {
+      create: (next, tenant) => store.create(next, tenant),
+      save: (next, tenant) => {
+        saveCalls += 1;
+        return store.save(next, tenant);
+      },
+      loadById: (id, grant) => store.loadById(id, grant),
+      loadByToken: (token) => store.loadByToken(token),
+    };
     const flow: FlowDefinition<Record<string, never>> = {
       id: "retry-write",
       name: "retry-write",
@@ -208,10 +223,12 @@ describe("tenant isolation (integration)", () => {
         },
       }],
     };
-    const result = await retryFlow(flow, store, {}, state, tenantB);
+    const result = await retryFlow(flow, trackingStore, {}, state, tenantB);
     expect(result.status).toBe("failed");
     expect(result.error?.code).toBe("AUTH_FAILED");
+    expect(result.data).toEqual({});
     expect(stepRuns).toBe(0);
+    expect(saveCalls).toBe(0);
     const rows = await listHouseholds(db, grantB);
     expect(rows.map((row) => row.name)).not.toContain("Crossed Retry Household");
   });

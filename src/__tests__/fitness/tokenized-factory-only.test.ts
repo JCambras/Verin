@@ -476,6 +476,7 @@ interface SealedPosition {
   readonly steps: readonly PositionStep[];
   /** The sealed type living there, WITH its type arguments. */
   readonly sealed: string;
+  readonly owner: (typeof SEALED)[number];
 }
 
 interface SealedPositionInventory {
@@ -551,7 +552,9 @@ function sealedPositionsOf(
     if (!sealed && !sealedType(current)) return true;
     if (steps.length > POSITION_DEPTH) return false;
     if (sealed) {
-      positions.push({ steps, sealed });
+      const owner = sealedValueType(current);
+      if (!owner) return false;
+      positions.push({ steps, sealed, owner });
       return true;
     }
     const key = current.compilerType as unknown as object;
@@ -727,17 +730,32 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
   const out: string[] = [];
   const check = (annotation: Type | undefined, source: Node | undefined, line: number): void => {
     if (!annotation || !source) return;
-    const sealed = sealedType(annotation);
-    if (!sealed || normalized === sealed.factory) return;
-    if (
-      !uncheckedAtSealedPosition(
-        awaited(source.getType()),
-        awaited(annotation),
-      )
-    ) return;
-    out.push(
-      `${normalized}:${line} - sealed type '${sealed.typeName}' annotated onto an unchecked value produced outside its factory`,
-    );
+    const expected = awaited(annotation);
+    const value = awaited(source.getType());
+    const inventory = sealedPositionsOf(expected);
+    if (!inventory.complete) {
+      const unresolved = SEALED.find((candidate) =>
+        normalized !== candidate.factory &&
+        sealedType(expected, true, [candidate]) !== null
+      );
+      if (unresolved) {
+        out.push(
+          `${normalized}:${line} - sealed type '${unresolved.typeName}' annotated onto an unchecked value produced outside its factory`,
+        );
+      }
+      return;
+    }
+    for (const { steps, owner } of inventory.positions) {
+      if (
+        normalized === owner.factory ||
+        (!isUncheckedSource(value) && !uncheckedAtPosition(value, steps))
+      ) {
+        continue;
+      }
+      out.push(
+        `${normalized}:${line} - sealed type '${owner.typeName}' annotated onto an unchecked value produced outside its factory`,
+      );
+    }
   };
 
   for (const kind of [
@@ -1510,6 +1528,27 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toEqual([]);
     });
 
+    it("a factory exemption applies only to its own sealed positions", () => {
+      const project = sealedFixture(
+        "/src/infrastructure/pii/tokenize.ts",
+        `
+          import type { Tokenized } from "../../contracts/tokenized";
+          import type { TenantContext } from "../../contracts/tenant";
+          const mixed: { token: Tokenized<string>; tenant: TenantContext } = JSON.parse("{}");
+          void mixed;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/infrastructure/pii/tokenize.ts")
+      );
+      expect(hits.some((hit) =>
+        hit.includes("TenantContext") && hit.includes("unchecked value")
+      ), hits.join("\n")).toBe(true);
+      expect(hits.some((hit) =>
+        hit.includes("Tokenized") && hit.includes("unchecked value")
+      ), hits.join("\n")).toBe(false);
+    });
+
     it("catches a cast through an imported type alias", () => {
       const project = sealedFixture(
         "/src/domain/evil.ts",
@@ -2245,6 +2284,20 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       );
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
         hit.startsWith("src/app/evil.ts:4") && hit.includes("unverifiable module load")
+      )).toBe(true);
+    });
+
+    it("catches createRequire through a property descriptor", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as nodeModule from "node:module";
+          const created = Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);
+          created("../contracts/tenant");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:3") && hit.includes("unverifiable module load")
       )).toBe(true);
     });
 

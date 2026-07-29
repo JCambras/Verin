@@ -1,4 +1,4 @@
-import { isAppError } from "@contracts/errors";
+import { isErrorCode } from "@contracts/errors";
 import { SQLSTATE_SOURCE } from "@domain/observability/safe-values";
 
 /**
@@ -16,15 +16,16 @@ import { SQLSTATE_SOURCE } from "@domain/observability/safe-values";
 const SQLSTATE_RE = new RegExp(`^${SQLSTATE_SOURCE}$`);
 
 export function safeReason(error: unknown): string {
-  if (isAppError(error)) return `app-error:${error.code}`;
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof (error as { code: unknown }).code === "string" &&
-    SQLSTATE_RE.test((error as { code: string }).code)
-  ) {
-    return `driver-error:${(error as { code: string }).code}`;
+  if (typeof error !== "object" || error === null) return "unexpected-error";
+  let code: unknown;
+  let appErrorShape: boolean;
+  try {
+    code = Reflect.get(error, "code");
+    appErrorShape = "message" in error;
+  } catch {
+    return "unexpected-error";
   }
+  if (appErrorShape && isErrorCode(code)) return `app-error:${code}`;
+  if (typeof code === "string" && SQLSTATE_RE.test(code)) return `driver-error:${code}`;
   return "unexpected-error";
 }

@@ -215,6 +215,14 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst load = Reflect.get.call(Reflect, nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Reflect.get.apply(Reflect, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst args = Math.random() ? [nodeModule, "createRequire"] : [];\nconst load = Reflect.get.apply(Reflect, args)(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst { getOwnPropertyDescriptor: read } = Object;\nconst load = read(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst read = Object.getOwnPropertyDescriptor.bind(Object);\nconst load = read(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor.call(Object, nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor.apply(Object, [nodeModule, "createRequire"])!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptors(nodeModule).createRequire.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst key = Math.random() ? "createRequire" : "other";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, key)!.value(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -230,7 +238,7 @@ describe("dependency-rule fence", () => {
           import * as nodeModule from "node:module";
           let read: Function;
           ({ get: read } = Reflect);
-          read = Object.getOwnPropertyDescriptor;
+          read = Object.getPrototypeOf;
           read(nodeModule, "createRequire");
         `,
       });
@@ -238,6 +246,17 @@ describe("dependency-rule fence", () => {
       expect(moduleReferences(source).filter((reference) =>
         reference.kind === "create-require"
       )).toEqual([]);
+    });
+
+    it("does not classify a statically different node:module property as createRequire", () => {
+      const project = inMemoryProject({
+        "src/domain/fine.ts": `
+          import * as nodeModule from "node:module";
+          Object.getOwnPropertyDescriptor(nodeModule, "builtinModules");
+        `,
+      });
+      expect(moduleReferences(project.getSourceFileOrThrow("src/domain/fine.ts"))
+        .filter((reference) => reference.kind === "create-require")).toEqual([]);
     });
 
     it("type-asserted node:module loaders cannot evade createRequire detection", () => {
