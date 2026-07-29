@@ -3675,3 +3675,28 @@ headroom and the unchanged 500-line file cap.
 binding cannot be the authority that upgrades immutable source provenance.
 **Revert path:** none while tenant SQL isolation and bounded replay-source provenance
 remain active controls.
+
+### D-121 · 2026-07-29 · reversible · Outer joins, tenant truth tests, and immutable mutations fail closed
+
+Tenant SQL conditions now preserve join semantics. A `LEFT JOIN` predicate can
+scope only its nullable right side, a `RIGHT JOIN` predicate can scope only its
+non-preserved left side, and a `FULL JOIN` predicate scopes neither preserved
+side. Equality edges are directional across outer joins, while inner joins and
+`WHERE` clauses retain bidirectional scope. Tenant comparisons must occupy a
+complete positive Boolean atom, so `IS NOT TRUE`, `IS FALSE`, and equivalent
+wrappers cannot satisfy the fence.
+
+The immutable ownership fence classifies row creation separately from `UPDATE`,
+`DELETE`, `TRUNCATE`, trigger disable or drop, and global trigger suppression.
+Only `INSERT` retains the exact table owner allowlist. Every migration SQL entry
+is resolved and inspected independently of the reviewed `runMigrations` loop.
+The three shipped migrations that intentionally create immutable rows or control
+append-only triggers are authorized by version, name, and exact SHA-256 digest;
+any content change or new destructive migration fails pending review.
+
+**Why:** an outer-join predicate does not filter its preserved side, a tenant
+comparison is not a scope guarantee when its truth is inverted, and database
+triggers are not structural protection if application code can disable them and
+mutate immutable rows.
+**Revert path:** none while tenant isolation and append-only ledger ownership
+remain active controls.

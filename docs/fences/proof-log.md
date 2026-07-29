@@ -6417,3 +6417,59 @@ The focused tenant, ledger projection, decision-ledger, schema, ownership, regis
 line-budget, typecheck, and lint checks pass.
 
 **Date:** 2026-07-29 (review corrections U1-U2, D-120).
+
+## Outer-join tenant scope, positive predicates, and immutable mutations (D-121)
+
+**Invariants:** an outer-join `ON` clause cannot scope a preserved tenant alias;
+only a complete positive tenant predicate satisfies the tenant fence; immutable
+tables have exact insert owners and no destructive mutation owner; reviewed
+migration mutations remain byte-exact.
+
+The permanent companions first ran against the pre-fix implementation:
+
+```text
+× does not use outer-join predicates to scope preserved aliases
+  expected false to be true
+
+× rejects inverted tenant predicates
+  expected false to be true
+
+× detects destructive mutations and append-only trigger bypasses
+  expected [] to deeply equal [delete.ts, disable-all-triggers.ts,
+  disable-trigger.ts, drop-trigger.ts, truncate.ts, update.ts]
+```
+
+The tenant condition model now distinguishes `WHERE`, inner `ON`, and each outer
+join mode. Outer-join equality edges carry scope only from the non-preserved side
+toward the preserved side's established bound. Atom matching is anchored to the
+complete positive expression. Permanent companions cover `LEFT`, `RIGHT`, and
+`FULL` joins, positive counterparts, inverted direct predicates, and inverted
+alias edges.
+
+The immutable SQL classifier now distinguishes `INSERT`, `MERGE`, `COPY`,
+`UPDATE`, `DELETE`, `TRUNCATE`, trigger control, and global trigger suppression.
+Insert owners cannot use that authority to rewrite rows. The migration loop's
+dynamic SQL escape is paired with a complete static inspection of `MIGRATIONS`;
+the foundation, provenance backfill, and migration 9
+disable-update-enable sequence are pinned by version, name, and SHA-256. A
+superset of migration 9 and an unreviewed migration both fail permanent
+companions.
+
+With the fixes present, two real-tree probes were planted:
+
+```text
+× enforces: every read/write on a tenant data table filters by org_id
+queries missing org_id:
+src/infrastructure/org-outer-join-violation-probe.ts:5
+
+× anti-fork: immutable tables have exact insert owners and no mutation owners
+immutable decision-ledger mutations bypass ownership:
+scripts/ledger-mutation-violation-probe.ts:5
+scripts/ledger-mutation-violation-probe.ts:8
+```
+
+**Revert:** both real-tree probes were removed. The in-memory companions retain
+the outer-join, inverted-predicate, destructive DML, trigger-control,
+global-suppression, insert-owner, and exact-migration cases.
+
+**Date:** 2026-07-29 (review corrections V1-V3, D-121).

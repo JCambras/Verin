@@ -135,6 +135,12 @@ interface ConstraintState {
   readonly edges: Array<readonly [string, string]>;
 }
 
+interface ConditionClause {
+  readonly sql: string;
+  readonly mode: "where" | "inner" | "left" | "right" | "full";
+  readonly joinedAlias: string | null;
+}
+
 function tenantTableAliases(sql: string): string[] {
   const normalized = normalizeSqlIdentifiers(sql);
   const references =
@@ -208,14 +214,14 @@ function topLevelWords(sql: string): Array<{
   return words;
 }
 
-function conditionClauses(sql: string): string[] {
+function conditionClauses(sql: string): ConditionClause[] {
   const words = topLevelWords(sql);
   const boundaries = new Set([
     "cross", "for", "full", "group", "having", "inner", "join", "left",
     "limit", "offset", "on", "order", "outer", "returning", "right",
     "union", "where",
   ]);
-  return words.flatMap((word, index) => {
+  return words.flatMap((word, index): ConditionClause[] => {
     if (word.word !== "where" && word.word !== "on") return [];
     let scopeEnd = sql.length;
     let depth = word.depth;
@@ -246,7 +252,44 @@ function conditionClauses(sql: string): string[] {
       candidate.depth === word.depth &&
       boundaries.has(candidate.word))?.start ?? sql.length;
     const end = Math.min(scopeEnd, boundary);
-    return [sql.slice(word.end, end).trim()];
+    if (word.word === "where") {
+      return [{
+        sql: sql.slice(word.end, end).trim(),
+        mode: "where",
+        joinedAlias: null,
+      }];
+    }
+    const preceding = words.slice(0, index).filter((candidate) =>
+      candidate.depth === word.depth);
+    let joinIndex = preceding.length - 1;
+    while (joinIndex >= 0 && preceding[joinIndex]?.word !== "join") {
+      joinIndex -= 1;
+    }
+    const join = preceding[joinIndex];
+    if (!join) return [];
+    let modifierIndex = joinIndex - 1;
+    if (preceding[modifierIndex]?.word === "outer") modifierIndex -= 1;
+    const modifier = preceding[modifierIndex]?.word;
+    const mode =
+      modifier === "left" || modifier === "right" || modifier === "full"
+        ? modifier
+        : "inner";
+    const joined = sql.slice(join.end, word.start).match(
+      /^\s*(?:lateral\s+)?(?:only\s+)?(?:(?:[a-z_][a-z0-9_$]*)\s*\.\s*)?([a-z_][a-z0-9_$]*)(?:\s+(?:as\s+)?([a-z_][a-z0-9_$]*))?/i,
+    );
+    const table = joined?.[1]?.toLowerCase();
+    const candidate = joined?.[2]?.toLowerCase();
+    const joinedAlias =
+      table && DATA_TABLES.includes(table)
+        ? candidate && !SQL_ALIAS_STOP_WORDS.has(candidate)
+          ? candidate
+          : table
+        : null;
+    return [{
+      sql: sql.slice(word.end, end).trim(),
+      mode,
+      joinedAlias,
+    }];
   });
 }
 
@@ -351,18 +394,20 @@ function atomConstraints(
   atom: string,
   governed: ReadonlySet<string>,
 ): ConstraintState {
-  const searchable = maskSubqueryBodies(atom);
+  const searchable = stripEnclosingParentheses(
+    maskSubqueryBodies(atom),
+  ).trim();
   const bound = new Set<string>();
   const edges: Array<readonly [string, string]> = [];
   for (const alias of governed) {
     const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (
       new RegExp(
-        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
+        `^${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})$`,
         "i",
       ).test(searchable) ||
       new RegExp(
-        `${BOUND_TENANT_VALUE}\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
+        `^${BOUND_TENANT_VALUE}\\s*=\\s*${escaped}\\s*\\.\\s*org_id$`,
         "i",
       ).test(searchable)
     ) {
@@ -373,11 +418,11 @@ function atomConstraints(
     const only = [...governed][0]!;
     if (
       new RegExp(
-        `(?:^|[^.\\w$])org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
+        `^org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})$`,
         "i",
       ).test(searchable) ||
       new RegExp(
-        `${BOUND_TENANT_VALUE}\\s*=\\s*org_id\\b`,
+        `^${BOUND_TENANT_VALUE}\\s*=\\s*org_id$`,
         "i",
       ).test(searchable)
     ) {
@@ -385,15 +430,40 @@ function atomConstraints(
     }
   }
   for (const match of searchable.matchAll(
-    /\b([a-z_][a-z0-9_$]*)\s*\.\s*org_id\s*=\s*([a-z_][a-z0-9_$]*)\s*\.\s*org_id\b/gi,
+    /^([a-z_][a-z0-9_$]*)\s*\.\s*org_id\s*=\s*([a-z_][a-z0-9_$]*)\s*\.\s*org_id$/gi,
   )) {
     const left = match[1]!.toLowerCase();
     const right = match[2]!.toLowerCase();
     if (governed.has(left) && governed.has(right)) {
       edges.push([left, right]);
+      edges.push([right, left]);
     }
   }
   return { bound, edges };
+}
+
+function applyClauseSemantics(
+  state: ConstraintState,
+  clause: ConditionClause,
+): ConstraintState {
+  if (clause.mode === "where" || clause.mode === "inner") return state;
+  if (clause.mode === "full" || clause.joinedAlias === null) {
+    return { bound: new Set(), edges: [] };
+  }
+  if (clause.mode === "left") {
+    return {
+      bound: new Set(
+        [...state.bound].filter((alias) => alias === clause.joinedAlias),
+      ),
+      edges: state.edges.filter(([from]) => from === clause.joinedAlias),
+    };
+  }
+  return {
+    bound: new Set(
+      [...state.bound].filter((alias) => alias !== clause.joinedAlias),
+    ),
+    edges: state.edges.filter(([from]) => from !== clause.joinedAlias),
+  };
 }
 
 function mergeConstraints(
@@ -476,7 +546,8 @@ function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<strin
   let alternatives: ConstraintState[] = [{ bound: new Set(), edges: [] }];
   const clauses = conditionClauses(sql);
   for (const clause of clauses) {
-    const next = constraintAlternatives(clause, governed);
+    const next = constraintAlternatives(clause.sql, governed).map((state) =>
+      applyClauseSemantics(state, clause));
     if (next.length === 0 || alternatives.length * next.length > 256) {
       return scoped;
     }
@@ -699,6 +770,60 @@ describe("org-id-required fence", () => {
           "SELECT * FROM decision_ledger scoped WHERE scoped.org_id = $1 AND EXISTS (SELECT 1 FROM households scoped WHERE TRUE)",
         ),
       ).toBe(true);
+    });
+    it("does not use outer-join predicates to scope preserved aliases", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT dl.* FROM decision_ledger dl LEFT JOIN households h ON dl.org_id = $1 AND h.org_id = dl.org_id",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT h.* FROM households h RIGHT JOIN decision_ledger dl ON dl.org_id = $1 AND h.org_id = dl.org_id",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM households h FULL JOIN decision_ledger dl ON h.org_id = $1 AND dl.org_id = $2",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl LEFT JOIN households h ON h.org_id = dl.org_id WHERE dl.org_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM households h RIGHT OUTER JOIN decision_ledger dl ON h.org_id = dl.org_id WHERE dl.org_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM households h FULL OUTER JOIN decision_ledger dl ON h.org_id = dl.org_id WHERE h.org_id = $1 AND dl.org_id = $1",
+        ),
+      ).toBe(false);
+    });
+    it("rejects inverted tenant predicates", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE (dl.org_id = $1) IS NOT TRUE",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE (dl.org_id = $1) IS FALSE",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl JOIN households h ON (h.org_id = dl.org_id) IS NOT TRUE WHERE dl.org_id = $1",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE ((dl.org_id = $1))",
+        ),
+      ).toBe(false);
     });
     it("limits migration-wide org_id escapes to the exact reviewed SQL", () => {
       expect(detectMissingOrgId(DECISION_LEDGER_GENERATIONS_SQL)).toBe(false);

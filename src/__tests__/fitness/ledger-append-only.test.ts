@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { join, relative } from "node:path";
+import { createHash } from "node:crypto";
 import { Node, SyntaxKind, type SourceFile } from "ts-morph";
 import {
   REPO_ROOT,
@@ -9,6 +10,9 @@ import {
   walk,
 } from "./_fence-utils";
 import { MIGRATION_SQL } from "@infra/store/migrations";
+import {
+  DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
+} from "@infra/store/decision-ledger-migration";
 
 const IMMUTABLE_TABLES = [
   "evidence_snapshots",
@@ -19,7 +23,17 @@ const IMMUTABLE_TABLES = [
   "decision_ledger",
 ] as const;
 type ImmutableTable = (typeof IMMUTABLE_TABLES)[number];
-type ImmutableWriteTarget = ImmutableTable | "unresolved";
+type ImmutableMutationKind =
+  | "insert"
+  | "merge"
+  | "copy"
+  | "update"
+  | "delete"
+  | "truncate"
+  | "trigger";
+type ImmutableWriteTarget =
+  | `${ImmutableMutationKind}:${ImmutableTable}`
+  | "unresolved";
 const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   evidence_snapshots: "src/infrastructure/ledger/ledger-sources.ts",
   decision_input_bundles: "src/infrastructure/ledger/ledger-sources.ts",
@@ -31,6 +45,23 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
 };
 const IMMUTABLE_TABLE_SET = new Set<string>(IMMUTABLE_TABLES);
+const REVIEWED_IMMUTABLE_MIGRATIONS = [
+  {
+    version: 3,
+    name: "decision-ledger-foundation",
+    sha256: "b63ee91ed6c81fa9f48bb67cee37311e698a6c53b3234488e2c94160c46128bd",
+  },
+  {
+    version: 6,
+    name: "decision-replay-source-provenance",
+    sha256: "90eede11f7c297c033e465a196d72dc22f8d94cfe49c78364b2e46542e1a5aac",
+  },
+  {
+    version: 8,
+    name: "decision-ledger-bundle-identity",
+    sha256: "a9968958afe5c2147897c964dea3d7a742744bd04a49e26a3144ad3eef98e2d9",
+  },
+] as const;
 const REVIEWED_UNRESOLVED_SQL_ESCAPE = Object.freeze({
   file: "src/infrastructure/store/migrations.ts",
   functionName: "runMigrations",
@@ -49,6 +80,29 @@ const REVIEWED_SQL_FORWARDING_ESCAPE = Object.freeze({
 interface SqlToken {
   readonly kind: "identifier" | "dot" | "string" | "body" | "other";
   readonly value?: string;
+}
+
+function immutableWriteTarget(
+  kind: ImmutableMutationKind,
+  table: ImmutableTable,
+): ImmutableWriteTarget {
+  return `${kind}:${table}`;
+}
+
+function immutableWriteTargetParts(target: Exclude<ImmutableWriteTarget, "unresolved">): {
+  readonly kind: ImmutableMutationKind;
+  readonly table: ImmutableTable;
+} {
+  const separator = target.indexOf(":");
+  return {
+    kind: target.slice(0, separator) as ImmutableMutationKind,
+    table: target.slice(separator + 1) as ImmutableTable,
+  };
+}
+
+function immutableMutationRoot(value: string): boolean {
+  return /\b(?:insert\s+into|merge\s+into|copy|update|delete\s+from|truncate|alter\s+table|drop\s+trigger|session_replication_role)\b/i
+    .test(value);
 }
 
 function sqlTokens(sql: string): SqlToken[] {
@@ -161,6 +215,14 @@ function immutableTargetAt(
   start: number,
 ): ImmutableTable | null {
   let targetIndex = start;
+  if (
+    tokens[targetIndex]?.kind === "identifier" &&
+    tokens[targetIndex]?.value === "if" &&
+    tokens[targetIndex + 1]?.kind === "identifier" &&
+    tokens[targetIndex + 1]?.value === "exists"
+  ) {
+    targetIndex += 2;
+  }
   if (
     tokens[targetIndex]?.kind === "identifier" &&
     tokens[targetIndex]?.value === "only"
@@ -305,9 +367,7 @@ function proceduralWriteTargets(
       if (value !== null) {
         variables.set(name, value);
         unresolvedWrites.delete(name);
-      } else if (
-        /\b(?:insert\s+into|merge\s+into|copy)\b/i.test(assignment[2]!)
-      ) {
+      } else if (immutableMutationRoot(assignment[2]!)) {
         unresolvedWrites.add(name);
       }
       continue;
@@ -320,7 +380,7 @@ function proceduralWriteTargets(
       immutableWriteTargets(value, seen).forEach((target) =>
         targets.add(target));
     } else if (
-      /\b(?:insert\s+into|merge\s+into|copy)\b/i.test(expression) ||
+      immutableMutationRoot(expression) ||
       [...unresolvedWrites].some((name) =>
         new RegExp(`\\b${name}\\b`, "i").test(expression))
     ) {
@@ -346,7 +406,30 @@ function immutableWriteTargets(
       proceduralWriteTargets(token.value, seen).forEach((target) =>
         targets.add(target));
     }
+    if (
+      token?.kind === "identifier" &&
+      token.value === "set_config"
+    ) {
+      const callEnd = tokens.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex > index &&
+          candidate.kind === "other" &&
+          candidate.value === ")",
+      );
+      const call = tokens.slice(
+        index,
+        callEnd < 0 ? tokens.length : callEnd,
+      );
+      if (
+        call.some((candidate) =>
+          candidate.kind === "string" &&
+          candidate.value?.toLowerCase() === "session_replication_role")
+      ) {
+        targets.add("unresolved");
+      }
+    }
     let targetIndex: number | null = null;
+    let mutationKind: ImmutableMutationKind | null = null;
     if (
       token?.kind === "identifier" &&
       (token.value === "insert" || token.value === "merge") &&
@@ -354,10 +437,12 @@ function immutableWriteTargets(
       tokens[index + 1]?.value === "into"
     ) {
       targetIndex = index + 2;
+      mutationKind = token.value;
     } else if (
       token?.kind === "identifier" &&
       token.value === "copy"
     ) {
+      mutationKind = "copy";
       targetIndex = tokens[index + 1]?.value === "binary"
         ? index + 2
         : index + 1;
@@ -371,6 +456,111 @@ function immutableWriteTargets(
         }
       }
       if (!writesRows) targetIndex = null;
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "update"
+    ) {
+      targetIndex = index + 1;
+      mutationKind = "update";
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "delete" &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "from"
+    ) {
+      targetIndex = index + 2;
+      mutationKind = "delete";
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "truncate" &&
+      tokens[index - 1]?.value !== "before"
+    ) {
+      for (let part = index + 1; part < tokens.length; part += 1) {
+        const candidate = tokens[part]!;
+        if (candidate.kind === "other" && candidate.value === ";") break;
+        if (
+          candidate.kind === "identifier" &&
+          candidate.value &&
+          IMMUTABLE_TABLE_SET.has(candidate.value)
+        ) {
+          targets.add(immutableWriteTarget(
+            "truncate",
+            candidate.value as ImmutableTable,
+          ));
+        }
+        if (
+          candidate.kind === "identifier" &&
+          ["cascade", "continue", "identity", "restart", "restrict"].includes(
+            candidate.value ?? "",
+          )
+        ) {
+          break;
+        }
+      }
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "alter" &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "table"
+    ) {
+      const table = immutableTargetAt(tokens, index + 2);
+      if (table) {
+        for (let part = index + 3; part < tokens.length; part += 1) {
+          const candidate = tokens[part]!;
+          if (candidate.kind === "other" && candidate.value === ";") break;
+          if (
+            candidate.kind === "identifier" &&
+            candidate.value === "disable" &&
+            tokens[part + 1]?.kind === "identifier" &&
+            tokens[part + 1]?.value === "trigger"
+          ) {
+            targets.add(immutableWriteTarget("trigger", table));
+            break;
+          }
+        }
+      }
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "drop" &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "trigger"
+    ) {
+      for (let part = index + 2; part < tokens.length; part += 1) {
+        const candidate = tokens[part]!;
+        if (candidate.kind === "other" && candidate.value === ";") break;
+        if (
+          candidate.kind === "identifier" &&
+          candidate.value === "on"
+        ) {
+          const table = immutableTargetAt(tokens, part + 1);
+          if (table) targets.add(immutableWriteTarget("trigger", table));
+          break;
+        }
+      }
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "set"
+    ) {
+      const statementEnd = tokens.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex > index &&
+          candidate.kind === "other" &&
+          candidate.value === ";",
+      );
+      const statement = tokens.slice(
+        index,
+        statementEnd < 0 ? tokens.length : statementEnd,
+      );
+      if (
+        statement.some((candidate) =>
+          candidate.kind === "identifier" &&
+          candidate.value === "session_replication_role") &&
+        statement.some((candidate) =>
+          (candidate.kind === "identifier" || candidate.kind === "string") &&
+          candidate.value?.toLowerCase() === "replica")
+      ) {
+        targets.add("unresolved");
+      }
     } else if (
       token?.kind === "identifier" &&
       token.value === "execute"
@@ -393,7 +583,9 @@ function immutableWriteTargets(
     }
     if (targetIndex === null) continue;
     const target = immutableTargetAt(tokens, targetIndex);
-    if (target) targets.add(target);
+    if (target && mutationKind) {
+      targets.add(immutableWriteTarget(mutationKind, target));
+    }
   }
   return [...targets];
 }
@@ -1161,15 +1353,106 @@ function isReviewedUnresolvedSql(
     expression.getText() === REVIEWED_UNRESOLVED_SQL_ESCAPE.argument;
 }
 
-function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
+function isReviewedImmutableMigration(
+  version: number,
+  name: string,
+  sql: string,
+): boolean {
+  return REVIEWED_IMMUTABLE_MIGRATIONS.some((migration) =>
+    migration.version === version &&
+    migration.name === name &&
+    migration.sha256 ===
+      createHash("sha256").update(sql).digest("hex"));
+}
+
+function relativeFencePath(file: SourceFile): string {
+  const absolute = file.getFilePath().replace(/\\/g, "/");
+  const sourceIndex = absolute.lastIndexOf("/src/");
+  return sourceIndex >= 0
+    ? absolute.slice(sourceIndex + 1)
+    : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
+}
+
+function migrationMutationViolations(
+  files: readonly SourceFile[],
+): Violation[] {
+  const file = files.find((candidate) =>
+    relativeFencePath(candidate) ===
+      REVIEWED_UNRESOLVED_SQL_ESCAPE.file);
+  if (!file) return [];
+  const declaration = file.getVariableDeclaration("MIGRATIONS");
+  const initializer = declaration?.getInitializer();
+  if (!declaration || !initializer) {
+    return [{ file: relativeFencePath(file), line: 1 }];
+  }
+  const migrations = staticArrayNodes(initializer);
+  if (migrations === null) {
+    return [{
+      file: relativeFencePath(file),
+      line: initializer.getStartLineNumber(),
+    }];
+  }
   const violations: Violation[] = [];
-  const seen = new Set<string>();
+  for (const migration of migrations) {
+    if (!Node.isObjectLiteralExpression(migration)) {
+      violations.push({
+        file: relativeFencePath(file),
+        line: migration.getStartLineNumber(),
+      });
+      continue;
+    }
+    const versionProperty = migration.getProperty("version");
+    const nameProperty = migration.getProperty("name");
+    const sqlProperty = migration.getProperty("sql");
+    if (
+      !Node.isPropertyAssignment(versionProperty) ||
+      !Node.isPropertyAssignment(nameProperty) ||
+      !Node.isPropertyAssignment(sqlProperty)
+    ) {
+      violations.push({
+        file: relativeFencePath(file),
+        line: migration.getStartLineNumber(),
+      });
+      continue;
+    }
+    const version = staticNumber(versionProperty.getInitializerOrThrow());
+    const name = staticString(nameProperty.getInitializerOrThrow());
+    const sql = staticString(sqlProperty.getInitializerOrThrow());
+    if (
+      version === null ||
+      name === null ||
+      sql === null ||
+      (
+        immutableWriteTargets(sql).length > 0 &&
+        !isReviewedImmutableMigration(version, name, sql)
+      )
+    ) {
+      violations.push({
+        file: relativeFencePath(file),
+        line: sqlProperty.getStartLineNumber(),
+      });
+    }
+  }
+  return violations;
+}
+
+function hasAllowedImmutableOwner(
+  target: ImmutableWriteTarget,
+  rel: string,
+): boolean {
+  if (target === "unresolved") return false;
+  const { kind, table } = immutableWriteTargetParts(target);
+  return kind === "insert" && INSERT_ALLOWLIST[table] === rel;
+}
+
+function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
+  const violations = migrationMutationViolations(files);
+  const seen = new Set(
+    violations.map((violation) =>
+      `${violation.file}:${violation.line}:migration`),
+  );
   for (const file of files) {
-    const absolute = file.getFilePath().replace(/\\/g, "/");
-    const sourceIndex = absolute.lastIndexOf("/src/");
-    const rel = sourceIndex >= 0
-      ? absolute.slice(sourceIndex + 1)
-      : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
+    const rel = relativeFencePath(file);
     for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const expression = sqlTextArgument(call);
       if (expression === null) {
@@ -1199,24 +1482,23 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         }
         continue;
       }
+      if (isReviewedUnresolvedSql(call, expression, rel)) continue;
       const value = staticString(expression);
       if (value === null) {
-        if (!isReviewedUnresolvedSql(call, expression, rel)) {
-          const key = `${rel}:${expression.getStartLineNumber()}:unresolved`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            violations.push({
-              file: rel,
-              line: expression.getStartLineNumber(),
-            });
-          }
+        const key = `${rel}:${expression.getStartLineNumber()}:unresolved`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: expression.getStartLineNumber(),
+          });
         }
         continue;
       }
-      for (const table of immutableWriteTargets(value)) {
-        const key = `${rel}:${table}`;
+      for (const target of immutableWriteTargets(value)) {
+        const key = `${rel}:${target}`;
         if (
-          (table === "unresolved" || INSERT_ALLOWLIST[table] !== rel) &&
+          !hasAllowedImmutableOwner(target, rel) &&
           !seen.has(key)
         ) {
           seen.add(key);
@@ -1250,10 +1532,10 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         }
         continue;
       }
-      for (const table of immutableWriteTargets(value)) {
-        const key = `${rel}:${table}`;
+      for (const target of immutableWriteTargets(value)) {
+        const key = `${rel}:${target}`;
         if (
-          (table === "unresolved" || INSERT_ALLOWLIST[table] !== rel) &&
+          !hasAllowedImmutableOwner(target, rel) &&
           !seen.has(key)
         ) {
           seen.add(key);
@@ -1414,11 +1696,11 @@ function exportedMutationNames(file: SourceFile): string[] {
 }
 
 describe("decision-ledger append-only fence", () => {
-  it("anti-fork: each immutable table has one exact raw-insert owner", () => {
+  it("anti-fork: immutable tables have exact insert owners and no mutation owners", () => {
     const violations = ledgerInsertViolations(ledgerFenceFiles());
     expect(
       violations,
-      `raw decision-ledger inserts bypass the repository:\n${violations.map(
+      `immutable decision-ledger mutations bypass ownership:\n${violations.map(
         (item) => `${item.file}:${item.line}`,
       ).join("\n")}`,
     ).toEqual([]);
@@ -1700,6 +1982,80 @@ describe("decision-ledger append-only fence", () => {
           `db.query("COPY evidence_snapshots TO STDOUT");`,
       });
       expect(ledgerInsertViolations(readOnly.getSourceFiles())).toEqual([]);
+    });
+
+    it("detects destructive mutations and append-only trigger bypasses", () => {
+      const project = inMemoryProject({
+        "/scripts/update.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("UPDATE decision_ledger SET payload_json = '{}' WHERE org_id = $1");`,
+        "/scripts/delete.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("DELETE FROM decision_records WHERE org_id = $1");`,
+        "/scripts/truncate.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("TRUNCATE TABLE evidence_snapshots");`,
+        "/scripts/disable-trigger.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("ALTER TABLE IF EXISTS ONLY public.decision_ledger DISABLE TRIGGER decision_ledger_no_update");`,
+        "/scripts/drop-trigger.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("DROP TRIGGER decision_records_no_delete ON decision_records");`,
+        "/scripts/disable-all-triggers.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("SET session_replication_role = 'replica'");`,
+        "/scripts/set-config.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("SELECT set_config('session_replication_role', $1, false)");`,
+        "/src/infrastructure/ledger/ledger-store.ts":
+          `export const rewrite = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("UPDATE decision_ledger SET payload_json = '{}' WHERE org_id = $1");`,
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual([
+        "delete.ts",
+        "disable-all-triggers.ts",
+        "disable-trigger.ts",
+        "drop-trigger.ts",
+        "ledger-store.ts",
+        "set-config.ts",
+        "truncate.ts",
+        "update.ts",
+      ]);
+    });
+
+    it("limits immutable migration mutations to exact reviewed entries", () => {
+      expect(
+        isReviewedImmutableMigration(
+          8,
+          "decision-ledger-bundle-identity",
+          DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
+        ),
+      ).toBe(true);
+      expect(
+        isReviewedImmutableMigration(
+          8,
+          "decision-ledger-bundle-identity",
+          `${DECISION_LEDGER_BUNDLE_IDENTITY_SQL}
+TRUNCATE decision_ledger;`,
+        ),
+      ).toBe(false);
+      const project = inMemoryProject({
+        "/src/infrastructure/store/migrations.ts":
+          `const MIGRATIONS = [{ ` +
+          `version: 9, name: "unsafe-rewrite", ` +
+          `sql: "UPDATE decision_ledger SET payload_json = '{}' WHERE org_id = $1" ` +
+          `}];\n` +
+          `export async function runMigrations(db: { transaction<T>(fn: (tx: { exec(s: string): Promise<void> }) => Promise<T>): Promise<T> }) {\n` +
+          `  for (const m of MIGRATIONS) {\n` +
+          `    await db.transaction(async (tx) => tx.exec(m.sql));\n` +
+          `  }\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
     });
 
     it("detects formatted and assigned procedural row creation", () => {
