@@ -402,6 +402,64 @@ describe("dependency-rule fence", () => {
           "export const value = load();",
         ].join("\n"),
       ],
+      [
+        "a parameter supplied at a call site",
+        [
+          "function load(platform: typeof process) {",
+          `  return platform.getBuiltinModule("node:module");`,
+          "}",
+          "export const value = load(process);",
+        ].join("\n"),
+      ],
+      [
+        "a type-aliased parameter supplied at a call site",
+        [
+          "type Platform = typeof process;",
+          "function load(platform: Platform) {",
+          `  return platform.getBuiltinModule("node:module");`,
+          "}",
+          "export const value = load(process);",
+        ].join("\n"),
+      ],
+      [
+        "a returned ambient receiver",
+        [
+          "function platform(): typeof process { return process; }",
+          `export const value = platform().getBuiltinModule("node:module");`,
+        ].join("\n"),
+      ],
+      [
+        "a conditionally reassigned computed member",
+        [
+          `let member: "getBuiltinModule" | "cwd" = "getBuiltinModule";`,
+          `if (false) member = "cwd";`,
+          `export const value = (process as any)[member]("node:module");`,
+        ].join("\n"),
+      ],
+      [
+        "an unresolved computed member",
+        [
+          "function load(member: string) {",
+          `  return (process as any)[member]("node:module");`,
+          "}",
+          `export const value = load("getBuiltinModule");`,
+        ].join("\n"),
+      ],
+      [
+        "nested destructuring",
+        [
+          "const { process: { getBuiltinModule } } = globalThis;",
+          `export const value = getBuiltinModule("node:module");`,
+        ].join("\n"),
+      ],
+      [
+        "nested assignment destructuring",
+        [
+          "let getBuiltinModule: (name: string) => unknown;",
+          "({ process: { getBuiltinModule } } = globalThis);",
+          `export const value = getBuiltinModule("node:module");`,
+        ].join("\n"),
+      ],
     ])("ambient getBuiltinModule cannot bypass the layer fence through %s", (_name, source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -432,6 +490,13 @@ describe("dependency-rule fence", () => {
             "if (false) platform = { getBuiltinModule: (value: string) => value };",
             `export const conditional = platform.getBuiltinModule("local");`,
             "export function parameter(local = process) { return local.getBuiltinModule.call(process); }",
+            "type LocalPlatform = { getBuiltinModule(value: string): string };",
+            "export function supplied(local: LocalPlatform) { return local.getBuiltinModule('local'); }",
+            "export function returned(): LocalPlatform { return { getBuiltinModule: (value) => value }; }",
+            "export const returnedValue = returned().getBuiltinModule('local');",
+            "const nested = { process };",
+            "const { process: { getBuiltinModule: nestedAcquire } } = nested;",
+            "export const nestedValue = nestedAcquire.call(process);",
           ].join("\n"),
         }),
       );
@@ -711,6 +776,23 @@ describe("dependency-rule fence", () => {
           `export const value = prototype.constructor("return 1")();`,
         ].join("\n"),
       ],
+      [
+        "nested destructured Reflect.get",
+        [
+          "const { Reflect: { get } } = globalThis;",
+          `const Ctor = get(() => undefined, "constructor");`,
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
+      [
+        "nested assignment-destructured Reflect.get",
+        [
+          "let get: typeof Reflect.get;",
+          "({ Reflect: { get } } = globalThis);",
+          `const Ctor = get(() => undefined, "constructor");`,
+          `export const value = Ctor("return 1")();`,
+        ].join("\n"),
+      ],
     ])("dynamic-code recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -866,6 +948,67 @@ describe("dependency-rule fence", () => {
         "local-time string constructed clock",
         `export const value = new Date("2026-07-29T12:00:00").toISOString();`,
       ],
+      [
+        "conditionally reassigned computed clock member",
+        [
+          `let member: "now" | "parse" = "now";`,
+          `if (false) member = "parse";`,
+          "export const value = Date[member];",
+        ].join("\n"),
+      ],
+      [
+        "unresolved computed clock member",
+        [
+          "function read(member: string) { return (Date as any)[member]; }",
+          `export const value = read("now");`,
+        ].join("\n"),
+      ],
+      [
+        "supplied ambient clock parameter",
+        [
+          "function read(Clock: DateConstructor) { return Clock.now(); }",
+          "export const value = read(Date);",
+        ].join("\n"),
+      ],
+      [
+        "type-aliased ambient clock parameter",
+        [
+          "type Clock = DateConstructor;",
+          "function read(Clock: Clock) { return Clock.now(); }",
+          "export const value = read(Date);",
+        ].join("\n"),
+      ],
+      [
+        "returned ambient clock",
+        [
+          "function clock(): DateConstructor { return Date; }",
+          "export const value = clock().now();",
+        ].join("\n"),
+      ],
+      [
+        "nested destructured randomness",
+        [
+          "const { Math: { random } } = globalThis;",
+          "export const value = random();",
+        ].join("\n"),
+      ],
+      [
+        "nested assignment-destructured randomness",
+        [
+          "let random: () => number;",
+          "({ Math: { random } } = globalThis);",
+          "export const value = random();",
+        ].join("\n"),
+      ],
+      [
+        "conditionally keyed destructured clock",
+        [
+          `let member: "now" | "parse" = "now";`,
+          `if (false) member = "parse";`,
+          "const { [member]: clockMember } = Date;",
+          "export const value = clockMember;",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -885,11 +1028,20 @@ describe("dependency-rule fence", () => {
             "const Function = (value: string) => () => value;",
             "const eval = (value: string) => value;",
             "const model = { constructor: () => 7 };",
+            "type LocalClock = { now(): number };",
+            "function suppliedClock(Clock: LocalClock) { return Clock.now(); }",
+            "function returnedClock(): LocalClock { return { now: () => 3 }; }",
+            `let localMember: "now" | "parse" = "now";`,
+            `if (false) localMember = "parse";`,
             "const globals = {",
             "  Date: { now: () => 2 },",
+            "  Math: { random: () => 0.25 },",
             "  process: { getBuiltinModule: (value: string) => value },",
             "};",
             "const { Date: Clock, process: platform } = globals;",
+            "const { Math: { random: nestedRandom } } = globals;",
+            "let nestedAssignedRandom = () => 0.75;",
+            "({ Math: { random: nestedAssignedRandom } } = globals);",
             "let AssignedClock = globals.Date;",
             "let assignedPlatform = globals.process;",
             "({ Date: AssignedClock, process: assignedPlatform } = globals);",
@@ -915,6 +1067,11 @@ describe("dependency-rule fence", () => {
             `  platform.getBuiltinModule("local"),`,
             "  AssignedClock.now(),",
             `  assignedPlatform.getBuiltinModule("local"),`,
+            "  suppliedClock(globals.Date),",
+            "  returnedClock().now(),",
+            "  nestedRandom(),",
+            "  nestedAssignedRandom(),",
+            "  Date[localMember],",
             "];",
           ].join("\n"),
         }),
@@ -964,6 +1121,8 @@ describe("dependency-rule fence", () => {
             "export const pinnedAlias = new Date(instant).toISOString();",
             `export const offset = new Date("2020-01-01T05:30:00+05:30").toISOString();`,
             "export const epoch = new Date(0).toISOString();",
+            `const deterministicMember = false ? "parse" as const : "UTC" as const;`,
+            "export const deterministic = globalThis.Date[deterministicMember];",
             "export const values = [left, right];",
           ].join("\n"),
         }),
