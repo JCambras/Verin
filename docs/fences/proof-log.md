@@ -5776,3 +5776,76 @@ fitness, integration, typecheck, lint, codec, migration, rebuild, and line-budge
 suites pass.
 
 **Date:** 2026-07-28 (review corrections J1-J5, ADR-0033, D-109).
+
+## Complete immutable classification, bounded replay, and provenance trust (D-110)
+
+**Invariants:** every string leaf retained in a replay source or ledger event has
+one explicit safe class; statically rooted SQL cannot bypass exact insert ownership;
+replay coverage selects one latest preceding recording through the partial index;
+invalid stored provenance never renders as real.
+
+The bounded lexical validator was replaced with a no-op. Six adversarial cases were
+then accepted instead of refused:
+
+```text
+× rejects a plain name retained as system actor
+× rejects a plain name retained as correlation
+× rejects a plain name retained as approval stage
+× rejects a plain name retained as idempotency key
+× rejects a plain name retained as execution part
+× rejects plain names in replay schema, command, and precondition fields
+  expected [Function] to throw an error
+```
+
+The production companion adds a future object containing an already-classified
+`id` leaf and proves the new structural path is still refused. Proceed, blocked,
+prohibited, recursive explanation, human actor, causation, compensation,
+specialist-review, deadline, and derived-decision paths are accepted explicitly.
+The schema traversal companion independently enumerates string leaves from all
+three replay schemas and every ledger union member. Its synthetic optional object
+proves a new `id` path is reported even when no fixture populates it.
+The future path was then deliberately added to the inventory:
+
+```text
+× classifies every immutable string path and rejects unclassified growth
+  expected [Function] to throw an error
+```
+
+A replace-composed insert was planted in `scripts/ledger-violation-probe.ts`:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+  raw decision-ledger inserts bypass the repository:
+  scripts/ledger-violation-probe.ts:2
+```
+
+The static evaluator companions cover replace, replaceAll, trim, case conversion,
+slice, substring, repeat, join, concat, templates, and addition. A separate case
+proves unresolved statically rooted SQL fails closed both inline and through a
+local helper, while an insert-shaped string in the bound parameter array produces
+no finding.
+
+The replay-coverage lateral lookup was changed from `LIMIT 1` to `LIMIT 2`:
+
+```text
+× reads the verified register under one tenant lock without trusting projection rows
+  expected coverage query to match ORDER BY l.sequence DESC LIMIT 1
+```
+
+The same companion rejects aggregate `max` or `count` calls in that query, and the
+functional reused-bundle case proves the latest in-window recording is selected.
+
+Finally, invalid provenance was changed to return no label:
+
+```text
+× labels malformed stored provenance as untrusted
+  expected null to be 'untrusted provenance'
+```
+
+The three cases cover an unknown source, invalid timestamp, and unknown confidence.
+
+**Revert:** every planted violation and weakened guard was restored. The focused
+ledger, projection, anti-fork, provenance, typecheck, lint, and line-budget suites
+pass.
+
+**Date:** 2026-07-28 (review corrections K1-K4, ADR-0033, D-110).

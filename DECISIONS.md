@@ -3376,3 +3376,34 @@ The composed implementation measures contracts at 4793 lines and infrastructure 
 request work must remain bounded as tenant history grows.
 **Revert path:** none while Prompt 7 promises PII-safe immutable history, exact-window
 verified register state, bounded request reads, and exact immutable insert ownership.
+
+### D-110 · 2026-07-28 · reversible · Immutable text, SQL ownership, replay coverage, and provenance fail closed
+
+One iterative boundary now visits every immutable string leaf and requires its
+complete structural path to have an explicit class: closed code or opaque
+retained-text reference, canonical hash, canonical timestamp, recorded version, or
+bounded lexical identifier. An unknown path is refused even when its leaf name is
+already classified elsewhere. A schema traversal companion compares every declared
+string path with the inventory, so optional schema growth cannot silently retain
+free text.
+
+The anti-fork fence inspects only the SQL argument of query and exec calls, resolves
+deterministic literal methods including replace, and rejects unresolved arguments
+that are rooted in static text. Bound parameter values remain data and are never
+scanned as SQL. The one existing dynamic replay-source table selector was replaced
+with two exact read statements.
+
+Replay evidence coverage now uses the existing tenant-scoped partial index through
+an ordered lateral `LIMIT 1` lookup for the latest recording at or before each
+decision, then compares that sequence with the verified window start. Route mapping
+parses stored row provenance and labels invalid values `untrusted provenance`.
+
+The composed implementation measures contracts at 4793 lines and infrastructure
+at 6698 lines. ADR-0033 amends ADR-0018's infrastructure ceiling to 6800,
+leaving 102 lines of measured headroom while preserving the 500-line file cap.
+
+**Why:** immutable history cannot accept opt-in string checks, an ownership fence
+cannot guess at unresolved SQL, bounded reads cannot aggregate tenant history, and
+corrupt provenance cannot render as real.
+**Revert path:** none while Prompt 7 promises a PII-safe immutable boundary, exact
+insert ownership, bounded register work, and fail-closed provenance rendering.

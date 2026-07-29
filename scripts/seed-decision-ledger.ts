@@ -55,6 +55,7 @@ export function retainedTextProjection(value: unknown): unknown {
   );
   if (typeof projected.code === "string") {
     if ("summary" in projected) projected.summary = projected.code;
+    if ("explanation" in projected) projected.explanation = projected.code;
     if ("messageTemplate" in projected) {
       projected.messageTemplate = projected.code;
     }

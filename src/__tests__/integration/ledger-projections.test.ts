@@ -478,6 +478,12 @@ describe("deterministic decision-ledger projections", () => {
       statements.some((sql) =>
         /count\(\*\).*max\(sequence\).*decision_ledger/is.test(sql)),
     ).toBe(false);
+    const coverageQuery = statements.find((sql) =>
+      sql.includes("LEFT JOIN LATERAL"));
+    expect(coverageQuery).toMatch(
+      /ORDER BY l\.sequence DESC\s+LIMIT 1/is,
+    );
+    expect(coverageQuery).not.toMatch(/\b(max|count)\s*\(/i);
   });
 
   it("uses the latest in-window evidence recording for a reused bundle", async () => {

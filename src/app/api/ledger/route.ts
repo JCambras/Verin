@@ -8,12 +8,11 @@ import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import {
   canFeedComplianceDecision,
   DEV_BADGE_TEXT,
-  type Confidence,
   type DerivedProvenance,
   type RecordProvenance,
-  type SourceSystem,
 } from "@contracts/provenance";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
+import { ledgerRowProvenanceLabel } from "@app/ledger/provenance";
 
 export const runtime = "nodejs";
 const MAX_ENTRIES = 200;
@@ -42,18 +41,6 @@ function badgeLabel(provenance: RecordProvenance | DerivedProvenance): string | 
   return canFeedComplianceDecision(provenance)
     ? null
     : DEV_BADGE_TEXT["synthetic-fixture"];
-}
-
-function rowProvenance(row: {
-  provSource: string;
-  provAsOf: string;
-  provConfidence: string;
-}): RecordProvenance {
-  return {
-    source: row.provSource as SourceSystem,
-    asOf: row.provAsOf,
-    confidence: row.provConfidence as Confidence,
-  };
 }
 
 /** Read-only, tenant-scoped register. No decision state is computed here. */
@@ -111,7 +98,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       correlationId: row.correlationId,
       decisionId: row.decisionId,
       entryHash: row.entryHash.slice(0, 16),
-      provenanceLabel: badgeLabel(rowProvenance(row)),
+      provenanceLabel: ledgerRowProvenanceLabel({
+        source: row.provSource,
+        asOf: row.provAsOf,
+        confidence: row.provConfidence,
+      }),
     })),
   } satisfies LedgerRegisterViewModel;
   return NextResponse.json(body);

@@ -28,6 +28,8 @@ import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
 import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
 import {
+  assertLedgerEventPiiBoundary,
+  assertReplaySourcePiiBoundary,
   isVersionIdentifier,
   retainedTextReference,
 } from "@infra/ledger/ledger-pii";
@@ -38,7 +40,10 @@ import {
   decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
-import { DecisionInputBundleSchema } from "@contracts/decision-core/evidence";
+import {
+  DecisionInputBundleSchema,
+  EvidenceSnapshotRefSchema,
+} from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import {
   LEDGER_LATER,
@@ -48,6 +53,7 @@ import {
   allLedgerEventSamples,
   decisionRecordingInput,
   laterEvidenceRecording,
+  retainedDecisionSourceFixtures,
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
@@ -584,6 +590,162 @@ describe("decision ledger storage and L1-L4 verification", () => {
       reasonCode: retainedTextReference("2".repeat(64)),
     });
     await expect(append(db, [opaque])).resolves.toHaveLength(1);
+  });
+
+  it("classifies every immutable string path and rejects unclassified growth", () => {
+    const input = decisionRecordingInput();
+    input.evidenceSnapshots.forEach((snapshot) =>
+      assertReplaySourcePiiBoundary("evidence", snapshot));
+    assertReplaySourcePiiBoundary("bundle", input.inputBundle);
+    assertReplaySourcePiiBoundary("decision", input.decisionRecord);
+    retainedDecisionSourceFixtures().forEach((record) =>
+      assertReplaySourcePiiBoundary("decision", record));
+    allLedgerEventSamples().forEach(assertLedgerEventPiiBoundary);
+    expect(input.decisionRecord.result.kind).toBe("proceed");
+    if (input.decisionRecord.result.kind !== "proceed") return;
+    const authority = input.decisionRecord.result.authority;
+    if (authority.mode === "automatic") throw new Error("expected staged authority");
+    const optionalPaths = DecisionRecordSchema.parse({
+      ...input.decisionRecord,
+      createdBy: {
+        firmId: LEDGER_ORG,
+        actorId: "actor:optional-paths",
+        roleIds: authority.stages[0]!.requirements[0]!.eligibleRoleIds,
+      },
+      derivedFromDecisionRef: {
+        firmId: LEDGER_ORG,
+        id: "dec:prior:optional-paths",
+      },
+      reevaluateWhen: [{
+        kind: "deadline_reached",
+        deadline: LEDGER_LATER,
+      }],
+      result: {
+        ...input.decisionRecord.result,
+        authority: {
+          mode: "specialist_review",
+          specialistRoleIds:
+            authority.stages[0]!.requirements[0]!.eligibleRoleIds,
+          stages: authority.stages,
+        },
+        executionPlan: {
+          ...input.decisionRecord.result.executionPlan,
+          steps: input.decisionRecord.result.executionPlan.steps.map(
+            (step, index) => index === 0
+              ? {
+                  ...step,
+                  compensatingAction: {
+                    targetRef: step.targetRef,
+                    command: step.command,
+                    idempotencyKey: `${step.idempotencyKey}:compensate`,
+                    conflictKeys: step.conflictKeys,
+                    reservationRefs: step.reservationRefs,
+                    preconditions: step.preconditions,
+                    verificationRuleRef: step.verificationRuleRef,
+                    reasonCode: "decision-closed",
+                  },
+                }
+              : step,
+          ),
+        },
+      },
+    });
+    assertReplaySourcePiiBoundary("decision", optionalPaths);
+    assertLedgerEventPiiBoundary(LedgerEntrySchema.parse({
+      ...allLedgerEventSamples()[0]!,
+      id: "event:optional-paths",
+      actor: {
+        firmId: LEDGER_ORG,
+        actorId: "actor:optional-paths",
+        roleIds: authority.stages[0]!.requirements[0]!.eligibleRoleIds,
+      },
+      causationRef: { firmId: LEDGER_ORG, id: "event:prior" },
+    }));
+    expect(() => assertLedgerEventPiiBoundary({
+      ...allLedgerEventSamples()[0]!,
+      futureContainer: { id: "future-id" },
+    } as never)).toThrowError(/unclassified retained text/);
+  });
+
+  it.each([
+    ["system actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: { firmId: LEDGER_ORG, systemId: "Robert Smith" },
+    })],
+    ["correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "Robert Smith",
+    })],
+    ["approval stage", "ApprovalRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      stageId: "Robert Smith",
+    })],
+    ["idempotency key", "ExecutionStarted", (event: Record<string, unknown>) => ({
+      ...event,
+      idempotencyKey: "Robert Smith",
+    })],
+    [
+      "execution part",
+      "ExecutionPartiallySucceeded",
+      (event: Record<string, unknown>) => ({
+        ...event,
+        completedParts: ["Robert Smith"],
+      }),
+    ],
+  ] as const)(
+    "rejects a plain name retained as %s",
+    (_name, type, mutate) => {
+      const sample = allLedgerEventSamples().find(
+        (event) => event.type === type,
+      )!;
+      const event = LedgerEntrySchema.parse(
+        mutate(sample as unknown as Record<string, unknown>),
+      );
+      expect(() => assertLedgerEventPiiBoundary(event)).toThrowError(
+        /unclassified retained text/,
+      );
+    },
+  );
+
+  it("rejects plain names in replay schema, command, and precondition fields", () => {
+    const input = decisionRecordingInput();
+    const snapshot = EvidenceSnapshotRefSchema.parse({
+      ...input.evidenceSnapshots[0]!,
+      schemaVersion: "Robert Smith",
+    });
+    expect(() =>
+      assertReplaySourcePiiBoundary("evidence", snapshot)
+    ).toThrowError(/unclassified retained text/);
+    expect(input.decisionRecord.result.kind).toBe("proceed");
+    if (input.decisionRecord.result.kind !== "proceed") return;
+    const step = input.decisionRecord.result.executionPlan.steps[0]!;
+    for (const changedStep of [
+      {
+        ...step,
+        command: { ...step.command, commandType: "Robert Smith" },
+      },
+      {
+        ...step,
+        preconditions: step.preconditions.map((precondition, index) => ({
+          ...precondition,
+          code: index === 0 ? "Robert Smith" : precondition.code,
+        })),
+      },
+    ]) {
+      const record = DecisionRecordSchema.parse({
+        ...input.decisionRecord,
+        result: {
+          ...input.decisionRecord.result,
+          executionPlan: {
+            ...input.decisionRecord.result.executionPlan,
+            steps: [changedStep],
+          },
+        },
+      });
+      expect(() =>
+        assertReplaySourcePiiBoundary("decision", record)
+      ).toThrowError(/unclassified retained text/);
+    }
   });
 
   it.each([

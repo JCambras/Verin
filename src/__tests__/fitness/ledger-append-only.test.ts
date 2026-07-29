@@ -109,6 +109,47 @@ function callTarget(node: Node): { receiver: Node; name: string } | null {
   return null;
 }
 
+function staticNumber(node: Node, seen = new Set<Node>()): number | null {
+  if (seen.has(node)) return null;
+  seen.add(node);
+  if (Node.isNumericLiteral(node)) return Number(node.getLiteralText());
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return staticNumber(node.getExpression(), seen);
+  }
+  if (Node.isPrefixUnaryExpression(node)) {
+    const value = staticNumber(node.getOperand(), new Set(seen));
+    if (value === null) return null;
+    if (node.getOperatorToken() === SyntaxKind.MinusToken) return -value;
+    if (node.getOperatorToken() === SyntaxKind.PlusToken) return value;
+    return null;
+  }
+  if (Node.isIdentifier(node)) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    const values = (resolved?.getDeclarations() ?? []).flatMap(
+      (declaration) => {
+        const initializer = Node.isVariableDeclaration(declaration)
+          ? declaration.getInitializer()
+          : undefined;
+        const value = initializer
+          ? staticNumber(initializer, new Set(seen))
+          : null;
+        return value === null ? [] : [value];
+      },
+    );
+    return values.length > 0 && values.every((value) => value === values[0])
+      ? values[0]!
+      : null;
+  }
+  return null;
+}
+
 function staticString(node: Node, seen = new Set<Node>()): string | null {
   if (seen.has(node)) return null;
   seen.add(node);
@@ -167,6 +208,53 @@ function staticString(node: Node, seen = new Set<Node>()): string | null {
         : staticString(argument, new Set(seen));
       return separator === null ? null : values.join(separator);
     }
+    const receiver = staticString(target.receiver, new Set(seen));
+    if (receiver === null) return null;
+    if (
+      (target.name === "replace" || target.name === "replaceAll") &&
+      node.getArguments().length === 2
+    ) {
+      const search = staticString(node.getArguments()[0]!, new Set(seen));
+      const replacement = staticString(
+        node.getArguments()[1]!,
+        new Set(seen),
+      );
+      if (search === null || replacement === null) return null;
+      return target.name === "replace"
+        ? receiver.replace(search, replacement)
+        : receiver.replaceAll(search, replacement);
+    }
+    if (node.getArguments().length === 0) {
+      if (target.name === "trim") return receiver.trim();
+      if (target.name === "trimStart") return receiver.trimStart();
+      if (target.name === "trimEnd") return receiver.trimEnd();
+      if (target.name === "toLowerCase") return receiver.toLowerCase();
+      if (target.name === "toUpperCase") return receiver.toUpperCase();
+    }
+    if (
+      (target.name === "slice" || target.name === "substring") &&
+      node.getArguments().length >= 1 &&
+      node.getArguments().length <= 2
+    ) {
+      const start = staticNumber(node.getArguments()[0]!, new Set(seen));
+      const endNode = node.getArguments()[1];
+      const end = endNode === undefined
+        ? undefined
+        : staticNumber(endNode, new Set(seen));
+      if (start === null || (endNode !== undefined && end === null)) {
+        return null;
+      }
+      const resolvedEnd = end ?? undefined;
+      return target.name === "slice"
+        ? receiver.slice(start, resolvedEnd)
+        : receiver.substring(start, resolvedEnd);
+    }
+    if (target.name === "repeat" && node.getArguments().length === 1) {
+      const count = staticNumber(node.getArguments()[0]!, new Set(seen));
+      return count !== null && Number.isInteger(count) && count >= 0
+        ? receiver.repeat(count)
+        : null;
+    }
     return null;
   }
   if (
@@ -196,6 +284,111 @@ function staticString(node: Node, seen = new Set<Node>()): string | null {
   return null;
 }
 
+function hasStaticStringRoot(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node) ||
+    Node.isTemplateExpression(node)
+  ) {
+    return true;
+  }
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return hasStaticStringRoot(node.getExpression(), seen);
+  }
+  if (Node.isArrayLiteralExpression(node)) {
+    return node.getElements().some((element) =>
+      hasStaticStringRoot(
+        Node.isSpreadElement(element) ? element.getExpression() : element,
+        new Set(seen),
+      ));
+  }
+  if (Node.isBinaryExpression(node)) {
+    return hasStaticStringRoot(node.getLeft(), new Set(seen)) ||
+      hasStaticStringRoot(node.getRight(), new Set(seen));
+  }
+  if (Node.isCallExpression(node)) {
+    const target = callTarget(node.getExpression());
+    return (
+      hasStaticStringRoot(node.getExpression(), new Set(seen)) ||
+      (target !== null &&
+        hasStaticStringRoot(target.receiver, new Set(seen))) ||
+      node.getArguments().some((argument) =>
+        hasStaticStringRoot(argument, new Set(seen)))
+    );
+  }
+  if (
+    Node.isIdentifier(node) ||
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    return (resolved?.getDeclarations() ?? []).some((declaration) => {
+      if (
+        Node.isFunctionDeclaration(declaration) ||
+        Node.isMethodDeclaration(declaration)
+      ) {
+        const body = declaration.getBody();
+        return body !== undefined &&
+          body.getDescendantsOfKind(SyntaxKind.ReturnStatement).some(
+            (statement) => {
+              const expression = statement.getExpression();
+              return expression !== undefined &&
+                hasStaticStringRoot(expression, new Set(seen));
+            },
+          );
+      }
+      const initializer =
+        Node.isVariableDeclaration(declaration) ||
+          Node.isPropertyAssignment(declaration)
+          ? declaration.getInitializer()
+          : undefined;
+      if (
+        initializer &&
+        (Node.isArrowFunction(initializer) ||
+          Node.isFunctionExpression(initializer))
+      ) {
+        const body = initializer.getBody();
+        if (!Node.isBlock(body)) {
+          return hasStaticStringRoot(body, new Set(seen));
+        }
+        return body.getDescendantsOfKind(SyntaxKind.ReturnStatement).some(
+          (statement) => {
+            const expression = statement.getExpression();
+            return expression !== undefined &&
+              hasStaticStringRoot(expression, new Set(seen));
+          },
+        );
+      }
+      return initializer
+        ? hasStaticStringRoot(initializer, new Set(seen))
+        : false;
+    });
+  }
+  return false;
+}
+
+function sqlTextArgument(call: Node): Node | null {
+  if (!Node.isCallExpression(call)) return null;
+  const expression = call.getExpression();
+  const target = callTarget(expression);
+  const name = target?.name ??
+    (Node.isIdentifier(expression) ? expression.getText() : null);
+  if (name !== "query" && name !== "exec") return null;
+  return call.getArguments()[0] ?? null;
+}
+
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
   const violations: Violation[] = [];
   const seen = new Set<string>();
@@ -205,24 +398,32 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
     const rel = sourceIndex >= 0
       ? absolute.slice(sourceIndex + 1)
       : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
-    for (const expression of [
-      ...file.getDescendantsOfKind(SyntaxKind.StringLiteral),
-      ...file.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
-      ...file.getDescendantsOfKind(SyntaxKind.TemplateExpression),
-      ...file.getDescendantsOfKind(SyntaxKind.BinaryExpression),
-      ...file.getDescendantsOfKind(SyntaxKind.Identifier),
-      ...file.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
-      ...file.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
-      ...file.getDescendantsOfKind(SyntaxKind.CallExpression),
-    ]) {
+    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const expression = sqlTextArgument(call);
+      if (expression === null) continue;
       const value = staticString(expression);
-      if (value === null) continue;
+      if (value === null) {
+        if (hasStaticStringRoot(expression)) {
+          const key = `${rel}:${expression.getStartLineNumber()}:unresolved`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({
+              file: rel,
+              line: expression.getStartLineNumber(),
+            });
+          }
+        }
+        continue;
+      }
       for (const match of value.matchAll(RAW_INSERT)) {
         const table = match[1]?.toLowerCase() as ImmutableTable | undefined;
         const key = `${rel}:${table}`;
         if (table && INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
           seen.add(key);
-          violations.push({ file: rel, line: expression.getStartLineNumber() });
+          violations.push({
+            file: rel,
+            line: expression.getStartLineNumber(),
+          });
         }
       }
       if (RAW_INSERT.lastIndex !== 0) {
@@ -314,9 +515,11 @@ describe("decision-ledger append-only fence", () => {
         "/scripts/join.ts":
           `const parts = ["INSERT", " INTO ", "decision_ledger"];\n` +
           `const method = "join";\n` +
-          `export const sql = parts[method]("");`,
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query(parts[method](""));`,
         "/scripts/concat.ts":
-          `export const sql = "INSERT INTO ".concat("decision_records");`,
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("INSERT INTO ".concat("decision_records"));`,
       });
       const planted = ledgerInsertViolations(project.getSourceFiles());
       expect(planted).toHaveLength(2);
@@ -326,11 +529,52 @@ describe("decision-ledger append-only fence", () => {
         .toBe(true);
     });
 
+    it("detects replace and chained literal transformations", () => {
+      const project = inMemoryProject({
+        "/scripts/replace.ts":
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query(" insert inx decision_ledger ".trim()` +
+          `.replace("inx", "into").toUpperCase());`,
+        "/scripts/slice.ts":
+          `const source = "__INSERT INTO decision_records__";\n` +
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec(source.slice(2, -2));`,
+      });
+      const planted = ledgerInsertViolations(project.getSourceFiles());
+      expect(planted).toHaveLength(2);
+    });
+
+    it("fails closed when rooted SQL cannot be resolved", () => {
+      const project = inMemoryProject({
+        "/scripts/unresolved.ts":
+          `declare function transform(value: string): string;\n` +
+          `const prefix = "INSERT INTO ";\n` +
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query(transform(prefix) + "decision_ledger");`,
+        "/scripts/helper.ts":
+          `function sql() { return "INSERT INTO decision_ledger"; }\n` +
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query(sql());`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
+    });
+
+    it("does not interpret dynamic bound values as SQL text", () => {
+      const project = inMemoryProject({
+        "/scripts/parameters.ts":
+          `export const run = (` +
+          `db: { query(s: string, p: unknown[]): unknown }, value: string) => ` +
+          `db.query("SELECT $1::text", [value, "INSERT INTO decision_ledger"]);`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([]);
+    });
+
     it("detects a planted insert into any immutable source table, not just the chain", () => {
       const project = inMemoryProject(Object.fromEntries(
         IMMUTABLE_TABLES.map((table) => [
           `/src/infrastructure/forked-${table}.ts`,
-          `export const sql = "INSERT INTO ${table} (org_id) VALUES ($1)";`,
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query("INSERT INTO ${table} (org_id) VALUES ($1)");`,
         ]),
       ));
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(

@@ -59,6 +59,13 @@ const canonicalHash = (value: unknown): string =>
     .update(unwrap(canonicalJson(value as never)), "utf8")
     .digest("hex");
 
+export function retainedDecisionSourceFixtures() {
+  return ["proceed", "blocked", "prohibited"].map((kind) =>
+    DecisionRecordSchema.parse(
+      retainedTextProjection(fixture(`decision-record-${kind}`)),
+    ));
+}
+
 export function decisionRecordingInput(): RecordDecisionInput {
   const inputBundle = DecisionInputBundleSchema.parse(
     fixture("decision-input-bundle"),

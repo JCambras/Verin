@@ -39,10 +39,15 @@ async function reuseStoredBytes(
   id: string,
   bytes: string,
 ): Promise<boolean> {
-  const stored = await tx.query<{ canonical_json: string }>(
-    `SELECT canonical_json FROM ${table} WHERE org_id = $1 AND id = $2`,
-    [orgId, id],
-  );
+  const stored = table === "evidence_snapshots"
+    ? await tx.query<{ canonical_json: string }>(
+        "SELECT canonical_json FROM evidence_snapshots WHERE org_id = $1 AND id = $2",
+        [orgId, id],
+      )
+    : await tx.query<{ canonical_json: string }>(
+        "SELECT canonical_json FROM decision_input_bundles WHERE org_id = $1 AND id = $2",
+        [orgId, id],
+      );
   const existing = stored.rows[0];
   if (!existing) return false;
   if (existing.canonical_json !== bytes) {
@@ -382,34 +387,37 @@ export async function listReplayDecisionEvidenceCoverage(
   const result = await tx.query<{
     evidence_snapshot_id: string;
     recorded_sequence: number | string | null;
-    preceding_recordings: number | string;
   }>(
     `SELECT m.evidence_snapshot_id,
-            max(l.sequence) FILTER (
-              WHERE l.sequence >= $3 AND l.sequence <= $4
-            ) AS recorded_sequence,
-            count(l.sequence) FILTER (
-              WHERE l.sequence <= $4
-            ) AS preceding_recordings
+            recording.sequence AS recorded_sequence
        FROM decision_records r
        JOIN decision_input_bundle_evidence m
          ON m.org_id = r.org_id AND m.bundle_id = r.input_bundle_id
-       LEFT JOIN decision_ledger l
-         ON l.org_id = m.org_id
-        AND l.evidence_snapshot_id = m.evidence_snapshot_id
-        AND l.event_type = 'EvidenceSnapshotRecorded'
+       LEFT JOIN LATERAL (
+         SELECT l.sequence
+           FROM decision_ledger l
+          WHERE l.org_id = m.org_id
+            AND l.evidence_snapshot_id = m.evidence_snapshot_id
+            AND l.event_type = 'EvidenceSnapshotRecorded'
+            AND l.sequence <= $3
+          ORDER BY l.sequence DESC
+          LIMIT 1
+       ) recording ON TRUE
       WHERE r.org_id = $1 AND r.id = $2
-      GROUP BY m.ordinal, m.evidence_snapshot_id
       ORDER BY m.ordinal ASC`,
-    [event.firmId, event.decisionRef.id, windowStart, decisionSequence],
+    [event.firmId, event.decisionRef.id, decisionSequence],
   );
-  return result.rows.map((row) => ({
-    id: row.evidence_snapshot_id,
-    recordedSequence: row.recorded_sequence === null
+  return result.rows.map((row) => {
+    const latest = row.recorded_sequence === null
       ? null
-      : Number(row.recorded_sequence),
-    hasPrecedingRecording: Number(row.preceding_recordings) > 0,
-  }));
+      : Number(row.recorded_sequence);
+    return {
+      id: row.evidence_snapshot_id,
+      recordedSequence:
+        latest !== null && latest >= windowStart ? latest : null,
+      hasPrecedingRecording: latest !== null,
+    };
+  });
 }
 
 export interface VerifiedReplaySources {
