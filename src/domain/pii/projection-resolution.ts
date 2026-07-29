@@ -28,6 +28,7 @@ const SLOT_PLACEHOLDER_EXACT_RE = /^\{\{slot_\d{4}\}\}$/;
 // there, or vice versa.
 const PERSON_WORD_RE = new RegExp(PERSON_WORD_SOURCE, "u");
 const PERSON_RUN_RE = new RegExp(`${PERSON_WORD_SOURCE}(?:\\s+${PERSON_WORD_SOURCE})*`, "gu");
+const LOWERCASE_LEADING_PERSON_RE = /^(\p{Ll}{2,}(?:[-']\p{Ll}+)?)(?=\s+\p{Ll}{2,}(?:ed|s)\b)/u;
 const ACCOUNT_RUN_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE, "g");
 const SIMULATED_SLOT = "{{slot_0000}}";
 const STATIC_PROJECTION_TEMPLATES = {
@@ -48,11 +49,10 @@ export function trustedStaticProjectionText(sourceId: StaticProjectionTemplateId
   return Object.freeze({ requestText: template.requestText, trustedSafeText: Object.freeze(trustedSafeText) });
 }
 interface Candidate extends PIIBearing {
-  readonly slotType: ResolvedSensitiveEntity["slotType"]; readonly rawText: string;
-  readonly identitySpan?: Readonly<{ start: number; end: number }>;
+  readonly slotType: ResolvedSensitiveEntity["slotType"]; readonly rawText: string; readonly identitySpan?: Readonly<{ start: number; end: number }> | null;
 }
 function addCandidate(candidates: Candidate[], slotType: Candidate["slotType"], rawText: string,
-  identitySpan?: Readonly<{ start: number; end: number }>,
+  identitySpan?: Readonly<{ start: number; end: number }> | null,
 ): void {
   const normalized = rawText.trim();
   if (normalized.length < 2) return;
@@ -61,10 +61,16 @@ function addCandidate(candidates: Candidate[], slotType: Candidate["slotType"], 
     candidate.rawText.toLocaleLowerCase() === normalized.toLocaleLowerCase()
   );
   if (found < 0) {
-    candidates.push(identitySpan ? { slotType, rawText: normalized, identitySpan } : { slotType, rawText: normalized });
+    candidates.push(identitySpan === undefined
+      ? { slotType, rawText: normalized }
+      : { slotType, rawText: normalized, identitySpan });
   } else if (identitySpan && !candidates[found]!.identitySpan) {
     candidates[found] = { ...candidates[found]!, identitySpan };
   }
+}
+function lowercaseLeadingSubject(text: string) {
+  const rawText = text.match(LOWERCASE_LEADING_PERSON_RE)?.[1];
+  return rawText ? { rawText, start: 0, end: rawText.length } : null;
 }
 function validatedSafeText(
   requestText: string,
@@ -90,7 +96,7 @@ function validatedSafeText(
   return trustedSpans;
 }
 function subjectCandidates(text: string, safeText: readonly TrustedSafeTextSpan[]): Candidate[] {
-  return [...text.matchAll(PERSON_RUN_RE)].flatMap((match) => {
+  const candidates: Candidate[] = [...text.matchAll(PERSON_RUN_RE)].flatMap((match) => {
     const rawText = match[0];
     const start = match.index ?? 0;
     const end = start + rawText.length;
@@ -105,6 +111,15 @@ function subjectCandidates(text: string, safeText: readonly TrustedSafeTextSpan[
         : {}),
     }];
   });
+  const lowercase = lowercaseLeadingSubject(text);
+  if (lowercase) {
+    candidates.push({
+      slotType: "subject",
+      rawText: lowercase.rawText,
+      identitySpan: { start: lowercase.start, end: lowercase.end },
+    });
+  }
+  return candidates;
 }
 function strictSubjects(text: string): string[] {
   return [...text.matchAll(PERSON_RUN_RE)].map((match) => match[0]);
@@ -132,6 +147,8 @@ function collectCandidates(
     else {
       const subjects = strictSubjects(value);
       for (const subject of subjects) addCandidate(candidates, "subject", subject);
+      const lowercase = lowercaseLeadingSubject(value);
+      if (lowercase) addCandidate(candidates, "subject", lowercase.rawText, null);
       for (const account of accountCandidates(value, subjects)) {
         addCandidate(candidates, "account-ref", account);
       }
@@ -194,6 +211,7 @@ export function resolveCompleteSensitiveEntities(input: SensitiveResolutionInput
     subjects.map((subject) => subject.rawText),
   )) addCandidate(candidates, "account-ref", account);
   collectCandidates(input.evidence, candidates);
+  if (candidates.some((candidate) => candidate.identitySpan === null)) return null;
   const bindings: ResolvedSensitiveEntity[] = [];
   const usedIdentity = new Set<IdentitySpan>();
   for (const slotType of ["subject", "account-ref"] as const) {
@@ -249,6 +267,7 @@ export function hasUnresolvedProjectionText(value: string, safeText?: readonly T
   return looksLikePIIValue(residual) ||
     hasSensitiveDigitRun(residual) ||
     looksLikeAmbiguousSensitiveText(residual) ||
+    LOWERCASE_LEADING_PERSON_RE.test(residual) ||
     PERSON_WORD_RE.test(residual);
 }
 export function hasUnresolvedProjectionEvidence(

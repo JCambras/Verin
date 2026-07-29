@@ -4069,3 +4069,60 @@ pnpm build             # compiled and generated all routes
 ```
 
 **Date:** 2026-07-28 (nineteenth review-fix round on v3 build-sequence prompt 6).
+
+### PF-112 wrapped authority paths are recursive and complete
+
+The shared authority walker inspected only members named `actor` or `tenant`,
+retained at most one wrapped authority of each kind, and suppressed wrapped
+authorities whenever a direct one existed.
+
+**Adversarial proof:** test-first companions paired a direct execution grant with
+`wrapped.piiGrant` in both parameter orders, then reversed which grant was wrapped.
+All four missing pairwise proofs produced zero violations before the change and one
+after it. A second companion placed both grants under
+`wrapped.authorities`; before the change the repository was reported as carrying no
+sealed tenant context, while the complete recursive prologue now passes and omitting
+its pairwise comparison fails. Four more permutations destructure a direct or nested
+grant before use, preserving its bound name in both parameter orders. Direct and
+nested tenant paths likewise fail unless they are compared. Existing integration
+coverage proves that `assertSameTenant` refuses both a different tenant and a
+different actor in the same tenant.
+
+### PF-113 lowercase identity text requires exact span provenance
+
+`alice requested a transfer` matched no title-case or all-caps person shape, so it
+passed the residual check with no subject slot. Supplying an exact identity span did
+not help because the resolver never created a candidate for that span.
+
+**Adversarial proof:** the test-first regression required the unbound request and
+`hasUnresolvedProjectionText` to fail, then required the exact span for `alice` to
+produce `{{slot_0001}} requested a transfer`. Both assertions failed before the
+change and pass now. A shortened span is refused, the same unbound shape in untyped
+evidence is refused, and ordinary lowercase prose remains accepted.
+
+### PF-114 pending migrations interleave and roll back as one plan
+
+All pending preflights ran before any pending DDL, and each migration then committed
+in a separate transaction. A later preflight that queried a relation created by an
+earlier pending migration failed with `42P01`.
+
+**Adversarial proof:** synthetic versions 4 and 5 make version 4 create a relation
+that version 5 preflights. The valid path failed with `driver-error:42P01` before the
+change and now records both versions. The refusing path observes an invalid row
+created by version 4, emits the actionable version-5 preflight refusal, and leaves
+neither the relation nor any pending ledger row. Repeating the refusal from a
+genuinely virgin schema leaves the schema empty, proving that ledger bootstrap and
+all baseline DDL roll back too.
+
+### PF-112 - PF-114 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false # 54 files, 975 tests passed
+pnpm exec eslint .                                          # clean
+pnpm exec tsc --noEmit                                      # clean
+pnpm knip                                                   # clean
+pnpm v3:invariants                                          # 6 active-pass, 0 active-fail
+pnpm golden:validate                                        # all 16 signed cases passed
+pnpm build                                                   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```

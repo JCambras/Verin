@@ -1,11 +1,11 @@
 /**
  * Portable PostgreSQL schema and ordered VERSIONED migrations (ADR-0004/0007,
  * D-016/D-029). `MIGRATIONS` is an ordered list applied by `runMigrations`, which
- * records each version in `schema_migrations`; a version's DDL and its ledger row
- * commit in ONE transaction, so a store is never left claiming a version it did not
- * fully apply. A schema change APPENDS a `{version, name, sql}` entry. Never edit a
- * shipped entry's DDL: stores that already recorded that version will never re-run
- * it, so the edit reaches new stores only and the two silently diverge.
+ * records each version in `schema_migrations`; the complete pending plan commits in
+ * one transaction, with each preflight immediately before its DDL. A schema change
+ * APPENDS a `{version, name, sql}` entry. Never edit a shipped entry's DDL: stores
+ * that already recorded that version will never re-run it, so the edit reaches new
+ * stores only and the two silently diverge.
  *
  * TEMPORAL COLUMNS ARE `timestamptz`, BUT THE APPLICATION BOUNDARY STAYS ISO STRINGS
  * IN BOTH DIRECTIONS. Writers emit `toISOString()`; a read parser in `db.ts`
@@ -22,7 +22,7 @@
  * than defaulting to unscoped.
  */
 import { appError, isAppError } from "@contracts/errors";
-import type { SqlDb } from "./db";
+import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
 
@@ -374,7 +374,7 @@ export const MIGRATION_SQL = [SCHEMA_MIGRATIONS_DDL, ...MIGRATIONS.map((m) => m.
 /**
  * Run every read-only probe for one version and report all orphan classes.
  */
-async function assertPreflightClean(db: SqlDb, m: Migration): Promise<void> {
+async function assertPreflightClean(db: SqlQueryable, m: Migration): Promise<void> {
   try {
     const blocked: string[] = [];
     for (const probe of m.preflight ?? []) {
@@ -428,7 +428,7 @@ UNION SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamesp
  * not hold. So the claim is PROVEN before the first mutation: if any object this
  * schema owns already exists, refuse, and leave the store byte-for-byte as found.
  */
-async function assertManagedSchemaEmpty(db: SqlDb): Promise<void> {
+async function assertManagedSchemaEmpty(db: SqlQueryable): Promise<void> {
   let existing: string[];
   try {
     const { rows } = await db.query<{ name: string }>(MANAGED_OBJECT_PROBE_SQL);
@@ -448,40 +448,38 @@ async function assertManagedSchemaEmpty(db: SqlDb): Promise<void> {
 }
 
 export async function runMigrations(db: SqlDb): Promise<void> {
-  const ledgerExisted = await migrationLedgerExists(db);
-  if (!ledgerExisted) await assertManagedSchemaEmpty(db);
+  let stage: Parameters<typeof migrationFailure>[0] = "virginity-check";
+  let activeMigration: Migration | undefined;
   try {
-    await db.exec(SCHEMA_MIGRATIONS_DDL);
+    await db.transaction(async (tx) => {
+      const ledgerExisted = await migrationLedgerExists(tx);
+      if (!ledgerExisted) await assertManagedSchemaEmpty(tx);
+      stage = "ledger-bootstrap";
+      await tx.exec(SCHEMA_MIGRATIONS_DDL);
+      stage = "applied-version-read";
+      const recorded = await tx.query<{ version: number }>(
+        "SELECT version FROM schema_migrations",
+      );
+      const applied = new Set(recorded.rows.map((row) => Number(row.version)));
+      if (applied.size === 0 && ledgerExisted) {
+        stage = "virginity-check";
+        await assertManagedSchemaEmpty(tx);
+      }
+      const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
+      for (const migration of pending) {
+        activeMigration = migration;
+        stage = "preflight";
+        await assertPreflightClean(tx, migration);
+        stage = "mutation";
+        await tx.exec(migration.sql);
+        await tx.query(
+          "INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())",
+          [migration.version, migration.name],
+        );
+      }
+    });
   } catch (cause) {
-    throw migrationFailure("ledger-bootstrap", cause);
+    if (isAppError(cause)) throw cause;
+    throw migrationFailure(stage, cause, activeMigration);
   }
-  let recorded: { rows: Array<{ version: number }> };
-  try {
-    recorded = await db.query<{ version: number }>("SELECT version FROM schema_migrations");
-  } catch (cause) {
-    throw migrationFailure("applied-version-read", cause);
-  }
-  const applied = new Set(recorded.rows.map((r) => Number(r.version)));
-  const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
-  // Bootstrap is dependency-aware: version 1 CREATES the tables versions 2..N probe,
-  // so on a virgin store the later preflights cannot run until it has been applied.
-  // Only a PROVEN-empty managed schema takes that path; everything else evaluates
-  // every pending preflight before the first mutation. The same dependency order is
-  // why a new migration's preflight may only read relations that already exist at
-  // the version BEFORE it - a probe against a table its own migration creates would
-  // fail permanently.
-  if (applied.size === 0 && ledgerExisted) await assertManagedSchemaEmpty(db);
-  const batch = applied.size === 0 ? pending.slice(0, 1) : pending;
-  for (const m of batch) await assertPreflightClean(db, m);
-  for (const m of batch) {
-    try {
-      await db.transaction(async (tx) => {
-        await tx.exec(m.sql);
-        await tx.query("INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())", [m.version, m.name]);
-      });
-    } catch (cause) {
-      throw migrationFailure("mutation", cause, m);
-    }
-  }
-  if (batch.length < pending.length) await runMigrations(db);
 }

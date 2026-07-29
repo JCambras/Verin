@@ -2155,3 +2155,39 @@ alone (object flattening destroys the evidence needed to reject the input).
 **Revert path:** revert this changeset to restore first-grant-only prologue
 derivation, mutation-before-virginity proof, unbounded substring masking, and
 post-mask-only evidence validation.
+
+## D-081 - Recursive authority discovery, lowercase identity provenance, and atomic migration plans
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-076, D-078, D-080,
+ADR-0034, v3 §15.1/§15.3, charter #1/#4/#7/#13
+
+Authority discovery now recursively walks every non-callable member path and keeps
+all direct and wrapped sealed authorities in declaration order. The tenant-scope
+fence uses that same derivation instead of a second name-limited prefilter. Every
+grant owes its exact action assertion, and every pair of discovered authority scopes
+owes `assertSameTenant`, which compares organization and actor identity before work.
+
+Lowercase leading actor-shaped text is now a projection candidate and a residual
+failure. It can be masked only when exact identity-span metadata binds the complete
+word to a declared subject slot. The same shape in untyped evidence is refused,
+while ordinary lowercase request prose remains accepted without a harmless-word
+vocabulary or caller safe flag.
+
+The migration runner now executes ledger bootstrap, applied-version discovery, and
+each pending preflight followed by its DDL and ledger row inside one outer
+transaction. A later preflight can query objects created by an earlier pending
+migration, and any later refusal rolls back every earlier pending mutation,
+including creation of the migration ledger on a virgin store. Missing-ledger
+virginity is still proven before ledger DDL.
+
+The line-budget fence measures contracts 3,944/4,000, domain 1,250/1,250,
+infrastructure 3,343/3,400, and presentation 918/6,000. No ceiling changed.
+
+**Alternatives rejected:** preserve one-level wrapper names and add `piiGrant`
+to the list (the next wrapper name or nesting level reopens the gap); classify
+lowercase names with a harmless-word vocabulary (caller prose would define its own
+safety); and commit each migration separately after a global preflight phase
+(dependency order and all-or-nothing rollback cannot both hold).
+
+**Revert path:** revert this changeset to restore name-limited authority discovery,
+lowercase identity pass-through, and phase-separated migration execution.

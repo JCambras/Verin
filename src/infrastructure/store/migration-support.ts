@@ -1,7 +1,7 @@
-import type { SqlDb } from "./db";
+import type { SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 
-export async function migrationLedgerExists(db: SqlDb): Promise<boolean> {
+export async function migrationLedgerExists(db: SqlQueryable): Promise<boolean> {
   try {
     const { rows } = await db.query<{ exists: boolean }>(`
       SELECT EXISTS (

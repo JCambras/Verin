@@ -1292,65 +1292,69 @@ export interface SealedAuthorityParameter {
 /**
  * EVERY sealed authority a signature carries, in declaration order.
  *
- * "Every" and "order" are both load-bearing. Returning on the FIRST sealed parameter
- * made the cross-authority rule opt-out by declaration order: with `ActionGrant`
- * tested before `TenantContext`, `listPeople(db, grant, tenant)` asserted only the
- * grant, and the two authorities were never compared - swapping two parameter
- * positions was the entire evasion. A TenantContext WRAPPED in an object
- * (`ctx: { tenant: TenantContext }`) is the same authority reached one property in,
- * so it is recognized wherever it is structurally carried; a parameter whose OWN
- * type is a sealed authority is NOT descended into, because `grant.tenant` and
- * `actor.tenant` are that authority's own internals and the same-tenant proof is
- * what relates them.
+ * A parameter whose own type is a sealed authority is not descended into because
+ * the cross-authority proof relates its internals. Every other object member is
+ * followed recursively, preserving distinct paths, bound names, and declaration
+ * order.
  */
 export function sealedAuthorityParameters(signature: Signature): SealedAuthorityParameter[] {
-  const direct: SealedAuthorityParameter[] = [];
-  const wrapped: SealedAuthorityParameter[] = [];
-  for (const parameter of signature.getParameters()) {
-    const declaration = parameter.getValueDeclaration() ?? parameter.getDeclarations()[0];
-    if (!declaration) continue;
-    const type = parameter.getTypeAtLocation(declaration);
-    const name = parameter.getName();
+  const memberExpression = (owner: string, name: string): string =>
+    /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
+      ? `${owner}.${name}`
+      : `${owner}[${JSON.stringify(name)}]`;
+  const collect = (
+    type: Type,
+    argument: string,
+    ancestors: ReadonlySet<object>,
+  ): SealedAuthorityParameter[] => {
     const own = SEALED_AUTHORITY_KINDS.find((candidate) =>
       declaredAsType(type, candidate.declaration, candidate.typeName)
     );
     if (own) {
-      direct.push({ kind: own.kind, argument: name, assertion: own.assertion, file: own.file, type });
-      continue;
+      return [{ kind: own.kind, argument, assertion: own.assertion, file: own.file, type }];
     }
-    for (const property of ["actor", "tenant"] as const) {
-      const member = type.getProperty(property);
-      const memberDeclaration = member?.getValueDeclaration() ?? member?.getDeclarations()[0];
-      if (!member || !memberDeclaration) continue;
-      const memberType = member.getTypeAtLocation(memberDeclaration);
-      const carried = SEALED_AUTHORITY_KINDS.find((candidate) =>
-        declaredAsType(memberType, candidate.declaration, candidate.typeName)
-      );
-      if (carried) {
-        wrapped.push({
-          kind: carried.kind,
-          argument: `${name}.${property}`,
-          assertion: carried.assertion,
-          file: carried.file,
-          type: memberType,
-        });
+    const key = type.compilerType as unknown as object;
+    if (ancestors.has(key)) return [];
+    const nested = new Set(ancestors).add(key);
+    return type.getProperties().flatMap((member) => {
+      const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
+      if (
+        !declaration ||
+        Node.isMethodDeclaration(declaration) ||
+        Node.isMethodSignature(declaration)
+      ) return [];
+      const memberType = member.getTypeAtLocation(declaration);
+      if (
+        memberType.getCallSignatures().length > 0 ||
+        memberType.getConstructSignatures().length > 0
+      ) return [];
+      return collect(memberType, memberExpression(argument, member.getName()), nested);
+    });
+  };
+  const authorities: SealedAuthorityParameter[] = [];
+  for (const parameter of signature.getParameters()) {
+    const declaration = parameter.getValueDeclaration() ?? parameter.getDeclarations()[0];
+    if (!declaration) continue;
+    if (Node.isParameterDeclaration(declaration)) {
+      const name = declaration.getNameNode();
+      if (!Node.isIdentifier(name)) {
+        for (const element of name.getDescendantsOfKind(SyntaxKind.BindingElement)) {
+          const bound = element.getNameNode();
+          if (!Node.isIdentifier(bound)) continue;
+          authorities.push(...collect(bound.getType(), bound.getText(), new Set()));
+        }
+        continue;
       }
     }
+    authorities.push(...collect(
+      parameter.getTypeAtLocation(declaration),
+      Node.isParameterDeclaration(declaration)
+        ? declaration.getNameNode().getText()
+        : parameter.getName(),
+      new Set(),
+    ));
   }
-  // A wrapped authority stands in only where the signature names NONE of that kind
-  // directly. A callable taking both a `TenantContext` and a value that merely
-  // CARRIES one (createSession's AuthenticatedUser, whose own proof is its runtime
-  // seal) has one tenant scope, not two - demanding an assertion on the carrier's
-  // member would make that signature unbuildable, which is the failure mode the
-  // shared prologue exists to remove.
-  return [
-    ...direct,
-    ...SEALED_AUTHORITY_KINDS.flatMap(({ kind }) =>
-      direct.some((authority) => authority.kind === kind)
-        ? []
-        : wrapped.filter((authority) => authority.kind === kind).slice(0, 1)
-    ),
-  ];
+  return authorities;
 }
 
 /**
@@ -1378,7 +1382,6 @@ export function requiredAuthorityPrologue(
 ): { required: RequiredAuthorityAssertion[]; unfenceable: string[] } {
   const authorities = sealedAuthorityParameters(signature);
   const grants = authorities.filter((authority) => authority.kind === "grant");
-  const tenants = authorities.filter((authority) => authority.kind === "tenant");
   const actions = new Map(grants.map((grant) => [grant, grantAction(grant)]));
   const unfenceable = grants.flatMap((grant) =>
     actions.get(grant) === null
@@ -1394,21 +1397,15 @@ export function requiredAuthorityPrologue(
       ? [authority.argument, JSON.stringify(actions.get(authority))]
       : [authority.argument],
   }));
-  for (const tenant of tenants) {
-    for (const grant of grants) {
+  const scopes = authorities.map((authority) =>
+    authority.kind === "tenant" ? authority.argument : `${authority.argument}.tenant`
+  );
+  for (let left = 0; left < scopes.length; left += 1) {
+    for (let right = left + 1; right < scopes.length; right += 1) {
       required.push({
         functionName: "assertSameTenant",
         file: "src/contracts/tenant.ts",
-        args: [tenant.argument, `${grant.argument}.tenant`],
-      });
-    }
-  }
-  for (let left = 0; left < grants.length; left += 1) {
-    for (let right = left + 1; right < grants.length; right += 1) {
-      required.push({
-        functionName: "assertSameTenant",
-        file: "src/contracts/tenant.ts",
-        args: [`${grants[left]!.argument}.tenant`, `${grants[right]!.argument}.tenant`],
+        args: [scopes[left]!, scopes[right]!],
       });
     }
   }

@@ -194,6 +194,45 @@ describe("the evidence-to-LLM projection scrubs at the boundary", () => {
       evidence: {},
     }).ok).toBe(true);
   });
+  it("refuses an unbound lowercase leading identity", () => {
+    const requestText = "alice requested a transfer";
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [],
+      evidence: {},
+    }).ok).toBe(false);
+    expect(hasUnresolvedProjectionText(requestText)).toBe(true);
+  });
+  it("masks a lowercase leading identity only from its exact trusted span", () => {
+    const requestText = "alice requested a transfer";
+    const result = projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [identitySpan(requestText, "alice")],
+      evidence: {},
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.maskedText.value).toBe("{{slot_0001}} requested a transfer");
+    }
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText,
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      identitySpans: [{ slotId: SLOT_1, start: 0, end: 4 }],
+      evidence: {},
+    }).ok).toBe(false);
+  });
+  it("refuses an unbound lowercase identity in untyped evidence prose", () => {
+    expect(projectForLlm({
+      purpose: "intent-shaping",
+      requestText: "please review the transfer",
+      slots: [{ slotId: SLOT_1, slotType: "subject" }],
+      evidence: { note: "alice requested a transfer" },
+    }).ok).toBe(false);
+  });
 
   it("rejects malformed projection input", () => {
     const base = {

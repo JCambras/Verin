@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { MIGRATIONS, MIGRATION_SQL, runMigrations } from "@infra/store/migrations";
+import { MIGRATIONS, MIGRATION_SQL, runMigrations, type Migration } from "@infra/store/migrations";
 
 /**
  * MIGRATION-3 UPGRADE REHEARSAL (D-016/D-061). Migration 3 adds tenant-qualified
@@ -170,7 +170,7 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
     )).rejects.toThrow(/foreign key|violates|constraint/i);
   });
 
-  it("runs all pending preflights before the first pending schema mutation", async () => {
+  it("rolls back earlier pending schema mutations when a later preflight refuses", async () => {
     await rewindToVersion1(db);
     await ORPHANS[0]!.plant(db);
     const indexesBefore = await schemaIndexes(db);
@@ -189,6 +189,70 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
     expect(await db.query<{ org_id: string }>(
       "SELECT org_id FROM sessions WHERE id = 's-legacy'",
     )).toEqual(rowBefore);
+  });
+
+  it("interleaves dependent preflights with pending DDL in one ordered transaction", async () => {
+    const plan = MIGRATIONS as Migration[];
+    plan.push(
+      {
+        version: 4,
+        name: "test-create-preflight-source",
+        sql: "CREATE TABLE migration_dependency_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_dependency_probe VALUES (1, true);",
+      },
+      {
+        version: 5,
+        name: "test-read-preflight-source",
+        sql: "CREATE INDEX migration_dependency_probe_valid ON migration_dependency_probe(valid);",
+        preflight: [{
+          relationship: "migration_dependency_probe_valid",
+          subject: "migration_dependency_probe(valid)",
+          sql: "SELECT count(*)::int AS orphans FROM migration_dependency_probe WHERE NOT valid;",
+        }],
+      },
+    );
+    try {
+      await runMigrations(db);
+      expect(await appliedVersions(db)).toEqual([1, 2, 3, 4, 5]);
+      const rows = await db.query("SELECT id, valid FROM migration_dependency_probe");
+      expect(rows.rows).toEqual([{ id: 1, valid: true }]);
+    } finally {
+      plan.splice(-2, 2);
+    }
+  });
+
+  it("rolls back earlier pending DDL and ledger rows when a dependent later preflight refuses", async () => {
+    const plan = MIGRATIONS as Migration[];
+    plan.push(
+      {
+        version: 4,
+        name: "test-create-refusing-source",
+        sql: "CREATE TABLE migration_rollback_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_rollback_probe VALUES (1, false);",
+      },
+      {
+        version: 5,
+        name: "test-refuse-dependent-source",
+        sql: "CREATE INDEX migration_rollback_probe_valid ON migration_rollback_probe(valid);",
+        preflight: [{
+          relationship: "migration_rollback_probe_valid",
+          subject: "migration_rollback_probe(valid)",
+          sql: "SELECT count(*)::int AS orphans FROM migration_rollback_probe WHERE NOT valid;",
+        }],
+      },
+    );
+    try {
+      const message = await runMigrations(db).then(
+        () => "",
+        (error: { message?: string }) => error.message ?? "",
+      );
+      expect(message).toContain("migration 5 (test-refuse-dependent-source) cannot be applied");
+      expect(await appliedVersions(db)).toEqual([1, 2]);
+      const relation = await db.query<{ exists: boolean }>(
+        "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'migration_rollback_probe') AS exists",
+      );
+      expect(relation.rows[0]?.exists).toBe(false);
+    } finally {
+      plan.splice(-2, 2);
+    }
   });
 
   for (const orphan of ORPHANS) {
@@ -330,6 +394,42 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
     expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((m) => m.version));
   });
 
+  it("rolls back the ledger bootstrap when a later dependent preflight refuses a virgin store", async () => {
+    const db = await createMemoryDb();
+    await db.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+    const plan = MIGRATIONS as Migration[];
+    plan.push(
+      {
+        version: 4,
+        name: "test-create-virgin-source",
+        sql: "CREATE TABLE migration_virgin_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_virgin_probe VALUES (1, false);",
+      },
+      {
+        version: 5,
+        name: "test-refuse-virgin-source",
+        sql: "CREATE INDEX migration_virgin_probe_valid ON migration_virgin_probe(valid);",
+        preflight: [{
+          relationship: "migration_virgin_probe_valid",
+          subject: "migration_virgin_probe(valid)",
+          sql: "SELECT count(*)::int AS orphans FROM migration_virgin_probe WHERE NOT valid;",
+        }],
+      },
+    );
+    try {
+      const message = await runMigrations(db).then(
+        () => "",
+        (error: { message?: string }) => error.message ?? "",
+      );
+      expect(message).toContain("migration 5 (test-refuse-virgin-source) cannot be applied");
+      const relations = await db.query<{ name: string }>(
+        "SELECT relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema()",
+      );
+      expect(relations.rows).toEqual([]);
+    } finally {
+      plan.splice(-2, 2);
+    }
+  });
+
   it("a NEIGHBOUR schema's same-named objects do not block a virgin bootstrap", async () => {
     // Verin can share a managed Postgres with another schema. The probe asks what
     // THIS schema owns, so a neighbour that happens to own a table, a trigger, or a
@@ -373,15 +473,22 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
 
 describe("migration failure diagnostics", () => {
   it("names the failing migration without surfacing driver text", async () => {
+    let execCount = 0;
+    const driverError = Object.assign(
+      new Error("duplicate key value includes alice@example.com"),
+      { code: "23505" },
+    );
+    const query = async (sql: string) => ({
+      rows: sql.includes("SELECT EXISTS") ? [{ exists: false }] : [],
+    }) as never;
+    const exec = async () => {
+      execCount += 1;
+      if (execCount === 2) throw driverError;
+    };
     const stub: SqlDb = {
-      query: async (sql: string) => ({ rows: sql.includes("schema_migrations") ? [] : [{ orphans: 0 }] }) as never,
+      query,
       exec: async () => undefined,
-      transaction: async () => {
-        throw Object.assign(
-          new Error("duplicate key value includes alice@example.com"),
-          { code: "23505" },
-        );
-      },
+      transaction: async (fn) => fn({ query, exec }),
       dump: async () => new Blob(),
       close: async () => undefined,
     };
@@ -411,25 +518,27 @@ describe("migration failure diagnostics", () => {
       new Error("violating row includes alice@example.com"),
       { code: "23503" },
     );
+    const exec = async () => {
+      if (stage === "ledger-bootstrap") throw driverError;
+    };
+    const query = async (sql: string) => {
+      if (sql.includes("SELECT EXISTS")) {
+        if (stage === "virginity-check") throw driverError;
+        return { rows: [{ exists: true }] } as never;
+      }
+      queryCount += 1;
+      if (stage === "applied-version-read" && queryCount === 1) throw driverError;
+      if (stage === "preflight" && queryCount > 1) throw driverError;
+      return {
+        rows: stage === "preflight"
+          ? [{ version: 1 }, { version: 2 }]
+          : [],
+      } as never;
+    };
     const stub: SqlDb = {
-      exec: async () => {
-        if (stage === "ledger-bootstrap") throw driverError;
-      },
-      query: async (sql: string) => {
-        if (sql.includes("SELECT EXISTS")) {
-          if (stage === "virginity-check") throw driverError;
-          return { rows: [{ exists: true }] } as never;
-        }
-        queryCount += 1;
-        if (stage === "applied-version-read" && queryCount === 1) throw driverError;
-        if (stage === "preflight" && queryCount > 1) throw driverError;
-        return {
-          rows: stage === "preflight"
-            ? [{ version: 1 }, { version: 2 }]
-            : [],
-        } as never;
-      },
-      transaction: async <T>() => undefined as T,
+      exec: async () => undefined,
+      query,
+      transaction: async (fn) => fn({ query, exec }),
       dump: async () => new Blob(),
       close: async () => undefined,
     };

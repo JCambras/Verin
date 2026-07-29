@@ -18,7 +18,7 @@ import {
   REPO_ROOT,
   requiredAuthorityPrologue,
   returnedCallableMembers,
-  typeKey,
+  sealedAuthorityParameters,
 } from "./_fence-utils";
 
 const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
@@ -80,52 +80,6 @@ function normalizedPath(path: string): string {
   return rel.startsWith("..") ? path.replace(/^\//, "") : rel;
 }
 
-function declaredAs(type: Type, file: string, name: string): boolean {
-  const queue = [type];
-  const seen = new Set<string>();
-  while (queue.length) {
-    const current = queue.shift()!;
-    const key = typeKey(current);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    for (const symbol of [current.getAliasSymbol(), current.getSymbol()]) {
-      if (symbol?.getName() !== name) continue;
-      if (
-        symbol.getDeclarations().some((declaration) =>
-          normalizedPath(declaration.getSourceFile().getFilePath()) === file
-        )
-      ) {
-        return true;
-      }
-    }
-    queue.push(...current.getUnionTypes(), ...current.getIntersectionTypes());
-  }
-  return false;
-}
-
-function carriesTenant(type: Type): boolean {
-  if (
-    declaredAs(type, "src/contracts/tenant.ts", "TenantContext") ||
-    declaredAs(type, "src/contracts/principal.ts", "WriteActor")
-  ) {
-    return true;
-  }
-  for (const name of ["tenant", "actor"]) {
-    const property = type.getProperty(name);
-    const declaration = property?.getValueDeclaration() ??
-      property?.getDeclarations()[0];
-    if (!declaration || !property) continue;
-    const propertyType = property.getTypeAtLocation(declaration);
-    if (
-      declaredAs(propertyType, "src/contracts/tenant.ts", "TenantContext") ||
-      declaredAs(propertyType, "src/contracts/principal.ts", "WriteActor")
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 interface RepositoryEntry {
   readonly name: string;
   readonly signatures: Signature[];
@@ -168,17 +122,6 @@ function callableMembers(
     }
   }
   return entries;
-}
-
-function signatureHas(
-  signature: Signature,
-  predicate: (type: Type) => boolean,
-): boolean {
-  return signature.getParameters().some((parameter) => {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    return Boolean(declaration && predicate(parameter.getTypeAtLocation(declaration)));
-  });
 }
 
 /**
@@ -386,7 +329,7 @@ export function detectMissingTenantParams(
       const ref = `${normalized} :: ${entry.name}`;
       if (escapes.has(ref)) continue;
       const unscoped = entry.signatures.some((signature) =>
-        !signatureHas(signature, carriesTenant)
+        sealedAuthorityParameters(signature).length === 0
       );
       if (unscoped) {
         out.push({
@@ -431,7 +374,7 @@ export function detectUnscopedPortMethods(
       for (const member of members) {
         if (escapes.has(member.ref)) continue;
         const unscoped = member.signatures.some((signature) =>
-          !signatureHas(signature, carriesTenant)
+          sealedAuthorityParameters(signature).length === 0
         );
         if (unscoped) out.push(member.ref);
       }
@@ -717,6 +660,116 @@ ${body}
       `, params)).toHaveLength(1);
     });
 
+    const mixedGrantPairs = [
+      {
+        params: `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          wrapped: { piiGrant: ActionGrant<"pii.view"> },`,
+        execution: "executionGrant",
+        pii: "wrapped.piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          wrapped: { piiGrant: ActionGrant<"pii.view"> },
+          executionGrant: ActionGrant<"execution.initiate">,`,
+        execution: "executionGrant",
+        pii: "wrapped.piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          piiGrant: ActionGrant<"pii.view">,
+          wrapped: { executionGrant: ActionGrant<"execution.initiate"> },`,
+        execution: "wrapped.executionGrant",
+        pii: "piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          wrapped: { executionGrant: ActionGrant<"execution.initiate"> },
+          piiGrant: ActionGrant<"pii.view">,`,
+        execution: "wrapped.executionGrant",
+        pii: "piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          { piiGrant }: { piiGrant: ActionGrant<"pii.view"> },`,
+        execution: "executionGrant",
+        pii: "piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          { piiGrant }: { piiGrant: ActionGrant<"pii.view"> },
+          executionGrant: ActionGrant<"execution.initiate">,`,
+        execution: "executionGrant",
+        pii: "piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          piiGrant: ActionGrant<"pii.view">,
+          { authority: { executionGrant } }: {
+            authority: { executionGrant: ActionGrant<"execution.initiate"> }
+          },`,
+        execution: "executionGrant",
+        pii: "piiGrant",
+      },
+      {
+        params: `db: SqlDb,
+          { authority: { executionGrant } }: {
+            authority: { executionGrant: ActionGrant<"execution.initiate"> }
+          },
+          piiGrant: ActionGrant<"pii.view">,`,
+        execution: "executionGrant",
+        pii: "piiGrant",
+      },
+    ];
+
+    it.each(mixedGrantPairs)(
+      "rejects a mixed direct/wrapped grant pair without its pairwise scope proof",
+      ({ params, execution, pii }) => {
+        expect(dualAuthorityViolations(`
+          assertActionGrant(${execution}, "execution.initiate");
+          assertActionGrant(${pii}, "pii.view");
+          return db.query("SELECT 1");
+        `, params)).toHaveLength(1);
+      },
+    );
+
+    it.each(mixedGrantPairs)(
+      "accepts a mixed direct/wrapped grant pair with both assertions and its scope proof",
+      ({ params, execution, pii }) => {
+        expect(dualAuthorityViolations(`
+          assertActionGrant(${execution}, "execution.initiate");
+          assertActionGrant(${pii}, "pii.view");
+          assertSameTenant(${execution}.tenant, ${pii}.tenant);
+          return db.query("SELECT 1");
+        `, params)).toEqual([]);
+      },
+    );
+
+    it("recursively preserves every distinct wrapped grant path", () => {
+      const params = `db: SqlDb,
+          wrapped: {
+            authorities: {
+              executionGrant: ActionGrant<"execution.initiate">,
+              piiGrant: ActionGrant<"pii.view">
+            }
+          },`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(wrapped.authorities.executionGrant, "execution.initiate");
+          assertActionGrant(wrapped.authorities.piiGrant, "pii.view");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+      expect(dualAuthorityViolations(`
+          assertActionGrant(wrapped.authorities.executionGrant, "execution.initiate");
+          assertActionGrant(wrapped.authorities.piiGrant, "pii.view");
+          assertSameTenant(
+            wrapped.authorities.executionGrant.tenant,
+            wrapped.authorities.piiGrant.tenant
+          );
+          return db.query("SELECT 1");
+      `, params)).toEqual([]);
+    });
+
     it("rejects a grant-pair proof delayed until after repository work", () => {
       expect(dualAuthorityViolations(`
           assertActionGrant(executionGrant, "execution.initiate");
@@ -774,6 +827,30 @@ ${body}
           return db.query("SELECT 1");
         `,
         wrapped,
+      )).toEqual([]);
+    });
+
+    it("requires every direct and wrapped tenant path to agree", () => {
+      const params = `
+          db: SqlDb,
+          tenant: TenantContext,
+          wrapped: { authority: { tenant: TenantContext } },`;
+      expect(dualAuthorityViolations(
+        `
+          assertTenantContext(tenant);
+          assertTenantContext(wrapped.authority.tenant);
+          return db.query("SELECT 1");
+        `,
+        params,
+      )).toHaveLength(1);
+      expect(dualAuthorityViolations(
+        `
+          assertTenantContext(tenant);
+          assertTenantContext(wrapped.authority.tenant);
+          assertSameTenant(tenant, wrapped.authority.tenant);
+          return db.query("SELECT 1");
+        `,
+        params,
       )).toEqual([]);
     });
 
