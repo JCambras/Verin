@@ -80,12 +80,117 @@ export interface Invariant {
   activationPrompts?: number[];
   activationArtifacts?: string[];
   activationMechanisms?: Array<{ type: "fitness"; ref: string }>;
-  mechanisms?: Array<{ type: string; ref: string; command?: string }>;
+  mechanisms?: InvariantMechanism[];
 }
 
 export interface Registry {
   gates: Record<string, Gate>;
   invariants: Invariant[];
+}
+
+export interface InvariantMechanism {
+  type: string;
+  ref: string;
+  command?: string;
+}
+
+export const ACTIVE_MECHANISM_RATCHET: Readonly<
+  Record<number, readonly InvariantMechanism[]>
+> = {
+  2: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/org-id-required.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-tenant-scope.test.ts",
+    },
+  ],
+  5: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/audited-write-required.test.ts",
+    },
+    {
+      type: "ci-gate",
+      ref: "audit-chain-verify",
+      command: "pnpm exec tsx scripts/audit-chain-verify.ts",
+    },
+    {
+      type: "file",
+      ref: "src/infrastructure/store/migrations.ts",
+    },
+  ],
+  7: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+  8: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+  9: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
+    },
+  ],
+};
+
+export const ACTIVE_RATCHET = Object.keys(
+  ACTIVE_MECHANISM_RATCHET,
+).map(Number);
+
+function mechanismTuples(
+  mechanisms: readonly InvariantMechanism[],
+): Array<[string, string, string | null]> {
+  return mechanisms.map((mechanism) => [
+    mechanism.type,
+    mechanism.ref,
+    mechanism.command ?? null,
+  ]);
+}
+
+export function activeInvariantRatchetProblems(
+  reg: Pick<Registry, "invariants">,
+): string[] {
+  const problems: string[] = [];
+  const activeIds = reg.invariants
+    .filter((invariant) => invariant.status === "active")
+    .map((invariant) => invariant.id)
+    .sort((left, right) => left - right);
+  const ratchetedIds = [...ACTIVE_RATCHET].sort(
+    (left, right) => left - right,
+  );
+  if (JSON.stringify(activeIds) !== JSON.stringify(ratchetedIds)) {
+    problems.push(
+      `active invariant ids must exactly match the shipped mechanism ratchet; expected ${JSON.stringify(ratchetedIds)}, received ${JSON.stringify(activeIds)}`,
+    );
+  }
+  for (const id of ACTIVE_RATCHET) {
+    const invariant = reg.invariants.find((candidate) => candidate.id === id);
+    if (invariant === undefined) continue;
+    if (invariant.status !== "active") {
+      problems.push(
+        `invariant ${id}: shipped as 'active' but regressed to '${invariant.status}' (the ratchet is monotonic)`,
+      );
+    }
+    const expected = mechanismTuples(
+      ACTIVE_MECHANISM_RATCHET[id] ?? [],
+    );
+    const actual = mechanismTuples(invariant.mechanisms ?? []);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      problems.push(
+        `invariant ${id}: shipped mechanism set drifted; expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      );
+    }
+  }
+  return problems;
 }
 
 export const INVARIANT_THREE_ACTIVATION_REQUIREMENTS = {

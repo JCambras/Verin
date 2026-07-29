@@ -28,6 +28,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  activeInvariantRatchetProblems,
   ciJobRunProblem,
   ciJobRuns,
   gateOrderingProblems,
@@ -92,6 +93,7 @@ for (const inv of registry.invariants) {
 // no-empty-requirement-set rule. Same shared core the v3-gate-ordering fence proves
 // adversarially, so this report can never emit a claim that fence would reject.
 structural.push(...gateOrderingProblems(registry, (p) => existsSync(join(ROOT, p))));
+structural.push(...activeInvariantRatchetProblems(registry));
 
 // ---------- verify the ratified-document pins (arch-version, defense in depth) ----------
 for (const doc of registry.documents) {

@@ -251,6 +251,7 @@ function routePageUsesResolvedStation(source: string): boolean {
   const scenarioId = directConst("scenarioId");
   const firmId = directConst("firmId");
   const journeyDeclaration = directConst("journey");
+  const idsDeclaration = directConst("ids");
   const isResolvedInput = (
     declaration: typeof scenarioId,
     resolver: string,
@@ -290,6 +291,40 @@ function routePageUsesResolvedStation(source: string): boolean {
     scenarioArgument.getSymbol() !== scenarioId?.getSymbol() ||
     !Node.isIdentifier(firmArgument) ||
     firmArgument.getSymbol() !== firmId?.getSymbol()
+  ) {
+    return false;
+  }
+  const idsInitializer = idsDeclaration?.getInitializer();
+  if (
+    !Node.isObjectLiteralExpression(idsInitializer) ||
+    idsInitializer.getProperties().length !== 2
+  ) {
+    return false;
+  }
+  const idFieldIsBound = (
+    field: "scenarioId" | "firmId",
+    resolved: typeof scenarioId,
+  ) => {
+    const property = idsInitializer.getProperty(field);
+    const value = Node.isPropertyAssignment(property)
+      ? property.getInitializer()
+      : Node.isShorthandPropertyAssignment(property)
+        ? property.getNameNode()
+        : undefined;
+    if (Node.isIdentifier(value)) {
+      return value.getSymbol() === resolved?.getSymbol();
+    }
+    return (
+      Node.isPropertyAccessExpression(value) &&
+      value.getName() === field &&
+      Node.isIdentifier(value.getExpression()) &&
+      value.getExpression().getSymbol() ===
+        journeyDeclaration?.getSymbol()
+    );
+  };
+  if (
+    !idFieldIsBound("scenarioId", scenarioId) ||
+    !idFieldIsBound("firmId", firmId)
   ) {
     return false;
   }
@@ -346,7 +381,8 @@ function routePageUsesResolvedStation(source: string): boolean {
     stationArgument.getSymbol() === resolved.getSymbol() &&
     Node.isIdentifier(journey) &&
     journey.getSymbol() === journeyDeclaration?.getSymbol() &&
-    ids?.getText() === "ids" &&
+    Node.isIdentifier(ids) &&
+    ids.getSymbol() === idsDeclaration?.getSymbol() &&
     approved?.getText() === "approved"
   );
 }
@@ -1169,6 +1205,14 @@ describe("demo-surface-completeness fence", () => {
         route.replace(
           "getJourney(scenarioId, firmId)",
           'getJourney(scenarioId, "firm-a")',
+        ),
+        route.replace(
+          "const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };",
+          'const ids = { scenarioId: "safe-proceed", firmId: "firm-a" };',
+        ),
+        route.replace(
+          "const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };",
+          "const ids = { scenarioId: journey.firmId, firmId: journey.scenarioId };",
         ),
       ]) {
         expect(

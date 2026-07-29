@@ -10397,6 +10397,86 @@ type, reference, exact command, and effective status.
 
 **Date:** 2026-07-29.
 
+### PF-031 (continued) · executed callbacks and stable assertion provenance
+
+**Invariant (charter #9):** Playwright neutralizers inside callbacks executed by a required test cannot
+escape analysis, and the sanctioned Axe helper must assert violations through a stable, unreassigned
+Playwright `expect` import.
+
+**Injection 20 - skip from an executed `test.step` callback.** Added an awaited `test.step` immediately
+before the real public route loop. Its callback called `test.info().skip(...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 21 - disguise a no-op assertion through unreachable assignment.** Replaced the helper's
+direct Playwright `expect` import with a local no-op function and assigned the imported assertion to it
+only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+**Companions added:** in-memory specifications reproduce inline and locally aliased executed callback
+neutralizers, and an in-memory helper reproduces the no-op local assertion plus unreachable import
+assignment.
+
+**Revert:** both real injections were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · renderer branch identifiers preserve resolved context
+
+**Invariant (Gate 0, ADR-0030):** every rendered demo surface receives the exact resolved scenario and
+firm identifiers, either directly from the validated query inputs or from the journey returned for
+those inputs.
+
+**Injection 16 - hardcode the renderer identifiers.** Replaced the dynamic page's `ids` object with the
+canonical `safe-proceed` and `firm-a` literals while leaving the resolved service call and every route
+case unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companions added:** in-memory routes reject hardcoded renderer identifiers and swapped journey
+fields while accepting identifiers derived from the resolved query or matching journey fields.
+
+**Revert:** the real route identifiers were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · blocking runner enforces the shared active ratchet
+
+**Invariant (v3 §17, ADR-0030):** the authoritative `v3:invariants` command rejects active-ID and
+mechanism-tuple drift before it can report an unreviewed invariant as `active-pass`.
+
+**Injection 6 - activate an unratcheted invariant through a passing fence.** Changed invariant 1 from
+`not-yet-active` to `active` and pointed it at the existing passing decision-core illegal-states fence,
+then executed the blocking runner directly.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: registry/pin problems:
+  - active invariant ids must exactly match the shipped mechanism ratchet; expected [2,5,7,8,9], received [1,2,5,7,8,9]
+```
+
+**Companion added:** the registry fitness test imports the same shared validator as the runner and
+retains direct cases for unratcheted activation and complete mechanism-tuple drift. Its runner binding
+check also rejects deleting the validator call or invoking it without feeding its problems into the
+fatal structural-problem path.
+
+**Revert:** invariant 1 was restored to its recorded state and empty mechanism set immediately.
+
+**Date:** 2026-07-29.
+
 ### PF-024 (continued) · exact active-invariant ratchet membership
 
 **Invariant (v3 §17, ADR-0030):** every active invariant has a reviewed, pinned mechanism tuple set, and

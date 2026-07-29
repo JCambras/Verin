@@ -36,7 +36,8 @@ Unsupported runners, custom shells, evidence jobs with non-empty `needs` depende
 jobs using `strategy.matrix` also prove nothing. Declared `activationPrompts` are validated for every
 status, the prompt-5 proof points for invariants 7, 8, and 9 are pinned exactly, and every shipped active
 invariant's complete mechanism tuple set is ratcheted. The active invariant ID set must exactly match
-the mechanism-ratchet keys.
+the mechanism-ratchet keys through one shared validator invoked by both the registry fence and blocking
+runner.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
 `ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
 empty, unsupported-shell, and fully skipped jobs prove nothing. The charter ratchet pins every complete

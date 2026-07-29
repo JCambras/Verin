@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { Node, Project } from "ts-morph";
 import {
+  ACTIVE_MECHANISM_RATCHET,
+  ACTIVE_RATCHET,
+  activeInvariantRatchetProblems,
   ciJobRunProblem,
   mappedFitnessProblems,
   parseCiJobs,
@@ -55,77 +59,61 @@ interface Registry {
 
 const VALID_STATUSES = ["active", "not-yet-active"];
 const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedure"];
-export const ACTIVE_MECHANISM_RATCHET: Readonly<
-  Record<number, readonly Mechanism[]>
-> = {
-  1: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/llm-pii-boundary.test.ts",
-    },
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/tokenized-factory-only.test.ts",
-    },
-  ],
-  2: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/org-id-required.test.ts",
-    },
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/decision-core-tenant-scope.test.ts",
-    },
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/tenant-context-required.test.ts",
-    },
-  ],
-  5: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/audited-write-required.test.ts",
-    },
-    {
-      type: "ci-gate",
-      ref: "audit-chain-verify",
-      command: "pnpm exec tsx scripts/audit-chain-verify.ts",
-    },
-    {
-      type: "file",
-      ref: "src/infrastructure/store/migrations.ts",
-    },
-  ],
-  7: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
-    },
-  ],
-  8: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
-    },
-  ],
-  9: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/decision-core-illegal-states.test.ts",
-    },
-  ],
-};
-export const ACTIVE_RATCHET = Object.keys(ACTIVE_MECHANISM_RATCHET).map(Number);
-
-function mechanismTuples(
-  mechanisms: readonly Mechanism[],
-): Array<[string, string, string | null]> {
-  return mechanisms.map((mechanism) => [
-    mechanism.type,
-    mechanism.ref,
-    mechanism.command ?? null,
-  ]);
+export function runnerEnforcesActiveInvariantRatchet(
+  source: string,
+): boolean {
+  const project = new Project({ useInMemoryFileSystem: true });
+  const file = project.createSourceFile("/scripts/v3-invariants.ts", source);
+  const imported = file
+    .getImportDeclaration("./v3-gates.lib")
+    ?.getNamedImports()
+    .find(
+      (specifier) =>
+        specifier.getName() === "activeInvariantRatchetProblems",
+    )
+    ?.getNameNode()
+    .getSymbol();
+  const registry = file.getVariableDeclaration("registry")?.getSymbol();
+  const structural = file.getVariableDeclaration("structural")?.getSymbol();
+  if (
+    imported === undefined ||
+    registry === undefined ||
+    structural === undefined
+  ) {
+    return false;
+  }
+  return file.getStatements().some((statement) => {
+    if (!Node.isExpressionStatement(statement)) return false;
+    const outer = statement.getExpression();
+    if (!Node.isCallExpression(outer) || outer.getArguments().length !== 1) {
+      return false;
+    }
+    const push = outer.getExpression();
+    if (
+      !Node.isPropertyAccessExpression(push) ||
+      push.getName() !== "push" ||
+      !Node.isIdentifier(push.getExpression()) ||
+      push.getExpression().getSymbol() !== structural
+    ) {
+      return false;
+    }
+    const spread = outer.getArguments()[0];
+    if (!Node.isSpreadElement(spread)) return false;
+    const validation = spread.getExpression();
+    if (
+      !Node.isCallExpression(validation) ||
+      validation.getArguments().length !== 1 ||
+      !Node.isIdentifier(validation.getExpression()) ||
+      validation.getExpression().getSymbol() !== imported
+    ) {
+      return false;
+    }
+    const argument = validation.getArguments()[0];
+    return (
+      Node.isIdentifier(argument) &&
+      argument.getSymbol() === registry
+    );
+  });
 }
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
@@ -176,39 +164,19 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
     }
   }
 
-  const activeIds = invs
-    .filter((inv) => inv.status === "active")
-    .map((inv) => inv.id)
-    .sort((left, right) => left - right);
-  const ratchetedIds = [...ACTIVE_RATCHET].sort((left, right) => left - right);
-  if (JSON.stringify(activeIds) !== JSON.stringify(ratchetedIds)) {
-    problems.push(
-      `active invariant ids must exactly match the shipped mechanism ratchet; expected ${JSON.stringify(ratchetedIds)}, received ${JSON.stringify(activeIds)}`,
-    );
-  }
-
-  for (const id of ACTIVE_RATCHET) {
-    const inv = invs.find((i) => i.id === id);
-    if (!inv) continue; // already reported as missing above
-    if (inv.status !== "active") problems.push(`invariant ${id}: shipped as 'active' but regressed to '${inv.status}' (the ratchet is monotonic)`);
-    const expected = mechanismTuples(ACTIVE_MECHANISM_RATCHET[id] ?? []);
-    const actual = mechanismTuples(inv.mechanisms ?? []);
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      problems.push(
-        `invariant ${id}: shipped mechanism set drifted; expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-      );
-    }
-  }
+  problems.push(...activeInvariantRatchetProblems(reg));
   return problems;
 }
 
 const registry = JSON.parse(readFileSync(root + "v3-invariants.json", "utf8")) as Registry;
 const ciJobs = parseCiJobs(existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "");
+const runnerSource = readFileSync(root + "scripts/v3-invariants.ts", "utf8");
 
 describe("v3-invariant registry fence", () => {
   it("enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted", () => {
     const problems = validateRegistry(registry, { exists: (p) => existsSync(root + p), ciJobs });
     expect(problems, `v3-invariants.json problems:\n${problems.join("\n")}`).toEqual([]);
+    expect(runnerEnforcesActiveInvariantRatchet(runnerSource)).toBe(true);
   });
 
   describe("detects (companion): a dishonest or hollow registry cannot pass", () => {
@@ -347,6 +315,24 @@ describe("v3-invariant registry fence", () => {
           ),
         ),
       ).toBe(true);
+    });
+    it("flags a blocking runner that discards the shared active ratchet result", () => {
+      expect(
+        runnerEnforcesActiveInvariantRatchet(
+          runnerSource.replace(
+            "structural.push(...activeInvariantRatchetProblems(registry));",
+            "activeInvariantRatchetProblems(registry);",
+          ),
+        ),
+      ).toBe(false);
+      expect(
+        runnerEnforcesActiveInvariantRatchet(
+          runnerSource.replace(
+            "structural.push(...activeInvariantRatchetProblems(registry));",
+            "",
+          ),
+        ),
+      ).toBe(false);
     });
     it("flags failed and missing results from every mapped fitness file", () => {
       const refs = ["active.test.ts", "gate-only.test.ts"];

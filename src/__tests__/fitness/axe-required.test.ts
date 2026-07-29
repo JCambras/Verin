@@ -841,6 +841,25 @@ function localCallableIsUnresolved(
   });
 }
 
+function callbackArgumentHasNeutralizer(
+  node: Node,
+  seen: ReadonlySet<FunctionNode>,
+): boolean {
+  const targets = localCallableFunctions(node);
+  if (
+    targets.some((target) =>
+      functionHasNeutralizer(target, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    targets.length === 0 &&
+    unwrapExpression(node).getType().getCallSignatures().length > 0 &&
+    localCallableIsUnresolved(node)
+  );
+}
+
 function functionHasNeutralizer(
   fn: FunctionNode,
   seen = new Set<FunctionNode>(),
@@ -848,8 +867,8 @@ function functionHasNeutralizer(
   if (seen.has(fn)) return false;
   seen.add(fn);
   const { origins, destructuredMembers } = testInfoOrigins(fn);
-  return ownedCalls(fn).some((call) =>
-    ["skip", "fixme", "fail"].some(
+  return ownedCalls(fn).some((call) => {
+    const neutralizesDirectly = ["skip", "fixme", "fail"].some(
       (member) =>
         isNeutralizingAnnotation(call) ||
         couldBeTestInfoMember(
@@ -862,12 +881,22 @@ function functionHasNeutralizer(
             destructuredMember === member &&
             derivesFromSymbol(call.getExpression(), symbol),
         ),
-    ) ||
-    localCallableFunctions(call.getExpression()).some((target) =>
-      functionHasNeutralizer(target, new Set(seen)),
-    ) ||
-    localCallableIsUnresolved(call.getExpression()),
-  );
+    );
+    const neutralizesThroughCallee =
+      localCallableFunctions(call.getExpression()).some((target) =>
+        functionHasNeutralizer(target, new Set(seen)),
+      ) || localCallableIsUnresolved(call.getExpression());
+    const neutralizesThroughCallback = call
+      .getArguments()
+      .some((argument) =>
+        callbackArgumentHasNeutralizer(argument, seen),
+      );
+    return (
+      neutralizesDirectly ||
+      neutralizesThroughCallee ||
+      neutralizesThroughCallback
+    );
+  });
 }
 
 function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
@@ -1412,7 +1441,16 @@ function isDirectViolationAssertion(statement: Node, resultName: string): boolea
   const matcher = matcherCall.getExpression();
   if (!Node.isPropertyAccessExpression(matcher) || matcher.getName() !== "toEqual") return false;
   const expectation = matcher.getExpression();
-  if (!Node.isCallExpression(expectation) || !isNamedImportCall(expectation, "@playwright/test", "expect")) return false;
+  if (
+    !Node.isCallExpression(expectation) ||
+    !isStableNamedImportCall(
+      expectation,
+      "@playwright/test",
+      "expect",
+    )
+  ) {
+    return false;
+  }
   const expectationArguments = expectation.getArguments();
   if (
     expectationArguments.length < 1 ||
@@ -2064,6 +2102,13 @@ disable();`,
 }
 const disable = neutralize;
 disable();`,
+        `await test.step("disable", async () => {
+  test.info().${"skip"}(true, "file disabled");
+});`,
+        `const disable = async () => {
+  test.info().${"fixme"}(true, "file disabled");
+};
+await test.step("disable", disable);`,
         `const disable = Math.random() > 2
   ? () => test.info().${"fail"}(true, "expected failure")
   : () => {};
@@ -2098,6 +2143,10 @@ test("axe", async ({ page }) => {
         VALID_HELPER.replace("results.violations, context", "results.violations.filter(() => false), context"),
         VALID_HELPER.replace("expect(results.violations, context)", "results.violations.length = 0;\n  expect(results.violations, context)"),
         VALID_HELPER.replace("expect(results.violations, context)", "expect(results.violations, (results.violations.length = 0, context))"),
+        VALID_HELPER.replace(
+          'import { expect, type Page } from "@playwright/test";',
+          'import { expect as playwrightExpect, type Page } from "@playwright/test";\nlet expect = () => ({ toEqual: () => undefined });\nif (false) expect = playwrightExpect;',
+        ),
         VALID_HELPER.replace("const results = await", "const results ="),
         VALID_HELPER.replace(".withTags(", '.exclude("body").withTags('),
         VALID_HELPER.replace(

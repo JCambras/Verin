@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, and the captain-approved callable-provenance and Gate 0 route-graph review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, and the captain-approved callback, assertion, renderer-ID, and runner-ratchet review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -116,6 +116,9 @@ The active-invariant ratchet also pins every complete mechanism tuple, including
 CI command where present. An active invariant therefore cannot keep its status while redirecting its
 proof to an unrelated passing fitness file. The active invariant ID set must exactly equal the ratchet
 key set, so activating another invariant with an unrelated passing mechanism cannot bypass review.
+This validator and its ratchet live in `scripts/v3-gates.lib.ts`; both the registry fitness test and
+the blocking `scripts/v3-invariants.ts` runner invoke the shared rule. The authoritative command
+therefore fails before reporting any newly active or repointed invariant that lacks the reviewed tuple.
 
 **Requirements sit at the earliest gate that can prove the WHOLE invariant** (same ruling), never at the
 first gate that touches part of one. Gate A therefore requires invariants 7, 8, and 9 because their
@@ -381,9 +384,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   until the ratchet, this
   ADR, ADR-0023 where applicable, and the proof evidence are amended together. Deleting an `evidence`
   clause is therefore a governance amendment, not a registry edit.
-- The active-invariant mechanism ratchet is exact in both dimensions: every active invariant has its
-  complete mechanism tuple set pinned, and no invariant may become active until its ID is added to that
-  ratchet in the same reviewed change.
+- The active-invariant mechanism ratchet in `scripts/v3-gates.lib.ts` is exact in both dimensions:
+  every active invariant has its complete mechanism tuple set pinned, and no invariant may become active
+  until its ID is added to that ratchet in the same reviewed change. The registry fence and blocking
+  v3 runner both invoke the same validator.
 - Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
   blocking job runs, checked against a real YAML parse of `.github/workflows/ci.yml` plus a restricted
   shell-command parse. The workflow must carry unfiltered normal `push` and `pull_request` triggers,
@@ -458,9 +462,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Prompt 10 lands: invariant 3 flips to `active` with its naming fence in the same PR, its
   `activationArtifacts` and pinned `activationMechanisms` become real, and Gate B is evaluated for green.
   The exact `domain-configuration` fitness must adversarially prove schema validation and shared-engine
-  binding for both YAML files. The fence asserts no invariant's CURRENT status, so the flip needs no
-  ratchet edit. If the fence cannot be written without domain-named exceptions, the primitive vocabulary
-  is overfit and ADR-0025's revisit trigger fires first.
+  binding for both YAML files. The same PR must add invariant 3 and its complete mechanism tuple to the
+  shared active-invariant ratchet before flipping the status; the registry fence and blocking runner
+  both reject an unratcheted activation. If the fence cannot be written without domain-named exceptions,
+  the primitive vocabulary is overfit and ADR-0025's revisit trigger fires first.
 - A mechanism lands that decides an `evidence` requirement (gate B's domain-schema/shared-engine
   binding or stable-corpus clauses, gate C's validated-bundle
   clause, gate F's verification-reconciler clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the

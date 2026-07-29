@@ -6383,6 +6383,17 @@ read-only loaded-state assertions, and sanctioned helpers, so DOM mutation, inje
 alternate navigation are non-evidence. PF-031 and PF-032 record the red reproductions, companions, and
 restored proofs.
 
+The captain-approved callback, assertion, renderer-ID, and runner-ratchet review (2026-07-29) amended
+ADR-0030 in place an eighteenth time: **(1)** Axe neutralizer analysis traverses callback arguments
+executed by calls such as `test.step`, so a nested TestInfo skip cannot hide outside the callback's
+direct call ownership; **(2)** the sanctioned helper accepts only a stable, unreassigned Playwright
+`expect` import; **(3)** the dynamic route structurally binds both renderer ID fields to the resolved
+query or returned journey identifiers; and **(4)** the complete active-ID and mechanism-tuple ratchet
+moves into the shared gate library and is invoked by both the registry fence and the blocking
+`v3:invariants` runner. Prompt 10's activation procedure now requires adding invariant 3's complete
+mechanism tuple to that shared ratchet in the same PR. PF-024, PF-031, and PF-032 record the red
+reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

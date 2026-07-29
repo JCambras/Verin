@@ -93,9 +93,10 @@ That parse is the repo's one structured CI authority; the charter-drift fence re
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
-The v3 registry fence separately pins the complete mechanism tuple set for every shipped active invariant,
-and requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
+The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
+requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
+Both the registry fence and the blocking runner invoke that validator.
 Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
 `domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
 an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
