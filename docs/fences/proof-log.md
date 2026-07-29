@@ -6290,3 +6290,27 @@ false`, and the active-profile assertion received `FA-4.2`. The production-brows
 received `Firm AProceedCaptain-signed outcome` where `Projected outcome` was required. After the
 complete-identity correction, the focused semantic fence and the same production-browser path
 pass.
+
+## PF-setup-39 · signed previews preserve exact evidence and account identity
+
+**Date:** 2026-07-29.
+
+**Invariant:** universal GC-09 and GC-15 impacts are not case-attributed. Exact-case attribution
+binds the canonical golden fixture, including observation and retrieval instants. The $420,000
+liquidity datum belongs to Smith Family Taxable while the distinct Joint Taxable account remains
+$95,000. Setup requester participation remains unbound in disposition summaries and identity.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` imports the signed fixture used by
+the evaluator, compares its bound evidence timestamps byte for byte, hashes independent evidence
+timestamp and subject mutations, validates both account identities across the golden corpus, and
+rejects an exclusion summary for an unbound requester. `e2e/demo-journey.spec.ts` verifies both
+universal labels, the exact four-day and 47-day signed facts, the family-taxable subject identity,
+and the visible unbound-requester authority summary.
+
+**Adversarial proof:** temporary injections restored the surrogate July 28 observation, aliased the
+$420,000 source to Joint Taxable, asserted requester exclusion, and restored captain-signed badges
+on universal cards. The focused semantic run failed with
+`src/app/demo/build-decision.ts:128`, `src/app/demo/data.ts:141`, and the expected signed
+`2026-07-22T14:12:00-04:00` observation. The production-browser run failed at
+`e2e/demo-journey.spec.ts:165` after receiving `GC-09Captain-signed case`. Reverting all four
+injections returned both focused commands to green.

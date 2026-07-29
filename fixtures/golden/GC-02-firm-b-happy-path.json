@@ -35,13 +35,13 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T06:00:00-04:00",
       "retrievedAt": "2026-07-26T09:30:05-04:00",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "Joint taxable brokerage available balance 420000 USD; covers 75000 USD plus Firm B's twelve-month 96000 USD reserve."
+      "summary": "Smith Family Taxable available balance 420000 USD; covers 75000 USD plus Firm B's twelve-month 96000 USD reserve."
     },
     {
       "evidenceKind": "planned-withdrawals",
@@ -106,11 +106,11 @@
       { "reservationId": "res:GC-02:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
     ],
     "preconditions": [
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable", "subject:smiths-household"], "mustStillHoldAtExecution": true }
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-family-taxable", "subject:smiths-household"], "mustStillHoldAtExecution": true }
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "source-account-selected", "summary": "Joint taxable brokerage chosen as the source; IRA rejected as a taxable event." },
+    { "code": "source-account-selected", "summary": "Smith Family Taxable chosen as the source; IRA rejected as a taxable event." },
     { "code": "cash-reserve-preserved", "summary": "After the movement the household retains twelve months (96000 USD) of reserve, satisfying the stricter Firm B policy." },
     { "code": "dual-approval-not-required", "summary": "75000 USD is below Firm B's 100000 USD threshold, so no dual-approval stage applies - the explanation changes because policy changed, not because a prompt changed." }
   ],

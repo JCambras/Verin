@@ -97,6 +97,13 @@ Notes on the two structural choices in the matrix mapping:
 Contract silences (Firm B's role and requester rule) stay null in every fixture - silence is
 recorded, never filled in.
 
+### Canonical Smiths taxable-account identities
+
+The signed liquidity source is `subject:smiths-family-taxable`, displayed as **Smith Family
+Taxable**. Its normal-case balance is $420,000. The distinct account
+`subject:smiths-joint-taxable`, displayed as **Joint Taxable**, remains a separate $95,000
+workspace account and is never an alias for the signed liquidity source (D-074).
+
 ## 5. Required fields per case (the validation contract)
 
 Every case - in this document and in its fixture - states all of:

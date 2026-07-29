@@ -140,7 +140,7 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByRole("heading", { name: "See the impact on signed examples" })).toBeVisible();
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText("GC-03 / GC-04");
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText(
-    "changed 2026-07-22 · 6 days ago",
+    "changed 2026-07-22 · 4 days ago",
   );
   await expect(
     page
@@ -158,8 +158,20 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
       .getByTestId("impact-firm-b"),
   ).toContainText("Captain-signed outcome");
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
-    "Planned-withdrawal evidence observed 2026-06-09 · 49 days old",
+    "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
   );
+  await expect(
+    page.getByTestId("signed-impact-stale-withdrawals"),
+  ).toContainText("Universal rule · not case-attributed");
+  await expect(
+    page.getByTestId("signed-impact-stale-withdrawals"),
+  ).not.toContainText("Captain-signed case");
+  await expect(
+    page.getByTestId("signed-impact-material-change"),
+  ).toContainText("Universal rule · not case-attributed");
+  await expect(
+    page.getByTestId("signed-impact-material-change"),
+  ).not.toContainText("Captain-signed case");
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
     "Available cash remains fresh as of 2026-07-26",
   );
@@ -189,6 +201,8 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(
     page.getByTestId("request-firm-a-policy-version"),
   ).not.toHaveText("FA-4.2");
+  await page.getByText("View evidence source identities").click();
+  await expect(page.getByText("subject:smiths-family-taxable")).toBeVisible();
   await checkAxe(page, "setup-request");
   await snap(page, 7, "setup-request");
 
@@ -198,6 +212,12 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByTestId("outcome-firm-a")).toContainText("Submitted · not verified");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("Blocked decision recorded");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("No authority");
+  await expect(
+    page.getByTestId("outcome-firm-a-authority-summary"),
+  ).toContainText("Requester participation remains unbound");
+  await expect(
+    page.getByTestId("outcome-firm-a-authority-summary"),
+  ).not.toContainText("requester cannot");
   await expect(
     page.getByTestId("outcome-firm-a-configuration-provenance"),
   ).toContainText("Projected");
@@ -551,7 +571,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
   await expect(
     page
-      .getByText("Available cash in the taxable brokerage account", {
+      .getByText("Available cash in Smith Family Taxable", {
         exact: true,
       })
       .locator(".."),

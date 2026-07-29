@@ -99,7 +99,7 @@ const validSnapshot = {
   id: "evs:u:1",
   kind: "account-balance",
   sourceRef: { firmId: "firm-a", id: "src:house-crm" },
-  subjectRef: { firmId: "firm-a", id: "subject:smiths-joint-taxable" },
+  subjectRef: { firmId: "firm-a", id: "subject:smiths-family-taxable" },
   observedAt: timestamp,
   retrievedAt: timestamp,
   attribution: "house-crm nightly sync",

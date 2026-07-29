@@ -283,11 +283,24 @@ function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
       id: impact.id,
       title: impact.title,
       caseRef: impact.caseRef,
+      attributionKind: impact.attributionKind,
       facts: impact.facts,
-      groupId: impact.groupId,
-      universalEffect: impact.universalEffect ?? null,
-      attribution: impact.attribution ?? null,
-      selectionEffects: impact.selectionEffects ?? null,
+      groupId:
+        impact.attributionKind === "exact-case"
+          ? impact.groupId
+          : null,
+      universalEffect:
+        impact.attributionKind === "universal-rule"
+          ? impact.universalEffect
+          : null,
+      attribution:
+        impact.attributionKind === "exact-case"
+          ? impact.attribution
+          : null,
+      selectionEffects:
+        impact.attributionKind === "exact-case"
+          ? impact.selectionEffects ?? null
+          : null,
     })),
     evaluatorTables: {
       reserveMonths: RESERVE_MONTHS,

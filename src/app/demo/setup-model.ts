@@ -220,14 +220,14 @@ export interface SetupPolicyGroupVM {
   readonly firms: readonly [FirmChoiceVM, FirmChoiceVM];
 }
 
-export interface SignedImpactVM {
+export interface ExactCaseImpactVM {
+  readonly attributionKind: "exact-case";
   readonly id: string;
   readonly title: string;
   readonly caseRef: string;
   readonly facts: string;
-  readonly groupId: SetupPolicyGroupVM["id"] | null;
-  readonly universalEffect?: string;
-  readonly attribution?: SignedImpactAttributionVM;
+  readonly groupId: SetupPolicyGroupVM["id"];
+  readonly attribution: SignedImpactAttributionVM;
   readonly selectionEffects?: Readonly<
     Record<
       SetupFirmId,
@@ -238,6 +238,19 @@ export interface SignedImpactVM {
     >
   >;
 }
+
+export interface UniversalRuleImpactVM {
+  readonly attributionKind: "universal-rule";
+  readonly id: string;
+  readonly title: string;
+  readonly caseRef: string;
+  readonly facts: string;
+  readonly universalEffect: string;
+}
+
+export type SignedImpactVM =
+  | ExactCaseImpactVM
+  | UniversalRuleImpactVM;
 
 export function isCaptainSignedImpact(
   attribution: SignedImpactAttributionVM | undefined,

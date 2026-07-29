@@ -35,7 +35,7 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T15:00:15-04:00",
       "retrievedAt": "2026-07-26T15:00:32-04:00",
       "freshness": "fresh",
@@ -101,7 +101,7 @@
       "explanation": "An active reservation for 75000 USD against the same household liquidity means this movement would jointly violate the cash-reserve policy.",
       "resolvingEvidence": [
         { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] },
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] }
+        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-family-taxable", "suppliableBy": ["external"] }
       ]
     }
   ],

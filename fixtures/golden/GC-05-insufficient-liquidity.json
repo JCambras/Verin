@@ -35,13 +35,13 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T06:00:00-04:00",
       "retrievedAt": "2026-07-26T09:30:05-04:00",
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
-      "summary": "Joint taxable brokerage available balance 160000 USD - the only source that avoids a taxable event."
+      "summary": "Smith Family Taxable available balance 160000 USD - the only source that avoids a taxable event."
     },
     {
       "evidenceKind": "pending-actions",
@@ -100,7 +100,7 @@
       "code": "cash-reserve-breach",
       "explanation": "The movement would leave less than twelve months of planned withdrawals in cash.",
       "resolvingEvidence": [
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] },
+        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-family-taxable", "suppliableBy": ["external"] },
         { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] }
       ]
     }

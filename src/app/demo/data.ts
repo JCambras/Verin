@@ -131,16 +131,17 @@ export const HOUSEHOLD = {
 
 export interface AccountData {
   readonly id: string;
+  readonly subjectRef: string;
   readonly name: string;
   readonly kind: string;
   readonly balanceMinor: number;
   readonly custodian: string;
 }
 export const ACCOUNTS: readonly AccountData[] = [
-  { id: "acct-taxable", name: "Smith Family Taxable", kind: "Taxable brokerage", balanceMinor: 42_000_000, custodian: "Fidelity" },
-  { id: "acct-joint", name: "Joint Taxable", kind: "Taxable brokerage", balanceMinor: 9_500_000, custodian: "Fidelity" },
-  { id: "acct-roth", name: "Elaine Smith Roth IRA", kind: "Roth IRA", balanceMinor: 18_500_000, custodian: "Schwab" },
-  { id: "acct-trad", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
+  { id: "acct-taxable", subjectRef: "subject:smiths-family-taxable", name: "Smith Family Taxable", kind: "Taxable brokerage", balanceMinor: 42_000_000, custodian: "Fidelity" },
+  { id: "acct-joint", subjectRef: "subject:smiths-joint-taxable", name: "Joint Taxable", kind: "Taxable brokerage", balanceMinor: 9_500_000, custodian: "Fidelity" },
+  { id: "acct-roth", subjectRef: "subject:elaine-smith-roth-ira", name: "Elaine Smith Roth IRA", kind: "Roth IRA", balanceMinor: 18_500_000, custodian: "Schwab" },
+  { id: "acct-trad", subjectRef: "subject:robert-smith-traditional-ira", name: "Robert Smith Traditional IRA", kind: "Traditional IRA", balanceMinor: 31_000_000, custodian: "Schwab" },
 ];
 
 // The monthly withdrawal schedule is captain-signed golden truth (GC-01/02/03/05:

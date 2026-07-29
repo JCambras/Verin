@@ -550,6 +550,9 @@ What is deleted is the desktop table abstraction, not the doctrine.
   signed input, including resolved authority and requester participation. Any material mismatch
   replaces the case label with `Projection from signed case`, labels the affected firm card
   `Projected outcome`, and removes every captain-signed outcome label.
+- **Universal-rule authority.** GC-09 and GC-15 impact cards carry
+  `Universal rule · not case-attributed`. They never inherit a captain-signed badge from a missing
+  policy-group comparison.
 - **Option posture is not configuration identity.** Signed closed choices retain their individual
   posture, but the activated configuration retains an immutable active version only when every
   resolved field matches that version. Setup keeps requester participation unbound. Firm A therefore

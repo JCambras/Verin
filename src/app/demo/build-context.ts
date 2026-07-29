@@ -149,10 +149,19 @@ export function buildEvidence(
 ): EvidenceVM {
   const spec = scenario.spec;
   const retrievedAt = demoTimestampLabel(evidence.retrievedAt);
+  const availableAccount = ACCOUNTS.find(
+    (account) =>
+      account.id === SMITHS_LIQUIDITY.availableAccountId,
+  );
+  if (!availableAccount) {
+    throw new Error(
+      "The signed Smiths liquidity basis has no matching account",
+    );
+  }
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
-      label: "Available cash in the taxable brokerage account",
+      label: `Available cash in ${availableAccount.name}`,
       metric: metric(
         evidence.availableCash.value,
         "currency-minor",

@@ -3491,3 +3491,22 @@ receipts, record, or export. Firm B retains `FB-2.1` only where its complete ide
 matching option names.
 **Revert path:** none while requester participation remains unbound and signed cases bind
 requester semantics.
+
+### D-074 · 2026-07-29 · captain-decision · Signed setup evidence and universal rules cannot borrow attribution
+
+Setup impact previews now read the captain-signed fixture request, evidence, observation times,
+retrieval times, and evaluation time directly. The material-input identity also binds the exact
+evaluator projection derived from those fixtures. A divergent request, evidence instant, resolved
+configuration, authority plan, scenario, phase, or selection remains projected. GC-09 and GC-15
+carry a non-signed universal-rule label because they have no complete per-firm attribution.
+
+The signed liquidity source is `subject:smiths-family-taxable`, displayed as Smith Family Taxable.
+The separate `subject:smiths-joint-taxable` workspace account remains Joint Taxable with its
+$95,000 balance. Golden evidence, runtime snapshots, decision hashes, records, and exports use the
+family-taxable identity for the signed source. Setup requester participation remains unbound, and
+the disposition summary states that fact instead of asserting requester exclusion.
+
+**Why:** a signed badge, evidence subject, authority summary, and exported hash are one product
+claim. Borrowing any of them from a nearby case or account makes the proof internally inconsistent.
+**Revert path:** none while these signed fixtures, interactive setup choices, and the distinct
+Smiths taxable accounts remain in the demo.

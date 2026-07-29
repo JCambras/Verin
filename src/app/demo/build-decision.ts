@@ -77,7 +77,6 @@ export function reserveFloorMetric(firm: FirmData, horizon: RecordProvenance = F
 export function amountMetric() {
   return metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
 }
-
 /** The horizon prose the record and the setup both print. Derived from the activated
  * number so the words, the floor, and the headroom cannot disagree. */
 export function reserveHorizonPhrase(firm: FirmData): string {
@@ -90,7 +89,6 @@ export const DISPOSITION_BADGES = {
   blocked: { status: "blocked", label: DISPOSITION_LABELS.blocked },
   prohibited: { status: "prohibited", label: DISPOSITION_LABELS.prohibited },
 } as const;
-
 function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   const spec = scenario.spec;
   const out: BlockerVM[] = [];
@@ -114,7 +112,6 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   }
   return out;
 }
-
 function proceedWhy(firm: FirmData, bankChanged: boolean | undefined): WhyVM {
   const cite = firm.id === "firm-a" ? `${firm.policyVersion} §2, §4` : `${firm.policyVersion} §3, §4`;
   return {
@@ -162,8 +159,12 @@ export function buildDisposition(
     };
   }
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
+  const requesterAuthority =
+    firm.requesterParticipation.mode === "unbound"
+      ? "Requester participation remains unbound in this demonstration."
+      : "The requester cannot satisfy both approvals.";
   const authoritySummary = dualApproval
-    ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
+    ? `Requires two distinct operations approvers. ${requesterAuthority}` +
       (scenario.spec.bankChanged ? " The recent bank-instruction change adds a specialist-review stage." : "")
     : scenario.spec.bankChanged &&
         firm.bankChangeHandling === "specialist-review"
@@ -181,7 +182,6 @@ export function buildDisposition(
     fakeClass: "deterministic-engine-output",
   };
 }
-
 export function buildRecommendation(scenario: ScenarioData, firm: FirmData): RecommendationVM {
   const disposition = buildDisposition(scenario, firm);
   const proceed = disposition.kind === "proceed";

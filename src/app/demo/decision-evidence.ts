@@ -3,6 +3,7 @@ import type {
   RecordProvenance,
 } from "@contracts/provenance";
 import {
+  ACCOUNTS,
   BANK_INSTRUCTION,
   DEMO_EVIDENCE_REF,
   DEMO_REVALIDATION_EVIDENCE_REF,
@@ -76,6 +77,15 @@ export function decisionEvidenceSnapshotFor(
     phase === "initial"
       ? GC15_PENDING_DISTRIBUTION.before
       : GC15_PENDING_DISTRIBUTION.after;
+  const availableAccount = ACCOUNTS.find(
+    (account) =>
+      account.id === SMITHS_LIQUIDITY.availableAccountId,
+  );
+  if (!availableAccount) {
+    throw new Error(
+      "The signed Smiths liquidity basis has no matching account",
+    );
+  }
   return {
     phase,
     ref:
@@ -85,7 +95,7 @@ export function decisionEvidenceSnapshotFor(
     retrievedAt: pending.retrievedAt,
     availableCash: evidenceValue(
       "house-crm:account-balance",
-      "subject:smiths-joint-taxable",
+      availableAccount.subjectRef,
       SMITHS_LIQUIDITY.availableMinor,
       stalePlannedWithdrawals
         ? `${OBSERVED_GC09_BALANCE}T06:00:00-04:00`

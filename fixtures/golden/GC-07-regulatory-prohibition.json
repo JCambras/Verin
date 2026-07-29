@@ -16,7 +16,7 @@
   },
   "trigger": {
     "kind": "human_request",
-    "description": "Advisor enters the $75,000 request; the joint taxable account carries an active legal hold recorded by operations.",
+    "description": "Advisor enters the $75,000 request; Smith Family Taxable carries an active legal hold recorded by operations.",
     "requesterRole": "advisor",
     "requestRef": "req:GC-07",
     "maskedRequestSummary": "distribute 75000 USD from an account under an active legal hold (tokenized)",
@@ -35,7 +35,7 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T06:00:00-04:00",
       "retrievedAt": "2026-07-26T11:00:05-04:00",
       "freshness": "fresh",
@@ -45,7 +45,7 @@
     },
     {
       "evidenceKind": "account-restriction",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-18T09:00:00-04:00",
       "retrievedAt": "2026-07-26T11:00:05-04:00",
       "freshness": "fresh",
@@ -82,7 +82,7 @@
   },
   "prohibition": {
     "source": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
-    "scope": "scope:account:subject:smiths-joint-taxable",
+    "scope": "scope:account:subject:smiths-family-taxable",
     "reasonCode": "active-legal-hold",
     "explanation": "An active legal hold on the source account prohibits all distributions while it stands. Regulatory sources take precedence over firm policy and household instructions."
   },

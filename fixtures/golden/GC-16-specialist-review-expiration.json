@@ -45,7 +45,7 @@
     },
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T18:15:00-04:00",
       "retrievedAt": "2026-07-26T18:20:02-04:00",
       "freshness": "fresh",

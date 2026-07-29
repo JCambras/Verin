@@ -4,32 +4,25 @@ import {
 } from "./decision-identity";
 import {
   APPROVAL_CLOCKS,
-  BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_NOW,
   FIRMS,
   GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
-  OBSERVED_GC09_BALANCE,
-  OBSERVED_STALE,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-  PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
   pendingDistributionDeltaSentence,
-  scenarioById,
   type SignedLiquidityCase,
 } from "./data";
-import {
-  decisionEvidenceSnapshotFor,
-  type DecisionEvidenceSnapshot,
-} from "./decision-evidence";
+import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 import { decisionAuthorityClaimFor } from "./decision-authority-claim";
 import { prov } from "./provenance";
 import {
   SETUP_FIRM_IDS,
   setupFirmSelectionKey,
   type ChoiceEffectVM,
+  type ExactCaseImpactVM,
   type MoneyMovementSetupVM,
+  type SignedImpactAttributionVM,
   type SetupFirmId,
   type SetupSelections,
 } from "./setup-model";
@@ -40,6 +33,12 @@ import {
   setupRuntimeFirm,
   type SetupResolvedConfiguration,
 } from "./setup-policy";
+import {
+  SIGNED_SETUP_CASES,
+  signedCaseEvidenceSnapshot,
+  signedCaseMaterialEvidence,
+  type SignedSetupCase,
+} from "./setup-signed-cases";
 
 const DEFAULT_SETUP_SELECTIONS: SetupSelections = {
   "firm-a": {
@@ -121,31 +120,32 @@ function factsLine(liquidity: SignedLiquidityCase): string {
   return `${usd(liquidity.availableMinor)} available · ${usd(liquidity.pendingMinor)} pending · same ${usd(liquidity.requestMinor)} request`;
 }
 
+interface SignedImpactCase {
+  readonly fixture: SignedSetupCase;
+  readonly evaluationEvidence: DecisionEvidenceSnapshot;
+  readonly liquidity: SignedLiquidityCase;
+}
+
 function impactAttribution(
   impact: {
     readonly id: string;
     readonly caseRef: string;
     readonly scenarioId: string | null;
-    readonly request: unknown;
-    readonly evidence: unknown;
-    readonly evaluationEvidence: DecisionEvidenceSnapshot;
-    readonly liquidity?: SignedLiquidityCase;
   },
-  signedImpact: typeof impact = impact,
+  cases: Readonly<Record<SetupFirmId, SignedImpactCase>>,
   signedFirms: readonly SetupFirmId[] = SETUP_FIRM_IDS,
-): NonNullable<
-  MoneyMovementSetupVM["impacts"][number]["attribution"]
-> {
+): SignedImpactAttributionVM {
   const materialInputHash = (
-    value: typeof impact,
+    signedCase: SignedImpactCase,
     firmId: SetupFirmId,
     signed: boolean,
   ) => {
     const evaluation = evaluateSetupPolicy(
       DEFAULT_SETUP_SELECTIONS,
       firmId,
-      value.evaluationEvidence,
-      value.liquidity,
+      signedCase.evaluationEvidence,
+      signedCase.liquidity,
+      signedCase.fixture.trigger.asOf,
     );
     const attributedEvaluation = signed
       ? {
@@ -181,12 +181,19 @@ function impactAttribution(
     };
     return signedImpactMaterialInputHash({
       phase: "signed-impact-preview",
-      impactId: value.id,
-      caseRef: value.caseRef,
-      scenarioId: value.scenarioId,
+      impactId: impact.id,
+      caseRef: impact.caseRef,
+      scenarioId: impact.scenarioId,
       firmId,
-      request: value.request,
-      evidence: value.evidence,
+      request: {
+        goldenTrigger: signedCase.fixture.trigger,
+        evaluatorRequest: CANONICAL_REQUEST,
+      },
+      evidence: signedCaseMaterialEvidence(
+        signedCase.fixture,
+        signedCase.evaluationEvidence,
+        signedCase.liquidity,
+      ),
       resolvedConfiguration: setupResolvedConfiguration(
         DEFAULT_SETUP_SELECTIONS,
         firmId,
@@ -200,13 +207,13 @@ function impactAttribution(
       firmId,
       {
         previewMaterialInputHash: materialInputHash(
-          impact,
+          cases[firmId],
           firmId,
           false,
         ),
         signedMaterialInputHash: signedFirms.includes(firmId)
           ? materialInputHash(
-              signedImpact,
+              cases[firmId],
               firmId,
               true,
             )
@@ -216,20 +223,21 @@ function impactAttribution(
         ),
       },
     ]),
-  ) as NonNullable<
-    MoneyMovementSetupVM["impacts"][number]["attribution"]
-  >;
+  ) as SignedImpactAttributionVM;
 }
 
 function bankImpactEffect(
   selections: SetupSelections,
   firmId: SetupFirmId,
   evidence: DecisionEvidenceSnapshot,
+  evaluatedAt: string,
 ): ChoiceEffectVM {
   const evaluated = evaluateSetupPolicy(
     selections,
     firmId,
     evidence,
+    SMITHS_LIQUIDITY,
+    evaluatedAt,
   );
   if (evaluated.dispositionKind === "blocked") {
     return effect(
@@ -267,10 +275,8 @@ function bankImpactEffect(
 }
 
 function bankImpactSelectionEffects(
-  evidence: DecisionEvidenceSnapshot,
-): NonNullable<
-  MoneyMovementSetupVM["impacts"][number]["selectionEffects"]
-> {
+  cases: Readonly<Record<SetupFirmId, SignedImpactCase>>,
+): NonNullable<ExactCaseImpactVM["selectionEffects"]> {
   const result = {
     "firm-a": [] as {
       selectionKey: string;
@@ -310,7 +316,8 @@ function bankImpactSelectionEffects(
                 effect: bankImpactEffect(
                   selections,
                   firmId,
-                  evidence,
+                  cases[firmId].evaluationEvidence,
+                  cases[firmId].fixture.trigger.asOf,
                 ),
               });
             }
@@ -322,97 +329,157 @@ function bankImpactSelectionEffects(
   return result;
 }
 
-export function buildSetupImpacts(
-  evidence: DecisionEvidenceSnapshot,
-): MoneyMovementSetupVM["impacts"] {
-  const signedRecentBankEvidence = decisionEvidenceSnapshotFor(
-    scenarioById("recent-bank-change-block"),
+function signedImpactCase(
+  fixture: SignedSetupCase,
+  fallback: SignedSetupCase,
+  liquidity: SignedLiquidityCase = SMITHS_LIQUIDITY,
+): SignedImpactCase {
+  return {
+    fixture,
+    evaluationEvidence: signedCaseEvidenceSnapshot(
+      fixture,
+      fallback,
+      liquidity,
+    ),
+    liquidity,
+  };
+}
+
+function evidenceDate(
+  caseFile: SignedSetupCase,
+  evidenceKind: string,
+): string {
+  const observedAt = caseFile.householdEvidence.find(
+    (datum) => datum.evidenceKind === evidenceKind,
+  )?.observedAt;
+  if (!observedAt) {
+    throw new Error(
+      `${caseFile.caseId} has no ${evidenceKind} observation`,
+    );
+  }
+  return observedAt.slice(0, 10);
+}
+
+function ageDays(asOf: string, observedAt: string): number {
+  return (
+    (Date.parse(asOf.slice(0, 10)) -
+      Date.parse(observedAt.slice(0, 10))) /
+    86_400_000
   );
-  const signedSafeEvidence = decisionEvidenceSnapshotFor(
-    scenarioById("safe-proceed"),
+}
+
+export function buildSetupImpacts(): MoneyMovementSetupVM["impacts"] {
+  const recentCases = {
+    "firm-a": signedImpactCase(
+      SIGNED_SETUP_CASES.recentA,
+      SIGNED_SETUP_CASES.recentA,
+    ),
+    "firm-b": signedImpactCase(
+      SIGNED_SETUP_CASES.recentB,
+      SIGNED_SETUP_CASES.recentA,
+    ),
+  };
+  const safeCases = {
+    "firm-a": signedImpactCase(
+      SIGNED_SETUP_CASES.happyA,
+      SIGNED_SETUP_CASES.happyA,
+    ),
+    "firm-b": signedImpactCase(
+      SIGNED_SETUP_CASES.happyB,
+      SIGNED_SETUP_CASES.happyB,
+    ),
+  };
+  const lowHeadroomCases = {
+    "firm-a": signedImpactCase(
+      SIGNED_SETUP_CASES.lowHeadroomB,
+      SIGNED_SETUP_CASES.happyB,
+      LOW_HEADROOM_LIQUIDITY,
+    ),
+    "firm-b": signedImpactCase(
+      SIGNED_SETUP_CASES.lowHeadroomB,
+      SIGNED_SETUP_CASES.happyB,
+      LOW_HEADROOM_LIQUIDITY,
+    ),
+  };
+  const recentObservedAt = evidenceDate(
+    SIGNED_SETUP_CASES.recentA,
+    "bank-instruction",
+  );
+  const staleObservedAt = evidenceDate(
+    SIGNED_SETUP_CASES.staleA,
+    "planned-withdrawals",
+  );
+  const staleAvailableObservedAt = evidenceDate(
+    SIGNED_SETUP_CASES.staleA,
+    "account-balance",
   );
   return [
     {
+      attributionKind: "exact-case",
       id: "recent-bank",
       title: "Recent bank change",
       caseRef: "GC-03 / GC-04",
-      facts: `Same request · changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · independent verification absent`,
+      facts: `Same request · changed ${recentObservedAt} · ${ageDays(SIGNED_SETUP_CASES.recentA.trigger.asOf, recentObservedAt)} days ago · independent verification absent`,
       groupId: "bank-change",
-      selectionEffects: bankImpactSelectionEffects(evidence),
+      selectionEffects: bankImpactSelectionEffects(recentCases),
       attribution: impactAttribution(
         {
           id: "recent-bank",
           caseRef: "GC-03 / GC-04",
           scenarioId: "recent-bank-change-block",
-          request: CANONICAL_REQUEST,
-          evidence,
-          evaluationEvidence: evidence,
         },
-        {
-          id: "recent-bank",
-          caseRef: "GC-03 / GC-04",
-          scenarioId: "recent-bank-change-block",
-          request: CANONICAL_REQUEST,
-          evidence: signedRecentBankEvidence,
-          evaluationEvidence: signedRecentBankEvidence,
-        },
+        recentCases,
       ),
     },
     {
+      attributionKind: "universal-rule",
       id: "stale-withdrawals",
       title: "Stale planned-withdrawal evidence",
       caseRef: "GC-09",
-      facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old`,
-      groupId: null,
-      universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.`,
+      facts: `Planned-withdrawal evidence observed ${staleObservedAt} · ${ageDays(SIGNED_SETUP_CASES.staleA.trigger.asOf, staleObservedAt)} days old`,
+      universalEffect: `Available cash remains fresh as of ${staleAvailableObservedAt}. Refresh the planned-withdrawal snapshot before reevaluation.`,
     },
     {
+      attributionKind: "exact-case",
       id: "verified-bank",
       title: "Verified bank instruction",
       caseRef: SMITHS_LIQUIDITY.caseRef,
       facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`,
       groupId: "threshold",
-      attribution: impactAttribution({
-        id: "verified-bank",
-        caseRef: SMITHS_LIQUIDITY.caseRef,
-        scenarioId: "safe-proceed",
-        request: CANONICAL_REQUEST,
-        evidence: signedSafeEvidence,
-        evaluationEvidence: signedSafeEvidence,
-      }),
+      attribution: impactAttribution(
+        {
+          id: "verified-bank",
+          caseRef: SMITHS_LIQUIDITY.caseRef,
+          scenarioId: "safe-proceed",
+        },
+        safeCases,
+      ),
     },
     {
+      attributionKind: "exact-case",
       id: "low-headroom",
       title: "Low headroom",
       caseRef: LOW_HEADROOM_LIQUIDITY.caseRef,
       facts: factsLine(LOW_HEADROOM_LIQUIDITY),
       groupId: "reserve",
-      attribution: impactAttribution({
-        id: "low-headroom",
-        caseRef: LOW_HEADROOM_LIQUIDITY.caseRef,
-        scenarioId: null,
-        request: {
-          ...CANONICAL_REQUEST,
-          amountMinor: LOW_HEADROOM_LIQUIDITY.requestMinor,
+      attribution: impactAttribution(
+        {
+          id: "low-headroom",
+          caseRef: LOW_HEADROOM_LIQUIDITY.caseRef,
+          scenarioId: null,
         },
-        evidence: {
-          availableMinor: LOW_HEADROOM_LIQUIDITY.availableMinor,
-          pendingMinor: LOW_HEADROOM_LIQUIDITY.pendingMinor,
-          plannedMonthlyMinor:
-            PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-        },
-        evaluationEvidence: signedSafeEvidence,
-        liquidity: LOW_HEADROOM_LIQUIDITY,
-      }, undefined, ["firm-b"]),
+        lowHeadroomCases,
+        ["firm-b"],
+      ),
     },
     {
+      attributionKind: "universal-rule",
       id: "material-change",
       title: "Material change after approval",
       caseRef: "GC-15",
       facts: pendingDistributionDeltaSentence(
         GC15_PENDING_DISTRIBUTION,
       ),
-      groupId: null,
       universalEffect: `The pending approved amount changes from ${usd(GC15_PENDING_DISTRIBUTION.before.amountMinor)} to ${usd(GC15_PENDING_DISTRIBUTION.after.amountMinor)}. Prior authority is voided for both firms, and evaluation reruns against the changed bundle.`,
     },
   ];

@@ -35,7 +35,7 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T14:55:00-04:00",
       "retrievedAt": "2026-07-26T15:00:02-04:00",
       "freshness": "fresh",
@@ -111,7 +111,7 @@
     ],
     "preconditions": [
       { "code": "reservation-still-held", "requiredEvidence": [], "mustStillHoldAtExecution": true },
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-family-taxable"], "mustStillHoldAtExecution": true }
     ]
   },
   "expectedExplanationNodes": [

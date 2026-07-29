@@ -35,7 +35,7 @@
   "householdEvidence": [
     {
       "evidenceKind": "account-balance",
-      "subjectRef": "subject:smiths-joint-taxable",
+      "subjectRef": "subject:smiths-family-taxable",
       "observedAt": "2026-07-26T17:40:00-04:00",
       "retrievedAt": "2026-07-26T17:45:02-04:00",
       "freshness": "fresh",

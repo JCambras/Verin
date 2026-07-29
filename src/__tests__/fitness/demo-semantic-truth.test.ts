@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
@@ -8,6 +8,7 @@ import {
 } from "@app/demo/build-setup-impacts";
 import {
   APPROVAL_CLOCKS,
+  ACCOUNTS,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_ACTIVATION_EFFECTIVE_AT,
@@ -30,6 +31,11 @@ import {
   demoTimestampLabel,
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
+import {
+  SIGNED_SETUP_CASES,
+  signedCaseEvidenceSnapshot,
+  signedCaseMaterialEvidence,
+} from "@app/demo/setup-signed-cases";
 import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
@@ -113,7 +119,11 @@ interface GoldenCase {
   readonly caseId: string;
   readonly scenarioRefNote: string;
   readonly firm: "firm-a" | "firm-b";
-  readonly trigger: { readonly maskedRequestSummary: string };
+  readonly trigger: {
+    readonly maskedRequestSummary: string;
+    readonly requestRef: string;
+    readonly asOf: string;
+  };
   readonly firmConfiguration: {
     readonly cashReserveMonths: number;
     readonly dualApprovalThresholdUsd: number;
@@ -123,7 +133,10 @@ interface GoldenCase {
   };
   readonly householdEvidence: readonly {
     readonly evidenceKind: string;
+    readonly subjectRef: string;
     readonly observedAt: string;
+    readonly retrievedAt: string;
+    readonly source: string;
     readonly freshness: string;
     readonly summary: string;
   }[];
@@ -216,6 +229,13 @@ function loadGolden(name: string): GoldenCase {
   return JSON.parse(
     readFileSync(join(REPO_ROOT, "fixtures/golden", name), "utf8"),
   ) as GoldenCase;
+}
+
+function loadAllGolden(): GoldenCase[] {
+  return readdirSync(join(REPO_ROOT, "fixtures/golden"))
+    .filter((name) => name.endsWith(".json"))
+    .sort()
+    .map(loadGolden);
 }
 
 function signed(caseFile: GoldenCase): GoldenCase {
@@ -351,7 +371,11 @@ interface StaleImpactAssignment {
 /** Days between two ISO dates - the ONE place the fence computes an age, so it can
  * never agree with drifted prose by carrying the same hardcoded number. */
 function ageDaysBetween(observedAt: string, now: string): number {
-  return (Date.parse(now) - Date.parse(observedAt)) / 86_400_000;
+  return (
+    (Date.parse(now.slice(0, 10)) -
+      Date.parse(observedAt.slice(0, 10))) /
+    86_400_000
+  );
 }
 
 export function staleImpactViolations(
@@ -382,10 +406,9 @@ export function staleImpactViolations(
 }
 
 /**
- * Every place the GC-09 staleness is SPOKEN. The age and the policy allowance are
- * derived from the signed observation and the configured freshness window, so moving
- * the demo clock re-derives all of them together instead of leaving a hand-typed "47
- * days old" beside a date that is now further back.
+ * Every place the GC-09 staleness is SPOKEN. Each age derives from the signed
+ * observation and the evaluation instant bound to that surface, while the blocker
+ * also derives its configured freshness window.
  */
 interface StaleAgeAssignment {
   readonly impactFacts: string;
@@ -395,27 +418,37 @@ interface StaleAgeAssignment {
 export function staleAgeViolations(
   actual: StaleAgeAssignment,
   plannedWithdrawalsAsOf: string,
-  now: string,
+  evaluationTimes: {
+    readonly impact: string;
+    readonly blocker: string;
+  },
   freshnessDays: number,
 ): string[] {
-  const ageDays = ageDaysBetween(plannedWithdrawalsAsOf, now);
+  const impactAgeDays = ageDaysBetween(
+    plannedWithdrawalsAsOf,
+    evaluationTimes.impact,
+  );
+  const blockerAgeDays = ageDaysBetween(
+    plannedWithdrawalsAsOf,
+    evaluationTimes.blocker,
+  );
   const violations: string[] = [];
   const impactWhere = sourceRef(
     "src/app/demo/build-setup-impacts.ts",
     'id: "stale-withdrawals"',
   );
-  if (!actual.impactFacts.includes(`${ageDays} days old`)) {
+  if (!actual.impactFacts.includes(`${impactAgeDays} days old`)) {
     violations.push(
-      `${impactWhere} :: the GC-09 impact card reads "${actual.impactFacts}" instead of the ${ageDays} days derived from ${plannedWithdrawalsAsOf}`,
+      `${impactWhere} :: the GC-09 impact card reads "${actual.impactFacts}" instead of the ${impactAgeDays} days derived from ${plannedWithdrawalsAsOf}`,
     );
   }
   const blockerWhere = sourceRef(
     "src/app/demo/build-decision.ts",
     "Planned-withdrawal evidence is",
   );
-  if (!actual.blocker.includes(`${ageDays} days old`)) {
+  if (!actual.blocker.includes(`${blockerAgeDays} days old`)) {
     violations.push(
-      `${blockerWhere} :: the GC-09 blocker reads "${actual.blocker}" instead of the ${ageDays} days derived from ${plannedWithdrawalsAsOf}`,
+      `${blockerWhere} :: the GC-09 blocker reads "${actual.blocker}" instead of the ${blockerAgeDays} days derived from ${plannedWithdrawalsAsOf}`,
     );
   }
   if (!actual.blocker.includes(`policy allows ${freshnessDays}`)) {
@@ -720,6 +753,7 @@ interface BankInstructionDateAssignment {
    * ago" beside a derived one is exactly how the signed date stops being the source. */
   readonly requestSummary: string;
   readonly inputHash: string;
+  readonly impactEvaluatedAt: string;
 }
 
 function recentBankInputHash(bankInstructionObservedAt: string): string {
@@ -743,6 +777,10 @@ export function bankInstructionDateViolations(
   const violations: string[] = [];
   const signedAgeDays =
     (Date.parse(DEMO_NOW) - Date.parse(signedDate)) / 86_400_000;
+  const signedImpactAgeDays =
+    (Date.parse(actual.impactEvaluatedAt.slice(0, 10)) -
+      Date.parse(signedDate.slice(0, 10))) /
+    86_400_000;
   if (actual.sourceAgeDays !== signedAgeDays) {
     violations.push(
       `${where} :: displayed age is ${actual.sourceAgeDays} days, not the ${signedAgeDays} days derived from ${signedDate}`,
@@ -769,7 +807,6 @@ export function bankInstructionDateViolations(
   }
   for (const [label, value] of [
     ["setup value", actual.setupValue],
-    ["impact facts", actual.impactFacts],
     ["blocker", actual.blocker],
   ] as const) {
     if (
@@ -780,6 +817,14 @@ export function bankInstructionDateViolations(
         `${where} :: ${label} does not render signed ${signedDate} as ${signedAgeDays} days old`,
       );
     }
+  }
+  if (
+    !actual.impactFacts.includes(signedDate) ||
+    !actual.impactFacts.includes(`${signedImpactAgeDays} days`)
+  ) {
+    violations.push(
+      `${where} :: impact facts do not render signed ${signedDate} as ${signedImpactAgeDays} days old at the signed evaluation instant`,
+    );
   }
   if (!actual.requestSummary.includes(`${signedAgeDays} days ago`)) {
     violations.push(
@@ -985,6 +1030,10 @@ function gc15ConsistencyViolations(
   );
   const checks = safety.checks.map((check) => check.label).join(" ");
   const violations: string[] = [];
+  const universalEffect =
+    impact.attributionKind === "universal-rule"
+      ? impact.universalEffect
+      : "";
   if (
     safety.invalidation?.deltaSentence !== expected ||
     impact.facts !== expected
@@ -1002,12 +1051,122 @@ function gc15ConsistencyViolations(
   if (
     !safety.invalidation?.before.display.includes("$0") ||
     !safety.invalidation.after.display.includes("$15,000") ||
-    !impact.universalEffect?.includes("$0") ||
-    !impact.universalEffect.includes("$15,000")
+    !universalEffect.includes("$0") ||
+    !universalEffect.includes("$15,000")
   ) {
     violations.push("pending-distribution before and after facts drifted");
   }
   return violations;
+}
+
+interface ImpactAttributionAssignment {
+  readonly id: string;
+  readonly attributionKind: "exact-case" | "universal-rule";
+  readonly groupId?: string | null;
+  readonly attribution?: unknown;
+  readonly selectionEffects?: unknown;
+}
+
+function impactAttributionViolations(
+  impacts: readonly ImpactAttributionAssignment[],
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/surfaces/setup-choices.tsx",
+    'impact.attributionKind === "exact-case"',
+  );
+  const violations: string[] = [];
+  for (const impact of impacts) {
+    if (
+      impact.attributionKind === "universal-rule" &&
+      (impact.groupId !== undefined ||
+        impact.attribution !== undefined ||
+        impact.selectionEffects !== undefined)
+    ) {
+      violations.push(
+        `${where} :: universal impact ${impact.id} carries case attribution`,
+      );
+    }
+    if (
+      impact.attributionKind === "exact-case" &&
+      (typeof impact.groupId !== "string" ||
+        impact.attribution === undefined)
+    ) {
+      violations.push(
+        `${where} :: exact-case impact ${impact.id} lacks complete attribution`,
+      );
+    }
+  }
+  return violations;
+}
+
+function accountIdentityViolations(
+  accounts: readonly {
+    readonly id: string;
+    readonly subjectRef: string;
+    readonly name: string;
+    readonly balanceMinor: number;
+  }[],
+  cases: readonly GoldenCase[],
+): string[] {
+  const where = sourceRef(
+    "src/app/demo/data.ts",
+    'id: "acct-taxable"',
+  );
+  const family = accounts.find(
+    (account) => account.id === "acct-taxable",
+  );
+  const joint = accounts.find(
+    (account) => account.id === "acct-joint",
+  );
+  const violations: string[] = [];
+  if (
+    family?.subjectRef !== "subject:smiths-family-taxable" ||
+    family.name !== "Smith Family Taxable" ||
+    family.balanceMinor !== 42_000_000
+  ) {
+    violations.push(
+      `${where} :: the $420,000 Smith Family Taxable identity is not canonical`,
+    );
+  }
+  if (
+    joint?.subjectRef !== "subject:smiths-joint-taxable" ||
+    joint.name !== "Joint Taxable" ||
+    joint.balanceMinor !== 9_500_000
+  ) {
+    violations.push(
+      `${where} :: the distinct $95,000 Joint Taxable identity is not canonical`,
+    );
+  }
+  for (const caseFile of cases) {
+    for (const datum of caseFile.householdEvidence) {
+      if (
+        datum.evidenceKind === "account-balance" &&
+        datum.summary.includes("420000 USD") &&
+        datum.subjectRef !== "subject:smiths-family-taxable"
+      ) {
+        violations.push(
+          `${where} :: ${caseFile.caseId} binds $420,000 to ${datum.subjectRef}`,
+        );
+      }
+    }
+  }
+  return violations;
+}
+
+function requesterSummaryViolations(
+  authoritySummary: string,
+): string[] {
+  if (
+    authoritySummary.includes(
+      "Requester participation remains unbound",
+    ) &&
+    !authoritySummary.includes("requester cannot")
+  ) {
+    return [];
+  }
+  return [
+    `${sourceRef("src/app/demo/build-decision.ts", "export function buildDisposition")} :: unbound requester participation is contradicted by "${authoritySummary}"`,
+  ];
 }
 
 export function demoSemanticFacts(): DemoSemanticFacts {
@@ -1039,6 +1198,9 @@ export function demoSemanticFacts(): DemoSemanticFacts {
   const lowHeadroomImpact = vm.impacts.find((impact) => impact.id === "low-headroom");
   if (!lowHeadroomImpact) {
     throw new Error("the setup no longer shows the GC-05 low-headroom signed-impact card");
+  }
+  if (lowHeadroomImpact.attributionKind !== "exact-case") {
+    throw new Error("the GC-05 low-headroom card lost exact-case attribution");
   }
   const lowHeadroomGroup = vm.policyGroups.find(
     (candidate) => candidate.id === lowHeadroomImpact.groupId,
@@ -1948,6 +2110,19 @@ describe("demo semantic-truth fence", () => {
       expect(firm.requesterParticipation).toEqual({
         mode: "unbound",
       });
+      const authoritySummary =
+        firm.disposition.kind === "proceed"
+          ? firm.disposition.authoritySummary
+          : undefined;
+      if (
+        authoritySummary?.includes(
+          "two distinct operations approvers",
+        )
+      ) {
+        expect(
+          requesterSummaryViolations(authoritySummary),
+        ).toEqual([]);
+      }
       if (firm.authorityPlan.mode !== "staged") continue;
       expect(
         firm.authorityPlan.stages
@@ -1965,6 +2140,14 @@ describe("demo semantic-truth fence", () => {
         /^[a-f0-9]{64}$/,
       );
     }
+  });
+
+  it("detects: an unbound requester cannot acquire an exclusion summary", () => {
+    const violations = requesterSummaryViolations(
+      "Requires two distinct operations approvers. The requester cannot satisfy both approvals.",
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("build-decision.ts:");
   });
 
   it("enforces: GC-15 derives every visible fact from one pending delta", () => {
@@ -2009,6 +2192,30 @@ describe("demo semantic-truth fence", () => {
         },
       ]),
     ).toEqual([]);
+  });
+
+  it("enforces: universal impacts never carry captain-signed case attribution", () => {
+    const universal = buildMoneyMovementSetup().impacts.filter(
+      (impact) => impact.attributionKind === "universal-rule",
+    );
+    expect(universal.map((impact) => impact.id)).toEqual([
+      "stale-withdrawals",
+      "material-change",
+    ]);
+    expect(impactAttributionViolations(universal)).toEqual([]);
+  });
+
+  it("detects: universal rules cannot inherit case attribution from a null group", () => {
+    const violations = impactAttributionViolations([
+      {
+        id: "stale-withdrawals",
+        attributionKind: "universal-rule",
+        groupId: null,
+        attribution: { "firm-a": "signed" },
+      },
+    ]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("setup-choices.tsx:");
   });
 
   it("detects: retrieval before its observation cannot pass", () => {
@@ -2463,7 +2670,7 @@ describe("demo semantic-truth fence", () => {
       buildMoneyMovementSetup().impacts.find(
         (impact) => impact.id === "stale-withdrawals",
       )?.facts,
-    ).toContain("49 days old");
+    ).toContain("47 days old");
 
     const expiredAuthority = getJourney(
       "specialist-review-expiration",
@@ -2566,7 +2773,7 @@ describe("demo semantic-truth fence", () => {
     const availableRow = journey.evidence.rows.find(
       (row) =>
         row.kind === "metric" &&
-        row.label === "Available cash in the taxable brokerage account",
+        row.label === "Available cash in Smith Family Taxable",
     );
     const plannedRow = journey.evidence.rows.find(
       (row) =>
@@ -2610,7 +2817,10 @@ describe("demo semantic-truth fence", () => {
         blocker: blocker?.condition ?? "",
       },
       truth.plannedWithdrawalsAsOf.slice(0, 10),
-      DEMO_NOW,
+      {
+        impact: gc09.trigger.asOf,
+        blocker: DEMO_NOW,
+      },
       decisionConfigurationFor(firmById("firm-a")).freshnessDays,
     );
     expect(ageViolations, ageViolations.join("\n")).toEqual([]);
@@ -2623,9 +2833,10 @@ describe("demo semantic-truth fence", () => {
         blocker: "Planned-withdrawal evidence is 47 days old; policy allows 30",
       },
       "2026-06-09",
-      // The same screenshot refresh the finding describes: move the demo clock and the
-      // hand-typed 47 stops being true while the date beside it stays put.
-      "2026-08-10",
+      {
+        impact: "2026-08-10",
+        blocker: "2026-08-10",
+      },
       14,
     );
     expect(violations).toHaveLength(3);
@@ -2646,16 +2857,18 @@ describe("demo semantic-truth fence", () => {
     const impact = vm.impacts.find(
       (candidate) => candidate.id === "stale-withdrawals",
     )!;
+    expect(impact.attributionKind).toBe("universal-rule");
+    if (impact.attributionKind !== "universal-rule") return;
     const actual = {
       facts: impact.facts,
-      effect: impact.universalEffect ?? "",
+      effect: impact.universalEffect,
     };
     expect(
       staleImpactViolations(
         actual,
         planned.observedAt.slice(0, 10),
         available.observedAt.slice(0, 10),
-        DEMO_NOW,
+        gc09.trigger.asOf,
       ),
     ).toEqual([]);
   });
@@ -2936,11 +3149,92 @@ describe("demo semantic-truth fence", () => {
     expect(violations[0]).toContain("decision-evidence.ts:");
   });
 
+  it("enforces: signed preview evidence is the canonical fixture evidence", () => {
+    const fixture = signed(
+      loadGolden("GC-03-recent-bank-change-firm-a.json"),
+    );
+    expect(SIGNED_SETUP_CASES.recentA).toEqual(fixture);
+    const snapshot = signedCaseEvidenceSnapshot(
+      SIGNED_SETUP_CASES.recentA,
+      SIGNED_SETUP_CASES.recentA,
+      SMITHS_LIQUIDITY,
+    );
+    const material = signedCaseMaterialEvidence(
+      SIGNED_SETUP_CASES.recentA,
+      snapshot,
+      SMITHS_LIQUIDITY,
+    );
+    const bank = fixture.householdEvidence.find(
+      (datum) => datum.evidenceKind === "bank-instruction",
+    )!;
+    expect(material.canonicalCase).toEqual(fixture);
+    expect(material.boundEvidence.bankInstruction.provenance.asOf).toBe(
+      bank.observedAt,
+    );
+    expect(material.boundEvidence.retrievedAt).toBe(
+      bank.retrievedAt,
+    );
+    expect(
+      buildMoneyMovementSetup().impacts.find(
+        (impact) => impact.id === "recent-bank",
+      )?.facts,
+    ).toContain("4 days ago");
+  });
+
+  it("enforces: the signed liquidity account and Joint Taxable stay distinct", () => {
+    expect(
+      accountIdentityViolations(ACCOUNTS, loadAllGolden()),
+    ).toEqual([]);
+    const evidence = decisionEvidenceSnapshotFor(
+      scenarioById("recent-bank-change-block"),
+    );
+    expect(evidence.availableCash.subjectRef).toBe(
+      "subject:smiths-family-taxable",
+    );
+    const aliased = {
+      ...evidence,
+      availableCash: {
+        ...evidence.availableCash,
+        subjectRef: "subject:smiths-joint-taxable",
+      },
+    };
+    expect(
+      decisionInputHashFor(
+        scenarioById("recent-bank-change-block"),
+        aliased,
+      ),
+    ).not.toBe(
+      decisionInputHashFor(
+        scenarioById("recent-bank-change-block"),
+        evidence,
+      ),
+    );
+  });
+
+  it("detects: the $420,000 source cannot alias Joint Taxable", () => {
+    const accounts = ACCOUNTS.map((account) =>
+      account.id === "acct-taxable"
+        ? {
+            ...account,
+            subjectRef: "subject:smiths-joint-taxable",
+          }
+        : account,
+    );
+    const violations = accountIdentityViolations(
+      accounts,
+      loadAllGolden(),
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toContain("data.ts:");
+  });
+
   it("enforces: no closed choice carries a signed-case effect no impact card can reach", () => {
     const vm = buildMoneyMovementSetup();
     const compared = new Map(
       vm.impacts.flatMap((impact) =>
-        impact.groupId ? [[impact.groupId, impact] as const] : [],
+        impact.attributionKind === "exact-case"
+          ? [[impact.groupId, impact] as const]
+          : [],
       ),
     );
     expect(compared.size).toBeGreaterThan(0);
@@ -2982,6 +3276,8 @@ describe("demo semantic-truth fence", () => {
     const impact = vm.impacts.find(
       (candidate) => candidate.id === "recent-bank",
     );
+    expect(impact?.attributionKind).toBe("exact-case");
+    if (impact?.attributionKind !== "exact-case") return;
     expect(impact?.selectionEffects).toBeDefined();
     if (!impact?.selectionEffects) return;
     for (const firmId of ["firm-a", "firm-b"] as const) {
@@ -3032,7 +3328,7 @@ describe("demo semantic-truth fence", () => {
   it("enforces: signed-impact attribution matches every material preview input exactly", () => {
     const vm = buildMoneyMovementSetup();
     const compared = vm.impacts.filter(
-      (impact) => impact.groupId !== null,
+      (impact) => impact.attributionKind === "exact-case",
     );
     const defaults = setupSelections();
     const expectedDefaultSigned = {
@@ -3097,7 +3393,11 @@ describe("demo semantic-truth fence", () => {
       scenarioId: "recent-bank-change-block",
       firmId: "firm-a" as const,
       request: { amountMinor: 7_500_000 },
-      evidence: { ref: "evidence-signed" },
+      evidence: {
+        subjectRef: "subject:smiths-family-taxable",
+        observedAt: "2026-07-22T14:12:00-04:00",
+        retrievedAt: "2026-07-26T09:30:05-04:00",
+      },
       resolvedConfiguration: {
         reserveMonths: 6,
         freshnessDays: 30,
@@ -3142,7 +3442,27 @@ describe("demo semantic-truth fence", () => {
       { ...input, scenarioId: "safe-proceed" },
       { ...input, firmId: "firm-b" as const },
       { ...input, request: { amountMinor: 10_000_000 } },
-      { ...input, evidence: { ref: "evidence-changed" } },
+      {
+        ...input,
+        evidence: {
+          ...input.evidence,
+          subjectRef: "subject:smiths-joint-taxable",
+        },
+      },
+      {
+        ...input,
+        evidence: {
+          ...input.evidence,
+          observedAt: "2026-07-24T14:12:00-04:00",
+        },
+      },
+      {
+        ...input,
+        evidence: {
+          ...input.evidence,
+          retrievedAt: "2026-07-28T14:30:00-04:00",
+        },
+      },
       {
         ...input,
         resolvedConfiguration: {
@@ -3376,6 +3696,7 @@ describe("demo semantic-truth fence", () => {
           inputHash: decisionInputHashFor(
             scenarioById("recent-bank-change-block"),
           ),
+          impactEvaluatedAt: gc03.trigger.asOf,
         },
         signedObservedAt,
       ),
@@ -3425,6 +3746,7 @@ describe("demo semantic-truth fence", () => {
         blocker: "Changed recently",
         requestSummary: "bank instruction changed 2 days ago",
         inputHash: recentBankInputHash("2026-07-24"),
+        impactEvaluatedAt: "2026-07-26",
       },
       "2026-07-22",
     );
@@ -3510,7 +3832,9 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: every signed-impact card opens on the captain-signed option", () => {
     const vm = buildMoneyMovementSetup();
-    const compared = vm.impacts.filter((impact) => impact.groupId !== null);
+    const compared = vm.impacts.filter(
+      (impact) => impact.attributionKind === "exact-case",
+    );
     expect(compared.length).toBeGreaterThan(0);
     for (const impact of compared) {
       const group = vm.policyGroups.find((candidate) => candidate.id === impact.groupId);

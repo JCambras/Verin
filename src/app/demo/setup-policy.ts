@@ -138,6 +138,7 @@ export function evaluateSetupPolicy(
   firmId: SetupFirmId,
   evidence: DecisionEvidenceSnapshot,
   liquidity: SignedLiquidityCase = SMITHS_LIQUIDITY,
+  evaluatedAt: string = DEMO_TIMELINE.decisionCreatedAt,
 ): SetupPolicyEvaluation {
   const firmSelections = selections[firmId];
   const reserveMonths = setting(
@@ -170,7 +171,7 @@ export function evaluateSetupPolicy(
     reserveMonths,
   });
   const evidenceAgeDays =
-    (Date.parse(DEMO_TIMELINE.decisionCreatedAt) -
+    (Date.parse(evaluatedAt) -
       Date.parse(evidence.plannedMonthlyWithdrawal.provenance.asOf)) /
     86_400_000;
   const freshnessSatisfied =

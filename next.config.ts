@@ -27,6 +27,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["@electric-sql/pglite"],
+  outputFileTracingIncludes: {
+    "/*": ["./fixtures/golden/*.json"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -233,6 +233,14 @@ function OutcomeCard({
       >
         {firm.disposition.why.reason}
       </p>
+      {firm.disposition.authoritySummary ? (
+        <p
+          className="mt-2 text-sm text-slate-800"
+          data-testid={`outcome-${firmId}-authority-summary`}
+        >
+          {firm.disposition.authoritySummary}
+        </p>
+      ) : null}
 
       <dl className="mt-4 grid gap-3">
         <div className="rounded-md border border-slate-200 bg-surface p-3">

@@ -309,7 +309,7 @@ export function buildMoneyMovementSetup(
       group("threshold", "Dual-approval threshold", "Above what amount must two distinct operations approvers act?", "The threshold may vary. Distinct-human quorum cannot.", "GC-01 / GC-02", [firmChoices("firm-a", "25000", thresholdA), firmChoices("firm-b", "100000", thresholdB)]),
       group("expiry", "Normal approval expiry and escalation", "When does waiting create escalation work, and when does authority expire?", "Clocks are closed pairs. Expiry never produces approval.", "GC-01 / GC-16", [firmChoices("firm-a", "1d-3d", expiryA), firmChoices("firm-b", "1d-3d", expiryB)]),
     ],
-    impacts: buildSetupImpacts(evidence),
+    impacts: buildSetupImpacts(),
     activation: {
       lifecyclePreview: {
         proposer: "Taylor Morgan",

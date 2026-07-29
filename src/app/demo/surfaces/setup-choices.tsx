@@ -126,7 +126,9 @@ export function ImpactBody({
       />
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
         {vm.impacts.map((impact) => {
-          const group = impact.groupId
+          const exactCase =
+            impact.attributionKind === "exact-case";
+          const group = exactCase
             ? vm.policyGroups.find((candidate) => candidate.id === impact.groupId)
             : undefined;
           const a = group
@@ -136,26 +138,36 @@ export function ImpactBody({
             ? selectedOption(vm.policyGroups, selections, group.id, "firm-b")
             : null;
           const selectionEffect = (firmId: SetupFirmId) =>
-            impact.selectionEffects?.[firmId].find(
-              (candidate) =>
-                candidate.selectionKey ===
-                setupFirmSelectionKey(selections[firmId]),
-            )?.effect;
+            exactCase
+              ? impact.selectionEffects?.[firmId].find(
+                  (candidate) =>
+                    candidate.selectionKey ===
+                    setupFirmSelectionKey(selections[firmId]),
+                )?.effect
+              : undefined;
           const effectA =
             selectionEffect("firm-a") ?? a?.signedCaseEffect;
           const effectB =
             selectionEffect("firm-b") ?? b?.signedCaseEffect;
           const signedA = isCaptainSignedImpact(
-            impact.attribution,
+            exactCase ? impact.attribution : undefined,
             "firm-a",
             selections,
           );
           const signedB = isCaptainSignedImpact(
-            impact.attribution,
+            exactCase ? impact.attribution : undefined,
             "firm-b",
             selections,
           );
-          const varied = impact.groupId !== null && (!signedA || !signedB);
+          const varied = exactCase && (!signedA || !signedB);
+          if (
+            exactCase &&
+            (!group || !a || !b || !effectA || !effectB)
+          ) {
+            throw new Error(
+              `Exact-case impact ${impact.id} has no complete firm projection`,
+            );
+          }
           return (
             <section
               key={impact.id}
@@ -166,11 +178,15 @@ export function ImpactBody({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs text-slate-700">{impact.caseRef}</span>
                 <StatusBadge
-                  status={varied ? "pending" : "done"}
+                  status={
+                    exactCase && !varied ? "done" : "pending"
+                  }
                   label={
-                    varied
-                      ? "Projection from signed case"
-                      : "Captain-signed case"
+                    exactCase
+                      ? varied
+                        ? "Projection from signed case"
+                        : "Captain-signed case"
+                      : "Universal rule · not case-attributed"
                   }
                 />
               </div>
@@ -178,7 +194,7 @@ export function ImpactBody({
                 {impact.title}
               </h2>
               <p className="mt-1 text-xs text-slate-600">{impact.facts}</p>
-              {group && a && b && effectA && effectB ? (
+              {exactCase && group && a && b && effectA && effectB ? (
                 <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
                   {group.firms.map((firm) => {
                     const selectedEffect =
@@ -199,7 +215,11 @@ export function ImpactBody({
               ) : (
                 <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
                   <StatusBadge status="done" label="Same safety rule" />
-                  <p className="mt-2 text-sm text-slate-700">{impact.universalEffect}</p>
+                  <p className="mt-2 text-sm text-slate-700">
+                    {impact.attributionKind === "universal-rule"
+                      ? impact.universalEffect
+                      : null}
+                  </p>
                 </div>
               )}
             </section>
