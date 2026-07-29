@@ -600,6 +600,8 @@ describe("dependency-rule fence", () => {
       `export const value = module["require"]("@infra/store");`,
       `export const value = (globalThis as any).require("@infra/store");`,
       `export const value = (globalThis as any)["require"]("@infra/store");`,
+      `export const value = (module as any)["requ" + "ire"]("@infra/store");`,
+      `const runtime: any = module;\nconst member = Math.random() > 0.5 ? "require" : "noop";\nexport const value = runtime[member]("@infra/store");`,
       `const loader = module;\nexport const value = loader.require("@infra/store");`,
     ])("a require member reached through an AMBIENT global still fails closed", (source) => {
       // NON-VACUOUS pair for the companion above: narrowing the scan to real loaders

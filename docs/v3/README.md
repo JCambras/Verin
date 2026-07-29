@@ -160,13 +160,17 @@ Playwright hooks, including reflectively registered hooks, or import the Axe run
 complete runtime local import graph, including the named roots, is inspected through side-effect imports,
 re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
 module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
-unresolved, non-literal, or indirect CommonJS loader provenance is non-evidence. Bare runtime dependencies
+unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
+Playwright hook provenance follows callable values stored in object properties. Bare runtime dependencies
 are restricted to configured local paths and the exact Playwright/Axe allowlist. The
 sanctioned helper admits no module-scope executable statement that could replace its analysis method.
-Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
+The route collections are non-empty declarative frozen literals, so Vitest and Playwright consume the
+same contents, and concrete URLs are assigned to their winning Next route before page coverage is
+credited. Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
 disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
-members, aliases, the `suite` registration alias, unshadowed Vitest globals, `todo`, `fails`, `skipIf`,
-and `runIf`, while preserving locally shadowed application callables.
+members, aliases, the `suite` registration alias, unshadowed Vitest globals and `globalThis` paths,
+neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while preserving locally
+shadowed application callables.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

@@ -446,6 +446,36 @@ const VITEST_REGISTRATION_BASES = new Set([
   "suite",
 ]);
 
+function isVitestGlobalObject(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapRegistrationExpression(node);
+  if (!Node.isIdentifier(normalized) || seen.has(normalized)) return false;
+  seen.add(normalized);
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  if (
+    normalized.getText() === "globalThis" &&
+    !declarations.some(
+      (declaration) =>
+        declaration.getSourceFile() === normalized.getSourceFile(),
+    )
+  ) {
+    return true;
+  }
+  const sources = [
+    ...declarations.flatMap((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return [];
+      const initializer = declaration.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }),
+    ...precedingRegistrationAssignments(normalized),
+  ];
+  return sources.some((source) =>
+    isVitestGlobalObject(source, new Set(seen)),
+  );
+}
+
 function vitestCallablePaths(
   node: Node,
   seen = new Set<Node>(),
@@ -485,6 +515,9 @@ function vitestCallablePaths(
     );
   }
   if (!Node.isIdentifier(normalized)) return [];
+  if (isVitestGlobalObject(normalized)) {
+    return [{ members: [], conditions: [] }];
+  }
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   const imported = declarations.flatMap(
     (declaration): VitestCallablePath[] => {
@@ -550,11 +583,90 @@ function vitestCallablePaths(
   ];
 }
 
+const NEUTRALIZING_VITEST_OPTIONS = new Set([
+  "skip",
+  "only",
+  "todo",
+  "fails",
+]);
+
+function registrationOptionPropertyName(node: Node): string | undefined {
+  if (Node.isIdentifier(node) || Node.isStringLiteral(node)) {
+    return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
+  }
+  if (!Node.isComputedPropertyName(node)) return undefined;
+  return staticRegistrationString(node.getExpression());
+}
+
+function registrationOptionsState(
+  node: Node,
+  seen = new Set<Node>(),
+): "safe" | "unsafe" | "not-options" | "unknown" {
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return "unknown";
+  seen.add(normalized);
+  if (
+    Node.isArrowFunction(normalized) ||
+    Node.isFunctionExpression(normalized) ||
+    Node.isNumericLiteral(normalized)
+  ) {
+    return "not-options";
+  }
+  if (Node.isObjectLiteralExpression(normalized)) {
+    for (const property of normalized.getProperties()) {
+      if (Node.isSpreadAssignment(property)) return "unsafe";
+      if (
+        !Node.isPropertyAssignment(property) &&
+        !Node.isShorthandPropertyAssignment(property) &&
+        !Node.isMethodDeclaration(property) &&
+        !Node.isGetAccessorDeclaration(property) &&
+        !Node.isSetAccessorDeclaration(property)
+      ) {
+        return "unsafe";
+      }
+      const name = registrationOptionPropertyName(property.getNameNode());
+      if (name === undefined) return "unsafe";
+      if (!NEUTRALIZING_VITEST_OPTIONS.has(name)) continue;
+      const value = Node.isPropertyAssignment(property)
+        ? property.getInitializer()
+        : Node.isShorthandPropertyAssignment(property)
+          ? property.getNameNode()
+          : undefined;
+      if (staticRegistrationBoolean(value) !== false) return "unsafe";
+    }
+    return "safe";
+  }
+  if (!Node.isIdentifier(normalized)) return "unknown";
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  if (declarations.some(Node.isFunctionDeclaration)) return "not-options";
+  const sources = [
+    ...declarations.flatMap((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return [];
+      const initializer = declaration.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }),
+    ...precedingRegistrationAssignments(normalized),
+  ];
+  if (sources.length === 0) return "unknown";
+  const states = sources.map((source) =>
+    registrationOptionsState(source, new Set(seen)),
+  );
+  if (states.some((state) => state === "unsafe")) return "unsafe";
+  return new Set(states).size === 1 ? states[0]! : "unknown";
+}
+
+function registrationOptionsAreUnsafe(call: Node): boolean {
+  if (!Node.isCallExpression(call)) return false;
+  const options = call.getArguments()[1];
+  if (options === undefined) return false;
+  const state = registrationOptionsState(options);
+  return state === "unsafe" || state === "unknown";
+}
+
 function disabledVitestRegistrationProblemsInFile(
   file: SourceFile,
   fileName: string,
 ): string[] {
-  const disabled = new Set(["skip", "only", "todo", "fails"]);
   const xPrefixed = new Set(["xit", "xtest", "xdescribe"]);
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
@@ -568,10 +680,16 @@ function disabledVitestRegistrationProblemsInFile(
         );
         const isDisabled =
           (members.length === 1 && xPrefixed.has(members[0]!)) ||
-          (VITEST_REGISTRATION_BASES.has(members[0]!) &&
-            (members.slice(1).some((member) => disabled.has(member)) ||
+          ((VITEST_REGISTRATION_BASES.has(members[0]!) ||
+            members[0] === "*") &&
+            (members
+              .slice(1)
+              .some((member) =>
+                NEUTRALIZING_VITEST_OPTIONS.has(member),
+              ) ||
               members.slice(1).includes("*") ||
-              conditionallyDisabled));
+              conditionallyDisabled ||
+              registrationOptionsAreUnsafe(call)));
         return isDisabled
           ? [
               `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${members.join(".")}`,
@@ -699,6 +817,23 @@ it.skipIf(unknown)("conditionally disabled", () => {});`,
       `test.todo("global test disabled");`,
       `import { suite } from "vitest";
 suite.skip("imported suite disabled", () => {});`,
+      `describe("disabled by options", { skip: true }, () => {});`,
+      `suite("focused by options", { only: true }, () => {});`,
+      `test("todo by options", { todo: true }, () => {});`,
+      `it("expected failure by options", { fails: true }, () => {});`,
+      `const flag = Math.random() > 0.5;
+describe("dynamically disabled", { skip: flag }, () => {});`,
+      `const options = { only: true };
+test("focused through options alias", options, () => {});`,
+      `const mode = "todo";
+it("computed option", { [mode]: true }, () => {});`,
+      `const base = { fails: true };
+test("spread options", { ...base }, () => {});`,
+      `const root = globalThis;
+root.describe.skip("global alias disabled", () => {});`,
+      `(globalThis as any).suite["only"]("global object focused", () => {});`,
+      `const registration = Math.random() > 0.5 ? "describe" : "suite";
+(globalThis as any)[registration].skip("dynamic global registration", () => {});`,
     ];
     for (const source of disabled) {
       expect(
@@ -721,6 +856,11 @@ test.runIf(true)("runs too", () => {});`,
     ).toEqual([]);
     expect(
       disabledVitestRegistrationProblems(
+        `describe("enabled", { skip: false, only: false, todo: false, fails: false }, () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
         `const suite = { skip: (_name: string, fn: () => void) => fn() };
 suite.skip("application suite", () => {});`,
       ),
@@ -729,6 +869,15 @@ suite.skip("application suite", () => {});`,
       disabledVitestRegistrationProblems(
         `function register(describe: { skip: (name: string) => void }) {
   describe.skip("application callback");
+}`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `function register(globalThis: {
+  describe: { skip: (name: string, fn: () => void) => void };
+}) {
+  globalThis.describe.skip("application suite", () => {});
 }`,
       ),
     ).toEqual([]);

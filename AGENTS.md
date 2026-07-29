@@ -278,7 +278,10 @@ or exclude configuration drifts.
   Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
   executable instrumentation. Charter-drift uses symbol-aware Vitest registration analysis for computed,
   aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
-  preserving locally shadowed application callables.
+  preserving locally shadowed application callables. Registration option objects and unshadowed
+  `globalThis` paths are included. Axe route collections are non-empty declarative frozen literals;
+  page coverage is credited only to the winning Next route. Hook provenance follows object-property
+  callables, and unresolved computed ambient CommonJS loaders are non-evidence.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

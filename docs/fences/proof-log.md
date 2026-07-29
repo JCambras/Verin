@@ -11597,3 +11597,97 @@ A locally declared application object whose property is named `require` remains 
 **Revert:** removed both real injections. The restored focused charter and Axe run passed all 37 tests.
 
 **Date:** 2026-07-29.
+
+### PF-001 (continued) · Vitest options and global-object registrations
+
+**Invariant (charter operating model / ADR-0030):** an enforcement suite cannot be neutralized through
+Vitest registration options or an unshadowed global-object path while another test keeps its file green.
+
+**Injection:** added both `describe("injected options bypass", { skip: true }, () => {})` and
+`(globalThis as any).suite.skip("injected global bypass", () => {})` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:711 disabled/focused Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:712 disabled/focused Vitest registration suite.skip
+```
+
+The focused charter-drift run exited 1. Before the fix, the same two in-memory forms returned no
+registration problem and their focused reproduction passed.
+
+**Companions added:** all four neutralizing options (`skip`, `only`, `todo`, and `fails`), dynamic
+values, computed keys, spreads, option aliases, direct and aliased `globalThis` paths, statically false
+options, and locally shadowed application authorities.
+
+**Revert:** removed both injected registrations. The restored focused charter, dependency, and Axe run
+passed all 122 tests.
+
+**Date:** 2026-07-29.
+
+### PF-002 (continued) · unresolved computed CommonJS members
+
+**Invariant (ADR-0001 / ADR-0030):** a computed member on ambient `module` cannot conceal a runtime
+dependency from layer enforcement or the complete Axe evidence graph.
+
+**Injection:** created `src/domain/review-commonjs.ts` with an ambient module call whose loader member
+was computed as `"requ" + "ire"`.
+
+**Observed failure (verbatim):**
+```text
+src/domain/review-commonjs.ts:1: domain -> unresolved (<non-literal require-reference>)
+```
+
+The focused dependency fence exited 1. Before the fix, the shared module-reference collector emitted no
+reference for the same computed ambient loader.
+
+**Companions added:** direct computed ambient members, dynamic keys reached through an ambient-module
+alias, and the same forms inside the Axe evidence graph. A locally declared application object and
+symbol-indexed `globalThis` access remain outside the ambient CommonJS authority.
+
+**Revert:** deleted the injected source file. The restored focused charter, dependency, and Axe run
+passed all 122 tests.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · stable routes, hook objects, and Next route ownership
+
+**Invariant (charter #9 / ADR-0030):** required accessibility evidence uses process-stable route
+collections, rejects Playwright hooks hidden in object properties, and credits a concrete URL only to
+the Next page that actually wins route resolution.
+
+**Injection 1:** stored `test.beforeEach` directly in an object property inside an unreachable block in
+`e2e/axe-routes.ts` and invoked that property. The branch prevented runtime registration while leaving
+the callable provenance executable to the source fence.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 route collections must be non-empty declarative frozen literals
+e2e/axe-routes.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2:** made `PUBLIC_AXE_ROUTES` conditional on `process.env.VITEST`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 route collections must be non-empty declarative frozen literals
+```
+
+**Injection 3:** added `src/app/app/[section]/page.tsx` while the only matching scanned URL resolved to
+an existing static page.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/[section]/page.tsx: route /app/[section] has no scanned URL that resolves to it in AUTHENTICATED_AXE_ROUTES
+```
+
+Each focused Axe run exited 1. Before the fix, focused reproductions accepted the object-stored hook,
+process-dependent collections, and one URL shared by overlapping static and dynamic page patterns.
+
+**Companions added:** object-property hook provenance, empty and process-dependent route modules,
+strict literal route manifests, and both failing and healthy static-versus-dynamic route precedence.
+
+**Revert:** restored `e2e/axe-routes.ts` and deleted the injected page and its empty directory. The
+restored focused charter, dependency, and Axe run passed all 122 tests.
+
+**Date:** 2026-07-29.

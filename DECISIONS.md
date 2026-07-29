@@ -6469,6 +6469,17 @@ unshadowed `describe`, `suite`, `test`, and `it` globals enabled by Vitest while
 shadowed application callables. PF-001 and PF-031 record the real red reproductions, non-vacuous
 companions, and restored proofs.
 
+The captain-approved registration-option, declarative-route, and precedence review (2026-07-29)
+amended ADR-0030 in place a twenty-sixth time: **(1)** charter-drift rejects `skip`, `only`, `todo`, and
+`fails` in Vitest registration option objects, including unresolved values, computed keys, spreads, and
+aliases; **(2)** unshadowed `globalThis` Vitest member paths are registration authorities while local
+shadows remain application code; **(3)** unresolved computed member access on ambient `module` is
+non-evidence for CommonJS loading; **(4)** Playwright hook provenance follows callable values stored in
+object properties; **(5)** Axe route collections are non-empty declarative frozen literals whose runtime
+contents cannot vary by process; and **(6)** concrete Axe URLs are assigned through Next route precedence,
+so a static page cannot falsely cover an overlapping dynamic page. PF-001, PF-002, and PF-031 record the
+real red reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

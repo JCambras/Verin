@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, and the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, and the captain-approved registration-option, declarative-route, and precedence review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -253,13 +253,21 @@ replacement, or comparable caller-side page setup therefore cannot mask the surf
 The fence follows every runtime local import reachable from the required specifications and sanctioned
 helpers, including side-effect imports, re-exports, configured TypeScript aliases, literal dynamic
 imports, and direct CommonJS imports. Indirect CommonJS loader provenance, including aliases of
-`require`, ambient `module.require` members, and destructured loader members, is non-evidence until the
+`require`, ambient `module.require` members, unresolved computed members on ambient `module`, and
+destructured loader members, is non-evidence until the
 graph can resolve the invoked target completely. Every reachable local module, including every named
 graph root, is subject to the same prohibition on Playwright hook registration and may not import the
 Axe runtime outside the exact sanctioned helper. Unresolved local imports and non-literal runtime
 imports are non-evidence. Bare runtime imports must
 either resolve through the directly parseable TypeScript path configuration or belong to the exact
 Playwright/Axe dependency allowlist.
+Playwright hook provenance also follows callable values through statically named object properties, so
+binding a hook into an object and invoking that property cannot hide registration. The four Axe route
+collections are accepted only as non-empty, directly frozen literal lists of directly frozen literal
+entries in a runtime-branch-free module. Their contents therefore cannot differ between the Vitest and
+Playwright processes. Route inventory uses Next's installed route ordering to assign each concrete URL
+to its winning static, dynamic, catch-all, or optional catch-all page, and every page must win at least
+one scanned URL.
 Configuration property names are normalized across direct and computed literal syntax at the root and
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
@@ -470,7 +478,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Vitest registration analysis follows computed and aliased `todo`, `fails`, `skipIf`, and `runIf`
   chains from imported authorities and the unshadowed `describe`, `suite`, `test`, and `it` globals
   enabled by the repository configuration. Locally shadowed application callables remain outside the
-  Vitest provenance graph. Unknown conditional state is non-evidence. The Axe helper admits no
+  Vitest provenance graph. The same provenance follows unshadowed `globalThis` member paths and inspects
+  registration option objects for `skip`, `only`, `todo`, and `fails`. Dynamic option keys, spreads, and
+  neutralizing values that are not statically false are non-evidence. Unknown conditional state is
+  non-evidence. The Axe helper admits no
   module-scope executable statement that could replace its analysis method, and required specifications
   cannot import the Axe runtime directly.
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
@@ -510,12 +521,14 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   `entryGates` chain makes that state control readiness. Prompt 5 landed with ADR-0029; prompts 6 and 7
   remain open.
 - The accessibility fence derives the complete `src/app/**/page.tsx` inventory, classifies every static
-  and dynamic route into its public, login, authenticated, or demo scan group, and requires exact
-  ownership in the frozen Axe collections. Adding a page without a loaded-state scan fails the fence.
+  and dynamic route into its public, login, authenticated, or demo scan group, applies Next route
+  precedence to every concrete scan URL, and requires every page to own a URL that actually resolves to
+  it. The frozen Axe collections are declarative, non-empty, and process-stable. Adding an unscanned page
+  or a page shadowed by a more specific route fails the fence.
 - Charter-drift disabled-fence detection parses Vitest registrations with symbol-aware AST provenance,
   including computed members, namespace imports, imported aliases, assigned aliases, unshadowed globals,
-  the `suite` alias, and x-prefixed registrations. String mentions and unrelated local functions are not
-  evidence.
+  `globalThis` member paths, the `suite` alias, x-prefixed registrations, and neutralizing registration
+  options. String mentions and unrelated local functions are not evidence.
 - The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
   Axe-specific charter proof is PF-031.
 - This does **not** change what invariant 3 requires, when prompt 10 runs, or the deferral of prompt 27

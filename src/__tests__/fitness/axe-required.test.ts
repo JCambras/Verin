@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
+import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import {
   Node,
   Project,
@@ -30,6 +31,7 @@ import {
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
 const E2E_HELPERS_PATH = "e2e/helpers.ts";
+const AXE_ROUTES_PATH = "e2e/axe-routes.ts";
 const PLAYWRIGHT_CONFIG_PATH = "playwright.config.ts";
 const TSCONFIG_PATH = "tsconfig.json";
 const AXE_HELPER_EXPORT = "assertNoAxeViolations";
@@ -432,17 +434,44 @@ export function pageRouteInventoryProblems(
     const paths = collections[name].map((route) =>
       route.path.split("?")[0]!,
     );
+    const byPattern = new Map<string, { file: string; pattern: string }>();
     for (const page of pages) {
-      if (!paths.some((path) => routeMatchesPattern(page.pattern, path))) {
+      if (byPattern.has(page.pattern)) {
         problems.push(
-          `${page.file}: route ${page.pattern} is absent from ${name}`,
+          `${page.file}: route ${page.pattern} duplicates another Next page pattern`,
         );
+      } else {
+        byPattern.set(page.pattern, page);
       }
     }
+    let sortedPatterns: string[];
+    try {
+      sortedPatterns = getSortedRoutes([...byPattern.keys()]);
+    } catch {
+      problems.push(`${name}: Next page patterns cannot be precedence-sorted`);
+      continue;
+    }
+    const ownedPages = new Set<string>();
     for (const path of paths) {
-      if (!pages.some((page) => routeMatchesPattern(page.pattern, path))) {
+      const winningPattern = sortedPatterns.find((pattern) =>
+        routeMatchesPattern(pattern, path),
+      );
+      const winner =
+        winningPattern === undefined
+          ? undefined
+          : byPattern.get(winningPattern);
+      if (winner === undefined) {
         problems.push(
           `${name}: route ${path} has no classified Next page.tsx owner`,
+        );
+      } else {
+        ownedPages.add(winner.file);
+      }
+    }
+    for (const page of pages) {
+      if (!ownedPages.has(page.file)) {
+        problems.push(
+          `${page.file}: route ${page.pattern} has no scanned URL that resolves to it in ${name}`,
         );
       }
     }
@@ -477,6 +506,125 @@ function unwrapExpression(node: Node): Node {
     current = current.getExpression();
   }
   return current;
+}
+
+function declarativeAxeRouteCollections(
+  sourceFile: SourceFile,
+): Readonly<Record<RouteCollectionName, RouteCollection>> | undefined {
+  const helper = sourceFile
+    .getFunctions()
+    .filter((fn) => fn.getName() === "axeRoute");
+  if (helper.length !== 1) return undefined;
+  const helperBody = helper[0]!.getBody();
+  const helperReturn =
+    Node.isBlock(helperBody) && helperBody.getStatements().length === 1
+      ? helperBody.getStatements()[0]
+      : undefined;
+  if (
+    helper[0]!.isExported() ||
+    helper[0]!.getParameters().map((parameter) => parameter.getName()).join(
+      ",",
+    ) !== "path,readySelector" ||
+    !Node.isReturnStatement(helperReturn)
+  ) {
+    return undefined;
+  }
+  const freeze = helperReturn.getExpression();
+  if (!Node.isCallExpression(freeze) || freeze.getArguments().length !== 1) {
+    return undefined;
+  }
+  const freezeMember = memberAccess(freeze.getExpression());
+  const frozenObject = freeze.getArguments()[0];
+  if (
+    freezeMember?.name !== "freeze" ||
+    !isUnshadowedGlobal(freezeMember.receiver, "Object") ||
+    !Node.isObjectLiteralExpression(frozenObject) ||
+    frozenObject.getProperties().length !== 2 ||
+    !frozenObject
+      .getProperties()
+      .every(
+        (property) =>
+          Node.isShorthandPropertyAssignment(property) &&
+          ["path", "readySelector"].includes(property.getName()),
+      )
+  ) {
+    return undefined;
+  }
+  const names: readonly RouteCollectionName[] = [
+    "PUBLIC_AXE_ROUTES",
+    "LOGIN_AXE_ROUTES",
+    "AUTHENTICATED_AXE_ROUTES",
+    "DEMO_AXE_ROUTES",
+  ];
+  const collections = new Map<RouteCollectionName, RouteCollection>();
+  for (const declaration of sourceFile.getVariableDeclarations()) {
+    const name = declaration.getName();
+    if (!names.includes(name as RouteCollectionName)) continue;
+    const statement = declaration.getVariableStatement();
+    const initializer = declaration.getInitializer();
+    const frozen = initializer && unwrapExpression(initializer);
+    if (
+      statement === undefined ||
+      !statement.isExported() ||
+      statement.getDeclarationKind() !== VariableDeclarationKind.Const ||
+      statement.getDeclarations().length !== 1 ||
+      !Node.isCallExpression(frozen) ||
+      frozen.getArguments().length !== 1
+    ) {
+      return undefined;
+    }
+    const member = memberAccess(frozen.getExpression());
+    const routes = unwrapExpression(frozen.getArguments()[0]!);
+    if (
+      member?.name !== "freeze" ||
+      !isUnshadowedGlobal(member.receiver, "Object") ||
+      !Node.isArrayLiteralExpression(routes) ||
+      routes.getElements().length === 0
+    ) {
+      return undefined;
+    }
+    const parsed: Array<{ path: string; readySelector: string }> = [];
+    for (const element of routes.getElements()) {
+      if (
+        !Node.isCallExpression(element) ||
+        element.getExpression().getText() !== "axeRoute" ||
+        element.getArguments().length !== 2
+      ) {
+        return undefined;
+      }
+      const [path, readySelector] = element.getArguments();
+      if (
+        !Node.isStringLiteral(path) ||
+        !Node.isStringLiteral(readySelector)
+      ) {
+        return undefined;
+      }
+      parsed.push({
+        path: path.getLiteralText(),
+        readySelector: readySelector.getLiteralText(),
+      });
+    }
+    collections.set(name as RouteCollectionName, parsed);
+  }
+  if (
+    collections.size !== names.length ||
+    sourceFile.getStatements().some((statement) => {
+      if (Node.isInterfaceDeclaration(statement)) return false;
+      if (statement === helper[0]) return false;
+      if (!Node.isVariableStatement(statement)) return true;
+      return !statement
+        .getDeclarations()
+        .every((declaration) =>
+          names.includes(declaration.getName() as RouteCollectionName),
+        );
+    })
+  ) {
+    return undefined;
+  }
+  return Object.fromEntries(collections) as Record<
+    RouteCollectionName,
+    RouteCollection
+  >;
 }
 
 function importModuleOf(node: Node): string | undefined {
@@ -758,6 +906,70 @@ function normalizedObjectProperties(
   return properties;
 }
 
+function objectPropertySources(
+  receiver: Node,
+  name: string,
+  seen = new Set<Node>(),
+): Node[] {
+  const value = unwrapExpression(receiver);
+  if (seen.has(value)) return [];
+  seen.add(value);
+  if (Node.isIdentifier(value)) {
+    const sources = [
+      ...(value
+        .getSymbol()
+        ?.getDeclarations()
+        .flatMap((declaration) => {
+          if (!Node.isVariableDeclaration(declaration)) return [];
+          const initializer = declaration.getInitializer();
+          return initializer === undefined ? [] : [initializer];
+        }) ?? []),
+      ...precedingAssignmentValues(value),
+    ];
+    return sources.flatMap((source) =>
+      objectPropertySources(source, name, new Set(seen)),
+    );
+  }
+  if (!Node.isObjectLiteralExpression(value)) return [];
+  return value.getProperties().flatMap((property) => {
+    if (Node.isSpreadAssignment(property)) {
+      return objectPropertySources(
+        property.getExpression(),
+        name,
+        new Set(seen),
+      );
+    }
+    const propertyName = staticPropertyName(property.getNameNode());
+    if (propertyName !== name) return [];
+    if (Node.isPropertyAssignment(property)) {
+      const initializer = property.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }
+    if (Node.isShorthandPropertyAssignment(property)) {
+      return [property.getNameNode()];
+    }
+    if (Node.isGetAccessorDeclaration(property)) {
+      return property
+        .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+        .flatMap((statement) => {
+          const expression = statement.getExpression();
+          return expression === undefined ? [] : [expression];
+        });
+    }
+    return [];
+  });
+}
+
+function objectPropertyValueSources(
+  node: Node,
+): Node[] {
+  const normalized = unwrapExpression(node);
+  const access = memberAccess(normalized);
+  return access === undefined
+    ? []
+    : objectPropertySources(access.receiver, access.name);
+}
+
 function isNamedImportMemberExpression(
   node: Node,
   moduleName: string,
@@ -929,8 +1141,44 @@ function couldBeNamedImportMemberExpression(
   ) {
     return true;
   }
+  if (
+    objectPropertyValueSources(normalized).some((source) =>
+      couldBeNamedImportMemberExpression(
+        source,
+        moduleName,
+        imported,
+        member,
+        new Set(seen),
+      ),
+    )
+  ) {
+    return true;
+  }
   if (!Node.isIdentifier(normalized)) return false;
-  return precedingAssignmentValues(normalized).some((assigned) =>
+  const declarationSources =
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return initializer === undefined ? [] : [initializer];
+        }
+        if (!Node.isBindingElement(declaration)) return [];
+        const property =
+          declaration.getPropertyNameNode() ?? declaration.getNameNode();
+        const name = staticPropertyName(property);
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        if (name === undefined || initializer === undefined) return [];
+        return objectPropertySources(initializer, name);
+      }) ?? [];
+  return [
+    ...declarationSources,
+    ...precedingAssignmentValues(normalized),
+  ].some((assigned) =>
     couldBeNamedImportMemberExpression(
       assigned,
       moduleName,
@@ -2143,6 +2391,15 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
   for (const [path, source] of Object.entries(sources)) {
     sourceFiles.set(path, project.createSourceFile(`/${path}`, source));
   }
+  const routeSource = sourceFiles.get(AXE_ROUTES_PATH);
+  if (
+    routeSource === undefined ||
+    declarativeAxeRouteCollections(routeSource) === undefined
+  ) {
+    problems.push(
+      `${AXE_ROUTES_PATH}:1 route collections must be non-empty declarative frozen literals`,
+    );
+  }
   problems.push(
     ...importedAxeGraphProblems(
       sourceFiles,
@@ -2228,10 +2485,25 @@ const VALID_TSCONFIG = `{
   }
 }`;
 
-const VALID_AXE_ROUTES = `export const PUBLIC_AXE_ROUTES = Object.freeze([]);
-export const LOGIN_AXE_ROUTES = Object.freeze([]);
-export const AUTHENTICATED_AXE_ROUTES = Object.freeze([]);
-export const DEMO_AXE_ROUTES = Object.freeze([]);`;
+const VALID_AXE_ROUTES = `interface AxeRoute {
+  readonly path: string;
+  readonly readySelector: string;
+}
+function axeRoute(path: string, readySelector: string): AxeRoute {
+  return Object.freeze({ path, readySelector });
+}
+export const PUBLIC_AXE_ROUTES = Object.freeze([
+  axeRoute("/", "h1"),
+] satisfies readonly AxeRoute[]);
+export const LOGIN_AXE_ROUTES = Object.freeze([
+  axeRoute("/login", "#email"),
+] satisfies readonly AxeRoute[]);
+export const AUTHENTICATED_AXE_ROUTES = Object.freeze([
+  axeRoute("/app", "main"),
+] satisfies readonly AxeRoute[]);
+export const DEMO_AXE_ROUTES = Object.freeze([
+  axeRoute("/app/demo", "main"),
+] satisfies readonly AxeRoute[]);`;
 
 const VALID_LOGIN_HELPER = `import { expect, type Page } from "@playwright/test";
 export async function login(page: Page, creds: { email: string; password: string }): Promise<void> {
@@ -2294,7 +2566,7 @@ function completeSources(
     [E2E_HELPERS_PATH]: VALID_LOGIN_HELPER,
     [PLAYWRIGHT_CONFIG_PATH]: VALID_CONFIG,
     [TSCONFIG_PATH]: VALID_TSCONFIG,
-    "e2e/axe-routes.ts": VALID_AXE_ROUTES,
+    [AXE_ROUTES_PATH]: VALID_AXE_ROUTES,
     ...VALID_SPECS,
     ...overrides,
   };
@@ -2308,14 +2580,25 @@ describe("axe-required fence", () => {
   }, 60_000);
 
   it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
+    const routeProject = new Project({
+      useInMemoryFileSystem: true,
+      skipAddingFilesFromTsConfig: true,
+    });
+    const declaredCollections = declarativeAxeRouteCollections(
+      routeProject.createSourceFile(
+        `/${AXE_ROUTES_PATH}`,
+        readFileSync(join(REPO_ROOT, AXE_ROUTES_PATH), "utf8"),
+      ),
+    );
+    expect(declaredCollections).toEqual({
+      PUBLIC_AXE_ROUTES,
+      LOGIN_AXE_ROUTES,
+      AUTHENTICATED_AXE_ROUTES,
+      DEMO_AXE_ROUTES,
+    });
     const inventoryProblems = pageRouteInventoryProblems(
       nextPageFiles(),
-      {
-        PUBLIC_AXE_ROUTES,
-        LOGIN_AXE_ROUTES,
-        AUTHENTICATED_AXE_ROUTES,
-        DEMO_AXE_ROUTES,
-      },
+      declaredCollections!,
     );
     expect(
       inventoryProblems,
@@ -2477,6 +2760,7 @@ void Axe;`,
         `const load = require;
 load("./axe-poison");`,
         `module.require("./axe-poison");`,
+        `(module as any)["requ" + "ire"]("./axe-poison");`,
         `const runtime = module;
 runtime["require"]("./axe-poison");`,
         `const { require: load } = module;
@@ -2500,12 +2784,68 @@ Axe.prototype.analyze = async () => ({ violations: [] } as never);`;
         );
       }
 
-      const applicationMember = completeSources();
-      applicationMember["e2e/axe-routes.ts"] =
+      const applicationSource =
         `const module = { require: (_specifier: string) => undefined };
 module.require("./application-operation");
+`;
+      const applicationProject = new Project({
+        useInMemoryFileSystem: true,
+        skipAddingFilesFromTsConfig: true,
+      });
+      expect(
+        runtimeModuleReferences(
+          applicationProject.createSourceFile(
+            "/e2e/application.ts",
+            applicationSource,
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it("rejects process-dependent or empty route collections", () => {
+      const processDependent = completeSources();
+      processDependent[AXE_ROUTES_PATH] =
+        `const routes = process.env.VITEST ? Object.freeze([]) : Object.freeze([]);
+export const PUBLIC_AXE_ROUTES = routes;
+export const LOGIN_AXE_ROUTES = routes;
+export const AUTHENTICATED_AXE_ROUTES = routes;
+export const DEMO_AXE_ROUTES = routes;`;
+      expect(axeCoverageProblems(processDependent)).toContain(
+        `${AXE_ROUTES_PATH}:1 route collections must be non-empty declarative frozen literals`,
+      );
+
+      const empty = completeSources();
+      empty[AXE_ROUTES_PATH] = VALID_AXE_ROUTES.replace(
+        '  axeRoute("/", "h1"),',
+        "",
+      );
+      expect(axeCoverageProblems(empty)).toContain(
+        `${AXE_ROUTES_PATH}:1 route collections must be non-empty declarative frozen literals`,
+      );
+    });
+
+    it("rejects Playwright hook callables stored in object properties", () => {
+      const wrappers = [
+        `const hooks = { install: test.beforeEach };
+hooks.install(() => undefined);`,
+        `const base = { install: test.beforeEach };
+const hooks = { ...base };
+const alias = hooks;
+alias.install(() => undefined);`,
+        `const hooks = { install: test.beforeEach };
+const { install } = hooks;
+install(() => undefined);`,
+      ];
+      for (const wrapper of wrappers) {
+        const wrappedHook = completeSources();
+        wrappedHook["e2e/axe-routes.ts"] =
+          `import { test } from "@playwright/test";
+${wrapper}
 ${VALID_AXE_ROUTES}`;
-      expect(axeCoverageProblems(applicationMember)).toEqual([]);
+        expect(axeCoverageProblems(wrappedHook), wrapper).toContain(
+          "e2e/axe-routes.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+        );
+      }
     });
 
     it("rejects an unclassified or unscanned Next page route", () => {
@@ -2543,7 +2883,7 @@ ${VALID_AXE_ROUTES}`;
           collections,
         ),
       ).toContain(
-        "src/app/privacy/page.tsx: route /privacy is absent from PUBLIC_AXE_ROUTES",
+        "src/app/privacy/page.tsx: route /privacy has no scanned URL that resolves to it in PUBLIC_AXE_ROUTES",
       );
       expect(
         pageRouteInventoryProblems(
@@ -2553,6 +2893,42 @@ ${VALID_AXE_ROUTES}`;
       ).toContain(
         "src/app/@modal/page.tsx: Next page route cannot be classified for Axe",
       );
+
+      expect(
+        pageRouteInventoryProblems(
+          [
+            "src/app/app/foo/page.tsx",
+            "src/app/app/[slug]/page.tsx",
+          ],
+          {
+            PUBLIC_AXE_ROUTES: [],
+            LOGIN_AXE_ROUTES: [],
+            AUTHENTICATED_AXE_ROUTES: [
+              { path: "/app/foo", readySelector: "main" },
+            ],
+            DEMO_AXE_ROUTES: [],
+          },
+        ),
+      ).toContain(
+        "src/app/app/[slug]/page.tsx: route /app/[slug] has no scanned URL that resolves to it in AUTHENTICATED_AXE_ROUTES",
+      );
+      expect(
+        pageRouteInventoryProblems(
+          [
+            "src/app/app/foo/page.tsx",
+            "src/app/app/[slug]/page.tsx",
+          ],
+          {
+            PUBLIC_AXE_ROUTES: [],
+            LOGIN_AXE_ROUTES: [],
+            AUTHENTICATED_AXE_ROUTES: [
+              { path: "/app/foo", readySelector: "main" },
+              { path: "/app/bar", readySelector: "main" },
+            ],
+            DEMO_AXE_ROUTES: [],
+          },
+        ),
+      ).toEqual([]);
     });
 
     it("rejects a required spec without an awaited sanctioned scan", () => {

@@ -1,5 +1,3 @@
-import { DEMO_SURFACES } from "../src/app/demo/surface-contract";
-
 export interface AxeRoute {
   readonly path: string;
   readonly readySelector: string;
@@ -26,10 +24,52 @@ export const AUTHENTICATED_AXE_ROUTES = Object.freeze([
 
 export const DEMO_AXE_ROUTES = Object.freeze([
   axeRoute("/app/demo", "[data-demo-launcher]"),
-  ...DEMO_SURFACES.map((surface) =>
-    axeRoute(
-      `/app/demo/${surface.station}?scenario=recent-bank-change-block&firm=firm-a`,
-      `[data-demo-surface="${surface.station}"]`,
-    ),
+  axeRoute(
+    "/app/demo/workspace?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="workspace"]',
+  ),
+  axeRoute(
+    "/app/demo/intent?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="intent"]',
+  ),
+  axeRoute(
+    "/app/demo/evidence?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="evidence"]',
+  ),
+  axeRoute(
+    "/app/demo/decision?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="decision"]',
+  ),
+  axeRoute(
+    "/app/demo/policy-trace?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="policy-trace"]',
+  ),
+  axeRoute(
+    "/app/demo/authority?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="authority"]',
+  ),
+  axeRoute(
+    "/app/demo/safety?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="safety"]',
+  ),
+  axeRoute(
+    "/app/demo/execution?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="execution"]',
+  ),
+  axeRoute(
+    "/app/demo/verification?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="verification"]',
+  ),
+  axeRoute(
+    "/app/demo/comparison?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="comparison"]',
+  ),
+  axeRoute(
+    "/app/demo/policy-authoring?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="policy-authoring"]',
+  ),
+  axeRoute(
+    "/app/demo/record?scenario=recent-bank-change-block&firm=firm-a",
+    '[data-demo-surface="record"]',
   ),
 ] satisfies readonly AxeRoute[]);
