@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, and the captain-approved execution-reachability review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, and the captain-approved enforcement-integrity review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -221,12 +221,17 @@ direct, computed, destructured, aliased, and namespace-imported Playwright neutr
 their imported symbols. A multi-argument `defineConfig` is rejected because later arguments override
 earlier selection settings. Each sanctioned route loop is a direct statement of its enabled registered
 test, outside uncalled functions and caught branches.
+Configuration property names are normalized across direct and computed literal syntax at the root and
+project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
+instead of leaving open a hidden selection override.
 
 **Gate 0 surface completeness is executable.** The prompt-3 evidence gap is replaced by
 `demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
-`docs/demo-contract.md` section 4 list, the dynamic route renders every station, every component exists,
-and the canonical journey directly awaits each surface screenshot in order. Its `snap` helper directly
-awaits `page.screenshot` into `demo-screens` and asserts that every returned capture is non-empty. The
+`docs/demo-contract.md` section 4 list, every dynamic route case returns the component imported from the
+manifest's exact component path, every component exists, and the canonical journey directly awaits each
+surface screenshot in order. Each `snap` call names its manifest station, and the helper verifies the
+station URL plus its surface-specific loaded marker before directly awaiting `page.screenshot` into
+`demo-screens` and asserting that the returned capture is non-empty. The
 blocking E2E gate reaches every typed demo route and waits for its surface-specific loaded marker.
 Gate 0 now computes green, and remains the structural predecessor of Gate A.
 
@@ -375,14 +380,17 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   understate what a gate needs.
 - Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
-  manifest, route switch, component inventory, and direct awaited ordered screenshots. The screenshot
-  helper writes only to the pinned artifact directory and rejects an empty capture, while the blocking
-  E2E gate reaches every typed route after its loaded marker. Gates A through I remain non-green against
-  their own unmet requirements.
+  manifest, each route case's imported component, and direct awaited ordered screenshots. The screenshot
+  helper verifies the corresponding URL and loaded marker, writes only to the pinned artifact directory,
+  and rejects an empty capture. Gates A through I remain non-green against their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
-  a rule cannot be enforced in one and missing in the other.
+  a rule cannot be enforced in one and missing in the other. The runner exits nonzero when the shared
+  Vitest invocation fails or any mapped fitness file, including a gate-only fence, fails or produces no
+  result.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
-  orphan and ratchet checks cover the new fence.
+  orphan and ratchet checks cover the new fence. Charter drift pins the complete set of effective
+  enforced mechanism tuples, including type, reference, command, and status, so a mechanism-level
+  `planned` override or deletion cannot bypass an entry-level ratchet.
 - Wave B's entry condition is recorded on gate B: prompts 5, 6, and 7 landed and Gate A is green,
   including owned invariants 1, 2, 4, and 5 plus earliest-proof references 7, 8, and 9. The structural
   `entryGates` chain makes that state control readiness. Prompt 5 landed with ADR-0029; prompts 6 and 7

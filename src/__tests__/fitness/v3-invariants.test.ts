@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
+import {
+  ciJobRunProblem,
+  mappedFitnessProblems,
+  parseCiJobs,
+  type CiJob,
+} from "../../../scripts/v3-gates.lib";
 
 /**
  * V3-INVARIANT REGISTRY FENCE (ADR-0023; v3 §17 preamble: CI reports active,
@@ -207,6 +212,36 @@ describe("v3-invariant registry fence", () => {
       const twentyNine = full(new Map(ratchetActive));
       twentyNine.invariants = twentyNine.invariants.filter((i) => i.id !== 17);
       expect(validateRegistry(twentyNine, deps).some((p) => p.includes("missing from the registry: 17"))).toBe(true);
+    });
+    it("flags failed and missing results from every mapped fitness file", () => {
+      const refs = ["active.test.ts", "gate-only.test.ts"];
+      expect(
+        mappedFitnessProblems(
+          refs,
+          new Map([
+            ["active.test.ts", true],
+            ["gate-only.test.ts", false],
+          ]),
+          1,
+        ),
+      ).toEqual([
+        "mapped fitness invocation exited 1",
+        "gate-only.test.ts FAILED",
+      ]);
+      expect(
+        mappedFitnessProblems(
+          refs,
+          new Map([["active.test.ts", true]]),
+          0,
+        ),
+      ).toEqual(["gate-only.test.ts produced no result"]);
+      expect(
+        mappedFitnessProblems(
+          refs,
+          new Map(refs.map((ref) => [ref, true])),
+          0,
+        ),
+      ).toEqual([]);
     });
     it("accepts a complete honest registry (cannot pass by always-failing)", () => {
       expect(validateRegistry(full(new Map(ratchetActive)), deps)).toEqual([]);

@@ -91,6 +91,8 @@ non-evidence because its execution or reachability semantics are not proven. Eve
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
+The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
+so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
 Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
 `domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
 an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
@@ -104,13 +106,16 @@ requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
 typed manifest is equal to the normative demo contract, every component and dynamic route exists, the
-canonical journey directly awaits all twelve screenshots in order, writes them to `demo-screens`, and
-asserts each capture is non-empty. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
+canonical route binds each station to its manifest component, and the journey directly awaits all twelve
+screenshots in order. Each capture verifies its station URL and loaded marker, writes to `demo-screens`,
+and asserts the result is non-empty. The runner fails on every mapped fitness failure or missing result,
+including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
 stable-corpus evidence, Gate F includes prompt 26's verification
 reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
 The Axe-specific fence also parses Playwright selection settings, forbids focused-test exclusion, binds public, authenticated, and demo
 route groups to directly owned loaded-state scans, rejects multi-argument configuration overrides and
-side-effecting assertion messages, and resolves direct, computed, destructured, aliased, and
+side-effecting assertion messages, normalizes computed configuration keys while failing closed on
+unresolved keys, and resolves direct, computed, destructured, aliased, and
 namespace-imported neutralization calls through imported Playwright symbols.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`

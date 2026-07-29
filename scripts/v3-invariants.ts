@@ -32,6 +32,7 @@ import {
   ciJobRuns,
   gateOrderingProblems,
   gateReadiness,
+  mappedFitnessProblems,
   parseCiJobs,
   type Gate,
   type Invariant as GateInvariant,
@@ -114,6 +115,7 @@ const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filte
 const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
 
 const fileResults = new Map<string, boolean>();
+let fitnessRunStatus: number | null = 0;
 if (fitnessFiles.length > 0) {
   const outDir = mkdtempSync(join(tmpdir(), "v3-invariants-"));
   const outFile = join(outDir, "vitest.json");
@@ -138,6 +140,7 @@ if (fitnessFiles.length > 0) {
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
+  fitnessRunStatus = run.status;
   try {
     interface VitestJson {
       testResults: Array<{ name: string; status: string }>;
@@ -149,9 +152,7 @@ if (fitnessFiles.length > 0) {
       if (ref) fileResults.set(ref, tr.status === "passed");
     }
   } catch {
-    // No parseable report (vitest crashed before writing): trust the exit code, never assume green.
     if (run.status !== 0) console.error(run.stderr || run.stdout);
-    for (const f of fitnessFiles) fileResults.set(f, run.status === 0);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
@@ -252,4 +253,12 @@ for (const view of gateReadiness(registry, {
 
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));
 
+const fitnessFailures = mappedFitnessProblems(
+  fitnessFiles,
+  fileResults,
+  fitnessRunStatus,
+);
+if (fitnessFailures.length > 0) {
+  fail(`mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}`);
+}
 if (failures.length > 0) fail(`ACTIVE invariants failing:\n  - ${failures.join("\n  - ")}`);

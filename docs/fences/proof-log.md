@@ -10351,6 +10351,105 @@ then passed all 10 tests.
 
 **Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).
 
+### PF-030 (continued, 11th review round) · mapped gate fitness is blocking
+
+**Invariant:** every fitness file selected by the v3 runner is blocking, including a fence required only
+by a gate and not by an active invariant.
+
+**Injection 41 - fail the Gate 0-only surface fence.** Removed the canonical record screenshot call from
+`e2e/demo-journey.spec.ts`, leaving every active invariant mechanism green.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: mapped fitness fences failing:
+  - mapped fitness invocation exited 1
+  - src/__tests__/fitness/demo-surface-completeness.test.ts FAILED
+```
+
+The runner exited 1. Before the correction, the same injection printed Gate 0 non-green but exited 0.
+The pure companion separately rejects a false result, a missing result, and a nonzero shared invocation,
+then accepts a complete passing result map.
+
+**Revert:** the record screenshot call was restored immediately.
+
+**Date:** 2026-07-29 (ADR-0030 and D-061 enforcement-integrity review).
+
+### PF-001 (continued) · effective charter mechanism ratchet
+
+**Invariant (charter operating model):** a mechanism that shipped enforced cannot be deleted or
+neutralized with a mechanism-level `planned` status while its parent entry stays enforced.
+
+**Injection 2 - mark the Axe-specific mechanism planned.** Added `"status": "planned"` only to charter
+rule 9's `axe-required.test.ts` mechanism.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (e'') ratchet: complete effective enforced mechanism tuples cannot regress
+AssertionError: charter mechanism ratchet regressed:
+ratcheted enforced mechanism missing: ["9","fitness","src/__tests__/fitness/axe-required.test.ts","","enforced"]
+```
+
+**Companion added:** the in-memory ratchet rejects both a planned override and complete deletion of the
+Axe tuple. The real fence pins every current effective enforced tuple, including entry id, mechanism
+type, reference, exact command, and effective status.
+
+**Revert:** the mechanism-level override was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · computed Playwright configuration keys
+
+**Invariant (charter #9):** Playwright selection proof sees direct and computed configuration property
+names and fails closed when a computed name cannot be resolved.
+
+**Injection 8 - hide an exclusion behind a computed literal.** Added
+`["testIgnore"]: ["**/smoke.spec.ts"]` to the real Playwright configuration.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Companions added:** in-memory configurations reject computed root exclusions, computed project
+`testDir`, and a configuration-derived computed key whose value cannot be decided statically.
+
+**Revert:** the computed exclusion was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · route identity and loaded screenshot ownership
+
+**Invariant (Gate 0, ADR-0030):** every manifest station returns the component imported from its exact
+manifest path, and every canonical screenshot verifies that station's URL and loaded marker before
+capture.
+
+**Injection 3 - render the wrong component for a valid station.** Changed the `record` case to return
+`WorkspaceSurface` while leaving every case label and manifest entry intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo route must render every typed surface exactly once
+```
+
+**Injection 4 - bind the record capture to the workspace station.** Changed only the fourth argument of
+the twelfth canonical call from `"record"` to `"workspace"`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Companions added:** the route companion substitutes the wrong imported surface without changing the
+case label, screenshot companions reject a mismatched station argument, and helper companions reject a
+generic URL assertion or body-only loaded marker.
+
+**Revert:** both injections were restored immediately.
+
+**Date:** 2026-07-29.
+
 ### PF-032 (continued) · awaited screenshot execution and non-empty artifacts
 
 **Invariant (Gate 0, ADR-0030):** each canonical screenshot call is a direct awaited statement of the

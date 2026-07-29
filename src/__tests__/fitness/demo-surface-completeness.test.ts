@@ -29,14 +29,63 @@ function contractSurfaceNames(markdown: string): string[] {
     .map((match) => match[2]!.replace(/\s+\(.*$/, "").trim());
 }
 
-function switchStations(source: string): string[] {
+function routeSurfaceBindings(
+  source: string,
+): Array<{ station: string; componentPath: string }> {
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile("/route.tsx", source);
-  return file
-    .getDescendantsOfKind(SyntaxKind.CaseClause)
-    .map((clause) => clause.getExpression())
-    .filter(Node.isStringLiteral)
-    .map((literal) => literal.getLiteralText());
+  const renderer = file.getFunction("renderStation");
+  const body = renderer?.getBody();
+  const parameter = renderer?.getParameters()[0];
+  if (
+    renderer === undefined ||
+    !Node.isBlock(body) ||
+    parameter === undefined ||
+    body.getStatements().length !== 1
+  ) {
+    return [];
+  }
+  const statement = body.getStatements()[0];
+  if (!Node.isSwitchStatement(statement)) return [];
+  const selector = statement.getExpression();
+  if (
+    !Node.isIdentifier(selector) ||
+    !selector
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => declaration === parameter)
+  ) {
+    return [];
+  }
+  const clauses = statement.getCaseBlock().getClauses();
+  if (!clauses.every(Node.isCaseClause)) return [];
+  return clauses.flatMap((clause) => {
+    const station = clause.getExpression();
+    const statements = clause.getStatements();
+    if (
+      !Node.isStringLiteral(station) ||
+      statements.length !== 1 ||
+      !Node.isReturnStatement(statements[0])
+    ) {
+      return [];
+    }
+    const returned = statements[0].getExpression();
+    if (!Node.isJsxSelfClosingElement(returned)) return [];
+    const tag = returned.getTagNameNode();
+    if (!Node.isIdentifier(tag)) return [];
+    const imported = tag
+      .getSymbol()
+      ?.getDeclarations()
+      .find(Node.isImportSpecifier);
+    const moduleName = imported === undefined ? undefined : importModuleOf(imported);
+    if (moduleName === undefined || !moduleName.startsWith("@app/")) return [];
+    return [
+      {
+        station: station.getLiteralText(),
+        componentPath: `src/app/${moduleName.slice("@app/".length)}.tsx`,
+      },
+    ];
+  });
 }
 
 function importModuleOf(node: Node): string | undefined {
@@ -62,7 +111,9 @@ function isNamedImportIdentifier(
   );
 }
 
-function screenshotSequence(source: string): Array<{ number: number; name: string }> {
+function screenshotSequence(
+  source: string,
+): Array<{ number: number; name: string; station: string }> {
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile("/demo.spec.ts", source);
   const registration = file
@@ -122,18 +173,25 @@ function screenshotSequence(source: string): Array<{ number: number; name: strin
     ) {
       return [];
     }
-    const [page, number, name] = call.getArguments();
+    const [page, number, name, station] = call.getArguments();
     if (
-      call.getArguments().length !== 3 ||
+      call.getArguments().length !== 4 ||
       page?.getText() !== "page" ||
       !Node.isNumericLiteral(number) ||
-      !Node.isStringLiteral(name)
+      !Node.isStringLiteral(name) ||
+      !Node.isStringLiteral(station)
     ) {
       return [];
     }
     const value = Number(number.getLiteralText());
     return value >= 1
-      ? [{ number: value, name: name.getLiteralText() }]
+      ? [
+          {
+            number: value,
+            name: name.getLiteralText(),
+            station: station.getLiteralText(),
+          },
+        ]
       : [];
   });
 }
@@ -153,19 +211,33 @@ function hasRealScreenshotHelper(source: string): boolean {
     file.getVariableDeclaration("SHOTS")?.getVariableStatement()?.getDeclarationKind() !==
       VariableDeclarationKind.Const ||
     helper.getParameters().map((parameter) => parameter.getName()).join(",") !==
-      "page,index,name" ||
-    body.getStatements().length !== 3
+      "page,index,name,station" ||
+    body.getStatements().length !== 5
   ) {
     return false;
   }
-  const settlement = body.getStatements()[0];
+  const routeAssertion = body.getStatements()[0];
+  if (
+    routeAssertion?.getText() !==
+    'await expect(page).toHaveURL(new RegExp(`/app/demo/${station}(?:\\\\?|$)`));'
+  ) {
+    return false;
+  }
+  const loadedAssertion = body.getStatements()[1];
+  if (
+    loadedAssertion?.getText() !==
+    'await expect(page.locator(`[data-demo-surface="${station}"]`)).toBeVisible();'
+  ) {
+    return false;
+  }
+  const settlement = body.getStatements()[2];
   if (
     settlement?.getText() !==
     "await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));"
   ) {
     return false;
   }
-  const declarationStatement = body.getStatements()[1];
+  const declarationStatement = body.getStatements()[3];
   if (!Node.isVariableStatement(declarationStatement)) return false;
   const declarations = declarationStatement.getDeclarations();
   if (declarations.length !== 1) return false;
@@ -203,7 +275,7 @@ function hasRealScreenshotHelper(source: string): boolean {
   ) {
     return false;
   }
-  const assertionStatement = body.getStatements()[2];
+  const assertionStatement = body.getStatements()[4];
   if (!Node.isExpressionStatement(assertionStatement)) return false;
   const assertion = assertionStatement.getExpression();
   if (!Node.isCallExpression(assertion) || assertion.getArguments().length !== 1) {
@@ -280,7 +352,14 @@ export function surfaceCompletenessProblems(
       "src/app/demo/model.ts:1 demo route sequence must exactly match the typed surface manifest",
     );
   }
-  if (JSON.stringify(switchStations(route)) !== JSON.stringify(stations)) {
+  const routeBindings = surfaces.map((surface) => ({
+    station: surface.station,
+    componentPath: surface.componentPath,
+  }));
+  if (
+    JSON.stringify(routeSurfaceBindings(route)) !==
+    JSON.stringify(routeBindings)
+  ) {
     problems.push(
       `${ROUTE_PATH}:1 dynamic demo route must render every typed surface exactly once`,
     );
@@ -289,6 +368,7 @@ export function surfaceCompletenessProblems(
   const screenshots = surfaces.map((surface) => ({
     number: surface.number,
     name: surface.screenshotName,
+    station: surface.station,
   }));
   if (
     !hasRealScreenshotHelper(e2e) ||
@@ -350,6 +430,20 @@ describe("demo-surface-completeness fence", () => {
         ),
       ).not.toEqual([]);
 
+      const wrongRouteBinding = route.replace(
+        "return <RecordSurface vm={journey.record} {...ids} />;",
+        "return <WorkspaceSurface vm={journey.workspace} {...ids} />;",
+      );
+      expect(
+        surfaceCompletenessProblems(
+          contract,
+          DEMO_SURFACES,
+          wrongRouteBinding,
+          e2e,
+          exists,
+        ),
+      ).not.toEqual([]);
+
       expect(
         surfaceCompletenessProblems(
           contract,
@@ -361,7 +455,7 @@ describe("demo-surface-completeness fence", () => {
       ).not.toEqual([]);
 
       const missingScreenshot = e2e.replace(
-        '  await snap(page, 12, "record");',
+        '  await snap(page, 12, "record", "record");',
         "",
       );
       expect(
@@ -376,16 +470,20 @@ describe("demo-surface-completeness fence", () => {
 
       for (const invalidCall of [
         e2e.replace(
-          '  await snap(page, 12, "record");',
-          '  snap(page, 12, "record");',
+          '  await snap(page, 12, "record", "record");',
+          '  snap(page, 12, "record", "record");',
         ),
         e2e.replace(
-          '  await snap(page, 12, "record");',
-          '  if (false) { await snap(page, 12, "record"); }',
+          '  await snap(page, 12, "record", "record");',
+          '  if (false) { await snap(page, 12, "record", "record"); }',
         ),
         e2e.replace(
-          '  await snap(page, 12, "record");',
-          '  return;\n  await snap(page, 12, "record");',
+          '  await snap(page, 12, "record", "record");',
+          '  return;\n  await snap(page, 12, "record", "record");',
+        ),
+        e2e.replace(
+          '  await snap(page, 12, "record", "record");',
+          '  await snap(page, 12, "record", "workspace");',
         ),
       ]) {
         expect(
@@ -423,6 +521,14 @@ describe("demo-surface-completeness fence", () => {
         e2e.replace(
           "  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));",
           "  return;",
+        ),
+        e2e.replace(
+          '  await expect(page).toHaveURL(new RegExp(`/app/demo/${station}(?:\\\\?|$)`));',
+          '  await expect(page).toHaveURL(/.*/);',
+        ),
+        e2e.replace(
+          '  await expect(page.locator(`[data-demo-surface="${station}"]`)).toBeVisible();',
+          '  await expect(page.locator("body")).toBeVisible();',
         ),
       ]) {
         expect(

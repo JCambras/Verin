@@ -226,6 +226,28 @@ function staticPropertyName(node: Node): string | undefined {
   return undefined;
 }
 
+function normalizedObjectProperties(
+  object: Node,
+): Map<string, Node> | undefined {
+  if (!Node.isObjectLiteralExpression(object)) return undefined;
+  const properties = new Map<string, Node>();
+  for (const property of object.getProperties()) {
+    if (
+      !Node.isPropertyAssignment(property) &&
+      !Node.isShorthandPropertyAssignment(property) &&
+      !Node.isMethodDeclaration(property) &&
+      !Node.isGetAccessorDeclaration(property) &&
+      !Node.isSetAccessorDeclaration(property)
+    ) {
+      return undefined;
+    }
+    const name = staticPropertyName(property.getNameNode());
+    if (name === undefined || properties.has(name)) return undefined;
+    properties.set(name, property);
+  }
+  return properties;
+}
+
 function isNamedImportMemberExpression(
   node: Node,
   moduleName: string,
@@ -549,9 +571,10 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
   }
   if (exported.getArguments().length !== 1) return false;
   const config = exported.getArguments()[0];
-  if (!Node.isObjectLiteralExpression(config)) return false;
-  if (config.getProperties().some(Node.isSpreadAssignment)) return false;
-  const testDir = config.getProperty("testDir");
+  if (config === undefined) return false;
+  const configProperties = normalizedObjectProperties(config);
+  if (configProperties === undefined) return false;
+  const testDir = configProperties.get("testDir");
   const testDirInitializer = Node.isPropertyAssignment(testDir)
     ? testDir.getInitializer()
     : undefined;
@@ -561,7 +584,7 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
   ) {
     return false;
   }
-  const forbidOnly = config.getProperty("forbidOnly");
+  const forbidOnly = configProperties.get("forbidOnly");
   if (
     !Node.isPropertyAssignment(forbidOnly) ||
     forbidOnly.getInitializer()?.getKind() !== SyntaxKind.TrueKeyword
@@ -569,8 +592,8 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
     return false;
   }
   const banned = ["testIgnore", "testMatch", "grep", "grepInvert"];
-  if (banned.some((name) => config.getProperty(name) !== undefined)) return false;
-  const projects = config.getProperty("projects");
+  if (banned.some((name) => configProperties.has(name))) return false;
+  const projects = configProperties.get("projects");
   if (projects === undefined) return true;
   if (!Node.isPropertyAssignment(projects)) return false;
   const initializer = projects.getInitializer();
@@ -581,12 +604,13 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
     return false;
   }
   return initializer.getElements().every(
-    (element) =>
-      Node.isObjectLiteralExpression(element) &&
-      !element.getProperties().some(Node.isSpreadAssignment) &&
-      [...banned, "testDir"].every(
-        (name) => element.getProperty(name) === undefined,
-      ),
+    (element) => {
+      const properties = normalizedObjectProperties(element);
+      return (
+        properties !== undefined &&
+        [...banned, "testDir"].every((name) => !properties.has(name))
+      );
+    },
   );
 }
 
@@ -1054,11 +1078,13 @@ pw.test("axe", async ({ page }) => {
     it("rejects Playwright configuration that excludes required accessibility tests", () => {
       for (const selector of [
         'testIgnore: ["**/smoke.spec.ts"]',
+        '["testIgnore"]: ["**/smoke.spec.ts"]',
         'testMatch: ["**/console.spec.ts"]',
         'grep: /unrelated/',
         'grepInvert: /Axe/',
         'projects: []',
         'projects: [{ name: "filtered", testDir: "./other" }]',
+        'projects: [{ name: "filtered", ["testDir"]: "./other" }]',
       ]) {
         const sources = completeSources();
         sources[PLAYWRIGHT_CONFIG_PATH] =
@@ -1077,6 +1103,12 @@ pw.test("axe", async ({ page }) => {
       merged[PLAYWRIGHT_CONFIG_PATH] =
         `import { defineConfig } from "@playwright/test"; export default defineConfig({ testDir: "./e2e", forbidOnly: true }, { testIgnore: ["**/smoke.spec.ts"] });`;
       expect(axeCoverageProblems(merged)).toContain(
+        "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
+      );
+      const unresolved = completeSources();
+      unresolved[PLAYWRIGHT_CONFIG_PATH] =
+        `import { defineConfig } from "@playwright/test"; const selection = "testIgnore"; export default defineConfig({ testDir: "./e2e", forbidOnly: true, [selection]: ["**/smoke.spec.ts"] });`;
+      expect(axeCoverageProblems(unresolved)).toContain(
         "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
       );
     });

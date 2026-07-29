@@ -6314,6 +6314,16 @@ direct awaited canonical `snap` calls whose helper directly awaits `page.screens
 `demo-screens` directory and asserts a non-empty capture. PF-031 and PF-032 record the red reproductions,
 focused companions, and restored green proofs.
 
+The captain-approved enforcement-integrity review (2026-07-29) amended ADR-0030 in place an eleventh
+time: **(1)** the v3 runner exits nonzero when the shared fitness invocation fails or any mapped fitness
+file, including a gate-only fence, fails or produces no result; **(2)** charter drift ratchets the
+complete set of effective enforced mechanism tuples, including the Axe-specific fitness mechanism and a
+mechanism-level status override; **(3)** Playwright configuration proof normalizes direct and computed
+literal property names at root and project scope and fails closed on unresolved computed names; and
+**(4)** Gate 0 binds each station to the component imported from its manifest path, while every canonical
+capture names its station and verifies that station's URL and loaded marker before the screenshot.
+PF-001, PF-030, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

@@ -37,8 +37,10 @@ nothing. Declared `activationPrompts` are validated for every status, and the pr
 invariants 7, 8, and 9 are pinned exactly.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
 `ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
-empty, unsupported-shell, and fully skipped jobs prove nothing. Both v3 mappings pin
-`pnpm exec tsx scripts/v3-invariants.ts`. Readiness computes every gate's structural `entryGates`, so a later
+empty, unsupported-shell, and fully skipped jobs prove nothing. The charter ratchet pins every complete
+effective enforced mechanism tuple, including mechanism-level status. Both v3 mappings pin
+`pnpm exec tsx scripts/v3-invariants.ts`, and the runner exits nonzero for every mapped fitness failure
+or missing result. Readiness computes every gate's structural `entryGates`, so a later
 gate cannot report green while a predecessor is non-green. Five ratchets in the fence pin the
 30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
 activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
@@ -97,8 +99,9 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/app/demo/surfaces/` fenced to import only view models + presentation (both rules:
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
-the typed manifest, route switch, components, and ordered screenshots. Landing a real path = replace the
-corresponding builder and remove its `DevProvenanceBadge` in the SAME PR (design §11.3).
+the typed manifest, each route case's imported component, and ordered screenshots that verify the
+corresponding URL and loaded marker. Landing a real path = replace the corresponding builder and remove
+its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
 The decision-primitive vocabulary (v3 prompt 8, ADR-0039) lives at `src/contracts/primitives/`
 (six primitives, set 1.0.0, provisional), mirrored by root `primitive-set-version.json` and

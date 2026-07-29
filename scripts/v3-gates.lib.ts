@@ -106,6 +106,27 @@ export const isMechanized = (r: GateRequirement): boolean => (MECHANIZED_KINDS a
 /** How a requirement is named in a report and in a failure message. */
 export const requirementLabel = (r: GateRequirement): string => (r.kind === "invariant" ? `#${r.id}` : (r.ref ?? "<no ref>"));
 
+export function mappedFitnessProblems(
+  fitnessFiles: readonly string[],
+  fileResults: ReadonlyMap<string, boolean>,
+  runStatus: number | null,
+): string[] {
+  const problems: string[] = [];
+  if (runStatus !== 0) {
+    problems.push(
+      runStatus === null
+        ? "mapped fitness invocation did not exit normally"
+        : `mapped fitness invocation exited ${runStatus}`,
+    );
+  }
+  for (const ref of fitnessFiles) {
+    const passed = fileResults.get(ref);
+    if (passed === undefined) problems.push(`${ref} produced no result`);
+    else if (!passed) problems.push(`${ref} FAILED`);
+  }
+  return problems;
+}
+
 /**
  * Prompt numbers named in prose, in every spelling the registry uses:
  * "prompt 6", "prompts 5-7", "prompts 9, 10", "prompts 5 and 6",
