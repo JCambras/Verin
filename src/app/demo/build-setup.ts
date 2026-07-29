@@ -326,7 +326,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
       { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
       { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
-      { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: pendingDistributionDeltaSentence(GC15_PENDING_DISTRIBUTION), groupId: null, universalEffect: `The pending approved amount changes from ${usd(GC15_PENDING_DISTRIBUTION.beforeMinor)} to ${usd(GC15_PENDING_DISTRIBUTION.afterMinor)}. Prior authority is voided for both firms, and evaluation reruns against the changed bundle.` },
+      { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: pendingDistributionDeltaSentence(GC15_PENDING_DISTRIBUTION), groupId: null, universalEffect: `The pending approved amount changes from ${usd(GC15_PENDING_DISTRIBUTION.before.amountMinor)} to ${usd(GC15_PENDING_DISTRIBUTION.after.amountMinor)}. Prior authority is voided for both firms, and evaluation reruns against the changed bundle.` },
     ],
     activation: {
       lifecyclePreview: {

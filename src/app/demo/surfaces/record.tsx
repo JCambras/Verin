@@ -159,6 +159,14 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     <dt className="text-xs text-slate-600">Audit-chain position</dt>
                     <dd className="break-all font-mono text-xs text-slate-800">{vm.hashes.auditPosition}</dd>
                   </div>
+                  {vm.hashes.approvalReceiptHash ? (
+                    <div className="flex min-w-0 flex-col sm:col-span-2">
+                      <dt className="text-xs text-slate-600">Approval-receipt hash</dt>
+                      <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-approval-receipt-hash">
+                        {vm.hashes.approvalReceiptHash}
+                      </dd>
+                    </div>
+                  ) : null}
                   {vm.activatedConfiguration ? (
                     <>
                       <div className="flex flex-col">
@@ -390,6 +398,16 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                         </p>
                         <EvidenceRow label="Before" fact={vm.safety.invalidation.before} />
                         <EvidenceRow label="After" fact={vm.safety.invalidation.after} />
+                        <dl className="grid min-w-0 gap-1 text-xs">
+                          <div className="min-w-0">
+                            <dt className="font-medium text-slate-700">Original input hash</dt>
+                            <dd className="break-all font-mono text-slate-800">{vm.safety.invalidation.inputIdentity.originalHash}</dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="font-medium text-slate-700">Refreshed input hash</dt>
+                            <dd className="break-all font-mono text-slate-800">{vm.safety.invalidation.inputIdentity.refreshedHash}</dd>
+                          </div>
+                        </dl>
                         <ExpandedWhy why={vm.safety.invalidation.why} />
                       </div>
                     ) : null}

@@ -27,9 +27,13 @@ import {
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
 import {
+  approvalReceiptHashFor,
+  decisionAuthorityRequirementsFor,
+  decisionInputIdentitiesFor,
   decisionRecordPreimageFor,
   decisionInputHashFor,
   decisionInputPreimageFor,
+  refreshedDecisionInputPreimageFor,
   hashCanonicalPreimage,
 } from "@app/demo/decision-identity";
 import { headroomMinor } from "@app/demo/build-decision";
@@ -1248,12 +1252,16 @@ describe("demo semantic-truth fence", () => {
     expect(demoTimelineViolations(DEMO_TIMELINE)).toEqual([]);
     expect(DEMO_CAUSAL_SEQUENCE).toEqual([
       "activationAt",
+      "pendingActivityObservedAt",
       "evidenceRetrievedAt",
       "recommendationRetrievedAt",
       "decisionCreatedAt",
       "specialistReviewedAt",
       "operationsApproval1At",
       "operationsApproval2At",
+      "revalidatedAt",
+      "executionSubmittedAt",
+      "executionVerifiedAt",
     ]);
   });
 
@@ -1263,7 +1271,9 @@ describe("demo semantic-truth fence", () => {
         ...DEMO_TIMELINE,
         evidenceRetrievedAt: "2026-07-28T13:59:00.000Z",
       }),
-    ).toContain("activationAt must precede evidenceRetrievedAt");
+    ).toContain(
+      "pendingActivityObservedAt must precede evidenceRetrievedAt",
+    );
   });
 
   it("enforces: every material activation field changes the snapshot hash", () => {
@@ -1357,16 +1367,10 @@ describe("demo semantic-truth fence", () => {
       precedence: journey.policyTrace.rows,
       authority: {
         reached: true,
-        summary: "Authority reached",
-        detail: "Exact approved inputs",
-        stages: journey.approvals?.stages ?? [],
+        requirements: decisionAuthorityRequirementsFor(
+          journey.approvals?.stages ?? [],
+        ),
       },
-      reachability: {
-        authority: true,
-        safety: true,
-        execution: true,
-      },
-      stopNote: journey.stopNote,
     };
     const firm = firmById("firm-a");
     const configuration = decisionConfigurationFor(firm);
@@ -1381,7 +1385,18 @@ describe("demo semantic-truth fence", () => {
     const changedClaims = [
       {
         ...claims,
-        authority: { ...claims.authority, detail: "Changed authority" },
+        authority: {
+          ...claims.authority,
+          requirements: claims.authority.requirements.map(
+            (requirement, index) =>
+              index === 0
+                ? {
+                    ...requirement,
+                    requirement: "Changed authority requirement",
+                  }
+                : requirement,
+          ),
+        },
       },
       {
         ...claims,
@@ -1414,12 +1429,143 @@ describe("demo semantic-truth fence", () => {
     expect(changedClaims).not.toContain(baseRecord);
   });
 
+  it("enforces: approval receipts never alter the earlier decision identity", () => {
+    const journey = getJourney("safe-proceed", "firm-a");
+    expect(journey.approvals).not.toBeNull();
+    expect(journey.record.approvalStages).not.toBeNull();
+    expect(journey.approvals?.binding.decisionHash).toBe(
+      journey.record.identity.decisionHash,
+    );
+
+    const requirements = decisionAuthorityRequirementsFor(
+      journey.record.approvalStages ?? [],
+    );
+    const changedReceipts = (journey.record.approvalStages ?? []).map(
+      (stage) => ({
+        ...stage,
+        stepState: "active" as const,
+        actors: stage.actors.map((actor) => ({
+          ...actor,
+          name: "Different receipt actor",
+          status: "pending",
+          statusLabel: "Awaiting approval",
+        })),
+      }),
+    );
+    expect(
+      decisionAuthorityRequirementsFor(changedReceipts),
+    ).toEqual(requirements);
+    expect(
+      approvalReceiptHashFor(
+        journey.record.identity.decisionHash,
+        changedReceipts,
+      ),
+    ).not.toBe(journey.record.hashes.approvalReceiptHash);
+    expect(journey.record.hashes.approvalReceiptHash).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+  });
+
+  it("detects: changing an immutable authority requirement changes identity", () => {
+    const journey = getJourney("safe-proceed", "firm-a");
+    const scenario = scenarioById("safe-proceed");
+    const firm = firmById("firm-a");
+    const requirements = decisionAuthorityRequirementsFor(
+      journey.record.approvalStages ?? [],
+    );
+    const claims = {
+      disposition: journey.recommendation.disposition,
+      precedence: journey.policyTrace.rows,
+      authority: { reached: true, requirements },
+    };
+    const base = hashCanonicalPreimage(
+      decisionRecordPreimageFor(
+        scenario,
+        firm,
+        decisionConfigurationFor(firm),
+        claims,
+      ),
+    );
+    const changed = hashCanonicalPreimage(
+      decisionRecordPreimageFor(
+        scenario,
+        firm,
+        decisionConfigurationFor(firm),
+        {
+          ...claims,
+          authority: {
+            reached: true,
+            requirements: requirements.map((requirement, index) =>
+              index === 0
+                ? { ...requirement, expiry: "Expires after 4 days" }
+                : requirement,
+            ),
+          },
+        },
+      ),
+    );
+    expect(changed).not.toBe(base);
+  });
+
   it("enforces: GC-15 derives every visible fact from one pending delta", () => {
     const safety = buildSafety(scenarioById("approval-invalidation"));
     const impact = buildMoneyMovementSetup().impacts.find(
       (candidate) => candidate.id === "material-change",
     )!;
     expect(gc15ConsistencyViolations(safety, impact)).toEqual([]);
+    expect(safety.invalidation?.before.provenance.asOf).toBe(
+      GC15_PENDING_DISTRIBUTION.before.observedAt,
+    );
+    expect(safety.invalidation?.before.retrievedAt).toBe(
+      demoTimestampLabel(
+        GC15_PENDING_DISTRIBUTION.before.retrievedAt,
+      ),
+    );
+    expect(safety.invalidation?.after.provenance.asOf).toBe(
+      GC15_PENDING_DISTRIBUTION.after.observedAt,
+    );
+    expect(safety.invalidation?.after.retrievedAt).toBe(
+      demoTimestampLabel(
+        GC15_PENDING_DISTRIBUTION.after.retrievedAt,
+      ),
+    );
+    expect(
+      timelineOrderViolations([
+        {
+          label: "original observation",
+          at: GC15_PENDING_DISTRIBUTION.before.observedAt,
+        },
+        {
+          label: "original retrieval",
+          at: GC15_PENDING_DISTRIBUTION.before.retrievedAt,
+        },
+        {
+          label: "refreshed observation",
+          at: GC15_PENDING_DISTRIBUTION.after.observedAt,
+        },
+        {
+          label: "refreshed retrieval",
+          at: GC15_PENDING_DISTRIBUTION.after.retrievedAt,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("detects: retrieval before its observation cannot pass", () => {
+    expect(
+      timelineOrderViolations([
+        {
+          label: "original observation",
+          at: "2026-07-28T14:01:00.000Z",
+        },
+        {
+          label: "original retrieval",
+          at: "2026-07-28T14:00:30.000Z",
+        },
+      ]),
+    ).toEqual([
+      "original retrieval occurs before original observation",
+    ]);
   });
 
   it("detects: contradictory GC-15 safety copy cannot pass", () => {
@@ -1492,7 +1638,7 @@ describe("demo semantic-truth fence", () => {
     expect(firmA.decisionHash).not.toBe(firmB.decisionHash);
   });
 
-  it("enforces: canonical identity is stable and changes with scenario, firm, or material input", () => {
+  it("enforces: canonical identity is stable and changes with firm or material input", () => {
     const stable = getJourney("safe-proceed", "firm-a").record.identity;
     expect(getJourney("safe-proceed", "firm-a").record.identity).toEqual(stable);
 
@@ -1516,6 +1662,56 @@ describe("demo semantic-truth fence", () => {
     expect(recentA.bundleHash).not.toBe(recentB.bundleHash);
 
     const safeScenario = scenarioById("safe-proceed");
+    for (const scenarioId of [
+      "dual-approval",
+      "approval-invalidation",
+      "competing-liquidity",
+      "duplicate-retry",
+      "partial-salesforce-success",
+      "delayed-nigo",
+    ]) {
+      expect(decisionInputHashFor(scenarioById(scenarioId))).toBe(
+        decisionInputHashFor(safeScenario),
+      );
+      const laterBranch =
+        getJourney(scenarioId, "firm-a").record.identity;
+      expect({
+        decisionId: laterBranch.decisionId,
+        inputHash: laterBranch.inputHash,
+        decisionHash: laterBranch.decisionHash,
+        bundleHash: laterBranch.bundleHash,
+      }).toEqual({
+        decisionId: stable.decisionId,
+        inputHash: stable.inputHash,
+        decisionHash: stable.decisionHash,
+        bundleHash: stable.bundleHash,
+      });
+    }
+    const recentExpired = getJourney(
+      "specialist-review-expiration",
+      "firm-a",
+    ).record.identity;
+    expect({
+      decisionId: recentExpired.decisionId,
+      inputHash: recentExpired.inputHash,
+      decisionHash: recentExpired.decisionHash,
+      bundleHash: recentExpired.bundleHash,
+    }).toEqual({
+      decisionId: recentA.decisionId,
+      inputHash: recentA.inputHash,
+      decisionHash: recentA.decisionHash,
+      bundleHash: recentA.bundleHash,
+    });
+    const relabeledScenario = {
+      ...safeScenario,
+      title: "Changed display title",
+      description: "Changed display description",
+      outcomeClass: "Changed display outcome",
+    };
+    expect(decisionInputHashFor(relabeledScenario)).toBe(
+      decisionInputHashFor(safeScenario),
+    );
+
     const materialInputChange = {
       ...safeScenario,
       spec: { ...safeScenario.spec, thirdPartyDestination: true },
@@ -1523,6 +1719,26 @@ describe("demo semantic-truth fence", () => {
     expect(decisionInputHashFor(materialInputChange)).not.toBe(
       decisionInputHashFor(safeScenario),
     );
+
+    const invalidation = scenarioById("approval-invalidation");
+    const invalidationIdentities =
+      decisionInputIdentitiesFor(invalidation);
+    expect(invalidationIdentities.original).toBe(
+      decisionInputHashFor(safeScenario),
+    );
+    expect(invalidationIdentities.refreshed).toBe(
+      hashCanonicalPreimage(
+        refreshedDecisionInputPreimageFor(invalidation),
+      ),
+    );
+    expect(invalidationIdentities.refreshed).not.toBe(
+      invalidationIdentities.original,
+    );
+    const safety = buildSafety(invalidation);
+    expect(safety.invalidation?.inputIdentity).toEqual({
+      originalHash: invalidationIdentities.original,
+      refreshedHash: invalidationIdentities.refreshed,
+    });
 
     const initial = activatedSnapshot();
     const changed = activatedSnapshot((selections) => {
@@ -1532,6 +1748,29 @@ describe("demo semantic-truth fence", () => {
     expect(changed.firms[0].bundleHash).not.toBe(initial.firms[0].bundleHash);
     expect(changed.firms[0].decisionId).not.toBe(initial.firms[0].decisionId);
     expect(changed.firms[0].decisionHash).not.toBe(initial.firms[0].decisionHash);
+  });
+
+  it("detects: later branch outcomes cannot alter the original input identity", () => {
+    const scenario = scenarioById("safe-proceed");
+    const original = decisionInputHashFor(scenario);
+    const futureOnly = {
+      ...scenario,
+      title: "Later retry branch",
+      outcomeClass: "duplicate suppressed",
+      spec: {
+        ...scenario.spec,
+        duplicateRetry: true,
+        partial: true,
+        delayedNigo: true,
+        invalidation: true,
+      },
+    };
+    expect(decisionInputHashFor(futureOnly)).toBe(original);
+    expect(
+      hashCanonicalPreimage(
+        refreshedDecisionInputPreimageFor(futureOnly),
+      ),
+    ).not.toBe(original);
   });
 
   it("enforces: activation freezes one immutable configuration and forward-fixes mutations", () => {
@@ -1585,6 +1824,48 @@ describe("demo semantic-truth fence", () => {
     }).toEqual(priorIdentity);
   });
 
+  it("enforces: configuration identity excludes activation actor and draft generation", () => {
+    const selections = setupSelections();
+    const first = activateMoneyMovementSetup(
+      selections,
+      setupActivationAuthority(selections, 3, "principal-a"),
+    );
+    const second = activateMoneyMovementSetup(
+      selections,
+      setupActivationAuthority(selections, 4, "principal-b"),
+    );
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.snapshot.snapshotHash).not.toBe(
+      first.snapshot.snapshotHash,
+    );
+    for (const firmIndex of [0, 1] as const) {
+      expect(
+        second.snapshot.firms[firmIndex].configurationHash,
+      ).toBe(first.snapshot.firms[firmIndex].configurationHash);
+      expect(second.snapshot.firms[firmIndex].policyVersion).toBe(
+        first.snapshot.firms[firmIndex].policyVersion,
+      );
+      expect(second.snapshot.firms[firmIndex].decisionHash).not.toBe(
+        first.snapshot.firms[firmIndex].decisionHash,
+      );
+    }
+  });
+
+  it("detects: a resolved configuration change alters configuration identity", () => {
+    const original = activatedSnapshot();
+    const changed = activatedSnapshot((selections) => {
+      selections["firm-a"].reserve = "9-months";
+    });
+    expect(changed.firms[0].configurationHash).not.toBe(
+      original.firms[0].configurationHash,
+    );
+    expect(changed.firms[1].configurationHash).toBe(
+      original.firms[1].configurationHash,
+    );
+  });
+
   it("enforces: the evaluator freezes ordered authority stages and export consumes them unchanged", () => {
     const snapshot = activatedSnapshot();
     const firmA = snapshot.firms[0];
@@ -1597,6 +1878,32 @@ describe("demo semantic-truth fence", () => {
     expect(record.approvalStages).toBe(firmA.authorityPlan.stages);
     expect(record.approvalStages).toEqual(firmA.authorityPlan.stages);
     expect(Object.isFrozen(firmA.authorityPlan.stages)).toBe(true);
+  });
+
+  it("enforces: records preserve null when authority was never reached", () => {
+    for (const [scenarioId, firmId] of [
+      ["permanent-prohibition", "firm-a"],
+      ["stale-evidence", "firm-a"],
+      ["recent-bank-change-block", "firm-b"],
+    ] as const) {
+      const journey = getJourney(scenarioId, firmId);
+      expect(journey.approvals).toBeNull();
+      expect(journey.record.approvalStages).toBeNull();
+      expect(journey.record.hashes.approvalReceiptHash).toBeNull();
+      expect(journey.record.stopNote).toContain(
+        "stopped at Decision",
+      );
+    }
+  });
+
+  it("detects: an empty authority collection is not a not-reached state", () => {
+    const blocked = getJourney("stale-evidence", "firm-a").record;
+    const structurallyReached = {
+      ...blocked,
+      approvalStages: [],
+    };
+    expect(blocked.approvalStages).toBeNull();
+    expect(structurallyReached.approvalStages).not.toBeNull();
   });
 
   it("enforces: activation, decision, authority, and evidence age share the July 28 timeline", () => {

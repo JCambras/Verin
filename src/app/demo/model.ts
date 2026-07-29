@@ -228,6 +228,10 @@ export interface InvalidationVM {
   readonly deltaSentence: string;
   readonly before: FactVM;
   readonly after: FactVM;
+  readonly inputIdentity: {
+    readonly originalHash: string;
+    readonly refreshedHash: string;
+  };
   readonly why: WhyVM;
   readonly primaryLabel: string;
 }
@@ -338,6 +342,7 @@ export interface RecordVM {
     readonly policyVersion: string;
     readonly instructionVersion: string;
     readonly auditPosition: string;
+    readonly approvalReceiptHash: string | null;
   };
   readonly activatedConfiguration: ActivatedConfigurationRecordVM | null;
   readonly intent: IntentVM;

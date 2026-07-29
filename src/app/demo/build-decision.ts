@@ -433,6 +433,24 @@ export function buildStages(
   return stages;
 }
 
+export function buildDecisionAuthorityStages(
+  scenario: ScenarioData,
+  firm: FirmData,
+): ApprovalStageVM[] {
+  return buildStages(
+    {
+      ...scenario,
+      spec: {
+        ...scenario.spec,
+        invalidation: false,
+        specialistExpired: false,
+      },
+    },
+    firm,
+    "gate",
+  );
+}
+
 export function buildApprovals(
   scenario: ScenarioData,
   firm: FirmData,

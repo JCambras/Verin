@@ -3369,3 +3369,34 @@ could let a record name authority and inputs that the server never verified.
 **Revert path:** remove the attestation and session-bound snapshot path together only if a
 real persisted policy lifecycle replaces it with equivalent authenticated attribution,
 versioned canonical identity, and fail-closed lookup.
+
+### D-069 · 2026-07-28 · reversible · Decision identity stops at the decision boundary
+
+The original input identity now contains only the request and evidence available before
+the decision. Demo scenario labels and later retry, invalidation, partial-success, NIGO,
+expiration, reachability, and stop-state facts do not alter it. Material evidence observed
+during revalidation receives a separate versioned input identity, and GC-15 prints both
+full hashes beside the typed before and after evidence phases.
+
+Decision authority identity contains only the ordered stage requirements. Completed actor
+names, statuses, and timestamps are bound by a separate approval-receipt hash on the final
+record and never change the decision hash shown at the earlier approval gate. Records that
+stop before authority preserve `null` for both approval stages and receipt identity; an
+empty stage collection is not used as a reached-state substitute.
+
+Configuration identity derives from the resolved firm configuration and each selection's
+authority posture. Activation actor, attestation, and draft generation remain bound by the
+activation snapshot and decision bundle, but identical firm configuration activated by a
+different Principal retains one configuration hash and policy version.
+
+GC-15 carries original and refreshed pending-activity values, observation times, and
+retrieval times as two typed phases. The original observation precedes its retrieval, and
+both screen and print projections read those exact timestamps.
+
+**Why:** input, decision, approval receipt, activation event, configuration, and final
+record are distinct immutable identities. Hashing a later event into an earlier identity
+makes the earlier approval circular and prevents byte-identical replay from the facts that
+actually existed at that point.
+
+**Revert path:** none while approval binds to a pre-event decision hash and GC-15 retains
+separate original and refreshed evidence snapshots.

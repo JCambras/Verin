@@ -14,6 +14,7 @@ import {
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_EVIDENCE_REF,
+  DEMO_REVALIDATION_EVIDENCE_REF,
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
@@ -32,25 +33,25 @@ import {
 } from "./data";
 
 export const DEMO_DECISION_SCHEMA_VERSION =
-  "money-movement-demo-decision/3.0.0";
+  "money-movement-demo-decision/4.0.0";
 export const DEMO_DECISION_ENGINE_VERSION =
-  "money-movement-demo-engine/2.0.0";
+  "money-movement-demo-engine/3.0.0";
+
+export interface DecisionAuthorityRequirementClaim {
+  readonly order: number;
+  readonly title: string;
+  readonly requirement: string;
+  readonly expiry: string | null;
+  readonly escalation: string | null;
+}
 
 export interface DecisionIdentityClaims {
   readonly disposition: DispositionVM;
   readonly precedence: readonly PrecedenceRowVM[];
   readonly authority: {
     readonly reached: boolean;
-    readonly summary: string;
-    readonly detail: string;
-    readonly stages: readonly ApprovalStageVM[];
+    readonly requirements: readonly DecisionAuthorityRequirementClaim[];
   };
-  readonly reachability: {
-    readonly authority: boolean;
-    readonly safety: boolean;
-    readonly execution: boolean;
-  };
-  readonly stopNote: string | null;
 }
 
 export interface DecisionInputOverrides {
@@ -62,7 +63,6 @@ export interface DecisionInputOverrides {
   readonly requestRef?: string;
   readonly evidenceRef?: string;
   readonly evidenceRetrievedAt?: string;
-  readonly recommendationRetrievedAt?: string;
   readonly bankInstructionObservedAt?: string;
 }
 
@@ -113,13 +113,40 @@ export function decisionInputPreimageFor(
   scenario: ScenarioData,
   overrides: DecisionInputOverrides = {},
 ): JsonValue {
+  return decisionInputPreimageForPhase(scenario, "initial", overrides);
+}
+
+export function refreshedDecisionInputPreimageFor(
+  scenario: ScenarioData,
+  overrides: DecisionInputOverrides = {},
+): JsonValue {
+  if (scenario.spec.invalidation !== true) {
+    throw new Error(
+      "A refreshed demo input identity requires a material-change scenario",
+    );
+  }
+  return decisionInputPreimageForPhase(
+    scenario,
+    "revalidation",
+    overrides,
+  );
+}
+
+function decisionInputPreimageForPhase(
+  scenario: ScenarioData,
+  phase: "initial" | "revalidation",
+  overrides: DecisionInputOverrides,
+): JsonValue {
   const stalePlannedWithdrawals =
     scenario.spec.stalePlannedWithdrawals === true;
   const bankChanged = scenario.spec.bankChanged === true;
-  const invalidation = scenario.spec.invalidation === true;
+  const pendingActivity =
+    phase === "initial"
+      ? GC15_PENDING_DISTRIBUTION.before
+      : GC15_PENDING_DISTRIBUTION.after;
   return toJsonValue({
     hashKind: "money-movement-demo-input",
-    preimageVersion: "money-movement-demo-input/3.0.0",
+    preimageVersion: "money-movement-demo-input/4.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion:
@@ -129,18 +156,16 @@ export function decisionInputPreimageFor(
         overrides.engineVersion ?? DEMO_DECISION_ENGINE_VERSION,
       evaluation: {
         asOf:
-          overrides.evaluationAsOf ?? DEMO_TIMELINE.decisionCreatedAt,
+          overrides.evaluationAsOf ??
+          (phase === "initial"
+            ? DEMO_TIMELINE.decisionCreatedAt
+            : DEMO_TIMELINE.revalidatedAt),
         timeZone: overrides.timeZone ?? DEMO_TIME_ZONE,
         timeZoneDataVersion:
           overrides.timeZoneDataVersion ??
           IANA_TIME_ZONE_DATA_VERSION,
       },
-      scenario: {
-        id: scenario.id,
-        title: scenario.title,
-        outcomeClass: scenario.outcomeClass,
-        spec: scenario.spec,
-      },
+      phase,
       request: {
         ref: overrides.requestRef ?? DEMO_REQUEST_REF,
         text: CANONICAL_REQUEST.text,
@@ -151,20 +176,20 @@ export function decisionInputPreimageFor(
         provenanceClass: "user-entered-demo-input",
       },
       evidence: {
-        ref: overrides.evidenceRef ?? DEMO_EVIDENCE_REF,
+        ref:
+          overrides.evidenceRef ??
+          (phase === "initial"
+            ? DEMO_EVIDENCE_REF
+            : DEMO_REVALIDATION_EVIDENCE_REF),
         retrievedAt:
           overrides.evidenceRetrievedAt ??
-          DEMO_TIMELINE.evidenceRetrievedAt,
-        recommendationRetrievedAt:
-          overrides.recommendationRetrievedAt ??
-          DEMO_TIMELINE.recommendationRetrievedAt,
+          pendingActivity.retrievedAt,
         availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
         availableCashObservedAt: stalePlannedWithdrawals
           ? OBSERVED_GC09_BALANCE
           : OBSERVED_RECENT,
-        pendingApprovedMinor: invalidation
-          ? GC15_PENDING_DISTRIBUTION.afterMinor
-          : SMITHS_LIQUIDITY.pendingMinor,
+        pendingApprovedMinor: pendingActivity.amountMinor,
+        pendingApprovedObservedAt: pendingActivity.observedAt,
         plannedWithdrawalMonthlyMinor:
           PLANNED_WITHDRAWAL_MONTHLY_MINOR,
         plannedWithdrawalObservedAt: stalePlannedWithdrawals
@@ -187,16 +212,6 @@ export function decisionInputPreimageFor(
                 "Large one-time needs are funded from the Smith Family Taxable account",
               ]
             : [],
-        materialChange: invalidation
-          ? {
-              kind: "pending-distribution-posted",
-              beforeMinor: GC15_PENDING_DISTRIBUTION.beforeMinor,
-              deltaMinor: GC15_PENDING_DISTRIBUTION.deltaMinor,
-              afterMinor: GC15_PENDING_DISTRIBUTION.afterMinor,
-              observedAt: GC15_PENDING_DISTRIBUTION.observedAt,
-              retrievedAt: GC15_PENDING_DISTRIBUTION.retrievedAt,
-            }
-          : null,
       },
     },
   });
@@ -214,6 +229,51 @@ export function decisionInputHashFor(scenario: ScenarioData): string {
   return hashCanonicalPreimage(decisionInputPreimageFor(scenario));
 }
 
+export function decisionInputIdentitiesFor(
+  scenario: ScenarioData,
+): {
+  readonly original: string;
+  readonly refreshed: string | null;
+} {
+  return {
+    original: decisionInputHashFor(scenario),
+    refreshed:
+      scenario.spec.invalidation === true
+        ? hashCanonicalPreimage(
+            refreshedDecisionInputPreimageFor(scenario),
+          )
+        : null,
+  };
+}
+
+export function decisionAuthorityRequirementsFor(
+  stages: readonly ApprovalStageVM[],
+): readonly DecisionAuthorityRequirementClaim[] {
+  return stages.map((stage, index) => ({
+    order: index + 1,
+    title: stage.title,
+    requirement: stage.requirement,
+    expiry: stage.expiry ?? null,
+    escalation: stage.escalation ?? null,
+  }));
+}
+
+export function approvalReceiptHashFor(
+  decisionHash: string,
+  stages: readonly ApprovalStageVM[] | null,
+): string | null {
+  if (stages === null) return null;
+  return hashCanonicalPreimage(toJsonValue({
+    hashKind: "money-movement-demo-approval-receipt",
+    preimageVersion:
+      "money-movement-demo-approval-receipt/1.0.0",
+    payload: {
+      decisionHash,
+      stages,
+    },
+  }));
+}
+
 export function decisionBundlePreimageFor(
   scenario: ScenarioData,
   firm: FirmData,
@@ -222,12 +282,12 @@ export function decisionBundlePreimageFor(
   const inputPreimage = decisionInputPreimageFor(scenario);
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
-    preimageVersion: "money-movement-demo-bundle/2.0.0",
+    preimageVersion: "money-movement-demo-bundle/3.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
       engineVersion: DEMO_DECISION_ENGINE_VERSION,
-      firm: { id: firm.id, label: firm.name },
+      firmId: firm.id,
       inputHash: hashCanonicalPreimage(inputPreimage),
       input: inputPreimage,
       configuration,
@@ -248,21 +308,18 @@ export function decisionRecordPreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
-    preimageVersion: "money-movement-demo-record/2.0.0",
+    preimageVersion: "money-movement-demo-record/3.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
       engineVersion: DEMO_DECISION_ENGINE_VERSION,
-      scenario: { id: scenario.id, title: scenario.title },
-      firm: { id: firm.id, label: firm.name },
+      firmId: firm.id,
       bundleHash: hashCanonicalPreimage(bundlePreimage),
       bundle: bundlePreimage,
       disposition: claims.disposition,
       blockers: claims.disposition.blockers ?? [],
       precedence: claims.precedence,
       authority: claims.authority,
-      reachability: claims.reachability,
-      stopNote: claims.stopNote,
       createdAt: DEMO_TIMELINE.decisionCreatedAt,
     },
   });

@@ -85,6 +85,16 @@ export function SafetySurface({
             <p className="text-base font-semibold text-slate-900">{vm.invalidation.deltaSentence}</p>
             <EvidenceRow label="Before" fact={vm.invalidation.before} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
             <EvidenceRow label="After" fact={vm.invalidation.after} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
+            <dl className="grid min-w-0 gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs">
+              <div className="min-w-0">
+                <dt className="font-medium text-slate-700">Original input hash</dt>
+                <dd className="break-all font-mono text-slate-800">{vm.invalidation.inputIdentity.originalHash}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="font-medium text-slate-700">Refreshed input hash</dt>
+                <dd className="break-all font-mono text-slate-800">{vm.invalidation.inputIdentity.refreshedHash}</dd>
+              </div>
+            </dl>
             <WhyBubble reason={vm.invalidation.why.reason} {...(vm.invalidation.why.regulation ? { regulation: vm.invalidation.why.regulation } : {})} />
           </div>
           {/* 4. One clear next action. */}

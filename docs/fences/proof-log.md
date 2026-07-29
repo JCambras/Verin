@@ -6147,3 +6147,45 @@ provenance.
 **Adversarial proof:** an evidence time before activation, a contradictory "liquidity
 unchanged" GC-15 check, and a synthetic-fixture request label each fail their companion
 detector.
+
+## PF-setup-33 · phase identities exclude future state and approval receipts
+
+**Date:** 2026-07-28.
+
+**Invariant:** the original decision identity binds only its pre-decision request,
+evidence, policy, precedence, disposition, and immutable authority requirements. Later
+scenario outcomes, approval receipts, reachability, and stop state cannot change it.
+Completed receipt fields instead change their separate approval-receipt hash. Revalidated
+material evidence receives a separate identity. Configuration identity depends on
+resolved firm configuration and selection posture, not the activating actor or draft
+generation. Authority not reached is `null`, never an empty reached collection.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares safe proceed with
+dual approval, invalidation, competing liquidity, duplicate retry, partial success, and
+delayed NIGO branches and requires byte-identical original identities. It also compares
+recent-bank-change with later specialist expiration, mutates completed receipt actors and
+statuses without changing requirements while requiring the receipt hash to move, changes a
+real authority requirement and requires the decision hash to move, activates identical
+configuration under different actors and draft generations, and checks blocked and
+prohibited records retain null authority and receipt identity.
+
+**Adversarial proof:** one companion combines retry, partial-success, delayed-NIGO, and
+invalidation flags plus changed display labels and proves the original input hash stays
+fixed while the refreshed hash differs. A changed authority expiry changes the decision
+hash. Replacing a blocked record's null authority with an empty collection makes it
+structurally reached and fails the null assertion.
+
+## PF-setup-34 · GC-15 evidence phases preserve chronology
+
+**Date:** 2026-07-28.
+
+**Invariant:** GC-15's original and refreshed pending-activity facts each carry their own
+value, observed time, and retrieved time. Retrieval never precedes observation, and both
+the safety surface and printable record reuse the typed phases.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` compares both rendered
+evidence rows to `GC15_PENDING_DISTRIBUTION`, orders the four phase instants, and verifies
+the original and refreshed input hashes printed by the invalidation view model.
+
+**Adversarial proof:** a planted original retrieval at 14:00:30 after an observation moved
+to 14:01 fails with `original retrieval occurs before original observation`.

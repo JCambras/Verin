@@ -15,6 +15,7 @@ import { FIXTURE_RESERVE_HORIZON, prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
   buildDisposition,
+  buildDecisionAuthorityStages,
   buildPolicyTrace,
   buildStages,
   headroomMetric,
@@ -32,7 +33,11 @@ import {
   type FirmData,
   type ScenarioData,
 } from "./data";
-import { decisionIdentityFor } from "./decision-identity";
+import {
+  approvalReceiptHashFor,
+  decisionAuthorityRequirementsFor,
+  decisionIdentityFor,
+} from "./decision-identity";
 
 export interface RecordBuildOptions {
   readonly identity?: DecisionIdentity;
@@ -109,18 +114,13 @@ export function buildRecord(
         precedence,
         authority: {
           reached: approvalStages !== null,
-          summary:
-            approvalStages !== null
-              ? disposition.authoritySummary ?? "Authority is required"
-              : "No approval authority exists for this decision",
-          detail:
-            approvalStages !== null
-              ? "The record carries the complete ordered approval-stage plan."
-              : stopNote ?? "The decision stopped before authority.",
-          stages: approvalStages ?? [],
+          requirements:
+            approvalStages === null
+              ? []
+              : decisionAuthorityRequirementsFor(
+                  buildDecisionAuthorityStages(scenario, firm),
+                ),
         },
-        reachability: reached,
-        stopNote,
       },
     );
   return {
@@ -140,6 +140,10 @@ export function buildRecord(
       policyVersion: firm.policyVersion,
       instructionVersion: "HH-INSTR-SMITH v3",
       auditPosition: IDS.auditPosition,
+      approvalReceiptHash: approvalReceiptHashFor(
+        identity.decisionHash,
+        approvalStages,
+      ),
     },
     activatedConfiguration: options.activatedConfiguration ?? null,
     intent: buildIntent(scenario),

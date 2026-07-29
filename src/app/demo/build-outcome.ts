@@ -17,6 +17,7 @@ import type {
 } from "./model";
 import { fact } from "./provenance";
 import { buildSpine } from "./spine";
+import { decisionInputIdentitiesFor } from "./decision-identity";
 import {
   CAST,
   DEMO_NOW,
@@ -35,12 +36,30 @@ const IDENTIFIERS = [
   { label: "Reservation", value: IDS.reservationId },
 ];
 
+function invalidationInputIdentity(
+  scenario: ScenarioData,
+): {
+  readonly originalHash: string;
+  readonly refreshedHash: string;
+} {
+  const identities = decisionInputIdentitiesFor(scenario);
+  if (identities.refreshed === null) {
+    throw new Error(
+      "Approval invalidation requires a refreshed input identity",
+    );
+  }
+  return {
+    originalHash: identities.original,
+    refreshedHash: identities.refreshed,
+  };
+}
+
 export function buildSafety(scenario: ScenarioData): SafetyVM {
   const spec = scenario.spec;
   const checks: SafetyCheckVM[] = spec.invalidation
     ? [
         {
-          label: `Pending approved activity changed from ${usdMinor(GC15_PENDING_DISTRIBUTION.beforeMinor)} to ${usdMinor(GC15_PENDING_DISTRIBUTION.afterMinor)}`,
+          label: `Pending approved activity changed from ${usdMinor(GC15_PENDING_DISTRIBUTION.before.amountMinor)} to ${usdMinor(GC15_PENDING_DISTRIBUTION.after.amountMinor)}`,
           status: "voided",
           statusLabel: "Evidence changed",
         },
@@ -103,17 +122,22 @@ export function buildSafety(scenario: ScenarioData): SafetyVM {
             GC15_PENDING_DISTRIBUTION,
           ),
           before: fact(
-            `${usdMinor(GC15_PENDING_DISTRIBUTION.beforeMinor)} pending approved activity`,
+            `${usdMinor(GC15_PENDING_DISTRIBUTION.before.amountMinor)} pending approved activity`,
             "synthetic-fixture",
-            DEMO_TIMELINE.decisionCreatedAt,
-            demoTimestampLabel(DEMO_TIMELINE.evidenceRetrievedAt),
+            GC15_PENDING_DISTRIBUTION.before.observedAt,
+            demoTimestampLabel(
+              GC15_PENDING_DISTRIBUTION.before.retrievedAt,
+            ),
           ),
           after: fact(
-            `${usdMinor(GC15_PENDING_DISTRIBUTION.afterMinor)} pending approved distribution`,
+            `${usdMinor(GC15_PENDING_DISTRIBUTION.after.amountMinor)} pending approved distribution`,
             "synthetic-fixture",
-            GC15_PENDING_DISTRIBUTION.observedAt,
-            demoTimestampLabel(GC15_PENDING_DISTRIBUTION.retrievedAt),
+            GC15_PENDING_DISTRIBUTION.after.observedAt,
+            demoTimestampLabel(
+              GC15_PENDING_DISTRIBUTION.after.retrievedAt,
+            ),
           ),
+          inputIdentity: invalidationInputIdentity(scenario),
           why: {
             reason:
               "Approval binds to the decision hash and input-bundle hash. The pending-distribution delta changed the evidence preimage, so the approval cannot stand.",

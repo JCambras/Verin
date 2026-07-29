@@ -15,6 +15,7 @@ import {
   type FirmData,
 } from "./data";
 import {
+  decisionAuthorityRequirementsFor,
   decisionIdentityFor,
   hashCanonicalPreimage,
   toJsonValue,
@@ -129,17 +130,41 @@ function evaluateFirm(
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
   const activeProfile = matchesActiveProfile(vm, firmId, selections);
   const posture = configurationPosture(selectedTruthLabels(vm, firmId, selections));
+  const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
+    const option = optionFor(vm, firmId, groupId, selections[firmId][groupId])!;
+    return {
+      groupId,
+      groupTitle: vm.policyGroups.find((group) => group.id === groupId)!.title,
+      label: option.label,
+      posture: optionPosture(option.truthLabel),
+    };
+  });
+  const baseFirm = FIRMS[firmId]!;
+  const resolvedConfiguration = {
+    reserveMonths: RESERVE_MONTHS[selections[firmId].reserve]!,
+    freshnessDays:
+      FRESHNESS_DAYS[selections[firmId].freshness]!,
+    bankChangeHandling:
+      BANK_HANDLING[selections[firmId]["bank-change"]]!,
+    dualApprovalThresholdMinor:
+      THRESHOLD_MINOR[selections[firmId].threshold]!,
+    approvalsRequired: baseFirm.approvalsRequired,
+    eligibleRole: baseFirm.eligibleRole,
+    requesterConstraint: baseFirm.requesterConstraint,
+    approvalClock: APPROVAL_CLOCKS[selections[firmId].expiry]!,
+  };
   const configurationHash = hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-profile-configuration",
     preimageVersion:
-      "money-movement-demo-profile-configuration/2.0.0",
+      "money-movement-demo-profile-configuration/3.0.0",
     payload: {
       firmId,
-      selections: SETUP_POLICY_GROUP_IDS.map((groupId) => ({
-        groupId,
-        optionId: selections[firmId][groupId],
+      resolvedConfiguration,
+      selections: selectedOptions.map((option) => ({
+        groupId: option.groupId,
+        optionId: selections[firmId][option.groupId],
+        posture: option.posture,
       })),
-      authority,
     },
   }));
   const policyVersion = activeProfile
@@ -181,9 +206,6 @@ function evaluateFirm(
     dualApproval,
     approvalClock,
   );
-  const stopNote = evaluatedAuthority.reached
-    ? null
-    : "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
   const identity = decisionIdentityFor(
     scenario,
     firm,
@@ -195,24 +217,14 @@ function evaluateFirm(
         firm,
         disposition.kind,
       ).rows,
-      authority: evaluatedAuthority,
-      reachability: {
-        authority: evaluatedAuthority.reached,
-        safety: evaluatedAuthority.reached,
-        execution: evaluatedAuthority.reached,
+      authority: {
+        reached: evaluatedAuthority.reached,
+        requirements: decisionAuthorityRequirementsFor(
+          evaluatedAuthority.stages,
+        ),
       },
-      stopNote,
     },
   );
-  const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
-    const option = optionFor(vm, firmId, groupId, selections[firmId][groupId])!;
-    return {
-      groupId,
-      groupTitle: vm.policyGroups.find((group) => group.id === groupId)!.title,
-      label: option.label,
-      posture: optionPosture(option.truthLabel),
-    };
-  });
   return {
     firmId,
     firmLabel: profile.firmLabel,

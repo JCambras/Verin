@@ -44,6 +44,7 @@ function activationTimestampLabel(iso: string): string {
 export const DEMO_TIMELINE = {
   decisionDate: "2026-07-28",
   activationAt: "2026-07-28T14:00:00.000Z",
+  pendingActivityObservedAt: "2026-07-28T14:00:30.000Z",
   evidenceRetrievedAt: "2026-07-28T14:01:00.000Z",
   recommendationRetrievedAt: "2026-07-28T14:03:00.000Z",
   decisionCreatedAt: "2026-07-28T14:05:00.000Z",
@@ -62,12 +63,16 @@ export const DEMO_TIMELINE = {
 
 export const DEMO_CAUSAL_SEQUENCE = [
   "activationAt",
+  "pendingActivityObservedAt",
   "evidenceRetrievedAt",
   "recommendationRetrievedAt",
   "decisionCreatedAt",
   "specialistReviewedAt",
   "operationsApproval1At",
   "operationsApproval2At",
+  "revalidatedAt",
+  "executionSubmittedAt",
+  "executionVerifiedAt",
 ] as const;
 
 export function demoTimelineViolations(
@@ -105,6 +110,7 @@ export const DEMO_RECORD_CREATED_AT = demoTimestampLabel(
 );
 export const DEMO_REQUEST_REF = `request:smiths-renovation@demo-${DEMO_TIMELINE.decisionDate}`;
 export const DEMO_EVIDENCE_REF = `smiths-evidence@${DEMO_TIMELINE.evidenceRetrievedAt}`;
+export const DEMO_REVALIDATION_EVIDENCE_REF = `smiths-evidence@${DEMO_TIMELINE.revalidatedAt}`;
 export const OBSERVED_RECENT = "2026-07-24";
 export const OBSERVED_BANK_INSTRUCTION_CHANGED = "2026-07-22";
 export const OBSERVED_GC09_BALANCE = "2026-07-26";
@@ -309,20 +315,30 @@ export const IDS = {
   auditPosition: "org demo-org · sequence 214",
 } as const;
 
-export interface PendingDistributionDelta {
-  readonly beforeMinor: number;
-  readonly deltaMinor: number;
-  readonly afterMinor: number;
+export interface PendingDistributionPhase {
+  readonly amountMinor: number;
   readonly observedAt: string;
   readonly retrievedAt: string;
 }
 
+export interface PendingDistributionDelta {
+  readonly before: PendingDistributionPhase;
+  readonly deltaMinor: number;
+  readonly after: PendingDistributionPhase;
+}
+
 export const GC15_PENDING_DISTRIBUTION: PendingDistributionDelta = {
-  beforeMinor: 0,
+  before: {
+    amountMinor: 0,
+    observedAt: DEMO_TIMELINE.pendingActivityObservedAt,
+    retrievedAt: DEMO_TIMELINE.evidenceRetrievedAt,
+  },
   deltaMinor: 1_500_000,
-  afterMinor: 1_500_000,
-  observedAt: DEMO_TIMELINE.revalidatedAt,
-  retrievedAt: DEMO_TIMELINE.revalidatedAt,
+  after: {
+    amountMinor: 1_500_000,
+    observedAt: DEMO_TIMELINE.revalidatedAt,
+    retrievedAt: DEMO_TIMELINE.revalidatedAt,
+  },
 };
 
 export function usdMinor(minor: number): string {

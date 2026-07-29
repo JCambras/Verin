@@ -13,6 +13,7 @@ import type { DecisionJourneyVM } from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import {
   buildApprovals,
+  buildDecisionAuthorityStages,
   buildPolicyTrace,
   buildRecommendation,
   buildStages,
@@ -25,7 +26,10 @@ import {
   firmById,
   scenarioById,
 } from "./data";
-import { decisionIdentityFor } from "./decision-identity";
+import {
+  decisionAuthorityRequirementsFor,
+  decisionIdentityFor,
+} from "./decision-identity";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
 function reachOf(scenarioId: string, firmId: string) {
@@ -58,6 +62,11 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
   const policyTrace = buildPolicyTrace(scenario, firm, disposition.kind);
   const approvalStages = reached.authority
     ? buildStages(scenario, firm, "final")
+    : null;
+  const authorityRequirements = reached.authority
+    ? decisionAuthorityRequirementsFor(
+        buildDecisionAuthorityStages(scenario, firm),
+      )
     : [];
   const identity = decisionIdentityFor(
     scenario,
@@ -68,16 +77,8 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
       precedence: policyTrace.rows,
       authority: {
         reached: reached.authority,
-        summary: reached.authority
-          ? disposition.authoritySummary ?? "Authority is required"
-          : "No approval authority exists for this decision",
-        detail: reached.authority
-          ? "The record carries the complete ordered approval-stage plan."
-          : stopNote ?? "The decision stopped before authority.",
-        stages: approvalStages,
+        requirements: authorityRequirements,
       },
-      reachability: reached,
-      stopNote,
     },
   );
   return {
