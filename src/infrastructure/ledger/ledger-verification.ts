@@ -40,6 +40,8 @@ export interface DecisionLedgerRow {
   readonly causationId: string | null;
   readonly decisionId: string | null;
   readonly evidenceSnapshotId: string | null;
+  readonly inputBundleId: string | null;
+  readonly expectedInputBundleId: string | null;
   readonly triggeringEntryId: string | null;
   readonly reservationCreationId: string | null;
   readonly payloadJson: string;
@@ -83,6 +85,8 @@ interface DbLedgerRow {
   causation_id: string | null;
   decision_id: string | null;
   evidence_snapshot_id: string | null;
+  input_bundle_id: string | null;
+  expected_input_bundle_id: string | null;
   triggering_entry_id: string | null;
   reservation_creation_id: string | null;
   payload_json: string;
@@ -108,6 +112,8 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
     causationId: row.causation_id,
     decisionId: row.decision_id,
     evidenceSnapshotId: row.evidence_snapshot_id,
+    inputBundleId: row.input_bundle_id,
+    expectedInputBundleId: row.expected_input_bundle_id,
     triggeringEntryId: row.triggering_entry_id,
     reservationCreationId: row.reservation_creation_id,
     payloadJson: row.payload_json,
@@ -127,13 +133,26 @@ export async function listDecisionLedger(
 ): Promise<DecisionLedgerRow[]> {
   if (tail === undefined) {
     const result = await db.query<DbLedgerRow>(
-      "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence ASC",
+      `SELECT ledger.*, record.input_bundle_id AS expected_input_bundle_id
+         FROM decision_ledger ledger
+         LEFT JOIN decision_records record
+           ON record.org_id = ledger.org_id
+          AND record.id = ledger.decision_id
+        WHERE ledger.org_id = $1
+        ORDER BY ledger.sequence ASC`,
       [orgId],
     );
     return result.rows.map(toRow);
   }
   const result = await db.query<DbLedgerRow>(
-    "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence DESC LIMIT $2",
+    `SELECT ledger.*, record.input_bundle_id AS expected_input_bundle_id
+       FROM decision_ledger ledger
+       LEFT JOIN decision_records record
+         ON record.org_id = ledger.org_id
+        AND record.id = ledger.decision_id
+      WHERE ledger.org_id = $1
+      ORDER BY ledger.sequence DESC
+      LIMIT $2`,
     [orgId, tail],
   );
   return result.rows.map(toRow).reverse();
@@ -217,6 +236,11 @@ function verifyL3(
       (event.causationRef?.id ?? null) === row.causationId &&
       promotedDecisionId(event) === row.decisionId &&
       promotedEvidenceSnapshotId(event) === row.evidenceSnapshotId &&
+      row.inputBundleId === (
+        event.type === "DecisionRecorded"
+          ? row.expectedInputBundleId
+          : null
+      ) &&
       promotedTriggeringEntryId(event) === row.triggeringEntryId &&
       promotedReservationCreationId(event) === row.reservationCreationId;
     if (!matches) {

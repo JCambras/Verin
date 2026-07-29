@@ -19,12 +19,14 @@ import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
+import { EvidenceSnapshotRefSchema } from "@contracts/decision-core/evidence";
 import {
   canonicalJson,
   decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { canFeedComplianceDecision } from "@contracts/provenance";
+import { deriveLedgerEventProvenance } from "@infra/ledger/ledger-source-provenance";
 import { createHash } from "node:crypto";
 import {
   LEDGER_ORG,
@@ -552,10 +554,13 @@ describe("deterministic decision-ledger projections", () => {
       /ORDER BY m\.ordinal ASC\s+LIMIT \$4/is,
     );
     expect(coverageQuery).not.toMatch(/\b(max|count)\s*\(/i);
-    expect(
-      statements.some((sql) =>
-        /FROM decision_ledger earlier/i.test(sql)),
-    ).toBe(false);
+    const predecessorQueries = statements.filter((sql) =>
+      /FROM decision_ledger earlier/i.test(sql));
+    expect(predecessorQueries.length).toBeGreaterThan(0);
+    expect(predecessorQueries.every((sql) =>
+      /earlier\.org_id = \$1/i.test(sql) &&
+      /ORDER BY earlier\.sequence DESC\s+LIMIT 1/is.test(sql) &&
+      !/\b(max|count)\s*\(/i.test(sql))).toBe(true);
   });
 
   it("uses the latest in-window evidence recording for a reused bundle", async () => {
@@ -585,6 +590,193 @@ describe("deterministic decision-ledger projections", () => {
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.decisions.map(({ projection }) =>
       projection.decisionId)).toContain("dec:GC-01:0002");
+  });
+
+  it("rejects a bounded provenance binding moved to a later recording", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const snapshot = input.evidenceSnapshots[0]!;
+    const rerecorded = LedgerEntrySchema.parse({
+      ...input.events[0]!,
+      id: "projection:later-provenance-binding",
+    });
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [rerecorded],
+      { source: "verin-crm", asOf: LEDGER_TIME, confidence: "high" },
+      [snapshot],
+    ))).resolves.toHaveLength(1);
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       DISABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+    await db.query(
+      `UPDATE decision_replay_source_provenance
+          SET recording_entry_id = $3
+        WHERE org_id = $1 AND source_kind = 'evidence' AND source_id = $2`,
+      [LEDGER_ORG, snapshot.id, rerecorded.id],
+    );
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       ENABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(register.verification.ok).toBe(false);
+    expect(register.decisions).toEqual([]);
+    expect(register.replaySourceReason).toBe(
+      "immutable replay source provenance binding is invalid",
+    );
+  });
+
+  it("checks the first recording immediately before the bounded provenance window", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const later = laterEvidenceRecording("evidence:bounded-predecessor");
+    const first = LedgerEntrySchema.parse({
+      ...later.event,
+      id: "projection:bounded-predecessor:first",
+    });
+    const bound = LedgerEntrySchema.parse({
+      ...later.event,
+      id: "projection:bounded-predecessor:bound",
+    });
+    const provenance = {
+      source: "verin-crm",
+      asOf: LEDGER_TIME,
+      confidence: "high",
+    } as const;
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [first],
+      provenance,
+      [later.snapshot],
+    ))).resolves.toHaveLength(1);
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [bound],
+      provenance,
+      [later.snapshot],
+    ))).resolves.toHaveLength(1);
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       DISABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+    await db.query(
+      `UPDATE decision_replay_source_provenance
+          SET recording_entry_id = $3
+        WHERE org_id = $1 AND source_kind = 'evidence' AND source_id = $2`,
+      [LEDGER_ORG, later.snapshot.id, bound.id],
+    );
+    await db.exec(
+      `ALTER TABLE decision_replay_source_provenance
+       ENABLE TRIGGER decision_replay_source_provenance_no_update`,
+    );
+    const status = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "StatusObserved",
+      )!,
+      id: "projection:bounded-predecessor:status",
+      evidenceSnapshotRef: {
+        firmId: LEDGER_ORG,
+        id: later.snapshot.id,
+      },
+    });
+
+    await expect(db.transaction((tx) => deriveLedgerEventProvenance(
+      tx,
+      status,
+      provenance,
+      false,
+      new Set([bound.id]),
+    ))).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "immutable replay source provenance binding is invalid",
+    });
+  });
+
+  it("accepts an honest first recording only from the requested tenant", async () => {
+    const otherOrg = "firm-b";
+    await db.query(
+      `INSERT INTO orgs
+        (id,name,created_at,prov_source,prov_asof,prov_confidence)
+       VALUES ($1,'Other Projection Firm',$2,'synthetic-ledger-test',$2,'high')`,
+      [otherOrg, TS],
+    );
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sharedId = "evidence:tenant-scoped-binding";
+    const first = laterEvidenceRecording(sharedId);
+    const realProvenance = {
+      source: "verin-crm",
+      asOf: LEDGER_TIME,
+      confidence: "high",
+    } as const;
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [first.event],
+      realProvenance,
+      [first.snapshot],
+    ))).resolves.toHaveLength(1);
+
+    const otherSnapshot = EvidenceSnapshotRefSchema.parse({
+      ...first.snapshot,
+      firmId: otherOrg,
+      sourceRef: { ...first.snapshot.sourceRef, firmId: otherOrg },
+      subjectRef: { ...first.snapshot.subjectRef, firmId: otherOrg },
+      encryptedStorageRef: {
+        ...first.snapshot.encryptedStorageRef,
+        firmId: otherOrg,
+      },
+    });
+    const otherBytes = canonicalJson(
+      otherSnapshot as unknown as JsonValue,
+    );
+    expect(otherBytes.ok).toBe(true);
+    if (!otherBytes.ok) return;
+    const otherEvent = LedgerEntrySchema.parse({
+      ...first.event,
+      firmId: otherOrg,
+      id: "projection:tenant-scoped-binding:other",
+      actor: { firmId: otherOrg, systemId: "ledger-test" },
+      evidenceSnapshotRef: { firmId: otherOrg, id: sharedId },
+      snapshotHash: createHash("sha256")
+        .update(otherBytes.value, "utf8")
+        .digest("hex"),
+    });
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      otherOrg,
+      [otherEvent],
+      LEDGER_PROVENANCE,
+      [otherSnapshot],
+    ))).resolves.toHaveLength(1);
+    const status = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "StatusObserved",
+      )!,
+      id: "projection:tenant-scoped-binding:status",
+      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: sharedId },
+    });
+    const derived = await db.transaction((tx) =>
+      deriveLedgerEventProvenance(
+        tx,
+        status,
+        realProvenance,
+        false,
+        new Set([first.event.id]),
+      ));
+    expect(derived.demonstration).toBe(false);
+    expect(derived.derivedFrom).toEqual(["verin-crm"]);
   });
 
   it("excludes provenance whose binding entry is outside the verified window", async () => {

@@ -163,15 +163,22 @@ async function insertRawDecisionEvent(
   expect(preimage).not.toBeNull();
   if (!preimage) return;
   const entryHash = computeChainHash(preimage, previousHash);
+  const inputBundle = event.type === "DecisionRecorded"
+    ? await db.query<{ input_bundle_id: string }>(
+        `SELECT input_bundle_id FROM decision_records
+          WHERE org_id = $1 AND id = $2`,
+        [LEDGER_ORG, event.decisionRef.id],
+      )
+    : null;
   await db.query(
     `INSERT INTO decision_ledger
       (org_id,id,sequence,event_type,schema_version,serializer_version,
        occurred_at,recorded_at,actor_json,correlation_id,causation_id,
-       decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
-       reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,
-       prov_confidence)
+       decision_id,evidence_snapshot_id,input_bundle_id,triggering_entry_id,
+       payload_json,reservation_creation_id,prev_hash,entry_hash,prov_source,
+       prov_asof,prov_confidence)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-             $18,$19,$20,$21)`,
+             $18,$19,$20,$21,$22)`,
     [
       LEDGER_ORG,
       event.id,
@@ -186,6 +193,7 @@ async function insertRawDecisionEvent(
       event.causationRef?.id ?? null,
       promotedDecisionId(event),
       promotedEvidenceSnapshotId(event),
+      inputBundle?.rows[0]?.input_bundle_id ?? null,
       promotedTriggeringEntryId(event),
       payload.value,
       promotedReservationCreationId(event),
@@ -538,6 +546,37 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [LEDGER_ORG],
     );
     await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    const result = await verifyDecisionLedger(db, LEDGER_ORG);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L3");
+  });
+
+  it("L3 binds promoted bundle identity to the immutable decision record", async () => {
+    await recordFixture(db);
+    await db.query(
+      `INSERT INTO decision_input_bundles
+        (org_id,id,canonical_json,schema_version,serializer_version,
+         engine_version,primitive_set_version,time_zone_data_version,
+         bundle_hash,recorded_at)
+       SELECT org_id,'bundle:l3-alternate',canonical_json,schema_version,
+              serializer_version,engine_version,primitive_set_version,
+              time_zone_data_version,$2,recorded_at
+         FROM decision_input_bundles
+        WHERE org_id = $1 AND id = 'bundle:GC-01:0001'`,
+      [LEDGER_ORG, "f".repeat(64)],
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET input_bundle_id = 'bundle:l3-alternate'
+        WHERE org_id = $1 AND event_type = 'DecisionRecorded'`,
+      [LEDGER_ORG],
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
+    );
     const result = await verifyDecisionLedger(db, LEDGER_ORG);
     expect(result.ok).toBe(false);
     expect(result.levels.at(-1)?.level).toBe("L3");

@@ -840,6 +840,18 @@ function symbolOf(node: Node) {
   return symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
 }
 
+const binaryAssignments = new WeakMap<SourceFile, readonly Node[]>();
+
+function assignmentsIn(file: SourceFile): readonly Node[] {
+  const cached = binaryAssignments.get(file);
+  if (cached) return cached;
+  const assignments = file.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  );
+  binaryAssignments.set(file, assignments);
+  return assignments;
+}
+
 function assignedValueBefore(
   node: Node,
   before: number,
@@ -873,9 +885,8 @@ function assignedValueBefore(
     }
   }
   const source = node.getSourceFile();
-  for (const assignment of source.getDescendantsOfKind(
-    SyntaxKind.BinaryExpression,
-  )) {
+  for (const assignment of assignmentsIn(source)) {
+    if (!Node.isBinaryExpression(assignment)) continue;
     if (
       assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
       assignment.getStart() >= before ||

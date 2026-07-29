@@ -3649,3 +3649,29 @@ must stay linear under tenant lock, and an operational integrity view cannot sta
 for a complete examiner delivery contract.
 **Revert path:** none while Prompt 7 promises one immutable write owner, scalable
 whole-ledger verification, and honest capability labeling.
+
+### D-120 · 2026-07-29 · reversible · Tenant predicates and bounded provenance authority fail closed
+
+The tenant SQL fence reduces each Boolean condition to its disjunctive alternatives.
+Every tenant-table alias must connect to a bound parameter in every alternative, and
+hardcoded tenant literals are refused. Alias-to-alias tenant joins remain valid only
+when each Boolean path connects them to a bound tenant predicate.
+
+Bounded replay-source provenance applies the same first-recording correspondence rule
+as whole-ledger verification. Evidence uses its existing tenant-scoped partial
+ordering index. Migration 9 promotes the immutable input-bundle identity onto
+`DecisionRecorded` rows, backfills it from immutable decision records, and adds
+partial ordering indexes for decision and bundle recording facts. Each bounded source
+lookup performs one tenant-scoped predecessor `LIMIT 1`; a mutable binding moved to a
+later recording cannot relabel older source bytes, including when the predecessor is
+just outside the verified window. L3 resolves the promoted bundle identity against
+the immutable decision record rather than accepting any non-null bundle reference.
+
+The composed implementation measures infrastructure at 8369 lines. ADR-0033 amends
+ADR-0018's infrastructure ceiling to 8500, preserving 131 lines of measured
+headroom and the unchanged 500-line file cap.
+
+**Why:** tenant isolation cannot depend on a predicate hidden under `OR`, and a mutable
+binding cannot be the authority that upgrades immutable source provenance.
+**Revert path:** none while tenant SQL isolation and bounded replay-source provenance
+remain active controls.

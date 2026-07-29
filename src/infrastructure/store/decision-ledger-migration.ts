@@ -288,6 +288,38 @@ CREATE INDEX IF NOT EXISTS decision_ledger_reservation_released
   WHERE event_type = 'ReservationReleased';
 `;
 
+export const DECISION_LEDGER_BUNDLE_IDENTITY_SQL = `
+ALTER TABLE decision_ledger
+  ADD COLUMN input_bundle_id text;
+ALTER TABLE decision_ledger
+  DISABLE TRIGGER decision_ledger_no_update;
+UPDATE decision_ledger ledger
+   SET input_bundle_id = record.input_bundle_id
+  FROM decision_records record
+ WHERE ledger.org_id = record.org_id
+   AND ledger.decision_id = record.id
+   AND ledger.event_type = 'DecisionRecorded'
+   AND ledger.org_id IN (SELECT id FROM orgs);
+ALTER TABLE decision_ledger
+  ENABLE TRIGGER decision_ledger_no_update;
+ALTER TABLE decision_ledger
+  ADD CONSTRAINT decision_ledger_input_bundle_shape
+  CHECK (
+    (event_type = 'DecisionRecorded') =
+    (input_bundle_id IS NOT NULL)
+  );
+ALTER TABLE decision_ledger
+  ADD CONSTRAINT decision_ledger_input_bundle_fkey
+  FOREIGN KEY (org_id, input_bundle_id)
+  REFERENCES decision_input_bundles(org_id, id);
+CREATE INDEX decision_ledger_bundle_recorded
+  ON decision_ledger(org_id, input_bundle_id, sequence)
+  WHERE event_type = 'DecisionRecorded';
+CREATE INDEX decision_ledger_decision_recorded
+  ON decision_ledger(org_id, decision_id, sequence)
+  WHERE event_type = 'DecisionRecorded';
+`;
+
 export const DECISION_REPLAY_SOURCE_PROVENANCE_SQL = `
 CREATE TABLE IF NOT EXISTS decision_replay_source_provenance (
   org_id text NOT NULL REFERENCES orgs(id),

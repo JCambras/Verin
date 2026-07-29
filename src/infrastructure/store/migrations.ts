@@ -26,6 +26,7 @@ import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
 import {
+  DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
   DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL,
@@ -374,6 +375,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 8,
     name: "decision-ledger-reservation-lookup-indexes",
     sql: DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL,
+  },
+  {
+    version: 9,
+    name: "decision-ledger-bundle-identity",
+    sql: DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
   },
 ];
 

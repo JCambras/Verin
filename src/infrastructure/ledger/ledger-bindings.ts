@@ -9,6 +9,7 @@ import { promotedDecisionRef } from "@contracts/decision-core/ledger-references"
 interface DecisionHashes {
   decision_hash: string;
   bundle_hash: string;
+  input_bundle_id: string;
 }
 
 const referenceKey = (ref: { firmId: string; id: string }): string =>
@@ -87,7 +88,7 @@ export function decisionReplayPinsMatchBundle(
 export async function assertLedgerSourceBindings(
   tx: SqlQueryable,
   event: LedgerEntry,
-): Promise<void> {
+): Promise<string | null> {
   if (event.type === "EvidenceSnapshotRecorded") {
     const snapshot = await tx.query<{
       content_hash: string;
@@ -104,7 +105,7 @@ export async function assertLedgerSourceBindings(
     ) {
       throw appError("STORE_CONSTRAINT", "ledger evidence hash does not match immutable snapshot");
     }
-    return;
+    return null;
   }
   if (event.type === "StatusObserved" && event.evidenceSnapshotRef) {
     const cited = await tx.query<{ id: string }>(
@@ -116,9 +117,9 @@ export async function assertLedgerSourceBindings(
     }
   }
   const ref = promotedDecisionRef(event);
-  if (!ref) return;
+  if (!ref) return null;
   const hashes = await tx.query<DecisionHashes>(
-    `SELECT r.decision_hash, b.bundle_hash
+    `SELECT r.decision_hash, r.input_bundle_id, b.bundle_hash
        FROM decision_records r
        JOIN decision_input_bundles b
          ON b.org_id = r.org_id AND b.id = r.input_bundle_id
@@ -149,4 +150,5 @@ export async function assertLedgerSourceBindings(
   ) {
     throw appError("STORE_CONSTRAINT", "ledger input bundle hash does not match immutable bundle");
   }
+  return stored.input_bundle_id;
 }

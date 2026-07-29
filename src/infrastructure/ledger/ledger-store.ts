@@ -176,7 +176,7 @@ async function appendPrepared(
   const structure = storedLedgerStructureLookup(tx, orgId);
   for (const prepared of events) {
     const { event, payloadJson, actorJson } = prepared;
-    await assertLedgerSourceBindings(tx, event);
+    const inputBundleId = await assertLedgerSourceBindings(tx, event);
     await assertRecordedLedgerStructure(
       [{ sequence, event }],
       structure,
@@ -208,16 +208,16 @@ async function appendPrepared(
       `INSERT INTO decision_ledger
         (org_id,id,sequence,event_type,schema_version,serializer_version,
          occurred_at,recorded_at,actor_json,correlation_id,causation_id,
-         decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
-         reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,
-         prov_confidence)
+         decision_id,evidence_snapshot_id,input_bundle_id,triggering_entry_id,
+         payload_json,reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,prov_confidence)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-               $18,$19,$20,$21)`,
+               $18,$19,$20,$21,$22)`,
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
         event.correlationId, event.causationRef?.id ?? null,
         promotedDecisionId(event), promotedEvidenceSnapshotId(event),
+        event.type === "DecisionRecorded" ? inputBundleId : null,
         promotedTriggeringEntryId(event), payloadJson,
         promotedReservationCreationId(event), prevHash, entryHash,
         provenance.source, provenance.asOf, provenance.confidence,

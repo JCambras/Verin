@@ -6376,3 +6376,44 @@ exact-owner escape, and 250 alternating reservation generations with one base
 lookup.
 
 **Date:** 2026-07-29 (review corrections T1-T4, ADR-0019/0033, D-119).
+
+## Boolean tenant scope and indexed first-source authority (D-120)
+
+**Invariants:** every Boolean path through a tenant query carries a bound tenant
+predicate; hardcoded tenant identities do not satisfy the fence; bounded provenance
+uses immutable ledger order, not the mutable binding table, to identify the first
+recording for an exact tenant and source identity.
+
+The permanent companions first ran against the pre-fix implementation:
+
+```text
+× requires a bound tenant predicate in every disjunct and rejects tenant literals
+  expected false to be true
+
+× rejects a bounded provenance binding moved to a later recording
+  expected true to be false
+
+× checks the first recording immediately before the bounded provenance window
+  promise resolved instead of rejecting
+```
+
+The tenant fence now evaluates conjunctions and disjunctions structurally. A bound
+predicate outside a nested disjunction remains mandatory, while a predicate present
+in only one `OR` arm does not. Literal comparisons are rejected even when another
+tenant predicate exists. Alias shadowing across nested tenant scopes fails closed;
+the whole-source integrity query uses unique aliases for each scope.
+
+Bounded provenance now performs an ordered tenant-scoped predecessor lookup for each
+binding it consumes. Migration 9 promotes and indexes input-bundle identity so
+evidence, decision, and bundle lookups all use ledger ordering indexes. Integration
+coverage moves a binding to a later recording, places the predecessor immediately
+before the visible window, supplies the same source identity from another tenant, and
+proves the honest first recording still passes. L3 also rejects a promoted bundle
+identity changed to a different valid immutable bundle. The schema companion disables
+sequential scans and verifies each predecessor query selects its intended index.
+
+**Revert:** the planted cases are permanent fence and PGlite integration companions.
+The focused tenant, ledger projection, decision-ledger, schema, ownership, registry,
+line-budget, typecheck, and lint checks pass.
+
+**Date:** 2026-07-29 (review corrections U1-U2, D-120).

@@ -120,7 +120,16 @@ settle now.
   transaction and displays only decisions whose complete replay sources fall inside
   it. The latest evidence recording at or before a decision is selected through the
   tenant-scoped partial index with an ordered lateral `LIMIT 1` lookup and then
-  compared with the verified window start. Any replay-source failure returns all
+  compared with the verified window start. Every source binding consumed by the
+  bounded path is also checked against the tenant-scoped
+  predecessor of its exact evidence, decision, or input-bundle identity. Evidence
+  identity uses its existing partial ledger index; migration 8 promotes input-bundle
+  identity and adds partial indexes for bundle and decision recording facts so all
+  three checks use the same bounded ordering authority. L3 compares the promoted
+  bundle identity with the immutable decision record, so any different valid bundle
+  reference still fails verification.
+  The mutable binding table does not establish first-recording authority. Any
+  replay-source failure returns all
   L1-L4 levels, no trusted decisions, and a bounded PII-safe reason. The gate's
   unbounded run is an integrity-verification control, not an examiner export.
   Evidence membership reads stop at the maximum number of recording facts that can
@@ -143,7 +152,7 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4700 and infrastructure 2500 to
-  7000. Measured final state is contracts 4525 and infrastructure 6859. Domain
+  7200. Measured final state is contracts 4525 and infrastructure 7094. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
@@ -206,7 +215,9 @@ claim those capabilities are shipped until their prompt lands them.
 
 ## Consequences
 
-Migration version 3 is additive. Migration version 7 adds indexes only. Existing
+Migration version 3 is additive. Migration version 7 adds indexes only. Migration
+version 8 promotes the immutable input-bundle identity onto decision-recording
+ledger rows and adds its tenant-scoped ordering index. Existing
 audit DDL, rows, preimages, outbox, and verification remain byte-compatible.
 Future event schema versions add dispatch entries and pure upcasts for projection
 use. They never rewrite an old row or hash. Prompt 19 owns decision re-evaluation,

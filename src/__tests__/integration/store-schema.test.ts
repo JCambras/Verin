@@ -185,6 +185,76 @@ describe("store schema hardening (integration)", () => {
       expect(idx.rows[0]!.indexdef).toContain("(org_id, input_bundle_id)");
     });
 
+    it("indexes tenant-scoped first-recording predecessor checks", async () => {
+      const indexes = await db.query<{
+        indexname: string;
+        indexdef: string;
+      }>(
+        `SELECT indexname, indexdef
+           FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND indexname IN (
+              'decision_ledger_evidence_recorded',
+              'decision_ledger_decision_recorded',
+              'decision_ledger_bundle_recorded'
+            )`,
+      );
+      const byName = new Map(
+        indexes.rows.map((row) => [row.indexname, row.indexdef]),
+      );
+      expect(byName.get("decision_ledger_evidence_recorded")).toContain(
+        "(org_id, evidence_snapshot_id, sequence)",
+      );
+      expect(byName.get("decision_ledger_decision_recorded")).toContain(
+        "(org_id, decision_id, sequence)",
+      );
+      expect(byName.get("decision_ledger_bundle_recorded")).toContain(
+        "(org_id, input_bundle_id, sequence)",
+      );
+
+      await db.exec("SET enable_seqscan = off");
+      const plans = await Promise.all([
+        db.query<Record<string, string>>(
+          `EXPLAIN (COSTS OFF)
+           SELECT sequence FROM decision_ledger earlier
+            WHERE earlier.org_id = $1
+              AND earlier.evidence_snapshot_id = $2
+              AND earlier.event_type = 'EvidenceSnapshotRecorded'
+              AND earlier.sequence < $3
+            ORDER BY earlier.sequence DESC
+            LIMIT 1`,
+          [ORG, "evidence:test", 100],
+        ),
+        db.query<Record<string, string>>(
+          `EXPLAIN (COSTS OFF)
+           SELECT sequence FROM decision_ledger earlier
+            WHERE earlier.org_id = $1
+              AND earlier.decision_id = $2
+              AND earlier.event_type = 'DecisionRecorded'
+              AND earlier.sequence < $3
+            ORDER BY earlier.sequence DESC
+            LIMIT 1`,
+          [ORG, "decision:test", 100],
+        ),
+        db.query<Record<string, string>>(
+          `EXPLAIN (COSTS OFF)
+           SELECT sequence FROM decision_ledger earlier
+            WHERE earlier.org_id = $1
+              AND earlier.input_bundle_id = $2
+              AND earlier.event_type = 'DecisionRecorded'
+              AND earlier.sequence < $3
+            ORDER BY earlier.sequence DESC
+            LIMIT 1`,
+          [ORG, "bundle:test", 100],
+        ),
+      ]);
+      const rendered = plans.map((plan) =>
+        plan.rows.flatMap((row) => Object.values(row)).join("\n"));
+      expect(rendered[0]).toContain("decision_ledger_evidence_recorded");
+      expect(rendered[1]).toContain("decision_ledger_decision_recorded");
+      expect(rendered[2]).toContain("decision_ledger_bundle_recorded");
+    });
+
     it("indexes both sides of immutable active-reservation lookup", async () => {
       const indexes = await db.query<{
         indexname: string;

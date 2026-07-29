@@ -16,56 +16,66 @@ export async function verifyReplaySourceCoverage(
 ): Promise<number> {
   const coverage = await tx.query<ReplaySourceCoverageRow>(
     `WITH bindable_sources AS (
-       SELECT 'evidence' AS source_kind, evidence.id AS source_id
-         FROM evidence_snapshots evidence WHERE evidence.org_id = $1
+       SELECT 'evidence' AS source_kind, bindable_evidence.id AS source_id
+         FROM evidence_snapshots bindable_evidence
+        WHERE bindable_evidence.org_id = $1
        UNION ALL
-       SELECT 'bundle', bundle.id
-         FROM decision_input_bundles bundle WHERE bundle.org_id = $1
+       SELECT 'bundle', bindable_bundle.id
+         FROM decision_input_bundles bindable_bundle
+        WHERE bindable_bundle.org_id = $1
        UNION ALL
-       SELECT 'decision', decision.id
-         FROM decision_records decision WHERE decision.org_id = $1
+       SELECT 'decision', bindable_decision.id
+         FROM decision_records bindable_decision
+        WHERE bindable_decision.org_id = $1
      )
      SELECT
-       (SELECT count(*) FROM evidence_snapshots s
-         WHERE s.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_ledger l
-            WHERE l.org_id = s.org_id
-              AND l.evidence_snapshot_id = s.id
-              AND l.event_type = 'EvidenceSnapshotRecorded'
+       (SELECT count(*) FROM evidence_snapshots orphan_evidence_source
+         WHERE orphan_evidence_source.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_ledger evidence_recording
+            WHERE evidence_recording.org_id = orphan_evidence_source.org_id
+              AND evidence_recording.evidence_snapshot_id =
+                  orphan_evidence_source.id
+              AND evidence_recording.event_type = 'EvidenceSnapshotRecorded'
          )) AS orphan_evidence,
-       (SELECT count(*) FROM decision_input_bundles b
-         WHERE b.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_records r
-            WHERE r.org_id = b.org_id AND r.input_bundle_id = b.id
+       (SELECT count(*) FROM decision_input_bundles orphan_bundle_source
+         WHERE orphan_bundle_source.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_records bundle_decision
+            WHERE bundle_decision.org_id = orphan_bundle_source.org_id
+              AND bundle_decision.input_bundle_id = orphan_bundle_source.id
          )) AS orphan_bundles,
-       (SELECT count(*) FROM decision_records r
-         WHERE r.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_ledger l
-            WHERE l.org_id = r.org_id
-              AND l.decision_id = r.id
-              AND l.event_type = 'DecisionRecorded'
+       (SELECT count(*) FROM decision_records orphan_decision_source
+         WHERE orphan_decision_source.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM decision_ledger decision_recording
+            WHERE decision_recording.org_id = orphan_decision_source.org_id
+              AND decision_recording.decision_id = orphan_decision_source.id
+              AND decision_recording.event_type = 'DecisionRecorded'
          )) AS orphan_decisions,
-       (SELECT count(*) FROM decision_replay_source_provenance binding
-         WHERE binding.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM bindable_sources source
-            WHERE source.source_kind = binding.source_kind
-              AND source.source_id = binding.source_id
+       (SELECT count(*)
+          FROM decision_replay_source_provenance orphan_binding
+         WHERE orphan_binding.org_id = $1 AND NOT EXISTS (
+           SELECT 1 FROM bindable_sources orphan_binding_source
+            WHERE orphan_binding_source.source_kind =
+                  orphan_binding.source_kind
+              AND orphan_binding_source.source_id = orphan_binding.source_id
          )) AS orphan_bindings,
-       (SELECT count(*) FROM bindable_sources source
+       (SELECT count(*) FROM bindable_sources missing_binding_source
          WHERE NOT EXISTS (
-           SELECT 1 FROM decision_replay_source_provenance binding
-            WHERE binding.org_id = $1
-              AND binding.source_kind = source.source_kind
-              AND binding.source_id = source.source_id
+           SELECT 1
+             FROM decision_replay_source_provenance missing_source_binding
+            WHERE missing_source_binding.org_id = $1
+              AND missing_source_binding.source_kind =
+                  missing_binding_source.source_kind
+              AND missing_source_binding.source_id =
+                  missing_binding_source.source_id
          )) AS missing_bindings,
-       (SELECT count(*) FROM evidence_snapshots evidence
-         WHERE evidence.org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundles bundle
-         WHERE bundle.org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundle_evidence membership
-         WHERE membership.org_id = $1) +
-       (SELECT count(*) FROM decision_records decision
-         WHERE decision.org_id = $1) AS source_count`,
+       (SELECT count(*) FROM evidence_snapshots count_evidence
+         WHERE count_evidence.org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundles count_bundle
+         WHERE count_bundle.org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundle_evidence count_membership
+         WHERE count_membership.org_id = $1) +
+       (SELECT count(*) FROM decision_records count_decision
+         WHERE count_decision.org_id = $1) AS source_count`,
     [orgId],
   );
   const row = coverage.rows[0];

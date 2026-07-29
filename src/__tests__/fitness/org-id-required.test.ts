@@ -4,6 +4,7 @@ import { SyntaxKind, type SourceFile } from "ts-morph";
 import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
 import { MIGRATION_SQL, MIGRATIONS, type PreflightProbe } from "@infra/store/migrations";
 import {
+  DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "@infra/store/decision-ledger-migration";
@@ -61,6 +62,10 @@ export function unclassifiedTables(ddl: string, dataTables: readonly string[], n
 // normalized SQL exactly: a substring/containment match would silently exempt
 // any superset query (e.g. the login query grown an "OR role = $2" arm).
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
+  {
+    sql: normalizeSql(DECISION_LEDGER_BUNDLE_IDENTITY_SQL),
+    why: "forward-only migration 8 backfills the promoted bundle identity for every existing tenant",
+  },
   {
     sql: normalizeSql(DECISION_LEDGER_GENERATIONS_SQL),
     why: "forward-only migration 5 validates and backfills every existing tenant",
@@ -122,10 +127,13 @@ function normalizeSqlIdentifiers(sql: string): string {
 }
 
 const BOUND_TENANT_VALUE = "(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*)";
-const TENANT_EQUAL_VALUE =
-  `(?:${BOUND_TENANT_VALUE}|'[^']*'|\\d+)`;
 const BOUND_TENANT_LIST =
   `\\(\\s*${BOUND_TENANT_VALUE}(?:\\s*,\\s*${BOUND_TENANT_VALUE})*\\s*\\)`;
+
+interface ConstraintState {
+  readonly bound: Set<string>;
+  readonly edges: Array<readonly [string, string]>;
+}
 
 function tenantTableAliases(sql: string): string[] {
   const normalized = normalizeSqlIdentifiers(sql);
@@ -143,52 +151,344 @@ function tenantTableAliases(sql: string): string[] {
   return aliases;
 }
 
-function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<string> {
-  const governed = new Set(aliases);
-  const scoped = new Set<string>();
-  const edges = new Map<string, Set<string>>();
-  for (const alias of governed) edges.set(alias, new Set());
-  for (const match of sql.matchAll(
+function topLevelWords(sql: string): Array<{
+  readonly word: string;
+  readonly start: number;
+  readonly end: number;
+  readonly depth: number;
+}> {
+  const words: Array<{
+    word: string;
+    start: number;
+    end: number;
+    depth: number;
+  }> = [];
+  let depth = 0;
+  for (let index = 0; index < sql.length;) {
+    const char = sql[index]!;
+    if (char === "'") {
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] !== "'") {
+          index += 1;
+        } else if (sql[index + 1] === "'") {
+          index += 2;
+        } else {
+          index += 1;
+          break;
+        }
+      }
+      continue;
+    }
+    if (char === "(") {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (/[a-z_]/i.test(char)) {
+      const start = index;
+      while (index < sql.length && /[a-z0-9_$]/i.test(sql[index]!)) {
+        index += 1;
+      }
+      words.push({
+        word: sql.slice(start, index).toLowerCase(),
+        start,
+        end: index,
+        depth,
+      });
+      continue;
+    }
+    index += 1;
+  }
+  return words;
+}
+
+function conditionClauses(sql: string): string[] {
+  const words = topLevelWords(sql);
+  const boundaries = new Set([
+    "cross", "for", "full", "group", "having", "inner", "join", "left",
+    "limit", "offset", "on", "order", "outer", "returning", "right",
+    "union", "where",
+  ]);
+  return words.flatMap((word, index) => {
+    if (word.word !== "where" && word.word !== "on") return [];
+    let scopeEnd = sql.length;
+    let depth = word.depth;
+    for (let cursor = word.end; cursor < sql.length; cursor += 1) {
+      if (sql[cursor] === "'") {
+        cursor += 1;
+        while (cursor < sql.length) {
+          if (sql[cursor] !== "'") {
+            cursor += 1;
+            continue;
+          }
+          if (sql[cursor + 1] === "'") {
+            cursor += 1;
+            continue;
+          }
+          break;
+        }
+        continue;
+      }
+      if (sql[cursor] === "(") depth += 1;
+      if (sql[cursor] === ")") depth -= 1;
+      if (depth < word.depth) {
+        scopeEnd = cursor;
+        break;
+      }
+    }
+    const boundary = words.slice(index + 1).find((candidate) =>
+      candidate.depth === word.depth &&
+      boundaries.has(candidate.word))?.start ?? sql.length;
+    const end = Math.min(scopeEnd, boundary);
+    return [sql.slice(word.end, end).trim()];
+  });
+}
+
+function stripEnclosingParentheses(value: string): string {
+  let current = value.trim();
+  while (current.startsWith("(") && current.endsWith(")")) {
+    let depth = 0;
+    let closesAtEnd = false;
+    for (let index = 0; index < current.length; index += 1) {
+      if (current[index] === "'") {
+        index += 1;
+        while (index < current.length) {
+          if (current[index] !== "'") continue;
+          if (current[index + 1] === "'") {
+            index += 1;
+            continue;
+          }
+          break;
+        }
+        continue;
+      }
+      if (current[index] === "(") depth += 1;
+      if (current[index] === ")") depth -= 1;
+      if (depth === 0) {
+        closesAtEnd = index === current.length - 1;
+        break;
+      }
+    }
+    if (!closesAtEnd) break;
+    current = current.slice(1, -1).trim();
+  }
+  return current;
+}
+
+function splitTopLevelBoolean(
+  value: string,
+  operator: "and" | "or",
+): string[] {
+  const words = topLevelWords(value).filter((word) =>
+    word.depth === 0 && word.word === operator);
+  if (words.length === 0) return [value];
+  const parts: string[] = [];
+  let start = 0;
+  for (const word of words) {
+    parts.push(value.slice(start, word.start));
+    start = word.end;
+  }
+  parts.push(value.slice(start));
+  return parts;
+}
+
+function maskSubqueryBodies(value: string): string {
+  const masked = [...value];
+  for (let start = 0; start < value.length; start += 1) {
+    if (value[start] === "'") {
+      start += 1;
+      while (start < value.length) {
+        if (value[start] !== "'") {
+          start += 1;
+        } else if (value[start + 1] === "'") {
+          start += 2;
+        } else {
+          break;
+        }
+      }
+      continue;
+    }
+    if (value[start] !== "(") continue;
+    let depth = 1;
+    let end = start + 1;
+    for (; end < value.length && depth > 0; end += 1) {
+      if (value[end] === "'") {
+        end += 1;
+        while (end < value.length) {
+          if (value[end] !== "'") {
+            end += 1;
+          } else if (value[end + 1] === "'") {
+            end += 2;
+          } else {
+            break;
+          }
+        }
+      } else if (value[end] === "(") {
+        depth += 1;
+      } else if (value[end] === ")") {
+        depth -= 1;
+      }
+    }
+    const close = end - 1;
+    if (
+      depth === 0 &&
+      /^(?:select|with|values)\b/i.test(value.slice(start + 1, close).trim())
+    ) {
+      masked.fill(" ", start + 1, close);
+      start = close;
+    }
+  }
+  return masked.join("");
+}
+
+function atomConstraints(
+  atom: string,
+  governed: ReadonlySet<string>,
+): ConstraintState {
+  const searchable = maskSubqueryBodies(atom);
+  const bound = new Set<string>();
+  const edges: Array<readonly [string, string]> = [];
+  for (const alias of governed) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (
+      new RegExp(
+        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
+        "i",
+      ).test(searchable) ||
+      new RegExp(
+        `${BOUND_TENANT_VALUE}\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
+        "i",
+      ).test(searchable)
+    ) {
+      bound.add(alias);
+    }
+  }
+  if (governed.size === 1) {
+    const only = [...governed][0]!;
+    if (
+      new RegExp(
+        `(?:^|[^.\\w$])org_id\\s*(?:=\\s*${BOUND_TENANT_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
+        "i",
+      ).test(searchable) ||
+      new RegExp(
+        `${BOUND_TENANT_VALUE}\\s*=\\s*org_id\\b`,
+        "i",
+      ).test(searchable)
+    ) {
+      bound.add(only);
+    }
+  }
+  for (const match of searchable.matchAll(
     /\b([a-z_][a-z0-9_$]*)\s*\.\s*org_id\s*=\s*([a-z_][a-z0-9_$]*)\s*\.\s*org_id\b/gi,
   )) {
     const left = match[1]!.toLowerCase();
     const right = match[2]!.toLowerCase();
     if (governed.has(left) && governed.has(right)) {
-      edges.get(left)!.add(right);
-      edges.get(right)!.add(left);
+      edges.push([left, right]);
     }
   }
-  for (const alias of governed) {
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (
-      new RegExp(
-        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*${TENANT_EQUAL_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
-        "i",
-      ).test(sql) ||
-      new RegExp(
-        `(?:${BOUND_TENANT_VALUE}|'[^']*')\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
-        "i",
-      ).test(sql)
-    ) {
-      scoped.add(alias);
-    }
+  return { bound, edges };
+}
+
+function mergeConstraints(
+  left: ConstraintState,
+  right: ConstraintState,
+): ConstraintState {
+  return {
+    bound: new Set([...left.bound, ...right.bound]),
+    edges: [...left.edges, ...right.edges],
+  };
+}
+
+function constraintAlternatives(
+  value: string,
+  governed: ReadonlySet<string>,
+): ConstraintState[] {
+  const expression = stripEnclosingParentheses(value);
+  if (/^not\b/i.test(expression)) {
+    return [{ bound: new Set(), edges: [] }];
   }
-  if (
-    governed.size === 1 &&
-    new RegExp(
-      `\\b(?:where|on)\\b[\\s\\S]*?\\borg_id\\s*(?:=\\s*${TENANT_EQUAL_VALUE}|\\bin\\s*${BOUND_TENANT_LIST})`,
-      "i",
-    ).test(sql)
-  ) {
-    scoped.add(aliases[0]!);
+  const disjuncts = splitTopLevelBoolean(expression, "or");
+  if (disjuncts.length > 1) {
+    return disjuncts.flatMap((part) =>
+      constraintAlternatives(part, governed));
   }
-  const pending = [...scoped];
+  const conjuncts = splitTopLevelBoolean(expression, "and");
+  if (conjuncts.length === 1) {
+    return [atomConstraints(expression, governed)];
+  }
+  let alternatives: ConstraintState[] = [{ bound: new Set(), edges: [] }];
+  for (const part of conjuncts) {
+    const next = constraintAlternatives(part, governed);
+    if (alternatives.length * next.length > 256) return [];
+    alternatives = alternatives.flatMap((left) =>
+      next.map((right) => mergeConstraints(left, right)));
+  }
+  return alternatives;
+}
+
+function constraintScopesAlias(
+  state: ConstraintState,
+  alias: string,
+): boolean {
+  const pending = [alias];
+  const visited = new Set<string>();
   while (pending.length > 0) {
     const current = pending.pop()!;
-    for (const neighbor of edges.get(current) ?? []) {
-      if (scoped.has(neighbor)) continue;
-      scoped.add(neighbor);
-      pending.push(neighbor);
+    if (state.bound.has(current)) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const [left, right] of state.edges) {
+      if (left === current && !visited.has(right)) pending.push(right);
+      if (right === current && !visited.has(left)) pending.push(left);
+    }
+  }
+  return false;
+}
+
+function hasTenantLiteral(sql: string): boolean {
+  const tenantColumn =
+    "(?:\\b[a-z_][a-z0-9_$]*\\s*\\.\\s*)?org_id\\b";
+  const literal = "(?:'[^']*'|(?<![$\\w])\\d+(?!\\w))";
+  if (
+    new RegExp(`${tenantColumn}\\s*=\\s*${literal}`, "i").test(sql) ||
+    new RegExp(`${literal}\\s*=\\s*${tenantColumn}`, "i").test(sql)
+  ) {
+    return true;
+  }
+  const lists = sql.matchAll(
+    new RegExp(`${tenantColumn}\\s+in\\s*\\(([^)]*)\\)`, "gi"),
+  );
+  return [...lists].some((match) =>
+    /'[^']*'|(?<![$\w])\d+(?!\w)/.test(match[1] ?? ""));
+}
+
+function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<string> {
+  const governed = new Set(aliases);
+  const scoped = new Set<string>();
+  if (hasTenantLiteral(sql)) return scoped;
+  let alternatives: ConstraintState[] = [{ bound: new Set(), edges: [] }];
+  const clauses = conditionClauses(sql);
+  for (const clause of clauses) {
+    const next = constraintAlternatives(clause, governed);
+    if (next.length === 0 || alternatives.length * next.length > 256) {
+      return scoped;
+    }
+    alternatives = alternatives.flatMap((left) =>
+      next.map((right) => mergeConstraints(left, right)));
+  }
+  for (const alias of governed) {
+    if (
+      alternatives.length > 0 &&
+      alternatives.every((state) => constraintScopesAlias(state, alias))
+    ) {
+      scoped.add(alias);
     }
   }
   return scoped;
@@ -199,8 +499,10 @@ export function detectMissingOrgId(sql: string): boolean {
   const normalized = normalizeSql(sql);
   if (REVIEWED_ESCAPES.some((e) => normalized === e.sql)) return false;
   const identifierNormalized = normalizeSqlIdentifiers(normalized);
-  const aliases = [...new Set(tenantTableAliases(identifierNormalized))];
+  const referencedAliases = tenantTableAliases(identifierNormalized);
+  const aliases = [...new Set(referencedAliases)];
   if (aliases.length === 0) return false;
+  if (aliases.length !== referencedAliases.length) return true;
   const scoped = scopedTenantAliases(identifierNormalized, aliases);
   return aliases.some((alias) => !scoped.has(alias));
 }
@@ -259,7 +561,8 @@ describe("org-id-required fence", () => {
     for (const sf of realProject().getSourceFiles()) {
       const rel = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
       for (const item of sqlOccurrences(sf)) {
-        if (detectMissingOrgId(item.sql)) {
+        const missing = detectMissingOrgId(item.sql);
+        if (missing) {
           offenders.push(
             `${rel}:${item.line}: ${normalizeSql(item.sql).slice(0, 70)}`,
           );
@@ -329,6 +632,16 @@ describe("org-id-required fence", () => {
           "SELECT * FROM decision_ledger dl JOIN households h ON h.org_id = dl.org_id WHERE h.org_id = $1",
         ),
       ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT r.decision_hash, r.input_bundle_id, b.bundle_hash FROM decision_records r JOIN decision_input_bundles b ON b.org_id = r.org_id AND b.id = r.input_bundle_id WHERE r.org_id = $1 AND r.id = $2",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT id FROM decision_ledger WHERE org_id = $1 AND evidence_snapshot_id = $2 AND event_type = 'EvidenceSnapshotRecorded' ORDER BY sequence DESC LIMIT 1",
+        ),
+      ).toBe(false);
     });
     it("allows a query that filters by org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE org_id = $1 AND id = $2")).toBe(false);
@@ -347,6 +660,43 @@ describe("org-id-required fence", () => {
       expect(
         detectMissingOrgId(
           "SELECT * FROM decision_ledger dl WHERE dl.org_id IN ('firm-a')",
+        ),
+      ).toBe(true);
+    });
+    it("requires a bound tenant predicate in every disjunct and rejects tenant literals", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id = $1 OR TRUE",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE (dl.org_id = $1 AND dl.event_type = $2) OR (dl.org_id = $3 AND dl.event_type = $4)",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id = $1 AND (dl.event_type = $2 OR dl.event_type = $3)",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id = 'firm-a'",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE 'firm-a' = dl.org_id",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl WHERE dl.org_id = $1 AND EXISTS (SELECT 1 FROM households h WHERE h.org_id = $2 OR TRUE)",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger scoped WHERE scoped.org_id = $1 AND EXISTS (SELECT 1 FROM households scoped WHERE TRUE)",
         ),
       ).toBe(true);
     });

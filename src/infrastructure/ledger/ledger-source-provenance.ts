@@ -63,6 +63,52 @@ function bindingProvenance(
   return provenance;
 }
 
+async function hasEarlierSourceRecording(
+  tx: SqlQueryable,
+  orgId: string,
+  kind: SourceKind,
+  id: string,
+  beforeSequence: number,
+): Promise<boolean> {
+  const params = [orgId, id, beforeSequence];
+  const result = kind === "evidence"
+    ? await tx.query<{ sequence: number | string }>(
+        `SELECT sequence
+           FROM decision_ledger earlier
+          WHERE earlier.org_id = $1
+            AND earlier.evidence_snapshot_id = $2
+            AND earlier.event_type = 'EvidenceSnapshotRecorded'
+            AND earlier.sequence < $3
+          ORDER BY earlier.sequence DESC
+          LIMIT 1`,
+        params,
+      )
+    : kind === "decision"
+    ? await tx.query<{ sequence: number | string }>(
+        `SELECT sequence
+           FROM decision_ledger earlier
+          WHERE earlier.org_id = $1
+            AND earlier.decision_id = $2
+            AND earlier.event_type = 'DecisionRecorded'
+            AND earlier.sequence < $3
+          ORDER BY earlier.sequence DESC
+          LIMIT 1`,
+        params,
+      )
+    : await tx.query<{ sequence: number | string }>(
+        `SELECT sequence
+           FROM decision_ledger earlier
+          WHERE earlier.org_id = $1
+            AND earlier.input_bundle_id = $2
+            AND earlier.event_type = 'DecisionRecorded'
+            AND earlier.sequence < $3
+          ORDER BY earlier.sequence DESC
+          LIMIT 1`,
+        params,
+      );
+  return result.rows.length > 0;
+}
+
 async function loadBinding(
   tx: SqlQueryable,
   orgId: string,
@@ -72,7 +118,7 @@ async function loadBinding(
 ): Promise<RecordProvenance | null> {
   const result = await tx.query<BindingRow>(
     `SELECT binding.recording_entry_id, ledger.event_type, ledger.decision_id,
-            ledger.evidence_snapshot_id, record.input_bundle_id,
+            ledger.evidence_snapshot_id, ledger.input_bundle_id,
             ledger.sequence,
             ledger.prov_source, ledger.prov_asof, ledger.prov_confidence,
             ledger.schema_version, ledger.serializer_version
@@ -80,9 +126,6 @@ async function loadBinding(
        JOIN decision_ledger ledger
          ON ledger.org_id = binding.org_id
         AND ledger.id = binding.recording_entry_id
-       LEFT JOIN decision_records record
-         ON record.org_id = ledger.org_id
-        AND record.id = ledger.decision_id
       WHERE binding.org_id = $1
         AND binding.source_kind = $2
         AND binding.source_id = $3`,
@@ -99,32 +142,15 @@ async function loadBinding(
       UNVERIFIED_REPLAY_SOURCE_PROVENANCE,
     );
   }
-  let hasEarlierRecording = false;
-  if (row && !verifiedRecordingEntryIds) {
-    const earlier = await tx.query<{ found: number }>(
-      `SELECT 1 AS found
-         FROM decision_ledger earlier
-         LEFT JOIN decision_records earlier_record
-           ON earlier_record.org_id = earlier.org_id
-          AND earlier_record.id = earlier.decision_id
-        WHERE earlier.org_id = $1
-          AND earlier.sequence < $4
-          AND (
-            ($2 = 'evidence'
-              AND earlier.event_type = 'EvidenceSnapshotRecorded'
-              AND earlier.evidence_snapshot_id = $3)
-            OR ($2 = 'decision'
-              AND earlier.event_type = 'DecisionRecorded'
-              AND earlier.decision_id = $3)
-            OR ($2 = 'bundle'
-              AND earlier.event_type = 'DecisionRecorded'
-              AND earlier_record.input_bundle_id = $3)
-          )
-        LIMIT 1`,
-      [orgId, kind, id, Number(row.sequence)],
-    );
-    hasEarlierRecording = earlier.rows.length > 0;
-  }
+  const hasEarlierRecording = row
+    ? await hasEarlierSourceRecording(
+        tx,
+        orgId,
+        kind,
+        id,
+        Number(row.sequence),
+      )
+    : false;
   return bindingProvenance(row, kind, id, hasEarlierRecording);
 }
 
