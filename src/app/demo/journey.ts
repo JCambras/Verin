@@ -26,6 +26,7 @@ import {
   firmById,
   scenarioById,
 } from "./data";
+import { decisionEvidenceSnapshotFor } from "./decision-evidence";
 import {
   decisionAuthorityClaimFor,
   decisionIdentityFor,
@@ -54,6 +55,7 @@ function stopNoteOf(scenarioId: string, firmId: string): string | null {
 
 export function getJourney(scenarioId: string, firmId: string): DecisionJourneyVM {
   const scenario = scenarioById(scenarioId);
+  const evidence = decisionEvidenceSnapshotFor(scenario);
   const firm = firmById(firmId);
   const reached = reachOf(scenario.id, firm.id);
   const stopNote = stopNoteOf(scenario.id, firm.id);
@@ -71,13 +73,14 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
       precedence: policyTrace.rows,
       authority: decisionAuthorityClaimFor(decisionAuthority),
     },
+    evidence,
   );
   return {
     scenarioId: scenario.id,
     firmId: firm.id,
-    workspace: buildWorkspace(scenario),
+    workspace: buildWorkspace(scenario, evidence),
     intent: buildIntent(scenario),
-    evidence: buildEvidence(scenario),
+    evidence: buildEvidence(scenario, evidence),
     recommendation,
     policyTrace,
     approvals: reached.authority
@@ -91,6 +94,7 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
       identity,
       disposition,
       authority: finalAuthority,
+      evidence,
     }),
   };
 }

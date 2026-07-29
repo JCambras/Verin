@@ -58,7 +58,53 @@ export function RequestBody({
           </div>
           <div>
             <dt className="text-xs text-slate-600">Pinned evidence</dt>
-            <dd className="break-all font-mono text-xs text-slate-800">{vm.request.evidenceRef}</dd>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.evidence.ref}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Evidence retrieved</dt>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.evidence.retrievedAt}
+            </dd>
+          </div>
+          <div>
+            <dt className="sr-only">Evidence source identities</dt>
+            <dd>
+              <details className="group text-xs text-slate-800">
+                <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-slate-200 px-3 font-medium text-slate-700">
+                  <span aria-hidden className="group-open:hidden">
+                    +
+                  </span>
+                  <span aria-hidden className="hidden group-open:inline">
+                    −
+                  </span>
+                  View evidence source identities
+                </summary>
+                <ul className="flex min-w-0 flex-col gap-2 px-3 pb-1 pt-3">
+                  {[
+                    snapshot.evidence.availableCash,
+                    snapshot.evidence.pendingApprovedActivity,
+                    snapshot.evidence.plannedMonthlyWithdrawal,
+                    snapshot.evidence.bankInstruction,
+                    snapshot.evidence.destinationRestriction,
+                    ...snapshot.evidence.conflictingFundingInstructions,
+                  ].map((datum) => (
+                    <li
+                      key={`${datum.sourceRef}:${datum.subjectRef}`}
+                      className="min-w-0"
+                    >
+                      <span className="block break-words font-mono">
+                        {datum.sourceRef}
+                      </span>
+                      <span className="block break-words font-mono text-slate-600">
+                        {datum.subjectRef}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </dd>
           </div>
           {snapshot.firms.map((firm) => (
             <div key={firm.firmId}>

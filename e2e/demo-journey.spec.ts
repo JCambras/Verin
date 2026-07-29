@@ -196,9 +196,69 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByRole("heading", { name: "Every outcome has a proof trail" })).toBeVisible();
   await expect(page.getByTestId("proof-firm-a")).toBeVisible();
   await expect(page.getByTestId("proof-firm-b")).toBeVisible();
+  await expect(page.getByTestId("proof-firm-a-eligible-role")).toHaveText(
+    "Operations",
+  );
+  await expect(page.getByTestId("proof-firm-b-eligible-role")).toHaveText(
+    "None - automatic or not reached",
+  );
+  await expect(
+    page.getByTestId("proof-firm-a-requester-participation"),
+  ).toHaveText("Unbound in this demonstration");
+  await expect(
+    page.getByTestId("proof-firm-b-requester-participation"),
+  ).toHaveText("Unbound in this demonstration");
   await expect(page.getByRole("button", { name: "Export decision record" })).toBeVisible();
   await checkAxe(page, "setup-proof");
   await snap(page, 9, "setup-proof");
+});
+
+test("bank-change impact follows the complete Firm B authority selection", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/setup");
+  for (const label of [
+    "Continue with both firms",
+    "Confirm required controls",
+    "Use this starting posture",
+  ]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+
+  await page
+    .getByTestId("choice-bank-change-firm-b")
+    .getByRole("radio", { name: /Specialist review/ })
+    .check();
+  await page
+    .getByTestId("choice-threshold-firm-b")
+    .getByRole("radio", { name: /Above \$100,000/ })
+    .check();
+  await page.getByRole("button", { name: "Review signed impact" }).click();
+
+  const impact = page
+    .getByTestId("signed-impact-recent-bank")
+    .getByTestId("impact-firm-b");
+  await expect(impact).toContainText(
+    "Specialist review; no dual approval at this amount",
+  );
+  await expect(impact).toContainText(
+    "configured $100,000 threshold",
+  );
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await page
+    .getByTestId("choice-threshold-firm-b")
+    .getByRole("radio", { name: /Above \$25,000/ })
+    .check();
+  await page.getByRole("button", { name: "Review signed impact" }).click();
+  await expect(impact).toContainText(
+    "Specialist review, then two distinct operations approvers",
+  );
+  await expect(impact).toContainText(
+    "configured $25,000 threshold",
+  );
+  await checkAxe(page, "setup-threshold-sensitive-impact");
 });
 
 /** The proof step claims hash-bound identity. Following each export must land on a
@@ -256,6 +316,16 @@ test("each firm's export lands on the record whose identifiers the proof step sh
         ? "Captain-signed configuration"
         : "Recommended configuration · pending captain signoff",
     );
+    await expect(
+      page.getByTestId("record-identity-eligible-role"),
+    ).toHaveText(
+      firmId === "firm-a"
+        ? "Operations"
+        : "None - automatic or not reached",
+    );
+    await expect(
+      page.getByTestId("record-identity-requester-participation"),
+    ).toHaveText("Unbound in this demonstration");
     // The numbers an examiner checks the horizon prose against, on the artifact itself.
     await expect(page.getByTestId("record-reserve-horizon")).toHaveText(
       firmId === "firm-a" ? "6 months of planned withdrawals" : "12 months of planned withdrawals",

@@ -14,7 +14,12 @@ import {
   deriveArtifactProvenance,
 } from "@contracts/provenance";
 import type { FactVM, FakeClass } from "./model";
-import { DEMO_NOW, OBSERVED_RECENT } from "./data";
+import {
+  DEMO_NOW,
+  OBSERVED_RECENT,
+  scenarioById,
+} from "./data";
+import { decisionEvidenceSnapshotFor } from "./decision-evidence";
 
 /** The SourceSystem a fake class renders under (drives the FreshValue "source · as of"
  * label). The precise fake class is always ALSO carried by a DevProvenanceBadge. */
@@ -54,9 +59,14 @@ export function derivedMetric(value: number, format: MetricFormat, inputs: reado
 /** The leaves every reserve figure stands on. Named so a caller cannot quietly drop
  * one: an omitted leaf is exactly how a derived figure claims a narrower lineage than
  * the inputs it was computed from (ADR-0022's flattening rule). */
-const SIGNED_BALANCE = prov("synthetic-fixture", OBSERVED_RECENT);
-const SIGNED_PENDING = prov("synthetic-fixture", OBSERVED_RECENT);
-const SIGNED_SCHEDULE = prov("synthetic-fixture", OBSERVED_RECENT);
+const SIGNED_EVIDENCE = decisionEvidenceSnapshotFor(
+  scenarioById("recent-bank-change-block"),
+);
+const SIGNED_BALANCE = SIGNED_EVIDENCE.availableCash.provenance;
+const SIGNED_PENDING =
+  SIGNED_EVIDENCE.pendingApprovedActivity.provenance;
+const SIGNED_SCHEDULE =
+  SIGNED_EVIDENCE.plannedMonthlyWithdrawal.provenance;
 const DEMO_REQUEST_AMOUNT = prov("user-entered-demo-input", DEMO_NOW);
 
 /** Where the reserve HORIZON came from. It is a FIRMS fixture on the journey and an

@@ -226,10 +226,21 @@ export interface AutomaticAuthorityVM {
   readonly state: string;
 }
 
+export type RequesterParticipation =
+  | {
+      readonly mode: "unbound";
+    }
+  | {
+      readonly mode: "excluded";
+      readonly constraint: "may-not-satisfy-both-approvals";
+    };
+
 export interface StagedAuthorityVM {
   readonly mode: "staged";
   readonly summary: string;
   readonly detail: string;
+  readonly eligibleRole: "operations";
+  readonly requesterParticipation: RequesterParticipation;
   readonly stages: readonly [ApprovalStageVM, ...ApprovalStageVM[]];
 }
 
@@ -352,6 +363,8 @@ export interface ActivatedConfigurationRecordVM {
   readonly configurationPostureStatus: string;
   readonly configurationPostureLabel: string;
   readonly configurationProvenance: string;
+  readonly eligibleRole: "operations" | null;
+  readonly requesterParticipation: RequesterParticipation["mode"];
   readonly activationActorId: string;
   readonly activationActorRole: Role;
   readonly attestationStatementVersion: string;

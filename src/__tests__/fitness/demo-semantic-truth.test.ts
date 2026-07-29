@@ -27,6 +27,10 @@ import {
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
 import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "@app/demo/decision-evidence";
+import {
   approvalReceiptHashFor,
   decisionAuthorityClaimFor,
   decisionBundlePreimageFor,
@@ -39,6 +43,7 @@ import {
   hashCanonicalPreimage,
 } from "@app/demo/decision-identity";
 import { headroomMinor } from "@app/demo/build-decision";
+import { buildEvidence } from "@app/demo/build-context";
 import { buildSafety } from "@app/demo/build-outcome";
 import {
   ACTIVATED_RESERVE_HORIZON,
@@ -60,12 +65,14 @@ import {
 } from "@app/demo/setup-activation-input";
 import {
   POSTURE_CONFIGURATION_LABEL,
+  SETUP_POLICY_GROUP_IDS,
   configurationPosture,
   type SetupActivatedSnapshotVM,
   type SetupAuthorityPosture,
   type SetupFirmId,
   type SetupSelections,
   type SetupTruthLabel,
+  setupFirmSelectionKey,
 } from "@app/demo/setup-model";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type { DisplayMetric } from "@contracts/metric";
@@ -318,12 +325,12 @@ export function staleEvidenceViolations(
   const violations: string[] = [];
   if (actual.availableCashAsOf !== truth.availableCashAsOf) {
     violations.push(
-      `${sourceRef("src/app/demo/build-context.ts", "const availableCashAsOf")} :: available cash uses ${actual.availableCashAsOf}, not the signed ${truth.availableCashAsOf}`,
+      `${sourceRef("src/app/demo/decision-evidence.ts", "availableCash: evidenceValue(")} :: available cash uses ${actual.availableCashAsOf}, not the signed ${truth.availableCashAsOf}`,
     );
   }
   if (actual.plannedWithdrawalsAsOf !== truth.plannedWithdrawalsAsOf) {
     violations.push(
-      `${sourceRef("src/app/demo/build-context.ts", "const plannedWithdrawalsAsOf")} :: planned withdrawals use ${actual.plannedWithdrawalsAsOf}, not the signed stale timestamp ${truth.plannedWithdrawalsAsOf}`,
+      `${sourceRef("src/app/demo/decision-evidence.ts", "plannedMonthlyWithdrawal: evidenceValue(")} :: planned withdrawals use ${actual.plannedWithdrawalsAsOf}, not the signed stale timestamp ${truth.plannedWithdrawalsAsOf}`,
     );
   }
   return violations;
@@ -422,7 +429,10 @@ export function observationDateViolations(
   surface: string,
   displayed: readonly { readonly label: string; readonly metric: DisplayMetric }[],
 ): string[] {
-  const where = sourceRef("src/app/demo/build-context.ts", "const availableCashAsOf");
+  const where = sourceRef(
+    "src/app/demo/decision-evidence.ts",
+    "export function decisionEvidenceSnapshotFor",
+  );
   const byValue = new Map<string, Map<string, string[]>>();
   for (const { label, metric } of displayed) {
     const key = `${metric.format}:${String(metric.value)}`;
@@ -697,12 +707,13 @@ function recentBankInputHash(bankInstructionObservedAt: string): string {
 
 export function bankInstructionDateViolations(
   actual: BankInstructionDateAssignment,
-  signedDate: string,
+  signedObservedAt: string,
 ): string[] {
   const where = sourceRef(
     "src/app/demo/data.ts",
     "export const OBSERVED_BANK_INSTRUCTION_CHANGED",
   );
+  const signedDate = signedObservedAt.slice(0, 10);
   const violations: string[] = [];
   const signedAgeDays =
     (Date.parse(DEMO_NOW) - Date.parse(signedDate)) / 86_400_000;
@@ -713,12 +724,20 @@ export function bankInstructionDateViolations(
   }
   for (const [label, value] of [
     ["source", actual.sourceDate],
-    ["journey evidence", actual.journeyEvidenceDate],
-    ["setup provenance", actual.setupProvenanceDate],
   ] as const) {
     if (value !== signedDate) {
       violations.push(
         `${where} :: ${label} uses ${value}, not signed bank-change date ${signedDate}`,
+      );
+    }
+  }
+  for (const [label, value] of [
+    ["journey evidence", actual.journeyEvidenceDate],
+    ["setup provenance", actual.setupProvenanceDate],
+  ] as const) {
+    if (value !== signedObservedAt) {
+      violations.push(
+        `${where} :: ${label} uses ${value}, not signed bank-change observation ${signedObservedAt}`,
       );
     }
   }
@@ -741,7 +760,7 @@ export function bankInstructionDateViolations(
       `${where} :: request summary does not render the ${signedAgeDays} days derived from signed ${signedDate}`,
     );
   }
-  const expectedHash = recentBankInputHash(signedDate);
+  const expectedHash = recentBankInputHash(signedObservedAt);
   if (actual.inputHash !== expectedHash) {
     violations.push(
       `${where} :: canonical input hash does not bind signed bank-change date ${signedDate}`,
@@ -1040,7 +1059,7 @@ export function semanticTruthViolations(
   }
   if (!sameBasis(actual.setupBasis, truth.smithsBasis)) {
     violations.push(
-      `${sourceRef("src/app/demo/build-setup.ts", "SMITHS_LIQUIDITY.availableMinor")} :: setup liquidity basis (${describeBasis(actual.setupBasis)}) differs from captain-signed (${describeBasis(truth.smithsBasis)})`,
+      `${sourceRef("src/app/demo/build-setup.ts", '{ label: "Available balance"')} :: setup liquidity basis (${describeBasis(actual.setupBasis)}) differs from captain-signed (${describeBasis(truth.smithsBasis)})`,
     );
   }
   if (!sameBasis(actual.setupBasis, actual.journeyBasis)) {
@@ -1515,6 +1534,149 @@ describe("demo semantic-truth fence", () => {
     expect(changedClaims).not.toContain(baseRecord);
   });
 
+  it("enforces: one typed evidence snapshot feeds identity, UI, activation, and export", () => {
+    const scenario = scenarioById("recent-bank-change-block");
+    const evidence = decisionEvidenceSnapshotFor(scenario);
+    const preimage = jsonObject(
+      jsonField(
+        jsonObject(decisionInputPreimageFor(scenario, {}, evidence)),
+        "payload",
+      ),
+    );
+    expect(jsonField(preimage, "evidence")).toEqual(evidence);
+
+    const journey = getJourney(
+      "recent-bank-change-block",
+      "firm-a",
+    );
+    const bankRow = journey.evidence.rows.find(
+      (row) =>
+        row.kind === "fact" &&
+        row.label === "Bank instruction on file",
+    );
+    const pendingRow = journey.evidence.rows.find(
+      (row) =>
+        row.kind === "fact" &&
+        row.label === "Pending approved activity",
+    );
+    expect(bankRow?.kind).toBe("fact");
+    expect(pendingRow?.kind).toBe("fact");
+    if (bankRow?.kind !== "fact" || pendingRow?.kind !== "fact") {
+      return;
+    }
+    expect(bankRow.fact.provenance).toEqual(
+      evidence.bankInstruction.provenance,
+    );
+    expect(pendingRow.fact.provenance).toEqual(
+      evidence.pendingApprovedActivity.provenance,
+    );
+    expect(bankRow.fact.retrievedAt).toBe(
+      demoTimestampLabel(evidence.retrievedAt),
+    );
+    expect(journey.record.evidence).toEqual(
+      journey.evidence.rows,
+    );
+    expect(journey.record.identity.inputHash).toBe(
+      decisionInputHashFor(scenario, evidence),
+    );
+
+    const activated = activatedSnapshot();
+    expect(activated.evidence).toEqual(evidence);
+    expect(Object.isFrozen(activated.evidence)).toBe(true);
+    const record = buildActivatedRecord(activated, "firm-a");
+    const exportedBank = record.evidence.find(
+      (row) =>
+        row.kind === "fact" &&
+        row.label === "Bank instruction on file",
+    );
+    expect(exportedBank?.kind).toBe("fact");
+    if (exportedBank?.kind !== "fact") return;
+    expect(exportedBank.fact.provenance).toEqual(
+      activated.evidence.bankInstruction.provenance,
+    );
+    expect(record.identity.inputHash).toBe(
+      decisionInputHashFor(scenario, activated.evidence),
+    );
+
+    const changedScenario = scenarioById(
+      "approval-invalidation",
+    );
+    const refreshed = decisionEvidenceSnapshotFor(
+      changedScenario,
+      "revalidation",
+    );
+    const refreshedPending = buildEvidence(
+      changedScenario,
+      refreshed,
+    ).rows.find(
+      (row) =>
+        row.kind === "fact" &&
+        row.label === "Pending approved activity",
+    );
+    expect(refreshedPending?.kind).toBe("fact");
+    if (refreshedPending?.kind !== "fact") return;
+    expect(refreshedPending.fact.display).toContain("$15,000");
+    expect(refreshedPending.fact.provenance).toEqual(
+      refreshed.pendingApprovedActivity.provenance,
+    );
+    expect(
+      jsonField(
+        jsonObject(
+          refreshedDecisionInputPreimageFor(
+            changedScenario,
+            {},
+            refreshed,
+          ),
+        ),
+        "payload",
+      ),
+    ).toMatchObject({ evidence: refreshed });
+  });
+
+  it("detects: any evidence source, observation, or provenance drift changes identity", () => {
+    const scenario = scenarioById("ambiguous-instruction");
+    const evidence = decisionEvidenceSnapshotFor(scenario);
+    const changed: DecisionEvidenceSnapshot[] = [
+      {
+        ...evidence,
+        availableCash: {
+          ...evidence.availableCash,
+          sourceRef: "changed:account-source",
+        },
+      },
+      {
+        ...evidence,
+        destinationRestriction: {
+          ...evidence.destinationRestriction,
+          provenance: {
+            ...evidence.destinationRestriction.provenance,
+            asOf: "2026-05-11T10:00:00-04:00",
+          },
+        },
+      },
+      {
+        ...evidence,
+        conflictingFundingInstructions: [
+          {
+            ...evidence.conflictingFundingInstructions[0]!,
+            provenance: {
+              ...evidence.conflictingFundingInstructions[0]!
+                .provenance,
+              confidence: "low",
+            },
+          },
+          evidence.conflictingFundingInstructions[1]!,
+        ],
+      },
+    ];
+    const base = decisionInputHashFor(scenario, evidence);
+    const changedHashes = changed.map((candidate) =>
+      decisionInputHashFor(scenario, candidate),
+    );
+    expect(changedHashes).not.toContain(base);
+    expect(new Set(changedHashes).size).toBe(changedHashes.length);
+  });
+
   it("enforces: approval receipts never alter the earlier decision identity", () => {
     const journey = getJourney("safe-proceed", "firm-a");
     expect(journey.approvals).not.toBeNull();
@@ -1590,7 +1752,7 @@ describe("demo semantic-truth fence", () => {
         {
           ...claims,
           authority: {
-            mode: "staged",
+            ...authority,
             requirements: requirements.map((requirement, index) =>
               index === 0
                 ? { ...requirement, expiry: "Expires after 4 days" }
@@ -1661,6 +1823,122 @@ describe("demo semantic-truth fence", () => {
       ),
     );
     expect(changed).not.toBe(base);
+  });
+
+  it("enforces: automatic authority has no role while every setup stage binds Operations", () => {
+    const automaticJourney = getJourney(
+      "safe-proceed",
+      "firm-b",
+    );
+    expect(automaticJourney.record.authority?.mode).toBe(
+      "automatic",
+    );
+    expect(decisionConfigurationFor(firmById("firm-b")).eligibleRole)
+      .toBeNull();
+    expect(
+      JSON.stringify(automaticJourney.record.authority),
+    ).not.toContain("Operations");
+
+    const stagedSnapshot = activatedSnapshot((selections) => {
+      selections["firm-b"]["bank-change"] = "specialist";
+    });
+    const staged = stagedSnapshot.firms[1];
+    expect(staged.authorityPlan.mode).toBe("staged");
+    expect(staged.eligibleRole).toBe("operations");
+    expect(staged.requesterParticipation).toEqual({
+      mode: "unbound",
+    });
+    if (staged.authorityPlan.mode !== "staged") return;
+    expect(staged.authorityPlan.eligibleRole).toBe("operations");
+    expect(staged.authorityPlan.requesterParticipation).toEqual({
+      mode: "unbound",
+    });
+    const record = buildActivatedRecord(
+      stagedSnapshot,
+      "firm-b",
+    );
+    expect(record.activatedConfiguration?.eligibleRole).toBe(
+      "operations",
+    );
+    expect(
+      record.activatedConfiguration?.requesterParticipation,
+    ).toBe("unbound");
+  });
+
+  it("detects: automatic-role and staged-role mixtures fail closed", () => {
+    const automaticScenario = scenarioById("safe-proceed");
+    const automaticFirm = firmById("firm-b");
+    const automaticAuthority =
+      getJourney("safe-proceed", "firm-b").record.authority;
+    expect(automaticAuthority?.mode).toBe("automatic");
+    if (automaticAuthority?.mode !== "automatic") return;
+    expect(() =>
+      decisionBundlePreimageFor(
+        automaticScenario,
+        automaticFirm,
+        {
+          ...decisionConfigurationFor(automaticFirm),
+          eligibleRole: "operations",
+        },
+        decisionAuthorityClaimFor(automaticAuthority),
+      ),
+    ).toThrow("conflicts with eligible role");
+
+    const stagedJourney = getJourney("safe-proceed", "firm-a");
+    const stagedAuthority = stagedJourney.record.authority;
+    expect(stagedAuthority?.mode).toBe("staged");
+    if (stagedAuthority?.mode !== "staged") return;
+    expect(() =>
+      decisionBundlePreimageFor(
+        automaticScenario,
+        firmById("firm-a"),
+        {
+          ...decisionConfigurationFor(firmById("firm-a")),
+          eligibleRole: null,
+        },
+        decisionAuthorityClaimFor(stagedAuthority),
+      ),
+    ).toThrow("conflicts with eligible role");
+
+    expect(() =>
+      decisionAuthorityClaimFor({
+        ...stagedAuthority,
+        eligibleRole: null,
+      } as unknown as AuthorityPlanVM),
+    ).toThrow("Operations eligible role");
+  });
+
+  it("enforces: setup requester participation stays unbound through hashes and receipts", () => {
+    const snapshot = activatedSnapshot((selections) => {
+      selections["firm-b"]["bank-change"] = "specialist";
+      selections["firm-b"].threshold = "25000";
+    });
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain("requesterConstraint");
+    expect(serialized).not.toContain(
+      "may-not-satisfy-both-approvals",
+    );
+    for (const firm of snapshot.firms) {
+      expect(firm.requesterParticipation).toEqual({
+        mode: "unbound",
+      });
+      if (firm.authorityPlan.mode !== "staged") continue;
+      expect(
+        firm.authorityPlan.stages
+          .flatMap((stage) => stage.actors)
+          .some((actor) => actor.requesterExcluded === true),
+      ).toBe(false);
+      const record = buildActivatedRecord(
+        snapshot,
+        firm.firmId,
+      );
+      expect(
+        record.activatedConfiguration?.requesterParticipation,
+      ).toBe("unbound");
+      expect(record.hashes.approvalReceiptHash).toMatch(
+        /^[a-f0-9]{64}$/,
+      );
+    }
   });
 
   it("enforces: GC-15 derives every visible fact from one pending delta", () => {
@@ -2058,6 +2336,8 @@ describe("demo semantic-truth fence", () => {
       mode: "staged",
       summary: "Staged",
       detail: "No stages",
+      eligibleRole: "operations",
+      requesterParticipation: { mode: "unbound" },
       stages: [],
     } as unknown as AuthorityPlanVM;
     expect(() => decisionAuthorityClaimFor(emptyStages)).toThrow(
@@ -2244,8 +2524,8 @@ describe("demo semantic-truth fence", () => {
     expect(available.freshness).toBe("fresh");
     expect(planned.freshness).toBe("stale");
     const truth = {
-      availableCashAsOf: available.observedAt.slice(0, 10),
-      plannedWithdrawalsAsOf: planned.observedAt.slice(0, 10),
+      availableCashAsOf: available.observedAt,
+      plannedWithdrawalsAsOf: planned.observedAt,
     };
     const journey = getJourney("stale-evidence", "firm-a");
     const availableRow = journey.evidence.rows.find(
@@ -2294,7 +2574,7 @@ describe("demo semantic-truth fence", () => {
         )!.facts,
         blocker: blocker?.condition ?? "",
       },
-      truth.plannedWithdrawalsAsOf,
+      truth.plannedWithdrawalsAsOf.slice(0, 10),
       DEMO_NOW,
       decisionConfigurationFor(firmById("firm-a")).freshnessDays,
     );
@@ -2576,13 +2856,15 @@ describe("demo semantic-truth fence", () => {
     ]);
     expect(violations).toHaveLength(1);
     expect(violations[0]).toContain("2 observation dates");
-    expect(violations[0]).toContain("build-context.ts:");
+    expect(violations[0]).toContain("decision-evidence.ts:");
   });
 
   it("enforces: no closed choice carries a signed-case effect no impact card can reach", () => {
     const vm = buildMoneyMovementSetup();
-    const compared = new Set(
-      vm.impacts.flatMap((impact) => (impact.groupId ? [impact.groupId] : [])),
+    const compared = new Map(
+      vm.impacts.flatMap((impact) =>
+        impact.groupId ? [[impact.groupId, impact] as const] : [],
+      ),
     );
     expect(compared.size).toBeGreaterThan(0);
     // Both owners are resolved on the GREEN path, so a renamed anchor fails loudly
@@ -2593,8 +2875,13 @@ describe("demo semantic-truth fence", () => {
     for (const group of vm.policyGroups) {
       for (const firm of group.firms) {
         for (const option of firm.options) {
-          const reachable = compared.has(group.id);
-          if (reachable && !option.signedCaseEffect) {
+          const impact = compared.get(group.id);
+          const reachable = impact !== undefined;
+          if (
+            reachable &&
+            !option.signedCaseEffect &&
+            !impact.selectionEffects
+          ) {
             violations.push(
               `${cardsWhere} :: a signed-impact card compares "${group.id}" but ${firm.firmId}:${option.id} carries no signed-case effect`,
             );
@@ -2608,6 +2895,58 @@ describe("demo semantic-truth fence", () => {
       }
     }
     expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("enforces: bank-change impact uses the complete threshold-sensitive evaluator result", () => {
+    const vm = buildMoneyMovementSetup();
+    const impact = vm.impacts.find(
+      (candidate) => candidate.id === "recent-bank",
+    );
+    expect(impact?.selectionEffects).toBeDefined();
+    if (!impact?.selectionEffects) return;
+    for (const firmId of ["firm-a", "firm-b"] as const) {
+      expect(impact.selectionEffects[firmId]).toHaveLength(162);
+      expect(
+        new Set(
+          impact.selectionEffects[firmId].map(
+            (candidate) => candidate.selectionKey,
+          ),
+        ).size,
+      ).toBe(162);
+      expect(
+        impact.selectionEffects[firmId].every((candidate) =>
+          SETUP_POLICY_GROUP_IDS.every((groupId) =>
+            candidate.selectionKey.includes(`${groupId}=`),
+          ),
+        ),
+      ).toBe(true);
+    }
+
+    const effectFor = (selections: SetupSelections) =>
+      impact.selectionEffects!["firm-b"].find(
+        (candidate) =>
+          candidate.selectionKey ===
+          setupFirmSelectionKey(selections["firm-b"]),
+      )?.effect;
+    const belowThreshold = setupSelections();
+    belowThreshold["firm-b"]["bank-change"] = "specialist";
+    belowThreshold["firm-b"].threshold = "100000";
+    const dualApproval = setupSelections();
+    dualApproval["firm-b"]["bank-change"] = "specialist";
+    dualApproval["firm-b"].threshold = "25000";
+
+    expect(effectFor(belowThreshold)?.summary).toBe(
+      "Specialist review; no dual approval at this amount",
+    );
+    expect(effectFor(belowThreshold)?.detail).toContain(
+      "$100,000 threshold",
+    );
+    expect(effectFor(dualApproval)?.summary).toBe(
+      "Specialist review, then two distinct operations approvers",
+    );
+    expect(effectFor(dualApproval)?.detail).toContain(
+      "$25,000 threshold",
+    );
   });
 
   it("enforces: the dual-approval promise is derived from the signed request amount", () => {
@@ -2718,9 +3057,9 @@ describe("demo semantic-truth fence", () => {
     const gc03 = signed(
       loadGolden("GC-03-recent-bank-change-firm-a.json"),
     );
-    const signedDate = gc03.householdEvidence
+    const signedObservedAt = gc03.householdEvidence
       .find((evidence) => evidence.evidenceKind === "bank-instruction")!
-      .observedAt.slice(0, 10);
+      .observedAt;
     const journey = getJourney("recent-bank-change-block", "firm-a");
     const evidence = journey.evidence.rows.find(
       (row) => row.kind === "fact" && row.label === "Bank instruction on file",
@@ -2753,7 +3092,7 @@ describe("demo semantic-truth fence", () => {
             scenarioById("recent-bank-change-block"),
           ),
         },
-        signedDate,
+        signedObservedAt,
       ),
     ).toEqual([]);
   });
@@ -2771,7 +3110,7 @@ describe("demo semantic-truth fence", () => {
       truth,
     );
     expect(violations).toHaveLength(2);
-    expect(violations[0]).toContain("build-context.ts:");
+    expect(violations[0]).toContain("decision-evidence.ts:");
     expect(violations[1]).toContain("planned withdrawals");
   });
 

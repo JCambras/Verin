@@ -101,6 +101,30 @@ function Trail({
           <p className="mt-1 text-xs text-slate-600">
             {identity.authorityPlan.detail}
           </p>
+          <dl className="mt-2 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-600">Eligible approval role</dt>
+              <dd
+                className="text-slate-800"
+                data-testid={`proof-${firmId}-eligible-role`}
+              >
+                {identity.eligibleRole === "operations"
+                  ? "Operations"
+                  : "None - automatic or not reached"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">Requester participation</dt>
+              <dd
+                className="text-slate-800"
+                data-testid={`proof-${firmId}-requester-participation`}
+              >
+                {identity.requesterParticipation.mode === "unbound"
+                  ? "Unbound in this demonstration"
+                  : "Requester excluded"}
+              </dd>
+            </div>
+          </dl>
           {identity.authorityPlan.mode === "automatic" ? (
             <dl className="mt-2 grid min-w-0 gap-2 text-xs">
               <div>

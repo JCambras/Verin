@@ -17,7 +17,6 @@ import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionR
 import { JourneyNav, SurfaceShell } from "./shared";
 import { PrintButton } from "./print-button";
 import { RecordAuthority } from "./record-authority";
-
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-2 print-avoid-break">
@@ -28,7 +27,6 @@ function DocSection({ n, title, children }: { n: number; title: string; children
     </section>
   );
 }
-
 /** On paper (and on this surface) reasoning prints expanded - never behind a tap. */
 function ExpandedWhy({ why, testId }: { why: WhyVM; testId?: string }) {
   return (
@@ -201,6 +199,34 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                         <dt className="text-xs text-slate-600">Configuration hash</dt>
                         <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-configuration-hash">
                           {vm.activatedConfiguration.configurationHash}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">
+                          Eligible approval role
+                        </dt>
+                        <dd
+                          className="text-xs text-slate-800"
+                          data-testid="record-identity-eligible-role"
+                        >
+                          {vm.activatedConfiguration.eligibleRole ===
+                          "operations"
+                            ? "Operations"
+                            : "None - automatic or not reached"}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">
+                          Requester participation
+                        </dt>
+                        <dd
+                          className="text-xs text-slate-800"
+                          data-testid="record-identity-requester-participation"
+                        >
+                          {vm.activatedConfiguration
+                            .requesterParticipation === "unbound"
+                            ? "Unbound in this demonstration"
+                            : "Requester excluded"}
                         </dd>
                       </div>
                       <div className="flex flex-col">

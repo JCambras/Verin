@@ -9,7 +9,13 @@
  * recorded contract variation, not a computed decision.
  */
 import { metric } from "@contracts/metric";
-import type { EvidenceRowVM, EvidenceVM, IntentVM, WorkspaceVM } from "./model";
+import type {
+  EvidenceRowVM,
+  EvidenceVM,
+  FactVM,
+  IntentVM,
+  WorkspaceVM,
+} from "./model";
 import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import {
@@ -19,20 +25,36 @@ import {
   DEMO_NOW,
   DESTINATION_RESTRICTION,
   HOUSEHOLD,
-  OBSERVED_GC09_BALANCE,
   OBSERVED_RECENT,
-  OBSERVED_STALE,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-  RETRIEVED_AT,
   SMITHS_LIQUIDITY,
   THIRD_PARTY_DESTINATION,
+  demoTimestampLabel,
   type ScenarioData,
+  usdMinor,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+  type DemoEvidenceValue,
+} from "./decision-evidence";
 
-/** The signed cases behind this request record NO pending approved activity, so the
- * evidence states that absence instead of deducting an unsigned amount from it. */
-const PENDING_ACTIVITY_STATEMENT =
-  "None recorded against this household at this evaluation";
+function pendingActivityStatement(amountMinor: number): string {
+  return amountMinor === 0
+    ? "None recorded against this household at this evaluation"
+    : `${usdMinor(amountMinor)} recorded against this household at this evaluation`;
+}
+
+function snapshotFact<T>(
+  evidence: DecisionEvidenceSnapshot,
+  datum: DemoEvidenceValue<T>,
+  display: string,
+): FactVM {
+  return {
+    display,
+    provenance: datum.provenance,
+    retrievedAt: demoTimestampLabel(evidence.retrievedAt),
+  };
+}
 
 /** The destination the interpreted intent binds to for this branch. */
 export function destinationFor(scenario: ScenarioData): string {
@@ -40,13 +62,11 @@ export function destinationFor(scenario: ScenarioData): string {
   return scenario.spec.bankChanged ? BANK_INSTRUCTION.changed : BANK_INSTRUCTION.stable;
 }
 
-export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
-  const availableCashAsOf = scenario.spec.stalePlannedWithdrawals
-    ? OBSERVED_GC09_BALANCE
-    : OBSERVED_RECENT;
-  const plannedWithdrawalsAsOf = scenario.spec.stalePlannedWithdrawals
-    ? OBSERVED_STALE
-    : OBSERVED_RECENT;
+export function buildWorkspace(
+  scenario: ScenarioData,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+): WorkspaceVM {
+  const retrievedAt = demoTimestampLabel(evidence.retrievedAt);
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -65,14 +85,35 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
         a.balanceMinor,
         "currency-minor",
         "synthetic-fixture",
-        a.id === SMITHS_LIQUIDITY.availableAccountId ? availableCashAsOf : OBSERVED_RECENT,
+        a.id === SMITHS_LIQUIDITY.availableAccountId
+          ? evidence.availableCash.provenance.asOf
+          : OBSERVED_RECENT,
       ),
-      custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+      custodian: fact(
+        a.custodian,
+        "synthetic-fixture",
+        OBSERVED_RECENT,
+        retrievedAt,
+      ),
       fakeClass: "synthetic-fixture",
     })),
-    liquidity: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", availableCashAsOf),
-    plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", plannedWithdrawalsAsOf),
-    pendingActivity: fact(`Pending approved activity: ${PENDING_ACTIVITY_STATEMENT.toLowerCase()}`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+    liquidity: metric(
+      evidence.availableCash.value,
+      "currency-minor",
+      evidence.availableCash.provenance,
+    ),
+    plannedMonthlyWithdrawal: metric(
+      evidence.plannedMonthlyWithdrawal.value,
+      "currency-minor",
+      evidence.plannedMonthlyWithdrawal.provenance,
+    ),
+    pendingActivity: snapshotFact(
+      evidence,
+      evidence.pendingApprovedActivity,
+      `Pending approved activity: ${pendingActivityStatement(
+        evidence.pendingApprovedActivity.value,
+      ).toLowerCase()}`,
+    ),
     onRamp: {
       title: "What do the Smiths need?",
       description: "Ask Verin in plain language. It gathers the evidence, determines the governed action, and routes the authority to approve it.",
@@ -102,33 +143,45 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
   };
 }
 
-export function buildEvidence(scenario: ScenarioData): EvidenceVM {
+export function buildEvidence(
+  scenario: ScenarioData,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+): EvidenceVM {
   const spec = scenario.spec;
-  const availableCashAsOf = spec.stalePlannedWithdrawals
-    ? OBSERVED_GC09_BALANCE
-    : OBSERVED_RECENT;
-  const plannedWithdrawalsAsOf = spec.stalePlannedWithdrawals
-    ? OBSERVED_STALE
-    : OBSERVED_RECENT;
+  const retrievedAt = demoTimestampLabel(evidence.retrievedAt);
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
       label: "Available cash in the taxable brokerage account",
-      metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", availableCashAsOf),
-      retrievedAt: RETRIEVED_AT,
+      metric: metric(
+        evidence.availableCash.value,
+        "currency-minor",
+        evidence.availableCash.provenance,
+      ),
+      retrievedAt,
       fakeClass: "synthetic-fixture",
     },
     {
       kind: "metric",
       label: "Planned monthly withdrawal",
-      metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", plannedWithdrawalsAsOf),
-      retrievedAt: RETRIEVED_AT,
+      metric: metric(
+        evidence.plannedMonthlyWithdrawal.value,
+        "currency-minor",
+        evidence.plannedMonthlyWithdrawal.provenance,
+      ),
+      retrievedAt,
       fakeClass: "synthetic-fixture",
     },
     {
       kind: "fact",
       label: "Pending approved activity",
-      fact: fact(PENDING_ACTIVITY_STATEMENT, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
+      fact: snapshotFact(
+        evidence,
+        evidence.pendingApprovedActivity,
+        pendingActivityStatement(
+          evidence.pendingApprovedActivity.value,
+        ),
+      ),
       fakeClass: "synthetic-fixture",
       why: { reason: "An approved but unsettled distribution would reduce the liquidity available to this request until it lands. The signed cases behind this request record none, so nothing is deducted from the available balance." },
     },
@@ -136,20 +189,32 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       ? {
           kind: "fact",
           label: "Bank instruction on file",
-          fact: fact(BANK_INSTRUCTION.changed, "synthetic-fixture", BANK_INSTRUCTION.changedOn, RETRIEVED_AT),
+          fact: snapshotFact(
+            evidence,
+            evidence.bankInstruction,
+            evidence.bankInstruction.value.destination,
+          ),
           fakeClass: "synthetic-fixture",
           why: { reason: "This instruction changed within the firm's recent-change window. Each firm's configured handling for a recent bank change applies to this movement." },
         }
       : {
           kind: "fact",
           label: "Bank instruction on file",
-          fact: fact(BANK_INSTRUCTION.stable, "synthetic-fixture", "2026-05-20", RETRIEVED_AT),
+          fact: snapshotFact(
+            evidence,
+            evidence.bankInstruction,
+            evidence.bankInstruction.value.destination,
+          ),
           fakeClass: "synthetic-fixture",
         },
     {
       kind: "fact",
       label: `Household instruction ${DESTINATION_RESTRICTION.ref}`,
-      fact: fact(DESTINATION_RESTRICTION.text, "synthetic-fixture", "2026-02-14", RETRIEVED_AT),
+      fact: snapshotFact(
+        evidence,
+        evidence.destinationRestriction,
+        evidence.destinationRestriction.value.text,
+      ),
       fakeClass: "synthetic-fixture",
       why: { reason: "A household-specific restriction. It takes precedence over firm policy defaults when the destination of a movement is checked." },
     },
@@ -159,8 +224,16 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
       kind: "conflict",
       label: "Distribution funding instruction",
       rule: "A human must resolve this conflict (survivorship rule: manual)",
-      a: fact("Renovation costs are paid from the Joint Taxable account", "synthetic-fixture", "2026-03-02", RETRIEVED_AT, "medium"),
-      b: fact("Large one-time needs are funded from the Smith Family Taxable account", "synthetic-fixture", "2026-07-10", RETRIEVED_AT, "medium"),
+      a: snapshotFact(
+        evidence,
+        evidence.conflictingFundingInstructions[0]!,
+        evidence.conflictingFundingInstructions[0]!.value,
+      ),
+      b: snapshotFact(
+        evidence,
+        evidence.conflictingFundingInstructions[1]!,
+        evidence.conflictingFundingInstructions[1]!.value,
+      ),
       fakeClass: "synthetic-fixture",
       blockerAffordance: "Choose the governing value",
     });

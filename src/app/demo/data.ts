@@ -11,7 +11,10 @@
  * data (the same value scenarios.yaml carries), never derived in a component.
  */
 import type { Role } from "@contracts/roles";
-import type { DispositionKind } from "./model";
+import type {
+  DispositionKind,
+  RequesterParticipation,
+} from "./model";
 
 export const DEMO_TIME_ZONE = "America/New_York";
 
@@ -98,9 +101,6 @@ export function demoTimelineViolations(
 }
 
 export const DEMO_NOW = DEMO_TIMELINE.decisionDate;
-export const RETRIEVED_AT = demoTimestampLabel(
-  DEMO_TIMELINE.evidenceRetrievedAt,
-);
 export const DEMO_ACTIVATION_EFFECTIVE_AT = activationTimestampLabel(
   DEMO_TIMELINE.activationAt,
 );
@@ -174,8 +174,8 @@ export interface FirmData {
   readonly reserveMonths: number;
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
-  readonly eligibleRole: string | null;
-  readonly requesterConstraint: string | null;
+  readonly eligibleRole: "operations" | null;
+  readonly requesterParticipation: RequesterParticipation;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
   readonly policyVersion: string;
 }
@@ -187,7 +187,10 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
     eligibleRole: "operations",
-    requesterConstraint: "may-not-satisfy-both-approvals",
+    requesterParticipation: {
+      mode: "excluded",
+      constraint: "may-not-satisfy-both-approvals",
+    },
     bankChangeHandling: "specialist-review",
     policyVersion: "FA-4.2",
   },
@@ -198,7 +201,7 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
     eligibleRole: null, // contract silence - not invented (scenarios.yaml firms note)
-    requesterConstraint: null,
+    requesterParticipation: { mode: "unbound" },
     bankChangeHandling: "block-until-independently-verified",
     policyVersion: "FB-2.1",
   },
@@ -285,8 +288,8 @@ export interface DecisionConfiguration {
   readonly bankChangeHandling: FirmData["bankChangeHandling"];
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
-  readonly eligibleRole: string | null;
-  readonly requesterConstraint: string | null;
+  readonly eligibleRole: FirmData["eligibleRole"];
+  readonly requesterParticipation: RequesterParticipation;
   readonly approvalClockId: string;
   readonly activatedSnapshotHash: string | null;
   readonly activationAuthority: {
@@ -423,7 +426,7 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
     eligibleRole: firm.eligibleRole,
-    requesterConstraint: firm.requesterConstraint,
+    requesterParticipation: firm.requesterParticipation,
     approvalClockId: DEFAULT_APPROVAL_CLOCK.id,
     activatedSnapshotHash: null,
     activationAuthority: null,

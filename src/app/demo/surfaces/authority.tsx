@@ -118,6 +118,25 @@ export function AuthoritySurface({
         </p>
       </div>
 
+      <dl className="grid min-w-0 gap-2 rounded-md border border-slate-200 bg-surface p-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-slate-600">Eligible approval role</dt>
+          <dd className="text-slate-800">
+            {vm.eligibleRole === "operations"
+              ? "Operations"
+              : vm.eligibleRole}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">Requester participation</dt>
+          <dd className="text-slate-800">
+            {vm.requesterParticipation.mode === "unbound"
+              ? "Unbound in this demonstration"
+              : `Requester excluded · ${vm.requesterParticipation.constraint}`}
+          </dd>
+        </div>
+      </dl>
+
       {vm.stages.map((s) => (
         <ApprovalStagePanel
           key={s.title}

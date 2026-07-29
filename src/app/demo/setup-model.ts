@@ -8,7 +8,13 @@
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import type { Role } from "@contracts/roles";
-import type { AuthorityPlanVM, DispositionVM, FakeClass } from "./model";
+import type {
+  AuthorityPlanVM,
+  DispositionVM,
+  FakeClass,
+  RequesterParticipation,
+} from "./model";
+import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 
 export const SETUP_FIRM_IDS = ["firm-a", "firm-b"] as const;
 export type SetupFirmId = (typeof SETUP_FIRM_IDS)[number];
@@ -25,6 +31,14 @@ export type SetupSelections = Record<
   SetupFirmId,
   Record<SetupPolicyGroupId, string>
 >;
+
+export function setupFirmSelectionKey(
+  selections: SetupSelections[SetupFirmId],
+): string {
+  return SETUP_POLICY_GROUP_IDS.map(
+    (groupId) => `${groupId}=${selections[groupId]}`,
+  ).join("|");
+}
 
 export const SETUP_ATTESTATION_STATEMENT_VERSION =
   "money-movement-demo-attestation/1.0.0";
@@ -202,6 +216,15 @@ export interface SignedImpactVM {
   readonly facts: string;
   readonly groupId: SetupPolicyGroupVM["id"] | null;
   readonly universalEffect?: string;
+  readonly selectionEffects?: Readonly<
+    Record<
+      SetupFirmId,
+      readonly {
+        readonly selectionKey: string;
+        readonly effect: ChoiceEffectVM;
+      }[]
+    >
+  >;
 }
 
 export interface SetupFactVM {
@@ -264,6 +287,11 @@ export interface SetupProofFirmVM {
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
   readonly authorityPlan: AuthorityPlanVM;
+  readonly eligibleRole: "operations" | null;
+  readonly requesterParticipation: Extract<
+    RequesterParticipation,
+    { readonly mode: "unbound" }
+  >;
   readonly reserveMetric: DisplayMetric;
   readonly reserveSummary: string;
   readonly reserveDetail: string;
@@ -316,6 +344,7 @@ export interface SetupActivatedSnapshotVM {
     readonly selectionsHash: string;
     readonly statement: string;
   };
+  readonly evidence: DecisionEvidenceSnapshot;
   readonly selections: SetupSelections;
   readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
 }

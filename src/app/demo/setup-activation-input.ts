@@ -6,14 +6,16 @@ import { IANA_TIME_ZONE_DATA_VERSION } from "@contracts/time-zone";
 import { buildMoneyMovementSetup } from "./build-setup";
 import {
   APPROVAL_CLOCKS,
-  DEMO_EVIDENCE_REF,
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
   FIRMS,
   scenarioById,
-  type FirmData,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "./decision-evidence";
 import {
   DEMO_DECISION_ENGINE_VERSION,
   DEMO_DECISION_SCHEMA_VERSION,
@@ -32,29 +34,14 @@ import {
   type SetupPolicyGroupId,
   type SetupSelections,
 } from "./setup-model";
+import {
+  BANK_HANDLING,
+  FRESHNESS_DAYS,
+  RESERVE_MONTHS,
+  THRESHOLD_MINOR,
+} from "./setup-policy";
 
 export const SETUP_SCENARIO_ID = "recent-bank-change-block";
-export const RESERVE_MONTHS: Readonly<Record<string, number>> = {
-  "6-months": 6,
-  "9-months": 9,
-  "12-months": 12,
-};
-export const FRESHNESS_DAYS: Readonly<Record<string, number>> = {
-  "7-days": 7,
-  "14-days": 14,
-  "30-days": 30,
-};
-export const BANK_HANDLING: Readonly<
-  Record<string, FirmData["bankChangeHandling"]>
-> = {
-  specialist: "specialist-review",
-  block: "block-until-independently-verified",
-};
-export const THRESHOLD_MINOR: Readonly<Record<string, number>> = {
-  "25000": 2_500_000,
-  "50000": 5_000_000,
-  "100000": 10_000_000,
-};
 
 export interface SetupActivationAuthorityBinding {
   readonly actor: {
@@ -235,11 +222,27 @@ export function validateSetupActivationDraft(
 function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
   return toJsonValue({
     scenarioId: SETUP_SCENARIO_ID,
-    firms: SETUP_FIRM_IDS.map((firmId) => ({
-      firmId,
-      profile: vm.profiles.find((candidate) => candidate.firmId === firmId)!,
-      runtime: FIRMS[firmId]!,
-    })),
+    firms: SETUP_FIRM_IDS.map((firmId) => {
+      const runtime = FIRMS[firmId]!;
+      return {
+        firmId,
+        profile: vm.profiles.find(
+          (candidate) => candidate.firmId === firmId,
+        )!,
+        runtime: {
+          id: runtime.id,
+          name: runtime.name,
+          reserveMonths: runtime.reserveMonths,
+          dualApprovalThresholdMinor:
+            runtime.dualApprovalThresholdMinor,
+          approvalsRequired: runtime.approvalsRequired,
+          bankChangeHandling: runtime.bankChangeHandling,
+          policyVersion: runtime.policyVersion,
+          authorityBinding: "derived-from-complete-selection",
+          requesterParticipation: { mode: "unbound" },
+        },
+      };
+    }),
     controls: vm.controls,
     roles: vm.roles,
     baseline: vm.baseline.map((entry) => ({
@@ -283,6 +286,7 @@ function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
       facts: impact.facts,
       groupId: impact.groupId,
       universalEffect: impact.universalEffect ?? null,
+      selectionEffects: impact.selectionEffects ?? null,
     })),
     evaluatorTables: {
       reserveMonths: RESERVE_MONTHS,
@@ -310,7 +314,12 @@ export function setupActivationPreimageFor(
   authorityPlans: readonly {
     readonly firmId: SetupFirmId;
     readonly authority: DecisionAuthorityClaim;
+    readonly eligibleRole: "operations" | null;
+    readonly requesterParticipation: { readonly mode: "unbound" };
   }[],
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
+    scenarioById(SETUP_SCENARIO_ID),
+  ),
 ): JsonValue {
   return toJsonValue({
     hashKind: "money-movement-demo-activation",
@@ -326,9 +335,11 @@ export function setupActivationPreimageFor(
         timeZoneDataVersion: IANA_TIME_ZONE_DATA_VERSION,
       },
       requestRef: DEMO_REQUEST_REF,
-      evidenceRef: DEMO_EVIDENCE_REF,
+      evidenceRef: evidence.ref,
       requestAndEvidence: decisionInputPreimageFor(
         scenarioById(SETUP_SCENARIO_ID),
+        {},
+        evidence,
       ),
       fixedConfiguration: fixedSetupConfiguration(vm),
       draft: {

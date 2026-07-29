@@ -44,7 +44,6 @@ import {
   automaticAuthorityPlan,
   unreachedAuthorityPlan,
 } from "./setup-authority";
-
 /** The ONE reserve projection behind every displayed floor and headroom for a firm -
  * DERIVED figures (ADR-0022): computed from synthetic inputs, so they render as
  * watermarked demonstrations. The projection is fed the WHOLE signed basis -
@@ -375,7 +374,10 @@ function buildStages(
         : { name: CAST.opsApprover2, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
       title: `Stage ${operationsStage} - Dual operations approval`,
-      requirement: "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
+      requirement:
+        firm.requesterParticipation.mode === "unbound"
+          ? "Two approvals required from distinct operations approvers. Requester participation remains unbound in this demonstration."
+          : "Two approvals required from distinct operations approvers. The requester cannot approve.",
       stepState:
         phase === "final" && specialistComplete && !spec.invalidation
           ? "done"
@@ -400,14 +402,18 @@ function buildStages(
                 : "Awaiting approval",
         },
         second,
-        {
-          name: CAST.requester,
-          role: "Advisor (requester)",
-          status: "pending",
-          statusLabel: "Cannot approve",
-          note: "Requested this movement - the requester cannot approve.",
-          requesterExcluded: true,
-        },
+        ...(firm.requesterParticipation.mode === "unbound"
+          ? []
+          : [
+              {
+                name: CAST.requester,
+                role: "Advisor (requester)",
+                status: "pending",
+                statusLabel: "Cannot approve",
+                note: "Requested this movement - the requester cannot approve.",
+                requesterExcluded: true,
+              },
+            ]),
       ],
       expiry: approvalClock.expiry,
       escalation: approvalClock.escalation,
@@ -436,6 +442,11 @@ export function buildAuthorityPlan(
       prov("synthetic-fixture", OBSERVED_RECENT),
     );
   }
+  if (firm.eligibleRole !== "operations") {
+    throw new Error(
+      "Staged authority requires the Operations eligible role",
+    );
+  }
   const hasSpecialist = scenario.spec.bankChanged &&
     firm.bankChangeHandling === "specialist-review";
   return {
@@ -446,6 +457,8 @@ export function buildAuthorityPlan(
         : "Specialist review; no dual approval at this amount"
       : "Two distinct operations approvers",
     detail: `${DEFAULT_APPROVAL_CLOCK.escalation}. ${DEFAULT_APPROVAL_CLOCK.expiry}.`,
+    eligibleRole: firm.eligibleRole,
+    requesterParticipation: firm.requesterParticipation,
     stages: [stages[0]!, ...stages.slice(1)],
   };
 }

@@ -6,7 +6,6 @@ import {
 } from "@contracts/decision-core/serialization";
 import { IANA_TIME_ZONE_DATA_VERSION } from "@contracts/time-zone";
 import type {
-  ApprovalStageVM,
   AuthorityPlanVM,
   DispositionVM,
   PrecedenceRowVM,
@@ -14,61 +13,39 @@ import type {
 import {
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
-  DEMO_EVIDENCE_REF,
-  DEMO_REVALIDATION_EVIDENCE_REF,
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
-  DESTINATION_RESTRICTION,
-  GC15_PENDING_DISTRIBUTION,
-  OBSERVED_GC09_BALANCE,
-  OBSERVED_RECENT,
-  OBSERVED_STALE,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-  SMITHS_LIQUIDITY,
   THIRD_PARTY_DESTINATION,
   type DecisionConfiguration,
   type DecisionIdentity,
   type FirmData,
   type ScenarioData,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "./decision-evidence";
+import {
+  assertAuthorityPlan,
+  type DecisionAuthorityClaim,
+} from "./decision-authority-claim";
+export {
+  decisionAuthorityClaimFor,
+  decisionAuthorityRequirementsFor,
+  type DecisionAuthorityClaim,
+} from "./decision-authority-claim";
 
 export const DEMO_DECISION_SCHEMA_VERSION =
   "money-movement-demo-decision/5.0.0";
 export const DEMO_DECISION_ENGINE_VERSION =
   "money-movement-demo-engine/4.0.0";
 
-export interface DecisionAuthorityRequirementClaim {
-  readonly order: number;
-  readonly title: string;
-  readonly requirement: string;
-  readonly expiry: string | null;
-  readonly escalation: string | null;
-}
-
 export interface DecisionIdentityClaims {
   readonly disposition: DispositionVM;
   readonly precedence: readonly PrecedenceRowVM[];
   readonly authority: DecisionAuthorityClaim;
 }
-
-export type DecisionAuthorityClaim =
-  | {
-      readonly mode: "not-reached";
-      readonly reason: string;
-    }
-  | {
-      readonly mode: "automatic";
-      readonly rule: string;
-      readonly thresholdMinor: number;
-      readonly policySource: string;
-      readonly executionMode: string;
-      readonly state: string;
-    }
-  | {
-      readonly mode: "staged";
-      readonly requirements: readonly DecisionAuthorityRequirementClaim[];
-    };
 
 export interface DecisionInputOverrides {
   readonly canonicalSerializerVersion?: string;
@@ -128,13 +105,23 @@ function destinationForIdentity(scenario: ScenarioData): string {
 export function decisionInputPreimageFor(
   scenario: ScenarioData,
   overrides: DecisionInputOverrides = {},
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
 ): JsonValue {
-  return decisionInputPreimageForPhase(scenario, "initial", overrides);
+  return decisionInputPreimageForPhase(
+    scenario,
+    "initial",
+    overrides,
+    evidence,
+  );
 }
 
 export function refreshedDecisionInputPreimageFor(
   scenario: ScenarioData,
   overrides: DecisionInputOverrides = {},
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
+    scenario,
+    "revalidation",
+  ),
 ): JsonValue {
   if (scenario.spec.invalidation !== true) {
     throw new Error(
@@ -145,6 +132,7 @@ export function refreshedDecisionInputPreimageFor(
     scenario,
     "revalidation",
     overrides,
+    evidence,
   );
 }
 
@@ -152,14 +140,29 @@ function decisionInputPreimageForPhase(
   scenario: ScenarioData,
   phase: "initial" | "revalidation",
   overrides: DecisionInputOverrides,
+  evidence: DecisionEvidenceSnapshot,
 ): JsonValue {
-  const stalePlannedWithdrawals =
-    scenario.spec.stalePlannedWithdrawals === true;
-  const bankChanged = scenario.spec.bankChanged === true;
-  const pendingActivity =
-    phase === "initial"
-      ? GC15_PENDING_DISTRIBUTION.before
-      : GC15_PENDING_DISTRIBUTION.after;
+  if (evidence.phase !== phase) {
+    throw new Error(
+      `Decision input phase ${phase} received ${evidence.phase} evidence`,
+    );
+  }
+  const bankInstructionObservedAt =
+    overrides.bankInstructionObservedAt ??
+    evidence.bankInstruction.provenance.asOf;
+  const evidencePayload = {
+    ...evidence,
+    ref: overrides.evidenceRef ?? evidence.ref,
+    retrievedAt:
+      overrides.evidenceRetrievedAt ?? evidence.retrievedAt,
+    bankInstruction: {
+      ...evidence.bankInstruction,
+      provenance: {
+        ...evidence.bankInstruction.provenance,
+        asOf: bankInstructionObservedAt,
+      },
+    },
+  };
   return toJsonValue({
     hashKind: "money-movement-demo-input",
     preimageVersion: "money-movement-demo-input/4.0.0",
@@ -192,42 +195,7 @@ function decisionInputPreimageForPhase(
         provenanceClass: "user-entered-demo-input",
       },
       evidence: {
-        ref:
-          overrides.evidenceRef ??
-          (phase === "initial"
-            ? DEMO_EVIDENCE_REF
-            : DEMO_REVALIDATION_EVIDENCE_REF),
-        retrievedAt:
-          overrides.evidenceRetrievedAt ??
-          pendingActivity.retrievedAt,
-        availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
-        availableCashObservedAt: stalePlannedWithdrawals
-          ? OBSERVED_GC09_BALANCE
-          : OBSERVED_RECENT,
-        pendingApprovedMinor: pendingActivity.amountMinor,
-        pendingApprovedObservedAt: pendingActivity.observedAt,
-        plannedWithdrawalMonthlyMinor:
-          PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-        plannedWithdrawalObservedAt: stalePlannedWithdrawals
-          ? OBSERVED_STALE
-          : OBSERVED_RECENT,
-        bankInstruction: bankChanged
-          ? BANK_INSTRUCTION.changed
-          : BANK_INSTRUCTION.stable,
-        bankInstructionObservedAt:
-          overrides.bankInstructionObservedAt ??
-          (bankChanged
-            ? BANK_INSTRUCTION.changedOn
-            : "2026-05-20"),
-        destinationRestrictionRef: DESTINATION_RESTRICTION.ref,
-        destinationRestriction: DESTINATION_RESTRICTION.text,
-        conflictingFundingInstructions:
-          scenario.spec.conflictingInstruction === true
-            ? [
-                "Renovation costs are paid from the Joint Taxable account",
-                "Large one-time needs are funded from the Smith Family Taxable account",
-              ]
-            : [],
+        ...evidencePayload,
       },
     },
   });
@@ -241,110 +209,41 @@ export function hashCanonicalPreimage(preimage: JsonValue): string {
   return createHash("sha256").update(serialized.value).digest("hex");
 }
 
-export function decisionInputHashFor(scenario: ScenarioData): string {
-  return hashCanonicalPreimage(decisionInputPreimageFor(scenario));
+export function decisionInputHashFor(
+  scenario: ScenarioData,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+): string {
+  return hashCanonicalPreimage(
+    decisionInputPreimageFor(scenario, {}, evidence),
+  );
 }
 
 export function decisionInputIdentitiesFor(
   scenario: ScenarioData,
+  originalEvidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
+    scenario,
+  ),
+  refreshedEvidence: DecisionEvidenceSnapshot | null =
+    scenario.spec.invalidation === true
+      ? decisionEvidenceSnapshotFor(scenario, "revalidation")
+      : null,
 ): {
   readonly original: string;
   readonly refreshed: string | null;
 } {
   return {
-    original: decisionInputHashFor(scenario),
+    original: decisionInputHashFor(scenario, originalEvidence),
     refreshed:
-      scenario.spec.invalidation === true
+      refreshedEvidence
         ? hashCanonicalPreimage(
-            refreshedDecisionInputPreimageFor(scenario),
+            refreshedDecisionInputPreimageFor(
+              scenario,
+              {},
+              refreshedEvidence,
+            ),
           )
         : null,
   };
-}
-
-export function decisionAuthorityRequirementsFor(
-  stages: readonly ApprovalStageVM[],
-): readonly DecisionAuthorityRequirementClaim[] {
-  return stages.map((stage, index) => ({
-    order: index + 1,
-    title: stage.title,
-    requirement: stage.requirement,
-    expiry: stage.expiry ?? null,
-    escalation: stage.escalation ?? null,
-  }));
-}
-
-function assertAuthorityPlan(plan: AuthorityPlanVM): void {
-  const mode: unknown = plan.mode;
-  if (
-    mode !== "not-reached" &&
-    mode !== "automatic" &&
-    mode !== "staged"
-  ) {
-    throw new Error(`Unsupported authority mode: ${String(mode)}`);
-  }
-  const expectedKeys =
-    plan.mode === "not-reached"
-      ? ["detail", "mode", "summary"]
-      : plan.mode === "automatic"
-        ? [
-            "detail",
-            "executionMode",
-            "mode",
-            "policySource",
-            "rule",
-            "state",
-            "summary",
-            "threshold",
-          ]
-        : ["detail", "mode", "stages", "summary"];
-  const actualKeys = Object.keys(plan).sort();
-  if (
-    actualKeys.length !== expectedKeys.length ||
-    actualKeys.some((key, index) => key !== expectedKeys[index])
-  ) {
-    throw new Error(
-      `Unsupported authority field mixture for mode ${plan.mode}`,
-    );
-  }
-  if (plan.mode === "automatic") {
-    if (
-      typeof plan.threshold.value !== "number" ||
-      !Number.isFinite(plan.threshold.value)
-    ) {
-      throw new Error("Automatic authority requires one finite threshold");
-    }
-  }
-  if (
-    plan.mode === "staged" &&
-    plan.stages.length === 0
-  ) {
-    throw new Error("Staged authority requires at least one stage");
-  }
-}
-
-export function decisionAuthorityClaimFor(
-  plan: AuthorityPlanVM,
-): DecisionAuthorityClaim {
-  assertAuthorityPlan(plan);
-  switch (plan.mode) {
-    case "not-reached":
-      return { mode: plan.mode, reason: plan.detail };
-    case "automatic":
-      return {
-        mode: plan.mode,
-        rule: plan.rule,
-        thresholdMinor: Number(plan.threshold.value),
-        policySource: plan.policySource,
-        executionMode: plan.executionMode,
-        state: plan.state,
-      };
-    case "staged":
-      return {
-        mode: plan.mode,
-        requirements: decisionAuthorityRequirementsFor(plan.stages),
-      };
-  }
 }
 
 export function approvalReceiptHashFor(
@@ -369,8 +268,32 @@ export function decisionBundlePreimageFor(
   firm: FirmData,
   configuration: DecisionConfiguration,
   authority: DecisionAuthorityClaim,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
 ): JsonValue {
-  const inputPreimage = decisionInputPreimageFor(scenario);
+  if (
+    (authority.mode === "automatic" &&
+      configuration.eligibleRole !== null) ||
+    (authority.mode === "staged" &&
+      configuration.eligibleRole !== authority.eligibleRole)
+  ) {
+    throw new Error(
+      `Authority mode ${authority.mode} conflicts with eligible role ${String(configuration.eligibleRole)}`,
+    );
+  }
+  if (
+    authority.mode === "staged" &&
+    JSON.stringify(configuration.requesterParticipation) !==
+      JSON.stringify(authority.requesterParticipation)
+  ) {
+    throw new Error(
+      "Authority requester participation conflicts with the resolved configuration",
+    );
+  }
+  const inputPreimage = decisionInputPreimageFor(
+    scenario,
+    {},
+    evidence,
+  );
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
     preimageVersion: "money-movement-demo-bundle/4.0.0",
@@ -392,12 +315,14 @@ export function decisionRecordPreimageFor(
   firm: FirmData,
   configuration: DecisionConfiguration,
   claims: DecisionIdentityClaims,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
 ): JsonValue {
   const bundlePreimage = decisionBundlePreimageFor(
     scenario,
     firm,
     configuration,
     claims.authority,
+    evidence,
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
@@ -423,18 +348,26 @@ export function decisionIdentityFor(
   firm: FirmData,
   configuration: DecisionConfiguration,
   claims: DecisionIdentityClaims,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
 ): DecisionIdentity {
-  const inputHash = decisionInputHashFor(scenario);
+  const inputHash = decisionInputHashFor(scenario, evidence);
   const bundleHash = hashCanonicalPreimage(
     decisionBundlePreimageFor(
       scenario,
       firm,
       configuration,
       claims.authority,
+      evidence,
     ),
   );
   const decisionHash = hashCanonicalPreimage(
-    decisionRecordPreimageFor(scenario, firm, configuration, claims),
+    decisionRecordPreimageFor(
+      scenario,
+      firm,
+      configuration,
+      claims,
+      evidence,
+    ),
   );
   return {
     decisionId: `dec-${firm.id}-${decisionHash.slice(0, 24)}`,

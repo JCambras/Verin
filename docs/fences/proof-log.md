@@ -6214,3 +6214,29 @@ focused run to green. Companion mutations invent staged authority for both signe
 cases, add `stages` to automatic authority, empty staged authority, alter the automatic
 threshold claim, and add the balance leaf to the reserve floor; each is rejected or
 changes the governed identity.
+
+## PF-setup-36 · evidence and setup authority share closed owners
+
+**Date:** 2026-07-29.
+
+**Invariant:** one typed evidence snapshot supplies canonical identity, evaluation,
+screen, activation, record, and export projections. Setup authority is derived from all
+five current selections by one evaluator. Automatic and not-reached modes carry no
+eligible role, staged mode carries Operations, and setup requester participation remains
+unbound. Recent-bank impact copy reflects the selected threshold and exact authority
+result.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` mutates source identity,
+observation time, and provenance and requires the input hash to change; compares the
+same initial and refreshed snapshot with evidence UI and canonical preimages; projects
+all 162 closed selection keys per firm; rejects automatic and staged role mixtures; and
+checks unbound requester state through authority, activation, receipt, record, and
+export. `e2e/demo-journey.spec.ts` switches Firm B between the $100,000 and $25,000
+thresholds, checks the resulting impact language, and verifies role and requester claims
+on proof and exported records.
+
+**Adversarial proof:** temporary injections replaced the available-cash source identity
+with a constant, returned a null staged role, marked an operations actor as requester
+excluded, and hardcoded the lower-threshold impact summary. The focused semantic-truth
+run failed all four companions at lines 1674, 1840, 1910, and 2936. Reverting the
+injections returned the focused run to green.

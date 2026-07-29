@@ -27,12 +27,15 @@ import {
   DEMO_NOW,
   DEMO_RECORD_CREATED_AT,
   IDS,
-  OBSERVED_RECENT,
   decisionConfigurationFor,
   type DecisionIdentity,
   type FirmData,
   type ScenarioData,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "./decision-evidence";
 import {
   approvalReceiptHashFor,
   decisionAuthorityClaimFor,
@@ -48,6 +51,7 @@ export interface RecordBuildOptions {
    * administrator's activated choice after setup. It changes the ADR-0022 leaf
    * classes behind the printed floor and headroom, never the arithmetic. */
   readonly reserveHorizon?: RecordProvenance;
+  readonly evidence?: DecisionEvidenceSnapshot;
 }
 
 function buildRecordReserve(
@@ -85,8 +89,15 @@ export function buildRecord(
   stopNote: string | null,
   options: RecordBuildOptions = {},
 ): RecordVM {
+  const evidence =
+    options.evidence ?? decisionEvidenceSnapshotFor(scenario);
   const provenance = recordProvenance(
-    [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
+    [
+      evidence.availableCash.provenance,
+      evidence.pendingApprovedActivity.provenance,
+      evidence.plannedMonthlyWithdrawal.provenance,
+      prov("user-entered-demo-input", DEMO_NOW),
+    ],
     DEMO_NOW,
   );
   const reserveHorizon = options.reserveHorizon ?? FIXTURE_RESERVE_HORIZON;
@@ -117,6 +128,7 @@ export function buildRecord(
           buildDecisionAuthorityPlan(scenario, firm),
         ),
       },
+      evidence,
     );
   return {
     identity: {
@@ -142,7 +154,7 @@ export function buildRecord(
     },
     activatedConfiguration: options.activatedConfiguration ?? null,
     intent: buildIntent(scenario),
-    evidence: buildEvidence(scenario).rows,
+    evidence: buildEvidence(scenario, evidence).rows,
     disposition,
     precedence,
     reserve: buildRecordReserve(

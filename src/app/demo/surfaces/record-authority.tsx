@@ -51,40 +51,70 @@ export function RecordAuthority({
       </div>
     );
   }
-  return authority.stages.map((stage) => (
-    <div
-      key={stage.title}
-      className="flex flex-col gap-1 print-avoid-break"
-    >
-      <p className="text-sm font-medium text-slate-800">{stage.title}</p>
-      <p className="text-sm text-slate-600">{stage.requirement}</p>
-      <ul className="flex flex-col gap-1">
-        {stage.actors.map((actor) => (
-          <li
-            key={actor.name}
-            className={`text-sm ${
-              actor.status === "voided"
-                ? "text-slate-800"
-                : "text-slate-700"
-            }`}
-            style={
-              actor.status === "voided" ? { opacity: 0.7 } : undefined
-            }
-          >
-            {actor.name} · {actor.role}:{" "}
-            {actor.requesterExcluded
-              ? (actor.note ?? actor.statusLabel)
-              : actor.statusLabel}
-          </li>
-        ))}
-      </ul>
-      {stage.expiry || stage.escalation ? (
-        <p className="text-xs text-slate-600">
-          {stage.expiry}
-          {stage.expiry && stage.escalation ? " · " : ""}
-          {stage.escalation}
-        </p>
-      ) : null}
-    </div>
-  ));
+  return (
+    <>
+      <dl className="grid min-w-0 gap-2 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-slate-600">
+            Eligible approval role
+          </dt>
+          <dd className="text-slate-800">
+            {authority.eligibleRole === "operations"
+              ? "Operations"
+              : authority.eligibleRole}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-600">
+            Requester participation
+          </dt>
+          <dd className="text-slate-800">
+            {authority.requesterParticipation.mode === "unbound"
+              ? "Unbound in this demonstration"
+              : `Requester excluded · ${authority.requesterParticipation.constraint}`}
+          </dd>
+        </div>
+      </dl>
+      {authority.stages.map((stage) => (
+        <div
+          key={stage.title}
+          className="flex flex-col gap-1 print-avoid-break"
+        >
+          <p className="text-sm font-medium text-slate-800">
+            {stage.title}
+          </p>
+          <p className="text-sm text-slate-600">{stage.requirement}</p>
+          <ul className="flex flex-col gap-1">
+            {stage.actors.map((actor) => (
+              <li
+                key={actor.name}
+                className={`text-sm ${
+                  actor.status === "voided"
+                    ? "text-slate-800"
+                    : "text-slate-700"
+                }`}
+                style={
+                  actor.status === "voided"
+                    ? { opacity: 0.7 }
+                    : undefined
+                }
+              >
+                {actor.name} · {actor.role}:{" "}
+                {actor.requesterExcluded
+                  ? (actor.note ?? actor.statusLabel)
+                  : actor.statusLabel}
+              </li>
+            ))}
+          </ul>
+          {stage.expiry || stage.escalation ? (
+            <p className="text-xs text-slate-600">
+              {stage.expiry}
+              {stage.expiry && stage.escalation ? " · " : ""}
+              {stage.escalation}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </>
+  );
 }

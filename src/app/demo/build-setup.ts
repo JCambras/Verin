@@ -14,26 +14,38 @@ import type {
   SetupChoiceOptionVM,
   SetupFirmId,
   SetupPolicyGroupVM,
+  SetupSelections,
 } from "./setup-model";
-import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric, prov } from "./provenance";
+import {
+  setupFirmSelectionKey,
+} from "./setup-model";
+import { evaluateSetupPolicy } from "./setup-policy";
+import {
+  RESERVE_FLOOR_INPUTS,
+  derivedMetric,
+  prov,
+} from "./provenance";
 import {
   CANONICAL_REQUEST,
   BANK_INSTRUCTION,
   DEMO_ACTIVATION_EFFECTIVE_AT,
-  DEMO_EVIDENCE_REF,
   DEMO_NOW,
   DEMO_REQUEST_REF,
   GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
-  OBSERVED_RECENT,
   OBSERVED_GC09_BALANCE,
   OBSERVED_STALE,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
   pendingDistributionDeltaSentence,
+  scenarioById,
   type SignedLiquidityCase,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "./decision-evidence";
 
 /** Whole dollars from integer minor units, for the one place a signed liquidity basis
  * is stated as prose. The numbers are never restated by hand. */
@@ -158,21 +170,6 @@ function bankOption(
           "No approval authority exists until the resolving evidence is supplied.",
           false,
         ),
-    signedCaseEffect: specialist
-      ? effect(
-          "proceed",
-          "Proceed",
-          "Specialist review, then normal authority",
-          "GC-03 records a proceed disposition with specialist and operations stages.",
-          true,
-        )
-      : effect(
-          "blocked",
-          "Blocked",
-          "Blocked pending independent verification",
-          "GC-04 records no authority or execution plan while the evidence is absent.",
-          false,
-        ),
   };
 }
 
@@ -258,7 +255,129 @@ function group(
   return { id, title, question, rationale, caseRef, firms };
 }
 
-export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
+const DEFAULT_SETUP_SELECTIONS: SetupSelections = {
+  "firm-a": {
+    reserve: "6-months",
+    freshness: "30-days",
+    "bank-change": "specialist",
+    threshold: "25000",
+    expiry: "1d-3d",
+  },
+  "firm-b": {
+    reserve: "12-months",
+    freshness: "30-days",
+    "bank-change": "block",
+    threshold: "100000",
+    expiry: "1d-3d",
+  },
+};
+
+function bankImpactEffect(
+  selections: SetupSelections,
+  firmId: SetupFirmId,
+  evidence: DecisionEvidenceSnapshot,
+): ChoiceEffectVM {
+  const evaluated = evaluateSetupPolicy(
+    selections,
+    firmId,
+    evidence,
+  );
+  if (evaluated.dispositionKind === "blocked") {
+    return effect(
+      "blocked",
+      "Blocked",
+      "Blocked pending independent verification",
+      "No approval authority exists until the resolving evidence is supplied.",
+      false,
+    );
+  }
+  if (evaluated.authority.mode === "automatic") {
+    return effect(
+      "done",
+      "Automatic",
+      "Proceed automatically at this amount",
+      `The request is below the configured ${usd(evaluated.dualApprovalThresholdMinor)} threshold and no approval stage applies.`,
+      true,
+    );
+  }
+  const summary =
+    evaluated.requiresSpecialist && evaluated.dualApproval
+      ? "Specialist review, then two distinct operations approvers"
+      : evaluated.requiresSpecialist
+        ? "Specialist review; no dual approval at this amount"
+        : "Two distinct operations approvers";
+  return effect(
+    "proceed",
+    "Proceed",
+    summary,
+    evaluated.dualApproval
+      ? `The request exceeds the configured ${usd(evaluated.dualApprovalThresholdMinor)} threshold.`
+      : `The evaluator creates no standard approval below the configured ${usd(evaluated.dualApprovalThresholdMinor)} threshold.`,
+    true,
+  );
+}
+
+function bankImpactSelectionEffects(
+  evidence: DecisionEvidenceSnapshot,
+): NonNullable<
+  MoneyMovementSetupVM["impacts"][number]["selectionEffects"]
+> {
+  const result = {
+    "firm-a": [] as {
+      selectionKey: string;
+      effect: ChoiceEffectVM;
+    }[],
+    "firm-b": [] as {
+      selectionKey: string;
+      effect: ChoiceEffectVM;
+    }[],
+  };
+  for (const firmId of ["firm-a", "firm-b"] as const) {
+    for (const reserve of ["6-months", "9-months", "12-months"]) {
+      for (const freshness of ["7-days", "14-days", "30-days"]) {
+        for (const bankChange of ["specialist", "block"]) {
+          for (const threshold of ["25000", "50000", "100000"]) {
+            for (const expiry of ["4h-2d", "1d-3d", "2d-5d"]) {
+              const firmSelections = {
+                reserve,
+                freshness,
+                "bank-change": bankChange,
+                threshold,
+                expiry,
+              };
+              const selections: SetupSelections = {
+                "firm-a":
+                  firmId === "firm-a"
+                    ? firmSelections
+                    : DEFAULT_SETUP_SELECTIONS["firm-a"],
+                "firm-b":
+                  firmId === "firm-b"
+                    ? firmSelections
+                    : DEFAULT_SETUP_SELECTIONS["firm-b"],
+              };
+              result[firmId].push({
+                selectionKey:
+                  setupFirmSelectionKey(firmSelections),
+                effect: bankImpactEffect(
+                  selections,
+                  firmId,
+                  evidence,
+                ),
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  return result;
+}
+
+export function buildMoneyMovementSetup(
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
+    scenarioById("recent-bank-change-block"),
+  ),
+): MoneyMovementSetupVM {
   const reserveA = [reserveOption(6, "Signed"), reserveOption(9, "Supported"), reserveOption(12, "Supported")];
   const reserveB = [reserveOption(6, "Supported"), reserveOption(9, "Supported"), reserveOption(12, "Signed")];
   const freshA = [freshnessOption(7, "Supported"), freshnessOption(14, "Supported"), freshnessOption(30, "Signed")];
@@ -322,7 +441,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       group("expiry", "Normal approval expiry and escalation", "When does waiting create escalation work, and when does authority expire?", "Clocks are closed pairs. Expiry never produces approval.", "GC-01 / GC-16", [firmChoices("firm-a", "1d-3d", expiryA), firmChoices("firm-b", "1d-3d", expiryB)]),
     ],
     impacts: [
-      { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: `Same request · changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · independent verification absent`, groupId: "bank-change" },
+      { id: "recent-bank", title: "Recent bank change", caseRef: "GC-03 / GC-04", facts: `Same request · changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · independent verification absent`, groupId: "bank-change", selectionEffects: bankImpactSelectionEffects(evidence) },
       { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
       { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
       { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
@@ -346,14 +465,14 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
       summary: `Smith household · taxable account · household-titled destination · bank instruction changed ${BANK_INSTRUCTION.changedAgeDays} days ago`,
       requestRef: DEMO_REQUEST_REF,
-      evidenceRef: DEMO_EVIDENCE_REF,
+      evidenceRef: evidence.ref,
       facts: [
         { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "User-entered demo input", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
-        { label: "Available balance", metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
-        { label: "Pending approved activity", metric: fixtureMetric(SMITHS_LIQUIDITY.pendingMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
-        { label: "Planned monthly withdrawals", metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Household instruction", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
-        { label: "Destination restriction", value: "Household-titled destinations only", category: "Household instruction", provenance: prov("synthetic-fixture", "2026-05-10"), fakeClass: "synthetic-fixture" },
-        { label: "Bank instruction", value: `Changed ${BANK_INSTRUCTION.changedOn} · ${BANK_INSTRUCTION.changedAgeDays} days ago · not independently verified`, category: "Synthetic fixture", provenance: prov("synthetic-fixture", BANK_INSTRUCTION.changedOn), fakeClass: "synthetic-fixture" },
+        { label: "Available balance", metric: metric(evidence.availableCash.value, "currency-minor", evidence.availableCash.provenance), category: "Synthetic fixture", provenance: evidence.availableCash.provenance, fakeClass: "synthetic-fixture" },
+        { label: "Pending approved activity", metric: metric(evidence.pendingApprovedActivity.value, "currency-minor", evidence.pendingApprovedActivity.provenance), category: "Synthetic fixture", provenance: evidence.pendingApprovedActivity.provenance, fakeClass: "synthetic-fixture" },
+        { label: "Planned monthly withdrawals", metric: metric(evidence.plannedMonthlyWithdrawal.value, "currency-minor", evidence.plannedMonthlyWithdrawal.provenance), category: "Household instruction", provenance: evidence.plannedMonthlyWithdrawal.provenance, fakeClass: "synthetic-fixture" },
+        { label: "Destination restriction", value: evidence.destinationRestriction.value.text, category: "Household instruction", provenance: evidence.destinationRestriction.provenance, fakeClass: "synthetic-fixture" },
+        { label: "Bank instruction", value: `Changed ${evidence.bankInstruction.provenance.asOf.slice(0, 10)} · ${BANK_INSTRUCTION.changedAgeDays} days ago · not independently verified`, category: "Synthetic fixture", provenance: evidence.bankInstruction.provenance, fakeClass: "synthetic-fixture" },
         { label: "Execution capability", value: "ACH through labeled fake adapter only", category: "Adapter fact", provenance: prov("fake-adapter-response", DEMO_NOW), fakeClass: "fake-adapter-response" },
         { label: "Authority invariant", value: "Blocked and prohibited decisions carry no approval authority", category: "Regulatory or product constraint", provenance: prov("deterministic-engine-output", DEMO_NOW), fakeClass: "deterministic-engine-output" },
       ],
@@ -364,7 +483,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     },
     proof: {
       engineLabel: "Labeled deterministic presentation builder · not production evaluator output",
-      dataProvenance: `Synthetic Smiths fixture · as of ${OBSERVED_GC09_BALANCE}`,
+      dataProvenance: `Synthetic Smiths fixture · as of ${evidence.availableCash.provenance.asOf.slice(0, 10)}`,
       exportQuestion: "Which profile's decision record do you want to export?",
       exportHint: "The setup produced two outcomes, so the export names one of them. The identifiers above are what the exported record carries.",
       exportError: "Choose which profile's decision record to export.",

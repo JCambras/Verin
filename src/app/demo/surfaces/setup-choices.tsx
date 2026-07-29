@@ -3,6 +3,7 @@
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT } from "../model";
+import { setupFirmSelectionKey } from "../setup-model";
 import type {
   ChoiceEffectVM,
   MoneyMovementSetupVM,
@@ -125,6 +126,16 @@ export function ImpactBody({
           const b = group
             ? selectedOption(vm.policyGroups, selections, group.id, "firm-b")
             : null;
+          const selectionEffect = (firmId: SetupFirmId) =>
+            impact.selectionEffects?.[firmId].find(
+              (candidate) =>
+                candidate.selectionKey ===
+                setupFirmSelectionKey(selections[firmId]),
+            )?.effect;
+          const effectA =
+            selectionEffect("firm-a") ?? a?.signedCaseEffect;
+          const effectB =
+            selectionEffect("firm-b") ?? b?.signedCaseEffect;
           const varied = (a !== null && a.truthLabel !== "Signed") || (b !== null && b.truthLabel !== "Signed");
           return (
             <section
@@ -142,16 +153,18 @@ export function ImpactBody({
                 {impact.title}
               </h2>
               <p className="mt-1 text-xs text-slate-600">{impact.facts}</p>
-              {group && a?.signedCaseEffect && b?.signedCaseEffect ? (
+              {group && a && b && effectA && effectB ? (
                 <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
                   {group.firms.map((firm) => {
                     const option = firm.firmId === "firm-a" ? a : b;
+                    const selectedEffect =
+                      firm.firmId === "firm-a" ? effectA : effectB;
                     return (
                       <ImpactFirmCard
                         key={firm.firmId}
                         firmId={firm.firmId}
                         firmLabel={firm.firmLabel}
-                        effect={option.signedCaseEffect!}
+                        effect={selectedEffect}
                         signed={option.truthLabel === "Signed"}
                       />
                     );

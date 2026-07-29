@@ -14,6 +14,7 @@ import type {
   AutomaticAuthorityVM,
   UnreachedAuthorityVM,
 } from "./model";
+import type { SetupPolicyEvaluation } from "./setup-policy";
 
 export function unreachedAuthorityPlan(
   detail: string,
@@ -29,6 +30,11 @@ export function automaticAuthorityPlan(
   firm: FirmData,
   thresholdProvenance: RecordProvenance,
 ): AutomaticAuthorityVM {
+  if (firm.eligibleRole !== null) {
+    throw new Error(
+      "Automatic authority cannot carry an eligible approval role",
+    );
+  }
   const amount = `$${(
     CANONICAL_REQUEST.amountMinor / 100
   ).toLocaleString("en-US")}`;
@@ -58,20 +64,34 @@ export function automaticAuthorityPlan(
 
 export function evaluateAuthorityPlan(
   firm: FirmData,
-  disposition: { readonly kind: string },
-  dualApproval: boolean,
+  evaluation: SetupPolicyEvaluation,
   approvalClock: ApprovalClock,
-  requiresSpecialist: boolean,
   thresholdProvenance: RecordProvenance,
 ): AuthorityPlanVM {
-  if (disposition.kind !== "proceed") {
+  if (
+    firm.eligibleRole !== evaluation.authority.eligibleRole ||
+    JSON.stringify(firm.requesterParticipation) !==
+      JSON.stringify(evaluation.requesterParticipation)
+  ) {
+    throw new Error(
+      "Runtime firm authority fields do not match the evaluator result",
+    );
+  }
+  if (evaluation.authority.mode === "not-reached") {
     return unreachedAuthorityPlan(
       "Independent bank verification is required before authority exists. No approval can substitute for the missing evidence.",
     );
   }
-  if (!requiresSpecialist && !dualApproval) {
+  if (evaluation.authority.mode === "automatic") {
     return automaticAuthorityPlan(firm, thresholdProvenance);
   }
+  if (firm.eligibleRole !== "operations") {
+    throw new Error(
+      "Staged authority requires the Operations eligible role",
+    );
+  }
+  const requiresSpecialist = evaluation.requiresSpecialist;
+  const dualApproval = evaluation.dualApproval;
   const specialistStage = {
     title: "Stage 1 - Bank-instruction specialist review",
     requirement:
@@ -93,6 +113,8 @@ export function evaluateAuthorityPlan(
       mode: "staged",
       summary: "Specialist review; no dual approval at this amount",
       detail: "The evaluator creates no standard approval below the configured threshold.",
+      eligibleRole: firm.eligibleRole,
+      requesterParticipation: firm.requesterParticipation,
       stages: [specialistStage],
     };
   }
@@ -109,7 +131,7 @@ export function evaluateAuthorityPlan(
       status: "done",
       statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval2At)}`,
     },
-    ...(firm.requesterConstraint === null
+    ...(firm.requesterParticipation.mode === "unbound"
       ? []
       : [
           {
@@ -125,7 +147,7 @@ export function evaluateAuthorityPlan(
   const operationsStage: ApprovalStageVM = {
     title: `Stage ${requiresSpecialist ? 2 : 1} - Dual operations approval`,
     requirement:
-      firm.requesterConstraint === null
+      firm.requesterParticipation.mode === "unbound"
         ? "Two approvals required from distinct operations approvers. Requester participation remains unbound in this demonstration."
         : "Two approvals required from distinct operations approvers. The requester cannot approve.",
     stepState: "done",
@@ -143,6 +165,8 @@ export function evaluateAuthorityPlan(
       ? "Specialist review, then two distinct operations approvers"
       : "Two distinct operations approvers",
     detail: `${approvalClock.escalation}. ${approvalClock.expiry}.`,
+    eligibleRole: firm.eligibleRole,
+    requesterParticipation: firm.requesterParticipation,
     stages,
   };
 }

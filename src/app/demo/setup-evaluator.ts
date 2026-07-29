@@ -1,19 +1,18 @@
-import { projectReserve } from "@domain/money-movement/reserve-projection";
 import { buildDisposition, buildPolicyTrace } from "./build-decision";
 import { buildMoneyMovementSetup } from "./build-setup";
 import { buildRecord } from "./build-summary";
 import {
   APPROVAL_CLOCKS,
-  CANONICAL_REQUEST,
   DEMO_NOW,
   FIRMS,
-  OBSERVED_RECENT,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-  SMITHS_LIQUIDITY,
   scenarioById,
   type DecisionConfiguration,
   type FirmData,
 } from "./data";
+import {
+  decisionEvidenceSnapshotFor,
+  type DecisionEvidenceSnapshot,
+} from "./decision-evidence";
 import {
   decisionAuthorityClaimFor,
   decisionIdentityFor,
@@ -46,16 +45,16 @@ import {
 import type { RecordVM } from "./model";
 import { evaluateAuthorityPlan } from "./setup-authority";
 import {
-  BANK_HANDLING,
-  FRESHNESS_DAYS,
-  RESERVE_MONTHS,
   SETUP_SCENARIO_ID,
-  THRESHOLD_MINOR,
   optionFor,
   setupActivationPreimageFor,
   validateSetupActivationDraft,
   type SetupActivationAuthorityBinding,
 } from "./setup-activation-input";
+import {
+  evaluateSetupPolicy,
+  type SetupPolicyEvaluation,
+} from "./setup-policy";
 
 /** Whether every selected option is still the firm's ACTIVE-profile value. This decides
  * policy VERSION identity (an untouched profile keeps FA-4.2 / FB-2.1); it deliberately
@@ -85,22 +84,25 @@ function selectedTruthLabels(
 
 function runtimeFirm(
   firmId: SetupFirmId,
-  selections: SetupSelections,
+  evaluation: SetupPolicyEvaluation,
   policyVersion: string,
 ): FirmData {
   const base = FIRMS[firmId]!;
   return {
     ...base,
-    reserveMonths: RESERVE_MONTHS[selections[firmId].reserve]!,
+    reserveMonths: evaluation.reserveMonths,
     dualApprovalThresholdMinor:
-      THRESHOLD_MINOR[selections[firmId].threshold]!,
-    bankChangeHandling: BANK_HANDLING[selections[firmId]["bank-change"]]!,
+      evaluation.dualApprovalThresholdMinor,
+    bankChangeHandling: evaluation.bankChangeHandling,
+    eligibleRole: evaluation.authority.eligibleRole,
+    requesterParticipation: evaluation.requesterParticipation,
     policyVersion,
   };
 }
 
 function decisionConfiguration(
   firm: FirmData,
+  evaluation: SetupPolicyEvaluation,
   selections: SetupSelections,
   snapshotHash: string,
   authority: SetupActivationAuthorityBinding,
@@ -108,12 +110,12 @@ function decisionConfiguration(
   return {
     policyVersion: firm.policyVersion,
     reserveMonths: firm.reserveMonths,
-    freshnessDays: FRESHNESS_DAYS[selections[firm.id as SetupFirmId].freshness]!,
+    freshnessDays: evaluation.freshnessDays,
     bankChangeHandling: firm.bankChangeHandling,
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
     eligibleRole: firm.eligibleRole,
-    requesterConstraint: firm.requesterConstraint,
+    requesterParticipation: firm.requesterParticipation,
     approvalClockId: selections[firm.id as SetupFirmId].expiry,
     activatedSnapshotHash: snapshotHash,
     activationAuthority: {
@@ -132,6 +134,7 @@ function evaluateFirm(
   selections: SetupSelections,
   snapshotHash: string,
   authority: SetupActivationAuthorityBinding,
+  evidence: DecisionEvidenceSnapshot,
 ): Omit<SetupProofFirmVM, "exportHref"> {
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
   const activeProfile = matchesActiveProfile(vm, firmId, selections);
@@ -146,17 +149,22 @@ function evaluateFirm(
     };
   });
   const baseFirm = FIRMS[firmId]!;
+  const policyEvaluation = evaluateSetupPolicy(
+    selections,
+    firmId,
+    evidence,
+  );
   const resolvedConfiguration = {
-    reserveMonths: RESERVE_MONTHS[selections[firmId].reserve]!,
-    freshnessDays:
-      FRESHNESS_DAYS[selections[firmId].freshness]!,
-    bankChangeHandling:
-      BANK_HANDLING[selections[firmId]["bank-change"]]!,
+    reserveMonths: policyEvaluation.reserveMonths,
+    freshnessDays: policyEvaluation.freshnessDays,
+    bankChangeHandling: policyEvaluation.bankChangeHandling,
     dualApprovalThresholdMinor:
-      THRESHOLD_MINOR[selections[firmId].threshold]!,
+      policyEvaluation.dualApprovalThresholdMinor,
     approvalsRequired: baseFirm.approvalsRequired,
-    eligibleRole: baseFirm.eligibleRole,
-    requesterConstraint: baseFirm.requesterConstraint,
+    authorityMode: policyEvaluation.authority.mode,
+    eligibleRole: policyEvaluation.authority.eligibleRole,
+    requesterParticipation:
+      policyEvaluation.requesterParticipation,
     approvalClock: APPROVAL_CLOCKS[selections[firmId].expiry]!,
   };
   const configurationHash = hashCanonicalPreimage(toJsonValue({
@@ -178,40 +186,24 @@ function evaluateFirm(
     : `${firmId === "firm-a" ? "FA" : "FB"}-MM-DEMO-${configurationHash
         .slice(0, 12)
         .toUpperCase()}`;
-  const firm = runtimeFirm(firmId, selections, policyVersion);
+  const firm = runtimeFirm(firmId, policyEvaluation, policyVersion);
   const configuration = decisionConfiguration(
     firm,
+    policyEvaluation,
     selections,
     snapshotHash,
     authority,
   );
-  const projection = projectReserve({
-    availableMinor: SMITHS_LIQUIDITY.availableMinor,
-    pendingMinor: SMITHS_LIQUIDITY.pendingMinor,
-    requestMinor: SMITHS_LIQUIDITY.requestMinor,
-    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-    reserveMonths: configuration.reserveMonths,
-  });
-  const evidenceAgeDays =
-    (Date.parse(DEMO_NOW) - Date.parse(OBSERVED_RECENT)) / 86_400_000;
-  const freshnessSatisfied = evidenceAgeDays <= configuration.freshnessDays;
-  const bankSatisfied =
-    configuration.bankChangeHandling === "specialist-review";
-  const kind =
-    projection.reserveSatisfied && freshnessSatisfied && bankSatisfied
-      ? "proceed"
-      : "blocked";
+  const projection = policyEvaluation.projection;
+  const freshnessSatisfied = policyEvaluation.freshnessSatisfied;
+  const kind = policyEvaluation.dispositionKind;
   const scenario = scenarioById(SETUP_SCENARIO_ID);
   const disposition = buildDisposition(scenario, firm, kind, ACTIVATED_RESERVE_HORIZON);
-  const dualApproval =
-    CANONICAL_REQUEST.amountMinor > configuration.dualApprovalThresholdMinor;
   const approvalClock = APPROVAL_CLOCKS[configuration.approvalClockId]!;
   const evaluatedAuthority = evaluateAuthorityPlan(
     firm,
-    disposition,
-    dualApproval,
+    policyEvaluation,
     approvalClock,
-    configuration.bankChangeHandling === "specialist-review",
     prov("user-entered-demo-input", DEMO_NOW),
   );
   const identity = decisionIdentityFor(
@@ -227,6 +219,7 @@ function evaluateFirm(
       ).rows,
       authority: decisionAuthorityClaimFor(evaluatedAuthority),
     },
+    evidence,
   );
   return {
     firmId,
@@ -243,6 +236,9 @@ function evaluateFirm(
     configurationProvenance: POSTURE_CONFIGURATION_LABEL[posture],
     disposition,
     authorityPlan: evaluatedAuthority,
+    eligibleRole: policyEvaluation.authority.eligibleRole,
+    requesterParticipation:
+      policyEvaluation.requesterParticipation,
     reserveMetric: derivedMetric(
       projection.requiredReserveMinor,
       "currency-minor",
@@ -279,19 +275,28 @@ export function setupActivationAuthorityClaims(
   vm: MoneyMovementSetupVM,
   selections: SetupSelections,
   authority: SetupActivationAuthorityBinding,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
+    scenarioById(SETUP_SCENARIO_ID),
+  ),
 ) {
-  return SETUP_FIRM_IDS.map((firmId) => ({
-    firmId,
-    authority: decisionAuthorityClaimFor(
-      evaluateFirm(
-        vm,
-        firmId,
-        selections,
-        "0".repeat(64),
-        authority,
-      ).authorityPlan,
-    ),
-  }));
+  return SETUP_FIRM_IDS.map((firmId) => {
+    const evaluated = evaluateFirm(
+      vm,
+      firmId,
+      selections,
+      "0".repeat(64),
+      authority,
+      evidence,
+    );
+    return {
+      firmId,
+      authority: decisionAuthorityClaimFor(
+        evaluated.authorityPlan,
+      ),
+      eligibleRole: evaluated.eligibleRole,
+      requesterParticipation: evaluated.requesterParticipation,
+    };
+  });
 }
 
 function deepFreeze<T>(value: T): T {
@@ -330,11 +335,14 @@ export function activateMoneyMovementSetup(
         "The demonstration attestation does not match the authenticated Principal and exact setup draft.",
     };
   }
-  const vm = buildMoneyMovementSetup();
+  const scenario = scenarioById(SETUP_SCENARIO_ID);
+  const evidence = decisionEvidenceSnapshotFor(scenario);
+  const vm = buildMoneyMovementSetup(evidence);
   const authorityPlans = setupActivationAuthorityClaims(
     vm,
     draft.selections,
     authority,
+    evidence,
   );
   const snapshotHash = hashCanonicalPreimage(
     setupActivationPreimageFor(
@@ -342,6 +350,7 @@ export function activateMoneyMovementSetup(
       draft,
       authority,
       authorityPlans,
+      evidence,
     ),
   );
   const snapshotVersion = `MM-DEMO-SNAPSHOT-${snapshotHash
@@ -353,6 +362,7 @@ export function activateMoneyMovementSetup(
     draft.selections,
     snapshotHash,
     authority,
+    evidence,
   );
   const evaluatedB = evaluateFirm(
     vm,
@@ -360,6 +370,7 @@ export function activateMoneyMovementSetup(
     draft.selections,
     snapshotHash,
     authority,
+    evidence,
   );
   const firms: [SetupProofFirmVM, SetupProofFirmVM] = [
     {
@@ -385,6 +396,7 @@ export function activateMoneyMovementSetup(
         selectionsHash: authority.selectionsHash,
         statement: vm.activation.attestationStatement,
       },
+      evidence,
       selections: draft.selections,
       firms,
     }),
@@ -401,7 +413,16 @@ export function buildActivatedRecord(
   if (!evaluated) {
     throw new Error(`Activated setup snapshot does not contain ${firmId}`);
   }
-  const firm = runtimeFirm(firmId, snapshot.selections, evaluated.policyVersion);
+  const policyEvaluation = evaluateSetupPolicy(
+    snapshot.selections,
+    firmId,
+    snapshot.evidence,
+  );
+  const firm = runtimeFirm(
+    firmId,
+    policyEvaluation,
+    evaluated.policyVersion,
+  );
   const reached = {
     authority: evaluated.authorityPlan.mode !== "not-reached",
     safety: evaluated.authorityPlan.mode !== "not-reached",
@@ -431,6 +452,9 @@ export function buildActivatedRecord(
         configurationPostureStatus: POSTURE_STATUS[evaluated.configurationPosture],
         configurationPostureLabel: POSTURE_OPTION_LABEL[evaluated.configurationPosture],
         configurationProvenance: evaluated.configurationProvenance,
+        eligibleRole: evaluated.eligibleRole,
+        requesterParticipation:
+          evaluated.requesterParticipation.mode,
         activationActorId:
           snapshot.activationAcknowledgment.actor.opaqueId,
         activationActorRole:
@@ -445,6 +469,7 @@ export function buildActivatedRecord(
           snapshot.activationAcknowledgment.statement,
       },
       reserveHorizon: ACTIVATED_RESERVE_HORIZON,
+      evidence: snapshot.evidence,
     },
   );
 }

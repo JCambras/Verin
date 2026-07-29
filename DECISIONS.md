@@ -3431,3 +3431,29 @@ misrepresentation before it reaches an export.
 **Revert path:** replace automatic authority only with a new captain ruling that changes
 GC-02 and GC-14. The loader, type-only import, closed-mode, and exact-lineage boundaries
 remain independently reversible.
+
+### D-071 · 2026-07-29 · reversible · Evidence and setup authority have one evaluator owner
+
+Each decision phase now carries one typed evidence snapshot containing every value,
+source identity, subject identity, observation instant, retrieval instant, and
+provenance claim. Canonical input identity, workspace, evidence review, setup request,
+activation snapshot, evaluator input, printable record, and export consume that same
+snapshot. A material revalidation creates a separate refreshed snapshot and identity
+without rewriting the original evidence.
+
+Setup policy evaluation now owns all five closed selections, the evidence snapshot,
+reserve projection, disposition, and authority mode. Automatic and not-reached
+authority have no eligible role. Every staged setup path binds the Operations role.
+Requester participation remains explicitly unbound throughout the setup path, so no
+requester exclusion or requester actor can enter its configuration, stages, hashes,
+receipts, UI, or export. Signed-case impact previews are a bounded projection of the
+same evaluator over the complete selection key, including the selected threshold.
+
+**Why:** independently reconstructed evidence, role, requester, or impact projections
+can make a hash, screen, and export each internally plausible while they contradict one
+another. One typed snapshot and one closed evaluator make those contradictions
+unrepresentable within the bounded demo path.
+
+**Revert path:** replace these owners together only if a real persisted evidence bundle
+and policy evaluator provide equivalent phase identity, closed authority validation,
+and presentation-ready projections.
