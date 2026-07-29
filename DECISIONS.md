@@ -6363,6 +6363,15 @@ and TypeScript assertion wrappers before recognizing neutralizers; and **(4)** G
 mutable contract and typed manifest to the exact twelve surface identities from the SHA-pinned ratified
 demo contract. PF-024, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
 
+The captain-approved reachability and delivery review (2026-07-29) amended ADR-0030 in place a
+sixteenth time: **(1)** required tests and directly registered hooks reject TestInfo skip, fixme, and
+fail neutralizers obtained from `test.info()` as well as callback parameters, including aliases and
+destructuring; **(2)** the dynamic demo page's validated return must be provably reachable, so a nested
+or conditional exit cannot hide a constant surface; **(3)** the canonical Gate 0 journey must click the
+complete ordered accessible-control graph and cannot substitute `page.goto`; and **(4)** the
+`demo-screens` upload rejects false conditions and `continue-on-error` while allowing the current
+`!cancelled()` predicate. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

@@ -102,9 +102,10 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
 the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
-route case's imported component, and ordered screenshots that verify the corresponding URL and loaded
-marker. CI then runs `scripts/demo-screen-artifacts.ts` to require every
-canonical artifact to exist and be non-empty, and upload-artifact fails on a missing directory.
+route case's imported component, the dynamic page's reachable return, the exact ordered clickable
+journey controls, and screenshots that verify the corresponding URL and loaded marker. CI then runs
+`scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
+upload-artifact fails when missing, conditionally disabled, or failure-neutralized.
 Landing a real path = replace the corresponding builder and remove
 its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
@@ -254,7 +255,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins the
   exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
   assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
-  Playwright symbols, rejects TestInfo neutralizers in required tests and their registered hooks,
+  Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
+  required tests and their registered hooks,
   proves Playwright forbids focused exclusion and selects the required specs, and binds every public,
   authenticated, and demo route to its loaded-state scan. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.

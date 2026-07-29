@@ -6,6 +6,8 @@ import {
   Project,
   SyntaxKind,
   VariableDeclarationKind,
+  type ArrowFunction,
+  type FunctionExpression,
   type SourceFile,
 } from "ts-morph";
 import { parse as parseYaml } from "yaml";
@@ -33,6 +35,22 @@ const CI_PATH = ".github/workflows/ci.yml";
 const ARTIFACT_COMMAND =
   "pnpm exec tsx scripts/demo-screen-artifacts.ts";
 const JOURNEY_TEST = "the seven-minute journey is clickable end-to-end on labeled fakes";
+const CANONICAL_JOURNEY_LINKS = [
+  "Demo",
+  "Run the seven-minute journey",
+  "Ask Verin about this household",
+  "Gather evidence",
+  "View the recommendation",
+  "View the policy trace",
+  "Continue to authority",
+  "Approve this movement",
+  "Execute the movement",
+  "View verification",
+  "Compare Firm A and Firm B",
+  "Author a policy change",
+  "Approve and activate FA-4.3",
+  "View the printable decision record",
+] as const;
 const RATIFIED_SURFACE_RATCHET = [
   "Household workspace",
   "Contextual intent panel",
@@ -139,6 +157,36 @@ function unwrapParentheses(node: Node | undefined): Node | undefined {
   return current;
 }
 
+type Callback = ArrowFunction | FunctionExpression;
+
+function canonicalJourneyCallback(file: SourceFile): Callback | undefined {
+  const registration = file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .find((call) => {
+      const [title] = call.getArguments();
+      const statement = call.getFirstAncestorByKind(
+        SyntaxKind.ExpressionStatement,
+      );
+      return (
+        isNamedImportIdentifier(
+          call.getExpression(),
+          "@playwright/test",
+          "test",
+        ) &&
+        statement?.getExpression() === call &&
+        statement.getParent() === file &&
+        Node.isStringLiteral(title) &&
+        title.getLiteralText() === JOURNEY_TEST
+      );
+    });
+  return registration
+    ?.getArguments()
+    .find(
+      (argument): argument is Callback =>
+        Node.isArrowFunction(argument) || Node.isFunctionExpression(argument),
+    );
+}
+
 function routePageUsesResolvedStation(source: string): boolean {
   const file = parsedSourceFile("/route.tsx", source);
   const renderer = file.getFunction("renderStation");
@@ -182,9 +230,14 @@ function routePageUsesResolvedStation(source: string): boolean {
   ) {
     return false;
   }
-  const returned = unwrapParentheses(
-    body.getStatements().find(Node.isReturnStatement)?.getExpression(),
-  );
+  const returnStatement = body.getStatements().find(Node.isReturnStatement);
+  if (
+    returnStatement === undefined ||
+    !isProvablyReachable(returnStatement, page)
+  ) {
+    return false;
+  }
+  const returned = unwrapParentheses(returnStatement.getExpression());
   if (!Node.isJsxElement(returned)) return false;
   const opening = returned.getOpeningElement();
   if (opening.getTagNameNode().getText() !== "div") return false;
@@ -257,25 +310,7 @@ function screenshotSequence(
   source: string,
 ): Array<{ number: number; name: string; station: string }> {
   const file = parsedSourceFile("/demo.spec.ts", source);
-  const registration = file
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .find((call) => {
-      const [title] = call.getArguments();
-      const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement);
-      return (
-        isNamedImportIdentifier(call.getExpression(), "@playwright/test", "test") &&
-        statement?.getExpression() === call &&
-        statement.getParent() === file &&
-        Node.isStringLiteral(title) &&
-        title.getLiteralText() === JOURNEY_TEST
-      );
-    });
-  const callback = registration
-    ?.getArguments()
-    .find(
-      (argument) =>
-        Node.isArrowFunction(argument) || Node.isFunctionExpression(argument),
-    );
+  const callback = canonicalJourneyCallback(file);
   const body = callback?.getBody();
   const helper = file.getFunction("snap");
   if (
@@ -325,6 +360,94 @@ function screenshotSequence(
         ]
       : [];
   });
+}
+
+function nearestFunction(node: Node): Node | undefined {
+  return node
+    .getAncestors()
+    .find(
+      (ancestor) =>
+        Node.isArrowFunction(ancestor) ||
+        Node.isFunctionExpression(ancestor) ||
+        Node.isFunctionDeclaration(ancestor),
+    );
+}
+
+function linkClickLabel(statement: Node): string | undefined {
+  if (!Node.isExpressionStatement(statement)) return undefined;
+  const awaited = statement.getExpression();
+  if (!Node.isAwaitExpression(awaited)) return undefined;
+  const click = awaited.getExpression();
+  if (!Node.isCallExpression(click) || click.getArguments().length !== 0) {
+    return undefined;
+  }
+  const clickExpression = click.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(clickExpression) ||
+    clickExpression.getName() !== "click"
+  ) {
+    return undefined;
+  }
+  const getByRole = clickExpression.getExpression();
+  if (!Node.isCallExpression(getByRole)) return undefined;
+  const roleExpression = getByRole.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(roleExpression) ||
+    roleExpression.getExpression().getText() !== "page" ||
+    roleExpression.getName() !== "getByRole"
+  ) {
+    return undefined;
+  }
+  const [role, options] = getByRole.getArguments();
+  if (
+    !Node.isStringLiteral(role) ||
+    role.getLiteralText() !== "link" ||
+    !Node.isObjectLiteralExpression(options)
+  ) {
+    return undefined;
+  }
+  const name = options.getProperty("name");
+  const initializer = Node.isPropertyAssignment(name)
+    ? name.getInitializer()
+    : undefined;
+  return Node.isStringLiteral(initializer)
+    ? initializer.getLiteralText()
+    : undefined;
+}
+
+function canonicalJourneyControlLabels(source: string): string[] {
+  const file = parsedSourceFile("/demo.spec.ts", source);
+  const callback = canonicalJourneyCallback(file);
+  const body = callback?.getBody();
+  if (
+    callback === undefined ||
+    !callback.isAsync() ||
+    !Node.isBlock(body)
+  ) {
+    return [];
+  }
+  return body.getStatements().flatMap((statement) => {
+    if (!isProvablyReachable(statement, callback)) return [];
+    const label = linkClickLabel(statement);
+    return label === undefined ? [] : [label];
+  });
+}
+
+function canonicalJourneyUsesProgrammaticNavigation(source: string): boolean {
+  const file = parsedSourceFile("/demo.spec.ts", source);
+  const callback = canonicalJourneyCallback(file);
+  if (callback === undefined) return true;
+  return callback
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) => {
+      if (nearestFunction(call) !== callback) return false;
+      const expression = call.getExpression();
+      return (
+        Node.isPropertyAccessExpression(expression) &&
+        expression.getExpression().getText() === "page" &&
+        expression.getName() === "goto"
+      );
+    });
 }
 
 function isRealScreenshotDeclaration(
@@ -566,7 +689,36 @@ export function surfaceCompletenessProblems(
       `${E2E_PATH}:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png`,
     );
   }
+  if (
+    canonicalJourneyUsesProgrammaticNavigation(e2e) ||
+    JSON.stringify(canonicalJourneyControlLabels(e2e)) !==
+      JSON.stringify(CANONICAL_JOURNEY_LINKS)
+  ) {
+    problems.push(
+      `${E2E_PATH}:1 canonical journey must traverse the complete product route graph through its expected clickable controls`,
+    );
+  }
   return problems;
+}
+
+function allowsBlockingFailure(node: unknown): boolean {
+  const candidate = node as
+    | { "continue-on-error"?: unknown }
+    | null;
+  return (
+    candidate !== null &&
+    typeof candidate === "object" &&
+    (candidate["continue-on-error"] === undefined ||
+      candidate["continue-on-error"] === false)
+  );
+}
+
+function uploadConditionRuns(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === "string" &&
+      value.replace(/\s/g, "") === "${{!cancelled()}}")
+  );
 }
 
 export function demoArtifactCiProblems(ci: string): string[] {
@@ -592,12 +744,19 @@ export function demoArtifactCiProblems(ci: string): string[] {
     Array.isArray(steps) &&
     steps.some((step) => {
       const candidate = step as
-        | { uses?: unknown; with?: unknown }
+        | {
+            uses?: unknown;
+            with?: unknown;
+            if?: unknown;
+            "continue-on-error"?: unknown;
+          }
         | null;
       const settings = candidate?.with;
       if (
         typeof candidate?.uses !== "string" ||
         !candidate.uses.startsWith("actions/upload-artifact@") ||
+        !allowsBlockingFailure(candidate) ||
+        !uploadConditionRuns(candidate.if) ||
         settings === null ||
         typeof settings !== "object" ||
         Array.isArray(settings)
@@ -717,6 +876,10 @@ describe("demo-surface-completeness fence", () => {
           "data-demo-surface={resolvedStation}",
           'data-demo-surface="workspace"',
         ),
+        route.replace(
+          "  return (\n    <div data-demo-surface={resolvedStation}>",
+          '  if (true) return <div data-demo-surface="workspace"><WorkspaceSurface vm={journey.workspace} {...ids} /></div>;\n  return (\n    <div data-demo-surface={resolvedStation}>',
+        ),
       ]) {
         expect(
           surfaceCompletenessProblems(
@@ -739,6 +902,37 @@ describe("demo-surface-completeness fence", () => {
           (path) => path !== DEMO_SURFACES[0]!.componentPath && exists(path),
         ),
       ).not.toEqual([]);
+
+      const workspaceControl =
+        '  await page.getByRole("link", { name: "Ask Verin about this household" }).click();';
+      for (const bypassedJourney of [
+        e2e.replace(
+          workspaceControl,
+          '  await page.goto("/app/demo/intent?scenario=recent-bank-change-block&firm=firm-a");',
+        ),
+        e2e.replace(
+          workspaceControl,
+          `${workspaceControl}
+  await page.goto("/app/demo/intent?scenario=recent-bank-change-block&firm=firm-a");`,
+        ),
+        e2e.replace(
+          workspaceControl,
+          '  await page.getByRole("link", { name: "Different control" }).click();',
+        ),
+      ]) {
+        expect(
+          surfaceCompletenessProblems(
+            contract,
+            DEMO_SURFACES,
+            route,
+            bypassedJourney,
+            exists,
+          ),
+          bypassedJourney,
+        ).toContain(
+          `${E2E_PATH}:1 canonical journey must traverse the complete product route graph through its expected clickable controls`,
+        );
+      }
 
       const missingScreenshot = e2e.replace(
         '  await snap(page, 12, "record", "record");',
@@ -906,6 +1100,41 @@ describe("demo-surface-completeness fence", () => {
         ),
       ).toContain(
         `${CI_PATH}:1 demo-screens upload must fail when the expected artifact directory is missing`,
+      );
+      const demoUpload = `      - uses: actions/upload-artifact@v7
+        if: \${{ !cancelled() }}
+        with:
+          name: demo-screens`;
+      for (const neutralizedUpload of [
+        ci.replace(
+          demoUpload,
+          `      - uses: actions/upload-artifact@v7
+        if: false
+        with:
+          name: demo-screens`,
+        ),
+        ci.replace(
+          demoUpload,
+          `      - uses: actions/upload-artifact@v7
+        if: \${{ !cancelled() }}
+        continue-on-error: true
+        with:
+          name: demo-screens`,
+        ),
+      ]) {
+        expect(demoArtifactCiProblems(neutralizedUpload)).toContain(
+          `${CI_PATH}:1 demo-screens upload must fail when the expected artifact directory is missing`,
+        );
+      }
+      expect(
+        demoArtifactCiProblems(
+          ci.replace(
+            "  e2e:\n    name: e2e (Playwright + axe)",
+            "  e2e:\n    continue-on-error: true\n    name: e2e (Playwright + axe)",
+          ),
+        ),
+      ).toContain(
+        `${CI_PATH}:1 e2e must run the demo screenshot artifact validator in a dedicated blocking step`,
       );
     });
   });

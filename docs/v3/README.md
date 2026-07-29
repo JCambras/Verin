@@ -111,10 +111,12 @@ moves by a registry edit alone. Gate 0 now has executable section 4 surface-comp
 typed manifest is equal to the normative demo contract, both are pinned to the exact twelve surface
 identities in the SHA-pinned ratified demo contract, every component and dynamic route exists, the
 canonical route binds each station to its manifest component, the dynamic page passes its resolved station
-to that renderer and its loaded marker, and the journey directly awaits all twelve screenshots in order.
+to that renderer and its loaded marker through a provably reachable return. The journey clicks the exact
+ordered product controls, forbids a `page.goto` substitute, and directly awaits all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
 assert the result is non-empty. CI separately verifies that every canonical artifact exists and is
-non-empty, then configures upload-artifact to fail when the directory is missing. The runner fails on
+non-empty, then configures upload-artifact to fail when the directory is missing or the upload is
+conditionally disabled or failure-neutralized. The runner fails on
 every mapped fitness failure or missing result,
 including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
 stable-corpus evidence, Gate F includes prompt 26's verification
@@ -128,7 +130,8 @@ and route mutations, including array-mutator calls, are rejected before a requir
 route collections and entries are frozen. Neutralizer aliases fail closed across every preceding
 assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
 wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
-and fail annotations. Conditional callback exits before a required scan are rejected as non-evidence.
+and fail annotations from callback parameters or `test.info()` return values. Conditional callback exits
+before a required scan are rejected as non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

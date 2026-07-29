@@ -10798,3 +10798,68 @@ noncanonical output path, a weak URL assertion, or a weak loaded-state assertion
 both fence files and all 17 tests.
 
 **Date:** 2026-07-29.
+
+### PF-031 (continued) · TestInfo returned by `test.info()`
+
+**Invariant (charter #9):** a required Axe test or registered hook cannot skip, fixme, or expected-fail
+itself through TestInfo returned by `test.info()`.
+
+**Injection 16 - skip the public scan through `test.info()`.** Added
+`test.info().skip(true, "disabled")` immediately before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications reject direct `test.info()` neutralizers,
+TestInfo value and member aliases, destructured `test.info()` members, destructured TestInfo callback
+parameters, and `test.info()` neutralizers in directly registered hooks.
+
+**Revert:** the injected `test.info().skip` call was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · reachable route return, clickable transitions, and blocking upload
+
+**Invariant (Gate 0, ADR-0030):** every dynamic station reaches the validated route return, the canonical
+journey traverses the ordered product route graph through real controls, and the screenshot upload
+executes with blocking failure semantics.
+
+**Injection 11 - return a constant surface first.** Added a literal-true conditional return of the
+workspace immediately before the dynamic page's validated final return.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 12 - bypass a product transition.** Replaced the real "Ask Verin about this household"
+link click with a direct `page.goto` to the intent route while leaving every screenshot intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Injection 13 - disable the artifact upload.** Replaced the real upload step's `!cancelled()` predicate
+with literal `false` while leaving its action and `if-no-files-found` setting intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: .github/workflows/ci.yml:1 demo-screens upload must fail when the expected artifact directory is missing
+```
+
+**Companions added:** in-memory dynamic pages reject conditional exits before the validated return;
+canonical journeys reject direct navigation, extra direct navigation after a valid click, and renamed
+controls; upload workflows reject false conditions plus step- and job-level `continue-on-error` while
+the existing `!cancelled()` predicate remains accepted.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both
+fence files and all 17 tests.
+
+**Date:** 2026-07-29.

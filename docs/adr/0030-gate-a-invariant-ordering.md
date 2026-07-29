@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, and the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, and the captain-approved reachability and delivery review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -227,7 +227,8 @@ binds each required specification to its typed route group and loaded-state asse
 direct, computed, destructured, aliased, and namespace-imported Playwright neutralization calls through
 their imported symbols. Parentheses and TypeScript assertion wrappers are normalized before symbol
 resolution. Required tests and their directly registered hooks reject `testInfo.skip`,
-`testInfo.fixme`, and `testInfo.fail`, including member aliases. A multi-argument `defineConfig` is
+`testInfo.fixme`, and `testInfo.fail`, including member aliases, destructured callback parameters, and
+TestInfo values returned by `test.info()`. A multi-argument `defineConfig` is
 rejected because later arguments override
 earlier selection settings. Each sanctioned route loop is a direct statement of its enabled registered
 test, outside uncalled functions and caught branches. Its route collection must come from a stable import
@@ -241,14 +242,18 @@ instead of leaving open a hidden selection override.
 `demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
 `docs/demo-contract.md` section 4 list, and both are ratcheted to the exact twelve identities in the
 SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract. Every dynamic route case returns the
-component imported from the manifest's exact component path, every component exists, and the canonical
-journey directly awaits each surface screenshot in order. Each `snap` call names its manifest station,
+component imported from the manifest's exact component path, every component exists, and the dynamic
+page's validated return must be provably reachable. The canonical journey must click the complete ordered
+set of accessible product controls, may not substitute `page.goto`, and directly awaits each surface
+screenshot in order. Each `snap` call names its manifest station,
 and the helper verifies the station URL plus its surface-specific loaded marker before directly awaiting
 `page.screenshot` into `demo-screens` and asserting that the returned capture is non-empty. The
 blocking E2E gate reaches every typed demo route and waits for its surface-specific loaded marker.
 After Playwright completes, a dedicated blocking command checks that every canonical screenshot exists
-and is non-empty. The artifact upload also sets `if-no-files-found: error`, so an early test return cannot
-leave the job green with no deliverable.
+and is non-empty. The artifact upload sets `if-no-files-found: error`, rejects
+`continue-on-error`, and accepts only unconditional execution or the existing `!cancelled()` predicate,
+so an early test return, false condition, or swallowed upload failure cannot leave the job green with no
+deliverable.
 Gate 0 now computes green, and remains the structural predecessor of Gate A.
 
 **Entry conditions are executable dependencies, not display copy.** Every gate declares structural
@@ -284,7 +289,8 @@ the invariant's live mechanism list, so an unrelated naming fence cannot produce
 Charter CI mappings all name and ratchet their exact commands; malformed, empty, unsupported-shell, or
 fully skipped jobs prove nothing. Required Axe tests reject module- and describe-scope skip/fixme
 annotations, `test.fail`, wrapped imported neutralizers, and TestInfo neutralizers in required tests or
-their registered hooks. The sanctioned helper pins the exact non-mutating document-animation settlement
+their registered hooks, including TestInfo obtained from `test.info()`. The sanctioned helper pins the
+exact non-mutating document-animation settlement
 before its complete WCAG scan. Playwright selection settings, route groups, loaded-state markers, and
 imported annotation aliases are part of that proof.
 
@@ -397,6 +403,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   calls, and conditional callback exits before the loop are non-evidence. Neutralizer aliases are
   rejected if any preceding assignment source resolves to `test.skip`, `test.fixme`, or `test.fail`,
   including when a later unreachable assignment appears benign.
+  TestInfo neutralizers are also resolved from callback parameters and from `test.info()` return values,
+  including aliases and destructuring.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -406,10 +414,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
   manifest, each route case's imported component, the dynamic page's resolved station argument and loaded
-  marker, and direct awaited ordered screenshots. Both the launcher and station screenshot helpers verify
+  marker through a provably reachable return, the complete ordered clickable-control route graph, and
+  direct awaited ordered screenshots with no `page.goto` substitute. Both the launcher and station screenshot helpers verify
   their corresponding URL and loaded marker, write only to the pinned artifact directory, and reject an
   empty capture. A dedicated post-Playwright command validates every canonical artifact,
-  and upload-artifact fails when the directory is missing. Gates A through I remain non-green against
+  and upload-artifact fails when the directory is missing or its execution or failure is neutralized.
+  Gates A through I remain non-green against
   their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
   a rule cannot be enforced in one and missing in the other. The runner exits nonzero when the shared

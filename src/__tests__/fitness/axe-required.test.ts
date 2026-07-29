@@ -589,9 +589,54 @@ function derivesFromSymbol(
   );
 }
 
-function couldBeMemberOfSymbol(
+function isTestInfoFactoryCall(node: Node): boolean {
+  const normalized = unwrapExpression(node);
+  return (
+    Node.isCallExpression(normalized) &&
+    normalized.getArguments().length === 0 &&
+    couldBeNamedImportMemberExpression(
+      normalized.getExpression(),
+      "@playwright/test",
+      "test",
+      "info",
+    )
+  );
+}
+
+function derivesFromTestInfo(
   node: Node,
-  origin: MorphSymbol,
+  origins: ReadonlySet<MorphSymbol>,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isTestInfoFactoryCall(normalized)) return true;
+  if (!Node.isIdentifier(normalized)) return false;
+  const symbol = normalized.getSymbol();
+  if (symbol !== undefined && origins.has(symbol)) return true;
+  if (
+    precedingAssignmentValues(normalized).some((assigned) =>
+      derivesFromTestInfo(assigned, origins, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    symbol?.getDeclarations().some((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return false;
+      const initializer = declaration.getInitializer();
+      return (
+        initializer !== undefined &&
+        derivesFromTestInfo(initializer, origins, new Set(seen))
+      );
+    }) ?? false
+  );
+}
+
+function couldBeTestInfoMember(
+  node: Node,
+  origins: ReadonlySet<MorphSymbol>,
   member: string,
   seen = new Set<Node>(),
 ): boolean {
@@ -601,14 +646,14 @@ function couldBeMemberOfSymbol(
   const access = memberAccess(normalized);
   if (
     access?.name === member &&
-    derivesFromSymbol(access.receiver, origin)
+    derivesFromTestInfo(access.receiver, origins)
   ) {
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
   if (
     precedingAssignmentValues(normalized).some((assigned) =>
-      couldBeMemberOfSymbol(assigned, origin, member, new Set(seen)),
+      couldBeTestInfoMember(assigned, origins, member, new Set(seen)),
     )
   ) {
     return true;
@@ -622,9 +667,9 @@ function couldBeMemberOfSymbol(
           const initializer = declaration.getInitializer();
           return (
             initializer !== undefined &&
-            couldBeMemberOfSymbol(
+            couldBeTestInfoMember(
               initializer,
-              origin,
+              origins,
               member,
               new Set(seen),
             )
@@ -640,7 +685,7 @@ function couldBeMemberOfSymbol(
         const initializer = variable?.getInitializer();
         return (
           initializer !== undefined &&
-          derivesFromSymbol(initializer, origin)
+          derivesFromTestInfo(initializer, origins)
         );
       }) ?? false
   );
@@ -648,12 +693,40 @@ function couldBeMemberOfSymbol(
 
 function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
   const parameter = callback.getParameters()[1]?.getNameNode();
-  if (!Node.isIdentifier(parameter)) return false;
-  const symbol = parameter.getSymbol();
-  if (symbol === undefined) return false;
+  const origins = new Set<MorphSymbol>();
+  const destructuredMembers = new Map<MorphSymbol, string>();
+  if (Node.isIdentifier(parameter)) {
+    const symbol = parameter.getSymbol();
+    if (symbol !== undefined) origins.add(symbol);
+  } else if (Node.isObjectBindingPattern(parameter)) {
+    for (const element of parameter.getElements()) {
+      const member = staticPropertyName(
+        element.getPropertyNameNode() ?? element.getNameNode(),
+      );
+      const name = element.getNameNode();
+      const symbol = Node.isIdentifier(name) ? name.getSymbol() : undefined;
+      if (
+        symbol !== undefined &&
+        member !== undefined &&
+        ["skip", "fixme", "fail"].includes(member)
+      ) {
+        destructuredMembers.set(symbol, member);
+      }
+    }
+  }
   return ownedCalls(callback).some((call) =>
-    ["skip", "fixme", "fail"].some((member) =>
-      couldBeMemberOfSymbol(call.getExpression(), symbol, member),
+    ["skip", "fixme", "fail"].some(
+      (member) =>
+        couldBeTestInfoMember(
+          call.getExpression(),
+          origins,
+          member,
+        ) ||
+        [...destructuredMembers].some(
+          ([symbol, destructuredMember]) =>
+            destructuredMember === member &&
+            derivesFromSymbol(call.getExpression(), symbol),
+        ),
     ),
   );
 }
@@ -1524,8 +1597,13 @@ pw.test("axe", async ({ page }) => {
         wrap(`(<typeof test.${"fixme"}>test.${"fixme"})(true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }, testInfo) => { testInfo.${"skip"}(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }, testInfo) => { const disable = testInfo.${"fixme"}; disable(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { test.info().${"skip"}(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { const info = test.info(); const disable = info.${"fixme"}; disable(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { const { ${"fail"}: disable } = test.info(); disable(true, "expected failure"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }, { ${"skip"}: disable }) => { disable(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test.beforeEach(async ({}, testInfo) => { testInfo.${"fixme"}(true, "disabled"); }); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test.describe("group", () => { test.beforeEach(async ({}, testInfo) => { testInfo.${"fail"}(true, "expected failure"); }); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
+        wrap(`test.beforeEach(() => { test.info().${"fixme"}(true, "disabled"); }); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
