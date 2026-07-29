@@ -184,6 +184,13 @@ Impacted subjects must intersect the request's source account or destination ins
 termless records, and same-household opaque references that do not connect to the governed request cannot
 substantiate either a label or a control.
 
+DST context requires at least two cited recent-change records whose exact UTC and local renderings share
+one signed zone identity and cross a transition in the emitted pinned transition table. Shared-instruction
+blast radius requires one cited changed instruction whose emitted account edges resolve to multiple
+distinct governed accounts. Assumption ids, same-offset timestamps, arbitrary changes, disconnected
+subjects, or distinct instruction identities prove neither context. Joint destinations retain their
+explicit duplicate-free owner set; owner cardinality is evaluated only for the term kind that consumes it.
+
 ---
 
 ## 6. Timestamp realism, given machine meaning
@@ -292,10 +299,10 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.11.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.6.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.7.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the complete repository-local runtime dependency closure of the

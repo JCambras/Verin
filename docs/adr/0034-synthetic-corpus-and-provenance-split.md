@@ -155,7 +155,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.6.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.7.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -212,7 +212,7 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.11.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.12.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
 and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
 declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
@@ -273,6 +273,10 @@ D-091 raises the ceiling to 7700 against 7541 measured lines for typed instructi
 per-instruction evidence, executable-authority dependency closure, fail-closed signoff parsing,
 repository-contained citations, and complete executable source discovery. The 159-line buffer preserves
 separate evidence, semantic, topology, and fence owners under the unchanged 500-line file ceiling.
+D-092 raises the ceiling to 7900 against 7739 measured lines for emitted-record-derived DST and shared
+instruction contexts, target-specific joint-owner analysis, and comprehensive executable-authority
+loader closure. The 161-line buffer preserves separate structural-context and fence owners under the
+unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

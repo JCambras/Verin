@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { parseDocument } from "yaml";
-import { REPO_ROOT } from "./_fence-utils";
+import { Project } from "ts-morph";
+import {
+  moduleReferences,
+  REPO_ROOT,
+} from "./_fence-utils";
 import { canonicalJson } from "../../../src/contracts/decision-core/serialization";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
 import {
@@ -49,6 +53,9 @@ import {
   semanticTreatment,
   type SemanticDefectRule,
 } from "../../../scripts/corpus/semantic-contract";
+import {
+  instructionConflictAnalysis,
+} from "../../../scripts/corpus/instruction-conflicts";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";
 import {
   evidenceObservationAuthorityProblems,
@@ -208,22 +215,28 @@ const compilerOptions = ts.parseJsonConfigFileContent(
 const authorityClosureProblems = (
   roots: readonly string[],
   inventory: readonly string[],
+  sourceOverrides: Readonly<Record<string, string>> = {},
 ): string[] => {
   const problems: string[] = [];
   const closure = new Set<string>();
   const pending = [...roots];
+  const project = new Project({
+    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+    skipAddingFilesFromTsConfig: true,
+  });
   while (pending.length > 0) {
     const file = pending.pop()!;
     if (closure.has(file)) continue;
     closure.add(file);
     const absolute = join(REPO_ROOT, file);
+    const bytes = sourceOverrides[file] ?? readFileSync(absolute, "utf8");
     const source = ts.createSourceFile(
       absolute,
-      readFileSync(absolute, "utf8"),
+      bytes,
       ts.ScriptTarget.Latest,
       true,
     );
-    const runtimeSpecifiers: string[] = [];
+    const runtimeStaticSpecifiers = new Set<string>();
     for (const statement of source.statements) {
       if (
         ts.isImportDeclaration(statement) &&
@@ -243,7 +256,9 @@ const authorityClosureProblems = (
               )
             )
           );
-        if (runtime) runtimeSpecifiers.push(statement.moduleSpecifier.text);
+        if (runtime) {
+          runtimeStaticSpecifiers.add(statement.moduleSpecifier.text);
+        }
       }
       if (
         ts.isExportDeclaration(statement) &&
@@ -258,32 +273,55 @@ const authorityClosureProblems = (
           )
         )
       ) {
-        runtimeSpecifiers.push(statement.moduleSpecifier.text);
+        runtimeStaticSpecifiers.add(statement.moduleSpecifier.text);
+      }
+      if (
+        ts.isImportEqualsDeclaration(statement) &&
+        !statement.isTypeOnly &&
+        ts.isExternalModuleReference(statement.moduleReference) &&
+        statement.moduleReference.expression !== undefined &&
+        ts.isStringLiteralLike(statement.moduleReference.expression)
+      ) {
+        runtimeStaticSpecifiers.add(
+          statement.moduleReference.expression.text,
+        );
       }
     }
-    const visitRuntimeLoads = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) {
-        const runtimeLoad =
-          node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (
-            ts.isIdentifier(node.expression) &&
-            node.expression.text === "require"
+    const sourceFile = project.createSourceFile(
+      absolute,
+      bytes,
+      { overwrite: true },
+    );
+    const runtimeReferences = moduleReferences(sourceFile).filter(
+      (reference) => {
+        if (
+          reference.kind === "import" ||
+          reference.kind === "export" ||
+          reference.kind === "import-equals"
+        ) {
+          return (
+            reference.specifier !== null &&
+            runtimeStaticSpecifiers.has(reference.specifier)
           );
-        if (runtimeLoad) {
-          const argument = node.arguments[0];
-          if (
-            argument === undefined ||
-            !ts.isStringLiteralLike(argument)
-          ) {
-            problems.push(`${file}: non-literal runtime dependency`);
-          } else {
-            runtimeSpecifiers.push(argument.text);
-          }
         }
+        return ![
+          "import-type",
+          "reference-types",
+          "reference-path",
+          "reference-lib",
+        ].includes(reference.kind);
+      },
+    );
+    const runtimeSpecifiers = new Set<string>();
+    for (const reference of runtimeReferences) {
+      if (reference.specifier === null) {
+        problems.push(
+          `${file}: indirect or non-literal runtime dependency (${reference.kind})`,
+        );
+      } else {
+        runtimeSpecifiers.add(reference.specifier);
       }
-      ts.forEachChild(node, visitRuntimeLoads);
-    };
-    visitRuntimeLoads(source);
+    }
     for (const specifier of runtimeSpecifiers) {
       const resolved = ts.resolveModuleName(
         specifier,
@@ -1859,7 +1897,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.6.0",
+      "verin-real-derived-semantics/1.7.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1929,6 +1967,38 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/subgraph.ts",
     );
+  });
+
+  it("the executable authority closure follows import-equals and refuses indirect loaders", () => {
+    const root = REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES[0];
+    const original = readFileSync(join(REPO_ROOT, root), "utf8");
+    const importEqualsProblems = authorityClosureProblems(
+      REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+      REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+      {
+        [root]:
+          `import Probe = require("./conflict-keys");\nvoid Probe;\n${original}`,
+      },
+    );
+    expect(importEqualsProblems).toContain(
+      "missing executable authority dependency scripts/corpus/conflict-keys.ts",
+    );
+
+    for (const probe of [
+      `import { createRequire as makeProbeRequire } from "node:module";\nconst probeRequire = makeProbeRequire(import.meta.url);\nprobeRequire("./conflict-keys");`,
+      `const probeRequire = require;\nprobeRequire("./conflict-keys");`,
+      `module.require("./conflict-keys");`,
+    ]) {
+      expect(
+        authorityClosureProblems(
+          REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+          REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+          { [root]: `${probe}\n${original}` },
+        ).some((problem) =>
+          problem.includes("indirect or non-literal runtime dependency")
+        ),
+      ).toBe(true);
+    }
   });
 
   it("semantic data or executable authority changes invalidate corpus signoff", () => {
@@ -2755,6 +2825,184 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       )!,
     );
     expect(syntheticSemanticProblems([governed])).toEqual([]);
+  });
+
+  it("synthetic DST context requires exact zone-bound records crossing a declared transition", () => {
+    const original = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-dst-straddling-observations",
+    )!,
+    ) as any;
+    expect(syntheticSemanticProblems([original])).toEqual([]);
+    expect(original.trigger.timeZoneTransitions).toEqual(
+      real.spec.world.clock.transitions,
+    );
+
+    const sameOffset = structuredClone(original);
+    const standard = sameOffset.trigger.timeZoneTransitions.find(
+      (transition: any) =>
+        transition.at === "2025-11-02T06:00:00.000Z",
+    );
+    standard.offsetMinutes = -240;
+    sameOffset.evidence.find(
+      (evidence: any) =>
+        evidence.subjectRef === "change:smiths-review-est",
+    ).recordChangedAtLocal = "2025-11-02T05:00:00.000-04:00";
+    expect(
+      syntheticSemanticProblems([sameOffset]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const missingZone = structuredClone(original);
+    delete missingZone.evidence.find(
+      (evidence: any) => evidence.kind === "recent-change",
+    ).localZone;
+    expect(
+      syntheticSemanticProblems([missingZone]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const assumptionOnly = structuredClone(original);
+    assumptionOnly.evidence = assumptionOnly.evidence.filter(
+      (evidence: any) => evidence.kind !== "recent-change",
+    );
+    assumptionOnly.records.recentChanges = [];
+    expect(
+      syntheticSemanticProblems([assumptionOnly]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+  });
+
+  it("synthetic blast radius requires one cited changed instruction with multiple governed accounts", () => {
+    const original = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId ===
+            "CS-shared-instruction-change-blast-radius",
+      )!,
+    ) as any;
+    expect(syntheticSemanticProblems([original])).toEqual([]);
+
+    const unconnected = structuredClone(original);
+    unconnected.records.bankInstructions.find(
+      (instruction: any) =>
+        instruction.id === unconnected.request.destinationRef,
+    ).accountRefs = [unconnected.request.sourceAccountRef];
+    expect(
+      syntheticSemanticProblems([unconnected]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const distinctInstruction = structuredClone(original);
+    distinctInstruction.records.recentChanges[0].subjectRef =
+      "bank-instruction:smiths-trust-alt";
+    expect(
+      syntheticSemanticProblems([distinctInstruction]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const mismatchedChange = structuredClone(original);
+    mismatchedChange.records.bankInstructions.find(
+      (instruction: any) =>
+        instruction.id === mismatchedChange.request.destinationRef,
+    ).changedAt = "2026-07-21T18:12:00.000Z";
+    expect(
+      syntheticSemanticProblems([mismatchedChange]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const correctlyTreated = structuredClone(original);
+    correctlyTreated.label = {
+      kind: "clean-control",
+      controlRationale: "all impacted accounts are reevaluated",
+    };
+    correctlyTreated.outcomes[0].observedTreatment =
+      correctlyTreated.outcomes[0].expectedTreatment;
+    expect(syntheticSemanticProblems([correctlyTreated])).toEqual([]);
+  });
+
+  it("instruction owner cardinality is target-specific for joint destinations", () => {
+    const request = {
+      firmRef: FIRM_REF,
+      requestRef: REQUEST_REF,
+      householdRef: HOUSEHOLD_REF,
+      action: "distribution" as const,
+      sourceAccountRef: ACCOUNT_REF,
+      destinationRef: INSTRUCTION_REF,
+      destinationSubjectRefs: [OWNER_REF_ALT, OWNER_REF],
+    };
+    const witness = (
+      targetKind:
+        | "source-account"
+        | "destination-instruction"
+        | "destination-subject"
+        | "request",
+      targetRef: string,
+      polarity: "required" | "forbidden",
+    ) => [{
+      instructionRef: INSTRUCTION_REF_ALT,
+      firmRef: FIRM_REF,
+      householdRef: HOUSEHOLD_REF,
+      term: {
+        governedAction: "distribution" as const,
+        sourceAccountRef: ACCOUNT_REF,
+        targetKind,
+        targetRef,
+        polarity,
+      },
+    }];
+
+    expect(
+      instructionConflictAnalysis(
+        request,
+        witness("source-account", ACCOUNT_REF, "required"),
+      ),
+    ).toEqual({ present: false, problems: [] });
+    expect(
+      instructionConflictAnalysis(
+        request,
+        witness("destination-subject", OWNER_REF_ALT, "forbidden"),
+      ),
+    ).toEqual({ present: true, problems: [] });
+    expect(
+      instructionConflictAnalysis(
+        request,
+        witness("destination-subject", ACTOR_REF, "forbidden"),
+      ),
+    ).toEqual({ present: false, problems: [] });
+
+    expect(
+      instructionConflictAnalysis(
+        {
+          ...request,
+          destinationSubjectRefs: [OWNER_REF, OWNER_REF],
+        },
+        witness("request", REQUEST_REF, "required"),
+      ).problems,
+    ).toContain("instruction conflict request is incomplete or ambiguous");
+
+    const realDerivedJoint = realDerivedDefectCase(
+      "instruction-conflict-unresolved",
+    );
+    (
+      (realDerivedJoint.replayPayload as Record<string, any>)
+        .destination.ownerRefs as string[]
+    ).push(OWNER_REF_ALT);
+    (realDerivedJoint.subjects as string[]).push(OWNER_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        realDerivedJoint,
+        classes,
+        "real-derived/RD-joint-destination.json",
+      ),
+    ).toEqual([]);
   });
 
   it("the Mira prohibition resolves the exact request destination subject", () => {

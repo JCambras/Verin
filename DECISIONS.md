@@ -4424,10 +4424,10 @@ budget fences walked `SRC_ROOT` only. The same PR adds a `tooling` bucket to `li
 `scripts/**` under the same 500-line per-file ceiling. Tooling is reported as its own bucket, never
 averaged into a platform layer; the existing zero-total staleness guard covers it.
 
-Numbering: ADR **0034** remains unchanged. These decisions were authored as D-070..D-077 and their
-proofs as PF-090..PF-093, but upstream assigned those ranges before integration. The canonical merged
-IDs continue the journal at **D-102..D-109** and the proof log at **PF-188..PF-191**. Earlier corpus
-references to the topic-branch IDs mean these canonical entries.
+Numbering: ADR **0034** remains unchanged, but upstream assigned the topic branch's decision and proof
+ranges before integration. Canonical mappings are **D-070..D-077 -> D-102..D-109**,
+**D-078..D-092 -> D-110..D-124**, **PF-090..PF-093 -> PF-188..PF-191**, and
+**PF-094..PF-108 -> PF-192..PF-206**. Earlier corpus references use these mappings.
 
 **Why:** the line ceilings are only meaningful if code cannot escape them by moving directory.
 **Revert path:** move the generator under `src/domain` plus an ADR-0018 amendment, and drop the bucket.
@@ -4525,7 +4525,7 @@ positives, so blocking everything cannot read as success.
 **Why:** a detection rate without a false-positive rate is not a metric.
 **Revert path:** none without reopening the captain ruling.
 
-### D-078 · 2026-07-28 · reversible · Corpus records carry an observation instant distinct from their business dates
+### D-110 · 2026-07-28 · reversible · Corpus records carry an observation instant distinct from their business dates
 
 Review finding `clean-controls-carry-stale-evidence`: `observedAtOf` derived an evidence item's
 `observedAt` from a business date (authority → `effectiveFrom`, restriction → `recordedAt`, bank
@@ -4554,10 +4554,10 @@ to produce meaningless.
 **Revert path:** collapse `observedAt` back into the business dates, and delete both rules with the case
 and assumption below.
 
-### D-079 · 2026-07-28 · reversible · AS-21 and one focused case exercise `evidence-staleness-unnoticed`
+### D-111 · 2026-07-28 · reversible · AS-21 and one focused case exercise `evidence-staleness-unnoticed`
 
 `evidence-staleness-unnoticed` was the one class in the closed taxonomy that no case carried - visible
-only because D-078 added the reverse completeness check. Rather than relabel a control to satisfy a
+only because D-110 added the reverse completeness check. Rather than relabel a control to satisfy a
 count, the corpus gains ONE focused case: `CS-stale-model-assignment-evidence` (AS-21), an IRA model
 assignment last observed twelve weeks ago against a seven-day freshness window, treated as the account's
 current allocation. It is deliberately benign in content (`pendingRebalance: false`) so the case is about
@@ -4568,7 +4568,7 @@ no signature is invalidated, and agents never sign.
 **Why:** an unexercised class inflates the taxonomy relative to what the corpus actually exercises.
 **Revert path:** delete AS-21 and the case, and the completeness check fails until the class is removed.
 
-### D-080 · 2026-07-28 · reversible · Cross-record references resolve by structured parse, never by substring or input order
+### D-112 · 2026-07-28 · reversible · Cross-record references resolve by structured parse, never by substring or input order
 
 Two determinism leaks found in review, fixed at the same root: an identifier is resolved by parsing it,
 not by scanning for it. Legal holds resolve through `legalHoldSubject` (exact `account:<key>` /
@@ -4584,7 +4584,7 @@ an unmodeled position-scoped RESTRICTION is refused rather than silently dropped
 on; substring matching and input-order sensitivity both break it invisibly.
 **Revert path:** none worth taking - both replaced strictly weaker checks.
 
-### D-081 · 2026-07-28 · captain-decision · Corpus graph, intake, signoff, and measurement boundaries fail closed
+### D-113 · 2026-07-28 · captain-decision · Corpus graph, intake, signoff, and measurement boundaries fail closed
 
 The prompt-11a corpus now validates every evidence and request reference against the complete emitted
 case graph with exactly-one semantics. Evidence-producing collections are required; every keyed spec
@@ -4613,7 +4613,7 @@ substrate. A favorable evaluated subset, a hidden real-derived case, or an id-sh
 the resulting claim indefensible.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-082 · 2026-07-28 · captain-decision · Corpus measurement, topology, intake, and freshness authorities are structural
+### D-114 · 2026-07-28 · captain-decision · Corpus measurement, topology, intake, and freshness authorities are structural
 
 The report derives counts and labels from the manifest inventory, recomputes the signed inventory digest,
 validates signoff internally, and rejects duplicate, unknown, cross-partition, or relabeled outcomes.
@@ -4644,7 +4644,7 @@ headroom for this completed boundary set. The post-prompt-19 ratchet-down point 
 topology and freshness cannot depend on caller convention or source-syntax heuristics.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-083 · 2026-07-28 · captain-decision · Replay intake and measurement carry closed semantic identity
+### D-115 · 2026-07-28 · captain-decision · Replay intake and measurement carry closed semantic identity
 
 Real-derived delivery accepts only canonical JSON bytes with unique object keys. Strict hand-owned case
 and replay schemas admit exactly the typed destination, ownership, liquidity, direction, authority,
@@ -4665,14 +4665,14 @@ unknown, or contradictory attribution is invalid. Structured measurement remains
 `verin-corpus/1.3.0` signed preimage binds label kind and label id beside each case's partition, id, and
 byte digest.
 
-The tooling bucket remains at its D-082 measurement of 4818 lines under the 4900 ceiling, preserving 82
+The tooling bucket remains at its D-114 measurement of 4818 lines under the 4900 ceiling, preserving 82
 lines of headroom without deleting existing design documentation.
 
 **Why:** a signed measurement cannot depend on a lossy JSON parse, a case-level boolean, caller-supplied
 labels, foreign household data, input ordering, or diagnostics that disclose the value being rejected.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-084 · 2026-07-28 · captain-decision · Replay truth, signoff, and schema semantics fail closed
+### D-116 · 2026-07-28 · captain-decision · Replay truth, signoff, and schema semantics fail closed
 
 The real-derived intake derives a closed defect signature for every taxonomy class. A defect label must
 name a present signature, while a clean control must satisfy every class's absence signature. After the
@@ -4694,7 +4694,7 @@ unmeasured headroom is introduced; the post-prompt-19 ratchet-down point remains
 YAML recovery, a one-sided denominator, a sensitive filename, or a nondeterministic API spelling.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-085 · 2026-07-29 · captain-decision · Replay semantics, evidence, and funding are signed authorities
+### D-117 · 2026-07-29 · captain-decision · Replay semantics, evidence, and funding are signed authorities
 
 The `verin-corpus/1.5.0` preimage binds the versioned
 `verin-real-derived-semantics/1.0.0` registry and exact digests of every executable authority that
@@ -4718,7 +4718,7 @@ pending.
 implicit funding cannot substantiate either a defect label or a clean control.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-086 · 2026-07-29 · captain-decision · Replay defects require typed outcome mismatches
+### D-118 · 2026-07-29 · captain-decision · Replay defects require typed outcome mismatches
 
 The `verin-corpus/1.6.0` preimage binds `verin-real-derived-replay/1.2.0` and
 `verin-real-derived-semantics/1.1.0`. The semantic registry separates awkward context from system
@@ -4741,7 +4741,7 @@ signoff stays pending.
 references or laundered nondeterminism cannot define signed replay truth.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-087 · 2026-07-29 · captain-decision · Outcome semantics govern both corpus partitions
+### D-119 · 2026-07-29 · captain-decision · Outcome semantics govern both corpus partitions
 
 The `verin-corpus/1.7.0` preimage binds `verin-real-derived-replay/1.3.0` and
 `verin-real-derived-semantics/1.2.0`. Synthetic and real-derived cases use the same closed
@@ -4766,7 +4766,7 @@ and captain signoff stays pending.
 policy comparison cannot alter replay funding or threshold treatment.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-088 · 2026-07-29 · captain-decision · Corpus labels, attribution, and synthetic funding are exact
+### D-120 · 2026-07-29 · captain-decision · Corpus labels, attribution, and synthetic funding are exact
 
 The `verin-corpus/1.8.0` preimage binds `verin-real-derived-semantics/1.3.0`. A real-derived defect label
 must equal the exact singleton semantic mismatch. A detector result for a defect case is valid only as an
@@ -4789,7 +4789,7 @@ deferred, and captain signoff stays pending.
 classes into coverage, and pending liquidity semantics cannot infer funding from unrelated accounts.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-089 · 2026-07-29 · captain-decision · Replay tenant, observation, funding, and ownership semantics are structural
+### D-121 · 2026-07-29 · captain-decision · Replay tenant, observation, funding, and ownership semantics are structural
 
 The `verin-corpus/1.9.0` preimage binds `verin-real-derived-case/1.2.0`,
 `verin-real-derived-replay/1.4.0`, and `verin-real-derived-semantics/1.4.0`. Each real-derived case has
@@ -4817,7 +4817,7 @@ captain signoff remain unchanged.
 funding semantics from unselected accounts, or contradictory ownership edges.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-090 · 2026-07-29 · captain-decision · Identity, tenant, and funding truth is reproducible and exact
+### D-122 · 2026-07-29 · captain-decision · Identity, tenant, and funding truth is reproducible and exact
 
 The `verin-corpus/1.10.0` preimage binds `verin-real-derived-case/1.3.0`,
 `verin-real-derived-replay/1.5.0`, and `verin-real-derived-semantics/1.5.0`. Synthetic identity context
@@ -4840,7 +4840,7 @@ pending captain signoff, and the 500-line file ceiling remain unchanged.
 subject collection, and one-cent funding differences must survive aggregation.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-091 · 2026-07-29 · captain-decision · Instruction truth and signed authorities are closed
+### D-123 · 2026-07-29 · captain-decision · Instruction truth and signed authorities are closed
 
 The `verin-corpus/1.11.0` preimage binds `verin-real-derived-case/1.4.0`,
 `verin-real-derived-replay/1.6.0`, and `verin-real-derived-semantics/1.6.0`. Synthetic and real-derived
@@ -4863,4 +4863,29 @@ captain signoff remain unchanged.
 
 **Why:** signed replay meaning cannot change through an unbound runtime dependency, untyped conflict
 claim, parser recovery, host-dependent citation, or unmeasured executable file.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-124 · 2026-07-29 · captain-decision · Temporal, blast-radius, owner, and authority-closure semantics derive from signed facts
+
+The `verin-corpus/1.12.0` preimage binds `verin-real-derived-semantics/1.7.0`. Synthetic DST context
+requires cited recent-change records with exact UTC and local renderings, one signed zone identity, and
+different offsets connected by an emitted transition from the pinned transition table. Shared-instruction
+blast radius requires one exact cited changed instruction whose emitted topology resolves to multiple
+distinct governed accounts. Assumption ids, same-offset timestamps, arbitrary recent records,
+disconnected subjects, and distinct instruction identities cannot substantiate either context. A
+correctly treated awkward context remains a clean control.
+
+Instruction analysis preserves a destination's explicit duplicate-free normalized owner set. Multiple
+owners no longer invalidate source-account, request, or destination-instruction terms, and
+destination-subject terms match exact members of that set. The executable-authority closure reuses the
+repository's comprehensive module-reference detector, follows runtime import-equals references, and
+fails closed on createRequire, aliased require, module.require, and other indirect or non-literal loaders.
+
+The tooling ceiling rises from 7700 to 7900 against 7739 measured lines, leaving 161 lines of explicit
+headroom for the separate structural-context and fence owners. Only the DST synthetic case gains temporal
+authority bytes. Path-keyed isolation, generated-file ownership, the empty deferred real-derived
+partition, the unchanged 500-line file ceiling, and pending unsigned captain signoff remain intact.
+
+**Why:** signed defect context must come from emitted facts, joint ownership must not invalidate
+unrelated terms, and a local loader spelling cannot change signed semantics outside the digest.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

@@ -6587,9 +6587,9 @@ existing PF-204 injections already prove the reachability and stale-deferral arm
 
 ## PF-188..PF-191 · replay-corpus fences · v3 prompt 11 (ADR-0034)
 
-**Numbering note.** These proofs were authored as PF-090..PF-093, but upstream assigned PF-090..PF-187
-before integration. The canonical merged IDs continue at PF-188..PF-191. Earlier corpus references to
-PF-090..PF-093 mean these four entries. Recorded as D-102.
+**Numbering note.** Upstream assigned the topic branch's proof range before integration. Canonical
+mappings are **PF-090..PF-093 -> PF-188..PF-191** and
+**PF-094..PF-108 -> PF-192..PF-206**. Earlier corpus references use these mappings. Recorded as D-102.
 
 ---
 
@@ -6826,7 +6826,7 @@ derivation yields one key per case.
 
 ---
 
-## PF-094 · corpus-provenance-split (clean-control honesty + taxonomy completeness) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-192 · corpus-provenance-split (clean-control honesty + taxonomy completeness) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-078/D-079, ADR-0034 §2b/§6):** a labeled clean control is the false-positive DENOMINATOR,
 so it may not carry the defect being measured - not through a stale observation, an authority lapsing
@@ -6885,7 +6885,7 @@ byte-identical; every rule holds"; fences green.
 
 ---
 
-## PF-095 · corpus-determinism (prefix-colliding household + input-order neutrality) · `src/__tests__/fitness/corpus-determinism.test.ts`
+## PF-193 · corpus-determinism (prefix-colliding household + input-order neutrality) · `src/__tests__/fitness/corpus-determinism.test.ts`
 
 **Invariant (D-080):** "adding a household changes only that household's bytes" must survive a new
 household whose key EXTENDS an existing one, and a semantically neutral reorder of a case's evidence
@@ -6928,7 +6928,7 @@ byte-compared; fence green.
 
 ---
 
-## PF-096 · corpus-provenance-split (graph, intake, signoff, and measurement boundaries) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-194 · corpus-provenance-split (graph, intake, signoff, and measurement boundaries) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-081, ADR-0034):** every evidence and request reference resolves to exactly one emitted
 record; the active real-derived deferral admits no delivered file; the signed preimage covers taxonomy
@@ -6996,7 +6996,7 @@ alias laundering, opaque-id suffixes, captain authority, and canonical `signedAt
 
 ---
 
-## PF-097 · corpus-provenance-split (inventory, topology, recursive intake, freshness, and artifact ownership) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-195 · corpus-provenance-split (inventory, topology, recursive intake, freshness, and artifact ownership) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-082, ADR-0034):** reporting is bound to the signed manifest inventory; numeric partition
 results stay inside their owner; pending-action liquidity is direction-aware; every household edge
@@ -7074,7 +7074,7 @@ holding.
 
 ---
 
-## PF-098 · corpus intake, attribution, privacy, digest, clock, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,timestamps,determinism}.test.ts`
+## PF-196 · corpus intake, attribution, privacy, digest, clock, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,timestamps,determinism}.test.ts`
 
 **Invariant (D-083, ADR-0034):** real-derived delivery cannot lose hidden JSON members or disclose
 rejected text; replay input is complete and closed; detector credit names the exact signed defect class;
@@ -7168,7 +7168,7 @@ canonical regeneration, and the full repository gates are green.
 
 ---
 
-## PF-099 · real-derived truth, diagnostics, signoff, schema, denominator, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,determinism}.test.ts`
+## PF-197 · real-derived truth, diagnostics, signoff, schema, denominator, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,determinism}.test.ts`
 
 **Invariant (D-084, ADR-0034):** real-derived labels match closed replay semantics; clean controls carry
 no supported defect signature; unsafe filenames never enter diagnostics; signoff YAML is unambiguous;
@@ -7240,7 +7240,7 @@ byte-identical with every rule holding.
 
 ---
 
-## PF-100 · signed replay semantics, topology, evidence, funding, and strict JSON · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-198 · signed replay semantics, topology, evidence, funding, and strict JSON · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-085, ADR-0034):** the signed preimage changes with declarative or executable replay
 semantics; references are entity-kind-scoped; every material plane has exact evidence; selected funding
@@ -7320,7 +7320,7 @@ companions passed.
 
 ---
 
-## PF-101 · outcome-based replay truth and request-bound topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-199 · outcome-based replay truth and request-bound topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-086, ADR-0034):** awkward context is not itself a defect; a signed defect requires the
 class's typed expected-versus-observed mismatch; instruction conflicts connect to the exact request and
@@ -7380,7 +7380,7 @@ driven adversarially.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
 
-## PF-102 · set-order and nondeterminism-flow closure · `src/__tests__/fitness/corpus-determinism.test.ts`
+## PF-200 · set-order and nondeterminism-flow closure · `src/__tests__/fitness/corpus-determinism.test.ts`
 
 **Invariant (D-086, ADR-0034):** set-like spec order cannot change emitted bytes, and banned
 nondeterministic APIs cannot be laundered through assignments, parameters, local returns, or dynamic
@@ -7415,7 +7415,7 @@ parameters, returns, literal dynamic imports, and nonliteral dynamic-import reje
 
 ---
 
-## PF-103 · partition-wide outcome and replay selector closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-201 · partition-wide outcome and replay selector closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-087, ADR-0034):** both partitions require context-bound typed treatment mismatches;
 pending actions bind to the request, selected funding, and exact evidence; pending liquidity treatment is
@@ -7507,7 +7507,7 @@ and all 151 focused corpus companions passed.
 
 ---
 
-## PF-104 · exact corpus outcomes and synthetic funding topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-202 · exact corpus outcomes and synthetic funding topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-088, ADR-0034):** a real-derived defect label equals the only semantic mismatch; detector
 attribution for a defect is empty or the exact signed-label singleton; synthetic funding is explicit,
@@ -7578,7 +7578,7 @@ passed.
 
 ---
 
-## PF-105 · tenant, observation, funding, and ownership closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-203 · tenant, observation, funding, and ownership closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-089, ADR-0034):** the AS-04 signer is outside the LLC household membership edge;
 bank-instruction and pending-action accounts belong to their declared households; selected-funding tax
@@ -7631,7 +7631,7 @@ files changed, and all 174 focused corpus, determinism, budget, and file-size te
 
 ---
 
-## PF-106 · typed identity, tenant subjects, and exact funding · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-204 · typed identity, tenant subjects, and exact funding · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-090, ADR-0034):** synthetic identity context is derived from typed raw bytes, exact
 candidates, and household bindings; real-derived generic subject references exclude firm scope; and
@@ -7681,7 +7681,7 @@ determinism, timestamp, budget, and file-size tests passed.
 
 ---
 
-## PF-107 · instruction and signed-authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+## PF-205 · instruction and signed-authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
 
 **Invariant (D-091, ADR-0034):** instruction-conflict truth comes from request-bound typed terms and exact
 evidence; the signed executable inventory equals its runtime dependency closure; signoff YAML rejects
@@ -7725,3 +7725,44 @@ remains empty, captain signoff remains pending, and all 164 focused corpus, budg
 passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, D-091 review hardening).
+
+---
+
+## PF-206 · emitted structural context and complete authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-092, ADR-0034):** DST and shared-instruction blast-radius context derives from exact
+emitted signed facts, joint destinations retain target-specific owner semantics, and the signed
+executable-authority closure covers every supported runtime loader form.
+
+**Injection 1 - assumption-only context.** Replaced both structural context authorities with checks for
+`AS-16` and `AS-06`.
+
+**Injection 2 - global singular owner rule.** Restored the unconditional requirement that every
+destination have exactly one owner before analyzing the term target.
+
+**Injection 3 - incomplete module traversal.** Filtered import-equals, createRequire, and indirect
+require references out of the shared module-reference results.
+
+**Observed failure:**
+```
+Test Files  1 failed (1)
+Tests       4 failed | 152 skipped (156)
+expected [] to include 'missing executable authority dependency scripts/corpus/conflict-keys.ts'
+synthetic DST context requires exact zone-bound records crossing a declared transition
+synthetic blast radius requires one cited changed instruction with multiple governed accounts
+expected problems to deeply equal []
+```
+
+**Standing companions:** same-offset and missing-zone temporal records fail; assumption-only temporal
+context fails; a one-account, differently changed instruction, or mismatched instruction-change instant
+fails blast-radius context; correctly treated shared-instruction context remains a clean control; joint
+destinations work for unrelated term
+kinds and exact destination-subject members; duplicate owners fail; import-equals reaches a local helper;
+and createRequire, aliased require, and module.require fail closed.
+
+**Revert:** all three weakenings were reverted. Canonical validation restored `corpusDigest`
+`a4b7ee7cad29d17e697154069a20f09e4215681ea0bbab28a6a37e5994ed07f4`. The real-derived partition
+remains empty, captain signoff remains pending, path-keyed generation changes only the DST case, and all
+156 corpus-provenance companions pass.
+
+**Date:** 2026-07-29 (v3 prompt 11, D-092 review hardening).

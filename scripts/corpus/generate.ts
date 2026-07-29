@@ -229,6 +229,9 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
   const settlementEarliest = addBusinessDays(clock.asOf, SETTLEMENT_BUSINESS_DAYS, clock.transitions);
 
   const evidenceRefs = sortedBy(corpusCase.evidence, (ref) => ref);
+  const carriesTimeZoneBoundary = evidenceRefs.filter(
+    (ref) => ref.startsWith("recent-change/"),
+  ).length >= 2;
   const evidence = evidenceRefs.map((ref) => {
     const { kind, recordKey } = evidenceRef(ref);
     const timing = timingOf(world, kind);
@@ -263,6 +266,14 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
         recordChangedAt,
         clock.recentChangeWindowDays,
       ),
+      ...(carriesTimeZoneBoundary && kind === "recent-change"
+        ? {
+          localZone: {
+            timeZone: clock.timeZone,
+            timeZoneDataVersion: clock.timeZoneDataVersion,
+          },
+        }
+        : {}),
       provenance: { ...corpusProvenance(clock.asOf, "high") },
     };
   });
@@ -306,6 +317,13 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
       asOfLocal: renderLocal(clock.asOf, clock.transitions),
       timeZone: clock.timeZone,
       timeZoneDataVersion: clock.timeZoneDataVersion,
+      ...(carriesTimeZoneBoundary
+        ? {
+          timeZoneTransitions: clock.transitions.map((transition) => ({
+            ...transition,
+          })),
+        }
+        : {}),
     },
     request: {
       firmRef: corpusCase.firmId,

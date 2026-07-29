@@ -68,7 +68,7 @@ enforced contract. In short, every case must carry:
   satisfy `observedAt <= retrievedAt <= evaluation.asOf` and match the derived per-kind freshness.
   `unknown` is legal only for the typed missing-observation state. The policy version and semantic digest
   are bound into captain signoff through `corpusDigest`;
-- semantic contract `verin-real-derived-semantics/1.6.0`; its declarative bytes and the complete
+- semantic contract `verin-real-derived-semantics/1.7.0`; its declarative bytes and the complete
   repository-local runtime dependency closure of its executable cross-field authorities are bound into
   `corpusDigest`.
 

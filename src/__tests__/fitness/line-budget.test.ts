@@ -69,12 +69,13 @@ const CEILINGS = {
   // D-086 raises it to 6200 against 5996 measured lines for outcome-based
   // semantics, request-bound conflict topology, schema-driven uniqueness, and
   // assignment-aware determinism enforcement. Current amendment history and
-  // measurements are recorded in ADR-0034.
+  // measurements are recorded in ADR-0034. D-092 raises it to 7900 against
+  // 7739 measured lines for structural temporal and blast-radius context.
   // The ratchet-down after
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 7700,
+  tooling: 7900,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

@@ -11,6 +11,10 @@ import {
   type SyntheticIdentityInput,
 } from "./synthetic-identity";
 import { syntheticInstructionConflictAnalysis } from "./synthetic-instruction-topology";
+import {
+  syntheticSharedInstructionBlastRadius,
+  syntheticTimeZoneBoundary,
+} from "./synthetic-structural-context";
 
 export interface EmittedEvidence {
   id: string;
@@ -25,6 +29,10 @@ export interface EmittedEvidence {
   retrievalLagSeconds: number;
   freshness: string;
   withinRecentChangeWindow: boolean;
+  localZone?: {
+    timeZone: string;
+    timeZoneDataVersion: string;
+  };
 }
 
 export interface EmittedRecords {
@@ -58,6 +66,7 @@ export interface EmittedRecords {
     bank: string;
     lastFour: string;
     verifiedAt: string | null;
+    changedAt: string | null;
   }>;
   referencedBankInstructions: Array<{
     id: string;
@@ -108,7 +117,11 @@ export interface EmittedRecords {
     subjectRef: string;
     scope: "account" | "position";
   }>;
-  recentChanges: Array<{ id: string; subjectRef: string }>;
+  recentChanges: Array<{
+    id: string;
+    subjectRef: string;
+    changedAt: string;
+  }>;
 }
 
 export interface EmittedCase {
@@ -122,6 +135,10 @@ export interface EmittedCase {
     timeZone: string;
     timeZoneDataVersion: string;
     asOfLocal: string;
+    timeZoneTransitions?: Array<{
+      at: string;
+      offsetMinutes: number;
+    }>;
   };
   request: {
     firmRef: string;
@@ -335,18 +352,15 @@ const CONTEXT_RULES: Readonly<
     );
   },
   "nonreducing-pending-action-present": pendingContext,
-  "time-zone-boundary": (item) => assumption(item, "AS-16"),
+  "time-zone-boundary": syntheticTimeZoneBoundary,
   "canonical-identity-collision": (item) =>
     syntheticIdentityContext(item).canonicalCollision,
   "threshold-equality": (item) =>
     item.thresholdPolicy !== null &&
     item.request.amountMinor === item.thresholdPolicy.thresholdMinor,
   "deadline-infeasible": (item) => !item.request.deadlineFeasible,
-  "resolved-conflict-multi-subject": (item) =>
-    assumption(item, "AS-06") &&
-    item.records.recentChanges.some((row) =>
-      evidenceSubjects(item, "recent-change").has(row.id)
-    ),
+  "resolved-conflict-multi-subject":
+    syntheticSharedInstructionBlastRadius,
   "selected-retirement-source-without-completed-review": (item) =>
     selectedFundingHasTaxClass(
       item.request.selectedFundingRefs,

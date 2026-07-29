@@ -59,11 +59,14 @@ export function instructionConflictAnalysis(
     request.sourceAccountRef,
     request.destinationRef,
   ];
+  const destinationSubjectRefs = [...request.destinationSubjectRefs].sort();
+  const destinationSubjectSet = new Set(destinationSubjectRefs);
   if (
     requestValues.some((value) => !nonEmpty(value)) ||
     !GOVERNED_INSTRUCTION_ACTIONS.includes(request.action) ||
-    request.destinationSubjectRefs.length !== 1 ||
-    !nonEmpty(request.destinationSubjectRefs[0])
+    destinationSubjectRefs.length === 0 ||
+    destinationSubjectSet.size !== destinationSubjectRefs.length ||
+    destinationSubjectRefs.some((value) => !nonEmpty(value))
   ) {
     return {
       present: false,
@@ -114,7 +117,7 @@ export function instructionConflictAnalysis(
       : term.targetKind === "destination-instruction"
         ? term.targetRef === request.destinationRef
         : term.targetKind === "destination-subject"
-          ? request.destinationSubjectRefs.includes(term.targetRef)
+          ? destinationSubjectSet.has(term.targetRef)
           : term.targetRef === request.requestRef;
     if (
       (term.polarity === "required" && !targetMatches) ||

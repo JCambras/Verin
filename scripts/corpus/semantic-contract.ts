@@ -55,6 +55,7 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/synthetic-identity.ts",
   "scripts/corpus/synthetic-instruction-topology.ts",
   "scripts/corpus/synthetic-semantics.ts",
+  "scripts/corpus/synthetic-structural-context.ts",
   "scripts/corpus/tree.ts",
   "scripts/corpus/world-topology.ts",
   "scripts/corpus/world.ts",
@@ -89,7 +90,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.6.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.7.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -137,6 +138,15 @@ const SemanticContractSchema = z.strictObject({
     ),
     instructionConflict: z.literal(
       "derived-from-request-bound-typed-instruction-terms",
+    ),
+    instructionOwners: z.literal(
+      "target-specific-normalized-destination-owner-set",
+    ),
+    syntheticTemporal: z.literal(
+      "cited-zone-bound-records-cross-declared-transition",
+    ),
+    syntheticBlastRadius: z.literal(
+      "one-cited-instruction-change-reaches-multiple-topology-subjects",
     ),
     pendingAction: z.literal(
       "must-resolve-to-request-household-and-selected-funding",
