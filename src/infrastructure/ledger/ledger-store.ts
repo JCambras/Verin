@@ -121,6 +121,28 @@ function storeFailure(orgId: string, error: unknown): AppError {
     : appError("INTERNAL", "decision ledger append failed");
 }
 
+async function cleanUpAppendSavepoint(
+  tx: SqlTx,
+  orgId: string,
+): Promise<void> {
+  try {
+    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
+  } catch (error) {
+    log.warn(
+      { orgId, reason: logSafeReason(error) },
+      "decision ledger savepoint rollback failed",
+    );
+  }
+  try {
+    await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
+  } catch (error) {
+    log.warn(
+      { orgId, reason: logSafeReason(error) },
+      "decision ledger savepoint release failed",
+    );
+  }
+}
+
 async function appendPrepared(
   tx: SqlTx,
   orgId: string,
@@ -429,12 +451,14 @@ export async function appendDecisionEvents(
   if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
     throw appError("VALIDATION", "decision source rows and recording events do not correspond");
   }
-  await lockDecisionLedgerTenant(tx, orgId, "append");
-  await assertStatusEvidenceOrder(tx, orgId, prepared.value);
-  await preflightEvidenceSnapshots(tx, snapshots);
-  const sourceWrite = issueValidatedLedgerSourceWrite();
-  await tx.exec("SAVEPOINT decision_ledger_append");
+  let savepointCreated = false;
   try {
+    await lockDecisionLedgerTenant(tx, orgId, "append");
+    await assertStatusEvidenceOrder(tx, orgId, prepared.value);
+    await preflightEvidenceSnapshots(tx, snapshots);
+    const sourceWrite = issueValidatedLedgerSourceWrite();
+    await tx.exec("SAVEPOINT decision_ledger_append");
+    savepointCreated = true;
     await insertEvidenceSnapshots(
       sourceWrite,
       tx,
@@ -449,10 +473,12 @@ export async function appendDecisionEvents(
       sourceWrite,
     );
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
+    savepointCreated = false;
     return appended;
   } catch (error) {
-    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
-    await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
+    if (savepointCreated) {
+      await cleanUpAppendSavepoint(tx, orgId);
+    }
     throw storeFailure(orgId, error);
   }
 }

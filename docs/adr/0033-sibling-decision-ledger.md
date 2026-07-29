@@ -46,7 +46,9 @@ settle now.
   the chain head, which serializes sequence assignment on Postgres and PGlite
   without a failed-transaction retry fork. Later appends require a nominal
   transaction capability and use a savepoint, so a caller that catches an append
-  error cannot commit a prefix. No decision-ledger outbox exists.
+  error cannot commit a prefix. Every database failure maps to the repository error
+  contract after best-effort savepoint cleanup that preserves the original error.
+  No decision-ledger outbox exists.
 - Composite `(org_id, id)` foreign keys make decision, evidence, membership,
   causation, and exception-triggering links structurally same-tenant. Every
   reference an event can name is a promoted column L3 re-derives from the payload.
@@ -56,9 +58,10 @@ settle now.
 - A recorded-version structural validator binds approval stages, execution steps,
   verification rules, reservations, decision uniqueness, evidence ordering, and
   eligible causal and exception triggers to the exact immutable decision that
-  authorizes them. Append, whole-ledger verification, bounded register replay, and
-  rebuild call that same authority before projection. Invalid references never
-  reach the projection fold.
+  authorizes them. Every decision-scoped fact follows its `DecisionRecorded` fact
+  in immutable sequence. Append, whole-ledger verification, bounded register replay,
+  and rebuild call that same authority before projection. Invalid or
+  pre-initialization references never reach the projection fold.
 - Every immutable string leaf is classified by its complete structural path at one
   storage boundary. Attribution is an opaque retained-text reference; hashes and
   timestamps keep their canonical forms; decision explanations, summaries, reasons,
@@ -95,7 +98,8 @@ settle now.
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
   state is never located by physical row order. Active reservation exclusivity is
   derived from preceding immutable creation and release events, never from the
-  mutable reservation index. A reservation generation is keyed by
+  mutable reservation index. Matching tenant-scoped partial indexes cover the
+  creation-reference expression and the release anti-join. A reservation generation is keyed by
   reservation reference, owning decision reference, and its creation ledger-entry
   identity. A release cites that exact generation. Reuse is allowed after release
   only through a new creation identity, and a delayed old-generation release cannot
@@ -195,11 +199,11 @@ claim those capabilities are shipped until their prompt lands them.
 
 ## Consequences
 
-Migration version 3 is additive. Existing audit DDL, rows, preimages, outbox, and
-verification remain byte-compatible. Future event schema versions add dispatch
-entries and pure upcasts for projection use. They never rewrite an old row or
-hash. Prompt 19 owns decision re-evaluation, and prompts 18/23/25 own authority,
-reservation, execution, and status behavior.
+Migration version 3 is additive. Migration version 7 adds indexes only. Existing
+audit DDL, rows, preimages, outbox, and verification remain byte-compatible.
+Future event schema versions add dispatch entries and pure upcasts for projection
+use. They never rewrite an old row or hash. Prompt 19 owns decision re-evaluation,
+and prompts 18/23/25 own authority, reservation, execution, and status behavior.
 
 The demo's fake `auditPosition`, fake status arrivals, and fake execution history
 are deletion or switchover candidates once their producers append real events.

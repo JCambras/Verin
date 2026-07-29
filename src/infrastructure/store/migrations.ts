@@ -28,6 +28,7 @@ import { migrationLedgerExists } from "./migration-support";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
+  DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL,
   DECISION_LEDGER_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "./decision-ledger-migration";
@@ -368,6 +369,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 7,
     name: "decision-replay-source-provenance",
     sql: DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
+  },
+  {
+    version: 8,
+    name: "decision-ledger-reservation-lookup-indexes",
+    sql: DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL,
   },
 ];
 

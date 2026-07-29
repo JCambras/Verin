@@ -13,6 +13,9 @@ export interface StructuralLedgerEntry {
   readonly event: LedgerEntry;
 }
 
+export const DECISION_RECORDING_REQUIRED =
+  "decision-scoped ledger event must follow DecisionRecorded";
+
 export interface LedgerStructureLookup {
   readonly decision: (id: string) => Promise<StructuralDecision | null>;
   readonly entry: (id: string) => Promise<StructuralLedgerEntry | null>;
@@ -294,6 +297,12 @@ async function assertEventStructure(
   const ref = promotedDecisionRef(event);
   let binding: StructuralDecision | null = null;
   if (ref) {
+    if (
+      event.type !== "DecisionRecorded" &&
+      !(await lookup.decisionRecording(ref.id, sequence))
+    ) {
+      throw appError("STORE_CONSTRAINT", DECISION_RECORDING_REQUIRED);
+    }
     binding = await lookup.decision(ref.id);
     if (!binding || binding.record.firmId !== event.firmId) {
       throw appError(

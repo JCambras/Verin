@@ -3573,3 +3573,23 @@ binding.
 **Revert path:** none while Prompt 7 promises exact insert ownership, authorized
 approval facts, rebuildable projections, typed repository failures, and retained
 replay verification.
+
+### D-117 · 2026-07-29 · reversible · Decision initialization, append failures, and reservation lookups fail closed
+
+Every decision-scoped ledger event except `DecisionRecorded` now requires that
+decision's recording event at a lower immutable sequence. Whole-ledger verification,
+rebuild, online append, and bounded register replay share the rule. A bounded window
+that contains a later recording rejects the pre-initialization event; a window that
+starts after an unseen recording continues to exclude that incomplete decision.
+
+Every database operation in `appendDecisionEvents`, including tenant locking,
+evidence preflight, savepoint creation, rollback, and release, is covered by typed
+error mapping. Savepoint cleanup is best-effort and cannot replace the original
+failure. Migration 8 adds matching partial indexes for both sides of immutable active
+reservation lookup, and an exact `EXPLAIN` companion proves the query selects them.
+
+**Why:** a hash-valid chain must still be replayable in sequence, repository adapters
+must not leak driver exceptions, and immutable reservation authority must remain
+bounded as tenant history grows.
+**Revert path:** none while Prompt 7 promises deterministic replay, typed repository
+failures, and immutable reservation authority.

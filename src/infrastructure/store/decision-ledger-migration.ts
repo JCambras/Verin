@@ -275,6 +275,19 @@ CREATE INDEX IF NOT EXISTS decision_ledger_evidence_recorded
   WHERE event_type = 'EvidenceSnapshotRecorded';
 `;
 
+export const DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS decision_ledger_active_reservation_created
+  ON decision_ledger(
+    org_id,
+    ((payload_json::jsonb #>> '{reservationRef,id}')),
+    sequence DESC
+  )
+  WHERE event_type = 'ReservationCreated';
+CREATE INDEX IF NOT EXISTS decision_ledger_reservation_released
+  ON decision_ledger(org_id, reservation_creation_id, sequence)
+  WHERE event_type = 'ReservationReleased';
+`;
+
 export const DECISION_REPLAY_SOURCE_PROVENANCE_SQL = `
 CREATE TABLE IF NOT EXISTS decision_replay_source_provenance (
   org_id text NOT NULL REFERENCES orgs(id),

@@ -6222,3 +6222,64 @@ retain the role-less, mixed-role, missing-cache, forged-generation, and raw-driv
 cases. The focused append-only, decision-ledger, and projection suites pass.
 
 **Date:** 2026-07-29 (review corrections Q1-Q4, ADR-0019/0033, D-116).
+
+## Decision initialization, complete error mapping, and bounded reservation lookup (D-117)
+
+**Invariants:** every decision-scoped event follows its immutable decision-recording
+fact; every later-append database failure crosses the typed repository boundary
+without cleanup masking the original error; active-reservation authority uses indexed
+immutable facts rather than tenant-history scans.
+
+The permanent companions first ran against the pre-fix implementation. A privileged
+test built a hash-valid chain with `ApprovalRecorded` immediately before its
+`DecisionRecorded` event. L1-L4 passed, and the verified register trusted the later
+decision:
+
+```text
+× rejects decision events recorded before their decision initialization
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:925
+```
+
+Driver failures before savepoint creation and during cleanup escaped as raw
+exceptions. A failed cleanup also replaced the original constraint error:
+
+```text
+× maps a driver failure during tenant lock
+  expected TypeError: driver is gone to match object { code: 'INTERNAL' }
+
+× maps a driver failure during savepoint creation
+  expected TypeError: driver is gone to match object { code: 'INTERNAL' }
+
+× maps evidence-preflight driver failures before the savepoint
+  expected TypeError: driver is gone to match object { code: 'INTERNAL' }
+
+× preserves the original release error after best-effort cleanup
+  expected TypeError: rollback cleanup failed to match object
+  { code: 'STORE_CONSTRAINT' }
+```
+
+The migration companion found neither side of the active-reservation lookup indexed:
+
+```text
+× indexes both sides of immutable active-reservation lookup
+  decision_ledger_active_reservation_created was undefined
+```
+
+The shared recorded-version validator now requires a preceding
+`DecisionRecorded` event for every decision-scoped later fact. Bounded replay
+distinguishes a later in-window recording, which invalidates the snapshot, from an
+out-of-window recording, which leaves the decision incomplete and excluded. The
+append boundary maps tenant-lock, preflight, savepoint creation, body, rollback, and
+release failures after best-effort cleanup while retaining the original error.
+Forward-only migration 8 adds partial creation and release indexes. The permanent
+schema companion disables sequential scans, explains the exact structural lookup,
+and proves both indexes appear in the selected plan.
+
+**Revert:** the privileged chain mutation is contained in the integration harness.
+The permanent companions retain the pre-initialization chain, five driver-failure
+phases, migration definitions, and exact query-plan assertions. The focused ledger,
+projection, schema, ownership, tenant, registry, line-budget, typecheck, and lint
+suites pass.
+
+**Date:** 2026-07-29 (review corrections R1-R3, ADR-0033, D-117).

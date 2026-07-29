@@ -184,6 +184,68 @@ describe("store schema hardening (integration)", () => {
       expect(idx.rows).toHaveLength(1);
       expect(idx.rows[0]!.indexdef).toContain("(org_id, input_bundle_id)");
     });
+
+    it("indexes both sides of immutable active-reservation lookup", async () => {
+      const indexes = await db.query<{
+        indexname: string;
+        indexdef: string;
+      }>(
+        `SELECT indexname, indexdef
+           FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND indexname IN (
+              'decision_ledger_active_reservation_created',
+              'decision_ledger_reservation_released'
+            )`,
+      );
+      const byName = new Map(
+        indexes.rows.map((row) => [row.indexname, row.indexdef]),
+      );
+      expect(
+        byName.get("decision_ledger_active_reservation_created"),
+      ).toContain(
+        "((payload_json)::jsonb #>> '{reservationRef,id}'::text[])",
+      );
+      expect(
+        byName.get("decision_ledger_active_reservation_created"),
+      ).toContain("sequence DESC");
+      expect(
+        byName.get("decision_ledger_active_reservation_created"),
+      ).toContain("WHERE (event_type = 'ReservationCreated'::text)");
+      expect(
+        byName.get("decision_ledger_reservation_released"),
+      ).toContain("(org_id, reservation_creation_id, sequence)");
+      expect(
+        byName.get("decision_ledger_reservation_released"),
+      ).toContain("WHERE (event_type = 'ReservationReleased'::text)");
+
+      await db.exec("SET enable_seqscan = off");
+      const explained = await db.query<Record<string, string>>(
+        `EXPLAIN (COSTS OFF)
+         SELECT created.sequence
+           FROM decision_ledger created
+          WHERE created.org_id = $1
+            AND created.event_type = 'ReservationCreated'
+            AND created.payload_json::jsonb #>> '{reservationRef,id}' = $2
+            AND created.sequence < $3
+            AND NOT EXISTS (
+                  SELECT 1
+                    FROM decision_ledger released
+                   WHERE released.org_id = created.org_id
+                     AND released.event_type = 'ReservationReleased'
+                     AND released.reservation_creation_id = created.id
+                     AND released.sequence < $3
+                )
+          ORDER BY created.sequence DESC
+          LIMIT 1`,
+        [ORG, "reservation:test", 100],
+      );
+      const plan = explained.rows
+        .flatMap((row) => Object.values(row))
+        .join("\n");
+      expect(plan).toContain("decision_ledger_active_reservation_created");
+      expect(plan).toContain("decision_ledger_reservation_released");
+    });
   });
 });
 

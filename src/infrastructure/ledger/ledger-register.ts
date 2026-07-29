@@ -30,6 +30,7 @@ import {
 import { listReplayDecisionEvidenceCoverage } from "./ledger-source-coverage";
 import {
   assertRecordedLedgerStructure,
+  DECISION_RECORDING_REQUIRED,
   type LedgerStructureLookup,
   type StructuralDecision,
   type StructuralLedgerEntry,
@@ -85,6 +86,12 @@ async function replayRegisterWindow(
   const entryById = new Map<string, StructuralLedgerEntry>(
     entries.map((item) => [item.event.id, item]),
   );
+  const recordingSequenceByDecision = new Map(
+    entries.flatMap((item) =>
+      item.event.type === "DecisionRecorded"
+        ? [[item.event.decisionRef.id, item.sequence] as const]
+        : []),
+  );
   const structuralDecisions = new Map<string, StructuralDecision>();
   const structure: LedgerStructureLookup = {
     decision: async (id) => structuralDecisions.get(id) ?? null,
@@ -126,6 +133,21 @@ async function replayRegisterWindow(
       continue;
     }
     const id = promotedDecisionId(event);
+    if (
+      id &&
+      event.type !== "DecisionRecorded" &&
+      !structuralDecisions.has(id)
+    ) {
+      const recordingSequence = recordingSequenceByDecision.get(id);
+      if (
+        recordingSequence !== undefined &&
+        recordingSequence > item.sequence
+      ) {
+        throw appError("STORE_CONSTRAINT", DECISION_RECORDING_REQUIRED);
+      }
+      incompleteDecisions.add(id);
+      continue;
+    }
     if (
       event.type === "StatusObserved" &&
       event.evidenceSnapshotRef !== undefined &&

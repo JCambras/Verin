@@ -201,6 +201,98 @@ async function insertRawDecisionEvent(
   );
 }
 
+async function moveLastEntryBeforeDecisionRecording(db: SqlDb): Promise<void> {
+  const rows = await db.query<{
+    id: string;
+    sequence: number | string;
+    event_type: string;
+    schema_version: string;
+    serializer_version: string;
+    payload_json: string;
+  }>(
+    `SELECT id, sequence, event_type, schema_version, serializer_version,
+            payload_json
+       FROM decision_ledger
+      WHERE org_id = $1
+      ORDER BY sequence DESC
+      LIMIT 2`,
+    [LEDGER_ORG],
+  );
+  const later = rows.rows[0]!;
+  const recording = rows.rows[1]!;
+  const laterSequence = Number(later.sequence);
+  const recordingSequence = Number(recording.sequence);
+  expect(later.event_type).toBe("ApprovalRecorded");
+  expect(recording.event_type).toBe("DecisionRecorded");
+  const predecessor = await db.query<{ entry_hash: string }>(
+    "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
+    [LEDGER_ORG, recordingSequence - 1],
+  );
+  const laterPreimage = decisionLedgerChainPreimage(
+    later.schema_version,
+    later.serializer_version,
+    later.payload_json,
+    LEDGER_PROVENANCE,
+  );
+  const recordingPreimage = decisionLedgerChainPreimage(
+    recording.schema_version,
+    recording.serializer_version,
+    recording.payload_json,
+    LEDGER_PROVENANCE,
+  );
+  expect(laterPreimage).not.toBeNull();
+  expect(recordingPreimage).not.toBeNull();
+  if (!laterPreimage || !recordingPreimage) return;
+  const previousHash = predecessor.rows[0]!.entry_hash;
+  const laterHash = computeChainHash(laterPreimage, previousHash);
+  const recordingHash = computeChainHash(recordingPreimage, laterHash);
+  await db.exec(
+    "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
+  );
+  try {
+    await db.transaction(async (tx) => {
+      await tx.query(
+        "UPDATE decision_ledger SET sequence = $3 WHERE org_id = $1 AND id = $2",
+        [LEDGER_ORG, recording.id, laterSequence + 1],
+      );
+      await tx.query(
+        `UPDATE decision_ledger
+            SET sequence = $3, prev_hash = $4, entry_hash = $5
+          WHERE org_id = $1 AND id = $2`,
+        [
+          LEDGER_ORG,
+          later.id,
+          recordingSequence,
+          previousHash,
+          laterHash,
+        ],
+      );
+      await tx.query(
+        `UPDATE decision_ledger
+            SET sequence = $3, prev_hash = $4, entry_hash = $5
+          WHERE org_id = $1 AND id = $2`,
+        [
+          LEDGER_ORG,
+          recording.id,
+          laterSequence,
+          laterHash,
+          recordingHash,
+        ],
+      );
+      await tx.query(
+        `UPDATE decision_ledger_anchor
+            SET max_sequence = $2, head_hash = $3
+          WHERE org_id = $1`,
+        [LEDGER_ORG, laterSequence, recordingHash],
+      );
+    });
+  } finally {
+    await db.exec(
+      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
+    );
+  }
+}
+
 /** Every statement a path issues, in order, so lock mode is observed not assumed. */
 async function measureStatements(
   db: SqlDb,
@@ -819,6 +911,42 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(verified.ok).toBe(false);
     expect(verified.replaySourceReason).toBe(
       "ledger event references an unauthorized approval stage",
+    );
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG))
+      .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+  });
+
+  it("rejects decision events recorded before their decision initialization", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalRecorded",
+    )!;
+    const approval = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:approval:before-decision",
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await insertRawDecisionEvent(db, approval);
+    await moveLastEntryBeforeDecisionRecording(db);
+
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(register.verification.ok).toBe(false);
+    expect(register.decisions).toEqual([]);
+    expect(register.replaySourceReason).toBe(
+      "decision-scoped ledger event must follow DecisionRecorded",
+    );
+    const integrity = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(integrity.ok).toBe(false);
+    expect(integrity.replaySourceReason).toBe(
+      "decision-scoped ledger event must follow DecisionRecorded",
     );
     await expect(rebuildDecisionProjections(db, LEDGER_ORG))
       .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
@@ -2163,6 +2291,114 @@ describe("decision ledger storage and L1-L4 verification", () => {
       );
     })).rejects.toMatchObject({ code: "INTERNAL" });
     expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
+  it.each([
+    ["tenant lock", "query", "SELECT id FROM orgs"],
+    ["savepoint creation", "exec", "SAVEPOINT decision_ledger_append"],
+  ] as const)("maps a driver failure during %s", async (
+    _phase,
+    method,
+    statement,
+  ) => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      id: `ledger:append:${method}-failure`,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(db.transaction((tx) => {
+      const failingTx: SqlTx = {
+        ...tx,
+        async query<T>(sql: string, params?: unknown[]) {
+          if (method === "query" && sql.includes(statement)) {
+            throw new TypeError("driver is gone");
+          }
+          return tx.query<T>(sql, params);
+        },
+        async exec(sql: string) {
+          if (method === "exec" && sql === statement) {
+            throw new TypeError("driver is gone");
+          }
+          return tx.exec(sql);
+        },
+      };
+      return appendDecisionEvents(
+        failingTx,
+        LEDGER_ORG,
+        [event],
+        LEDGER_PROVENANCE,
+      );
+    })).rejects.toMatchObject({ code: "INTERNAL" });
+  });
+
+  it("maps evidence-preflight driver failures before the savepoint", async () => {
+    await recordFixture(db);
+    const later = laterEvidenceRecording("evidence:preflight-driver-failure");
+    await expect(db.transaction((tx) => {
+      const failingTx: SqlTx = {
+        ...tx,
+        async query<T>(sql: string, params?: unknown[]) {
+          if (sql.includes("SELECT canonical_json FROM evidence_snapshots")) {
+            throw new TypeError("driver is gone");
+          }
+          return tx.query<T>(sql, params);
+        },
+      };
+      return appendDecisionEvents(
+        failingTx,
+        LEDGER_ORG,
+        [later.event],
+        LEDGER_PROVENANCE,
+        [later.snapshot],
+      );
+    })).rejects.toMatchObject({ code: "INTERNAL" });
+  });
+
+  it("preserves the original release error after best-effort cleanup", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:append:release-failure",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    let rollbackAttempts = 0;
+    let releaseAttempts = 0;
+    await expect(db.transaction((tx) => {
+      const failingTx: SqlTx = {
+        ...tx,
+        async exec(sql: string) {
+          if (sql === "ROLLBACK TO SAVEPOINT decision_ledger_append") {
+            rollbackAttempts += 1;
+            throw new TypeError("rollback cleanup failed");
+          }
+          if (sql === "RELEASE SAVEPOINT decision_ledger_append") {
+            releaseAttempts += 1;
+            if (releaseAttempts === 1) {
+              throw { code: "23505", message: "release failed" };
+            }
+            throw new TypeError("release cleanup failed");
+          }
+          return tx.exec(sql);
+        },
+      };
+      return appendDecisionEvents(
+        failingTx,
+        LEDGER_ORG,
+        [event],
+        LEDGER_PROVENANCE,
+      );
+    })).rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+    expect(rollbackAttempts).toBe(1);
+    expect(releaseAttempts).toBe(2);
   });
 
   it("persists evidence gathered after the decision and refuses an uncited snapshot", async () => {
