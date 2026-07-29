@@ -187,6 +187,7 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
       ? value
       : unsupportedSchemaStructure(definition, `${path} is not an array`);
   };
+  const checkEdges: SchemaEdge[] = [];
   if (definition.checks !== undefined) {
     for (const [index, check] of array("checks", definition.checks).entries()) {
       const traits =
@@ -205,7 +206,11 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
           `checks.${index} is not a Zod check`,
         );
       }
-      if (isSchema(check)) knownPaths.add(`checks.${index}`);
+      if (isSchema(check)) {
+        checkEdges.push(
+          edge(`checks.${index}`, `check[${index}]`, check),
+        );
+      }
     }
   }
   let edges: SchemaEdge[];
@@ -300,6 +305,7 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
       }
       edges = [];
   }
+  edges.push(...checkEdges);
   assertKnownSchemaChildren(definition, knownPaths);
   return edges;
 };
@@ -405,38 +411,59 @@ const opaqueSchemaNodeEntries = (
 const opaqueSchemaNodes = (schema: z.ZodType): ReadonlySet<z.ZodType> =>
   new Set(opaqueSchemaNodeEntries(schema, "").map((entry) => entry.node));
 
-/*
- * These exact internal nodes have behavior that JSON Schema cannot express:
- * TokenizedPayload deep-freezes already-validated JSON and DecisionInputBundle
- * canonicalizes a time-zone spelling before its enum check. ExplanationNode is
- * seeded too because its iterative z.unknown recursion is the next candidate,
- * though it contributes no opaque node today.
- *
- * The seed GRAPHS are shared (DecisionInputBundle reaches TenantContext's leaves),
- * so traversing them would silently bless any opaque node later added anywhere
- * inside them. The resolved inventory is therefore PINNED by path below: a new
- * opaque node - inside a seed graph or outside it - fails the pin instead of
- * joining the allowlist.
- */
 const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
-  "DecisionInputBundleSchema.timeZone",
-  "TokenizedPayloadSchema.value.{}",
+  "actor.ts:ActorRefSchema.check[0]",
+  "actor.ts:ActorRefSchema.roleIds.check[1]",
+  "actor.ts:ActorRefSchema.roleIds.check[2]",
+  "actor.ts:TokenizedPayloadSchema.value.{}",
+  "authority.ts:EscalationStepSchema.after.check[0]",
+  "authority.ts:EscalationStepSchema.roleIds.check[1]",
+  "authority.ts:EscalationStepSchema.roleIds.check[2]",
+  "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].check[0]",
+  "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].suppliableBy.check[1]",
+  "decision.ts:DecisionRecordSchema.check[0]",
+  "decision.ts:DecisionRecordSchema.check[1]",
+  "decision.ts:DecisionRecordSchema.check[2]",
+  "decision.ts:DecisionRecordSchema.check[4]",
+  "decision.ts:DecisionRecordSchema.check[5]",
+  "decision.ts:ExplanationNodeSchema.evidenceSnapshotRefs.check[0]",
+  "decision.ts:ExplanationNodeSchema.sourceRefs.[].check[0]",
+  "decision.ts:ExplanationNodeSchema.sourceRefs.check[0]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.conflictKeys.check[1]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[1]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.[].requiredEvidenceSnapshotRefs.check[2]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.preconditions.check[1]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].compensatingAction.reservationRefs.check[0]",
+  "decision.ts:ProceedDecisionSchema.executionPlan.steps.[].dependsOn.check[0]",
+  "decision.ts:RevaluationConditionSchema.check[0]",
+  "evidence.ts:DecisionInputBundleSchema.evidenceSnapshotRefs.check[0]",
+  "evidence.ts:DecisionInputBundleSchema.householdInstructionVersionRefs.check[0]",
+  "evidence.ts:DecisionInputBundleSchema.timeZone",
+  "trigger.ts:AmbiguityRefSchema.candidateRefs.check[1]",
+  "trigger.ts:AmbiguityRefSchema.candidateRefs.check[2]",
 ] as const;
 
-const ALLOWED_OPAQUE_SCHEMA_ENTRIES: readonly OpaqueSchemaEntry[] = [
-  ...opaqueSchemaNodeEntries(
-    actorSchemas.TokenizedPayloadSchema,
-    "TokenizedPayloadSchema",
-  ),
-  ...opaqueSchemaNodeEntries(
-    explanationSchemas.ExplanationNodeSchema,
-    "ExplanationNodeSchema",
-  ),
-  ...opaqueSchemaNodeEntries(
-    evidenceSchemas.DecisionInputBundleSchema,
-    "DecisionInputBundleSchema",
-  ),
-];
+const opaqueSchemaEntriesByPath = new Map<string, OpaqueSchemaEntry>();
+for (const [file, moduleExports] of DECISION_CORE_SCHEMA_MODULES) {
+  for (const [exportName, value] of Object.entries(moduleExports)) {
+    if (!isSchema(value)) continue;
+    for (const entry of opaqueSchemaNodeEntries(
+      value,
+      `${file}:${exportName}`,
+    )) {
+      opaqueSchemaEntriesByPath.set(entry.path, entry);
+    }
+  }
+}
+const ALLOWED_OPAQUE_SCHEMA_ENTRIES = ALLOWED_OPAQUE_SCHEMA_NODE_PATHS.map(
+  (path) => {
+    const entry = opaqueSchemaEntriesByPath.get(path);
+    if (entry === undefined) {
+      throw new Error(`missing allowed opaque schema node: ${path}`);
+    }
+    return entry;
+  },
+);
 
 const ALLOWED_OPAQUE_SCHEMA_NODES = new Set<z.ZodType>(
   ALLOWED_OPAQUE_SCHEMA_ENTRIES.map((entry) => entry.node),
@@ -857,6 +884,22 @@ describe("decision-core tenant-scope fence", () => {
   it("accepts a recognized child-bearing schema with transparent children", () => {
     expect(tenantBoundaryAudit(
       [["probe.ts", { SafePromise: z.promise(z.string()) }]],
+      {},
+    ).unsafe).toEqual([]);
+  });
+
+  it("finds an opaque schema used as a check", () => {
+    const CheckedOpaque = z.string().check(z.custom(() => true));
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { CheckedOpaque }]],
+      {},
+    ).unsafe).toEqual(["probe.ts:CheckedOpaque"]);
+  });
+
+  it("accepts a type-preserving check without schema children", () => {
+    const CheckedString = z.string().check(z.minLength(1));
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { CheckedString }]],
       {},
     ).unsafe).toEqual([]);
   });

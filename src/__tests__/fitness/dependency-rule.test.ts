@@ -393,6 +393,15 @@ describe("dependency-rule fence", () => {
           `export const value = load("@infra/store");`,
         ].join("\n"),
       ],
+      [
+        "a parameter default",
+        [
+          "function load(platform = process) {",
+          `  return platform.getBuiltinModule("node:module");`,
+          "}",
+          "export const value = load();",
+        ].join("\n"),
+      ],
     ])("ambient getBuiltinModule cannot bypass the layer fence through %s", (_name, source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -422,6 +431,7 @@ describe("dependency-rule fence", () => {
             "let platform = process;",
             "if (false) platform = { getBuiltinModule: (value: string) => value };",
             `export const conditional = platform.getBuiltinModule("local");`,
+            "export function parameter(local = process) { return local.getBuiltinModule.call(process); }",
           ].join("\n"),
         }),
       );
@@ -694,6 +704,13 @@ describe("dependency-rule fence", () => {
         "ambient Function as a value",
         "export const factory = Function;",
       ],
+      [
+        "unprovable constructor receiver",
+        [
+          "const prototype = Object.getPrototypeOf(async function () {});",
+          `export const value = prototype.constructor("return 1")();`,
+        ].join("\n"),
+      ],
     ])("dynamic-code recovery through %s is rejected", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -795,6 +812,60 @@ describe("dependency-rule fence", () => {
           "export const value = Clock.now();",
         ].join("\n"),
       ],
+      [
+        "array-bound ambient clock",
+        "const [Clock] = [Date];\nexport const value = Clock.now();",
+      ],
+      [
+        "array-parameter ambient clock",
+        [
+          "function read([Clock] = [Date]) { return Clock.now(); }",
+          "export const value = read();",
+        ].join("\n"),
+      ],
+      [
+        "nested-bound ambient clock",
+        [
+          "const { clocks: { Date: Clock } } = { clocks: globalThis };",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "array-assigned ambient clock",
+        [
+          "let Clock: DateConstructor;",
+          "([Clock] = [Date]);",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "nested-assigned ambient clock",
+        [
+          "let Clock: DateConstructor;",
+          "({ clocks: { Date: Clock } } = { clocks: globalThis });",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "shorthand assignment-default ambient clock",
+        [
+          "let Clock: DateConstructor;",
+          "({ Clock = Date } = {} as { Clock?: DateConstructor });",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "empty-spread constructed clock",
+        "export const value = new Date(...([] as [])).toISOString();",
+      ],
+      [
+        "local-time component constructed clock",
+        "export const value = new Date(2026, 6, 29).toISOString();",
+      ],
+      [
+        "local-time string constructed clock",
+        `export const value = new Date("2026-07-29T12:00:00").toISOString();`,
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -864,7 +935,17 @@ describe("dependency-rule fence", () => {
             "const ConditionalClock = false ? FirstClock : SecondClock;",
             "const empty = {} as { Date?: typeof FirstClock };",
             "const { Date: DefaultClock = FirstClock } = empty;",
-            "export const values = [Clock.now(), LogicalClock.now(), ConditionalClock.now(), DefaultClock.now()];",
+            "function read(ParameterClock = FirstClock) { return ParameterClock.now(); }",
+            "function readArray([ParameterClock] = [FirstClock]) { return ParameterClock.now(); }",
+            "const [ArrayClock] = [FirstClock];",
+            "const { clocks: { Date: NestedClock } } = { clocks: { Date: SecondClock } };",
+            "let AssignedClock = FirstClock;",
+            "([AssignedClock] = [SecondClock]);",
+            "let NestedAssignedClock = FirstClock;",
+            "({ clocks: { Date: NestedAssignedClock } } = { clocks: { Date: SecondClock } });",
+            "let AssignmentDefaultClock = FirstClock;",
+            "({ AssignmentDefaultClock = SecondClock } = {} as { AssignmentDefaultClock?: typeof SecondClock });",
+            "export const values = [Clock.now(), LogicalClock.now(), ConditionalClock.now(), DefaultClock.now(), read(), readArray(), ArrayClock.now(), NestedClock.now(), AssignedClock.now(), NestedAssignedClock.now(), AssignmentDefaultClock.now()];",
           ].join("\n"),
         }),
       );
@@ -878,7 +959,11 @@ describe("dependency-rule fence", () => {
             "let left = 1;",
             "let right = 2;",
             "({ left, right } = { left: 3, right: 4 });",
+            `const instant = "2020-01-01T00:00:00.000Z" as const;`,
             `export const pinned = new Date("2020-01-01T00:00:00.000Z").toISOString();`,
+            "export const pinnedAlias = new Date(instant).toISOString();",
+            `export const offset = new Date("2020-01-01T05:30:00+05:30").toISOString();`,
+            "export const epoch = new Date(0).toISOString();",
             "export const values = [left, right];",
           ].join("\n"),
         }),
