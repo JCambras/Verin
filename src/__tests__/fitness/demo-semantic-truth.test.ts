@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
-import { signedImpactMaterialInputHash } from "@app/demo/build-setup-impacts";
+import {
+  signedImpactMaterialInputHash,
+  type SignedImpactMaterialInput,
+} from "@app/demo/build-setup-impacts";
 import {
   APPROVAL_CLOCKS,
   BANK_INSTRUCTION,
@@ -66,6 +69,8 @@ import {
 } from "@app/demo/setup-activation-input";
 import {
   POSTURE_CONFIGURATION_LABEL,
+  POSTURE_OPTION_LABEL,
+  POSTURE_STATUS,
   SETUP_POLICY_GROUP_IDS,
   configurationPosture,
   isCaptainSignedImpact,
@@ -536,6 +541,9 @@ interface ConfigurationClaim {
   readonly firmId: string;
   readonly truthLabels: readonly SetupTruthLabel[];
   readonly posture: SetupAuthorityPosture;
+  readonly activeProfile: boolean;
+  readonly status: string;
+  readonly label: string;
   readonly provenance: string;
 }
 
@@ -544,7 +552,7 @@ export function configurationPostureViolations(
 ): string[] {
   const where = sourceRef(
     "src/app/demo/setup-evaluator.ts",
-    "configurationProvenance: POSTURE_CONFIGURATION_LABEL",
+    "configurationProvenance: activeProfile",
   );
   const violations: string[] = [];
   for (const claim of claims) {
@@ -554,9 +562,25 @@ export function configurationPostureViolations(
         `${where} :: ${claim.firmId} claims posture "${claim.posture}" for truth labels [${claim.truthLabels.join(", ")}], which are "${expected}"`,
       );
     }
-    if (claim.provenance !== POSTURE_CONFIGURATION_LABEL[claim.posture]) {
+    if (claim.activeProfile) {
+      if (
+        claim.status !== POSTURE_STATUS[claim.posture] ||
+        claim.label !== POSTURE_OPTION_LABEL[claim.posture] ||
+        claim.provenance !==
+          POSTURE_CONFIGURATION_LABEL[claim.posture]
+      ) {
+        violations.push(
+          `${where} :: ${claim.firmId} renders "${claim.label}" / "${claim.provenance}" for active posture "${claim.posture}"`,
+        );
+      }
+    } else if (
+      claim.status !== "pending" ||
+      claim.label !== "Projected configuration" ||
+      !claim.provenance.includes("Projected") ||
+      claim.provenance.includes("Captain-signed")
+    ) {
       violations.push(
-        `${where} :: ${claim.firmId} renders "${claim.provenance}" for posture "${claim.posture}"`,
+        `${where} :: ${claim.firmId} does not match its active profile but renders "${claim.label}" / "${claim.provenance}"`,
       );
     }
     const unsigned = claim.truthLabels.filter((label) => label !== "Signed");
@@ -2244,11 +2268,20 @@ describe("demo semantic-truth fence", () => {
     expect(second.snapshot.snapshotHash).not.toBe(first.snapshot.snapshotHash);
     expect(second.snapshot.firms[0].policyVersion).not.toBe(priorPolicyVersion);
     expect(second.snapshot.firms[0].policyVersion).not.toBe("FA-4.2");
-    // A mutated combination never retains a captain-signed badge (F1): the 9-month
-    // horizon is a supported house default, not a signed one.
-    expect(second.snapshot.firms[0].configurationPosture).toBe("house-default");
+    expect(
+      configurationPosture(
+        second.snapshot.firms[0].selectedOptions.map(
+          (option) =>
+            option.posture === "signed"
+              ? "Signed"
+              : option.posture === "recommended"
+                ? "Recommended"
+                : "Supported",
+        ),
+      ),
+    ).toBe("house-default");
     expect(second.snapshot.firms[0].configurationProvenance).toBe(
-      POSTURE_CONFIGURATION_LABEL["house-default"],
+      "Projected demonstration configuration · differs from FA-4.2",
     );
     expect(second.snapshot.firms[0].configurationProvenance).not.toContain("Captain-signed");
     expect(first.snapshot.firms[0].disposition).toEqual(priorDisposition);
@@ -2783,7 +2816,14 @@ describe("demo semantic-truth fence", () => {
       const claims = snapshot.firms.map((firm) => ({
         firmId: firm.firmId,
         truthLabels: labelsOf(firm.firmId, selections),
-        posture: firm.configurationPosture,
+        posture: configurationPosture(labelsOf(firm.firmId, selections)),
+        activeProfile:
+          firm.policyVersion ===
+          vm.profiles.find(
+            (profile) => profile.firmId === firm.firmId,
+          )!.activeVersion,
+        status: firm.configurationPostureStatus,
+        label: firm.configurationPostureLabel,
         provenance: firm.configurationProvenance,
       }));
       const violations = configurationPostureViolations(claims);
@@ -2796,13 +2836,26 @@ describe("demo semantic-truth fence", () => {
         ).toBe(firm.configurationProvenance);
       }
     }
-    // Firm B's untouched profile keeps its FB-2.1 identity but is NOT captain-signed:
-    // two of its five defaults are only recommended.
     const untouched = activatedSnapshot();
     expect(untouched.firms[1].policyVersion).toBe("FB-2.1");
-    expect(untouched.firms[1].configurationPosture).toBe("recommended");
+    expect(
+      configurationPosture(
+        labelsOf("firm-b", setupSelections()),
+      ),
+    ).toBe("recommended");
     expect(untouched.firms[1].configurationProvenance).not.toContain("Captain-signed");
-    expect(untouched.firms[0].configurationPosture).toBe("signed");
+    expect(
+      configurationPosture(
+        labelsOf("firm-a", setupSelections()),
+      ),
+    ).toBe("signed");
+    expect(untouched.firms[0].policyVersion).not.toBe("FA-4.2");
+    expect(untouched.firms[0].configurationProvenance).toContain(
+      "Projected",
+    );
+    expect(untouched.firms[0].configurationProvenance).not.toContain(
+      "Captain-signed",
+    );
   });
 
   it("detects: a captain-signed claim over a merely recommended choice cannot pass", () => {
@@ -2811,12 +2864,34 @@ describe("demo semantic-truth fence", () => {
         firmId: "firm-b",
         truthLabels: ["Signed", "Recommended", "Signed", "Signed", "Recommended"],
         posture: "signed",
+        activeProfile: true,
+        status: POSTURE_STATUS.signed,
+        label: POSTURE_OPTION_LABEL.signed,
         provenance: POSTURE_CONFIGURATION_LABEL.signed,
       },
     ]);
     expect(violations.some((violation) => violation.includes('are "recommended"'))).toBe(true);
     expect(
       violations.some((violation) => violation.includes("exports a captain-signed claim")),
+    ).toBe(true);
+  });
+
+  it("detects: an active-profile mismatch cannot retain a captain-signed claim", () => {
+    const violations = configurationPostureViolations([
+      {
+        firmId: "firm-a",
+        truthLabels: ["Signed", "Signed", "Signed", "Signed", "Signed"],
+        posture: "signed",
+        activeProfile: false,
+        status: POSTURE_STATUS.signed,
+        label: POSTURE_OPTION_LABEL.signed,
+        provenance: POSTURE_CONFIGURATION_LABEL.signed,
+      },
+    ]);
+    expect(
+      violations.some((violation) =>
+        violation.includes("does not match its active profile"),
+      ),
     ).toBe(true);
   });
 
@@ -2960,6 +3035,11 @@ describe("demo semantic-truth fence", () => {
       (impact) => impact.groupId !== null,
     );
     const defaults = setupSelections();
+    const expectedDefaultSigned = {
+      "recent-bank": { "firm-a": false, "firm-b": true },
+      "verified-bank": { "firm-a": false, "firm-b": true },
+      "low-headroom": { "firm-a": false, "firm-b": true },
+    } as const;
     expect(compared.length).toBeGreaterThan(0);
 
     for (const impact of compared) {
@@ -2967,8 +3047,12 @@ describe("demo semantic-truth fence", () => {
       for (const firmId of ["firm-a", "firm-b"] as const) {
         expect(
           isCaptainSignedImpact(impact.attribution, firmId, defaults),
-          `${impact.id}:${firmId} must open on the exact captain-signed input`,
-        ).toBe(true);
+          `${impact.id}:${firmId} signed attribution does not match its complete input`,
+        ).toBe(
+          expectedDefaultSigned[
+            impact.id as keyof typeof expectedDefaultSigned
+          ][firmId],
+        );
         for (const groupId of SETUP_POLICY_GROUP_IDS) {
           const varied = structuredClone(defaults);
           const group = vm.policyGroups.find(
@@ -2993,7 +3077,10 @@ describe("demo semantic-truth fence", () => {
         isCaptainSignedImpact(
           {
             ...impact.attribution!,
-            previewMaterialInputHash: "0".repeat(64),
+            "firm-a": {
+              ...impact.attribution!["firm-a"],
+              previewMaterialInputHash: "0".repeat(64),
+            },
           },
           "firm-a",
           defaults,
@@ -3008,17 +3095,134 @@ describe("demo semantic-truth fence", () => {
       impactId: "recent-bank",
       caseRef: "GC-03 / GC-04",
       scenarioId: "recent-bank-change-block",
+      firmId: "firm-a" as const,
       request: { amountMinor: 7_500_000 },
       evidence: { ref: "evidence-signed" },
-    };
+      resolvedConfiguration: {
+        reserveMonths: 6,
+        freshnessDays: 30,
+        bankChangeHandling: "specialist-review",
+        dualApprovalThresholdMinor: 2_500_000,
+        approvalsRequired: 2,
+        authorityMode: "staged",
+        eligibleRole: "operations",
+        requesterParticipation: {
+          mode: "excluded",
+          constraint: "may-not-satisfy-both-approvals",
+        },
+        approvalClock: APPROVAL_CLOCKS["1d-3d"]!,
+      },
+      authority: {
+        claim: {
+          mode: "staged",
+          eligibleRole: "operations",
+          requesterParticipation: {
+            mode: "excluded",
+            constraint: "may-not-satisfy-both-approvals",
+          },
+          requirements: [
+            {
+              order: 1,
+              title: "Dual operations approval",
+              requirement:
+                "Two distinct operations approvers. The requester cannot approve.",
+              expiry: "Expires after 3 days",
+              escalation: "Escalates after 1 day",
+            },
+          ],
+        },
+        requesterMayApprove: false,
+      },
+    } satisfies SignedImpactMaterialInput;
     const signedHash = signedImpactMaterialInputHash(input);
-    const mutations = [
+    const mutations: SignedImpactMaterialInput[] = [
       { ...input, phase: "activated-impact" },
       { ...input, impactId: "verified-bank" },
       { ...input, caseRef: "GC-01 / GC-02" },
       { ...input, scenarioId: "safe-proceed" },
+      { ...input, firmId: "firm-b" as const },
       { ...input, request: { amountMinor: 10_000_000 } },
       { ...input, evidence: { ref: "evidence-changed" } },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          reserveMonths: 12,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          freshnessDays: 14,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          bankChangeHandling:
+            "block-until-independently-verified" as const,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          dualApprovalThresholdMinor: 10_000_000,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          approvalsRequired: 1,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          authorityMode: "automatic" as const,
+          eligibleRole: null,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          requesterParticipation: { mode: "unbound" },
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
+          approvalClock: APPROVAL_CLOCKS["4h-2d"]!,
+        },
+      },
+      {
+        ...input,
+        authority: {
+          ...input.authority,
+          claim: {
+            ...input.authority.claim,
+            requirements: [
+              {
+                ...input.authority.claim.requirements[0]!,
+                expiry: "Expires after 2 days",
+              },
+            ],
+          },
+        },
+      },
+      {
+        ...input,
+        authority: {
+          ...input.authority,
+          requesterMayApprove: null,
+        },
+      },
     ];
     expect(
       new Set(mutations.map(signedImpactMaterialInputHash)).size,

@@ -6,8 +6,6 @@ import { Metric } from "@app/presentation/metric";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS } from "../model";
 import {
-  POSTURE_OPTION_LABEL,
-  POSTURE_STATUS,
   type MoneyMovementSetupVM,
   type SetupActivatedSnapshotVM,
   type SetupFirmId,
@@ -203,8 +201,8 @@ function OutcomeCard({
           <p className="break-all font-mono text-xs text-slate-700">{firm.policyVersion}</p>
           <p className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge
-              status={POSTURE_STATUS[firm.configurationPosture]}
-              label={POSTURE_OPTION_LABEL[firm.configurationPosture]}
+              status={firm.configurationPostureStatus}
+              label={firm.configurationPostureLabel}
             />
             <span className="text-xs text-slate-600" data-testid={`outcome-${firmId}-configuration-provenance`}>
               {firm.configurationProvenance}

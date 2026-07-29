@@ -40,11 +40,16 @@ export function setupFirmSelectionKey(
   ).join("|");
 }
 
-export interface SignedImpactAttributionVM {
-  readonly previewMaterialInputHash: string;
-  readonly signedMaterialInputHash: string;
-  readonly signedSelectionKeys: Readonly<Record<SetupFirmId, string>>;
-}
+export type SignedImpactAttributionVM = Readonly<
+  Record<
+    SetupFirmId,
+    {
+      readonly previewMaterialInputHash: string;
+      readonly signedMaterialInputHash: string | null;
+      readonly signedSelectionKey: string;
+    }
+  >
+>;
 
 export const SETUP_ATTESTATION_STATEMENT_VERSION =
   "money-movement-demo-attestation/1.0.0";
@@ -239,12 +244,14 @@ export function isCaptainSignedImpact(
   firmId: SetupFirmId,
   selections: SetupSelections,
 ): boolean {
+  const firm = attribution?.[firmId];
   return (
-    attribution !== undefined &&
-    attribution.previewMaterialInputHash ===
-      attribution.signedMaterialInputHash &&
+    firm !== undefined &&
+    firm.signedMaterialInputHash !== null &&
+    firm.previewMaterialInputHash ===
+      firm.signedMaterialInputHash &&
     setupFirmSelectionKey(selections[firmId]) ===
-      attribution.signedSelectionKeys[firmId]
+      firm.signedSelectionKey
   );
 }
 
@@ -301,10 +308,8 @@ export interface SetupProofFirmVM {
   readonly bundleHash: string;
   readonly policyVersion: string;
   readonly configurationHash: string;
-  /** The authority this exact configuration carries, derived from every selected
-   * option's truth label. Rendered as a distinct badge so the screen and the export
-   * make the same claim. */
-  readonly configurationPosture: SetupAuthorityPosture;
+  readonly configurationPostureStatus: string;
+  readonly configurationPostureLabel: string;
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
   readonly authorityPlan: AuthorityPlanVM;

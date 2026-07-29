@@ -145,23 +145,13 @@ export function ImpactBody({
             selectionEffect("firm-a") ?? a?.signedCaseEffect;
           const effectB =
             selectionEffect("firm-b") ?? b?.signedCaseEffect;
-          const attribution = impact.attribution
-            ? {
-                previewMaterialInputHash:
-                  impact.attribution.previewMaterialInputHash,
-                signedMaterialInputHash:
-                  impact.attribution.signedMaterialInputHash,
-                signedSelectionKeys:
-                  impact.attribution.signedSelectionKeys,
-              }
-            : undefined;
           const signedA = isCaptainSignedImpact(
-            attribution,
+            impact.attribution,
             "firm-a",
             selections,
           );
           const signedB = isCaptainSignedImpact(
-            attribution,
+            impact.attribution,
             "firm-b",
             selections,
           );

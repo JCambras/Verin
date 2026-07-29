@@ -142,6 +142,21 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText(
     "changed 2026-07-22 · 6 days ago",
   );
+  await expect(
+    page
+      .getByTestId("signed-impact-recent-bank")
+      .getByTestId("impact-firm-a"),
+  ).toContainText("Projected outcome");
+  await expect(
+    page
+      .getByTestId("signed-impact-recent-bank")
+      .getByTestId("impact-firm-a"),
+  ).not.toContainText("Captain-signed outcome");
+  await expect(
+    page
+      .getByTestId("signed-impact-recent-bank")
+      .getByTestId("impact-firm-b"),
+  ).toContainText("Captain-signed outcome");
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
     "Planned-withdrawal evidence observed 2026-06-09 · 49 days old",
   );
@@ -171,6 +186,9 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByText("$8,000.00").first()).toBeVisible();
   await expect(page.getByText("$48,000.00").first()).toBeVisible();
   await expect(page.getByText("$96,000.00").first()).toBeVisible();
+  await expect(
+    page.getByTestId("request-firm-a-policy-version"),
+  ).not.toHaveText("FA-4.2");
   await checkAxe(page, "setup-request");
   await snap(page, 7, "setup-request");
 
@@ -180,11 +198,9 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByTestId("outcome-firm-a")).toContainText("Submitted · not verified");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("Blocked decision recorded");
   await expect(page.getByTestId("outcome-firm-b")).toContainText("No authority");
-  // The untouched profiles carry DIFFERENT authority: every Firm A default is signed,
-  // while two of Firm B's five are only house recommendations.
   await expect(
     page.getByTestId("outcome-firm-a-configuration-provenance"),
-  ).toHaveText("Captain-signed configuration");
+  ).toContainText("Projected");
   await expect(
     page.getByTestId("outcome-firm-b-configuration-provenance"),
   ).toHaveText("Recommended configuration · pending captain signoff");
@@ -331,11 +347,9 @@ test("each firm's export lands on the record whose identifiers the proof step sh
         .getByTestId("dev-provenance-badge")
         .first(),
     ).toHaveText("demo input");
-    // The export never makes a stronger provenance claim than the screen that produced
-    // it: an untouched Firm B is recommended-pending-signoff, not captain-signed.
     await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
       firmId === "firm-a"
-        ? "Captain-signed configuration"
+        ? "Projected demonstration configuration · differs from FA-4.2"
         : "Recommended configuration · pending captain signoff",
     );
     await expect(
@@ -509,7 +523,7 @@ test("a changed selection freezes, exports, and requires reactivation after anot
   await expect(page.getByTestId("record-reserve-headroom")).toContainText("$273,000.00");
   // A supported horizon is a house default, never a captain-signed configuration.
   await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
-    "House-default demonstration configuration",
+    "Projected demonstration configuration · differs from FA-4.2",
   );
 });
 

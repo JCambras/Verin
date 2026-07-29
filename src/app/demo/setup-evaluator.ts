@@ -4,7 +4,6 @@ import { buildRecord } from "./build-summary";
 import {
   APPROVAL_CLOCKS,
   DEMO_NOW,
-  FIRMS,
   scenarioById,
   type DecisionConfiguration,
   type FirmData,
@@ -17,7 +16,6 @@ import {
   decisionAuthorityClaimFor,
   decisionIdentityFor,
   hashCanonicalPreimage,
-  toJsonValue,
 } from "./decision-identity";
 import {
   ACTIVATED_RESERVE_HORIZON,
@@ -53,23 +51,10 @@ import {
 } from "./setup-activation-input";
 import {
   evaluateSetupPolicy,
+  setupRuntimeFirm,
   type SetupPolicyEvaluation,
 } from "./setup-policy";
-
-/** Whether every selected option is still the firm's ACTIVE-profile value. This decides
- * policy VERSION identity (an untouched profile keeps FA-4.2 / FB-2.1); it deliberately
- * does NOT decide signoff - a firm's default can be a house recommendation the captain
- * never signed, which is exactly why the two questions have separate answers. */
-function matchesActiveProfile(
-  vm: MoneyMovementSetupVM,
-  firmId: SetupFirmId,
-  selections: SetupSelections,
-): boolean {
-  return vm.policyGroups.every((group) => {
-    const firm = group.firms.find((candidate) => candidate.firmId === firmId);
-    return firm?.initialOptionId === selections[firmId][group.id];
-  });
-}
+import { setupProfileIdentity } from "./setup-profile-identity";
 
 /** The truth label of each selected option, in group order. */
 function selectedTruthLabels(
@@ -80,24 +65,6 @@ function selectedTruthLabels(
   return SETUP_POLICY_GROUP_IDS.map(
     (groupId) => optionFor(vm, firmId, groupId, selections[firmId][groupId])!.truthLabel,
   );
-}
-
-function runtimeFirm(
-  firmId: SetupFirmId,
-  evaluation: SetupPolicyEvaluation,
-  policyVersion: string,
-): FirmData {
-  const base = FIRMS[firmId]!;
-  return {
-    ...base,
-    reserveMonths: evaluation.reserveMonths,
-    dualApprovalThresholdMinor:
-      evaluation.dualApprovalThresholdMinor,
-    bankChangeHandling: evaluation.bankChangeHandling,
-    eligibleRole: evaluation.authority.eligibleRole,
-    requesterParticipation: evaluation.requesterParticipation,
-    policyVersion,
-  };
 }
 
 function decisionConfiguration(
@@ -137,7 +104,6 @@ function evaluateFirm(
   evidence: DecisionEvidenceSnapshot,
 ): Omit<SetupProofFirmVM, "exportHref"> {
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
-  const activeProfile = matchesActiveProfile(vm, firmId, selections);
   const posture = configurationPosture(selectedTruthLabels(vm, firmId, selections));
   const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
     const option = optionFor(vm, firmId, groupId, selections[firmId][groupId])!;
@@ -148,45 +114,36 @@ function evaluateFirm(
       posture: optionPosture(option.truthLabel),
     };
   });
-  const baseFirm = FIRMS[firmId]!;
   const policyEvaluation = evaluateSetupPolicy(
     selections,
     firmId,
     evidence,
   );
-  const resolvedConfiguration = {
-    reserveMonths: policyEvaluation.reserveMonths,
-    freshnessDays: policyEvaluation.freshnessDays,
-    bankChangeHandling: policyEvaluation.bankChangeHandling,
-    dualApprovalThresholdMinor:
-      policyEvaluation.dualApprovalThresholdMinor,
-    approvalsRequired: baseFirm.approvalsRequired,
-    authorityMode: policyEvaluation.authority.mode,
-    eligibleRole: policyEvaluation.authority.eligibleRole,
-    requesterParticipation:
-      policyEvaluation.requesterParticipation,
-    approvalClock: APPROVAL_CLOCKS[selections[firmId].expiry]!,
-  };
-  const configurationHash = hashCanonicalPreimage(toJsonValue({
-    hashKind: "money-movement-demo-profile-configuration",
-    preimageVersion:
-      "money-movement-demo-profile-configuration/3.0.0",
-    payload: {
-      firmId,
-      resolvedConfiguration,
-      selections: selectedOptions.map((option) => ({
-        groupId: option.groupId,
-        optionId: selections[firmId][option.groupId],
-        posture: option.posture,
-      })),
-    },
-  }));
-  const policyVersion = activeProfile
-    ? profile.activeVersion
-    : `${firmId === "firm-a" ? "FA" : "FB"}-MM-DEMO-${configurationHash
-        .slice(0, 12)
-        .toUpperCase()}`;
-  const firm = runtimeFirm(firmId, policyEvaluation, policyVersion);
+  if (
+    policyEvaluation.requesterParticipation.mode !==
+    "unbound"
+  ) {
+    throw new Error(
+      "Setup evaluation must preserve unbound requester participation",
+    );
+  }
+  const profileIdentity = setupProfileIdentity(
+    vm,
+    firmId,
+    selections,
+    policyEvaluation,
+    evidence,
+  );
+  const {
+    activeProfile,
+    configurationHash,
+    policyVersion,
+  } = profileIdentity;
+  const firm = setupRuntimeFirm(
+    firmId,
+    policyEvaluation,
+    policyVersion,
+  );
   const configuration = decisionConfiguration(
     firm,
     policyEvaluation,
@@ -232,8 +189,15 @@ function evaluateFirm(
     bundleHash: identity.bundleHash,
     policyVersion,
     configurationHash,
-    configurationPosture: posture,
-    configurationProvenance: POSTURE_CONFIGURATION_LABEL[posture],
+    configurationPostureStatus: activeProfile
+      ? POSTURE_STATUS[posture]
+      : "pending",
+    configurationPostureLabel: activeProfile
+      ? POSTURE_OPTION_LABEL[posture]
+      : "Projected configuration",
+    configurationProvenance: activeProfile
+      ? POSTURE_CONFIGURATION_LABEL[posture]
+      : `Projected demonstration configuration · differs from ${profile.activeVersion}`,
     disposition,
     authorityPlan: evaluatedAuthority,
     eligibleRole: policyEvaluation.authority.eligibleRole,
@@ -418,7 +382,7 @@ export function buildActivatedRecord(
     firmId,
     snapshot.evidence,
   );
-  const firm = runtimeFirm(
+  const firm = setupRuntimeFirm(
     firmId,
     policyEvaluation,
     evaluated.policyVersion,
@@ -449,8 +413,10 @@ export function buildActivatedRecord(
         snapshotVersion: snapshot.snapshotVersion,
         snapshotHash: snapshot.snapshotHash,
         configurationHash: evaluated.configurationHash,
-        configurationPostureStatus: POSTURE_STATUS[evaluated.configurationPosture],
-        configurationPostureLabel: POSTURE_OPTION_LABEL[evaluated.configurationPosture],
+        configurationPostureStatus:
+          evaluated.configurationPostureStatus,
+        configurationPostureLabel:
+          evaluated.configurationPostureLabel,
         configurationProvenance: evaluated.configurationProvenance,
         eligibleRole: evaluated.eligibleRole,
         requesterParticipation:

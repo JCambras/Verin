@@ -223,8 +223,8 @@ function Trail({
           <dt className="text-xs text-slate-600">Configuration provenance</dt>
           <dd className="flex flex-wrap items-center gap-2 break-words text-sm text-slate-800">
             <StatusBadge
-              status={POSTURE_STATUS[identity.configurationPosture]}
-              label={POSTURE_OPTION_LABEL[identity.configurationPosture]}
+              status={identity.configurationPostureStatus}
+              label={identity.configurationPostureLabel}
             />
             <span data-testid={`identity-${firmId}-configuration-provenance`}>
               {identity.configurationProvenance}

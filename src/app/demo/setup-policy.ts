@@ -1,12 +1,16 @@
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import {
+  APPROVAL_CLOCKS,
   CANONICAL_REQUEST,
   DEMO_TIMELINE,
+  FIRMS,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
+  type ApprovalClock,
   type FirmData,
   type SignedLiquidityCase,
 } from "./data";
+import type { RequesterParticipation } from "./model";
 import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 import type {
   SetupFirmId,
@@ -64,10 +68,57 @@ export interface SetupPolicyEvaluation {
   readonly dualApproval: boolean;
   readonly requiresSpecialist: boolean;
   readonly authority: SetupAuthorityResolution;
-  readonly requesterParticipation: {
-    readonly mode: "unbound";
-  };
+  readonly requesterParticipation: RequesterParticipation;
   readonly projection: ReturnType<typeof projectReserve>;
+}
+
+export interface SetupResolvedConfiguration {
+  readonly reserveMonths: number;
+  readonly freshnessDays: number;
+  readonly bankChangeHandling: FirmData["bankChangeHandling"];
+  readonly dualApprovalThresholdMinor: number;
+  readonly approvalsRequired: number;
+  readonly authorityMode: SetupAuthorityResolution["mode"];
+  readonly eligibleRole: SetupAuthorityResolution["eligibleRole"];
+  readonly requesterParticipation: RequesterParticipation;
+  readonly approvalClock: ApprovalClock;
+}
+
+export function setupRuntimeFirm(
+  firmId: SetupFirmId,
+  evaluation: SetupPolicyEvaluation,
+  policyVersion: string,
+): FirmData {
+  const base = FIRMS[firmId]!;
+  return {
+    ...base,
+    reserveMonths: evaluation.reserveMonths,
+    dualApprovalThresholdMinor:
+      evaluation.dualApprovalThresholdMinor,
+    bankChangeHandling: evaluation.bankChangeHandling,
+    eligibleRole: evaluation.authority.eligibleRole,
+    requesterParticipation: evaluation.requesterParticipation,
+    policyVersion,
+  };
+}
+
+export function setupResolvedConfiguration(
+  selections: SetupSelections,
+  firmId: SetupFirmId,
+  evaluation: SetupPolicyEvaluation,
+): SetupResolvedConfiguration {
+  return {
+    reserveMonths: evaluation.reserveMonths,
+    freshnessDays: evaluation.freshnessDays,
+    bankChangeHandling: evaluation.bankChangeHandling,
+    dualApprovalThresholdMinor:
+      evaluation.dualApprovalThresholdMinor,
+    approvalsRequired: FIRMS[firmId]!.approvalsRequired,
+    authorityMode: evaluation.authority.mode,
+    eligibleRole: evaluation.authority.eligibleRole,
+    requesterParticipation: evaluation.requesterParticipation,
+    approvalClock: APPROVAL_CLOCKS[selections[firmId].expiry]!,
+  };
 }
 
 function setting(

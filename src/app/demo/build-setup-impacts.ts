@@ -3,8 +3,11 @@ import {
   toJsonValue,
 } from "./decision-identity";
 import {
+  APPROVAL_CLOCKS,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
+  DEMO_NOW,
+  FIRMS,
   GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
   OBSERVED_GC09_BALANCE,
@@ -20,14 +23,23 @@ import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
 } from "./decision-evidence";
+import { decisionAuthorityClaimFor } from "./decision-authority-claim";
+import { prov } from "./provenance";
 import {
+  SETUP_FIRM_IDS,
   setupFirmSelectionKey,
   type ChoiceEffectVM,
   type MoneyMovementSetupVM,
   type SetupFirmId,
   type SetupSelections,
 } from "./setup-model";
-import { evaluateSetupPolicy } from "./setup-policy";
+import { evaluateAuthorityPlan } from "./setup-authority";
+import {
+  evaluateSetupPolicy,
+  setupResolvedConfiguration,
+  setupRuntimeFirm,
+  type SetupResolvedConfiguration,
+} from "./setup-policy";
 
 const DEFAULT_SETUP_SELECTIONS: SetupSelections = {
   "firm-a": {
@@ -51,8 +63,16 @@ export interface SignedImpactMaterialInput {
   readonly impactId: string;
   readonly caseRef: string;
   readonly scenarioId: string | null;
+  readonly firmId: SetupFirmId;
   readonly request: unknown;
   readonly evidence: unknown;
+  readonly resolvedConfiguration: SetupResolvedConfiguration;
+  readonly authority: {
+    readonly claim: ReturnType<
+      typeof decisionAuthorityClaimFor
+    >;
+    readonly requesterMayApprove: boolean | null;
+  };
 }
 
 export function signedImpactMaterialInputHash(
@@ -62,13 +82,16 @@ export function signedImpactMaterialInputHash(
     toJsonValue({
       hashKind: "money-movement-signed-impact-input",
       preimageVersion:
-        "money-movement-signed-impact-input/1.0.0",
+        "money-movement-signed-impact-input/2.0.0",
       phase: value.phase,
       impactId: value.impactId,
       caseRef: value.caseRef,
       scenarioId: value.scenarioId,
+      firmId: value.firmId,
       request: value.request,
       evidence: value.evidence,
+      resolvedConfiguration: value.resolvedConfiguration,
+      authority: value.authority,
     }),
   );
 }
@@ -105,32 +128,97 @@ function impactAttribution(
     readonly scenarioId: string | null;
     readonly request: unknown;
     readonly evidence: unknown;
+    readonly evaluationEvidence: DecisionEvidenceSnapshot;
+    readonly liquidity?: SignedLiquidityCase;
   },
   signedImpact: typeof impact = impact,
+  signedFirms: readonly SetupFirmId[] = SETUP_FIRM_IDS,
 ): NonNullable<
   MoneyMovementSetupVM["impacts"][number]["attribution"]
 > {
-  const materialInputHash = (value: typeof impact) =>
-    signedImpactMaterialInputHash({
+  const materialInputHash = (
+    value: typeof impact,
+    firmId: SetupFirmId,
+    signed: boolean,
+  ) => {
+    const evaluation = evaluateSetupPolicy(
+      DEFAULT_SETUP_SELECTIONS,
+      firmId,
+      value.evaluationEvidence,
+      value.liquidity,
+    );
+    const attributedEvaluation = signed
+      ? {
+          ...evaluation,
+          requesterParticipation:
+            FIRMS[firmId]!.requesterParticipation,
+        }
+      : evaluation;
+    const firm = setupRuntimeFirm(
+      firmId,
+      attributedEvaluation,
+      FIRMS[firmId]!.policyVersion,
+    );
+    const authorityClaim = decisionAuthorityClaimFor(
+      evaluateAuthorityPlan(
+        firm,
+        attributedEvaluation,
+        APPROVAL_CLOCKS[
+          DEFAULT_SETUP_SELECTIONS[firmId].expiry
+        ]!,
+        prov("deterministic-engine-output", DEMO_NOW),
+      ),
+    );
+    const authority = {
+      claim: authorityClaim,
+      requesterMayApprove:
+        authorityClaim.mode === "staged"
+          ? authorityClaim.requesterParticipation.mode ===
+            "excluded"
+            ? false
+            : null
+          : null,
+    };
+    return signedImpactMaterialInputHash({
       phase: "signed-impact-preview",
       impactId: value.id,
       caseRef: value.caseRef,
       scenarioId: value.scenarioId,
+      firmId,
       request: value.request,
       evidence: value.evidence,
+      resolvedConfiguration: setupResolvedConfiguration(
+        DEFAULT_SETUP_SELECTIONS,
+        firmId,
+        attributedEvaluation,
+      ),
+      authority,
     });
-  return {
-    previewMaterialInputHash: materialInputHash(impact),
-    signedMaterialInputHash: materialInputHash(signedImpact),
-    signedSelectionKeys: {
-      "firm-a": setupFirmSelectionKey(
-        DEFAULT_SETUP_SELECTIONS["firm-a"],
-      ),
-      "firm-b": setupFirmSelectionKey(
-        DEFAULT_SETUP_SELECTIONS["firm-b"],
-      ),
-    },
   };
+  return Object.fromEntries(
+    SETUP_FIRM_IDS.map((firmId) => [
+      firmId,
+      {
+        previewMaterialInputHash: materialInputHash(
+          impact,
+          firmId,
+          false,
+        ),
+        signedMaterialInputHash: signedFirms.includes(firmId)
+          ? materialInputHash(
+              signedImpact,
+              firmId,
+              true,
+            )
+          : null,
+        signedSelectionKey: setupFirmSelectionKey(
+          DEFAULT_SETUP_SELECTIONS[firmId],
+        ),
+      },
+    ]),
+  ) as NonNullable<
+    MoneyMovementSetupVM["impacts"][number]["attribution"]
+  >;
 }
 
 function bankImpactEffect(
@@ -240,6 +328,9 @@ export function buildSetupImpacts(
   const signedRecentBankEvidence = decisionEvidenceSnapshotFor(
     scenarioById("recent-bank-change-block"),
   );
+  const signedSafeEvidence = decisionEvidenceSnapshotFor(
+    scenarioById("safe-proceed"),
+  );
   return [
     {
       id: "recent-bank",
@@ -255,6 +346,7 @@ export function buildSetupImpacts(
           scenarioId: "recent-bank-change-block",
           request: CANONICAL_REQUEST,
           evidence,
+          evaluationEvidence: evidence,
         },
         {
           id: "recent-bank",
@@ -262,6 +354,7 @@ export function buildSetupImpacts(
           scenarioId: "recent-bank-change-block",
           request: CANONICAL_REQUEST,
           evidence: signedRecentBankEvidence,
+          evaluationEvidence: signedRecentBankEvidence,
         },
       ),
     },
@@ -284,9 +377,8 @@ export function buildSetupImpacts(
         caseRef: SMITHS_LIQUIDITY.caseRef,
         scenarioId: "safe-proceed",
         request: CANONICAL_REQUEST,
-        evidence: decisionEvidenceSnapshotFor(
-          scenarioById("safe-proceed"),
-        ),
+        evidence: signedSafeEvidence,
+        evaluationEvidence: signedSafeEvidence,
       }),
     },
     {
@@ -309,7 +401,9 @@ export function buildSetupImpacts(
           plannedMonthlyMinor:
             PLANNED_WITHDRAWAL_MONTHLY_MINOR,
         },
-      }),
+        evaluationEvidence: signedSafeEvidence,
+        liquidity: LOW_HEADROOM_LIQUIDITY,
+      }, undefined, ["firm-b"]),
     },
     {
       id: "material-change",

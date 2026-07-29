@@ -6268,3 +6268,25 @@ expose the rotating credential id as the lineage. The focused real-PGlite lifecy
 failed at line 145 with expected `lineage-s-half`, received `s-half`. Both injections
 were reverted. The same focused commands returned green, and the two production-browser
 regressions passed.
+
+## PF-setup-38 · signed attribution and active versions require complete authority identity
+
+**Date:** 2026-07-29.
+
+**Invariant:** captain-signed impact labels and immutable active policy versions require exact
+per-firm identity across the complete selected policy configuration, resolved authority, requester
+participation, requester approval eligibility, case, scenario, phase, request, and evidence. Setup
+requester participation remains unbound and never inherits the signed fixture exclusion.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` varies every resolved configuration
+field and authority requirement independently, checks each firm against only its signed case, and
+requires Firm A's unbound setup configuration to use a derived demonstration version and projected
+claim. `e2e/demo-journey.spec.ts` verifies the visible Firm A impact, activated version, outcome,
+proof, and exported record while preserving Firm B's matching signed attribution.
+
+**Adversarial proof:** before the correction, the focused semantic run failed with
+`recent-bank:firm-a signed attribution does not match its complete input: expected true to be
+false`, and the active-profile assertion received `FA-4.2`. The production-browser regression
+received `Firm AProceedCaptain-signed outcome` where `Projected outcome` was required. After the
+complete-identity correction, the focused semantic fence and the same production-browser path
+pass.

@@ -3474,3 +3474,20 @@ revocation, logout, and another login remain isolated.
 **Why:** signedness is an exact input claim, and setup ownership belongs to the logical
 authenticated session rather than one rotating credential value.
 **Revert path:** none while signed previews remain interactive and session ids rotate.
+
+### D-073 · 2026-07-29 · reversible · Setup signedness and policy versions share complete authority identity
+
+Signed-impact identity is now per firm and binds the complete selected policy configuration,
+resolved authority, requester participation, requester approval eligibility, case, scenario,
+phase, request, and evidence. A firm with no signed case for an impact is always projected.
+
+Active-profile matching compares every resolved configuration field in addition to the five
+closed selections. Setup requester participation remains explicitly unbound. Firm A therefore
+receives a derived demonstration policy version and projected configuration claim instead of
+retaining `FA-4.2`; no requester exclusion enters its activated configuration, stages, hashes,
+receipts, record, or export. Firm B retains `FB-2.1` only where its complete identity matches.
+
+**Why:** a signed label or immutable version is a claim about exact inputs, not a claim about
+matching option names.
+**Revert path:** none while requester participation remains unbound and signed cases bind
+requester semantics.

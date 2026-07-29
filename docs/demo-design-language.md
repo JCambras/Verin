@@ -547,8 +547,14 @@ What is deleted is the desktop table abstraction, not the doctrine.
 - **Signed-case authority.** An impact card carries `Captain-signed case` against the CASE, never
   against a mutable outcome. The current result retains that label only when its complete selected
   policy configuration and bound scenario, phase, request, and evidence identity exactly match the
-  signed input. Any material mismatch replaces the case label with `Projection from signed case`,
-  labels the affected firm card `Projected outcome`, and removes every captain-signed outcome label.
+  signed input, including resolved authority and requester participation. Any material mismatch
+  replaces the case label with `Projection from signed case`, labels the affected firm card
+  `Projected outcome`, and removes every captain-signed outcome label.
+- **Option posture is not configuration identity.** Signed closed choices retain their individual
+  posture, but the activated configuration retains an immutable active version only when every
+  resolved field matches that version. Setup keeps requester participation unbound. Firm A therefore
+  receives a derived demonstration version and projected-configuration label instead of `FA-4.2`,
+  while no requester exclusion enters activation, authority, hashes, receipts, records, or exports.
 - **Three authority postures, never a signed/not-signed binary.** Every closed choice carries one of
   three states, and each renders as its own badge so they cannot be read as one another:
   `Captain-signed` (§5 done/green), `Recommended · not signed` (amber - a house recommendation the
