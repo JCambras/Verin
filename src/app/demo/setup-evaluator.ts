@@ -81,6 +81,7 @@ function decisionConfiguration(
     bankChangeHandling: firm.bankChangeHandling,
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
+    distinctActorsRequired: firm.distinctActorsRequired,
     eligibleRole: firm.eligibleRole,
     requesterParticipation: firm.requesterParticipation,
     approvalClockId: selections[firm.id as SetupFirmId].expiry,

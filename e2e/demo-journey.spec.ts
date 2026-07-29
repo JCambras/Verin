@@ -135,7 +135,7 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await checkAxe(page, "setup-choices");
   await snap(page, 4, "setup-choices");
 
-  // 5 - Signed cases show different correct effects without ranking the firms.
+  // 5 - Golden cases show different correct effects without overstating attribution.
   await page.getByRole("button", { name: "Review signed impact" }).click();
   await expect(page.getByRole("heading", { name: "See the impact on signed examples" })).toBeVisible();
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText("GC-03 / GC-04");
@@ -156,7 +156,27 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
     page
       .getByTestId("signed-impact-recent-bank")
       .getByTestId("impact-firm-b"),
-  ).toContainText("Captain-signed outcome");
+  ).toContainText("Projected outcome");
+  await expect(
+    page
+      .getByTestId("signed-impact-recent-bank")
+      .getByTestId("impact-firm-b"),
+  ).not.toContainText("Captain-signed outcome");
+  for (const impactId of [
+    "recent-bank",
+    "verified-bank",
+    "low-headroom",
+  ]) {
+    const impact = page.getByTestId(
+      `signed-impact-${impactId}`,
+    );
+    await expect(impact).toContainText(
+      "Projection from signed case",
+    );
+    await expect(impact).not.toContainText(
+      "Captain-signed outcome",
+    );
+  }
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
     "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
   );

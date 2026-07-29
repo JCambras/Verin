@@ -6282,7 +6282,8 @@ requester participation remains unbound and never inherits the signed fixture ex
 field and authority requirement independently, checks each firm against only its signed case, and
 requires Firm A's unbound setup configuration to use a derived demonstration version and projected
 claim. `e2e/demo-journey.spec.ts` verifies the visible Firm A impact, activated version, outcome,
-proof, and exported record while preserving Firm B's matching signed attribution.
+proof, and exported record. PF-setup-40 supersedes the earlier Firm B attribution expectation
+because the golden fixtures do not carry every material setup input.
 
 **Adversarial proof:** before the correction, the focused semantic run failed with
 `recent-bank:firm-a signed attribution does not match its complete input: expected true to be
@@ -6314,3 +6315,29 @@ on universal cards. The focused semantic run failed with
 `2026-07-22T14:12:00-04:00` observation. The production-browser run failed at
 `e2e/demo-journey.spec.ts:165` after receiving `GC-09Captain-signed case`. Reverting all four
 injections returned both focused commands to green.
+
+## PF-setup-40 · signed baselines are fixture-derived and canonical mirrors stay aligned
+
+**Date:** 2026-07-29.
+
+**Invariant:** a signed setup baseline is constructed independently from one golden fixture's exact
+configuration, authority, trigger, request, scenario, evidence, disposition, and policy versions.
+Absent fixture inputs remain absent and force projection. No evaluator preview, fallback case,
+cloned timestamp, or synthesized evidence can become the signed oracle. The canonical GC-07
+decision record exactly mirrors the golden regulatory prohibition and retains an internally valid
+decision hash.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` requires absent fixture evidence to
+remain absent, checks exact fixture evidence rows and instants, and independently mutates trigger,
+configuration, authority, evidence, phase, selection, liquidity, and disposition inputs while
+requiring the governed identity to change. `src/__tests__/fitness/golden-cases.test.ts` compares
+the canonical GC-07 record's firm, time, disposition, prohibition, precedence sources, and hash to
+the binding golden fixture. `e2e/demo-journey.spec.ts` requires every incomplete exact-case setup
+preview to display as projected with no captain-signed outcome.
+
+**Adversarial proof:** the semantic companion uses GC-04, which has no planned-withdrawals row, and
+proves the loader returns no evaluator evidence and invents no replacement row. Independent
+fixture mutations each change the baseline hash. The GC-07 companion replaces the family-taxable
+scope and exact explanation, recomputes a valid decision hash, and still receives explicit scope
+and explanation parity failures while receiving no hash failure. The focused Vitest command
+completed with 107 passing tests across both fence files.

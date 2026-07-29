@@ -175,6 +175,7 @@ export interface FirmData {
   readonly reserveMonths: number;
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
   readonly eligibleRole: "operations" | null;
   readonly requesterParticipation: RequesterParticipation;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
@@ -187,6 +188,7 @@ export const FIRMS: Record<string, FirmData> = {
     reserveMonths: 6,
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
+    distinctActorsRequired: true,
     eligibleRole: "operations",
     requesterParticipation: {
       mode: "excluded",
@@ -201,6 +203,7 @@ export const FIRMS: Record<string, FirmData> = {
     reserveMonths: 12,
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
+    distinctActorsRequired: true,
     eligibleRole: null, // contract silence - not invented (scenarios.yaml firms note)
     requesterParticipation: { mode: "unbound" },
     bankChangeHandling: "block-until-independently-verified",
@@ -289,6 +292,7 @@ export interface DecisionConfiguration {
   readonly bankChangeHandling: FirmData["bankChangeHandling"];
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
   readonly eligibleRole: FirmData["eligibleRole"];
   readonly requesterParticipation: RequesterParticipation;
   readonly approvalClockId: string;
@@ -426,6 +430,7 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
     bankChangeHandling: firm.bankChangeHandling,
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
+    distinctActorsRequired: firm.distinctActorsRequired,
     eligibleRole: firm.eligibleRole,
     requesterParticipation: firm.requesterParticipation,
     approvalClockId: DEFAULT_APPROVAL_CLOCK.id,

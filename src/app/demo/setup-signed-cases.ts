@@ -1,18 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  BANK_INSTRUCTION,
-  DESTINATION_RESTRICTION,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-  type SignedLiquidityCase,
-} from "./data";
-import type {
-  DecisionEvidenceSnapshot,
-  DemoEvidenceValue,
-} from "./decision-evidence";
 import type { SetupFirmId } from "./setup-model";
+import type { SetupPolicyEvidence } from "./setup-policy";
 
-interface GoldenEvidence {
+export interface GoldenEvidence {
   readonly evidenceKind: string;
   readonly subjectRef: string;
   readonly observedAt: string;
@@ -21,6 +12,47 @@ interface GoldenEvidence {
   readonly source: string;
   readonly provenance: string;
   readonly summary: string;
+}
+
+interface GoldenFirmConfiguration {
+  readonly firmId: SetupFirmId;
+  readonly cashReserveMonths: number;
+  readonly dualApprovalThresholdUsd: number;
+  readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
+  readonly eligibleRole: "operations" | null;
+  readonly requesterConstraint:
+    | "may-not-satisfy-both-approvals"
+    | null;
+  readonly bankInstructionChangeHandling:
+    | "specialist-review"
+    | "block-until-independently-verified";
+}
+
+interface GoldenAuthorityStage {
+  readonly stageId: string;
+  readonly order: number;
+  readonly executionMode: string;
+  readonly eligibleRoleIds: readonly string[];
+  readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
+  readonly requesterMayApprove: boolean;
+  readonly expiresAfter: string;
+  readonly escalationPath: readonly {
+    readonly after: string;
+    readonly roleIds: readonly string[];
+    readonly reasonCode: string;
+  }[];
+}
+
+interface GoldenExpectedAuthority {
+  readonly mode:
+    | "automatic"
+    | "approval"
+    | "specialist_review"
+    | "none";
+  readonly stages: readonly GoldenAuthorityStage[];
+  readonly note: string;
 }
 
 export interface SignedSetupCase {
@@ -35,7 +67,20 @@ export interface SignedSetupCase {
     readonly maskedRequestSummary: string;
     readonly asOf: string;
   };
+  readonly firmConfiguration: GoldenFirmConfiguration;
   readonly householdEvidence: readonly GoldenEvidence[];
+  readonly policyVersions: {
+    readonly domainConfigVersionId: string;
+    readonly firmPolicyVersionId: string;
+    readonly householdInstructionVersionIds:
+      readonly string[];
+    readonly regulatoryVersionId: string | null;
+  };
+  readonly expectedDisposition:
+    | "proceed"
+    | "blocked"
+    | "prohibited";
+  readonly expectedAuthority: GoldenExpectedAuthority;
   readonly signoff: {
     readonly status: string;
     readonly authority: string;
@@ -107,145 +152,183 @@ export const SIGNED_SETUP_CASES = {
 function evidence(
   caseFile: SignedSetupCase,
   evidenceKind: string,
-  fallback?: SignedSetupCase,
-): GoldenEvidence {
-  const found =
+): GoldenEvidence | null {
+  return (
     caseFile.householdEvidence.find(
       (candidate) => candidate.evidenceKind === evidenceKind,
-    ) ??
-    fallback?.householdEvidence.find(
-      (candidate) => candidate.evidenceKind === evidenceKind,
-    );
-  if (!found) {
-    throw new Error(
-      `${caseFile.caseId} has no ${evidenceKind} evidence`,
-    );
-  }
-  return found;
+    ) ?? null
+  );
 }
 
-function evidenceValue<T>(
+function amountFrom(
+  text: string,
+  pattern: RegExp,
+): number | null {
+  const match = text.match(pattern);
+  return match ? Number(match[1]) * 100 : null;
+}
+
+function bankVerification(
   datum: GoldenEvidence,
-  value: T,
-): DemoEvidenceValue<T> {
-  return {
-    sourceRef: `${datum.source}:${datum.evidenceKind}`,
-    subjectRef: datum.subjectRef,
-    value,
-    provenance: {
-      source: "fixture",
-      asOf: datum.observedAt,
-      confidence: "high",
-    },
+): boolean | null {
+  const summary = datum.summary.toLowerCase();
+  if (
+    summary.includes("not yet independently verified") ||
+    summary.includes("not independently verified")
+  ) {
+    return false;
+  }
+  return summary.includes("independently verified")
+    ? true
+    : null;
+}
+
+export interface SignedCaseEvaluationEvidence
+  extends SetupPolicyEvidence {
+  readonly plannedMonthlyWithdrawal: {
+    readonly value: number;
+    readonly provenance: { readonly asOf: string };
+    readonly canonical: GoldenEvidence;
+  };
+  readonly bankInstruction: {
+    readonly value: {
+      readonly independentlyVerified: boolean;
+    };
+    readonly provenance: { readonly asOf: string };
+    readonly canonical: GoldenEvidence;
   };
 }
 
-export function signedCaseEvidenceSnapshot(
+export function signedCaseEvaluationEvidence(
   caseFile: SignedSetupCase,
-  fallback: SignedSetupCase,
-  liquidity: SignedLiquidityCase,
-): DecisionEvidenceSnapshot {
-  const available = evidence(
-    caseFile,
-    "account-balance",
-    fallback,
+): SignedCaseEvaluationEvidence | null {
+  const planned = evidence(caseFile, "planned-withdrawals");
+  const bank = evidence(caseFile, "bank-instruction");
+  if (!planned || !bank) return null;
+  const plannedMonthlyMinor = amountFrom(
+    planned.summary,
+    /(\d+)\s+USD\/month/i,
   );
-  const planned = evidence(
-    caseFile,
-    "planned-withdrawals",
-    fallback,
-  );
-  const bank = evidence(
-    caseFile,
-    "bank-instruction",
-    fallback,
-  );
-  const pending = caseFile.householdEvidence.find(
-    (candidate) => candidate.evidenceKind === "pending-actions",
-  );
-  const retrievedAt = [available, planned, bank, pending]
-    .filter(
-      (datum): datum is GoldenEvidence => datum !== undefined,
-    )
-    .map((datum) => datum.retrievedAt)
-    .sort()
-    .at(-1)!;
-  const bankChanged =
-    bank.summary.includes("changed") &&
-    !bank.summary.includes("unchanged");
-  const pendingAmount = pending
-    ? Number(
-        pending.summary.match(
-          /Pending approved distribution of (\d+) USD/i,
-        )?.[1] ?? "0",
-      ) * 100
-    : 0;
-  const pendingDatum =
-    pending ??
-    ({
-      ...available,
-      evidenceKind: "pending-actions",
-      subjectRef: "subject:smiths-household",
-      summary: "No pending approved activity",
-    } satisfies GoldenEvidence);
-  const destinationDatum = {
-    ...available,
-    evidenceKind: "household-instruction",
-    subjectRef: "subject:smiths-household",
-    summary: DESTINATION_RESTRICTION.text,
-  } satisfies GoldenEvidence;
+  const independentlyVerified = bankVerification(bank);
+  if (
+    plannedMonthlyMinor === null ||
+    independentlyVerified === null
+  ) {
+    return null;
+  }
   return {
-    phase: "initial",
-    ref: `golden-evidence:${caseFile.caseId}`,
-    retrievedAt,
-    availableCash: evidenceValue(
-      available,
-      liquidity.availableMinor,
-    ),
-    pendingApprovedActivity: evidenceValue(
-      pendingDatum,
-      pendingAmount,
-    ),
-    plannedMonthlyWithdrawal: evidenceValue(
-      planned,
-      PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-    ),
-    bankInstruction: evidenceValue(bank, {
-      destination: bankChanged
-        ? BANK_INSTRUCTION.changed
-        : BANK_INSTRUCTION.stable,
-      independentlyVerified: !bankChanged,
-    }),
-    destinationRestriction: evidenceValue(
-      destinationDatum,
-      DESTINATION_RESTRICTION,
-    ),
-    conflictingFundingInstructions: [],
+    plannedMonthlyWithdrawal: {
+      value: plannedMonthlyMinor,
+      provenance: { asOf: planned.observedAt },
+      canonical: planned,
+    },
+    bankInstruction: {
+      value: { independentlyVerified },
+      provenance: { asOf: bank.observedAt },
+      canonical: bank,
+    },
   };
 }
 
 export function signedCaseMaterialEvidence(
   caseFile: SignedSetupCase,
-  snapshot: DecisionEvidenceSnapshot,
-  liquidity: SignedLiquidityCase,
 ) {
+  const available = evidence(caseFile, "account-balance");
+  const pending = evidence(caseFile, "pending-actions");
+  const evaluationEvidence =
+    signedCaseEvaluationEvidence(caseFile);
+  const availableMinor = available
+    ? amountFrom(
+        available.summary,
+        /(?:balance|liquidity)[^\d]*(\d+)\s+USD/i,
+      )
+    : null;
+  const pendingMinor = pending
+    ? amountFrom(
+        pending.summary,
+        /Pending approved distribution of (\d+)\s+USD/i,
+      )
+    : null;
+  const requestMinor = amountFrom(
+    caseFile.trigger.maskedRequestSummary,
+    /distribute (\d+)\s+USD/i,
+  );
   return {
     caseId: caseFile.caseId,
-    canonicalCase: caseFile,
-    boundEvidence: snapshot,
+    canonicalEvidence: caseFile.householdEvidence,
     evaluatorInputs: {
       evaluatedAt: caseFile.trigger.asOf,
-      availableMinor: liquidity.availableMinor,
-      pendingMinor: liquidity.pendingMinor,
-      requestMinor: liquidity.requestMinor,
+      availableMinor,
+      pendingMinor,
+      requestMinor,
       plannedMonthlyMinor:
-        snapshot.plannedMonthlyWithdrawal.value,
+        evaluationEvidence?.plannedMonthlyWithdrawal.value ??
+        null,
       plannedObservedAt:
-        snapshot.plannedMonthlyWithdrawal.provenance.asOf,
+        evaluationEvidence?.plannedMonthlyWithdrawal
+          .canonical.observedAt ?? null,
+      plannedRetrievedAt:
+        evaluationEvidence?.plannedMonthlyWithdrawal
+          .canonical.retrievedAt ?? null,
       bankInstructionObservedAt:
-        snapshot.bankInstruction.provenance.asOf,
+        evaluationEvidence?.bankInstruction.canonical
+          .observedAt ?? null,
+      bankInstructionRetrievedAt:
+        evaluationEvidence?.bankInstruction.canonical
+          .retrievedAt ?? null,
       bankInstructionIndependentlyVerified:
-        snapshot.bankInstruction.value.independentlyVerified,
+        evaluationEvidence?.bankInstruction.value
+          .independentlyVerified ?? null,
+    },
+  };
+}
+
+export function signedCaseResolvedConfiguration(
+  caseFile: SignedSetupCase,
+) {
+  const configuration = caseFile.firmConfiguration;
+  return {
+    policyVersions: caseFile.policyVersions,
+    reserveMonths: configuration.cashReserveMonths,
+    freshnessDays: null,
+    bankChangeHandling:
+      configuration.bankInstructionChangeHandling,
+    dualApprovalThresholdMinor:
+      configuration.dualApprovalThresholdUsd * 100,
+    approvalsRequired: configuration.approvalsRequired,
+    distinctActorsRequired:
+      configuration.distinctActorsRequired,
+    authorityMode:
+      caseFile.expectedAuthority.mode === "none"
+        ? "not-reached"
+        : caseFile.expectedAuthority.mode === "automatic"
+          ? "automatic"
+          : "staged",
+    eligibleRole: configuration.eligibleRole,
+    requesterParticipation:
+      configuration.requesterConstraint === null
+        ? { mode: "unbound" as const }
+        : {
+            mode: "excluded" as const,
+            constraint: configuration.requesterConstraint,
+          },
+    approvalClock: null,
+  };
+}
+
+export function signedCaseRequestMaterial(
+  caseFile: SignedSetupCase,
+) {
+  return {
+    trigger: caseFile.trigger,
+    evaluatorRequest: {
+      text: null,
+      amountMinor: amountFrom(
+        caseFile.trigger.maskedRequestSummary,
+        /distribute (\d+)\s+USD/i,
+      ),
+      purpose: null,
+      deadline: null,
     },
   };
 }

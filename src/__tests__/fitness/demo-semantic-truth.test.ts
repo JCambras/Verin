@@ -3,9 +3,10 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
+  signedImpactFixtureMaterialInput,
   signedImpactMaterialInputHash,
   type SignedImpactMaterialInput,
-} from "@app/demo/build-setup-impacts";
+} from "@app/demo/setup-impact-attribution";
 import {
   APPROVAL_CLOCKS,
   ACCOUNTS,
@@ -33,9 +34,10 @@ import {
 } from "@app/demo/data";
 import {
   SIGNED_SETUP_CASES,
-  signedCaseEvidenceSnapshot,
+  signedCaseEvaluationEvidence,
   signedCaseMaterialEvidence,
 } from "@app/demo/setup-signed-cases";
+import { evaluateSetupPolicy } from "@app/demo/setup-policy";
 import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
@@ -3149,36 +3151,102 @@ describe("demo semantic-truth fence", () => {
     expect(violations[0]).toContain("decision-evidence.ts:");
   });
 
-  it("enforces: signed preview evidence is the canonical fixture evidence", () => {
+  it("enforces: signed evidence preserves only canonical fixture rows and instants", () => {
     const fixture = signed(
-      loadGolden("GC-03-recent-bank-change-firm-a.json"),
+      loadGolden("GC-01-firm-a-happy-path.json"),
     );
-    expect(SIGNED_SETUP_CASES.recentA).toEqual(fixture);
-    const snapshot = signedCaseEvidenceSnapshot(
-      SIGNED_SETUP_CASES.recentA,
-      SIGNED_SETUP_CASES.recentA,
-      SMITHS_LIQUIDITY,
+    expect(SIGNED_SETUP_CASES.happyA).toEqual(fixture);
+    const evaluationEvidence = signedCaseEvaluationEvidence(
+      SIGNED_SETUP_CASES.happyA,
     );
     const material = signedCaseMaterialEvidence(
-      SIGNED_SETUP_CASES.recentA,
-      snapshot,
-      SMITHS_LIQUIDITY,
+      SIGNED_SETUP_CASES.happyA,
     );
+    const planned = fixture.householdEvidence.find(
+      (datum) => datum.evidenceKind === "planned-withdrawals",
+    )!;
     const bank = fixture.householdEvidence.find(
       (datum) => datum.evidenceKind === "bank-instruction",
     )!;
-    expect(material.canonicalCase).toEqual(fixture);
-    expect(material.boundEvidence.bankInstruction.provenance.asOf).toBe(
+    expect(evaluationEvidence).not.toBeNull();
+    expect(material.canonicalEvidence).toEqual(
+      fixture.householdEvidence,
+    );
+    expect(
+      evaluationEvidence?.plannedMonthlyWithdrawal.canonical,
+    ).toEqual(planned);
+    expect(
+      evaluationEvidence?.bankInstruction.canonical,
+    ).toEqual(bank);
+    expect(
+      evaluationEvidence?.bankInstruction.provenance.asOf,
+    ).toBe(
       bank.observedAt,
     );
-    expect(material.boundEvidence.retrievedAt).toBe(
+    expect(
+      evaluationEvidence?.bankInstruction.canonical.retrievedAt,
+    ).toBe(
       bank.retrievedAt,
+    );
+    const recentB = SIGNED_SETUP_CASES.recentB;
+    expect(
+      recentB.householdEvidence.map(
+        (datum) => datum.evidenceKind,
+      ),
+    ).toEqual(["bank-instruction", "account-balance"]);
+    expect(
+      signedCaseEvaluationEvidence(recentB),
+    ).toBeNull();
+    expect(
+      signedCaseMaterialEvidence(recentB).canonicalEvidence,
+    ).toEqual(recentB.householdEvidence);
+    expect(
+      signedCaseMaterialEvidence(recentB).canonicalEvidence,
+    ).not.toContainEqual(
+      expect.objectContaining({
+        evidenceKind: "planned-withdrawals",
+      }),
+    );
+    expect(
+      signedCaseMaterialEvidence(recentB).canonicalEvidence,
+    ).not.toContainEqual(
+      expect.objectContaining({
+        evidenceKind: "household-instruction",
+      }),
     );
     expect(
       buildMoneyMovementSetup().impacts.find(
         (impact) => impact.id === "recent-bank",
       )?.facts,
     ).toContain("4 days ago");
+  });
+
+  it("enforces: setup reserve evaluation consumes the bound planned-withdrawal value", () => {
+    const evidence = decisionEvidenceSnapshotFor(
+      scenarioById("safe-proceed"),
+    );
+    const baseline = evaluateSetupPolicy(
+      setupSelections(),
+      "firm-a",
+      evidence,
+      SMITHS_LIQUIDITY,
+      DEMO_TIMELINE.decisionCreatedAt,
+    );
+    const increased = evaluateSetupPolicy(
+      setupSelections(),
+      "firm-a",
+      {
+        ...evidence,
+        plannedMonthlyWithdrawal: {
+          ...evidence.plannedMonthlyWithdrawal,
+          value: 10_000_000,
+        },
+      },
+      SMITHS_LIQUIDITY,
+      DEMO_TIMELINE.decisionCreatedAt,
+    );
+    expect(baseline.reserveSatisfied).toBe(true);
+    expect(increased.reserveSatisfied).toBe(false);
   });
 
   it("enforces: the signed liquidity account and Joint Taxable stay distinct", () => {
@@ -3332,9 +3400,9 @@ describe("demo semantic-truth fence", () => {
     );
     const defaults = setupSelections();
     const expectedDefaultSigned = {
-      "recent-bank": { "firm-a": false, "firm-b": true },
-      "verified-bank": { "firm-a": false, "firm-b": true },
-      "low-headroom": { "firm-a": false, "firm-b": true },
+      "recent-bank": { "firm-a": false, "firm-b": false },
+      "verified-bank": { "firm-a": false, "firm-b": false },
+      "low-headroom": { "firm-a": false, "firm-b": false },
     } as const;
     expect(compared.length).toBeGreaterThan(0);
 
@@ -3383,6 +3451,119 @@ describe("demo semantic-truth fence", () => {
         ),
       ).toBe(false);
     }
+
+    const exactHash = "a".repeat(64);
+    expect(
+      isCaptainSignedImpact(
+        {
+          "firm-a": {
+            previewMaterialInputHash: exactHash,
+            signedMaterialInputHash: exactHash,
+            signedSelectionKey: setupFirmSelectionKey(
+              defaults["firm-a"],
+            ),
+          },
+          "firm-b": {
+            previewMaterialInputHash: "b".repeat(64),
+            signedMaterialInputHash: null,
+            signedSelectionKey: null,
+          },
+        },
+        "firm-a",
+        defaults,
+      ),
+    ).toBe(true);
+  });
+
+  it("enforces: the signed baseline is projected directly from the fixture", () => {
+    const descriptor = {
+      id: "recent-bank",
+      caseRef: "GC-03 / GC-04",
+      scenarioId: "recent-bank-change-block",
+    };
+    const fixture = SIGNED_SETUP_CASES.recentB;
+    const baseline = signedImpactFixtureMaterialInput(
+      descriptor,
+      fixture,
+    );
+    expect(baseline.phase).toBeNull();
+    expect(baseline.authority).toEqual(
+      fixture.expectedAuthority,
+    );
+    expect(
+      (
+        baseline.resolvedConfiguration as {
+          policyVersions: unknown;
+        }
+      ).policyVersions,
+    ).toEqual(fixture.policyVersions);
+    expect(baseline.evidence).toEqual(
+      signedCaseMaterialEvidence(fixture),
+    );
+    expect(baseline.missingMaterialInputs).toEqual(
+      expect.arrayContaining([
+        "phase",
+        "firmConfiguration.freshnessDays",
+        "firmConfiguration.approvalClock",
+        "selectionKey",
+        "evidence.plannedMonthlyMinor",
+      ]),
+    );
+
+    const mutations = [
+      (candidate: typeof fixture) => {
+        (
+          candidate.trigger as {
+            maskedRequestSummary: string;
+          }
+        ).maskedRequestSummary =
+          "distribute 100000 USD to a recently changed destination";
+      },
+      (candidate: typeof fixture) => {
+        (
+          candidate.firmConfiguration as {
+            dualApprovalThresholdUsd: number;
+          }
+        ).dualApprovalThresholdUsd = 25_000;
+      },
+      (candidate: typeof fixture) => {
+        (
+          candidate.policyVersions as {
+            domainConfigVersionId: string;
+          }
+        ).domainConfigVersionId =
+          "money-movement@2026.08.0";
+      },
+      (candidate: typeof fixture) => {
+        (
+          candidate.householdEvidence[0] as {
+            observedAt: string;
+          }
+        ).observedAt =
+          "2026-07-24T14:12:00-04:00";
+      },
+      (candidate: typeof fixture) => {
+        (
+          candidate.expectedAuthority as {
+            note: string;
+          }
+        ).note = "A different authority outcome";
+      },
+    ];
+    const baselineHash =
+      signedImpactMaterialInputHash(baseline);
+    for (const mutate of mutations) {
+      const candidate = structuredClone(fixture);
+      mutate(candidate);
+      expect(
+        signedImpactMaterialInputHash(
+          signedImpactFixtureMaterialInput(
+            descriptor,
+            candidate,
+          ),
+        ),
+      ).not.toBe(baselineHash);
+    }
   });
 
   it("enforces: signed-impact identity binds every declared material input", () => {
@@ -3404,6 +3585,7 @@ describe("demo semantic-truth fence", () => {
         bankChangeHandling: "specialist-review",
         dualApprovalThresholdMinor: 2_500_000,
         approvalsRequired: 2,
+        distinctActorsRequired: true,
         authorityMode: "staged",
         eligibleRole: "operations",
         requesterParticipation: {
@@ -3433,6 +3615,10 @@ describe("demo semantic-truth fence", () => {
         },
         requesterMayApprove: false,
       },
+      dispositionKind: "proceed",
+      selectionKey:
+        "reserve=6-months|freshness=30-days|bank-change=specialist|threshold=25000|expiry=1d-3d",
+      missingMaterialInputs: [],
     } satisfies SignedImpactMaterialInput;
     const signedHash = signedImpactMaterialInputHash(input);
     const mutations: SignedImpactMaterialInput[] = [
@@ -3503,6 +3689,13 @@ describe("demo semantic-truth fence", () => {
         ...input,
         resolvedConfiguration: {
           ...input.resolvedConfiguration,
+          distinctActorsRequired: false,
+        },
+      },
+      {
+        ...input,
+        resolvedConfiguration: {
+          ...input.resolvedConfiguration,
           authorityMode: "automatic" as const,
           eligibleRole: null,
         },
@@ -3542,6 +3735,12 @@ describe("demo semantic-truth fence", () => {
           ...input.authority,
           requesterMayApprove: null,
         },
+      },
+      { ...input, dispositionKind: "blocked" },
+      { ...input, selectionKey: null },
+      {
+        ...input,
+        missingMaterialInputs: ["phase"],
       },
     ];
     expect(

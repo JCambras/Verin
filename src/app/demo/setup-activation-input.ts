@@ -236,6 +236,8 @@ function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
           dualApprovalThresholdMinor:
             runtime.dualApprovalThresholdMinor,
           approvalsRequired: runtime.approvalsRequired,
+          distinctActorsRequired:
+            runtime.distinctActorsRequired,
           bankChangeHandling: runtime.bankChangeHandling,
           policyVersion: runtime.policyVersion,
           authorityBinding: "derived-from-complete-selection",

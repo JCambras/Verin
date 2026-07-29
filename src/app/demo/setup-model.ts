@@ -46,7 +46,7 @@ export type SignedImpactAttributionVM = Readonly<
     {
       readonly previewMaterialInputHash: string;
       readonly signedMaterialInputHash: string | null;
-      readonly signedSelectionKey: string;
+      readonly signedSelectionKey: string | null;
     }
   >
 >;
@@ -261,6 +261,7 @@ export function isCaptainSignedImpact(
   return (
     firm !== undefined &&
     firm.signedMaterialInputHash !== null &&
+    firm.signedSelectionKey !== null &&
     firm.previewMaterialInputHash ===
       firm.signedMaterialInputHash &&
     setupFirmSelectionKey(selections[firmId]) ===

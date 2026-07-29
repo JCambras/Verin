@@ -3510,3 +3510,28 @@ the disposition summary states that fact instead of asserting requester exclusio
 claim. Borrowing any of them from a nearby case or account makes the proof internally inconsistent.
 **Revert path:** none while these signed fixtures, interactive setup choices, and the distinct
 Smiths taxable accounts remain in the demo.
+
+### D-075 · 2026-07-29 · captain-decision · Signed setup baselines come only from complete golden fixtures
+
+Signed setup attribution now builds its baseline directly from each captain-signed golden
+fixture. The baseline binds that fixture's exact firm configuration, resolved authority,
+trigger, request fields, scenario, source identities, evidence rows, observation and retrieval
+instants, disposition, and policy versions. Preview identity is constructed separately from
+the setup evaluator and binds the actual phase, complete selection key, liquidity, evidence,
+resolved configuration, authority, and disposition.
+
+Golden fixtures do not define every setup input. Missing phase, freshness, approval clock,
+structured request fields, selection key, or evaluator evidence keeps the preview projected.
+The setup path never borrows evidence from another case, clones metadata into a missing kind,
+or creates a synthetic signed input. Demo-only evidence remains explicitly identified as a
+projection and cannot become the signed baseline.
+
+The canonical GC-07 decision record mirrors the golden regulatory prohibition exactly,
+including the Smith Family Taxable scope, regulatory source, firm policy precedence, exact
+explanation, and decision hash. A fitness fence compares that mirror to the golden fixture and
+rejects drift even when a divergent record carries an internally valid recomputed hash.
+
+**Why:** a signed baseline must be independent of the preview it judges, and a canonical
+decision record cannot serve as a second mutable version of binding product truth.
+**Revert path:** none while setup attribution cites captain-signed fixtures and the GC-07
+decision-core mirror remains canonical.

@@ -1,17 +1,14 @@
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import {
   APPROVAL_CLOCKS,
-  CANONICAL_REQUEST,
   DEMO_TIMELINE,
   FIRMS,
-  PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
   type ApprovalClock,
   type FirmData,
   type SignedLiquidityCase,
 } from "./data";
 import type { RequesterParticipation } from "./model";
-import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 import type {
   SetupFirmId,
   SetupSelections,
@@ -78,10 +75,26 @@ export interface SetupResolvedConfiguration {
   readonly bankChangeHandling: FirmData["bankChangeHandling"];
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
+  readonly distinctActorsRequired: boolean;
   readonly authorityMode: SetupAuthorityResolution["mode"];
   readonly eligibleRole: SetupAuthorityResolution["eligibleRole"];
   readonly requesterParticipation: RequesterParticipation;
   readonly approvalClock: ApprovalClock;
+}
+
+interface SetupPolicyEvidenceValue<T> {
+  readonly value: T;
+  readonly provenance: {
+    readonly asOf: string;
+  };
+}
+
+export interface SetupPolicyEvidence {
+  readonly plannedMonthlyWithdrawal:
+    SetupPolicyEvidenceValue<number>;
+  readonly bankInstruction: SetupPolicyEvidenceValue<{
+    readonly independentlyVerified: boolean;
+  }>;
 }
 
 export function setupRuntimeFirm(
@@ -114,6 +127,8 @@ export function setupResolvedConfiguration(
     dualApprovalThresholdMinor:
       evaluation.dualApprovalThresholdMinor,
     approvalsRequired: FIRMS[firmId]!.approvalsRequired,
+    distinctActorsRequired:
+      FIRMS[firmId]!.distinctActorsRequired,
     authorityMode: evaluation.authority.mode,
     eligibleRole: evaluation.authority.eligibleRole,
     requesterParticipation: evaluation.requesterParticipation,
@@ -136,7 +151,7 @@ function setting(
 export function evaluateSetupPolicy(
   selections: SetupSelections,
   firmId: SetupFirmId,
-  evidence: DecisionEvidenceSnapshot,
+  evidence: SetupPolicyEvidence,
   liquidity: SignedLiquidityCase = SMITHS_LIQUIDITY,
   evaluatedAt: string = DEMO_TIMELINE.decisionCreatedAt,
 ): SetupPolicyEvaluation {
@@ -167,7 +182,8 @@ export function evaluateSetupPolicy(
     availableMinor: liquidity.availableMinor,
     pendingMinor: liquidity.pendingMinor,
     requestMinor: liquidity.requestMinor,
-    plannedMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+    plannedMonthlyMinor:
+      evidence.plannedMonthlyWithdrawal.value,
     reserveMonths,
   });
   const evidenceAgeDays =
@@ -186,7 +202,7 @@ export function evaluateSetupPolicy(
       ? "proceed"
       : "blocked";
   const dualApproval =
-    CANONICAL_REQUEST.amountMinor > dualApprovalThresholdMinor;
+    liquidity.requestMinor > dualApprovalThresholdMinor;
   const requiresSpecialist =
     bankChangeRequiresAction &&
     bankChangeHandling === "specialist-review";

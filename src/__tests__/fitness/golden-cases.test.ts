@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  DecisionRecordSchema,
+  type DecisionRecord,
+} from "@contracts/decision-core/decision";
+import {
+  canonicalJson,
+  decisionHashPreimage,
+} from "@contracts/decision-core/serialization";
+import { unwrap } from "@contracts/result";
 import { REPO_ROOT } from "./_fence-utils";
 import {
   GOLDEN_DOC,
@@ -40,6 +50,112 @@ import {
 const realCases = loadGoldenCases();
 const realRefs = loadScenarioRefs();
 const realDoc = readFileSync(GOLDEN_DOC, "utf8");
+const goldenGc07 = JSON.parse(
+  readFileSync(
+    join(
+      REPO_ROOT,
+      "fixtures/golden/GC-07-regulatory-prohibition.json",
+    ),
+    "utf8",
+  ),
+) as {
+  firm: string;
+  trigger: { asOf: string };
+  expectedDisposition: string;
+  policyVersions: {
+    firmPolicyVersionId: string;
+  };
+  prohibition: {
+    source: {
+      sourceType: string;
+      sourceId: string;
+      versionId: string;
+    };
+    scope: string;
+    reasonCode: string;
+    explanation: string;
+  };
+};
+const prohibitedRecordFixture = JSON.parse(
+  readFileSync(
+    join(
+      REPO_ROOT,
+      "fixtures/decision-core/decision-record-prohibited.json",
+    ),
+    "utf8",
+  ),
+) as unknown;
+
+function decisionHashFor(record: DecisionRecord): string {
+  return createHash("sha256")
+    .update(
+      unwrap(canonicalJson(decisionHashPreimage(record))),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+function gc07MirrorProblems(
+  golden: typeof goldenGc07,
+  recordValue: unknown,
+): string[] {
+  const parsed = DecisionRecordSchema.safeParse(recordValue);
+  if (!parsed.success) {
+    return ["GC-07 canonical record must satisfy DecisionRecordSchema"];
+  }
+  const record = parsed.data;
+  if (record.result.kind !== "prohibited") {
+    return [
+      "GC-07 canonical record result.kind must equal golden expectedDisposition",
+    ];
+  }
+  const prohibition = record.result.prohibition;
+  const precedence = record.precedenceTrace[0];
+  return [
+    record.firmId === golden.firm
+      ? null
+      : "GC-07 canonical record firmId must equal golden firm",
+    record.createdAt ===
+    new Date(golden.trigger.asOf).toISOString()
+      ? null
+      : "GC-07 canonical record createdAt must equal golden trigger.asOf",
+    record.result.kind === golden.expectedDisposition
+      ? null
+      : "GC-07 canonical record result.kind must equal golden expectedDisposition",
+    prohibition.scopeRef.id === golden.prohibition.scope
+      ? null
+      : "GC-07 canonical record prohibition scope must equal golden prohibition scope",
+    prohibition.reasonCode === golden.prohibition.reasonCode
+      ? null
+      : "GC-07 canonical record prohibition reason must equal golden prohibition reason",
+    prohibition.explanation === golden.prohibition.explanation
+      ? null
+      : "GC-07 canonical record prohibition explanation must equal golden prohibition explanation",
+    prohibition.source.sourceType ===
+    golden.prohibition.source.sourceType
+      ? null
+      : "GC-07 canonical record prohibition source type must equal golden source",
+    prohibition.source.sourceRef.id ===
+    golden.prohibition.source.sourceId
+      ? null
+      : "GC-07 canonical record prohibition source id must equal golden source",
+    prohibition.source.versionRef.id ===
+    golden.prohibition.source.versionId
+      ? null
+      : "GC-07 canonical record prohibition version must equal golden source",
+    precedence?.left.versionRef.id ===
+    golden.prohibition.source.versionId
+      ? null
+      : "GC-07 canonical record precedence left must equal golden regulatory version",
+    precedence?.right.versionRef.id ===
+    golden.policyVersions.firmPolicyVersionId
+      ? null
+      : "GC-07 canonical record precedence right must equal golden firm policy version",
+    record.decisionHash === decisionHashFor(record)
+      ? null
+      : "GC-07 canonical record decisionHash must match its canonical preimage",
+  ].filter((problem): problem is string => problem !== null);
+}
 
 describe("golden-cases fence", () => {
   it("enforces: every golden case is complete, aligned, consistent, and signoff-gated", () => {
@@ -50,6 +166,12 @@ describe("golden-cases fence", () => {
   it("enforces: the truth set covers all twelve spec-enumerated cases with at least twelve fixtures", () => {
     expect(realCases.length).toBeGreaterThanOrEqual(12);
     expect(REQUIRED_SPEC_NAMES.length).toBe(12);
+  });
+
+  it("enforces: the canonical GC-07 record exactly mirrors its golden prohibition", () => {
+    expect(
+      gc07MirrorProblems(goldenGc07, prohibitedRecordFixture),
+    ).toEqual([]);
   });
 });
 
@@ -204,5 +326,40 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(realCases.length).toBeGreaterThan(0);
     expect(realCases[0]!.rel.startsWith("fixtures/golden/")).toBe(true);
     expect(readFileSync(join(REPO_ROOT, realCases[0]!.rel), "utf8").length).toBeGreaterThan(0);
+  });
+
+  it("flags a hash-valid GC-07 record that drifts from the golden prohibition", () => {
+    const mutated = structuredClone(
+      prohibitedRecordFixture,
+    ) as {
+      decisionHash: string;
+      result: {
+        prohibition: {
+          scopeRef: { id: string };
+          explanation: string;
+        };
+      };
+    };
+    mutated.result.prohibition.scopeRef.id =
+      "scope:account:subject:smiths-joint-taxable";
+    mutated.result.prohibition.explanation =
+      "A different prohibition explanation.";
+    mutated.decisionHash = decisionHashFor(
+      DecisionRecordSchema.parse(mutated),
+    );
+    const problems = gc07MirrorProblems(goldenGc07, mutated);
+    expect(
+      problems.some((problem) => problem.includes("scope")),
+    ).toBe(true);
+    expect(
+      problems.some((problem) =>
+        problem.includes("explanation"),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some((problem) =>
+        problem.includes("decisionHash"),
+      ),
+    ).toBe(false);
   });
 });
