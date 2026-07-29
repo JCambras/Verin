@@ -22,6 +22,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
+  evidenceForPass,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   requestFor,
@@ -107,6 +108,7 @@ export const DISPOSITION_BADGES = {
 export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): DispositionVM {
   const kind = dispositionFor(scenario, firm.id);
   const sourceCase = sourceCaseFor(scenario, firm.id);
+  const selectedEvidence = evidenceForPass(sourceCase, pass);
   if (kind === "prohibited") {
     return buildProhibitedDisposition(scenario, firm);
   }
@@ -141,10 +143,10 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: J
     (dualApproval
       ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals."
       : "Automatic authority applies because the amount is below this firm's dual-approval threshold; no approval stage is required.");
-  const sourceEvidence = sourceCase?.evidence.find(
+  const sourceEvidence = selectedEvidence.find(
     (entry) => entry.evidenceKind === "account-balance",
   );
-  const destinationEvidence = sourceCase?.evidence.find(
+  const destinationEvidence = selectedEvidence.find(
     (entry) => entry.evidenceKind === "bank-instruction",
   );
   return {
@@ -164,15 +166,16 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData, pass
   const disposition = buildDisposition(scenario, firm, pass);
   const proceed = disposition.kind === "proceed";
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  const sourceEvidence = sourceCase?.evidence.find(
+  const selectedEvidence = evidenceForPass(sourceCase, pass);
+  const sourceEvidence = selectedEvidence.find(
     (entry) => entry.evidenceKind === "account-balance",
   );
   const alternatives =
-    sourceCase?.evidence.filter(
+    selectedEvidence.filter(
       (entry) =>
         entry.evidenceKind === "account-balance" &&
         entry !== sourceEvidence,
-    ) ?? [];
+    );
   const request = requestFor(scenario, firm.id);
   return {
     spine: buildSpine("Decision", DISPOSITION_BADGES[disposition.kind]),

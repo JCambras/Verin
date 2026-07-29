@@ -218,7 +218,7 @@ export function buildSafety(
         : [],
     idempotencyKey:
       executionEligible ? (eligibility?.idempotencyKey ?? null) : null,
-    executionEligibility: eligibility,
+    executionEligibility: executionEligible ? eligibility : null,
     invalidation: invalidatedPass && initial && refreshed
       ? {
           voidedActors: [

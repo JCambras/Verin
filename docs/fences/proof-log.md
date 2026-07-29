@@ -5845,3 +5845,35 @@ typecheck, lint, knip, the v3 invariant report, file-size ratchet, and productio
 corrected state.
 
 **Date:** 2026-07-29 (review corrections, D-073).
+
+## F113 · lifecycle-selected evidence, summaries, and examiner records
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** GC-15 initial surfaces select only the original evidence and decision reach, while
+revalidated surfaces select the refreshed evidence, derived bindings, fresh approvals, reservation,
+execution, and verification. Recommendation alternatives cannot cross lifecycle phases. Comparison,
+policy simulation, printable records, and return navigation retain the selected pass.
+
+An adversarial production injection replaced Recommendation's phase selector with the case's entire
+evidence collection. The focused fence failed at
+`src/__tests__/fitness/golden-cases.test.ts:70` with:
+
+```text
+GC-15 visible lifecycle passes must preserve phase-selected evidence, exact firm authority, decision bindings, approval reach, invalidation, reservation, execution, and submitted verification in signed order
+```
+
+The production injection was reverted immediately. Companion mutations expose future evidence on
+the initial record, substitute the refreshed recommendation into the initial pass, mark initial
+execution and eligibility reached, remove a revalidated binding, and drift initial and revalidated
+policy simulations. Each mutation produces the lifecycle-pass or selected-snapshot diagnostic.
+
+Browser coverage first reproduced the defect when the initial Recommendation rendered a future
+account snapshot as an alternative. It now proves distinct initial and revalidated recommendation
+sources, policy headroom, record bindings, lifecycle lengths, execution reach, verification reach,
+and exact route context.
+
+**Revert:** the production injection was removed. All remaining adversarial mutations live only in
+companion tests.
+
+**Date:** 2026-07-29 (review corrections, D-075).

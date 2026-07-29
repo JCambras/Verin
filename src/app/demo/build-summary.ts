@@ -27,6 +27,7 @@ import {
   reserveFloorMetric,
   DISPOSITION_BADGES,
 } from "./build-decision";
+import { liquidityInputs } from "./build-decision-truth";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
@@ -36,6 +37,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
+  evidenceForPass,
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -145,25 +147,25 @@ export function buildComparison(
   };
 }
 
-export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): PolicyAuthoringVM {
+export function buildPolicyAuthoring(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+): PolicyAuthoringVM {
   const isFirmA = firm.id === "firm-a";
   const twelveMonthFloor = calculateReserveFloorMinor(PLANNED_WITHDRAWAL_MONTHLY_MINOR, DRAFT_RESERVE_MONTHS);
-  const liquidityInputs = [prov("synthetic-fixture", OBSERVED_RECENT)];
+  const simulationInputs = liquidityInputs(scenario, firm, pass);
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  const latest =
+  const snapshot =
     authority.kind === "signed"
-      ? (authority.preExecutionRevalidation ?? authority.initialDecision)
+      ? pass === "revalidated"
+        ? (authority.preExecutionRevalidation ?? authority.initialDecision)
+        : authority.initialDecision
       : null;
-  const newHeadroom = latest
-    ? calculateHeadroomMinor(latest.availableCashMinor, latest.pendingActivityMinor, twelveMonthFloor)
+  const newHeadroom = snapshot
+    ? calculateHeadroomMinor(snapshot.availableCashMinor, snapshot.pendingActivityMinor, twelveMonthFloor)
     : null;
-  const currentHeadroom = headroomMetric(
-    scenario,
-    firm,
-    authority.kind === "signed" && authority.preExecutionRevalidation
-      ? "revalidated"
-      : "initial",
-  );
+  const currentHeadroom = headroomMetric(scenario, firm, pass);
   const disp = dispositionFor(scenario, firm.id);
   const request = requestFor(scenario, firm.id);
   // The simulation's own arithmetic decides whether the request survives the drafted
@@ -191,12 +193,12 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
           {
             label: "Smith household reserve floor",
             before: { metric: reserveFloorMetric(firm, scenario) },
-            after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", liquidityInputs, DEMO_NOW) },
+            after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", simulationInputs, DEMO_NOW) },
           },
           {
             label: "Available after reserve",
             before: { metric: currentHeadroom },
-            after: { metric: derivedMetric(newHeadroom, "currency-minor", liquidityInputs, DEMO_NOW) },
+            after: { metric: derivedMetric(newHeadroom, "currency-minor", simulationInputs, DEMO_NOW) },
           },
           {
             label: "This request",
@@ -205,8 +207,8 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
           },
           {
             label: "Demo-corpus households newly below the floor",
-            before: { metric: derivedMetric(0, "count", liquidityInputs, DEMO_NOW) },
-            after: { metric: derivedMetric(3, "count", liquidityInputs, DEMO_NOW) },
+            before: { metric: derivedMetric(0, "count", simulationInputs, DEMO_NOW) },
+            after: { metric: derivedMetric(3, "count", simulationInputs, DEMO_NOW) },
           },
         ]
       : isFirmA
@@ -214,7 +216,7 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
             {
               label: "Smith household reserve floor",
               before: { metric: reserveFloorMetric(firm, scenario) },
-              after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", liquidityInputs, DEMO_NOW) },
+              after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", simulationInputs, DEMO_NOW) },
             },
             {
               label: "Available after reserve",
@@ -264,6 +266,7 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
 function signedLifecycle(
   scenario: ScenarioData,
   firm: FirmData,
+  pass: JourneyPass,
 ): RecordVM["lifecycle"] {
   const sourceCase = sourceCaseFor(scenario, firm.id);
   if (!sourceCase) return [];
@@ -284,12 +287,19 @@ function signedLifecycle(
       timeline.executionSucceededAt,
       timeline.statusObservedAt,
     ];
-    return sourceCase.ledgerEvents.map((event, index) => ({
+    const lifecycle = sourceCase.ledgerEvents.map((event, index) => ({
       type: event.type,
       timestampIso: instants[index]!,
       display: formatDemoInstant(instants[index]!, undefined, true),
       note: event.note,
     }));
+    if (pass === "revalidated") return lifecycle;
+    const invalidatedAt = lifecycle.findIndex(
+      (event) => event.type === "ApprovalInvalidated",
+    );
+    return invalidatedAt < 0
+      ? lifecycle
+      : lifecycle.slice(0, invalidatedAt + 1);
   }
   const approvalInstants = buildApprovals(scenario, firm).stages.flatMap(
     (stage) =>
@@ -350,12 +360,18 @@ function signedLifecycle(
   });
 }
 
-export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
+export function buildRecord(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+): RecordVM {
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  const sourceProvenance =
-    sourceCase?.evidence.map((entry) =>
-      prov("synthetic-fixture", entry.observedAt),
-    ) ?? [prov("synthetic-fixture", OBSERVED_RECENT)];
+  const selectedEvidence = evidenceForPass(sourceCase, pass);
+  const sourceProvenance = selectedEvidence.length
+    ? selectedEvidence.map((entry) =>
+        prov("synthetic-fixture", entry.observedAt),
+      )
+    : [prov("synthetic-fixture", OBSERVED_RECENT)];
   const provenance = recordProvenance(
     [
       ...sourceProvenance,
@@ -368,8 +384,8 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
   );
   const timeline = timelineFor(scenario, firm);
   const proceed = dispositionFor(scenario, firm.id) === "proceed";
-  const revalidated = hasSignedInvalidationAuthority(scenario, firm.id);
-  const pass = revalidated ? "revalidated" : "initial";
+  const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
+  const revalidated = invalidation && pass === "revalidated";
   const approvals = proceed ? buildApprovals(scenario, firm, pass) : null;
   const originalApproval = revalidated
     ? buildApprovals(scenario, firm, "initial")
@@ -390,9 +406,11 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
       ? "This journey stopped at Decision."
       : !safetyReached
         ? "This journey stopped at Authority because the ordered authority plan was not satisfied."
-        : execution === null
-          ? "This journey stopped at Safety because exact signed liquidity authority is unavailable."
-          : null;
+        : invalidation && pass === "initial"
+          ? "This journey returned to Decision: both approvals were voided when material evidence changed."
+          : execution === null
+            ? "This journey stopped at Safety because exact signed liquidity authority is unavailable."
+            : null;
   return {
     header: {
       decisionId: "dec-smiths-renovation-2026-0726",
@@ -433,11 +451,14 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
     approvalStages: approvals?.stages ?? null,
     authorityMode: approvals?.mode ?? null,
     automaticAuthority: approvals?.automaticAuthority ?? null,
-    executionEligibility: executionEligibilityFor(scenario, firm.id),
+    executionEligibility:
+      safety?.reservationId
+        ? executionEligibilityFor(scenario, firm.id)
+        : null,
     safety: finalSafety,
     execution: execution?.rows ?? null,
     verification,
-    lifecycle: signedLifecycle(scenario, firm),
+    lifecycle: signedLifecycle(scenario, firm, pass),
     stopNote,
     provenanceAppendix: provenance.derivedFrom,
   };

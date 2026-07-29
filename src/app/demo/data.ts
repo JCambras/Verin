@@ -20,6 +20,22 @@ import {
 
 export type JourneyPass = "initial" | "revalidated";
 
+export function evidenceForPass(
+  sourceCase: SignedCaseVariant | null | undefined,
+  pass: JourneyPass,
+) {
+  return (
+    sourceCase?.evidence.filter(
+      (entry) =>
+        entry.liquidityPhase === null ||
+        entry.liquidityPhase ===
+          (pass === "revalidated"
+            ? "pre-execution-revalidation"
+            : "initial-decision"),
+    ) ?? []
+  );
+}
+
 // A fixed demo world clock keeps freshness and screenshots stable.
 export const DEMO_NOW = "2026-07-26";
 export const DEMO_TIME_ZONE = "America/New_York";

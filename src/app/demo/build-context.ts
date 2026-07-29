@@ -19,6 +19,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
+  evidenceForPass,
   liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
@@ -86,6 +87,7 @@ export function buildWorkspace(
 ): WorkspaceVM {
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const sourceCase = sourceCaseFor(scenario, firm.id);
+  const selectedEvidence = evidenceForPass(sourceCase, pass);
   const timeline = timelineFor(scenario, firm);
   const refreshed =
     pass === "revalidated" && authority.kind === "signed"
@@ -95,12 +97,8 @@ export function buildWorkspace(
     authority.kind === "signed"
       ? (refreshed ?? authority.initialDecision)
       : null;
-  const liquidityEvidence = sourceCase?.evidence.find(
-    (entry) =>
-      entry.evidenceKind === "account-balance" &&
-      (refreshed
-        ? entry.liquidityPhase === "pre-execution-revalidation"
-        : entry.liquidityPhase !== "pre-execution-revalidation"),
+  const liquidityEvidence = selectedEvidence.find(
+    (entry) => entry.evidenceKind === "account-balance",
   );
   const liquidityObservedAt =
     liquidityEvidence?.observedAt ??
@@ -110,19 +108,13 @@ export function buildWorkspace(
     : refreshed
       ? formatDemoInstant(timeline.revalidatedAt)
       : RETRIEVED_AT;
-  const plannedEvidence = sourceCase?.evidence.find(
-    (entry) =>
-      entry.evidenceKind === "planned-withdrawals" &&
-      entry.liquidityPhase !== "pre-execution-revalidation",
+  const plannedEvidence = selectedEvidence.find(
+    (entry) => entry.evidenceKind === "planned-withdrawals",
   );
   const accountEvidence =
-    sourceCase?.evidence.filter(
-      (entry) =>
-        entry.evidenceKind === "account-balance" &&
-        (refreshed
-          ? entry.liquidityPhase === "pre-execution-revalidation"
-          : entry.liquidityPhase !== "pre-execution-revalidation"),
-    ) ?? [];
+    selectedEvidence.filter(
+      (entry) => entry.evidenceKind === "account-balance",
+    );
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -196,12 +188,7 @@ export function buildEvidence(
   pass: JourneyPass = "initial",
 ): EvidenceVM {
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  const evidence =
-    sourceCase?.evidence.filter(
-      (entry) =>
-        pass === "revalidated" ||
-        entry.liquidityPhase !== "pre-execution-revalidation",
-    ) ?? [];
+  const evidence = evidenceForPass(sourceCase, pass);
   const rows: EvidenceRowVM[] = evidence.map(projectEvidenceRow);
   if (!sourceCase) {
     rows.push({

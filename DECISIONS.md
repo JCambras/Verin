@@ -3602,3 +3602,19 @@ printable record, and the revalidated pass.
 depend on every call site remembering hidden URL state.
 **Revert path:** restore positional link arguments and singular launcher selection only if another
 typed navigation boundary preserves all four context fields and every exact variant.
+
+### D-075 · 2026-07-29 · reversible · Journey pass selects evidence, summaries, and record reach
+
+One phase selector now governs signed evidence on Workspace, Evidence, Recommendation, derived
+metrics, and printable records. Initial GC-15 routes select the original snapshot, original
+decision binding, original approvals, and lifecycle through `ApprovalInvalidated`; they expose no
+reservation, execution, or verification. Revalidated routes select the refreshed snapshot, derived
+binding, fresh approvals, reservation, execution, verification, comparison, and policy simulation.
+All summary builders require the selected pass from the journey boundary.
+
+**Why:** preserving `pass` in the URL was insufficient while builders independently selected the
+latest evidence or inferred revalidation from scenario authority. That allowed a future snapshot to
+appear as an initial alternative and made initial printable records indistinguishable from final
+revalidated records.
+**Revert path:** none while D-068 through D-074 require exact lifecycle identity across navigation
+and examiner-facing surfaces.

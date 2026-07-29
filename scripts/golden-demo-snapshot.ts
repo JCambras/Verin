@@ -23,6 +23,7 @@ import {
   bindExactSourceCase,
   dispositionFor,
   firmById,
+  hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
@@ -57,7 +58,11 @@ function renderMoney(money: DisplayMetric): RenderedMoney {
 /** Surface 11's simulated policy draft, as it is actually emitted for a branch. */
 function draftSimulation(scenarioId: string, firmId: string) {
   const scenario = SCENARIOS.find((s) => s.id === scenarioId)!;
-  const rows = buildPolicyAuthoring(scenario, firmById(firmId)).simulationDelta;
+  const rows = buildPolicyAuthoring(
+    scenario,
+    firmById(firmId),
+    "initial",
+  ).simulationDelta;
   const numberAt = (label: string): number | null => {
     const value = rows.find((row) => row.label === label)?.after.metric?.value;
     return typeof value === "number" ? value : null;
@@ -123,7 +128,12 @@ function displayedDecisions(): DisplayedDecision[] {
       const simulated = draftSimulation(scenario.id, firm.id);
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
-      const journey = getJourney(scenario.id, firm.id, "initial", caseId);
+      const journey = getJourney(
+        scenario.id,
+        firm.id,
+        "initial",
+        caseId,
+      );
       const visibleEvidence = journey.evidence.rows.flatMap((row) =>
         row.kind === "fact" || row.kind === "metric"
           ? [
@@ -298,7 +308,14 @@ function sourceTimelines(): SourceTimeline[] {
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
       if (!sourceCase) return [];
-      const journey = getJourney(scenario.id, firm.id, "initial", caseId);
+      const journey = getJourney(
+        scenario.id,
+        firm.id,
+        hasSignedInvalidationAuthority(scenario, firm.id)
+          ? "revalidated"
+          : "initial",
+        caseId,
+      );
       const lifecycleEvents = journey.record.lifecycle.map((lifecycleEvent, index) =>
         event(
           lifecycleEvent.type === "EvidenceSnapshotRecorded" && index > 0
@@ -566,8 +583,16 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const policyRows = buildPolicyAuthoring(
     SCENARIOS.find((scenario) => scenario.id === "approval-invalidation")!,
     FIRMS["firm-a"]!,
+    "initial",
   ).simulationDelta;
   const policyHeadroom = policyRows.find(
+    (row) => row.label === DRAFT_HEADROOM_LABEL,
+  );
+  const revalidatedPolicyHeadroom = buildPolicyAuthoring(
+    SCENARIOS.find((scenario) => scenario.id === "approval-invalidation")!,
+    FIRMS["firm-a"]!,
+    "revalidated",
+  ).simulationDelta.find(
     (row) => row.label === DRAFT_HEADROOM_LABEL,
   );
   const reservationCausality =
@@ -739,8 +764,18 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     ],
     reservationCausality,
     approvalInvalidationLifecycle: {
-      eventTypes: invalidationJourney.record.lifecycle.map((event) => event.type),
-      eventInstants: invalidationJourney.record.lifecycle.map(
+      initialEventTypes: invalidationJourney.record.lifecycle.map(
+        (event) => event.type,
+      ),
+      initialEventInstants: invalidationJourney.record.lifecycle.map(
+        (event) => event.timestampIso,
+      ),
+      revalidatedEventTypes:
+        revalidatedInvalidationJourney.record.lifecycle.map(
+          (event) => event.type,
+        ),
+      revalidatedEventInstants:
+        revalidatedInvalidationJourney.record.lifecycle.map(
         (event) => event.timestampIso,
       ),
       originalApprovals:
@@ -767,6 +802,8 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         ) ?? [],
       initialReservationVisible:
         Boolean(invalidationJourney.safety?.reservationId),
+      initialExecutionReached: invalidationJourney.execution !== null,
+      initialVerificationReached: invalidationJourney.verification !== null,
       revalidatedReservationVisible:
         Boolean(revalidatedInvalidationJourney.safety?.reservationId),
       revalidatedExecutionReached:
@@ -781,15 +818,63 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         revalidatedInvalidationJourney.verification?.proves.map(
           (proof) => proof.display,
         ) ?? [],
+      initialComparisonHeadroomMinor:
+        invalidationJourney.comparison.rows.find(
+          (row) =>
+            row.dimension === "Available after reserve" &&
+            row.a.metric !== undefined,
+        )?.a.metric?.value ?? null,
       revalidatedComparisonHeadroomMinor:
         revalidatedInvalidationJourney.comparison.rows.find(
           (row) =>
             row.dimension === "Available after reserve" &&
             row.a.metric !== undefined,
         )?.a.metric?.value ?? null,
-      recordBindings: invalidationJourney.record.decisionBindings.map(
+      initialRecordBindings: invalidationJourney.record.decisionBindings.map(
         (binding) => ({ ...binding }),
       ),
+      revalidatedRecordBindings:
+        revalidatedInvalidationJourney.record.decisionBindings.map(
+        (binding) => ({ ...binding }),
+      ),
+      initialRecordEvidencePhases:
+        invalidationJourney.record.evidence.flatMap((row) =>
+          row.kind === "metric" || row.kind === "fact"
+            ? [row.sourceBinding.liquidityPhase]
+            : [],
+        ),
+      revalidatedRecordEvidencePhases:
+        revalidatedInvalidationJourney.record.evidence.flatMap((row) =>
+          row.kind === "metric" || row.kind === "fact"
+            ? [row.sourceBinding.liquidityPhase]
+            : [],
+        ),
+      initialRecordExecutionReached:
+        invalidationJourney.record.execution !== null,
+      initialRecordVerificationReached:
+        invalidationJourney.record.verification !== null,
+      initialRecordEligibilityVisible:
+        invalidationJourney.record.executionEligibility !== null ||
+        Boolean(invalidationJourney.record.safety?.executionEligibility),
+      revalidatedRecordExecutionReached:
+        revalidatedInvalidationJourney.record.execution !== null,
+      revalidatedRecordVerificationReached:
+        revalidatedInvalidationJourney.record.verification !== null,
+      revalidatedRecordEligibilityVisible:
+        revalidatedInvalidationJourney.record.executionEligibility !== null ||
+        Boolean(
+          revalidatedInvalidationJourney.record.safety?.executionEligibility,
+        ),
+      initialRecommendationSource:
+        invalidationJourney.recommendation.recommendation?.source.display ??
+        null,
+      revalidatedRecommendationSource:
+        revalidatedInvalidationJourney.recommendation.recommendation?.source
+          .display ?? null,
+      initialRecommendationAlternativeCount:
+        invalidationJourney.recommendation.alternatives.length,
+      revalidatedRecommendationAlternativeCount:
+        revalidatedInvalidationJourney.recommendation.alternatives.length,
       originalApprovalBinding:
         invalidationJourney.approvals?.binding ?? null,
       freshApprovalBinding:
@@ -818,13 +903,21 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         partialJourney.record.verification?.exceptionDecision ?? null,
     },
     invalidationPolicySimulation: {
-      currentHeadroomMinor:
+      initialCurrentHeadroomMinor:
         typeof policyHeadroom?.before.metric?.value === "number"
           ? policyHeadroom.before.metric.value
           : null,
-      draftedHeadroomMinor:
+      initialDraftedHeadroomMinor:
         typeof policyHeadroom?.after.metric?.value === "number"
           ? policyHeadroom.after.metric.value
+          : null,
+      revalidatedCurrentHeadroomMinor:
+        typeof revalidatedPolicyHeadroom?.before.metric?.value === "number"
+          ? revalidatedPolicyHeadroom.before.metric.value
+          : null,
+      revalidatedDraftedHeadroomMinor:
+        typeof revalidatedPolicyHeadroom?.after.metric?.value === "number"
+          ? revalidatedPolicyHeadroom.after.metric.value
           : null,
     },
   };

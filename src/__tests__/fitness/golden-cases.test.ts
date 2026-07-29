@@ -884,12 +884,24 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
   it("flags incomplete invalidation, partial-receipt, and latest-snapshot projections", () => {
     const incompleteLifecycle = demoClone();
-    incompleteLifecycle.approvalInvalidationLifecycle.eventTypes.splice(5, 1);
+    incompleteLifecycle.approvalInvalidationLifecycle.initialEventTypes.splice(
+      5,
+      1,
+    );
     incompleteLifecycle.approvalInvalidationLifecycle.freshApprovals = 1;
     incompleteLifecycle.approvalInvalidationLifecycle.initialReservationVisible = true;
+    incompleteLifecycle.approvalInvalidationLifecycle.initialExecutionReached =
+      true;
+    incompleteLifecycle.approvalInvalidationLifecycle.initialRecordEligibilityVisible =
+      true;
     incompleteLifecycle.approvalInvalidationLifecycle.revalidatedExecutionStatuses =
       ["completed"];
-    incompleteLifecycle.approvalInvalidationLifecycle.recordBindings.pop();
+    incompleteLifecycle.approvalInvalidationLifecycle.revalidatedRecordBindings.pop();
+    incompleteLifecycle.approvalInvalidationLifecycle.initialRecommendationSource =
+      incompleteLifecycle.approvalInvalidationLifecycle.revalidatedRecommendationSource;
+    incompleteLifecycle.approvalInvalidationLifecycle.initialRecordEvidencePhases.push(
+      "pre-execution-revalidation",
+    );
     incompleteLifecycle.approvalInvalidationLifecycle.unsupportedFirmEventCount =
       13;
     incompleteLifecycle.approvalInvalidationLifecycle.revalidatedComparisonHeadroomMinor =
@@ -913,14 +925,16 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     const staleSimulation = demoClone();
-    staleSimulation.invalidationPolicySimulation.currentHeadroomMinor =
-      25_200_000;
-    staleSimulation.invalidationPolicySimulation.draftedHeadroomMinor =
+    staleSimulation.invalidationPolicySimulation.initialCurrentHeadroomMinor =
+      23_700_000;
+    staleSimulation.invalidationPolicySimulation.revalidatedDraftedHeadroomMinor =
       20_400_000;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, staleSimulation).some(
         (problem) =>
-          problem.includes("latest pre-execution liquidity snapshot"),
+          problem.includes(
+            "selected initial or pre-execution liquidity snapshot",
+          ),
       ),
     ).toBe(true);
   });

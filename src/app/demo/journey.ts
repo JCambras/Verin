@@ -104,7 +104,7 @@ export function getJourney(
     verification,
     stopNote,
     comparison: buildComparison(scenario, pass),
-    policyAuthoring: buildPolicyAuthoring(scenario, firm),
-    record: buildRecord(scenario, firm),
+    policyAuthoring: buildPolicyAuthoring(scenario, firm, pass),
+    record: buildRecord(scenario, firm, pass),
   };
 }

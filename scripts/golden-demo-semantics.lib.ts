@@ -238,25 +238,47 @@ export interface DemoSemanticSnapshot {
     relatedRequestAt: string;
   }>;
   approvalInvalidationLifecycle: {
-    eventTypes: string[];
-    eventInstants: string[];
+    initialEventTypes: string[];
+    initialEventInstants: string[];
+    revalidatedEventTypes: string[];
+    revalidatedEventInstants: string[];
     originalApprovals: number;
     freshApprovals: number;
     freshPlanSatisfied: boolean;
     freshActorIds: string[];
     freshRoleIds: string[];
     initialReservationVisible: boolean;
+    initialExecutionReached: boolean;
+    initialVerificationReached: boolean;
     revalidatedReservationVisible: boolean;
     revalidatedExecutionReached: boolean;
     revalidatedVerificationReached: boolean;
     revalidatedExecutionStatuses: string[];
     revalidatedVerificationProves: string[];
+    initialComparisonHeadroomMinor: number | null;
     revalidatedComparisonHeadroomMinor: number | null;
-    recordBindings: Array<{
+    initialRecordBindings: Array<{
       kind: "original" | "derived";
       decisionHash: string;
       bundleHash: string;
     }>;
+    revalidatedRecordBindings: Array<{
+      kind: "original" | "derived";
+      decisionHash: string;
+      bundleHash: string;
+    }>;
+    initialRecordEvidencePhases: Array<string | null>;
+    revalidatedRecordEvidencePhases: Array<string | null>;
+    initialRecordExecutionReached: boolean;
+    initialRecordVerificationReached: boolean;
+    initialRecordEligibilityVisible: boolean;
+    revalidatedRecordExecutionReached: boolean;
+    revalidatedRecordVerificationReached: boolean;
+    revalidatedRecordEligibilityVisible: boolean;
+    initialRecommendationSource: string | null;
+    revalidatedRecommendationSource: string | null;
+    initialRecommendationAlternativeCount: number;
+    revalidatedRecommendationAlternativeCount: number;
     originalApprovalBinding: {
       decisionHash: string;
       bundleHash: string;
@@ -288,8 +310,10 @@ export interface DemoSemanticSnapshot {
     } | null;
   };
   invalidationPolicySimulation: {
-    currentHeadroomMinor: number | null;
-    draftedHeadroomMinor: number | null;
+    initialCurrentHeadroomMinor: number | null;
+    initialDraftedHeadroomMinor: number | null;
+    revalidatedCurrentHeadroomMinor: number | null;
+    revalidatedDraftedHeadroomMinor: number | null;
   };
 }
 
@@ -1893,9 +1917,34 @@ export function validateGoldenDemoSemantics(
         isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
       )
     : [];
+  const initialLifecycleEnd = expectedGc15Types.indexOf(
+    "ApprovalInvalidated",
+  );
+  const expectedInitialGc15Types =
+    initialLifecycleEnd < 0
+      ? []
+      : expectedGc15Types.slice(0, initialLifecycleEnd + 1);
+  const gc15Evidence = Array.isArray(gc15?.householdEvidence)
+    ? gc15.householdEvidence.filter(isObj)
+    : [];
+  const evidenceSummary = (
+    phase: "initial-decision" | "pre-execution-revalidation",
+  ): string | null => {
+    const entry = gc15Evidence.find(
+      (candidate) =>
+        candidate.evidenceKind === "account-balance" &&
+        candidate.liquidityPhase === phase,
+    );
+    return entry && isNonEmptyString(entry.summary) ? entry.summary : null;
+  };
+  const expectedInitialRecommendation = evidenceSummary("initial-decision");
+  const expectedRevalidatedRecommendation = evidenceSummary(
+    "pre-execution-revalidation",
+  );
   const lifecycle = demo.approvalInvalidationLifecycle;
-  const originalRecordBinding = lifecycle.recordBindings[0];
-  const derivedRecordBinding = lifecycle.recordBindings[1];
+  const initialRecordBinding = lifecycle.initialRecordBindings[0];
+  const originalRecordBinding = lifecycle.revalidatedRecordBindings[0];
+  const derivedRecordBinding = lifecycle.revalidatedRecordBindings[1];
   const bindingMatches = (
     left: { decisionHash: string; bundleHash: string } | null | undefined,
     right: { decisionHash: string; bundleHash: string } | null | undefined,
@@ -1908,13 +1957,23 @@ export function validateGoldenDemoSemantics(
     );
   if (
     expectedGc15Types.length === 0 ||
-    lifecycle.eventTypes.length !== expectedGc15Types.length ||
-    lifecycle.eventTypes.some(
+    expectedInitialGc15Types.length === 0 ||
+    lifecycle.initialEventTypes.length !== expectedInitialGc15Types.length ||
+    lifecycle.initialEventTypes.some(
+      (eventType, index) => eventType !== expectedInitialGc15Types[index],
+    ) ||
+    lifecycle.revalidatedEventTypes.length !== expectedGc15Types.length ||
+    lifecycle.revalidatedEventTypes.some(
       (eventType, index) => eventType !== expectedGc15Types[index],
     ) ||
-    lifecycle.eventInstants.some(
+    lifecycle.initialEventInstants.some(
       (instant, index) =>
-        index > 0 && instant < lifecycle.eventInstants[index - 1]!,
+        index > 0 && instant < lifecycle.initialEventInstants[index - 1]!,
+    ) ||
+    lifecycle.revalidatedEventInstants.some(
+      (instant, index) =>
+        index > 0 &&
+        instant < lifecycle.revalidatedEventInstants[index - 1]!,
     ) ||
     lifecycle.originalApprovals !== 2 ||
     lifecycle.freshApprovals !== 2 ||
@@ -1922,6 +1981,8 @@ export function validateGoldenDemoSemantics(
     new Set(lifecycle.freshActorIds).size !== 2 ||
     !lifecycle.freshRoleIds.every((roleId) => roleId === "operations") ||
     lifecycle.initialReservationVisible ||
+    lifecycle.initialExecutionReached ||
+    lifecycle.initialVerificationReached ||
     !lifecycle.revalidatedReservationVisible ||
     !lifecycle.revalidatedExecutionReached ||
     !lifecycle.revalidatedVerificationReached ||
@@ -1929,7 +1990,13 @@ export function validateGoldenDemoSemantics(
     !lifecycle.revalidatedVerificationProves.includes(
       "Submission accepted by the capability",
     ) ||
-    lifecycle.recordBindings.length !== 2 ||
+    lifecycle.initialRecordBindings.length !== 1 ||
+    initialRecordBinding?.kind !== "original" ||
+    !bindingMatches(
+      initialRecordBinding,
+      lifecycle.originalApprovalBinding,
+    ) ||
+    lifecycle.revalidatedRecordBindings.length !== 2 ||
     originalRecordBinding?.kind !== "original" ||
     derivedRecordBinding?.kind !== "derived" ||
     !bindingMatches(
@@ -1939,10 +2006,34 @@ export function validateGoldenDemoSemantics(
     !bindingMatches(derivedRecordBinding, lifecycle.freshApprovalBinding) ||
     originalRecordBinding.decisionHash === derivedRecordBinding.decisionHash ||
     originalRecordBinding.bundleHash === derivedRecordBinding.bundleHash ||
+    lifecycle.initialRecordEvidencePhases.length === 0 ||
+    lifecycle.initialRecordEvidencePhases.includes(
+      "pre-execution-revalidation",
+    ) ||
+    !lifecycle.initialRecordEvidencePhases.includes("initial-decision") ||
+    lifecycle.revalidatedRecordEvidencePhases.length === 0 ||
+    lifecycle.revalidatedRecordEvidencePhases.includes("initial-decision") ||
+    !lifecycle.revalidatedRecordEvidencePhases.includes(
+      "pre-execution-revalidation",
+    ) ||
+    lifecycle.initialRecordExecutionReached ||
+    lifecycle.initialRecordVerificationReached ||
+    lifecycle.initialRecordEligibilityVisible ||
+    !lifecycle.revalidatedRecordExecutionReached ||
+    !lifecycle.revalidatedRecordVerificationReached ||
+    !lifecycle.revalidatedRecordEligibilityVisible ||
+    expectedInitialRecommendation === null ||
+    expectedRevalidatedRecommendation === null ||
+    lifecycle.initialRecommendationSource !==
+      expectedInitialRecommendation ||
+    lifecycle.revalidatedRecommendationSource !==
+      expectedRevalidatedRecommendation ||
+    lifecycle.initialRecommendationAlternativeCount !== 0 ||
+    lifecycle.revalidatedRecommendationAlternativeCount !== 0 ||
     lifecycle.unsupportedFirmEventCount !== 0
   ) {
     problems.push(
-      "GC-15 visible lifecycle must preserve exact firm authority, both decision bindings, approval passes, invalidation, reservation, execution, and submitted verification in signed order",
+      "GC-15 visible lifecycle passes must preserve phase-selected evidence, exact firm authority, decision bindings, approval reach, invalidation, reservation, execution, and submitted verification in signed order",
     );
   }
 
@@ -2001,7 +2092,20 @@ export function validateGoldenDemoSemantics(
   const gc15RevalidationAvailable = minorFromMajor(
     gc15Signed?.preExecutionRevalidation?.availableLiquidityUsd ?? null,
   );
+  const gc15InitialAvailable = minorFromMajor(
+    gc15Signed?.availableLiquidityUsd ?? null,
+  );
   const gc15ReserveFloor = minorFromMajor(gc15Signed?.reserveFloorUsd ?? null);
+  const initialGc15Headroom =
+    gc15InitialAvailable === null ||
+    gc15InitialPending === null ||
+    gc15ReserveFloor === null
+      ? null
+      : tryHeadroomMinor(
+          gc15InitialAvailable,
+          gc15InitialPending,
+          gc15ReserveFloor,
+        );
   const currentGc15Headroom =
     gc15RevalidationAvailable === null ||
     gc15RevalidationPending === null ||
@@ -2029,17 +2133,34 @@ export function validateGoldenDemoSemantics(
           gc15RevalidationPending,
           draftedGc15Floor,
         );
+  const initialDraftedGc15Headroom =
+    gc15InitialAvailable === null ||
+    gc15InitialPending === null ||
+    draftedGc15Floor === null
+      ? null
+      : tryHeadroomMinor(
+          gc15InitialAvailable,
+          gc15InitialPending,
+          draftedGc15Floor,
+        );
   if (
+    initialGc15Headroom === null ||
     currentGc15Headroom === null ||
+    initialDraftedGc15Headroom === null ||
     draftedGc15Headroom === null ||
-    demo.invalidationPolicySimulation.currentHeadroomMinor !==
+    demo.invalidationPolicySimulation.initialCurrentHeadroomMinor !==
+      initialGc15Headroom ||
+    demo.invalidationPolicySimulation.initialDraftedHeadroomMinor !==
+      initialDraftedGc15Headroom ||
+    demo.invalidationPolicySimulation.revalidatedCurrentHeadroomMinor !==
       currentGc15Headroom ||
-    demo.invalidationPolicySimulation.draftedHeadroomMinor !==
+    demo.invalidationPolicySimulation.revalidatedDraftedHeadroomMinor !==
       draftedGc15Headroom ||
+    lifecycle.initialComparisonHeadroomMinor !== initialGc15Headroom ||
     lifecycle.revalidatedComparisonHeadroomMinor !== currentGc15Headroom
   ) {
     problems.push(
-      "GC-15 comparison and policy simulation must use the latest pre-execution liquidity snapshot",
+      "GC-15 comparison and policy simulation must use the selected initial or pre-execution liquidity snapshot",
     );
   }
   return problems;

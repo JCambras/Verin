@@ -553,6 +553,22 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     page.getByRole("link", { name: "Continue under automatic authority" }),
   ).toBeVisible();
 
+  const invalidationContext =
+    "scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation";
+  await page.goto(`/app/demo/decision?${invalidationContext}`);
+  await expect(
+    page.getByRole("region", { name: "Recommended source" }),
+  ).toContainText("Balance 300000 USD at first evaluation.");
+  await expect(
+    page.getByRole("region", { name: "Alternatives considered" }),
+  ).toHaveCount(0);
+  await page.goto(`/app/demo/policy-authoring?${invalidationContext}`);
+  const initialPolicyHeadroom = page
+    .getByRole("row")
+    .filter({ hasText: "Available after reserve" });
+  await expect(initialPolicyHeadroom).toContainText("$252,000.00");
+  await expect(initialPolicyHeadroom).toContainText("$204,000.00");
+
   await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a");
   await expect(page.getByText(/Approved ·/)).toHaveCount(2);
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
@@ -560,6 +576,17 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.getByRole("link", { name: "Re-evaluate with current evidence" }).click();
   await expect(page.getByTestId("derived-decision")).toBeVisible();
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Recommended source" }),
+  ).toContainText(
+    "Available taxable liquidity remains 300000 USD at pre-execution revalidation.",
+  );
+  await expect(
+    page.getByRole("region", { name: "Recommended source" }),
+  ).not.toContainText("first evaluation");
+  await expect(
+    page.getByRole("region", { name: "Alternatives considered" }),
+  ).toHaveCount(0);
   await page.getByRole("link", { name: "Back to the evidence" }).click();
   await expect(page).toHaveURL(/pass=revalidated/);
   await expect(page.getByTestId("refreshed-evidence")).toBeVisible();
@@ -586,10 +613,28 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page).toHaveURL(/pass=revalidated/);
   await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
 
-  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
+  await page.goto(`/app/demo/record?${invalidationContext}`);
+  await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(6);
+  await expect(page.getByTestId("decision-binding")).toHaveCount(1);
+  await expect(page.getByText("Derived decision hash", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/idem:GC-15/)).toHaveCount(0);
+  await expect(page.getByText(/res:GC-15/)).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Execution" }),
+  ).toContainText("returned to Decision");
+  await expect(
+    page.getByRole("region", { name: "Execution" }),
+  ).not.toContainText("Submitted");
+  await expect(
+    page.getByRole("region", { name: "Verification state at time of export" }),
+  ).toContainText("returned to Decision");
+
+  await page.goto(`/app/demo/record?${invalidationContext}&pass=revalidated`);
   const lifecycle = page.getByTestId("signed-lifecycle-event");
   await expect(lifecycle).toHaveCount(13);
   await expect(page.getByTestId("decision-binding")).toHaveCount(2);
+  await expect(page.getByText(/idem:GC-15/).first()).toBeVisible();
+  await expect(page.getByText(/res:GC-15/).first()).toBeVisible();
   await expect(page.getByText("Original decision hash", { exact: true })).toBeVisible();
   await expect(page.getByText("Derived decision hash", { exact: true })).toBeVisible();
   await expect(page.getByText("Refreshed input-bundle hash", { exact: true })).toBeVisible();
@@ -608,6 +653,12 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "ExecutionSucceeded",
     "StatusObserved",
   ]);
+  await expect(
+    page.getByRole("region", { name: "Execution" }),
+  ).toContainText("Submitted");
+  await expect(
+    page.getByRole("region", { name: "Verification state at time of export" }),
+  ).toContainText("Submission accepted by the capability");
   const lifecycleInstants = await lifecycle.evaluateAll((rows) =>
     rows.map((row) => row.getAttribute("data-event-instant")),
   );
@@ -659,7 +710,9 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "ExceptionDecisionRequested",
   );
 
-  await page.goto("/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a");
+  await page.goto(
+    "/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a&pass=revalidated",
+  );
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$189,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$252,000.00", { exact: true })).toHaveCount(0);

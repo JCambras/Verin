@@ -3,6 +3,7 @@ import type { BlockerVM, WhyVM } from "./model";
 import { prov } from "./provenance";
 import {
   OBSERVED_RECENT,
+  evidenceForPass,
   sourceCaseFor,
   type FirmData,
   type JourneyPass,
@@ -19,15 +20,16 @@ export function liquidityInputs(
   firm: FirmData,
   pass: JourneyPass,
 ): readonly RecordProvenance[] {
-  const selected = sourceCaseFor(scenario, firm.id)?.evidence.filter(
+  const selected = evidenceForPass(
+    sourceCaseFor(scenario, firm.id),
+    pass,
+  ).filter(
     (entry) =>
       (entry.evidenceKind === "account-balance" ||
         entry.evidenceKind === "pending-actions" ||
-        entry.evidenceKind === "planned-withdrawals") &&
-      (pass === "revalidated" ||
-        entry.liquidityPhase !== "pre-execution-revalidation"),
+        entry.evidenceKind === "planned-withdrawals"),
   );
-  return selected?.length
+  return selected.length
     ? selected.map((entry) =>
         prov("synthetic-fixture", entry.observedAt),
       )
