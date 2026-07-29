@@ -356,7 +356,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   owned entry points rather than `package.json` scripts. Only a dedicated simple command can prove execution. Comments, echo arguments,
   short-circuited expressions, heredocs, compound commands, step names, environment values, and `uses:`
   paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
-  effective shell, an implicit shell on an unsupported runner, or a job carrying a non-empty `needs`
+  effective shell, any missing, dynamic, invalid, or unsupported runner regardless of an explicit
+  shell, or a job carrying a non-empty `needs`
   dependency. An unparseable
   workflow yields no jobs, so every `ci-gate` reads unmet rather than passing on a file nothing could read.
 - `parseCiJobs` is the repo's one structured CI authority, read by three call sites - the gate
@@ -369,7 +370,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   non-mutating animation settlement, complete scan, and direct unmodified-violations assertion are
   structurally pinned by that fence. Module/file/describe scope annotations and expected-failure tests
   cannot neutralize the required scans, including computed, destructured, aliased, and namespace-imported
-  annotation calls. Playwright configuration must be one effective configuration object, reject
+  annotation calls and aliases introduced by later simple assignments. Playwright configuration must be one effective configuration object, reject
   focused-test exclusion, and select the required specifications. Typed public, authenticated,
   and demo route groups bind each directly owned route loop to navigation plus its loaded-state marker.
   Optional assertion messages must be structurally side-effect-free. The

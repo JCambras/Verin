@@ -214,6 +214,7 @@ export interface CiJob {
 
 export interface CiStep {
   neutralizedBy?: string;
+  unsupportedRunner?: string;
   unsupportedShell?: string;
   unsupportedWorkingDirectory?: string;
   commands: string[];
@@ -289,11 +290,25 @@ function workflowTriggerProblem(doc: unknown): string | undefined {
   return undefined;
 }
 
-function shellProblem(shell: unknown, runsOn: unknown): string | undefined {
-  if (shell === undefined) {
-    if (typeof runsOn === "string" && /^(?:ubuntu|macos)-/i.test(runsOn)) return undefined;
-    return `implicit shell on unsupported runner '${String(runsOn)}'`;
-  }
+const SUPPORTED_POSIX_RUNNERS = new Set([
+  "ubuntu-latest",
+  "ubuntu-24.04",
+  "ubuntu-22.04",
+  "macos-latest",
+  "macos-15",
+  "macos-14",
+]);
+
+function runnerProblem(runsOn: unknown): string | undefined {
+  if (runsOn === undefined) return "missing runs-on";
+  if (typeof runsOn !== "string") return `non-string runs-on '${String(runsOn)}'`;
+  const normalized = runsOn.toLowerCase();
+  if (SUPPORTED_POSIX_RUNNERS.has(normalized)) return undefined;
+  return `unsupported or unschedulable runner '${runsOn}'`;
+}
+
+function shellProblem(shell: unknown): string | undefined {
+  if (shell === undefined) return undefined;
   if (typeof shell !== "string") return `non-string shell '${String(shell)}'`;
   const normalized = collapse(shell).toLowerCase();
   if (normalized === "bash" || normalized === "sh") return undefined;
@@ -395,9 +410,9 @@ function commandMatches(actual: readonly string[] | undefined, required: readonl
  * class here, and `continue-on-error: true` is its cheapest spelling: the command
  * still runs, its failure just stops mattering.
  *
- * Effective shell selection follows workflow defaults, job defaults, and step
- * overrides. Only implicit POSIX hosted-runner shells and the built-in `bash`
- * and `sh` shells are supported; every other shell fails closed.
+ * Effective runner and shell selection are validated independently. Only the
+ * supported POSIX hosted runners, their implicit shells, and the built-in
+ * `bash` and `sh` shells are accepted; every other shape fails closed.
  */
 export function parseCiJobs(yamlText: string): CiWorkflow {
   const jobs = new Map<string, CiJob>() as CiWorkflow;
@@ -422,22 +437,26 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
     const jobDirectory = configuredRunWorkingDirectory(job);
     const defaultDirectory = jobDirectory === undefined ? workflowDirectory : jobDirectory;
     const runsOn = (job as { "runs-on"?: unknown } | null)?.["runs-on"];
+    const unsupportedRunner = runnerProblem(runsOn);
     const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
       const run = (step as { run?: unknown } | null)?.run;
       if (typeof run !== "string") return [];
       const stepShell = (step as { shell?: unknown } | null)?.shell;
       const effectiveShell = stepShell === undefined ? defaultShell : stepShell;
-      const unsupportedShell = shellProblem(effectiveShell, runsOn);
+      const unsupportedShell = shellProblem(effectiveShell);
       const stepDirectory = (step as { "working-directory"?: unknown } | null)?.["working-directory"];
       const effectiveDirectory = stepDirectory === undefined ? defaultDirectory : stepDirectory;
       const unsupportedWorkingDirectory = workingDirectoryProblem(effectiveDirectory);
       const simple =
-        unsupportedShell === undefined && unsupportedWorkingDirectory === undefined
+        unsupportedRunner === undefined &&
+        unsupportedShell === undefined &&
+        unsupportedWorkingDirectory === undefined
           ? simpleShellCommand(run)
           : undefined;
       return [
         {
           ...(neutralizerOf(step) === undefined ? {} : { neutralizedBy: neutralizerOf(step) }),
+          ...(unsupportedRunner === undefined ? {} : { unsupportedRunner }),
           ...(unsupportedShell === undefined ? {} : { unsupportedShell }),
           ...(unsupportedWorkingDirectory === undefined ? {} : { unsupportedWorkingDirectory }),
           commands: shellCommandLines(run),
@@ -467,6 +486,7 @@ export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
     job.steps.some(
       (step) =>
         step.neutralizedBy === undefined &&
+        step.unsupportedRunner === undefined &&
         step.unsupportedShell === undefined &&
         step.unsupportedWorkingDirectory === undefined &&
         step.blockingCommand !== undefined,
@@ -480,6 +500,7 @@ export type CiCommandStatus =
   | { state: "invalid-command" }
   | { state: "inactive-workflow"; reason: string }
   | { state: "neutralized"; reason: string }
+  | { state: "unsafe-runner"; reason: string }
   | { state: "unsafe-shell"; reason?: string }
   | { state: "unsafe-working-directory"; reason: string }
   | { state: "missing-command" };
@@ -507,6 +528,10 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   if (neutralized?.neutralizedBy !== undefined) {
     return { state: "neutralized", reason: `step ${neutralized.neutralizedBy}` };
   }
+  const unsupportedRunner = relevant.find((step) => step.unsupportedRunner !== undefined);
+  if (unsupportedRunner?.unsupportedRunner !== undefined) {
+    return { state: "unsafe-runner", reason: unsupportedRunner.unsupportedRunner };
+  }
   const unsupported = relevant.find((step) => step.unsupportedShell !== undefined);
   if (unsupported?.unsupportedShell !== undefined) {
     return { state: "unsafe-shell", reason: unsupported.unsupportedShell };
@@ -532,6 +557,8 @@ export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: 
       return `ci workflow does not provide normal blocking evidence: ${status.reason}`;
     case "neutralized":
       return `ci job '${ref}' command '${command}' is neutralized by ${status.reason}`;
+    case "unsafe-runner":
+      return `ci job '${ref}' command '${command}' uses ${status.reason}`;
     case "unsafe-shell":
       return status.reason === undefined
         ? `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`

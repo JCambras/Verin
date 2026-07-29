@@ -6324,6 +6324,14 @@ literal property names at root and project scope and fails closed on unresolved 
 capture names its station and verifies that station's URL and loaded marker before the screenshot.
 PF-001, PF-030, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
 
+The captain-approved runner-and-alias review (2026-07-29) amended ADR-0030 in place a twelfth time:
+**(1)** CI evidence validates the effective `runs-on` value independently of shell selection, so an
+explicit `bash` or `sh` cannot make a missing, non-string, dynamic, unsupported, or unschedulable runner
+look executable; and **(2)** the Playwright neutralizer resolver follows the latest preceding simple
+assignment for named imports, namespace imports, and member aliases, including typed `let`
+declarations. PF-030 and PF-031 record the red reproductions, focused companions, and restored green
+proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

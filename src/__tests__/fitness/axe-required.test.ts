@@ -82,6 +82,24 @@ function isDirectNamespaceImportIdentifier(node: Node, moduleName: string): bool
   );
 }
 
+function latestPrecedingAssignment(node: Node): Node | undefined {
+  if (!Node.isIdentifier(node)) return undefined;
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return undefined;
+  return node
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < node.getStart() &&
+        Node.isIdentifier(candidate.getLeft()) &&
+        candidate.getLeft().getSymbol() === symbol,
+    )
+    .sort((left, right) => right.getStart() - left.getStart())[0]
+    ?.getRight();
+}
+
 function isNamespaceImportIdentifier(
   node: Node,
   moduleName: string,
@@ -91,6 +109,13 @@ function isNamespaceImportIdentifier(
   seen.add(node);
   if (isDirectNamespaceImportIdentifier(node, moduleName)) return true;
   if (!Node.isIdentifier(node)) return false;
+  const assigned = latestPrecedingAssignment(node);
+  if (
+    assigned !== undefined &&
+    isNamespaceImportIdentifier(assigned, moduleName, new Set(seen))
+  ) {
+    return true;
+  }
   return (
     node
       .getSymbol()
@@ -123,6 +148,18 @@ function isNamedImportIdentifier(
     return true;
   }
   if (!Node.isIdentifier(node)) return false;
+  const assigned = latestPrecedingAssignment(node);
+  if (
+    assigned !== undefined &&
+    isNamedImportIdentifier(
+      assigned,
+      moduleName,
+      imported,
+      new Set(seen),
+    )
+  ) {
+    return true;
+  }
   return (
     node
       .getSymbol()
@@ -265,6 +302,19 @@ function isNamedImportMemberExpression(
     return true;
   }
   if (!Node.isIdentifier(node)) return false;
+  const assigned = latestPrecedingAssignment(node);
+  if (
+    assigned !== undefined &&
+    isNamedImportMemberExpression(
+      assigned,
+      moduleName,
+      imported,
+      member,
+      new Set(seen),
+    )
+  ) {
+    return true;
+  }
   return (
     node
       .getSymbol()
@@ -1054,6 +1104,7 @@ pw.test("axe", async ({ page }) => {
         wrap(`test.describe("group", () => { test.beforeEach(() => test.${"skip"}()); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
         wrap(`test("axe", async ({ page }) => { test.${"skip"}(); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { test.${"fail"}(); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { let disable: typeof test.${"fail"}; disable = test.${"fail"}; disable(); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
@@ -1173,6 +1224,44 @@ test("axe", async ({ page }) => {
         'pw.test["skip"](() => true, "file disabled");',
         'const check = pw.test; const disable = check.fixme; disable(() => true, "file disabled");',
         'const { test: check } = pw; const { ["fail"]: disable } = check; disable(() => true, "expected failure");',
+      ];
+      for (const neutralizer of neutralizers) {
+        const spec = `import { expect, test } from "@playwright/test";
+import * as pw from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+${neutralizer}
+test("axe", async ({ page }) => {
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+        expect(
+          axeCoverageProblems(
+            completeSources({ "e2e/smoke.spec.ts": spec }),
+          ),
+          spec,
+        ).toContain(
+          "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+        );
+      }
+    });
+
+    it("rejects Playwright neutralizer aliases introduced by later assignments", () => {
+      const neutralizers = [
+        `let disable: typeof test.${"skip"};
+disable = test.${"skip"};
+disable(true, "file disabled");`,
+        `let disable: typeof test.${"fixme"};
+disable = test["${"fixme"}"];
+disable(true, "file disabled");`,
+        `let check: typeof pw.test;
+check = pw.test;
+let disable: typeof check.fail;
+disable = check.fail;
+disable(true, "expected failure");`,
       ];
       for (const neutralizer of neutralizers) {
         const spec = `import { expect, test } from "@playwright/test";

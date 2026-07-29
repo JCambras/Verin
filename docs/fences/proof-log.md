@@ -10478,3 +10478,52 @@ write.
 passed both tests, and the combined focused run passed all 12 tests.
 
 **Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).
+
+### PF-030 (continued, 12th review round) · runner schedulability is independent of shell selection
+
+**Invariant (ADR-0030):** a mapped CI command is evidence only when its job names a supported,
+schedulable POSIX GitHub-hosted runner. An explicit shell cannot substitute for `runs-on`.
+
+**Injection 12 - remove the runner while keeping an explicit shell.** Removed
+`runs-on: ubuntu-latest` from the real `v3-invariants` job and added `shell: bash` to its mapped
+command step.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)
+AssertionError: v3-invariants: expected false to be true
+```
+
+**Companion added:** in-memory workflows reject missing, non-string, dynamic, unsupported, and
+unschedulable runner labels even when the mapped step explicitly selects `bash`. Supported Ubuntu and
+macOS labels still prove the command.
+
+**Revert:** the real runner declaration and implicit shell were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · Playwright aliases assigned after declaration
+
+**Invariant (charter #9):** a required Axe specification cannot be neutralized through a Playwright
+annotation alias assigned after its declaration.
+
+**Injection 9 - assign a typed neutralizer alias later.** Added the following module-scope statements
+to the real public Axe specification:
+```ts
+let disable: typeof test.skip;
+disable = test.skip;
+disable(true, "file disabled");
+```
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications reject direct, computed-member, and
+namespace-member neutralizer aliases introduced by later typed assignments.
+
+**Revert:** the three injected statements were removed immediately.
+
+**Date:** 2026-07-29.

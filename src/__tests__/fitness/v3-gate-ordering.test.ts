@@ -755,7 +755,43 @@ describe("v3 gate-ordering fence", () => {
           "audit-chain-verify",
           "pnpm audit:chain",
         ),
-      ).toEqual({ state: "unsafe-shell", reason: "implicit shell on unsupported runner 'undefined'" });
+      ).toEqual({ state: "unsafe-runner", reason: "missing runs-on" });
+    });
+
+    it("validates runner schedulability independently of explicit shell selection", () => {
+      const workflow = (runsOn: string | undefined) =>
+        parseCiFixture(
+          [
+            "jobs:",
+            "  audit-chain-verify:",
+            ...(runsOn === undefined ? [] : [`    runs-on: ${runsOn}`]),
+            "    steps:",
+            "      - shell: bash",
+            "        run: pnpm audit:chain",
+            "",
+          ].join("\n"),
+        );
+      for (const [runsOn, reason] of [
+        [undefined, "missing runs-on"],
+        ["42", "non-string runs-on '42'"],
+        ["windows-latest", "unsupported or unschedulable runner 'windows-latest'"],
+        ["ubuntu-never", "unsupported or unschedulable runner 'ubuntu-never'"],
+        ['" ubuntu-latest "', "unsupported or unschedulable runner ' ubuntu-latest '"],
+        ['"${{ matrix.os }}"', "unsupported or unschedulable runner '${{ matrix.os }}'"],
+      ] as const) {
+        const jobs = workflow(runsOn);
+        expect(
+          ciJobCommandStatus(jobs, "audit-chain-verify", "pnpm audit:chain"),
+          String(runsOn),
+        ).toEqual({ state: "unsafe-runner", reason });
+        expect(ciJobBlocks(jobs, "audit-chain-verify"), String(runsOn)).toBe(false);
+      }
+      for (const runsOn of ["ubuntu-latest", "ubuntu-24.04", "macos-15"]) {
+        expect(
+          ciJobCommandStatus(workflow(runsOn), "audit-chain-verify", "pnpm audit:chain"),
+          runsOn,
+        ).toEqual({ state: "proven" });
+      }
     });
 
     it("refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)", () => {
