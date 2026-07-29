@@ -276,12 +276,15 @@ or exclude configuration drifts.
   are non-evidence. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
   Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
-  executable instrumentation. Charter-drift uses symbol-aware Vitest registration analysis for computed,
+  executable instrumentation, executable parameter defaults, or anything but exactly two plain
+  parameters and the side-effect-free `{ page }` builder configuration. Charter-drift uses symbol-aware Vitest registration analysis for computed,
   aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
   preserving locally shadowed application callables. Registration option objects and unshadowed
-  `globalThis` paths are included. Axe route collections are non-empty declarative frozen literals;
+  `globalThis` and Node `global` paths are included, and `.each`/`.for` case collections must be
+  statically non-empty. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
-  callables, and unresolved computed ambient CommonJS loaders are non-evidence.
+  callables, member writes, and direct or aliased `Object.assign` mutations, and unresolved computed
+  ambient CommonJS loaders are non-evidence.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

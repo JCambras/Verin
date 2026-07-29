@@ -6480,6 +6480,16 @@ contents cannot vary by process; and **(6)** concrete Axe URLs are assigned thro
 so a static page cannot falsely cover an overlapping dynamic page. PF-001, PF-002, and PF-031 record the
 real red reproductions, companions, and restored proofs.
 
+The captain-approved callable-member, helper-syntax, and parameterized-registration review (2026-07-29)
+amended ADR-0030 in place a twenty-seventh time: **(1)** Playwright hook provenance follows member
+assignments and direct or aliased `Object.assign` mutations through object aliases; **(2)** the
+sanctioned Axe helper requires exactly two plain parameters and exactly the side-effect-free `{ page }`
+builder configuration; **(3)** Node `global` is treated as the same unshadowed Vitest authority as
+`globalThis`; and **(4)** `.each` and `.for` registrations require statically non-empty case
+collections, including tagged tables, while empty, spread-derived, and unresolved collections are
+non-evidence. PF-001 and PF-031 record the real red injections, focused companions, and restored green
+proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

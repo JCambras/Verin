@@ -11691,3 +11691,77 @@ strict literal route manifests, and both failing and healthy static-versus-dynam
 restored focused charter, dependency, and Axe run passed all 122 tests.
 
 **Date:** 2026-07-29.
+
+### PF-031 (continued) · mutable hook wrappers and exact Axe helper syntax
+
+**Invariant (charter #9 / ADR-0030):** a reachable Axe evidence module cannot register a Playwright
+hook through a mutable object wrapper, and the sanctioned helper cannot execute hidden syntax before
+or during the scan.
+
+**Injection 1:** added a mutable `injectedHooks` object to `e2e/helpers.ts`, assigned
+`test.beforeEach` through `injectedHooks.install`, and invoked the member.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2:** repeated the real injection through an alias of `Object.assign`, then invoked the
+mutated member through the original object.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 3:** added an executable third default parameter to `e2e/axe.ts` and spread an invoked
+expression after `page` in the Axe builder configuration.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+The pre-fix focused companions accepted all three forms. The first red companion run failed on the
+member assignment and executable default, confirming both prior false-green paths before the shared
+provenance and helper-shape fixes landed.
+
+**Companions added:** mutable member writes, member writes through object aliases, direct and aliased
+`Object.assign`, executable parameter defaults, and invoked builder spreads. Existing literal,
+spread-wrapper, destructured, bound, reflective, and transitive callable cases remain enforced.
+
+**Revert:** restored `e2e/helpers.ts` and `e2e/axe.ts` exactly. The restored focused Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · Node global and parameterized Vitest registration coverage
+
+**Invariant (charter operating model / ADR-0030):** a fitness fence cannot be neutralized through
+Node's alias of the global object or through a parameterized registration that produces zero tests.
+
+**Injection 1:** added `(global as any).describe.skip(...)` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:28 disabled/focused Vitest registration describe.skip
+```
+
+**Injection 2:** replaced that injection with `describe.each([])(...)` in the same real fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:28 disabled/focused Vitest registration describe.each
+```
+
+The pre-fix focused companion accepted Node `global`, an empty case list, and an unresolved case
+collection. The real injections make both enforcement paths fail with file and line evidence.
+
+**Companions added:** direct and aliased Node `global` registrations, local-shadow preservation,
+empty direct and aliased `.each`/`.for` collections, spread-derived and unresolved collections,
+non-empty literal and frozen collections, and empty versus non-empty tagged tables.
+
+**Revert:** removed both real injections. The restored focused charter-drift fence passed.
+
+**Date:** 2026-07-29.

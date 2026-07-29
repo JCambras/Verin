@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, and the captain-approved registration-option, declarative-route, and precedence review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, and the captain-approved callable-member, helper-syntax, and parameterized-registration review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -261,8 +261,12 @@ Axe runtime outside the exact sanctioned helper. Unresolved local imports and no
 imports are non-evidence. Bare runtime imports must
 either resolve through the directly parseable TypeScript path configuration or belong to the exact
 Playwright/Axe dependency allowlist.
-Playwright hook provenance also follows callable values through statically named object properties, so
-binding a hook into an object and invoking that property cannot hide registration. The four Axe route
+Playwright hook provenance also follows callable values through statically named object properties,
+member assignments, and direct or aliased `Object.assign` calls, including when the object itself is
+invoked through an alias. Binding a hook into a mutable wrapper therefore cannot hide registration.
+The sanctioned Axe helper has exactly two plain parameters and its builder receives exactly the
+side-effect-free shorthand object `{ page }`; parameter defaults, rest or destructured parameters,
+computed configuration, spreads, and extra properties are non-evidence. The four Axe route
 collections are accepted only as non-empty, directly frozen literal lists of directly frozen literal
 entries in a runtime-branch-free module. Their contents therefore cannot differ between the Vitest and
 Playwright processes. Route inventory uses Next's installed route ordering to assign each concrete URL
@@ -478,10 +482,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Vitest registration analysis follows computed and aliased `todo`, `fails`, `skipIf`, and `runIf`
   chains from imported authorities and the unshadowed `describe`, `suite`, `test`, and `it` globals
   enabled by the repository configuration. Locally shadowed application callables remain outside the
-  Vitest provenance graph. The same provenance follows unshadowed `globalThis` member paths and inspects
+  Vitest provenance graph. The same provenance follows unshadowed `globalThis` and Node `global` member paths and inspects
   registration option objects for `skip`, `only`, `todo`, and `fails`. Dynamic option keys, spreads, and
   neutralizing values that are not statically false are non-evidence. Unknown conditional state is
-  non-evidence. The Axe helper admits no
+  non-evidence. Parameterized `.each` and `.for` registrations require a statically non-empty collection;
+  empty, spread-derived, or unresolved collections are non-evidence, while tagged tables require a
+  header and at least one static row. The Axe helper admits no
   module-scope executable statement that could replace its analysis method, and required specifications
   cannot import the Axe runtime directly.
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
@@ -527,7 +533,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   or a page shadowed by a more specific route fails the fence.
 - Charter-drift disabled-fence detection parses Vitest registrations with symbol-aware AST provenance,
   including computed members, namespace imports, imported aliases, assigned aliases, unshadowed globals,
-  `globalThis` member paths, the `suite` alias, x-prefixed registrations, and neutralizing registration
+  `globalThis` and Node `global` member paths, the `suite` alias, x-prefixed registrations, and neutralizing registration
   options. String mentions and unrelated local functions are not evidence.
 - The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
   Axe-specific charter proof is PF-031.

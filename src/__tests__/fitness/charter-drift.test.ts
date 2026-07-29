@@ -437,6 +437,7 @@ interface VitestCallablePath {
     modifier: "skipIf" | "runIf";
     value?: boolean;
   }>;
+  caseCollections: Array<boolean | undefined>;
 }
 
 const VITEST_REGISTRATION_BASES = new Set([
@@ -455,7 +456,7 @@ function isVitestGlobalObject(
   seen.add(normalized);
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   if (
-    normalized.getText() === "globalThis" &&
+    ["globalThis", "global"].includes(normalized.getText()) &&
     !declarations.some(
       (declaration) =>
         declaration.getSourceFile() === normalized.getSourceFile(),
@@ -483,6 +484,33 @@ function vitestCallablePaths(
   const normalized = unwrapRegistrationExpression(node);
   if (seen.has(normalized)) return [];
   seen.add(normalized);
+  if (Node.isTaggedTemplateExpression(normalized)) {
+    const paths = vitestCallablePaths(
+      normalized.getTag(),
+      new Set(seen),
+    );
+    const template = normalized.getTemplate();
+    const literalText = Node.isNoSubstitutionTemplateLiteral(template)
+      ? template.getLiteralText()
+      : `${template.getHead().getLiteralText()}${template
+          .getTemplateSpans()
+          .map((span) => `value${span.getLiteral().getLiteralText()}`)
+          .join("")}`;
+    return paths.map((path) => {
+      const modifier = path.members.at(-1);
+      if (modifier !== "each" && modifier !== "for") return path;
+      const rows = literalText
+        .split(/\r?\n/)
+        .filter((row) => row.trim() !== "");
+      return {
+        ...path,
+        caseCollections: [
+          ...path.caseCollections,
+          rows.length >= 2,
+        ],
+      };
+    });
+  }
   if (Node.isCallExpression(normalized)) {
     const paths = vitestCallablePaths(
       normalized.getExpression(),
@@ -490,6 +518,17 @@ function vitestCallablePaths(
     );
     return paths.map((path) => {
       const modifier = path.members.at(-1);
+      if (modifier === "each" || modifier === "for") {
+        return {
+          ...path,
+          caseCollections: [
+            ...path.caseCollections,
+            staticRegistrationCaseCollection(
+              normalized.getArguments()[0],
+            ),
+          ],
+        };
+      }
       if (modifier !== "skipIf" && modifier !== "runIf") return path;
       return {
         ...path,
@@ -516,7 +555,7 @@ function vitestCallablePaths(
   }
   if (!Node.isIdentifier(normalized)) return [];
   if (isVitestGlobalObject(normalized)) {
-    return [{ members: [], conditions: [] }];
+    return [{ members: [], conditions: [], caseCollections: [] }];
   }
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   const imported = declarations.flatMap(
@@ -526,7 +565,11 @@ function vitestCallablePaths(
         .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
         ?.getModuleSpecifierValue();
       return moduleName === "vitest"
-        ? [{ members: [declaration.getName()], conditions: [] }]
+        ? [{
+            members: [declaration.getName()],
+            conditions: [],
+            caseCollections: [],
+          }]
         : [];
     }
     if (Node.isNamespaceImport(declaration)) {
@@ -534,7 +577,7 @@ function vitestCallablePaths(
         .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
         ?.getModuleSpecifierValue();
       return moduleName === "vitest"
-        ? [{ members: [], conditions: [] }]
+        ? [{ members: [], conditions: [], caseCollections: [] }]
         : [];
     }
     if (Node.isVariableDeclaration(declaration)) {
@@ -577,6 +620,7 @@ function vitestCallablePaths(
           {
             members: [normalized.getText()],
             conditions: [],
+            caseCollections: [],
           },
         ]
       : []),
@@ -589,6 +633,65 @@ const NEUTRALIZING_VITEST_OPTIONS = new Set([
   "todo",
   "fails",
 ]);
+
+function staticRegistrationCaseCollection(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): boolean | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (Node.isArrayLiteralExpression(normalized)) {
+    return normalized.getElements().some(Node.isSpreadElement)
+      ? undefined
+      : normalized.getElements().length > 0;
+  }
+  if (Node.isCallExpression(normalized)) {
+    const member = staticRegistrationMember(normalized.getExpression());
+    if (
+      member?.name === "freeze" &&
+      Node.isIdentifier(member.receiver) &&
+      member.receiver.getText() === "Object" &&
+      !member.receiver
+        .getSymbol()
+        ?.getDeclarations()
+        .some(
+          (declaration) =>
+            declaration.getSourceFile() === normalized.getSourceFile(),
+        )
+    ) {
+      return staticRegistrationCaseCollection(
+        normalized.getArguments()[0],
+        new Set(seen),
+      );
+    }
+    return undefined;
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingRegistrationAssignments(normalized),
+  ];
+  const values = sources.map((source) =>
+    staticRegistrationCaseCollection(source, new Set(seen)),
+  );
+  if (
+    values.length === 0 ||
+    values.some((value) => value === undefined) ||
+    new Set(values).size !== 1
+  ) {
+    return undefined;
+  }
+  return values[0];
+}
 
 function registrationOptionPropertyName(node: Node): string | undefined {
   if (Node.isIdentifier(node) || Node.isStringLiteral(node)) {
@@ -678,6 +781,9 @@ function disabledVitestRegistrationProblemsInFile(
             (modifier === "skipIf" && value !== false) ||
             (modifier === "runIf" && value !== true),
         );
+        const emptyOrUnresolvedCases = path.caseCollections.some(
+          (nonEmpty) => nonEmpty !== true,
+        );
         const isDisabled =
           (members.length === 1 && xPrefixed.has(members[0]!)) ||
           ((VITEST_REGISTRATION_BASES.has(members[0]!) ||
@@ -689,6 +795,7 @@ function disabledVitestRegistrationProblemsInFile(
               ) ||
               members.slice(1).includes("*") ||
               conditionallyDisabled ||
+              emptyOrUnresolvedCases ||
               registrationOptionsAreUnsafe(call)));
         return isDisabled
           ? [
@@ -832,8 +939,20 @@ test("spread options", { ...base }, () => {});`,
       `const root = globalThis;
 root.describe.skip("global alias disabled", () => {});`,
       `(globalThis as any).suite["only"]("global object focused", () => {});`,
+      `(global as any).describe.skip("node global disabled", () => {});`,
+      `const root = global;
+root.suite.only("node global alias focused", () => {});`,
       `const registration = Math.random() > 0.5 ? "describe" : "suite";
 (globalThis as any)[registration].skip("dynamic global registration", () => {});`,
+      `describe.each([])("empty parameterized suite", () => {});`,
+      `test.for([])("empty parameterized test", () => {});`,
+      `const cases: unknown[] = [];
+suite.each(cases)("empty aliased cases", () => {});`,
+      `const cases = [1];
+it.each([...cases])("spread cases", () => {});`,
+      `const cases = Math.random() > 0.5 ? [1] : [];
+test.for(cases)("dynamic parameterized test", () => {});`,
+      "describe.each``(\"empty tagged suite\", () => {});",
     ];
     for (const source of disabled) {
       expect(
@@ -861,6 +980,18 @@ test.runIf(true)("runs too", () => {});`,
     ).toEqual([]);
     expect(
       disabledVitestRegistrationProblems(
+        `describe.each([[1], [2]])("enabled cases", () => {});
+test.for([{ value: 1 }])("enabled case", () => {});
+it.each(Object.freeze([[1]]))("frozen enabled case", () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        "it.each`value\n${1}`(\"enabled tagged case\", () => {});",
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
         `const suite = { skip: (_name: string, fn: () => void) => fn() };
 suite.skip("application suite", () => {});`,
       ),
@@ -878,6 +1009,15 @@ suite.skip("application suite", () => {});`,
   describe: { skip: (name: string, fn: () => void) => void };
 }) {
   globalThis.describe.skip("application suite", () => {});
+}`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `function register(global: {
+  describe: { skip: (name: string, fn: () => void) => void };
+}) {
+  global.describe.skip("application suite", () => {});
 }`,
       ),
     ).toEqual([]);

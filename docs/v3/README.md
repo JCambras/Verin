@@ -161,16 +161,20 @@ complete runtime local import graph, including the named roots, is inspected thr
 re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
 module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
 unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
-Playwright hook provenance follows callable values stored in object properties. Bare runtime dependencies
+Playwright hook provenance follows callable values stored in object properties, member assignments, and
+direct or aliased `Object.assign` mutations through object aliases. Bare runtime dependencies
 are restricted to configured local paths and the exact Playwright/Axe allowlist. The
-sanctioned helper admits no module-scope executable statement that could replace its analysis method.
+sanctioned helper admits no module-scope executable statement that could replace its analysis method,
+requires exactly two plain parameters, and admits only the side-effect-free `{ page }` builder
+configuration.
 The route collections are non-empty declarative frozen literals, so Vitest and Playwright consume the
 same contents, and concrete URLs are assigned to their winning Next route before page coverage is
 credited. Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
 disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
-members, aliases, the `suite` registration alias, unshadowed Vitest globals and `globalThis` paths,
-neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while preserving locally
-shadowed application callables.
+members, aliases, the `suite` registration alias, unshadowed Vitest globals, `globalThis`, and Node
+`global` paths, neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while
+preserving locally shadowed application callables. Parameterized `.each` and `.for` registrations must
+carry statically non-empty case collections.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

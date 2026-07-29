@@ -906,6 +906,223 @@ function normalizedObjectProperties(
   return properties;
 }
 
+function objectAliasSources(node: Node): Node[] {
+  const normalized = unwrapExpression(node);
+  if (Node.isIdentifier(normalized)) {
+    return [
+      ...(normalized
+        .getSymbol()
+        ?.getDeclarations()
+        .flatMap((declaration) => {
+          if (Node.isVariableDeclaration(declaration)) {
+            const initializer = declaration.getInitializer();
+            return initializer === undefined ? [] : [initializer];
+          }
+          if (!Node.isBindingElement(declaration)) return [];
+          const property =
+            declaration.getPropertyNameNode() ?? declaration.getNameNode();
+          const name = staticPropertyName(property);
+          const variable = declaration.getFirstAncestorByKind(
+            SyntaxKind.VariableDeclaration,
+          );
+          const initializer = variable?.getInitializer();
+          return name === undefined || initializer === undefined
+            ? []
+            : objectPropertySources(initializer, name);
+        }) ?? []),
+      ...precedingAssignmentValues(normalized),
+    ];
+  }
+  if (
+    Node.isCallExpression(normalized) &&
+    isObjectAssignCallable(normalized.getExpression())
+  ) {
+    const target = normalized.getArguments()[0];
+    return target === undefined ? [] : [target];
+  }
+  return [];
+}
+
+function sameObjectReference(
+  left: Node,
+  right: Node,
+): boolean {
+  const leftKeys = objectReferenceKeys(left);
+  return [...objectReferenceKeys(right)].some((key) =>
+    leftKeys.has(key),
+  );
+}
+
+function objectReferenceKeys(
+  node: Node,
+  seen = new Set<Node>(),
+): Set<string> {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return new Set();
+  seen.add(normalized);
+  if (Node.isIdentifier(normalized)) {
+    const keys = new Set<string>();
+    const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+    if (declarations.length > 0) {
+      keys.add(
+        `symbol:${declarations
+          .map(
+            (declaration) =>
+              `${declaration.getSourceFile().getFilePath()}:${declaration.getStart()}`,
+          )
+          .sort()
+          .join("|")}`,
+      );
+    }
+    for (const source of objectAliasSources(normalized)) {
+      for (const key of objectReferenceKeys(source, new Set(seen))) {
+        keys.add(key);
+      }
+    }
+    return keys;
+  }
+  const access = memberAccess(normalized);
+  if (access !== undefined) {
+    const keys = new Set(
+      [...objectReferenceKeys(access.receiver, new Set(seen))].map(
+        (key) => `member:${key}:${access.name}`,
+      ),
+    );
+    for (const source of objectPropertySources(
+      access.receiver,
+      access.name,
+    )) {
+      for (const key of objectReferenceKeys(source, new Set(seen))) {
+        keys.add(key);
+      }
+    }
+    return keys;
+  }
+  if (
+    Node.isCallExpression(normalized) &&
+    isObjectAssignCallable(normalized.getExpression())
+  ) {
+    const target = normalized.getArguments()[0];
+    return target === undefined
+      ? new Set()
+      : objectReferenceKeys(target, new Set(seen));
+  }
+  return new Set([
+    `node:${normalized.getSourceFile().getFilePath()}:${normalized.getStart()}`,
+  ]);
+}
+
+function isObjectAssignCallable(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  const access = memberAccess(normalized);
+  if (
+    access?.name === "assign" &&
+    isUnshadowedGlobal(access.receiver, "Object")
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(normalized)) return false;
+  return objectAliasSources(normalized).some((source) =>
+    isObjectAssignCallable(source, new Set(seen)),
+  );
+}
+
+interface ObjectPropertyMutationIndex {
+  assignments: Array<{
+    before: number;
+    receiver: Node;
+    name: string;
+    value: Node;
+  }>;
+  merges: Array<{
+    before: number;
+    target: Node;
+    sources: Node[];
+  }>;
+}
+
+const OBJECT_PROPERTY_MUTATION_CACHE = new WeakMap<
+  SourceFile,
+  ObjectPropertyMutationIndex
+>();
+
+function objectPropertyMutationIndex(
+  sourceFile: SourceFile,
+): ObjectPropertyMutationIndex {
+  const cached = OBJECT_PROPERTY_MUTATION_CACHE.get(sourceFile);
+  if (cached !== undefined) return cached;
+  const assignments = sourceFile
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .flatMap((candidate) => {
+      if (
+        candidate.getOperatorToken().getKind() !== SyntaxKind.EqualsToken
+      ) {
+        return [];
+      }
+      const target = memberAccess(candidate.getLeft());
+      return target === undefined
+        ? []
+        : [{
+            before: candidate.getStart(),
+            receiver: target.receiver,
+            name: target.name,
+            value: candidate.getRight(),
+          }];
+    });
+  const index: ObjectPropertyMutationIndex = {
+    assignments,
+    merges: [],
+  };
+  OBJECT_PROPERTY_MUTATION_CACHE.set(sourceFile, index);
+  index.merges.push(...sourceFile
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .flatMap((call) => {
+      if (!isObjectAssignCallable(call.getExpression())) return [];
+      const [target, ...sources] = call.getArguments();
+      return target === undefined
+        ? []
+        : [{
+            before: call.getStart(),
+            target,
+            sources,
+          }];
+    }));
+  return index;
+}
+
+function precedingObjectPropertyValues(
+  receiver: Node,
+  name: string,
+): Node[] {
+  const before = receiver.getStart();
+  const index = objectPropertyMutationIndex(receiver.getSourceFile());
+  const assigned = index.assignments
+    .filter(
+      (candidate) =>
+        candidate.before < before &&
+        candidate.name === name &&
+        sameObjectReference(candidate.receiver, receiver),
+    )
+    .map((candidate) => candidate.value);
+  const merged = index.merges
+    .filter(
+      (merge) =>
+        merge.before < before &&
+        sameObjectReference(merge.target, receiver),
+    )
+    .flatMap((merge) =>
+      merge.sources.flatMap((source) =>
+        objectPropertySources(source, name),
+      ),
+    );
+  return [...assigned, ...merged];
+}
+
 function objectPropertySources(
   receiver: Node,
   name: string,
@@ -914,6 +1131,7 @@ function objectPropertySources(
   const value = unwrapExpression(receiver);
   if (seen.has(value)) return [];
   seen.add(value);
+  const assigned = precedingObjectPropertyValues(value, name);
   if (Node.isIdentifier(value)) {
     const sources = [
       ...(value
@@ -926,12 +1144,39 @@ function objectPropertySources(
         }) ?? []),
       ...precedingAssignmentValues(value),
     ];
-    return sources.flatMap((source) =>
-      objectPropertySources(source, name, new Set(seen)),
-    );
+    return [
+      ...assigned,
+      ...sources.flatMap((source) =>
+        objectPropertySources(source, name, new Set(seen)),
+      ),
+    ];
   }
-  if (!Node.isObjectLiteralExpression(value)) return [];
-  return value.getProperties().flatMap((property) => {
+  if (
+    Node.isCallExpression(value) &&
+    isObjectAssignCallable(value.getExpression())
+  ) {
+    return [
+      ...assigned,
+      ...value.getArguments().flatMap((source) =>
+        objectPropertySources(source, name, new Set(seen)),
+      ),
+    ];
+  }
+  const access = memberAccess(value);
+  if (access !== undefined) {
+    return [
+      ...assigned,
+      ...objectPropertySources(
+        access.receiver,
+        access.name,
+        new Set(seen),
+      ).flatMap((source) =>
+        objectPropertySources(source, name, new Set(seen)),
+      ),
+    ];
+  }
+  if (!Node.isObjectLiteralExpression(value)) return assigned;
+  return [...assigned, ...value.getProperties().flatMap((property) => {
     if (Node.isSpreadAssignment(property)) {
       return objectPropertySources(
         property.getExpression(),
@@ -957,7 +1202,7 @@ function objectPropertySources(
         });
     }
     return [];
-  });
+  })];
 }
 
 function objectPropertyValueSources(
@@ -2060,9 +2305,12 @@ function pageArgumentUsesParameter(call: CallExpression, pageName: string): bool
   if (!Node.isNewExpression(created)) return false;
   const config = created.getArguments()[0];
   if (!Node.isObjectLiteralExpression(config)) return false;
-  const page = config.getProperty("page");
-  if (Node.isShorthandPropertyAssignment(page)) return page.getName() === pageName;
-  return Node.isPropertyAssignment(page) && page.getInitializer()?.getText() === pageName;
+  const properties = config.getProperties();
+  return (
+    properties.length === 1 &&
+    Node.isShorthandPropertyAssignment(properties[0]) &&
+    properties[0].getName() === pageName
+  );
 }
 
 function configuredAxeAnalysis(
@@ -2259,7 +2507,20 @@ function helperIsSanctioned(sourceFile: SourceFile): boolean {
     return false;
   }
   const body = helper.getBody();
-  const pageName = helper.getParameters()[0]?.getName();
+  const parameters = helper.getParameters();
+  if (
+    parameters.length !== 2 ||
+    parameters.some(
+      (parameter) =>
+        !Node.isIdentifier(parameter.getNameNode()) ||
+        parameter.getInitializer() !== undefined ||
+        parameter.isRestParameter() ||
+        parameter.hasQuestionToken(),
+    )
+  ) {
+    return false;
+  }
+  const pageName = parameters[0]!.getName();
   if (!Node.isBlock(body) || pageName === undefined || body.getStatements().length !== 3) return false;
   const [settle, declarationStatement, assertion] = body.getStatements();
   if (!isAnimationSettlement(settle!, pageName) || !Node.isVariableStatement(declarationStatement)) return false;
@@ -2835,6 +3096,25 @@ alias.install(() => undefined);`,
         `const hooks = { install: test.beforeEach };
 const { install } = hooks;
 install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+hooks.install = test.beforeEach;
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const alias = hooks;
+alias.install = test.beforeEach;
+hooks.install(() => undefined);`,
+        `const wrapper = { hooks: {} as Record<string, unknown> };
+const { hooks } = wrapper;
+wrapper.hooks.install = test.beforeEach;
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+Object.assign(hooks, { install: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const assign = Object.assign;
+assign(hooks, { install: test.beforeEach });
+const alias = hooks;
+alias.install(() => undefined);`,
       ];
       for (const wrapper of wrappers) {
         const wrappedHook = completeSources();
@@ -3483,6 +3763,14 @@ test("axe"`,
         VALID_HELPER.replace(
           "await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));",
           "await page.evaluate(() => Promise.resolve());",
+        ),
+        VALID_HELPER.replace(
+          "(page: Page, context: string)",
+          "(page: Page, context: string, poison = (() => { throw new Error('poison'); })())",
+        ),
+        VALID_HELPER.replace(
+          "new Axe({ page })",
+          "new Axe({ page, ...(() => ({ page: undefined }))() })",
         ),
       ];
       for (const helper of invalid) {
