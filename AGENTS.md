@@ -28,12 +28,14 @@ effective workflow/job/step shell. The required
 command must be a dedicated simple command whose exit status controls its step, and the job must BLOCK:
 a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
-Unsupported runners and custom shells also prove nothing.
+Unsupported runners, custom shells, and evidence jobs with non-empty `needs` dependencies also prove
+nothing. Declared `activationPrompts` are validated for every status, and the prompt-5 proof points for
+invariants 7, 8, and 9 are pinned exactly.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
 `ci-gate` mechanisms through it too, with both v3 mappings pinned to `pnpm v3:invariants`. Readiness computes every gate's structural `entryGates`, so a later
-gate cannot report green while a predecessor is non-green. Three ratchets in the fence pin the
-30-invariant gate-assignment map, complete gate metadata (wave, predecessor chain, entry condition,
-outcome), and every gate's COMPLETE TYPED requirement
+gate cannot report green while a predecessor is non-green. Four ratchets in the fence pin the
+30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, complete gate
+metadata (wave, predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED requirement
 set including each non-invariant proof prompt: moving one, including deleting an `evidence` clause, is an
 ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
@@ -232,7 +234,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   amber badge lands ~4.1:1 and fails), and secondary text inside a faded block must be slate-800+
   (slate-600 at 0.7 is ~3.5:1). E2E axe scans settle animations first
   (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
-  contrast failures.
+  contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins its
+  complete WCAG scan and direct unmodified-violations assertion.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

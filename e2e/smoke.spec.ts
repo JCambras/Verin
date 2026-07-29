@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import { assertNoAxeViolations } from "./axe";
 
 /**
  * Phase-0 smoke. Makes the E2E gate REAL from the first UI commit (charter #8 —
@@ -17,11 +17,7 @@ test("health endpoint reports ok", async ({ request }) => {
   expect(await res.json()).toMatchObject({ status: "ok", service: "verin" });
 });
 
-test("landing has no serious/critical axe violations (WCAG 2.2 AA)", async ({ page }) => {
+test("landing has no Axe violations (WCAG 2.2 AA)", async ({ page }) => {
   await page.goto("/");
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-    .analyze();
-  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  expect(serious.map((v) => v.id), JSON.stringify(serious, null, 2)).toEqual([]);
+  await assertNoAxeViolations(page, "landing");
 });

@@ -1,63 +1,100 @@
-import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   Node,
   Project,
   SyntaxKind,
   type ArrowFunction,
+  type CallExpression,
   type FunctionDeclaration,
   type FunctionExpression,
   type SourceFile,
 } from "ts-morph";
 import { REPO_ROOT } from "./_fence-utils";
 
+const AXE_HELPER_PATH = "e2e/axe.ts";
+const AXE_HELPER_EXPORT = "assertNoAxeViolations";
+const REQUIRED_AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
 const REQUIRED_AXE_SPECS = [
   "e2e/smoke.spec.ts",
   "e2e/walkthrough.spec.ts",
   "e2e/demo-journey.spec.ts",
 ] as const;
 
-type ScanFunction = ArrowFunction | FunctionDeclaration | FunctionExpression;
+type Callback = ArrowFunction | FunctionExpression;
+type FunctionNode = Callback | FunctionDeclaration;
 
-function originatesFromBuilder(node: Node, builders: ReadonlySet<string>): boolean {
-  if (Node.isNewExpression(node)) return builders.has(node.getExpression().getText());
-  if (Node.isCallExpression(node)) return originatesFromBuilder(node.getExpression(), builders);
-  if (Node.isPropertyAccessExpression(node)) return originatesFromBuilder(node.getExpression(), builders);
-  if (Node.isParenthesizedExpression(node) || Node.isAwaitExpression(node)) {
-    return originatesFromBuilder(node.getExpression(), builders);
-  }
-  return false;
+function importModuleOf(node: Node): string | undefined {
+  return node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)?.getModuleSpecifierValue();
 }
 
-function isScanFunction(node: Node): node is ScanFunction {
-  return Node.isArrowFunction(node) || Node.isFunctionDeclaration(node) || Node.isFunctionExpression(node);
+function isNamedImportIdentifier(node: Node, moduleName: string, imported: string): boolean {
+  if (!Node.isIdentifier(node)) return false;
+  return (
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some(
+        (declaration) =>
+          Node.isImportSpecifier(declaration) &&
+          declaration.getName() === imported &&
+          importModuleOf(declaration) === moduleName,
+      ) ?? false
+  );
 }
 
-function nearestFunction(node: Node): ScanFunction | undefined {
-  return node.getAncestors().find(isScanFunction);
+function isDefaultImportIdentifier(node: Node, moduleName: string): boolean {
+  if (!Node.isIdentifier(node)) return false;
+  return (
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        const importDeclaration = declaration.getFirstAncestorByKind(SyntaxKind.ImportDeclaration);
+        return (
+          importDeclaration?.getModuleSpecifierValue() === moduleName &&
+          importDeclaration.getDefaultImport()?.getText() === node.getText()
+        );
+      }) ?? false
+  );
 }
 
-function ownedCalls(fn: ScanFunction) {
+function isNamedImportCall(call: CallExpression, moduleName: string, imported: string): boolean {
+  return isNamedImportIdentifier(call.getExpression(), moduleName, imported);
+}
+
+function isNamedImportMemberCall(
+  call: CallExpression,
+  moduleName: string,
+  imported: string,
+  member: string,
+): boolean {
+  const expression = call.getExpression();
+  return (
+    Node.isPropertyAccessExpression(expression) &&
+    expression.getName() === member &&
+    isNamedImportIdentifier(expression.getExpression(), moduleName, imported)
+  );
+}
+
+function isFunctionNode(node: Node): node is FunctionNode {
+  return Node.isArrowFunction(node) || Node.isFunctionExpression(node) || Node.isFunctionDeclaration(node);
+}
+
+function nearestFunction(node: Node): FunctionNode | undefined {
+  return node.getAncestors().find(isFunctionNode);
+}
+
+function ownedCalls(fn: FunctionNode): CallExpression[] {
   return fn.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) => nearestFunction(call) === fn);
-}
-
-function axeAnalysisCalls(fn: ScanFunction, builders: ReadonlySet<string>) {
-  return ownedCalls(fn).filter((call) => {
-    const expression = call.getExpression();
-    return (
-      Node.isPropertyAccessExpression(expression) &&
-      expression.getName() === "analyze" &&
-      originatesFromBuilder(expression.getExpression(), builders)
-    );
-  });
 }
 
 function contains(container: Node, node: Node): boolean {
   return container === node || node.getAncestors().includes(container);
 }
 
-function isStaticallyDead(node: Node, boundary?: Node): boolean {
+function isStaticallyDead(node: Node, boundary: Node): boolean {
   for (const ancestor of node.getAncestors()) {
     if (ancestor === boundary) break;
     if (Node.isIfStatement(ancestor)) {
@@ -79,223 +116,248 @@ function isStaticallyDead(node: Node, boundary?: Node): boolean {
   return false;
 }
 
-function isAwaited(call: Node): boolean {
-  return call.getParent()?.getKind() === SyntaxKind.AwaitExpression;
+function isInsideTry(node: Node, boundary: Node): boolean {
+  return node.getAncestors().some((ancestor) => ancestor !== boundary && Node.isTryStatement(ancestor));
 }
 
-function referencesNames(node: Node, names: ReadonlySet<string>): boolean {
-  if (Node.isIdentifier(node) && names.has(node.getText())) return true;
-  return node.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) => names.has(identifier.getText()));
+function directCallContainer(call: CallExpression): Node | undefined {
+  const statement = call.getFirstAncestorByKind(SyntaxKind.ExpressionStatement);
+  return statement?.getExpression() === call ? statement.getParent() : undefined;
 }
 
-function referencesViolations(node: Node, resultNames: ReadonlySet<string>): boolean {
-  const accesses = [
-    ...(Node.isPropertyAccessExpression(node) ? [node] : []),
-    ...node.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
-  ];
-  return accesses.some((access) => access.getName() === "violations" && referencesNames(access.getExpression(), resultNames));
+function callbackOf(call: CallExpression): Callback | undefined {
+  return call.getArguments().find((argument): argument is Callback => Node.isArrowFunction(argument) || Node.isFunctionExpression(argument));
 }
 
-function assertionFailsOnViolations(
-  fn: ScanFunction,
-  expectNames: ReadonlySet<string>,
-  resultNames: ReadonlySet<string>,
-): boolean {
-  const derivedNames = new Set<string>();
-  const declarations = fn
-    .getDescendantsOfKind(SyntaxKind.VariableDeclaration)
-    .filter((declaration) => nearestFunction(declaration) === fn && !isStaticallyDead(declaration, fn));
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const declaration of declarations) {
-      const name = declaration.getNameNode();
-      const initializer = declaration.getInitializer();
-      if (!Node.isIdentifier(name) || initializer === undefined || derivedNames.has(name.getText())) continue;
-      if (referencesViolations(initializer, resultNames) || referencesNames(initializer, derivedNames)) {
-        derivedNames.add(name.getText());
-        changed = true;
-      }
-    }
-  }
-  const isDerived = (node: Node) => referencesViolations(node, resultNames) || referencesNames(node, derivedNames);
-
-  return ownedCalls(fn).some((call) => {
-    if (isStaticallyDead(call, fn)) return false;
-    const matcher = call.getExpression();
-    if (!Node.isPropertyAccessExpression(matcher)) return false;
-    const expectation = matcher.getExpression();
-    if (!Node.isCallExpression(expectation) || !expectNames.has(expectation.getExpression().getText())) return false;
-    const subject = expectation.getArguments()[0];
-    const expected = call.getArguments()[0];
-    if (subject === undefined || expected === undefined) return false;
-    if (
-      (matcher.getName() === "toEqual" || matcher.getName() === "toStrictEqual") &&
-      Node.isArrayLiteralExpression(expected) &&
-      expected.getElements().length === 0
-    ) {
-      return isDerived(subject);
-    }
-    if (matcher.getName() === "toHaveLength" && expected.getText() === "0") return isDerived(subject);
-    return (
-      matcher.getName() === "toBe" &&
-      expected.getText() === "0" &&
-      Node.isPropertyAccessExpression(subject) &&
-      subject.getName() === "length" &&
-      isDerived(subject.getExpression())
-    );
-  });
-}
-
-function functionHasGatingAnalysis(
-  fn: ScanFunction,
-  builders: ReadonlySet<string>,
-  expectNames: ReadonlySet<string>,
-): boolean {
-  return axeAnalysisCalls(fn, builders).some((analysis) => {
-    if (!isAwaited(analysis) || isStaticallyDead(analysis, fn)) return false;
-    const declaration = analysis.getFirstAncestorByKind(SyntaxKind.VariableDeclaration);
-    if (declaration === undefined || nearestFunction(declaration) !== fn) return false;
-    const name = declaration.getNameNode();
-    const initializer = declaration.getInitializer();
-    if (!Node.isIdentifier(name) || initializer === undefined || !contains(initializer, analysis)) return false;
-    return assertionFailsOnViolations(fn, expectNames, new Set([name.getText()]));
-  });
-}
-
-function importedNames(sourceFile: SourceFile, imported: string): Set<string> {
-  return new Set(
-    sourceFile
-      .getImportDeclarations()
-      .filter((declaration) => declaration.getModuleSpecifierValue() === "@playwright/test")
-      .flatMap((declaration) =>
-        declaration
-          .getNamedImports()
-          .filter((specifier) => specifier.getName() === imported)
-          .map((specifier) => specifier.getAliasNode()?.getText() ?? specifier.getName()),
-      ),
+function isRegisteredTest(call: CallExpression, sourceFile: SourceFile): boolean {
+  const directContainer = directCallContainer(call);
+  if (directContainer === sourceFile) return true;
+  const callback = nearestFunction(call);
+  if (callback === undefined || Node.isFunctionDeclaration(callback) || !Node.isBlock(callback.getBody())) return false;
+  if (directContainer !== callback.getBody()) return false;
+  const describeCall = callback.getParent();
+  if (!Node.isCallExpression(describeCall) || !describeCall.getArguments().includes(callback)) return false;
+  return (
+    isNamedImportMemberCall(describeCall, "@playwright/test", "test", "describe") &&
+    directCallContainer(describeCall) === sourceFile
   );
 }
 
-function isDisabledTest(call: Node, callback: ScanFunction, testNames: ReadonlySet<string>): boolean {
-  const disabled = new Set(
-    [...testNames].flatMap((name) => [`${name}.skip`, `${name}.fixme`, `${name}.describe${".skip"}`, `${name}.describe${".fixme"}`]),
+function testIsDisabled(callback: Callback): boolean {
+  return ownedCalls(callback).some(
+    (call) =>
+      isNamedImportMemberCall(call, "@playwright/test", "test", "skip") ||
+      isNamedImportMemberCall(call, "@playwright/test", "test", "fixme"),
   );
-  if (
-    call
-      .getAncestors()
-      .filter(Node.isCallExpression)
-      .some((ancestor) => disabled.has(ancestor.getExpression().getText()))
-  ) {
-    return true;
-  }
-  return ownedCalls(callback).some((nested) => disabled.has(nested.getExpression().getText()));
 }
 
-function hasTestedAxeAnalysis(
-  sourceFile: SourceFile,
-  builders: ReadonlySet<string>,
-  testNames: ReadonlySet<string>,
-  expectNames: ReadonlySet<string>,
-): boolean {
-  const helperNames = new Set(
-    sourceFile
-      .getDescendantsOfKind(SyntaxKind.FunctionDeclaration)
-      .filter((fn) => fn.getName() !== undefined && !isStaticallyDead(fn) && functionHasGatingAnalysis(fn, builders, expectNames))
-      .map((fn) => fn.getName()!),
-  );
+function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
   return sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
-    if (!testNames.has(call.getExpression().getText())) return false;
-    const callback = call.getArguments().find((argument) => Node.isArrowFunction(argument) || Node.isFunctionExpression(argument));
-    if (callback === undefined || isStaticallyDead(call) || isDisabledTest(call, callback, testNames)) return false;
-    if (functionHasGatingAnalysis(callback, builders, expectNames)) return true;
+    if (!isNamedImportCall(call, "@playwright/test", "test") || !isRegisteredTest(call, sourceFile)) return false;
+    const callback = callbackOf(call);
+    if (callback === undefined || testIsDisabled(callback)) return false;
     return ownedCalls(callback).some(
       (nested) =>
-        helperNames.has(nested.getExpression().getText()) &&
-        isAwaited(nested) &&
-        !isStaticallyDead(nested, callback),
+        isNamedImportCall(nested, "./axe", AXE_HELPER_EXPORT) &&
+        Node.isAwaitExpression(nested.getParent()) &&
+        !isStaticallyDead(nested, callback) &&
+        !isInsideTry(nested, callback),
     );
   });
+}
+
+function pageArgumentUsesParameter(call: CallExpression, pageName: string): boolean {
+  const expression = call.getExpression();
+  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== "withTags") return false;
+  const created = expression.getExpression();
+  if (!Node.isNewExpression(created)) return false;
+  const config = created.getArguments()[0];
+  if (!Node.isObjectLiteralExpression(config)) return false;
+  const page = config.getProperty("page");
+  if (Node.isShorthandPropertyAssignment(page)) return page.getName() === pageName;
+  return Node.isPropertyAssignment(page) && page.getInitializer()?.getText() === pageName;
+}
+
+function configuredAxeAnalysis(
+  initializer: Node,
+  pageName: string,
+): CallExpression | undefined {
+  if (!Node.isAwaitExpression(initializer)) return undefined;
+  const analysis = initializer.getExpression();
+  if (!Node.isCallExpression(analysis)) return undefined;
+  const analyze = analysis.getExpression();
+  if (!Node.isPropertyAccessExpression(analyze) || analyze.getName() !== "analyze") return undefined;
+  const withTags = analyze.getExpression();
+  if (!Node.isCallExpression(withTags) || !pageArgumentUsesParameter(withTags, pageName)) return undefined;
+  const constructor = withTags.getExpression();
+  if (!Node.isPropertyAccessExpression(constructor)) return undefined;
+  const created = constructor.getExpression();
+  if (!Node.isNewExpression(created) || !isDefaultImportIdentifier(created.getExpression(), "@axe-core/playwright")) return undefined;
+  const tags = withTags.getArguments()[0];
+  if (!Node.isArrayLiteralExpression(tags)) return undefined;
+  const values = tags.getElements().map((element) => (Node.isStringLiteral(element) ? element.getLiteralText() : ""));
+  return values.length === REQUIRED_AXE_TAGS.length && REQUIRED_AXE_TAGS.every((tag, index) => values[index] === tag)
+    ? analysis
+    : undefined;
+}
+
+function isAnimationSettlement(statement: Node, pageName: string): boolean {
+  if (!Node.isExpressionStatement(statement)) return false;
+  const awaited = statement.getExpression();
+  if (!Node.isAwaitExpression(awaited)) return false;
+  const call = awaited.getExpression();
+  if (!Node.isCallExpression(call)) return false;
+  const expression = call.getExpression();
+  return Node.isPropertyAccessExpression(expression) && expression.getName() === "evaluate" && expression.getExpression().getText() === pageName;
+}
+
+function isDirectViolationAssertion(statement: Node, resultName: string): boolean {
+  if (!Node.isExpressionStatement(statement)) return false;
+  const matcherCall = statement.getExpression();
+  if (!Node.isCallExpression(matcherCall)) return false;
+  const matcher = matcherCall.getExpression();
+  if (!Node.isPropertyAccessExpression(matcher) || matcher.getName() !== "toEqual") return false;
+  const expectation = matcher.getExpression();
+  if (!Node.isCallExpression(expectation) || !isNamedImportCall(expectation, "@playwright/test", "expect")) return false;
+  const subject = expectation.getArguments()[0];
+  if (
+    !Node.isPropertyAccessExpression(subject) ||
+    subject.getName() !== "violations" ||
+    subject.getExpression().getText() !== resultName
+  ) {
+    return false;
+  }
+  const expected = matcherCall.getArguments()[0];
+  return Node.isArrayLiteralExpression(expected) && expected.getElements().length === 0;
+}
+
+function helperIsSanctioned(sourceFile: SourceFile): boolean {
+  const helpers = sourceFile
+    .getFunctions()
+    .filter((fn) => fn.getName() === AXE_HELPER_EXPORT && fn.isExported() && fn.isAsync());
+  if (helpers.length !== 1) return false;
+  const helper = helpers[0]!;
+  const body = helper.getBody();
+  const pageName = helper.getParameters()[0]?.getName();
+  if (!Node.isBlock(body) || pageName === undefined || body.getStatements().length !== 3) return false;
+  const [settle, declarationStatement, assertion] = body.getStatements();
+  if (!isAnimationSettlement(settle!, pageName) || !Node.isVariableStatement(declarationStatement)) return false;
+  const declarations = declarationStatement.getDeclarations();
+  if (declarations.length !== 1) return false;
+  const declaration = declarations[0]!;
+  const resultName = declaration.getNameNode();
+  const initializer = declaration.getInitializer();
+  if (!Node.isIdentifier(resultName) || initializer === undefined) return false;
+  if (configuredAxeAnalysis(initializer, pageName) === undefined) return false;
+  return isDirectViolationAssertion(assertion!, resultName.getText());
 }
 
 export function axeCoverageProblems(sources: Readonly<Record<string, string>>): string[] {
   const project = new Project({ useInMemoryFileSystem: true });
   const problems: string[] = [];
+  const sourceFiles = new Map<string, SourceFile>();
+  for (const [path, source] of Object.entries(sources)) {
+    sourceFiles.set(path, project.createSourceFile(`/${path}`, source));
+  }
+  const helper = sourceFiles.get(AXE_HELPER_PATH);
+  if (helper === undefined) {
+    problems.push(`${AXE_HELPER_PATH}:1 sanctioned Axe assertion helper is missing`);
+  } else if (!helperIsSanctioned(helper)) {
+    problems.push(`${AXE_HELPER_PATH}:1 must directly await the complete WCAG Axe scan and assert its unmodified violations`);
+  }
   for (const path of REQUIRED_AXE_SPECS) {
-    const source = sources[path];
-    if (source === undefined) {
+    const sourceFile = sourceFiles.get(path);
+    if (sourceFile === undefined) {
       problems.push(`${path}:1 required Axe E2E specification is missing`);
-      continue;
-    }
-    const sourceFile = project.createSourceFile(`/${path}`, source);
-    const builders = new Set(
-      sourceFile
-        .getImportDeclarations()
-        .filter((declaration) => declaration.getModuleSpecifierValue() === "@axe-core/playwright")
-        .flatMap((declaration) => {
-          const defaultImport = declaration.getDefaultImport();
-          return defaultImport === undefined ? [] : [defaultImport.getText()];
-        }),
-    );
-    if (builders.size === 0) {
-      problems.push(`${path}:1 must import the Axe Playwright builder`);
-    } else if (!hasTestedAxeAnalysis(sourceFile, builders, importedNames(sourceFile, "test"), importedNames(sourceFile, "expect"))) {
-      problems.push(`${path}:1 must execute an enabled, reachable, awaited Axe analysis whose violations fail the Playwright test`);
+    } else if (!specAwaitsSanctionedHelper(sourceFile)) {
+      problems.push(`${path}:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe`);
     }
   }
   return problems;
 }
 
+const VALID_HELPER = `import Axe from "@axe-core/playwright";
+import { expect, type Page } from "@playwright/test";
+export async function assertNoAxeViolations(page: Page, context: string): Promise<void> {
+  await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
+  const results = await new Axe({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+  expect(results.violations, context).toEqual([]);
+}`;
+
+const VALID_SPEC = `import { test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+test("axe", async ({ page }) => {
+  await assertNoAxeViolations(page, "surface");
+});`;
+
+function completeSources(spec = VALID_SPEC, helper = VALID_HELPER): Record<string, string> {
+  return {
+    [AXE_HELPER_PATH]: helper,
+    ...Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, spec])),
+  };
+}
+
 describe("axe-required fence", () => {
-  it("enforces: public, authenticated, and demo E2E surfaces execute Axe", () => {
-    const sources = Object.fromEntries(
-      REQUIRED_AXE_SPECS.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]),
-    );
+  it("enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion", () => {
+    const paths = [AXE_HELPER_PATH, ...REQUIRED_AXE_SPECS];
+    const sources = Object.fromEntries(paths.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]));
     const problems = axeCoverageProblems(sources);
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
-  describe("detects (companion): removing an Axe scan cannot leave accessibility enforcement green", () => {
-    it("rejects a required spec with ordinary browser assertions but no Axe analysis", () => {
-      const valid = `import { test, expect } from "@playwright/test";\nimport Axe from "@axe-core/playwright";\ntest("axe", async ({ page }) => { const results = await new Axe({ page }).withTags(["wcag22aa"]).analyze(); expect(results.violations).toEqual([]); });`;
-      const sources = Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, valid]));
-      sources["e2e/walkthrough.spec.ts"] = `import { test } from "@playwright/test";\ntest("page works", async ({ page }) => page.goto("/"));`;
+  describe("detects (companion): accessibility enforcement cannot become false-green", () => {
+    it("rejects a required spec without an awaited sanctioned scan", () => {
+      const sources = completeSources();
+      sources["e2e/walkthrough.spec.ts"] = `import { test } from "@playwright/test"; test("page works", async ({ page }) => page.goto("/"));`;
       expect(axeCoverageProblems(sources)).toEqual([
-        "e2e/walkthrough.spec.ts:1 must import the Axe Playwright builder",
+        "e2e/walkthrough.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
       ]);
     });
 
-    it("accepts aliased builders only when their analysis executes", () => {
-      const valid = `import { test as check, expect as verify } from "@playwright/test";\nimport AccessibilityScanner from "@axe-core/playwright";\ncheck("axe", async ({ page }) => { const results = await new AccessibilityScanner({ page }).analyze(); const serious = results.violations.filter(Boolean); verify(serious.map((item) => item.id)).toStrictEqual([]); });`;
-      const sources = Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, valid]));
-      expect(axeCoverageProblems(sources)).toEqual([]);
+    it("accepts aliases at module scope and directly inside enabled test.describe", () => {
+      const moduleSpec = `import { test as check } from "@playwright/test";
+import { assertNoAxeViolations as scan } from "./axe";
+check("axe", async ({ page }) => { await scan(page, "surface"); });`;
+      expect(axeCoverageProblems(completeSources(moduleSpec))).toEqual([]);
+      const describeSpec = `import { test as check } from "@playwright/test";
+import { assertNoAxeViolations as scan } from "./axe";
+check.describe("group", () => {
+  check("axe", async ({ page }) => { await scan(page, "surface"); });
+});`;
+      expect(axeCoverageProblems(completeSources(describeSpec))).toEqual([]);
     });
 
-    it("rejects skipped, dead, unawaited, and unasserted Axe scans", () => {
+    it("rejects unreachable, disabled, unawaited, and caught helper calls", () => {
       const wrap = (body: string) =>
-        `import { test, expect } from "@playwright/test";\nimport Axe from "@axe-core/playwright";\n${body}`;
+        `import { test } from "@playwright/test";\nimport { assertNoAxeViolations } from "./axe";\n${body}`;
       const invalid = [
-        wrap(`test.${"describe" + ".skip"}("off", () => { test("axe", async ({ page }) => { const results = await new Axe({ page }).analyze(); expect(results.violations).toEqual([]); }); });`),
-        wrap(`test("axe", async ({ page }) => { if (false) { const results = await new Axe({ page }).analyze(); expect(results.violations).toEqual([]); } });`),
-        wrap(`test("axe", async ({ page }) => { return; const results = await new Axe({ page }).analyze(); expect(results.violations).toEqual([]); });`),
-        wrap(`test("axe", async ({ page }) => { const results = new Axe({ page }).analyze(); expect(results).toBeDefined(); });`),
-        wrap(`test("axe", async ({ page }) => { await new Axe({ page }).analyze(); expect([]).toEqual([]); });`),
-        wrap(`test("axe", async ({ page }) => { test.${"skip"}(); const results = await new Axe({ page }).analyze(); expect(results.violations).toEqual([]); });`),
+        wrap(`function neverCalled() { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); }`),
+        wrap(`if (false) { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); }`),
+        wrap(`test.${"describe" + ".skip"}("off", () => { test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
+        wrap(`test("axe", async ({ page }) => { test.${"skip"}(); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
+        wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
+        wrap(`test.describe("group", () => { const test = (...args: unknown[]) => args; test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
       ];
-      for (const source of invalid) {
-        const sources = Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, source]));
-        expect(axeCoverageProblems(sources), source).toHaveLength(REQUIRED_AXE_SPECS.length);
+      for (const spec of invalid) {
+        expect(axeCoverageProblems(completeSources(spec)), spec).toHaveLength(REQUIRED_AXE_SPECS.length);
       }
     });
 
-    it("requires an Axe helper to assert violations and be awaited by an enabled test", () => {
-      const helper = `import { test, expect } from "@playwright/test";\nimport Axe from "@axe-core/playwright";\nasync function check(page: unknown) { const results = await new Axe({ page }).analyze(); expect(results.violations).toHaveLength(0); }\ntest("axe", async ({ page }) => { await check(page); });`;
-      const sources = Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, helper]));
-      expect(axeCoverageProblems(sources)).toEqual([]);
-      sources["e2e/demo-journey.spec.ts"] = helper.replace("await check(page)", "check(page)");
-      expect(axeCoverageProblems(sources)).toEqual([
-        "e2e/demo-journey.spec.ts:1 must execute an enabled, reachable, awaited Axe analysis whose violations fail the Playwright test",
-      ]);
+    it("rejects caught, transformed, incomplete, or masked helper assertions", () => {
+      const invalid = [
+        VALID_HELPER.replace("expect(results.violations, context).toEqual([]);", "try { expect(results.violations, context).toEqual([]); } catch {}"),
+        VALID_HELPER.replace("results.violations, context", "results.violations.filter(() => false), context"),
+        VALID_HELPER.replace("expect(results.violations, context)", "results.violations.length = 0;\n  expect(results.violations, context)"),
+        VALID_HELPER.replace("const results = await", "const results ="),
+        VALID_HELPER.replace(".withTags(", '.exclude("body").withTags('),
+      ];
+      for (const helper of invalid) {
+        expect(axeCoverageProblems(completeSources(VALID_SPEC, helper)), helper).toContain(
+          "e2e/axe.ts:1 must directly await the complete WCAG Axe scan and assert its unmodified violations",
+        );
+      }
     });
   });
 });

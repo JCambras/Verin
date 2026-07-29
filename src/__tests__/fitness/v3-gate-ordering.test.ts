@@ -32,10 +32,10 @@ import {
  * report - the report is itself a document bound by ruling clause 5, so it may
  * not emit a claim this fence would reject. One core, two callers, no drift.
  * This file owns the ADVERSARIAL half (charter #4: detection is not
- * verification) plus the captain's ruled requirement sets and the three ratchets
+ * verification) plus the captain's ruled requirement sets and the four ratchets
  * that keep those sets from moving by a registry edit alone: the 30-invariant
- * activation-ownership map, complete gate metadata, and every gate's COMPLETE
- * typed requirement set.
+ * activation-ownership map, the prompt-5 proof points for invariants 7-9,
+ * complete gate metadata, and every gate's COMPLETE typed requirement set.
  *
  * The rules:
  *  (a) every gate is well-formed - an integer prompt range inside the 30-prompt
@@ -119,6 +119,12 @@ const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
   26: "G", 27: "H", 28: "G", 29: "H", 30: "G",
 };
 
+const EARLIEST_PROOF_PROMPTS_RATCHET: Record<string, number[]> = {
+  7: [5],
+  8: [5],
+  9: [5],
+};
+
 type RatchetedGateMetadata = Pick<Gate, "wave" | "entryGates" | "entryCondition" | "outcome">;
 
 const GATE_METADATA_RATCHET: Record<string, RatchetedGateMetadata> = {
@@ -185,7 +191,7 @@ const GATE_METADATA_RATCHET: Record<string, RatchetedGateMetadata> = {
 };
 
 /**
- * RATCHET 3 - the COMPLETE typed requirement set of every gate, not merely its
+ * RATCHET 4 - the COMPLETE typed requirement set of every gate, not merely its
  * invariant ids. Pinning ids alone left a gate's `artifact` / `fitness` /
  * `ci-gate` / `evidence` requirements editable by a registry change nothing
  * ratcheted: gate 0's only non-met requirement is its `evidence` clause, so
@@ -272,6 +278,12 @@ const requirementKey = (r: GateRequirement): string =>
     : `${r.kind}:${r.ref}${r.kind === "ci-gate" ? ` runs '${r.command}'` : ""} @ prompt ${r.prompt}`;
 
 const ownershipOf = (reg: Registry): Record<string, string> => Object.fromEntries(reg.invariants.map((i) => [String(i.id), i.gate]));
+const earliestProofPromptsOf = (reg: Registry): Record<string, number[]> =>
+  Object.fromEntries(
+    reg.invariants
+      .filter((invariant) => Object.hasOwn(EARLIEST_PROOF_PROMPTS_RATCHET, String(invariant.id)))
+      .map((invariant) => [String(invariant.id), invariant.activationPrompts ?? []]),
+  );
 const metadataOf = (reg: Registry): Record<string, RatchetedGateMetadata> =>
   Object.fromEntries(
     Object.entries(reg.gates).map(([key, gate]) => [
@@ -309,6 +321,10 @@ describe("v3 gate-ordering fence", () => {
 
   it("enforces (ratchet): the ratified activation-ownership map of all 30 invariants", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
+  });
+
+  it("enforces (ratchet): invariants 7, 8, and 9 retain their prompt-5 proof point", () => {
+    expect(earliestProofPromptsOf(registry)).toEqual(EARLIEST_PROOF_PROMPTS_RATCHET);
   });
 
   it("enforces (ratchet): every gate's wave, structural entry condition, and outcome are the ruled ones", () => {
@@ -391,6 +407,11 @@ describe("v3 gate-ordering fence", () => {
       reg.gates.A!.requires = [inv(1), inv(7)];
       const problems = gateOrderingProblems(reg, () => true);
       expect(problems).toEqual([]);
+    });
+    it("flags invalid activation prompts on an active invariant", () => {
+      const reg = base();
+      reg.invariants[2]!.activationPrompts = [0];
+      expect(gateOrderingProblems(reg, () => true).some((p) => p.includes("invariant 7") && p.includes("prompt numbers in 1-30"))).toBe(true);
     });
     it("flags an early reference when its recorded proof point is dropped", () => {
       const reg = base();
@@ -724,6 +745,28 @@ describe("v3 gate-ordering fence", () => {
       for (const ref of ["e2e", "golden-cases", "audit-chain-verify", "v3-invariants", "test"]) expect(ciJobBlocks(ciJobs, ref), ref).toBe(true);
     });
 
+    it("refuses an evidence job with a needs dependency that can prevent it from running", () => {
+      const jobs = parseCiJobs(
+        [
+          "jobs:",
+          "  disabled:",
+          "    runs-on: ubuntu-latest",
+          "    if: false",
+          "    steps:",
+          "      - run: echo disabled",
+          "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
+          "    needs: disabled",
+          "    steps:",
+          "      - run: pnpm audit:chain",
+          "",
+        ].join("\n"),
+      );
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
+      expect(ciJobBlocks(jobs, "audit-chain-verify")).toBe(false);
+      expect(ciJobRunProblem(jobs, "audit-chain-verify", "pnpm audit:chain")).toContain("needs: disabled");
+    });
+
     it("requires a dedicated command step and still reads a folded simple command", () => {
       const jobs = parseCiJobs(
         [
@@ -777,6 +820,9 @@ describe("v3 gate-ordering fence", () => {
       const movedPrompt = clone(registry);
       movedPrompt.gates.B!.requires.find((r) => r.kind === "artifact")!.prompt = 9;
       expect(requirementsOf(movedPrompt)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
+      const falsifiedEarlyProof = clone(registry);
+      falsifiedEarlyProof.invariants.find((i) => i.id === 7)!.activationPrompts = [1];
+      expect(earliestProofPromptsOf(falsifiedEarlyProof)).not.toEqual(EARLIEST_PROOF_PROMPTS_RATCHET);
       const relinked = clone(registry);
       relinked.gates.B!.entryGates = [];
       relinked.gates.B!.entryCondition = "None.";

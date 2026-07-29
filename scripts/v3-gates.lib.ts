@@ -166,8 +166,9 @@ function shellCommandLines(script: string): string[] {
 export interface CiJob {
   /**
    * Set when the job cannot be counted on to fail the build: `continue-on-error`,
-   * or a conditional that may exclude it from a normal push/PR run. A neutralized
-   * job proves nothing, however correct its steps look.
+   * a conditional that may exclude it from a normal push/PR run, or a `needs`
+   * dependency that can prevent it from running. A neutralized job proves nothing,
+   * however correct its steps look.
    */
   neutralizedBy?: string;
   /** Dedicated simple commands whose exit status controls a non-neutralized step. */
@@ -197,6 +198,14 @@ function neutralizerOf(node: unknown): string | undefined {
   if (cont !== undefined && cont !== false) return `continue-on-error: ${String(cont)}`;
   if (n.if !== undefined) return `if: ${String(n.if)}`;
   return undefined;
+}
+
+function dependencyNeutralizerOf(node: unknown): string | undefined {
+  const job = node as { needs?: unknown } | null;
+  if (job === null || typeof job !== "object" || !Object.hasOwn(job, "needs")) return undefined;
+  if (Array.isArray(job.needs) && job.needs.length === 0) return undefined;
+  const value = Array.isArray(job.needs) ? job.needs.join(", ") : String(job.needs);
+  return `needs: ${value}`;
 }
 
 function configuredRunShell(node: unknown): unknown {
@@ -342,7 +351,7 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
     const commands = parsedSteps
       .filter((step) => step.neutralizedBy === undefined && step.blockingCommand !== undefined)
       .map((step) => step.blockingCommand!);
-    const neutralizedBy = neutralizerOf(job);
+    const neutralizedBy = neutralizerOf(job) ?? dependencyNeutralizerOf(job);
     jobs.set(key, neutralizedBy === undefined ? { commands, steps: parsedSteps } : { neutralizedBy, commands, steps: parsedSteps });
   }
   return jobs;
@@ -585,20 +594,23 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     if (!gate || !Array.isArray(gate.prompts)) continue;
     const tag = `invariant ${inv.id} (${inv.name})`;
 
-    if (inv.status === "not-yet-active") {
-      const declared = inv.activationPrompts;
+    const declared = inv.activationPrompts;
+    if (declared !== undefined) {
       if (!Array.isArray(declared) || declared.length === 0) {
-        problems.push(`${tag}: not-yet-active but declares no activationPrompts - its prerequisite cannot be ordered against gate ${inv.gate}`);
+        problems.push(`${tag}: activationPrompts must be a non-empty array of prompt numbers`);
       } else if (!declared.every((n) => Number.isInteger(n) && n >= 1 && n <= LAST_PROMPT)) {
         problems.push(`${tag}: activationPrompts must be prompt numbers in 1-${LAST_PROMPT}, got [${declared.join(", ")}]`);
+      } else if (new Set(declared).size !== declared.length) {
+        problems.push(`${tag}: activationPrompts contains duplicate prompt numbers`);
       } else {
-        // (f) prose may not name a later prompt than the structured field admits
         const inProse = promptsNamedInProse(inv.activatesWhen ?? "");
         const unlisted = inProse.filter((n) => !declared.includes(n));
         if (unlisted.length > 0) {
           problems.push(`${tag}: activatesWhen names prompt(s) ${unlisted.join(", ")} that activationPrompts omits - the structured prerequisite understates the prose`);
         }
       }
+    } else if (inv.status === "not-yet-active") {
+      problems.push(`${tag}: not-yet-active but declares no activationPrompts - its prerequisite cannot be ordered against gate ${inv.gate}`);
     }
 
     // (g) HONESTY: an artifact-gated invariant cannot be declared implemented before its artifacts exist

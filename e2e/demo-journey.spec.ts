@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
 import { login, PRINCIPAL } from "./helpers";
+import { assertNoAxeViolations } from "./axe";
 
 /**
  * Walking-skeleton E2E (v3 prompt 3, Gate 0): the seven-minute journey is clickable
@@ -12,17 +12,6 @@ import { login, PRINCIPAL } from "./helpers";
  */
 
 const SHOTS = "demo-screens";
-
-async function checkAxe(page: Page, name: string) {
-  // Settle the surface-entry fade (design §12.2) first: scanning mid-animation
-  // reads blended colors and reports false contrast failures.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-    .analyze();
-  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  expect(serious.map((v) => `${name}:${v.id}`), JSON.stringify(serious, null, 2)).toEqual([]);
-}
 
 async function snap(page: Page, index: number, name: string) {
   // Settle the surface-entry fade (design §12.2) before capturing: a mid-fade
@@ -42,14 +31,14 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // Launcher.
   await page.getByRole("link", { name: "Demo", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Money-movement demo" })).toBeVisible();
-  await checkAxe(page, "launcher");
+  await assertNoAxeViolations(page, "launcher");
   await snap(page, 0, "launcher");
 
   // 1 - Household workspace (canonical journey: recent bank change under Firm A).
   await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
   await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
   await expectDevBadge(page);
-  await checkAxe(page, "workspace");
+  await assertNoAxeViolations(page, "workspace");
   await snap(page, 1, "workspace");
 
   // 2 - Contextual intent panel: request + typed slots, LLM draft set apart.
@@ -57,7 +46,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Drafted - not yet reviewed")).toBeVisible();
   await expect(page.getByText("$75,000.00").first()).toBeVisible();
   await expectDevBadge(page);
-  await checkAxe(page, "intent");
+  await assertNoAxeViolations(page, "intent");
   await snap(page, 2, "intent");
 
   // 3 - Evidence: sources, observed vs retrieved, an explicit gap row.
@@ -65,21 +54,21 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByTestId("evidence-missing")).toBeVisible();
   await expect(page.getByText("retrieved Jul 26, 09:14").first()).toBeVisible();
   await expectDevBadge(page);
-  await checkAxe(page, "evidence");
+  await assertNoAxeViolations(page, "evidence");
   await snap(page, 3, "evidence");
 
   // 4 - Recommendation: proceed, with the specialist-review authority summary.
   await page.getByRole("link", { name: "View the recommendation" }).click();
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
   await expect(page.getByText("specialist-review stage")).toBeVisible();
-  await checkAxe(page, "decision");
+  await assertNoAxeViolations(page, "decision");
   await snap(page, 4, "decision");
 
   // 5 - Policy trace: versions in mono, precedence rows.
   await page.getByRole("link", { name: "View the policy trace" }).click();
   await expect(page.getByText("FA-4.2").first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Household destination restriction" })).toBeVisible();
-  await checkAxe(page, "policy-trace");
+  await assertNoAxeViolations(page, "policy-trace");
   await snap(page, 5, "policy-trace");
 
   // 6 - Authority: dual approval + specialist review; requester cannot approve.
@@ -88,7 +77,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Bank-instruction specialist review").first()).toBeVisible();
   await expect(page.getByText("the requester cannot approve")).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
-  await checkAxe(page, "authority");
+  await assertNoAxeViolations(page, "authority");
   await snap(page, 6, "authority");
 
   // 7 - Safety: revalidation, reservation + idempotency inspectable.
@@ -96,7 +85,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Material evidence re-checked")).toBeVisible();
   await page.getByRole("button", { name: "Verify source" }).click();
   await expect(page.getByText("mm-smiths-renovation-aug15-4c7f").first()).toBeVisible();
-  await checkAxe(page, "safety");
+  await assertNoAxeViolations(page, "safety");
   await snap(page, 7, "safety");
 
   // 8 - Execution: submitted is NOT settled; deferral stated; fake adapter labeled.
@@ -105,7 +94,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
   await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
   await expectDevBadge(page);
-  await checkAxe(page, "execution");
+  await assertNoAxeViolations(page, "execution");
   await snap(page, 8, "execution");
 
   // 9 - Verification: proves vs not-yet, next poll.
@@ -113,14 +102,14 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("What this status proves")).toBeVisible();
   await expect(page.getByText("What it does not prove yet")).toBeVisible();
   await expect(page.getByText("Next status poll")).toBeVisible();
-  await checkAxe(page, "verification");
+  await assertNoAxeViolations(page, "verification");
   await snap(page, 9, "verification");
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expect(page.getByText("FB-2.1").first()).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
-  await checkAxe(page, "comparison");
+  await assertNoAxeViolations(page, "comparison");
   await snap(page, 10, "comparison");
 
   // 11 - Policy authoring: draft set apart; activation appears only after approval.
@@ -131,13 +120,13 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await page.getByRole("link", { name: "Approve and activate FA-4.3" }).click();
   await expect(page.getByTestId("policy-activated")).toBeVisible();
   await expect(page.getByText("FA-4.2 → FA-4.3")).toBeVisible();
-  await checkAxe(page, "policy-authoring-approved");
+  await assertNoAxeViolations(page, "policy-authoring-approved");
 
   // 12 - Printable record: watermark, full hashes, expanded reasoning.
   await page.getByRole("link", { name: "View the printable decision record" }).click();
   await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
   await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
-  await checkAxe(page, "record");
+  await assertNoAxeViolations(page, "record");
   await snap(page, 12, "record");
 });
 
@@ -149,7 +138,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByTestId("disposition-blocked")).toBeVisible();
   await expect(page.getByTestId("blocker-row")).toBeVisible();
   await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
-  await checkAxe(page, "decision-blocked");
+  await assertNoAxeViolations(page, "decision-blocked");
   await snap(page, 13, "decision-blocked-firm-b");
   // Downstream stations honestly do not exist for a blocked journey.
   await page.goto("/app/demo/authority?scenario=recent-bank-change-block&firm=firm-b");
@@ -169,7 +158,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   expect(await card.getByRole("button").count()).toBe(1);
   await expect(card.getByRole("button", { name: "Why did Verin do this?" })).toBeVisible();
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
-  await checkAxe(page, "decision-prohibited");
+  await assertNoAxeViolations(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
 
   // The approval-invalidation moment: the voided approval STAYS, what changed is
@@ -179,7 +168,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByText("Approval voided - evidence changed").first()).toBeVisible();
   await expect(page.getByTestId("what-changed")).toBeVisible();
   await expect(page.getByRole("link", { name: "Re-evaluate with current evidence" })).toBeVisible();
-  await checkAxe(page, "safety-invalidation");
+  await assertNoAxeViolations(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");
 
   // Duplicate retry: the product claim in plain words, keys matching byte-for-byte.

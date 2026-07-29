@@ -82,13 +82,15 @@ required command must be a dedicated simple command whose exit status controls i
 named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
 `env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
 neutralized by `continue-on-error` or an `if:`.
-An unsupported runner or custom shell is non-evidence because its execution semantics are not proven.
+An unsupported runner, custom shell, or evidence job carrying a non-empty `needs` dependency is
+non-evidence because its execution or reachability semantics are not proven. Every declared
+`activationPrompts` array is validated regardless of activation status.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too. A gate's
-`awaiting:` line names every requirement holding it back, undecidable ones included. Three ratchets in
-the fence pin the complete 30-invariant gate-assignment map, complete gate metadata (wave, structural
-predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED requirement set including
-each non-invariant proof prompt. Readiness
+`awaiting:` line names every requirement holding it back, undecidable ones included. Four ratchets in
+the fence pin the complete 30-invariant gate-assignment map, the prompt-5 proof points for invariants
+7, 8, and 9, complete gate metadata (wave, structural predecessor chain, entry condition, outcome), and
+every gate's COMPLETE TYPED requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered gate 0
 green. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's

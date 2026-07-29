@@ -10067,3 +10067,80 @@ whose violation assertions gate the calling test, while rejecting the same helpe
 **Revert:** the assertion was restored immediately with `apply_patch`.
 
 **Date:** 2026-07-28.
+
+### PF-030 (continued, 7th review round) · active proof metadata, proof-point ratchet, and CI dependency reachability
+
+**Invariant:** every declared activation proof point is valid regardless of current activation status;
+the ruled prompt-5 proof points for invariants 7, 8, and 9 cannot be rewritten to an earlier prompt; and
+a CI evidence command counts only when its job is dependency-free and therefore guaranteed to run from
+its own workflow registration.
+
+**Injection 34 - give active invariant 7 an invalid prompt.** Changed only invariant 7's
+`activationPrompts` from `[5]` to `[0]`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+invariant 7 (A proceed decision cannot exist without authority and an execution plan): activationPrompts must be prompt numbers in 1-30, got [0]
+
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): invariants 7, 8, and 9 retain their prompt-5 proof point
+-     5,
++     0,
+```
+
+**Injection 35 - add a dependency to the mapped v3 evidence job.** Added only `needs: quality` to the
+real `v3-invariants` workflow job while leaving its dedicated `pnpm v3:invariants` step unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm v3:invariants' is neutralized by job needs: quality
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm v3:invariants' is neutralized by job needs: quality
+```
+
+**Companions added:** the shared gate-ordering core rejects invalid, empty, duplicate, and out-of-range
+declared prompt lists on active and not-yet-active invariants. The fence mutates invariant 7 to valid but
+false `[1]` and proves the prompt-5 ratchet fails even though general ordering would accept it. A CI
+companion gives an evidence job `needs: disabled`, where the dependency has `if: false`, and proves
+`ciJobRuns`, `ciJobBlocks`, and the diagnostic all reject the mapped command.
+
+**Revert:** both injected files were restored immediately with `apply_patch`. The focused governance run
+passes 73 tests across gate ordering, invariant integrity, charter drift, and Axe coverage.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved enforcement-completeness review).
+
+### PF-031 (continued) · sanctioned assertions and registered Playwright tests
+
+**Invariant (charter #9):** every required surface specification registers an enabled Playwright test at
+module scope or directly inside an enabled module-scope `test.describe`, awaits the sanctioned Axe helper,
+and cannot swallow or transform the helper's complete violations assertion.
+
+**Injection 1 - move the public Axe test into an uncalled function.** Wrapped the otherwise-valid
+`e2e/smoke.spec.ts` Axe test in `neverRegistersAxe()` without invoking the function.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 2 - swallow the sanctioned assertion.** Wrapped the direct
+`expect(results.violations).toEqual([])` in `e2e/axe.ts` with `try { ... } catch {}`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/axe.ts:1 must directly await the complete WCAG Axe scan and assert its unmodified violations
+```
+
+**Companions added:** in-memory sources reject tests inside uncalled functions, literal dead branches,
+skipped descriptions, runtime skips, unawaited helper calls, and helper calls inside a caught path. Helper
+companions reject a caught assertion, `filter(() => false)`, clearing the violations before assertion,
+an unawaited analysis, and an Axe exclusion inserted before the required WCAG tag set. Aliased imports
+still pass at both accepted registration sites, while shadowed test or helper aliases fail, proving the
+fence follows imported bindings rather than depending on one spelling.
+
+**Revert:** both injections were restored immediately with `apply_patch`; the focused Axe and
+charter-drift fences pass.
+
+**Date:** 2026-07-28.

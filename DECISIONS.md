@@ -6271,11 +6271,21 @@ analysis and fails on its violations, rejecting skipped, dead, unawaited, unasse
 scans; **(7)** the ADR index's related-governance range now includes ADR-0030. Focused companions and
 real injection evidence extend PF-030 and PF-031.
 
+The captain-approved enforcement-completeness review (2026-07-28) amended ADR-0030 in place a seventh
+time: **(1)** every declared `activationPrompts` array is validated for active and not-yet-active
+invariants, while a fourth ratchet pins invariants 7, 8, and 9 exactly to prompt 5; **(2)** a CI evidence
+job with a non-empty `needs` dependency is rejected under the stricter evidence-job contract, because a
+skipped dependency can prevent the mapped command from running; **(3)** Axe analysis and assertion move
+to the sanctioned `e2e/axe.ts` helper, which the fence pins to a complete WCAG-tagged scan and a direct
+assertion over unmodified violations; and **(4)** required Playwright tests must register at module scope
+or directly inside an enabled module-scope `test.describe`, then await the helper outside any caught or
+dead path. Focused companions and real injections extend PF-030 and PF-031.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
 list - of any requirement kind, including deleting an `evidence` clause - its `wave`, `entryGates`,
 `entryCondition`, `outcome`, or any
-invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all three ratchets in
+invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all four ratchets in
 `src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.
