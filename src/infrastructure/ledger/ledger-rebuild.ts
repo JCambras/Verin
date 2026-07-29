@@ -1,4 +1,4 @@
-import type { SqlDb } from "@infra/store/db";
+import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import type { RecordProvenance } from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
@@ -21,6 +21,7 @@ import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
 export async function rebuildDecisionProjections(
   db: SqlDb,
   orgId: string,
+  beforeApply?: (tx: SqlQueryable, entries: number) => Promise<void>,
 ): Promise<ProjectedDecision[]> {
   await db.transaction(async (tx) => {
     // A rebuild REPLACES derived state, so it takes the exclusive tenant lock before
@@ -78,6 +79,7 @@ export async function rebuildDecisionProjections(
       orgId,
       replay.map((item) => item.event),
     );
+    if (beforeApply) await beforeApply(tx, rows.length);
     await clearDerivedState(tx, orgId);
     for (const item of replay) {
       const record = item.event.type === "DecisionRecorded"

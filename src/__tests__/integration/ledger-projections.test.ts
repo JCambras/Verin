@@ -520,6 +520,10 @@ describe("deterministic decision-ledger projections", () => {
       /ORDER BY m\.ordinal ASC\s+LIMIT \$4/is,
     );
     expect(coverageQuery).not.toMatch(/\b(max|count)\s*\(/i);
+    expect(
+      statements.some((sql) =>
+        /FROM decision_ledger earlier/i.test(sql)),
+    ).toBe(false);
   });
 
   it("uses the latest in-window evidence recording for a reused bundle", async () => {

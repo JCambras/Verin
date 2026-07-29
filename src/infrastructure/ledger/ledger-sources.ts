@@ -27,6 +27,7 @@ import {
 } from "./ledger-source-capability";
 import { verifyReplaySourceProvenanceBinding } from "./ledger-source-provenance";
 import { decisionReplayPinsMatchBundle } from "./ledger-bindings";
+import { verifyReplaySourceCoverage } from "./ledger-source-integrity";
 
 export function replaySourcesContainPII(values: readonly unknown[]): boolean {
   try {
@@ -222,6 +223,7 @@ export async function bindReplaySourceProvenance(
       [event.firmId, source.kind, source.id, event.id],
     );
   }
+  await verifyReplaySourceProvenanceBinding(tx, event);
 }
 
 function replaySourceError(reason: string): never {
@@ -450,49 +452,8 @@ export async function verifyReplaySources(
       );
     }
   }
-  const coverage = await tx.query<{
-    orphan_evidence: number | string;
-    orphan_bundles: number | string;
-    orphan_decisions: number | string;
-    source_count: number | string;
-  }>(
-    `SELECT
-       (SELECT count(*) FROM evidence_snapshots s
-         WHERE s.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_ledger l
-            WHERE l.org_id = s.org_id
-              AND l.evidence_snapshot_id = s.id
-              AND l.event_type = 'EvidenceSnapshotRecorded'
-         )) AS orphan_evidence,
-       (SELECT count(*) FROM decision_input_bundles b
-         WHERE b.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_records r
-            WHERE r.org_id = b.org_id AND r.input_bundle_id = b.id
-         )) AS orphan_bundles,
-       (SELECT count(*) FROM decision_records r
-         WHERE r.org_id = $1 AND NOT EXISTS (
-           SELECT 1 FROM decision_ledger l
-            WHERE l.org_id = r.org_id
-              AND l.decision_id = r.id
-              AND l.event_type = 'DecisionRecorded'
-         )) AS orphan_decisions,
-       (SELECT count(*) FROM evidence_snapshots WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundles WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundle_evidence WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_records WHERE org_id = $1) AS source_count`,
-    [orgId],
-  );
-  const row = coverage.rows[0];
-  if (
-    !row ||
-    Number(row.orphan_evidence) !== 0 ||
-    Number(row.orphan_bundles) !== 0 ||
-    Number(row.orphan_decisions) !== 0
-  ) {
-    replaySourceError("immutable replay source has no recording ledger fact");
-  }
   return {
     decisions,
-    sourcesChecked: Number(row.source_count),
+    sourcesChecked: await verifyReplaySourceCoverage(tx, orgId),
   };
 }

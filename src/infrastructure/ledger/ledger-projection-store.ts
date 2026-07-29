@@ -3,7 +3,7 @@
  * already states and is rebuilt by replaying it, so nothing in this module may be
  * the source of an answer the ledger does not contain.
  */
-import type { SqlDb, SqlTx } from "@infra/store/db";
+import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
@@ -243,7 +243,7 @@ export async function clearDerivedState(
 
 /** How many decisions this tenant has derived state for, so a window can say so. */
 export async function countDecisionProjections(
-  db: SqlDb,
+  db: SqlQueryable,
   orgId: string,
 ): Promise<number> {
   const rows = await db.query<{ n: number | string }>(
@@ -254,7 +254,7 @@ export async function countDecisionProjections(
 }
 
 export async function listDecisionProjectionMetadata(
-  db: SqlDb,
+  db: SqlQueryable,
   orgId: string,
   limit: number,
 ): Promise<Array<{ readonly decisionId: string; readonly lastSequence: number }>> {

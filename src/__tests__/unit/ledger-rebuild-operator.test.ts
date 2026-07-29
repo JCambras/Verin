@@ -94,6 +94,12 @@ describe("ledger-rebuild operator contract", () => {
     ]);
   });
 
+  it("does not release a verified preview before an apply rebuild", () => {
+    expect(RUNNER.indexOf("await printPlan")).toBeGreaterThan(
+      RUNNER.indexOf("if (!options.apply)"),
+    );
+  });
+
   it("detects a preview that reads deserialized projection state", () => {
     expect(
       planProjectionReaders(

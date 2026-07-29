@@ -63,6 +63,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     MAX_ENTRIES,
     MAX_DECISIONS,
   );
+  const trusted = verification.ok;
   const body = {
     verification: {
       ok: verification.ok,
@@ -72,8 +73,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       replaySourceReason,
     },
     total: verification.entriesStored,
-    decisionsTotal,
-    decisions: decisions.map(({ projection, provenance }) => ({
+    decisionsTotal: trusted ? decisionsTotal : 0,
+    decisions: (trusted ? decisions : []).map(({ projection, provenance }) => ({
       decisionId: projection.decisionId,
       disposition: projection.disposition,
       approvalMode: projection.approvalMode,
@@ -90,7 +91,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       lastSequence: projection.lastSequence,
       provenanceLabel: badgeLabel(provenance),
     })),
-    entries: rows.slice(-MAX_ENTRIES).reverse().map((row) => ({
+    entries: (trusted ? rows : []).slice(-MAX_ENTRIES).reverse().map((row) => ({
       sequence: row.sequence,
       occurredAt: row.occurredAt,
       eventType: row.eventType,

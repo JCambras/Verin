@@ -6023,3 +6023,83 @@ SQL forms were restored to their valid fail-closed outcomes. The focused ledger,
 projection, anti-fork, and typecheck suites pass.
 
 **Date:** 2026-07-28 (review corrections N1-N3, ADR-0033, D-113).
+
+## Failed snapshots, binding completeness, atomic rebuild, and row-creation ownership (D-114)
+
+**Invariants:** an unverified register exposes no actor or event metadata; every
+immutable replay source has exactly one valid provenance binding; rebuild apply
+mutates the exact state it previewed; bounded provenance reads do no examiner-grade
+history scan; every statically resolvable immutable row-creation form has one owner;
+restricted capability imports resolve through emitted extensions.
+
+The new companions were first run against the pre-fix implementation. The API
+returned an actor value from a row whose L1 verification had failed:
+
+```text
+× suppresses row metadata when the verified snapshot fails
+expected [ { sequence: 0, actor: "victim@example.com", ... } ] to deeply equal []
+src/__tests__/unit/ledger-route-provenance.test.ts:73
+```
+
+A conflicting binding preclaim was silently accepted and an orphan binding was
+invisible to whole-store verification:
+
+```text
+× rejects a preclaimed replay-source provenance binding during append
+promise resolved [ { id: "ledger:later-evidence:evidence:preclaimed", ... } ] instead of rejecting
+src/__tests__/integration/decision-ledger.test.ts:1693
+
+× rejects an orphan replay-source provenance binding during verification
+expected true to be false
+src/__tests__/integration/decision-ledger.test.ts:1711
+```
+
+The operator runner verified and printed its plan before the apply branch, and the
+bounded register issued the historical correspondence query:
+
+```text
+× does not release a verified preview before an apply rebuild
+expected 3008 to be greater than 3047
+src/__tests__/unit/ledger-rebuild-operator.test.ts:98
+
+× reads the verified register under one tenant lock without trusting projection rows
+expected true to be false
+src/__tests__/integration/ledger-projections.test.ts:525
+```
+
+The in-memory anti-fork companions planted MERGE, COPY FROM, direct and
+literal-concatenated EXECUTE statements, plus a namespace capability import ending
+in `.js`. All bypassed the prior detector. After strengthening it, two shipped-source
+probes were added:
+
+```text
+scripts/ledger-row-creation-violation-probe.ts:2
+src/infrastructure/ledger/source-capability-violation-probe.ts:1
+```
+
+The authoritative fence failed with both exact locations:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+scripts/ledger-row-creation-violation-probe.ts:2
+
+× immutable source writers require the validated ledger-store capability
+expected [
+  {
+    file: "src/infrastructure/ledger/source-capability-violation-probe.ts",
+    line: 1
+  }
+] to deeply equal []
+```
+
+The probes and three temporary source regressions were removed. The permanent
+companions inject corrupt rows and bindings through the privileged test harness,
+prove rollback leaves no source or event prefix, assert no bounded provenance query
+contains `FROM decision_ledger earlier`, and keep COPY TO non-mutating.
+
+**Revert:** all planted source regressions and both probe files were removed. The
+focused route, rebuild, ledger, projection, anti-fork, typecheck, and lint suites
+pass.
+
+**Date:** 2026-07-28 (review corrections O1-O6, ADR-0033, D-114).

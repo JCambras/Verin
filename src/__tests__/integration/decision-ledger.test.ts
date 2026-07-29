@@ -1669,6 +1669,60 @@ describe("decision ledger storage and L1-L4 verification", () => {
     );
   });
 
+  it("rejects a preclaimed replay-source provenance binding during append", async () => {
+    await recordFixture(db);
+    const later = laterEvidenceRecording("evidence:preclaimed");
+    const existing = await db.query<{ id: string }>(
+      `SELECT id FROM decision_ledger
+        WHERE org_id = $1 ORDER BY sequence ASC LIMIT 1`,
+      [LEDGER_ORG],
+    );
+    await db.query(
+      `INSERT INTO decision_replay_source_provenance
+        (org_id, source_kind, source_id, recording_entry_id)
+       VALUES ($1, 'evidence', $2, $3)`,
+      [LEDGER_ORG, later.snapshot.id, existing.rows[0]!.id],
+    );
+
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [later.event],
+      LEDGER_PROVENANCE,
+      [later.snapshot],
+    ))).rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+    const persisted = await db.query<{ n: number | string }>(
+      `SELECT
+         (SELECT count(*) FROM evidence_snapshots
+           WHERE org_id = $1 AND id = $2) +
+         (SELECT count(*) FROM decision_ledger
+           WHERE org_id = $1 AND id = $3) AS n`,
+      [LEDGER_ORG, later.snapshot.id, later.event.id],
+    );
+    expect(Number(persisted.rows[0]?.n)).toBe(0);
+  });
+
+  it("rejects an orphan replay-source provenance binding during verification", async () => {
+    await recordFixture(db);
+    const existing = await db.query<{ id: string }>(
+      `SELECT id FROM decision_ledger
+        WHERE org_id = $1 ORDER BY sequence ASC LIMIT 1`,
+      [LEDGER_ORG],
+    );
+    await db.query(
+      `INSERT INTO decision_replay_source_provenance
+        (org_id, source_kind, source_id, recording_entry_id)
+       VALUES ($1, 'evidence', 'evidence:orphan-binding', $2)`,
+      [LEDGER_ORG, existing.rows[0]!.id],
+    );
+
+    const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(broken.ok).toBe(false);
+    expect(broken.replaySourceReason).toBe(
+      "immutable replay-source provenance binding has no source",
+    );
+  });
+
   it("refuses replay after immutable bundle membership is changed", async () => {
     await recordFixture(db);
     await db.exec(

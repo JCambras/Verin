@@ -20,7 +20,7 @@ interface BindingRow {
   readonly decision_id: string | null;
   readonly evidence_snapshot_id: string | null;
   readonly input_bundle_id: string | null;
-  readonly has_earlier_recording: boolean;
+  readonly sequence: number | string;
   readonly prov_source: string;
   readonly prov_asof: string;
   readonly prov_confidence: string;
@@ -35,6 +35,7 @@ function bindingProvenance(
   row: BindingRow | undefined,
   kind: SourceKind,
   id: string,
+  hasEarlierRecording: boolean,
 ): RecordProvenance | null {
   if (!row) return null;
   const matches = kind === "evidence"
@@ -53,7 +54,7 @@ function bindingProvenance(
       confidence: row.prov_confidence,
     },
   );
-  if (!matches || row.has_earlier_recording || !provenance) {
+  if (!matches || hasEarlierRecording || !provenance) {
     throw appError(
       "STORE_CONSTRAINT",
       "immutable replay source provenance binding is invalid",
@@ -72,26 +73,7 @@ async function loadBinding(
   const result = await tx.query<BindingRow>(
     `SELECT binding.recording_entry_id, ledger.event_type, ledger.decision_id,
             ledger.evidence_snapshot_id, record.input_bundle_id,
-            EXISTS (
-              SELECT 1
-                FROM decision_ledger earlier
-                LEFT JOIN decision_records earlier_record
-                  ON earlier_record.org_id = earlier.org_id
-                 AND earlier_record.id = earlier.decision_id
-               WHERE earlier.org_id = binding.org_id
-                 AND earlier.sequence < ledger.sequence
-                 AND (
-                   (binding.source_kind = 'evidence'
-                     AND earlier.event_type = 'EvidenceSnapshotRecorded'
-                     AND earlier.evidence_snapshot_id = binding.source_id)
-                   OR (binding.source_kind = 'decision'
-                     AND earlier.event_type = 'DecisionRecorded'
-                     AND earlier.decision_id = binding.source_id)
-                   OR (binding.source_kind = 'bundle'
-                     AND earlier.event_type = 'DecisionRecorded'
-                     AND earlier_record.input_bundle_id = binding.source_id)
-                 )
-            ) AS has_earlier_recording,
+            ledger.sequence,
             ledger.prov_source, ledger.prov_asof, ledger.prov_confidence,
             ledger.schema_version, ledger.serializer_version
        FROM decision_replay_source_provenance binding
@@ -117,7 +99,33 @@ async function loadBinding(
       UNVERIFIED_REPLAY_SOURCE_PROVENANCE,
     );
   }
-  return bindingProvenance(row, kind, id);
+  let hasEarlierRecording = false;
+  if (row && !verifiedRecordingEntryIds) {
+    const earlier = await tx.query<{ found: number }>(
+      `SELECT 1 AS found
+         FROM decision_ledger earlier
+         LEFT JOIN decision_records earlier_record
+           ON earlier_record.org_id = earlier.org_id
+          AND earlier_record.id = earlier.decision_id
+        WHERE earlier.org_id = $1
+          AND earlier.sequence < $4
+          AND (
+            ($2 = 'evidence'
+              AND earlier.event_type = 'EvidenceSnapshotRecorded'
+              AND earlier.evidence_snapshot_id = $3)
+            OR ($2 = 'decision'
+              AND earlier.event_type = 'DecisionRecorded'
+              AND earlier.decision_id = $3)
+            OR ($2 = 'bundle'
+              AND earlier.event_type = 'DecisionRecorded'
+              AND earlier_record.input_bundle_id = $3)
+          )
+        LIMIT 1`,
+      [orgId, kind, id, Number(row.sequence)],
+    );
+    hasEarlierRecording = earlier.rows.length > 0;
+  }
+  return bindingProvenance(row, kind, id, hasEarlierRecording);
 }
 
 async function decisionSourceProvenance(

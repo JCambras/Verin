@@ -7,7 +7,11 @@
  * A replay that rebuilt nothing FAILS (charter #4): an empty result means the script
  * was pointed at the wrong store, not that the store is healthy.
  */
-import { createDb, type SqlDb } from "../src/infrastructure/store/db";
+import {
+  createDb,
+  type SqlDb,
+  type SqlQueryable,
+} from "../src/infrastructure/store/db";
 import { isAppError } from "../src/contracts/errors";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
 import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
@@ -27,11 +31,26 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+async function printLockedPlan(
+  db: SqlQueryable,
+  tenant: string,
+  entries: number,
+): Promise<void> {
+  const sample = await listDecisionProjectionMetadata(
+    db,
+    tenant,
+    REBUILD_PLAN_SAMPLE,
+  );
+  const lines = rebuildPlanLines({
+    tenant,
+    entries,
+    derived: await countDecisionProjections(db, tenant),
+    sample,
+  });
+  process.stdout.write(`${lines.join("\n")}\n`);
+}
+
 async function printPlan(db: SqlDb, tenant: string): Promise<number> {
-  // Replaying a chain that does not verify would launder a corrupted source into
-  // derived state, so integrity is checked BEFORE the plan is printed or applied.
-  // The preview runs the SAME chain-plus-replay-source check the apply path runs, so
-  // a plan can never promise a replay that would then fail halfway.
   const integrity = await verifyDecisionLedgerIntegrity(db, tenant);
   const verdict = integrity.ledger;
   if (!integrity.ok) {
@@ -46,18 +65,7 @@ async function printPlan(db: SqlDb, tenant: string): Promise<number> {
       `org ${tenant} has 0 decision-ledger entries - replaying nothing is vacuous (did db:seed run against this store?)`,
     );
   }
-  const sample = await listDecisionProjectionMetadata(
-    db,
-    tenant,
-    REBUILD_PLAN_SAMPLE,
-  );
-  const lines = rebuildPlanLines({
-    tenant,
-    entries: verdict.entriesChecked,
-    derived: await countDecisionProjections(db, tenant),
-    sample,
-  });
-  process.stdout.write(`${lines.join("\n")}\n`);
+  await printLockedPlan(db, tenant, verdict.entriesChecked);
   return verdict.entriesChecked;
 }
 
@@ -76,15 +84,23 @@ async function main(): Promise<void> {
     await db.close();
     fail(`org ${options.tenant} does not exist in this store`);
   }
-  const entries = await printPlan(db, options.tenant);
   if (!options.apply) {
+    await printPlan(db, options.tenant);
     await db.close();
     process.stdout.write(
       "PREVIEW - nothing was changed. Re-run with --apply to replay this tenant.\n",
     );
     return;
   }
-  const rebuilt = await rebuildDecisionProjections(db, options.tenant);
+  let entries = 0;
+  const rebuilt = await rebuildDecisionProjections(
+    db,
+    options.tenant,
+    async (tx, verifiedEntries) => {
+      entries = verifiedEntries;
+      await printLockedPlan(tx, options.tenant, verifiedEntries);
+    },
+  );
   await db.close();
   if (rebuilt.length === 0) {
     fail(

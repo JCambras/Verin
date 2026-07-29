@@ -31,7 +31,7 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
 const IMMUTABLE_TABLE_SET = new Set<string>(IMMUTABLE_TABLES);
 
 interface SqlToken {
-  readonly kind: "identifier" | "dot" | "other";
+  readonly kind: "identifier" | "dot" | "string" | "body" | "other";
   readonly value?: string;
 }
 
@@ -66,28 +66,35 @@ function sqlTokens(sql: string): SqlToken[] {
       continue;
     }
     if (char === "'") {
+      let value = "";
       index += 1;
       while (index < sql.length) {
         if (sql[index] === "\\") {
+          value += sql[index + 1] ?? "";
           index += 2;
         } else if (sql[index] === "'" && sql[index + 1] === "'") {
+          value += "'";
           index += 2;
         } else if (sql[index] === "'") {
           index += 1;
           break;
         } else {
+          value += sql[index]!;
           index += 1;
         }
       }
-      tokens.push({ kind: "other" });
+      tokens.push({ kind: "string", value });
       continue;
     }
     if (char === "$") {
       const tag = sql.slice(index).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0];
       if (tag) {
         const end = sql.indexOf(tag, index + tag.length);
+        const value = end < 0
+          ? sql.slice(index + tag.length)
+          : sql.slice(index + tag.length, end);
         index = end < 0 ? sql.length : end + tag.length;
-        tokens.push({ kind: "other" });
+        tokens.push({ kind: "body", value });
         continue;
       }
     }
@@ -124,46 +131,105 @@ function sqlTokens(sql: string): SqlToken[] {
       });
       continue;
     }
-    tokens.push({ kind: char === "." ? "dot" : "other" });
+    tokens.push({
+      kind: char === "." ? "dot" : "other",
+      value: char,
+    });
     index += 1;
   }
   return tokens;
 }
 
-function immutableInsertTargets(sql: string): ImmutableTable[] {
-  const tokens = sqlTokens(sql);
-  const targets: ImmutableTable[] = [];
-  for (let index = 0; index < tokens.length - 2; index += 1) {
-    if (
-      tokens[index]?.kind !== "identifier" ||
-      tokens[index]?.value !== "insert" ||
-      tokens[index + 1]?.kind !== "identifier" ||
-      tokens[index + 1]?.value !== "into"
-    ) {
-      continue;
-    }
-    let targetIndex = index + 2;
-    if (
-      tokens[targetIndex]?.kind === "identifier" &&
-      tokens[targetIndex]?.value === "only"
-    ) {
-      targetIndex += 1;
-    }
-    const firstTarget = tokens[targetIndex];
-    if (firstTarget?.kind !== "identifier") continue;
-    let targetValue = firstTarget.value;
-    while (
-      tokens[targetIndex + 1]?.kind === "dot" &&
-      tokens[targetIndex + 2]?.kind === "identifier"
-    ) {
-      targetIndex += 2;
-      targetValue = tokens[targetIndex]!.value;
-    }
-    if (targetValue && IMMUTABLE_TABLE_SET.has(targetValue)) {
-      targets.push(targetValue as ImmutableTable);
-    }
+function immutableTargetAt(
+  tokens: readonly SqlToken[],
+  start: number,
+): ImmutableTable | null {
+  let targetIndex = start;
+  if (
+    tokens[targetIndex]?.kind === "identifier" &&
+    tokens[targetIndex]?.value === "only"
+  ) {
+    targetIndex += 1;
   }
-  return targets;
+  const firstTarget = tokens[targetIndex];
+  if (firstTarget?.kind !== "identifier") return null;
+  let targetValue = firstTarget.value;
+  while (
+    tokens[targetIndex + 1]?.kind === "dot" &&
+    tokens[targetIndex + 2]?.kind === "identifier"
+  ) {
+    targetIndex += 2;
+    targetValue = tokens[targetIndex]!.value;
+  }
+  return targetValue && IMMUTABLE_TABLE_SET.has(targetValue)
+    ? targetValue as ImmutableTable
+    : null;
+}
+
+function immutableWriteTargets(
+  sql: string,
+  seen = new Set<string>(),
+): ImmutableTable[] {
+  if (seen.has(sql)) return [];
+  seen.add(sql);
+  const tokens = sqlTokens(sql);
+  const targets = new Set<ImmutableTable>();
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token?.kind === "body" && token.value !== undefined) {
+      immutableWriteTargets(token.value, seen).forEach((target) =>
+        targets.add(target));
+    }
+    let targetIndex: number | null = null;
+    if (
+      token?.kind === "identifier" &&
+      (token.value === "insert" || token.value === "merge") &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "into"
+    ) {
+      targetIndex = index + 2;
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "copy"
+    ) {
+      targetIndex = tokens[index + 1]?.value === "binary"
+        ? index + 2
+        : index + 1;
+      let writesRows = false;
+      for (let part = targetIndex + 1; part < tokens.length; part += 1) {
+        const candidate = tokens[part]!;
+        if (candidate.kind === "other" && candidate.value === ";") break;
+        if (candidate.kind === "identifier" && candidate.value === "from") {
+          writesRows = true;
+          break;
+        }
+      }
+      if (!writesRows) targetIndex = null;
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "execute"
+    ) {
+      let composed = "";
+      for (let nested = index + 1; nested < tokens.length; nested += 1) {
+        const candidate = tokens[nested]!;
+        if (candidate.kind === "other" && candidate.value === ";") break;
+        if (
+          (candidate.kind === "string" || candidate.kind === "body") &&
+          candidate.value !== undefined
+        ) {
+          composed += candidate.value;
+          immutableWriteTargets(candidate.value, seen).forEach((target) =>
+            targets.add(target));
+        }
+      }
+      immutableWriteTargets(composed, seen).forEach((target) =>
+        targets.add(target));
+    }
+    if (targetIndex === null) continue;
+    const target = immutableTargetAt(tokens, targetIndex);
+    if (target) targets.add(target);
+  }
+  return [...targets];
 }
 
 interface Violation {
@@ -180,6 +246,20 @@ const RESTRICTED_SOURCE_IMPORTS: Record<string, string> = {
   assertValidatedLedgerSourceWrite:
     "src/infrastructure/ledger/ledger-sources.ts",
 };
+
+function restrictedSourceModule(
+  specifier: string,
+  resolved?: SourceFile,
+): boolean {
+  const resolvedPath = resolved?.getFilePath().replace(/\\/g, "/") ?? "";
+  const normalized = specifier
+    .split(/[?#]/, 1)[0]!
+    .replace(/\.(?:[cm]?[jt]sx?)$/i, "");
+  return /\/ledger-(?:sources|source-capability)\.(?:[cm]?[jt]sx?)$/i.test(
+    resolvedPath,
+  ) ||
+    /(?:^|\/)ledger-(?:sources|source-capability)$/.test(normalized);
+}
 
 function staticStringArray(node: Node, seen: Set<Node>): string[] | null {
   if (seen.has(node)) return null;
@@ -911,7 +991,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         }
         continue;
       }
-      for (const table of immutableInsertTargets(value)) {
+      for (const table of immutableWriteTargets(value)) {
         const key = `${rel}:${table}`;
         if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
           seen.add(key);
@@ -947,7 +1027,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         }
         continue;
       }
-      for (const table of immutableInsertTargets(value)) {
+      for (const table of immutableWriteTargets(value)) {
         const key = `${rel}:${table}`;
         if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
           seen.add(key);
@@ -985,9 +1065,10 @@ function sourceWriteBoundaryViolations(
       : relative(REPO_ROOT, absolute).replace(/\\/g, "/");
     for (const declaration of file.getImportDeclarations()) {
       const specifier = declaration.getModuleSpecifierValue();
-      const restrictedModule =
-        /(?:^|\/)ledger-sources$/.test(specifier) ||
-        /(?:^|\/)ledger-source-capability$/.test(specifier);
+      const restrictedModule = restrictedSourceModule(
+        specifier,
+        declaration.getModuleSpecifierSourceFile(),
+      );
       if (
         restrictedModule &&
         declaration.getNamespaceImport()
@@ -1012,9 +1093,9 @@ function sourceWriteBoundaryViolations(
       const specifier = declaration.getModuleSpecifierValue();
       if (
         specifier &&
-        (
-          /(?:^|\/)ledger-sources$/.test(specifier) ||
-          /(?:^|\/)ledger-source-capability$/.test(specifier)
+        restrictedSourceModule(
+          specifier,
+          declaration.getModuleSpecifierSourceFile(),
         )
       ) {
         violations.push({
@@ -1036,10 +1117,7 @@ function sourceWriteBoundaryViolations(
           : null;
       if (
         value &&
-        (
-          /(?:^|\/)ledger-sources$/.test(value) ||
-          /(?:^|\/)ledger-source-capability$/.test(value)
-        )
+        restrictedSourceModule(value)
       ) {
         violations.push({
           file: rel,
@@ -1057,10 +1135,7 @@ function sourceWriteBoundaryViolations(
       const value = specifier ? staticString(specifier) : null;
       if (
         value &&
-        (
-          /(?:^|\/)ledger-sources$/.test(value) ||
-          /(?:^|\/)ledger-source-capability$/.test(value)
-        )
+        restrictedSourceModule(value)
       ) {
         violations.push({
           file: rel,
@@ -1277,6 +1352,39 @@ describe("decision-ledger append-only fence", () => {
       ]);
     });
 
+    it("detects merge, copy, and procedural row creation", () => {
+      const project = inMemoryProject({
+        "/scripts/merge.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("MERGE INTO decision_records target USING staged source ON false WHEN NOT MATCHED THEN INSERT (id) VALUES (source.id)");`,
+        "/scripts/copy.ts":
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query('COPY public.evidence_snapshots FROM STDIN');`,
+        "/scripts/execute.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`DO $body$ BEGIN EXECUTE 'INSERT INTO decision_ledger (id) VALUES (''x'')'; END $body$`);",
+        "/scripts/execute-concat.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`DO $body$ BEGIN EXECUTE 'INSERT INTO ' || 'decision_input_bundles'; END $body$`);",
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual([
+        "copy.ts",
+        "execute-concat.ts",
+        "execute.ts",
+        "merge.ts",
+      ]);
+      const readOnly = inMemoryProject({
+        "/scripts/copy-out.ts":
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query("COPY evidence_snapshots TO STDOUT");`,
+      });
+      expect(ledgerInsertViolations(readOnly.getSourceFiles())).toEqual([]);
+    });
+
     it("fails closed on an unresolved SQL-bearing alias", () => {
       const project = inMemoryProject({
         "/scripts/unresolved-alias.ts":
@@ -1354,6 +1462,17 @@ describe("decision-ledger append-only fence", () => {
       expect(
         sourceWriteBoundaryViolations(project.getSourceFiles()),
       ).toHaveLength(7);
+    });
+
+    it("resolves restricted module imports with emitted JavaScript extensions", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `import * as capability from "./ledger/ledger-source-capability.js";\n` +
+          `void capability;`,
+      });
+      expect(
+        sourceWriteBoundaryViolations(project.getSourceFiles()),
+      ).toHaveLength(1);
     });
 
     it("detects a planted immutable mutation export", () => {

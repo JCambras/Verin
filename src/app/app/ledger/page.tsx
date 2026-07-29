@@ -154,7 +154,9 @@ export default function DecisionLedgerPage() {
 
           {model.entries.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-              No decision events have been recorded for this firm.
+              {model.verification.ok
+                ? "No decision events have been recorded for this firm."
+                : "Entry details are suppressed because verification failed."}
             </p>
           ) : (
             <div

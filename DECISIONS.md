@@ -3492,3 +3492,36 @@ bounded verification cannot consume an unverified historical producer label, and
 raw-insert owner must remain one owner across valid PostgreSQL and TypeScript syntax.
 **Revert path:** none while Prompt 7 promises exact replay pins, exact-window provenance
 trust, bounded register reads, and one immutable insert owner.
+
+### D-114 · 2026-07-28 · reversible · Failed snapshots, source bindings, rebuild apply, and row-creation ownership fail closed
+
+The ledger API returns only its bounded L1-L4 verdict when verification fails.
+Actor, event, decision, correlation, hash, and provenance details are suppressed,
+and the UI states that the details are withheld instead of claiming the ledger is
+empty.
+
+Replay-source provenance bindings are validated immediately after every append.
+Whole-store verification enumerates both sides of the binding and proves that
+every immutable evidence, bundle, and decision source has exactly one binding and
+that no binding names a missing source. A conflicting preclaim aborts the append
+and its source and event rows together.
+
+The immutable-row ownership fence recognizes INSERT, MERGE, COPY FROM, and
+statically resolvable procedural EXECUTE statements inside dollar-quoted bodies.
+It resolves restricted source and capability imports through their source file
+and emitted JavaScript extensions. COPY TO remains a read and is not flagged.
+
+Rebuild apply prints the verified plan through a read-only view of the same
+exclusive tenant transaction that clears and replays derived state. Preview-only
+mode remains non-mutating. Bounded register provenance checks the binding entry
+against the exact verified window before parsing it and performs no historical
+correspondence scan; the full verifier and append path retain that examiner-grade
+check.
+
+**Why:** failed cryptographic snapshots cannot expose untrusted PII-bearing
+metadata, an append-only side table cannot preclaim or orphan future truth, a
+reviewed plan must describe the state actually mutated, and static ownership
+cannot depend on one SQL verb or one import spelling.
+**Revert path:** none while Prompt 7 promises PII-safe failure, exact replay
+bindings, preview-first repair, bounded register work, and one immutable write
+owner.
