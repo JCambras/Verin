@@ -1735,6 +1735,14 @@ function helperIsSanctioned(sourceFile: SourceFile): boolean {
     .filter((fn) => fn.getName() === AXE_HELPER_EXPORT && fn.isExported() && fn.isAsync());
   if (helpers.length !== 1) return false;
   const helper = helpers[0]!;
+  const topLevelStatements = sourceFile.getStatements();
+  if (
+    topLevelStatements.length !== 3 ||
+    topLevelStatements.filter(Node.isImportDeclaration).length !== 2 ||
+    !topLevelStatements.includes(helper)
+  ) {
+    return false;
+  }
   const body = helper.getBody();
   const pageName = helper.getParameters()[0]?.getName();
   if (!Node.isBlock(body) || pageName === undefined || body.getStatements().length !== 3) return false;
@@ -1748,6 +1756,14 @@ function helperIsSanctioned(sourceFile: SourceFile): boolean {
   if (!Node.isIdentifier(resultName) || initializer === undefined) return false;
   if (configuredAxeAnalysis(initializer, pageName) === undefined) return false;
   return isDirectViolationAssertion(assertion!, resultName.getText());
+}
+
+function specHasAxeRuntimeAccess(sourceFile: SourceFile): boolean {
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.StringLiteral)
+    .some((literal) =>
+      literal.getLiteralText().startsWith("@axe-core/playwright"),
+    );
 }
 
 function loginHelperIsSanctioned(sourceFile: SourceFile): boolean {
@@ -1818,7 +1834,10 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
     const sourceFile = sourceFiles.get(path);
     if (sourceFile === undefined) {
       problems.push(`${path}:1 required Axe E2E specification is missing`);
-    } else if (!specAwaitsSanctionedHelper(sourceFile)) {
+    } else if (
+      specHasAxeRuntimeAccess(sourceFile) ||
+      !specAwaitsSanctionedHelper(sourceFile)
+    ) {
       problems.push(`${path}:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe`);
     } else {
       for (const group of REQUIRED_ROUTE_GROUPS[path]) {
@@ -2421,6 +2440,22 @@ disable(true, "file disabled");`,
         `Reflect.apply(test.${"skip"}, test, [true, "file disabled"]);`,
         `const invoke = Reflect.apply;
 invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
+        `Reflect.apply.call(
+  Reflect,
+  test.${"skip"},
+  test,
+  [true, "file disabled"],
+);`,
+        `Reflect.apply.apply(Reflect, [
+  test.${"fixme"},
+  test,
+  [true, "file disabled"],
+]);`,
+        `Reflect.apply(
+  Reflect.apply,
+  Reflect,
+  [test.${"fail"}, test, [true, "expected failure"]],
+);`,
         `function disable() {
   test.info().${"fixme"}(true, "file disabled");
 }
@@ -2550,6 +2585,35 @@ test("axe"`,
           "e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations",
         );
       }
+    });
+
+    it("rejects module-scope Axe runtime instrumentation in the helper and required specs", () => {
+      const instrumentedHelper = VALID_HELPER.replace(
+        'import { expect, type Page } from "@playwright/test";',
+        `import { expect, type Page } from "@playwright/test";
+Axe.prototype.analyze = async () => ({ violations: [] }) as never;`,
+      );
+      expect(
+        axeCoverageProblems(completeSources({}, instrumentedHelper)),
+      ).toContain(
+        "e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations",
+      );
+
+      const instrumentedSpec = VALID_SPECS["e2e/smoke.spec.ts"].replace(
+        'import { expect, test } from "@playwright/test";',
+        `import { expect, test } from "@playwright/test";
+import Axe from "@axe-core/playwright";
+Axe.prototype.analyze = async () => ({ violations: [] }) as never;`,
+      );
+      expect(
+        axeCoverageProblems(
+          completeSources({
+            "e2e/smoke.spec.ts": instrumentedSpec,
+          }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+      );
     });
   });
 });

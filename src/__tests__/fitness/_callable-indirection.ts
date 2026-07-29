@@ -132,9 +132,87 @@ function isReflectApplyValue(
   );
 }
 
+function staticArrayElements(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): Node[] | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (Node.isArrayLiteralExpression(normalized)) {
+    const elements = normalized.getElements();
+    return elements.every(Node.isExpression) ? elements : undefined;
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingAssignmentValues(normalized),
+  ];
+  const values = sources
+    .map((source) => staticArrayElements(source, new Set(seen)))
+    .filter((value): value is Node[] => value !== undefined);
+  if (values.length !== 1 || values.length !== sources.length) {
+    return undefined;
+  }
+  return values[0];
+}
+
+function compositionalReflectApplyTarget(
+  callable: Node,
+  args: readonly Node[],
+  seen = new Set<Node>(),
+): Node | undefined {
+  const normalized = unwrapExpression(callable);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  const access = staticMemberAccess(normalized);
+  if (access?.name === "call") {
+    return compositionalReflectApplyTarget(
+      access.receiver,
+      args.slice(1),
+      new Set(seen),
+    );
+  }
+  if (
+    access?.name === "apply" &&
+    !isGlobalReflect(access.receiver)
+  ) {
+    const applied = staticArrayElements(args[1]);
+    return applied === undefined
+      ? undefined
+      : compositionalReflectApplyTarget(
+          access.receiver,
+          applied,
+          new Set(seen),
+        );
+  }
+  if (!isReflectApplyValue(normalized)) return undefined;
+  const target = args[0];
+  if (target === undefined) return undefined;
+  const reflectedArguments = staticArrayElements(args[2]);
+  if (reflectedArguments === undefined) return target;
+  return (
+    compositionalReflectApplyTarget(
+      target,
+      reflectedArguments,
+      new Set(seen),
+    ) ?? target
+  );
+}
+
 export function reflectApplyTarget(
   call: CallExpression,
 ): Node | undefined {
-  if (!isReflectApplyValue(call.getExpression())) return undefined;
-  return call.getArguments()[0];
+  return compositionalReflectApplyTarget(
+    call.getExpression(),
+    call.getArguments(),
+  );
 }

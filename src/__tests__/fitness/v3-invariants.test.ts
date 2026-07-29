@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Node, Project, SyntaxKind } from "ts-morph";
 import {
@@ -389,6 +398,40 @@ describe("v3-invariant registry fence", () => {
           "activeRatchetProblems",
         ),
       ).toBe(false);
+    });
+    it("proves injected gate-ratchet drift exits the real runner nonzero", () => {
+      const drifted = structuredClone(
+        registry as unknown as GateRegistry,
+      );
+      drifted.gates.B!.outcome = "Both domain files exist.";
+      const directory = mkdtempSync(
+        join(tmpdir(), "verin-v3-runner-drift-"),
+      );
+      const registryPath = join(directory, "v3-invariants.json");
+      writeFileSync(registryPath, JSON.stringify(drifted));
+      try {
+        const run = spawnSync(
+          process.execPath,
+          [
+            join(root, "node_modules/tsx/dist/cli.mjs"),
+            join(root, "scripts/v3-invariants.ts"),
+            "--registry",
+            registryPath,
+          ],
+          {
+            cwd: root,
+            encoding: "utf8",
+            env: { ...process.env, NO_COLOR: "1" },
+          },
+        );
+        expect(run.status, run.stderr || run.stdout).toBe(1);
+        expect(run.stderr).toContain(
+          "v3-invariants: gate constitution problems:",
+        );
+        expect(run.stderr).toContain("gate metadata drifted");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
     });
     it("flags failed and missing results from every mapped fitness file", () => {
       const refs = ["active.test.ts", "gate-only.test.ts"];

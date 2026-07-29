@@ -437,6 +437,19 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/charter-drift.test.ts"
+        },
+        {
+          "type": "file",
+          "ref": "scripts/fitness-tests.lib.ts"
+        },
+        {
+          "type": "file",
+          "ref": "scripts/fitness-tests.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "test",
+          "command": "pnpm exec tsx scripts/fitness-tests.ts"
         }
       ]
     },

@@ -55,6 +55,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: unit + integration + fitness
         run: pnpm exec vitest run
+      - name: complete fitness inventory
+        run: pnpm exec tsx scripts/fitness-tests.ts
 
   knip:
     name: knip (dead-export / dead-code)

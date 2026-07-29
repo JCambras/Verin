@@ -6416,6 +6416,18 @@ complete Next `page.tsx` inventory and requires every static and dynamic route t
 scan owner. PF-001, PF-024, PF-030, PF-031, and PF-032 record the adversarial companions and restored
 green proofs.
 
+The captain-approved fitness-inventory and execution-provenance review (2026-07-29) amended ADR-0030
+in place a twenty-first time: **(1)** the blocking test job invokes a direct fitness-inventory runner
+that enumerates every fitness file and fails if Vitest configuration omits any per-file result;
+**(2)** charter-drift resolves `todo`, `fails`, `skipIf`, and `runIf` through computed and aliased
+Vitest chains, failing closed on unknown conditions; **(3)** the v3 companion executes the real runner
+against injected ratchet drift and requires exit 1; **(4)** the Axe helper rejects module-scope runtime
+replacement, while required specifications cannot import the Axe runtime directly; **(5)** callable
+indirection composes nested `Reflect.apply`, `call`, and `apply` forms for Playwright neutralizers and
+hooks; and **(6)** Gate 0 requires stable unreassigned screenshot helpers and identity preservation for
+every supported URL scenario and firm resolver. PF-001, PF-024, PF-031, and PF-032 record the red
+reproductions, continuous companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

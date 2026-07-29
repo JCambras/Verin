@@ -26,6 +26,8 @@ import {
 import {
   dispositionFor,
   FIRMS,
+  resolveFirmId,
+  resolveScenarioId,
   SCENARIOS,
 } from "../../app/demo/data";
 import { getJourney } from "../../app/demo/journey";
@@ -74,6 +76,26 @@ const RATIFIED_SURFACE_RATCHET = [
   "Printable examiner-grade decision artifact",
 ] as const;
 const parsedSourceFiles = new Map<string, SourceFile>();
+
+export function resolverIdentityProblems(
+  scenarioIds: readonly string[],
+  firmIds: readonly string[],
+  resolveScenario: (id: string | undefined) => string | null,
+  resolveFirm: (id: string | undefined) => string | null,
+): string[] {
+  return [
+    ...scenarioIds.flatMap((id) =>
+      resolveScenario(id) === id
+        ? []
+        : [`scenario resolver remaps supported id '${id}'`],
+    ),
+    ...firmIds.flatMap((id) =>
+      resolveFirm(id) === id
+        ? []
+        : [`firm resolver remaps supported id '${id}'`],
+    ),
+  ];
+}
 
 function parsedSourceFile(path: string, source: string): SourceFile {
   const key = `${path}\0${source}`;
@@ -1152,6 +1174,31 @@ function isNonEmptyScreenshotAssertion(
   return Node.isNumericLiteral(threshold) && threshold.getLiteralText() === "0";
 }
 
+function isUnreassignedFunction(
+  file: SourceFile,
+  helper: NonNullable<ReturnType<SourceFile["getFunction"]>>,
+): boolean {
+  const symbol = helper.getNameNode()?.getSymbol();
+  if (symbol === undefined) return false;
+  return !file
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .some((expression) => {
+      const operator = expression.getOperatorToken().getKind();
+      const left = expression.getLeft();
+      const writtenIdentifiers = [
+        ...(Node.isIdentifier(left) ? [left] : []),
+        ...left.getDescendantsOfKind(SyntaxKind.Identifier),
+      ];
+      return (
+        operator >= SyntaxKind.FirstAssignment &&
+        operator <= SyntaxKind.LastAssignment &&
+        writtenIdentifiers.some(
+          (identifier) => identifier.getSymbol() === symbol,
+        )
+      );
+    });
+}
+
 function hasRealScreenshotHelper(source: string): boolean {
   const file = parsedSourceFile("/demo.spec.ts", source);
   const helper = file.getFunction("snap");
@@ -1160,6 +1207,7 @@ function hasRealScreenshotHelper(source: string): boolean {
   if (
     helper === undefined ||
     !helper.isAsync() ||
+    !isUnreassignedFunction(file, helper) ||
     !Node.isBlock(body) ||
     !Node.isStringLiteral(shots) ||
     shots.getLiteralText() !== "demo-screens" ||
@@ -1194,6 +1242,7 @@ function hasRealLauncherScreenshotHelper(source: string): boolean {
   if (
     helper === undefined ||
     !helper.isAsync() ||
+    !isUnreassignedFunction(file, helper) ||
     !Node.isBlock(body) ||
     helper.getParameters().map((parameter) => parameter.getName()).join(",") !==
       "page" ||
@@ -1733,6 +1782,34 @@ ${workspaceControl}`,
           invalidHelper,
         ).not.toEqual([]);
       }
+
+      for (const reassignedHelper of [
+        e2e.replace(
+          `test("${JOURNEY_TEST}"`,
+          `[snap] = [async () => {
+  await Promise.resolve();
+}];
+test("${JOURNEY_TEST}"`,
+        ),
+        e2e.replace(
+          `test("${JOURNEY_TEST}"`,
+          `snapLauncher = async () => {
+  await Promise.resolve();
+};
+test("${JOURNEY_TEST}"`,
+        ),
+      ]) {
+        expect(
+          surfaceCompletenessProblems(
+            contract,
+            DEMO_SURFACES,
+            route,
+            reassignedHelper,
+            exists,
+          ),
+          reassignedHelper,
+        ).not.toEqual([]);
+      }
     });
 
     it("rejects registered hooks that can alter the canonical journey", () => {
@@ -1763,6 +1840,15 @@ install(async ({ page }) => {
 install(test.beforeEach, test, [async ({ page }) => {
   page.screenshot = async () => Buffer.from("not a screenshot") as never;
 }]);`,
+        `Reflect.apply.call(Reflect, test.beforeEach, test, [async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+}]);`,
+        `Reflect.apply.apply(Reflect, [test.beforeEach, test, [async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+}]]);`,
+        `Reflect.apply(Reflect.apply, Reflect, [test.beforeEach, test, [async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+}]]);`,
       ]) {
         const hookedJourney = e2e.replace(
           `test("${JOURNEY_TEST}"`,
@@ -1784,6 +1870,14 @@ install(test.beforeEach, test, [async ({ page }) => {
     });
 
     it("preserves every supported scenario and firm outcome through the journey service", () => {
+      expect(
+        resolverIdentityProblems(
+          SCENARIOS.map((scenario) => scenario.id),
+          Object.keys(FIRMS),
+          resolveScenarioId,
+          resolveFirmId,
+        ),
+      ).toEqual([]);
       for (const scenario of SCENARIOS) {
         for (const firm of Object.values(FIRMS)) {
           const journey = getJourney(scenario.id, firm.id);
@@ -1797,6 +1891,24 @@ install(test.beforeEach, test, [async ({ page }) => {
           );
         }
       }
+    });
+
+    it("rejects URL resolvers that remap a supported scenario or firm", () => {
+      expect(
+        resolverIdentityProblems(
+          ["safe-proceed", "approval-invalidation"],
+          ["firm-a", "firm-b"],
+          (id) =>
+            id === undefined || id === "safe-proceed"
+              ? "safe-proceed"
+              : "safe-proceed",
+          (id) =>
+            id === undefined || id === "firm-a" ? "firm-a" : "firm-a",
+        ),
+      ).toEqual([
+        "scenario resolver remaps supported id 'approval-invalidation'",
+        "firm resolver remaps supported id 'firm-b'",
+      ]);
     });
 
     it("rejects missing, empty, or non-blocking screenshot artifacts", () => {

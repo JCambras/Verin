@@ -74,7 +74,18 @@ function fail(msg: string): never {
 }
 
 // ---------- load + guard the registry ----------
-const registryPath = join(ROOT, "v3-invariants.json");
+const registryFlagIndex = process.argv.indexOf("--registry");
+const registryOverride =
+  registryFlagIndex === -1
+    ? undefined
+    : process.argv[registryFlagIndex + 1];
+if (registryFlagIndex !== -1 && registryOverride === undefined) {
+  fail("--registry requires a path");
+}
+const registryPath =
+  registryOverride === undefined
+    ? join(ROOT, "v3-invariants.json")
+    : resolve(registryOverride);
 if (!existsSync(registryPath)) fail("v3-invariants.json is missing from the repo root");
 const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
 

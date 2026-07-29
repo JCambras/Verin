@@ -93,6 +93,8 @@ That parse is the repo's one structured CI authority; the charter-drift fence re
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
+The blocking test job also invokes a direct fitness-inventory runner that enumerates every fitness file
+and requires a passing per-file result, so Vitest include or exclude drift cannot silently omit a fence.
 The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
 requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
@@ -121,7 +123,8 @@ controls, rejects registered Playwright hooks, and restricts its complete top-le
 against DOM mutation, injected controls, screenshot replacement, and alternate navigation before
 directly awaiting all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
-assert the result is non-empty. CI separately verifies that every canonical artifact exists and is
+assert the result is non-empty. Both screenshot helpers must remain unreassigned, and every supported URL
+scenario and firm resolver must preserve the supplied identity. CI separately verifies that every canonical artifact exists and is
 non-empty, then configures upload-artifact to fail when the directory is missing or the upload is
 conditionally disabled or failure-neutralized. The runner fails on
 every mapped fitness failure or missing result,
@@ -140,13 +143,16 @@ assignment source, including a later unreachable benign overwrite. Parentheses a
 wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
 and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
 must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or `Reflect.apply`
-and transitively invoked local neutralizer helpers are followed, and unresolved local callable
+and transitively invoked local neutralizer helpers are followed, including nested reflective invocation,
+and unresolved local callable
 indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
 login helper is pinned to the uninstrumented browser flow. Required specifications may register no
-Playwright hooks, including reflectively registered hooks. Conditional callback exits before a required
-scan are rejected as non-evidence. Charter-drift detects disabled or focused Vitest fences through
-symbol-aware AST registration analysis, including computed members and aliases.
+Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. The
+sanctioned helper admits no module-scope executable statement that could replace its analysis method.
+Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
+disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
+members, aliases, `todo`, `fails`, `skipIf`, and `runIf`.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

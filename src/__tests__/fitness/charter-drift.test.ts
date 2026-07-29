@@ -8,6 +8,7 @@ import {
   type SourceFile,
 } from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
+import { fitnessInventoryProblems } from "../../../scripts/fitness-tests.lib";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
@@ -153,6 +154,15 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["charter-as-code", "fitness", "src/__tests__/fitness/charter-drift.test.ts", "", "enforced"],
   ["charter-amended-by-adr-only", "procedure", ".github/pull_request_template.md", "", "enforced"],
   ["charter-drift-fence", "fitness", "src/__tests__/fitness/charter-drift.test.ts", "", "enforced"],
+  ["charter-drift-fence", "file", "scripts/fitness-tests.lib.ts", "", "enforced"],
+  ["charter-drift-fence", "file", "scripts/fitness-tests.ts", "", "enforced"],
+  [
+    "charter-drift-fence",
+    "ci-gate",
+    "test",
+    "pnpm exec tsx scripts/fitness-tests.ts",
+    "enforced",
+  ],
   ["non-utc-clock", "config", "vitest.config.ts", "", "enforced"],
   ["non-utc-clock", "file", "src/__tests__/setup.ts", "", "enforced"],
   ["dependency-rule", "config", "eslint.config.mjs", "", "enforced"],
@@ -227,6 +237,11 @@ const RATCHETED_CI_COMMANDS = [
   { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
   { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
   { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm exec tsx scripts/golden-cases-validate.ts" },
+  {
+    entryId: "charter-drift-fence",
+    ref: "test",
+    command: "pnpm exec tsx scripts/fitness-tests.ts",
+  },
 ] as const;
 
 function blockingCiJobs(): Map<string, CiJob> {
@@ -301,6 +316,51 @@ function staticRegistrationString(
     })[0];
 }
 
+function staticRegistrationBoolean(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): boolean | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (normalized.getKind() === SyntaxKind.TrueKeyword) return true;
+  if (normalized.getKind() === SyntaxKind.FalseKeyword) return false;
+  if (
+    Node.isPrefixUnaryExpression(normalized) &&
+    normalized.getOperatorToken() === SyntaxKind.ExclamationToken
+  ) {
+    const value = staticRegistrationBoolean(
+      normalized.getOperand(),
+      new Set(seen),
+    );
+    return value === undefined ? undefined : !value;
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingRegistrationAssignments(normalized),
+  ];
+  const values = sources.map((source) =>
+    staticRegistrationBoolean(source, new Set(seen)),
+  );
+  if (
+    values.length === 0 ||
+    values.some((value) => value === undefined) ||
+    new Set(values).size !== 1
+  ) {
+    return undefined;
+  }
+  return values[0];
+}
+
 function staticRegistrationMember(
   node: Node,
 ): { receiver: Node; name?: string } | undefined {
@@ -335,33 +395,71 @@ function precedingRegistrationAssignments(node: Node): Node[] {
     .map((candidate) => candidate.getRight());
 }
 
+interface VitestCallablePath {
+  members: string[];
+  conditions: Array<{
+    modifier: "skipIf" | "runIf";
+    value?: boolean;
+  }>;
+}
+
 function vitestCallablePaths(
   node: Node,
   seen = new Set<Node>(),
-): string[][] {
+): VitestCallablePath[] {
   const normalized = unwrapRegistrationExpression(node);
   if (seen.has(normalized)) return [];
   seen.add(normalized);
+  if (Node.isCallExpression(normalized)) {
+    const paths = vitestCallablePaths(
+      normalized.getExpression(),
+      new Set(seen),
+    );
+    return paths.map((path) => {
+      const modifier = path.members.at(-1);
+      if (modifier !== "skipIf" && modifier !== "runIf") return path;
+      return {
+        ...path,
+        conditions: [
+          ...path.conditions,
+          {
+            modifier,
+            value: staticRegistrationBoolean(
+              normalized.getArguments()[0],
+            ),
+          },
+        ],
+      };
+    });
+  }
   const member = staticRegistrationMember(normalized);
   if (member !== undefined) {
     return vitestCallablePaths(member.receiver, new Set(seen)).map(
-      (path) => [...path, member.name ?? "*"],
+      (path) => ({
+        ...path,
+        members: [...path.members, member.name ?? "*"],
+      }),
     );
   }
   if (!Node.isIdentifier(normalized)) return [];
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
-  const imported = declarations.flatMap((declaration): string[][] => {
+  const imported = declarations.flatMap(
+    (declaration): VitestCallablePath[] => {
     if (Node.isImportSpecifier(declaration)) {
       const moduleName = declaration
         .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
         ?.getModuleSpecifierValue();
-      return moduleName === "vitest" ? [[declaration.getName()]] : [];
+      return moduleName === "vitest"
+        ? [{ members: [declaration.getName()], conditions: [] }]
+        : [];
     }
     if (Node.isNamespaceImport(declaration)) {
       const moduleName = declaration
         .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
         ?.getModuleSpecifierValue();
-      return moduleName === "vitest" ? [[]] : [];
+      return moduleName === "vitest"
+        ? [{ members: [], conditions: [] }]
+        : [];
     }
     if (Node.isVariableDeclaration(declaration)) {
       const initializer = declaration.getInitializer();
@@ -383,11 +481,12 @@ function vitestCallablePaths(
     const initializer = variable?.getInitializer();
     return initializer === undefined
       ? []
-      : vitestCallablePaths(initializer, new Set(seen)).map((path) => [
+      : vitestCallablePaths(initializer, new Set(seen)).map((path) => ({
           ...path,
-          name ?? "*",
-        ]);
-  });
+          members: [...path.members, name ?? "*"],
+        }));
+    },
+  );
   return [
     ...imported,
     ...precedingRegistrationAssignments(normalized).flatMap((source) =>
@@ -401,20 +500,27 @@ function disabledVitestRegistrationProblemsInFile(
   fileName: string,
 ): string[] {
   const base = new Set(["it", "test", "describe"]);
-  const disabled = new Set(["skip", "only"]);
+  const disabled = new Set(["skip", "only", "todo", "fails"]);
   const xPrefixed = new Set(["xit", "xtest", "xdescribe"]);
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .flatMap((call) =>
       vitestCallablePaths(call.getExpression()).flatMap((path) => {
+        const members = path.members;
+        const conditionallyDisabled = path.conditions.some(
+          ({ modifier, value }) =>
+            (modifier === "skipIf" && value !== false) ||
+            (modifier === "runIf" && value !== true),
+        );
         const isDisabled =
-          (path.length === 1 && xPrefixed.has(path[0]!)) ||
-          (base.has(path[0]!) &&
-            (path.slice(1).some((member) => disabled.has(member)) ||
-              path.slice(1).includes("*")));
+          (members.length === 1 && xPrefixed.has(members[0]!)) ||
+          (base.has(members[0]!) &&
+            (members.slice(1).some((member) => disabled.has(member)) ||
+              members.slice(1).includes("*") ||
+              conditionallyDisabled));
         return isDisabled
           ? [
-              `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${path.join(".")}`,
+              `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${members.join(".")}`,
             ]
           : [];
       }),
@@ -485,7 +591,7 @@ describe("charter-drift fence", () => {
     expect(offenders, `disabled/focused fences found:\n${offenders.join("\n")}`).toEqual([]);
   });
 
-  it("(b companion) detects computed, namespace, imported, and assigned disabling aliases", () => {
+  it("(b companion) detects every supported Vitest neutralizer through aliases and computed chains", () => {
     const disabled = [
       `import { describe as suite } from "vitest";
 const off = suite["skip"];
@@ -499,6 +605,21 @@ check("disabled", () => {});`,
 let off: typeof describe.skip;
 off = describe.skip;
 off("disabled", () => {});`,
+      `import { it } from "vitest";
+it.todo("disabled");`,
+      `import { test } from "vitest";
+const inverted = test.fails;
+inverted("expected failure", () => {});`,
+      `import * as vitest from "vitest";
+const condition = true;
+vitest.test["skipIf"](condition)("disabled", () => {});`,
+      `import { describe } from "vitest";
+const never = false;
+const disabledSuite = describe.runIf(never);
+disabledSuite("disabled", () => {});`,
+      `import { it } from "vitest";
+const unknown = Math.random() > 0.5;
+it.skipIf(unknown)("conditionally disabled", () => {});`,
     ];
     for (const source of disabled) {
       expect(
@@ -510,6 +631,41 @@ off("disabled", () => {});`,
       disabledVitestRegistrationProblems(
         `import { describe as suite, it as check } from "vitest";
 suite("enabled", () => { check("runs", () => {}); });`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { test } from "vitest";
+test.skipIf(false)("runs", () => {});
+test.runIf(true)("runs too", () => {});`,
+      ),
+    ).toEqual([]);
+  });
+
+  it("(b' companion) rejects a missing fitness result even when Vitest exits successfully", () => {
+    const expected = [
+      "src/__tests__/fitness/axe-required.test.ts",
+      "src/__tests__/fitness/charter-drift.test.ts",
+    ];
+    expect(
+      fitnessInventoryProblems(
+        expected,
+        [
+          {
+            name: "/repo/src/__tests__/fitness/axe-required.test.ts",
+            status: "passed",
+          },
+        ],
+        0,
+      ),
+    ).toContain(
+      "src/__tests__/fitness/charter-drift.test.ts produced no result",
+    );
+    expect(
+      fitnessInventoryProblems(
+        expected,
+        expected.map((name) => ({ name, status: "passed" })),
+        0,
       ),
     ).toEqual([]);
   });

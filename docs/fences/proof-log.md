@@ -10397,6 +10397,114 @@ type, reference, exact command, and effective status.
 
 **Date:** 2026-07-29.
 
+### PF-001 (continued) · complete fitness execution and Vitest neutralizers
+
+**Invariant (charter operating model and #4):** every load-bearing fitness file produces a result in
+blocking CI, and a Vitest registration neutralizer cannot hide a broken fence.
+
+**Injection - omit charter-drift through Vitest configuration.** Added
+`src/__tests__/fitness/charter-drift.test.ts` to `vitest.config.ts` `exclude`, then ran the exact new
+blocking command `corepack pnpm exec tsx scripts/fitness-tests.ts`.
+
+**Observed failure (verbatim):**
+```text
+fitness inventory failed:
+  - src/__tests__/fitness/charter-drift.test.ts produced no result
+```
+
+**Injection - neutralize a mapped fence with `todo`.** Added
+`it.todo("disabled charter control")` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (b) no fitness fence is disabled or focused (this file included)
+AssertionError: disabled/focused fences found:
+charter-drift.test.ts:540 disabled/focused Vitest registration it.todo
+```
+
+**Companions added:** in-memory Vitest sources cover `todo`, `fails`, computed and aliased
+`skipIf(true)`, `runIf(false)`, unknown conditional state, and the two statically safe cases. The
+fitness-inventory companion supplies a successful invocation report that deliberately omits
+charter-drift and requires the missing-result diagnosis.
+
+**Revert:** both real injections were removed immediately. The restored focused charter-drift fence
+passed, and the complete fitness-inventory command passed all inventoried files.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · injected ratchet drift exits the real runner nonzero
+
+**Invariant (v3 §17 and ADR-0030):** shared constitution ratchet drift reaches a real blocking process
+exit, not merely a syntactically visible `fail` call.
+
+**Continuous executable injection:** the companion writes a registry copy whose Gate B outcome violates
+the shared metadata ratchet, invokes the real `scripts/v3-invariants.ts` entry point with that copy, and
+requires exit status 1 plus both `gate constitution problems` and `gate metadata drifted` diagnostics.
+The temporary registry is removed in a `finally` block.
+
+**Observed result:** the companion passed only after the child runner exited 1 with the pinned
+diagnostics. Mutating the immediate guard to `if (false && ...)` or clearing the validator result still
+fails the existing structural companion.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · authentic Axe runtime and compositional reflection
+
+**Invariant (charter #9):** required accessibility scans use the authentic sanctioned Axe runtime and
+cannot be disabled through nested reflective invocation.
+
+**Injection - replace Axe analysis at module scope.** Assigned an empty-result implementation to
+`AxeBuilder.prototype.analyze` in the real sanctioned helper.
+
+**Injection - nest a Playwright neutralizer behind `Reflect.apply.call`.** Added
+`Reflect.apply.call(Reflect, test.skip, test, [true, "disabled"])` to the real public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory sources cover module-scope helper replacement, direct Axe runtime import
+from a required specification, `Reflect.apply.call`, `Reflect.apply.apply`, and a nested
+`Reflect.apply(Reflect.apply, ...)` neutralizer. The shared callable resolver supplies the same nested
+forms to the Gate 0 hook detector.
+
+**Revert:** both real injections were removed immediately. The restored focused Axe fence passed all
+tests.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · stable screenshot helpers and URL identity
+
+**Invariant (Gate 0, ADR-0030):** canonical screenshots are produced by the validated helpers that
+remain active at runtime, and every supported URL scenario and firm reaches the exact requested branch.
+
+**Injection - reassign the canonical screenshot helper.** Replaced `snap` after its validated
+declaration with a no-op async function in the real demo journey.
+
+**Injection - remap supported scenario identifiers.** Changed `resolveScenarioId` so every known
+scenario returned the default scenario.
+
+**Observed failures (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > detects (companion): incomplete surface contracts cannot pass > preserves every supported scenario and firm outcome through the journey service
+AssertionError: scenario resolver remaps supported id 'recent-bank-change-block'
+```
+
+**Companions added:** in-memory journeys reassign `snap` and `snapLauncher` after their valid
+declarations. A pure resolver-identity companion remaps one supported scenario and firm and requires
+both diagnostics, while the real fence exhaustively checks every supported id.
+
+**Revert:** both real injections were removed immediately. The restored focused Gate 0 fence passed all
+tests.
+
+**Date:** 2026-07-29.
+
 ### PF-030 (continued) · shared exact gate ratchets block the runner
 
 **Invariant (ADR-0030):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
