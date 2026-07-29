@@ -192,6 +192,8 @@ export type SignedVerificationData =
 export interface SignedLedgerEventData {
   readonly type: string;
   readonly note: string;
+  readonly stageId: string | null;
+  readonly lifecyclePass: "initial" | "revalidated" | null;
 }
 
 export interface SignedExplanationData {

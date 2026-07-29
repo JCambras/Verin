@@ -153,8 +153,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet."},
     {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity."},
-    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
-    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "Second, distinct operations approver approves; quorum satisfied."},
     {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final approval and before the sibling request arrives."},
     {"type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity after final approval and revalidation - the ordering fact that decides the pair."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},

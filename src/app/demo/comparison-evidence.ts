@@ -4,54 +4,94 @@ import {
 } from "./data";
 import type { SignedCaseVariant } from "./signed-cases";
 
-const COMPARABLE_EVIDENCE_KINDS = [
-  "account-balance",
-  "planned-withdrawals",
-  "bank-instruction",
-  "household-instruction",
-  "pending-actions",
-] as const;
+export interface ComparisonEvidenceResult {
+  readonly equivalent: boolean;
+  readonly availableA: boolean;
+  readonly availableB: boolean;
+  readonly onlyInA: readonly string[];
+  readonly onlyInB: readonly string[];
+  readonly changed: readonly string[];
+}
 
-function comparisonEvidence(
+function normalizedEvidence(
   sourceCase: SignedCaseVariant | null,
   pass: JourneyPass,
 ) {
-  const evidence = evidenceForPass(sourceCase, pass);
-  return COMPARABLE_EVIDENCE_KINDS.map((evidenceKind) => {
-    const entry = evidence.find(
-      (candidate) =>
-        candidate.evidenceKind === evidenceKind &&
-        (evidenceKind !== "account-balance" ||
-          candidate.subjectRef === "subject:smiths-joint-taxable"),
-    );
-    return entry
-      ? {
+  return evidenceForPass(sourceCase, pass)
+    .map((entry) => {
+      const key = [
+        entry.evidenceKind,
+        entry.subjectRef,
+        entry.liquidityPhase ?? "",
+      ].join("\u0000");
+      return {
+        key,
+        label: `${entry.evidenceKind} · ${entry.subjectRef}`,
+        signature: JSON.stringify({
           evidenceKind: entry.evidenceKind,
           subjectRef: entry.subjectRef,
           observedAt: entry.observedAt,
           retrievedAt: entry.retrievedAt,
           freshness: entry.freshness,
-          displayValue: entry.displayValue,
-          observedAbsent: entry.observedAbsent,
+          source: entry.source,
+          provenance: entry.provenance,
           liquidityPhase: entry.liquidityPhase,
-        }
-      : null;
-  });
+          observedAbsent: entry.observedAbsent,
+          displayValue: entry.displayValue,
+          freshnessWindowDays: entry.freshnessWindowDays,
+        }),
+      };
+    })
+    .sort((left, right) =>
+      left.key.localeCompare(right.key) ||
+      left.signature.localeCompare(right.signature),
+    );
 }
 
-export function hasEquivalentComparisonEvidence(
+export function compareComparisonEvidence(
   sourceA: SignedCaseVariant | null,
   sourceB: SignedCaseVariant | null,
   pass: JourneyPass,
-): boolean {
-  return Boolean(
-    sourceA &&
-      sourceB &&
-      sourceA.trigger.requestAmountMinor ===
-        sourceB.trigger.requestAmountMinor &&
-      sourceA.trigger.requestAt === sourceB.trigger.requestAt &&
-      comparisonEvidence(sourceA, pass).every((entry) => entry !== null) &&
-      JSON.stringify(comparisonEvidence(sourceA, pass)) ===
-        JSON.stringify(comparisonEvidence(sourceB, pass)),
-  );
+): ComparisonEvidenceResult {
+  const rowsA = normalizedEvidence(sourceA, pass);
+  const rowsB = normalizedEvidence(sourceB, pass);
+  const keys = new Set([
+    ...rowsA.map(({ key }) => key),
+    ...rowsB.map(({ key }) => key),
+  ]);
+  const onlyInA: string[] = [];
+  const onlyInB: string[] = [];
+  const changed: string[] = [];
+  for (const key of [...keys].sort()) {
+    const a = rowsA.filter((row) => row.key === key);
+    const b = rowsB.filter((row) => row.key === key);
+    if (a.length === 0) {
+      onlyInB.push(...b.map(({ label }) => label));
+    } else if (b.length === 0) {
+      onlyInA.push(...a.map(({ label }) => label));
+    } else if (
+      JSON.stringify(a.map(({ signature }) => signature)) !==
+      JSON.stringify(b.map(({ signature }) => signature))
+    ) {
+      changed.push(a[0]!.label);
+    }
+  }
+  const triggerEquivalent =
+    sourceA !== null &&
+    sourceB !== null &&
+    sourceA.trigger.requestAmountMinor ===
+      sourceB.trigger.requestAmountMinor &&
+    sourceA.trigger.requestAt === sourceB.trigger.requestAt;
+  return {
+    equivalent:
+      triggerEquivalent &&
+      onlyInA.length === 0 &&
+      onlyInB.length === 0 &&
+      changed.length === 0,
+    availableA: sourceA !== null,
+    availableB: sourceB !== null,
+    onlyInA,
+    onlyInB,
+    changed,
+  };
 }

@@ -147,8 +147,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan."},
-    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
-    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "Second, distinct operations approver approves."},
     {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final approval."},
     {"type": "ReservationCreated", "note": "Liquidity reservation created after final approval and revalidation; NOT released while parts remain incomplete."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},

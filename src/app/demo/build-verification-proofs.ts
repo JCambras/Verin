@@ -14,8 +14,8 @@ export function buildVerificationProofs(
     verification.observedStatus === "submitted"
       ? [
           {
-            ledgerEvent: "StatusObserved" as const,
-            observedAt: verification.observedAt,
+            ledgerEvent: "ExecutionSucceeded" as const,
+            observedAt: timeline.executionSucceededAt,
           },
         ]
       : verification.observedStatus === "unknown"
@@ -31,8 +31,8 @@ export function buildVerificationProofs(
           ]
         : [
             {
-              ledgerEvent: "StatusObserved" as const,
-              observedAt: timeline.statusObservedAt,
+              ledgerEvent: "ExecutionSucceeded" as const,
+              observedAt: timeline.executionSucceededAt,
             },
             {
               ledgerEvent: "StatusObserved" as const,

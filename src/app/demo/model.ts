@@ -56,6 +56,7 @@ export interface FactVM {
 }
 export interface VerificationProofVM extends FactVM {
   readonly ledgerEvent:
+    | "ExecutionSucceeded"
     | "ExecutionPartiallySucceeded"
     | "StatusObserved";
 }

@@ -12,13 +12,17 @@
 import type { DecisionJourneyVM } from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
-import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
+import {
+  buildExecution,
+  buildSafety,
+  buildVerification,
+} from "./build-outcome";
+import { executionReachFor } from "./execution-reach";
 import { buildPolicyAuthoring } from "./build-policy-authoring";
 import { buildComparison, buildRecord } from "./build-summary";
 import {
   bindExactSourceCase,
   dispositionFor,
-  executionEligibilityFor,
   firmById,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -44,11 +48,7 @@ function reachOf(
   const safety = authority && approvals?.satisfied === true;
   const execution =
     safety &&
-    liquidityAuthorityFor(scenario, firmId).kind === "signed" &&
-    executionEligibilityFor(scenario, firmId)?.eligible === true &&
-    (!scenario.spec.invalidation ||
-      (pass === "revalidated" &&
-        hasSignedInvalidationAuthority(scenario, firmId)));
+    executionReachFor(scenario, firm, pass).reached;
   return { authority, safety, execution, approvals };
 }
 
@@ -65,6 +65,14 @@ function stopNoteOf(
     return "This journey stopped at Safety: exact signed liquidity authority is unavailable for this scenario and firm.";
   }
   if (scenario.spec.invalidation && pass === "initial") return "This journey returned to Decision: both approvals were voided when material evidence changed.";
+  const executionReach = executionReachFor(
+    scenario,
+    firmById(firmId),
+    pass,
+  );
+  if (!executionReach.reached) {
+    return `This journey stopped at Safety: ${executionReach.reason}`;
+  }
   return null;
 }
 

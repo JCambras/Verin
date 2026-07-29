@@ -50,6 +50,86 @@ describe("demo truth boundaries", () => {
       "No exact signed post-review result was recorded",
     );
     expect(journey.record.safety?.checks).toContainEqual(check);
+    expect(journey.safety?.executionEligibility).toBeNull();
+    expect(journey.safety?.reservationId).toBeNull();
+    expect(journey.execution).toBeNull();
+    expect(journey.verification).toBeNull();
+    expect(journey.record.executionEligibility).toBeNull();
+    expect(journey.record.execution).toBeNull();
+    expect(journey.record.verification).toBeNull();
+    expect(journey.record.lifecycle.map(({ type }) => type)).not.toContain(
+      "ReservationCreated",
+    );
+    expect(journey.stopNote).toContain(
+      "bank-instruction-independently-verified lacks exact signed proof",
+    );
+  });
+
+  it("binds verification proofs to causal events", () => {
+    const submitted = getJourney(
+      "safe-proceed",
+      "firm-a",
+      "initial",
+      "GC-01-firm-a-happy-path",
+    ).verification?.proves[0];
+    const nigo = getJourney(
+      "delayed-nigo",
+      "firm-b",
+      "initial",
+      "GC-14-delayed-nigo",
+    ).verification?.proves;
+
+    expect(submitted?.ledgerEvent).toBe("ExecutionSucceeded");
+    expect(submitted?.provenance.asOf).toBe(
+      "2026-07-26T13:59:10.000Z",
+    );
+    expect(nigo?.[0]).toMatchObject({
+      ledgerEvent: "ExecutionSucceeded",
+      provenance: {
+        asOf: "2026-07-26T21:44:10.000Z",
+      },
+    });
+    expect(nigo?.[1]).toMatchObject({
+      ledgerEvent: "StatusObserved",
+      provenance: {
+        asOf: "2026-07-28T21:44:00.000Z",
+      },
+    });
+  });
+
+  it("compares every signed evidence row and assigns real audit positions", () => {
+    const firmA = getJourney(
+      "safe-proceed",
+      "firm-a",
+      "initial",
+      "GC-01-firm-a-happy-path",
+    );
+    const firmB = getJourney(
+      "safe-proceed",
+      "firm-b",
+      "initial",
+      "GC-02-firm-b-happy-path",
+    );
+    const gc07 = getJourney(
+      "permanent-prohibition",
+      "firm-a",
+      "initial",
+      "GC-07-regulatory-prohibition",
+    );
+
+    expect(firmA.comparison.description).toContain(
+      "only Firm A includes account-balance · subject:smiths-ira",
+    );
+    expect(firmA.comparison.description).not.toContain(
+      "driven by policy provenance",
+    );
+    expect(firmA.record.hashes.auditPosition.orgId).toBe("demo-org");
+    expect(firmA.record.hashes.auditPosition.sequence).not.toBe(
+      firmB.record.hashes.auditPosition.sequence,
+    );
+    expect(firmA.record.hashes.auditPosition.sequence).not.toBe(
+      gc07.record.hashes.auditPosition.sequence,
+    );
   });
 
   it("withholds policy approval until exact-case simulation is computed", () => {

@@ -161,9 +161,9 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent change is pinned into the bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision requiring specialist review then dual operations approval."},
-    {"type": "ApprovalRecorded", "note": "Bank-change specialist approves the recent change (stage 1)."},
-    {"type": "ApprovalRecorded", "note": "First operations approver approves (stage 2)."},
-    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves (stage 2); quorum satisfied."},
+    {"type": "ApprovalRecorded", "stageId": "bank-change-specialist-review", "lifecyclePass": "initial", "note": "Bank-change specialist approves the recent change (stage 1)."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "First operations approver approves (stage 2)."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "Second, distinct operations approver approves (stage 2); quorum satisfied."},
     {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final operations approval."},
     {"type": "ReservationCreated", "note": "Liquidity reservation created after final approval and revalidation, before execution."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},

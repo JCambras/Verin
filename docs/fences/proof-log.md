@@ -6043,3 +6043,36 @@ state.
 **Revert:** every adversarial mutation remains inside companion tests.
 
 **Date:** 2026-07-29 (review corrections, D-081).
+
+## F119 · execution reach, causal proofs, audit slots, and approval quorums
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** unresolved must-hold evidence exposes no execution state; verification proofs name
+their causal signed event; comparison equivalence covers every signed evidence row; audit positions
+are unique structural pairs; and each approval stage reaches quorum in every applicable lifecycle
+pass before execution.
+
+The original production browser path rendered GC-03 reservation and execution state even though its
+signed bank finding remained changed and unverified. GC-14 attributed capability acceptance to its
+later NIGO observation. GC-01 and GC-02 were labeled equivalent after the comparison projection
+dropped GC-01's IRA row. Every printable record claimed sequence 214, and deleting one signed
+approval event did not fail the truth gate.
+
+Companions now re-enable GC-03 execution state without must-hold proof, bind GC-14 submission
+acceptance to `StatusObserved`, omit the differing IRA evidence row from comparison copy, reuse an
+exact `(orgId, sequence)` pair, and remove approvals from GC-03's specialist and operations stages
+and GC-15's revalidated round. Each mutation produces its named reachability, event-provenance,
+complete-evidence, audit-collision, or lifecycle-quorum diagnostic.
+
+Browser coverage proves GC-03 stops at Safety with no eligibility, reservation, execution, or
+verification state; GC-01 and GC-14 acceptance proofs bind `ExecutionSucceeded`; GC-01 comparison
+discloses its extra IRA row; exact records carry distinct audit sequences; and initial and
+revalidated approval rounds remain visibly complete.
+
+All 598 Vitest cases and all 27 Playwright cases with Axe pass. The signed-golden validator,
+typecheck, lint, production build, and file-size ratchet pass on the corrected state.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+**Date:** 2026-07-29 (review corrections, D-082).

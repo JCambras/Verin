@@ -853,6 +853,9 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
               }),
             ) ?? [],
           reservationVisible: Boolean(journey.safety?.reservationId),
+          executionEligibilityVisible:
+            journey.safety?.executionEligibility !== null &&
+            journey.safety?.executionEligibility !== undefined,
           executionReached: journey.execution !== null,
           verificationReached: journey.verification !== null,
           executionEligibility: journey.safety?.executionEligibility

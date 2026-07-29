@@ -115,8 +115,14 @@ export function RecordHeader({ vm }: { vm: RecordVM }) {
         </div>
         <div className="flex flex-col sm:col-span-2">
           <dt className="text-xs text-slate-600">Audit-chain position</dt>
-          <dd className="font-mono text-xs text-slate-800">
-            {vm.hashes.auditPosition}
+          <dd
+            className="font-mono text-xs text-slate-800"
+            data-testid="record-audit-position"
+            data-audit-org-id={vm.hashes.auditPosition.orgId}
+            data-audit-sequence={vm.hashes.auditPosition.sequence}
+          >
+            org {vm.hashes.auditPosition.orgId} · sequence{" "}
+            {vm.hashes.auditPosition.sequence}
           </dd>
         </div>
       </dl>

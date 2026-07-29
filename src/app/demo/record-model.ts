@@ -31,7 +31,10 @@ export interface RecordVM {
   readonly hashes: {
     readonly policyVersion: string;
     readonly instructionVersion: string;
-    readonly auditPosition: string;
+    readonly auditPosition: {
+      readonly orgId: string;
+      readonly sequence: number;
+    };
   };
   readonly decisionBindings: readonly {
     readonly kind: "original" | "derived";

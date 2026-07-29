@@ -149,11 +149,6 @@ export const CAST = {
   principal: "Jordan Bell",
 } as const;
 
-// Stable fake identifiers (rendered font-mono; full values print on the record).
-export const IDS = {
-  auditPosition: "org demo-org · sequence 214",
-} as const;
-
 // ── The twelve scenario branches (contract §5; scenarios.yaml scenarios) ─────────────
 // `disposition`/`perFirm` mirror scenarios.yaml exactly (fenced). `spec` states which
 // contract facts the branch varies - it selects pre-authored view-model content in the

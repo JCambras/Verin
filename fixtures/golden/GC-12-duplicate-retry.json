@@ -147,8 +147,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying the stable idempotency key."},
-    {"type": "ApprovalRecorded", "note": "First operations approver approves."},
-    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "First operations approver approves."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "Second, distinct operations approver approves; quorum satisfied."},
     {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final approval."},
     {"type": "ReservationCreated", "note": "Liquidity reservation created after final approval and revalidation, before the first attempt."},
     {"type": "ExecutionStarted", "note": "Exactly ONE ExecutionStarted is recorded for the step: the duplicate attempts are absorbed by the idempotency key and return duplicate_suppressed receipts referencing the same entry - no second start is ever recorded."},

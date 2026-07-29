@@ -46,7 +46,7 @@ async function expectFullDecisionBinding(page: Page) {
   }
 }
 
-test("the seven-minute journey is clickable end-to-end on labeled fakes", async ({ page }) => {
+test("the seven-minute journey fails closed and signed surfaces remain clickable", async ({ page }) => {
   await login(page, PRINCIPAL);
 
   // Launcher.
@@ -128,17 +128,32 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
-  // 7 - Safety: revalidation, reservation + idempotency inspectable.
+  // 7 - Safety: changed, unverified bank evidence blocks execution.
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
   await expect(page.getByText("Material evidence re-checked")).toBeVisible();
-  await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("idem:GC-03:smiths-75000-2026-08-15").first()).toBeVisible();
-  await expect(page.getByText("res:GC-03:liquidity").first()).toBeVisible();
+  await expect(
+    page.getByText("Bank-instruction revalidation not evaluated"),
+  ).toBeVisible();
+  await expect(page.getByText("Execute the movement")).toHaveCount(0);
+  await expect(page.getByText("idem:GC-03:smiths-75000-2026-08-15")).toHaveCount(0);
+  await expect(page.getByText("res:GC-03:liquidity")).toHaveCount(0);
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 
-  // 8 - Execution: submitted is NOT settled; deferral stated; fake adapter labeled.
-  await page.getByRole("link", { name: "Execute the movement" }).click();
+  await page.goto(
+    "/app/demo/execution?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a",
+  );
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(
+    page.getByText(
+      /bank-instruction-independently-verified lacks exact signed proof/,
+    ),
+  ).toBeVisible();
+
+  // 8 - A separately selected signed executable case remains clickable.
+  await page.goto(
+    "/app/demo/execution?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+  );
   await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
   await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
   await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
@@ -158,11 +173,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Planned-withdrawal schedule unavailable", {
-      exact: true,
-    }),
-  ).toBeVisible();
+  await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
   await checkAxe(page, "comparison");
   await snap(page, 10, "comparison");
@@ -718,7 +729,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     page
       .getByRole("region", { name: "Execution" })
       .getByText(
-        "This journey stopped at Safety because exact signed liquidity authority is unavailable.",
+        "This journey stopped at Safety: No captain-signed numeric liquidity case covers approval-invalidation for firm-b",
       ),
   ).toBeVisible();
   const unsupportedRevalidation = await page.goto(
@@ -955,6 +966,24 @@ test("verification proof provenance stays bound to each signed event", async ({ 
   await login(page, PRINCIPAL);
 
   await page.goto(
+    "/app/demo/verification?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+  );
+  const submittedProof = page
+    .getByRole("region", {
+      name: "What this status proves",
+    })
+    .getByRole("listitem")
+    .filter({ hasText: "Submission accepted by the capability" });
+  await expect(submittedProof).toHaveAttribute(
+    "data-proof-event",
+    "ExecutionSucceeded",
+  );
+  await expect(submittedProof).toHaveAttribute(
+    "data-event-instant",
+    "2026-07-26T13:59:10.000Z",
+  );
+
+  await page.goto(
     "/app/demo/verification?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success",
   );
   const partialProofs = page.getByRole("region", {
@@ -992,7 +1021,17 @@ test("verification proof provenance stays bound to each signed event", async ({ 
     nigoProofs.getByRole("listitem").filter({
       hasText: "Submission accepted by the capability",
     }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:20.000Z");
+  ).toHaveAttribute("data-proof-event", "ExecutionSucceeded");
+  await expect(
+    nigoProofs.getByRole("listitem").filter({
+      hasText: "Submission accepted by the capability",
+    }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:10.000Z");
+  await expect(
+    nigoProofs.getByRole("listitem").filter({
+      hasText: "Custodian returned the instruction NIGO",
+    }),
+  ).toHaveAttribute("data-proof-event", "StatusObserved");
   await expect(
     nigoProofs.getByRole("listitem").filter({
       hasText: "Custodian returned the instruction NIGO",
@@ -1008,7 +1047,7 @@ test("verification proof provenance stays bound to each signed event", async ({ 
       })
       .getByRole("listitem")
       .filter({ hasText: "Submission accepted by the capability" }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:20.000Z");
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:10.000Z");
 });
 
 test("printable records carry exact route and lifecycle identity", async ({ page }) => {
@@ -1025,6 +1064,9 @@ test("printable records carry exact route and lifecycle identity", async ({ page
     "GC-06-household-restriction",
   );
   await expect(page.getByTestId("record-context")).toContainText("initial");
+  const householdAudit = await page
+    .getByTestId("record-audit-position")
+    .getAttribute("data-audit-sequence");
   const householdRecordId = await page
     .getByTestId("record-decision-id")
     .textContent();
@@ -1035,6 +1077,14 @@ test("printable records carry exact route and lifecycle identity", async ({ page
   await expect(page.getByTestId("record-decision-id")).not.toHaveText(
     householdRecordId ?? "",
   );
+  await expect(page.getByTestId("record-audit-position")).toHaveAttribute(
+    "data-audit-org-id",
+    "demo-org",
+  );
+  await expect(page.getByTestId("record-audit-position")).not.toHaveAttribute(
+    "data-audit-sequence",
+    householdAudit ?? "",
+  );
 
   await page.goto(
     "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation",
@@ -1042,6 +1092,9 @@ test("printable records carry exact route and lifecycle identity", async ({ page
   const initialRecordId = await page
     .getByTestId("record-decision-id")
     .textContent();
+  const initialAudit = await page
+    .getByTestId("record-audit-position")
+    .getAttribute("data-audit-sequence");
   await expect(page.getByTestId("record-context").locator("time")).toHaveAttribute(
     "data-event-instant",
     "2026-07-26T21:45:10.000Z",
@@ -1058,6 +1111,10 @@ test("printable records carry exact route and lifecycle identity", async ({ page
   );
   await expect(page.getByTestId("record-decision-id")).not.toHaveText(
     initialRecordId ?? "",
+  );
+  await expect(page.getByTestId("record-audit-position")).not.toHaveAttribute(
+    "data-audit-sequence",
+    initialAudit ?? "",
   );
   await expect(page.getByTestId("record-context").locator("time")).toHaveAttribute(
     "data-event-instant",
@@ -1161,11 +1218,23 @@ test("policy trace does not infer no recent change from missing evidence", async
 test("comparison does not claim policy-only causality across an evidence gap", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto(
+    "/app/demo/comparison?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+  );
+  await expect(
+    page.getByText(
+      /only Firm A includes account-balance · subject:smiths-ira/,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/driven by policy provenance/),
+  ).toHaveCount(0);
+
+  await page.goto(
     "/app/demo/comparison?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first",
   );
   await expect(
     page.getByText(
-      "Exact signed equivalent evidence is unavailable for one comparison arm.",
+      /Exact signed evidence (?:differs|is unavailable)/,
     ),
   ).toBeVisible();
   const dispositionRow = page
@@ -1179,9 +1248,7 @@ test("comparison does not claim policy-only causality across an evidence gap", a
     dispositionRow.getByText(/same evidence - the outcome differs because/i),
   ).toHaveCount(0);
   await expect(
-    dispositionRow.getByText(
-      "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy.",
-    ),
+    dispositionRow.getByText(/not attributed solely to policy/),
   ).toBeVisible();
 });
 
@@ -1293,7 +1360,7 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     "record",
   ];
   for (const s of surfaces) {
-    await page.goto(`/app/demo/${s}?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a`);
+    await page.goto(`/app/demo/${s}?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect(await page.getByTestId("dev-provenance-badge").count(), `surface ${s} must carry a dev provenance badge`).toBeGreaterThan(0);
   }

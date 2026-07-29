@@ -22,17 +22,25 @@ import {
   reserveFloorMetric,
   DISPOSITION_BADGES,
 } from "./build-decision";
-import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
+import {
+  buildExecution,
+  buildSafety,
+  buildVerification,
+} from "./build-outcome";
+import { executionReachFor } from "./execution-reach";
 import {
   activeDecisionAt,
   recordDecisionBindings,
 } from "./decision-bindings";
-import { hasEquivalentComparisonEvidence } from "./comparison-evidence";
+import {
+  compareComparisonEvidence,
+  type ComparisonEvidenceResult,
+} from "./comparison-evidence";
 import { formatDemoInstant, timelineFor } from "./timeline";
+import { auditPositionFor } from "./audit-position";
 import {
   DEMO_NOW,
   FIRMS,
-  IDS,
   OBSERVED_RECENT,
   decisionIdentityFor,
   dispositionFor,
@@ -73,6 +81,30 @@ function bankChangeHandlingLabel(firm: FirmData): string {
     : "Blocked until independently verified";
 }
 
+function evidenceDifferenceCopy(
+  comparison: ComparisonEvidenceResult,
+): string {
+  const unavailable = [
+    ...(!comparison.availableA ? ["Firm A"] : []),
+    ...(!comparison.availableB ? ["Firm B"] : []),
+  ];
+  if (unavailable.length > 0) {
+    return `Exact signed evidence is unavailable for ${unavailable.join(" and ")}.`;
+  }
+  const differences = [
+    ...(comparison.onlyInA.length
+      ? [`only Firm A includes ${comparison.onlyInA.join(", ")}`]
+      : []),
+    ...(comparison.onlyInB.length
+      ? [`only Firm B includes ${comparison.onlyInB.join(", ")}`]
+      : []),
+    ...(comparison.changed.length
+      ? [`signed values differ for ${comparison.changed.join(", ")}`]
+      : []),
+  ];
+  return `The complete signed evidence sets differ: ${differences.join("; ")}.`;
+}
+
 export function buildComparison(
   scenario: ScenarioData,
   pass: JourneyPass = "initial",
@@ -87,11 +119,13 @@ export function buildComparison(
   const reserveB = reserveFloorMetric(b, scenario, pass);
   const sourceA = sourceCaseFor(scenario, a.id);
   const sourceB = sourceCaseFor(scenario, b.id);
-  const equivalentEvidence = hasEquivalentComparisonEvidence(
+  const evidenceComparison = compareComparisonEvidence(
     sourceA,
     sourceB,
     pass,
   );
+  const equivalentEvidence = evidenceComparison.equivalent;
+  const evidenceDifference = evidenceDifferenceCopy(evidenceComparison);
   const policyA =
     sourceA?.policyVersions.firmPolicyVersionId ?? a.policyVersion;
   const policyB =
@@ -155,7 +189,7 @@ export function buildComparison(
             why: {
               reason: equivalentEvidence
                 ? "Same household, same request, and exact signed equivalent evidence - the outcome differs because the approved policy version differs, with zero code change."
-                : "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy.",
+                : `${evidenceDifference} The outcome is not attributed solely to policy.`,
             },
           }
         : {}),
@@ -164,7 +198,7 @@ export function buildComparison(
   return {
     description: equivalentEvidence
       ? "The same household and the same request under exact signed equivalent evidence. The differences below are driven by policy provenance, not code."
-      : "The same household and request are shown, but exact signed equivalent evidence is unavailable for one comparison arm.",
+      : `The same household and request are shown. ${evidenceDifference}`,
     columns: [
       {
         firmId: a.id,
@@ -274,15 +308,26 @@ function signedLifecycle(
     }
     return timeline.decisionAt;
   };
-  return sourceCase.ledgerEvents.map((event) => {
+  const lifecycle = sourceCase.ledgerEvents.map((event) => {
     const timestampIso = instantFor(event.type);
     return {
     type: event.type,
     timestampIso,
     display: formatDemoInstant(timestampIso, undefined, true),
-    note: event.note,
+      note: event.note,
     };
   });
+  return executionReachFor(scenario, firm, pass).reached
+    ? lifecycle
+    : lifecycle.filter(
+        ({ type }) =>
+          type !== "ReservationCreated" &&
+          type !== "ExecutionStarted" &&
+          type !== "ExecutionSucceeded" &&
+          type !== "ExecutionPartiallySucceeded" &&
+          type !== "StatusObserved" &&
+          type !== "ExceptionDecisionRequested",
+      );
 }
 
 export function buildRecord(
@@ -322,6 +367,7 @@ export function buildRecord(
           invalidation: buildSafety(scenario, firm, "initial").invalidation,
         }
       : safety;
+  const executionReach = executionReachFor(scenario, firm, pass);
   const stopNote =
     !proceed
       ? "This journey stopped at Decision."
@@ -330,7 +376,7 @@ export function buildRecord(
         : invalidation && pass === "initial"
           ? "This journey returned to Decision: both approvals were voided when material evidence changed."
           : execution === null
-            ? "This journey stopped at Safety because exact signed liquidity authority is unavailable."
+            ? `This journey stopped at Safety: ${executionReach.reason}`
             : null;
   const decisionAt = activeDecisionAt(scenario, firm, pass);
   return {
@@ -352,7 +398,7 @@ export function buildRecord(
       instructionVersion:
         sourceCase?.policyVersions.householdInstructionVersionIds.join(", ") ||
         "Exact signed source unavailable",
-      auditPosition: `${IDS.auditPosition} · ${scenario.id} · ${firm.id} · ${sourceCase?.caseId ?? "unsigned"} · ${pass}`,
+      auditPosition: auditPositionFor(scenario, firm.id, pass),
     },
     decisionBindings: recordDecisionBindings(scenario, firm, pass),
     intent: buildIntent(scenario, firm),

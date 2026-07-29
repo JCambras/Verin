@@ -173,7 +173,10 @@ export interface DemoSemanticSnapshot {
     headerSourceCaseId: string | null;
     headerPass: "initial" | "revalidated";
     decisionId: string;
-    auditPosition: string;
+    auditPosition: {
+      orgId: string;
+      sequence: number;
+    };
     headerCreatedAtIso: string;
     decisionEventInstants: string[];
     decisionBindings: Array<{
@@ -220,6 +223,7 @@ export interface DemoSemanticSnapshot {
       detail: string | null;
     }>;
     reservationVisible: boolean;
+    executionEligibilityVisible: boolean;
     executionReached: boolean;
     verificationReached: boolean;
     executionEligibility: {
@@ -250,7 +254,10 @@ export interface DemoSemanticSnapshot {
     } | null;
     verificationProves: Array<{
       display: string;
-      ledgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
+      ledgerEvent:
+        | "ExecutionSucceeded"
+        | "ExecutionPartiallySucceeded"
+        | "StatusObserved";
       observedAtIso: string;
     }>;
     verificationNotProvenYet: string[];
@@ -399,50 +406,84 @@ const sameMembers = (left: Iterable<string>, right: Iterable<string>): boolean =
 const sourceKey = (scenarioId: string, firmId: string, disposition: string): string =>
   `${scenarioId}\u0000${firmId}\u0000${disposition}`;
 
-const COMPARISON_EVIDENCE_KINDS = [
-  "account-balance",
-  "planned-withdrawals",
-  "bank-instruction",
-  "household-instruction",
-  "pending-actions",
-] as const;
-
-function comparisonEvidenceSignature(
+function comparisonEvidenceRows(
   source: Record<string, unknown> | undefined,
-): string | null {
+): Array<{ key: string; label: string; signature: string }> | null {
   const trigger = isObj(source?.trigger) ? source.trigger : null;
   const money = source ? readSignedMoney(source) : null;
   const evidence = Array.isArray(source?.householdEvidence)
     ? source.householdEvidence.filter(isObj)
     : [];
   if (!trigger || !money) return null;
-  const selected = COMPARISON_EVIDENCE_KINDS.map((evidenceKind) => {
-    const entry = evidence.find(
-      (candidate) =>
-        candidate.evidenceKind === evidenceKind &&
-        (evidenceKind !== "account-balance" ||
-          candidate.subjectRef === "subject:smiths-joint-taxable"),
-    );
-    return entry
-      ? {
+  return evidence
+    .filter(
+      (entry) =>
+        entry.liquidityPhase !== "pre-execution-revalidation",
+    )
+    .map((entry) => {
+      const key = [
+        entry.evidenceKind,
+        entry.subjectRef,
+        entry.liquidityPhase ?? "",
+      ].join("\u0000");
+      return {
+        key,
+        label: `${String(entry.evidenceKind)} · ${String(entry.subjectRef)}`,
+        signature: JSON.stringify({
           evidenceKind: entry.evidenceKind,
           subjectRef: entry.subjectRef,
           observedAt: entry.observedAt,
           retrievedAt: entry.retrievedAt,
           freshness: entry.freshness,
+          source: entry.source,
+          provenance: entry.provenance,
           displayValue: entry.displayValue ?? null,
           observedAbsent: entry.observedAbsent ?? false,
           liquidityPhase: entry.liquidityPhase ?? null,
-        }
-      : null;
-  });
-  return selected.every((entry) => entry !== null)
+          freshnessWindowDays: entry.freshnessWindowDays ?? null,
+        }),
+      };
+    })
+    .sort((left, right) =>
+      left.key.localeCompare(right.key) ||
+      left.signature.localeCompare(right.signature),
+    );
+}
+
+function comparisonEvidenceSignature(
+  source: Record<string, unknown> | undefined,
+): string | null {
+  const trigger = isObj(source?.trigger) ? source.trigger : null;
+  const money = source ? readSignedMoney(source) : null;
+  const evidence = comparisonEvidenceRows(source);
+  return trigger && money && evidence
     ? JSON.stringify({
         requestAt: trigger.asOf,
         requestAmountUsd: money.requestAmountUsd,
-        evidence: selected,
+        evidence: evidence.map(({ signature }) => signature),
       })
     : null;
+}
+
+function comparisonEvidenceDifferenceLabels(
+  sourceA: Record<string, unknown> | undefined,
+  sourceB: Record<string, unknown> | undefined,
+): string[] {
+  const rowsA = comparisonEvidenceRows(sourceA);
+  const rowsB = comparisonEvidenceRows(sourceB);
+  if (!rowsA || !rowsB) return [];
+  const keys = new Set([
+    ...rowsA.map(({ key }) => key),
+    ...rowsB.map(({ key }) => key),
+  ]);
+  return [...keys].sort().flatMap((key) => {
+    const a = rowsA.filter((row) => row.key === key);
+    const b = rowsB.filter((row) => row.key === key);
+    return JSON.stringify(a.map(({ signature }) => signature)) ===
+      JSON.stringify(b.map(({ signature }) => signature))
+      ? []
+      : [a[0]?.label ?? b[0]!.label];
+  });
 }
 
 function comparisonHasEquivalentEvidence(
@@ -681,6 +722,8 @@ function expectedSignedCaseVariant(
     ledgerEvents: data.expectedLedgerEvents.filter(isObj).map((event) => ({
       type: event.type,
       note: event.note,
+      stageId: event.stageId ?? null,
+      lifecyclePass: event.lifecyclePass ?? null,
     })),
     explanations: data.expectedExplanationNodes
       .filter(isObj)
@@ -965,25 +1008,48 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
   const boundSourceIds = new Set<string>();
   for (const d of demo.decisions) {
     const at = `${d.scenarioId}/${d.firmId}/${d.decisionRole}`;
+    const ownComparisonSource = d.sourceCaseId
+      ? caseData(cases, d.sourceCaseId)
+      : undefined;
+    const comparisonFirmId =
+      d.firmId === "firm-a" ? "firm-b" : "firm-a";
+    const counterpart = cases.find(
+      ({ data }) =>
+        isObj(data) &&
+        data.scenarioRef === d.scenarioId &&
+        data.firm === comparisonFirmId,
+    );
+    const comparisonDifferences = comparisonEvidenceDifferenceLabels(
+      ownComparisonSource,
+      counterpart && isObj(counterpart.data)
+        ? counterpart.data
+        : undefined,
+    );
     if (
       d.decisionRole === "primary" &&
       !comparisonHasEquivalentEvidence(cases, d)
     ) {
       if (
-        d.comparisonDescription !==
-        "The same household and request are shown, but exact signed equivalent evidence is unavailable for one comparison arm."
+        !d.comparisonDescription?.toLowerCase().includes(
+          "signed evidence",
+        ) ||
+        comparisonDifferences.some(
+          (difference) =>
+            !d.comparisonDescription?.includes(difference),
+        )
       ) {
         problems.push(
-          `${at}: comparison does not disclose its exact signed evidence-authority gap`,
+          `${at}: comparison does not disclose its complete signed evidence difference`,
         );
       }
       if (
         d.comparisonDispositionReason !== null &&
-        d.comparisonDispositionReason !==
-          "The disposition comparison includes an evidence-authority gap, so the outcome is not attributed solely to policy."
+        !d.comparisonDispositionReason.includes(
+          "not attributed solely to policy",
+        )
       ) {
         problems.push(
-          `${at}: comparison attributes a disposition difference solely to policy despite an evidence-authority gap`,
+          `${at}: comparison attributes a disposition difference solely to policy despite differing signed evidence`,
         );
       }
     }
@@ -1636,8 +1702,49 @@ function validateSourceTimelines(
           isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
         )
       : [];
+    const eligibilityPreconditions =
+      isObj(source?.expectedExecutionEligibility) &&
+      Array.isArray(source.expectedExecutionEligibility.preconditions)
+        ? source.expectedExecutionEligibility.preconditions.filter(isObj)
+        : [];
+    const timelineEvidence = (
+      Array.isArray(source?.householdEvidence)
+        ? source.householdEvidence
+        : []
+    ).filter(
+      (entry) =>
+        isObj(entry) &&
+        (expectedLedgerTypes.includes("ApprovalInvalidated")
+          ? entry.liquidityPhase === "pre-execution-revalidation"
+          : entry.liquidityPhase !== "pre-execution-revalidation"),
+    );
+    const executionProofComplete = eligibilityPreconditions.every(
+      (precondition) => {
+        if (precondition.mustStillHoldAtExecution !== true) return true;
+        const required = Array.isArray(precondition.requiredEvidence)
+          ? precondition.requiredEvidence.filter(isNonEmptyString)
+          : [];
+        return (
+          required.every((requiredRef) =>
+            timelineEvidence.some(
+              (entry) =>
+                isObj(entry) && entry.subjectRef === requiredRef,
+            ),
+          ) &&
+          (precondition.code !==
+            "bank-instruction-independently-verified" ||
+            timelineEvidence.some(
+              (entry) =>
+                isObj(entry) &&
+                entry.evidenceKind === "bank-instruction" &&
+                entry.liquidityPhase ===
+                  "pre-execution-revalidation",
+            ))
+        );
+      },
+    );
     const eventKinds = timeline.events.map(({ kind }) => kind);
-    if (eligibility === true) {
+    if (eligibility === true && executionProofComplete) {
       const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
       const decisionIndex = eventKinds.lastIndexOf("DecisionRecorded");
       const firstApprovalIndex = eventKinds.indexOf("ApprovalRecorded");
@@ -1792,15 +1899,20 @@ function validateRecordIdentities(
         `printable record decision identity is reused: ${record.decisionId}`,
       );
     }
-    if (!isNonEmptyString(record.auditPosition)) {
+    const auditPositionKey = `${record.auditPosition.orgId}\u0000${record.auditPosition.sequence}`;
+    if (
+      !isNonEmptyString(record.auditPosition.orgId) ||
+      !Number.isSafeInteger(record.auditPosition.sequence) ||
+      record.auditPosition.sequence <= 0
+    ) {
       problems.push("printable record carries no stable audit position");
-    } else if (auditPositions.has(record.auditPosition)) {
+    } else if (auditPositions.has(auditPositionKey)) {
       problems.push(
-        `printable record audit position is reused: ${record.auditPosition}`,
+        `printable record audit position is reused: ${record.auditPosition.orgId}/${record.auditPosition.sequence}`,
       );
     }
     decisionIds.add(record.decisionId);
-    auditPositions.add(record.auditPosition);
+    auditPositions.add(auditPositionKey);
     const expectedKinds =
       record.routePass === "revalidated"
         ? ["original", "derived"]
@@ -2315,6 +2427,52 @@ export function validateGoldenDemoSemantics(
     const expectedPreconditions = Array.isArray(expected?.preconditions)
       ? expected.preconditions.filter(isObj)
       : [];
+    const hasDerivedPass = Array.isArray(source?.expectedLedgerEvents) &&
+      source.expectedLedgerEvents.some(
+        (event) => isObj(event) && event.type === "ApprovalInvalidated",
+      );
+    const activeEvidence = (
+      Array.isArray(source?.householdEvidence)
+        ? source.householdEvidence
+        : []
+    ).filter(
+      (entry) =>
+        isObj(entry) &&
+        (hasDerivedPass
+          ? entry.liquidityPhase === "pre-execution-revalidation"
+          : entry.liquidityPhase !== "pre-execution-revalidation"),
+    );
+    const unmetMustHold = expectedPreconditions.find((precondition) => {
+      if (precondition.mustStillHoldAtExecution !== true) return false;
+      const requiredEvidence = Array.isArray(
+        precondition.requiredEvidence,
+      )
+        ? precondition.requiredEvidence.filter(isNonEmptyString)
+        : [];
+      const hasEveryEvidence = requiredEvidence.every((requiredRef) =>
+        activeEvidence.some(
+          (entry) =>
+            isObj(entry) && entry.subjectRef === requiredRef,
+        ),
+      );
+      return (
+        !hasEveryEvidence ||
+        (precondition.code ===
+          "bank-instruction-independently-verified" &&
+          !exactPostReviewEvidence)
+      );
+    });
+    if (
+      unmetMustHold &&
+      (guard.executionEligibilityVisible ||
+        guard.reservationVisible ||
+        guard.executionReached ||
+        guard.verificationReached)
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: unresolved must-hold precondition ${String(unmetMustHold.code)} must expose no execution eligibility, reservation, execution, or verification state`,
+      );
+    }
     const eligibilityDrift =
       !expected ||
       !actual ||
@@ -2360,7 +2518,10 @@ export function validateGoldenDemoSemantics(
     const expectedVerification = isObj(source?.expectedVerificationState)
       ? source.expectedVerificationState
       : null;
-    if (expectedVerification?.reached === true) {
+    if (
+      expectedVerification?.reached === true &&
+      !unmetMustHold
+    ) {
       const expectedProves = Array.isArray(expectedVerification.proves)
         ? expectedVerification.proves.filter(isNonEmptyString)
         : [];
@@ -2379,30 +2540,30 @@ export function validateGoldenDemoSemantics(
       const timeline = demo.sourceTimelines.find(
         ({ sourceCaseId }) => sourceCaseId === guard.sourceCaseId,
       );
-      const statusObservedInstants =
-        timeline?.events
-          .filter(({ kind }) => kind === "StatusObserved")
-          .map(({ instant }) => instant) ?? [];
       const partialSucceededAt = timeline?.events.find(
         ({ kind }) => kind === "ExecutionPartiallySucceeded",
       )?.instant;
-      const expectedProofEvents =
-        expectedVerification.observedStatus === "submitted"
-          ? [
-              {
-                ledgerEvent: "StatusObserved",
-                observedAtIso: expectedVerification.observedAt,
-              },
-            ]
-          : expectedVerification.observedStatus === "unknown"
-            ? expectedProves.map(() => ({
-                ledgerEvent: "ExecutionPartiallySucceeded",
-                observedAtIso: partialSucceededAt,
-              }))
-            : expectedProves.map((_, index) => ({
-                ledgerEvent: "StatusObserved",
-                observedAtIso: statusObservedInstants[index],
-              }));
+      const executionSucceededAt = timeline?.events.find(
+        ({ kind }) => kind === "ExecutionSucceeded",
+      )?.instant;
+      const expectedProofEvents = expectedProves.map((proof) => {
+        if (expectedVerification.observedStatus === "unknown") {
+          return {
+            ledgerEvent: "ExecutionPartiallySucceeded",
+            observedAtIso: partialSucceededAt,
+          };
+        }
+        if (proof === "Submission accepted by the capability") {
+          return {
+            ledgerEvent: "ExecutionSucceeded",
+            observedAtIso: executionSucceededAt,
+          };
+        }
+        return {
+          ledgerEvent: "StatusObserved",
+          observedAtIso: expectedVerification.observedAt,
+        };
+      });
       if (
         !guard.verificationReached ||
         !guard.verificationState ||

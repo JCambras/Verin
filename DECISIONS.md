@@ -3739,3 +3739,21 @@ simulation can compute.
 allowed one examiner-facing surface to claim more than its exact signed inputs established.
 **Revert path:** none while D-073 through D-080 require exact signed identity and fail-closed evidence
 and simulation authority across every demo surface.
+
+### D-082 · 2026-07-29 · reversible · Execution, provenance, audit, and quorum truth is structural
+
+Execution reach now requires exact signed proof for every precondition that must still hold. An
+unresolved proof removes execution eligibility, reservation, execution, verification, and their
+printable-record projections. Verification claims bind to the causal execution event instead of a
+later observed status.
+
+Cross-firm comparisons normalize every signed evidence row before claiming equivalence. Record audit
+positions are deterministic, collision-free `(orgId, sequence)` pairs derived from exact scenario,
+firm, case, and lifecycle pass. Approval events carry stage and pass bindings, and both raw validation
+and the rendered authority plan require every stage quorum in every applicable pass.
+
+**Why:** presentation-only guards, selected evidence subsets, decorated duplicate audit strings, and
+stage configuration without recorded approvals could each publish examiner-facing state that the
+signed event history did not establish.
+**Revert path:** replace these demo authorities when the real execution, comparison, audit, and
+approval projections land, provided the same fail-closed structural guarantees remain.

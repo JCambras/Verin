@@ -59,7 +59,7 @@ const realDoc = readFileSync(GOLDEN_DOC, "utf8");
 const realContracts = readFileSync(V3_CORE_CONTRACTS, "utf8");
 const realStatusDocs = loadStatusVocabularyDocs();
 let realDemo!: DemoSemanticSnapshot;
-let approvalPlanSatisfied!: typeof import("../../app/demo/build-decision").approvalPlanSatisfied;
+let approvalPlanSatisfied!: typeof import("../../app/demo/build-approval-stages").approvalPlanSatisfied;
 let parseSignedCaseVariants!: typeof import("../../app/demo/signed-cases").parseSignedCaseVariants;
 
 beforeAll(async () => {
@@ -73,13 +73,13 @@ beforeAll(async () => {
       `raw golden-case validation failed before production parsing:\n${rawProblems.join("\n")}`,
     );
   }
-  const [snapshot, decision, signedCases] = await Promise.all([
+  const [snapshot, approvalStages, signedCases] = await Promise.all([
     import("../../../scripts/golden-demo-snapshot"),
-    import("../../app/demo/build-decision"),
+    import("../../app/demo/build-approval-stages"),
     import("../../app/demo/signed-cases"),
   ]);
   realDemo = snapshot.loadDemoSemanticSnapshot();
-  approvalPlanSatisfied = decision.approvalPlanSatisfied;
+  approvalPlanSatisfied = approvalStages.approvalPlanSatisfied;
   parseSignedCaseVariants = signedCases.parseSignedCaseVariants;
 });
 
@@ -226,6 +226,71 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       run(revalidationBeforeOriginalApprovals).some((problem) =>
         problem.includes("approval invalidation chronology"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires every authority-stage quorum in each lifecycle pass", () => {
+    const missingSpecialist = clone();
+    const specialistEvents = caseById(
+      missingSpecialist,
+      "GC-03-recent-bank-change-firm-a",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    specialistEvents.splice(
+      specialistEvents.findIndex(
+        (event) =>
+          event.type === "ApprovalRecorded" &&
+          event.stageId === "bank-change-specialist-review",
+      ),
+      1,
+    );
+    expect(
+      run(missingSpecialist).some((problem) =>
+        problem.includes(
+          "approval quorum for initial stage bank-change-specialist-review requires 1 ApprovalRecorded events, found 0",
+        ),
+      ),
+    ).toBe(true);
+
+    const incompleteOps = clone();
+    const opsEvents = caseById(
+      incompleteOps,
+      "GC-03-recent-bank-change-firm-a",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    opsEvents.splice(
+      opsEvents.findIndex(
+        (event) =>
+          event.type === "ApprovalRecorded" &&
+          event.stageId === "ops-dual-approval",
+      ),
+      1,
+    );
+    expect(
+      run(incompleteOps).some((problem) =>
+        problem.includes(
+          "approval quorum for initial stage ops-dual-approval requires 2 ApprovalRecorded events, found 1",
+        ),
+      ),
+    ).toBe(true);
+
+    const incompleteRevalidation = clone();
+    const revalidationEvents = caseById(
+      incompleteRevalidation,
+      "GC-15-approval-invalidation",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    revalidationEvents.splice(
+      revalidationEvents.findIndex(
+        (event) =>
+          event.type === "ApprovalRecorded" &&
+          event.lifecyclePass === "revalidated",
+      ),
+      1,
+    );
+    expect(
+      run(incompleteRevalidation).some((problem) =>
+        problem.includes(
+          "approval quorum for revalidated stage ops-dual-approval requires 2 ApprovalRecorded events, found 1",
+        ),
       ),
     ).toBe(true);
   });
@@ -798,7 +863,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         routeSourceCaseId === "GC-07-regulatory-prohibition",
     )!;
     duplicate.decisionId = gc06.decisionId;
-    duplicate.auditPosition = gc06.auditPosition;
+    duplicate.auditPosition = { ...gc06.auditPosition };
     const reusedProblems = validateGoldenDemoSemantics(
       clone(),
       realRefs,
@@ -1083,7 +1148,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       overstatedProblems.some((problem) =>
         problem.includes(
-          "comparison does not disclose its exact signed evidence-authority gap",
+          "comparison does not disclose its complete signed evidence difference",
         ),
       ),
     ).toBe(true);
@@ -1091,6 +1156,26 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       overstatedProblems.some((problem) =>
         problem.includes(
           "attributes a disposition difference solely to policy",
+        ),
+      ),
+    ).toBe(true);
+
+    const omittedEvidenceRow = demoClone();
+    const gc01 = omittedEvidenceRow.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-01-firm-a-happy-path" &&
+        decisionRole === "primary",
+    )!;
+    gc01.comparisonDescription =
+      "The same household and request have signed evidence.";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        omittedEvidenceRow,
+      ).some((problem) =>
+        problem.includes(
+          "comparison does not disclose its complete signed evidence difference",
         ),
       ),
     ).toBe(true);
@@ -1155,6 +1240,10 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       gc03.exactBankInstructionPostReviewEvidence,
     ).toBe(false);
+    expect(gc03.executionEligibilityVisible).toBe(false);
+    expect(gc03.reservationVisible).toBe(false);
+    expect(gc03.executionReached).toBe(false);
+    expect(gc03.verificationReached).toBe(false);
     expect(gc03.safetyChecks).toContainEqual(
       expect.objectContaining({
         label: "Bank-instruction revalidation not evaluated",
@@ -1185,6 +1274,28 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ).some((problem) =>
         problem.includes(
           "missing exact post-review bank-instruction evidence must remain unavailable",
+        ),
+      ),
+    ).toBe(true);
+
+    const bypassedMustHold = demoClone();
+    const bypassedGc03 = bypassedMustHold.executionGuards.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId ===
+        "GC-03-recent-bank-change-firm-a",
+    )!;
+    bypassedGc03.executionEligibilityVisible = true;
+    bypassedGc03.reservationVisible = true;
+    bypassedGc03.executionReached = true;
+    bypassedGc03.verificationReached = true;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        bypassedMustHold,
+      ).some((problem) =>
+        problem.includes(
+          "unresolved must-hold precondition bank-instruction-independently-verified must expose no execution eligibility, reservation, execution, or verification state",
         ),
       ),
     ).toBe(true);
@@ -2037,6 +2148,30 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ).some((problem) =>
         problem.includes(
           "verification proof provenance must bind each claim",
+        ),
+      ),
+    ).toBe(true);
+
+    const causalEventDrift = demoClone();
+    const nigoProof = causalEventDrift.executionGuards
+      .find(
+        (guard) =>
+          guard.sourceCaseId === "GC-14-delayed-nigo",
+      )!
+      .verificationProves.find(
+        ({ display }) =>
+          display === "Submission accepted by the capability",
+      )!;
+    nigoProof.ledgerEvent = "StatusObserved";
+    nigoProof.observedAtIso = "2026-07-28T21:44:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        causalEventDrift,
+      ).some((problem) =>
+        problem.includes(
+          "verification proof provenance must bind each claim to its own signed ledger event instant",
         ),
       ),
     ).toBe(true);

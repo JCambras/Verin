@@ -414,15 +414,49 @@ function parseVariant(value: unknown): SignedCaseVariant {
       `${caseId}.expectedLedgerEvents`,
     ).map((entry, index) => {
       const ledger = asRecord(entry, `${caseId}.expectedLedgerEvents[${index}]`);
+      const type = asString(
+        ledger.type,
+        `${caseId}.expectedLedgerEvents[${index}].type`,
+      );
+      const stageId =
+        ledger.stageId === undefined
+          ? null
+          : asString(
+              ledger.stageId,
+              `${caseId}.expectedLedgerEvents[${index}].stageId`,
+            );
+      const lifecyclePass =
+        ledger.lifecyclePass === undefined
+          ? null
+          : asString(
+              ledger.lifecyclePass,
+              `${caseId}.expectedLedgerEvents[${index}].lifecyclePass`,
+            );
+      if (
+        lifecyclePass !== null &&
+        lifecyclePass !== "initial" &&
+        lifecyclePass !== "revalidated"
+      ) {
+        throw new TypeError(
+          `${caseId}.expectedLedgerEvents[${index}].lifecyclePass is unsupported`,
+        );
+      }
+      if (
+        type === "ApprovalRecorded" &&
+        (stageId === null || lifecyclePass === null)
+      ) {
+        throw new TypeError(
+          `${caseId}.expectedLedgerEvents[${index}] approval binding is incomplete`,
+        );
+      }
       return {
-        type: asString(
-          ledger.type,
-          `${caseId}.expectedLedgerEvents[${index}].type`,
-        ),
+        type,
         note: asString(
           ledger.note,
           `${caseId}.expectedLedgerEvents[${index}].note`,
         ),
+        stageId,
+        lifecyclePass,
       };
     }),
     explanations: asArray(

@@ -165,8 +165,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Account, liquidity, planned-withdrawal, bank-instruction, and household-instruction snapshots pinned into the input bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with recommendation, authority requirement, and execution plan; bound to the input-bundle hash."},
-    {"type": "ApprovalRecorded", "note": "First operations approver approves against the decision hash."},
-    {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "First operations approver approves against the decision hash."},
+    {"type": "ApprovalRecorded", "stageId": "ops-dual-approval", "lifecyclePass": "initial", "note": "Second, distinct operations approver approves; quorum satisfied."},
     {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after approval against the still-current decision basis."},
     {"type": "ReservationCreated", "note": "Liquidity reservation created on conflict key conflict:smiths-liquidity after final approval and revalidation."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},

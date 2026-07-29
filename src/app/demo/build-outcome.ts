@@ -19,6 +19,7 @@ import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
 import { buildVerificationProofs } from "./build-verification-proofs";
 import { buildBankInstructionSafetyCheck } from "./build-safety-check";
+import { executionReachFor } from "./execution-reach";
 import {
   CAST,
   decisionIdentityFor,
@@ -97,11 +98,11 @@ export function buildSafety(
     (entry) => entry.evidenceKind === "bank-instruction",
   ) ?? [];
   const invalidatedPass = invalidationAuthority && pass === "initial";
-  const executionEligible =
-    authority.kind === "signed" &&
-    eligibility?.eligible === true &&
-    (!invalidationAuthority ||
-      (invalidationAuthority && pass === "revalidated"));
+  const executionEligible = executionReachFor(
+    scenario,
+    firm,
+    pass,
+  ).reached;
   const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
         {
@@ -299,21 +300,14 @@ export function buildExecution(
   pass: JourneyPass = "initial",
 ): ExecutionVM | null {
   const timeline = timelineFor(scenario, firm);
-  const authority = liquidityAuthorityFor(scenario, firm.id);
   const eligibility = executionEligibilityFor(scenario, firm.id);
   const verification = sourceCaseFor(scenario, firm.id)?.verification;
-  const invalidation = hasSignedInvalidationAuthority(
-    scenario,
-    firm.id,
-  );
   const duplicateRetry =
     sourceCaseFor(scenario, firm.id)?.explanations.some(
       (entry) => entry.code === "duplicate-suppressed",
     ) ?? false;
   if (
-    authority.kind === "missing" ||
-    eligibility?.eligible !== true ||
-    (invalidation && pass !== "revalidated") ||
+    !executionReachFor(scenario, firm, pass).reached ||
     verification?.reached !== true
   ) {
     return null;
@@ -368,7 +362,7 @@ export function buildExecution(
       timestamp: formatDemoInstant(timeline.retryAt),
       timestampIso: timeline.retryAt,
       plainClaim: "Already submitted once - Verin did not send it again.",
-      identifiers: eligibility.idempotencyKey
+      identifiers: eligibility?.idempotencyKey
         ? [{ label: "Idempotency key (matches the original byte-for-byte)", value: eligibility.idempotencyKey }]
         : [],
       fakeClass: "fake-adapter-response",
@@ -389,14 +383,9 @@ export function buildVerification(
   pass: JourneyPass = "initial",
 ): VerificationVM | null {
   const timeline = timelineFor(scenario, firm);
-  const authority = liquidityAuthorityFor(scenario, firm.id);
-  const eligibility = executionEligibilityFor(scenario, firm.id);
   const sourceCase = sourceCaseFor(scenario, firm.id);
   if (
-    authority.kind === "missing" ||
-    eligibility?.eligible !== true ||
-    (hasSignedInvalidationAuthority(scenario, firm.id) &&
-      pass !== "revalidated") ||
+    !executionReachFor(scenario, firm, pass).reached ||
     sourceCase?.verification.reached !== true
   ) {
     return null;

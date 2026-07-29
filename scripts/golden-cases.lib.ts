@@ -361,6 +361,69 @@ function validateExecutableLedgerOrder(
   }
 }
 
+function validateApprovalLedgerQuorums(
+  events: unknown[],
+  eligible: boolean | undefined,
+  authority: unknown,
+  P: (msg: string) => void,
+): void {
+  if (
+    eligible !== true ||
+    !events.every(isObj) ||
+    !isObj(authority) ||
+    !Array.isArray(authority.stages)
+  ) {
+    return;
+  }
+  const stages = authority.stages.filter(isObj);
+  const approvals = events.filter(
+    (event) => event.type === "ApprovalRecorded",
+  );
+  const passes = events.some(
+    (event) => event.type === "ApprovalInvalidated",
+  )
+    ? ["initial", "revalidated"]
+    : ["initial"];
+  for (const [index, approval] of approvals.entries()) {
+    if (
+      !isNonEmptyString(approval.stageId) ||
+      !stages.some((stage) => stage.stageId === approval.stageId)
+    ) {
+      P(
+        `expectedLedgerEvents ApprovalRecorded[${index}] must bind an expectedAuthority stageId`,
+      );
+    }
+    if (
+      !isNonEmptyString(approval.lifecyclePass) ||
+      !passes.includes(approval.lifecyclePass)
+    ) {
+      P(
+        `expectedLedgerEvents ApprovalRecorded[${index}] must bind lifecyclePass ${passes.join("|")}`,
+      );
+    }
+  }
+  for (const pass of passes) {
+    for (const stage of stages) {
+      if (
+        !isNonEmptyString(stage.stageId) ||
+        !isPositiveSafeInt(stage.approvalsRequired)
+      ) {
+        continue;
+      }
+      const count = approvals.filter(
+        (event) =>
+          event.stageId === stage.stageId &&
+          event.lifecyclePass === pass,
+      ).length;
+      if (count < stage.approvalsRequired) {
+        P(
+          `expectedLedgerEvents approval quorum for ${pass} stage ${stage.stageId} requires ${stage.approvalsRequired} ApprovalRecorded events, found ${count}`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * The signed money figures a case states as STRUCTURED data. Amounts are first-class
  * fields rather than numbers regexed out of signed prose, so a captain rewording a
@@ -1027,8 +1090,27 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
         if (!isObj(l)) return P(`${at} is not an object`);
         if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event (${AUTHORITY_LAPSE_EVENT_TYPES.join("|")}), got ${JSON.stringify(l.type)}`);
         if (!isNonEmptyString(l.note)) P(`${at}.note missing or empty`);
+        if (l.type === "ApprovalRecorded") {
+          if (!isNonEmptyString(l.stageId)) {
+            P(`${at}.stageId missing or empty for ApprovalRecorded`);
+          }
+          if (
+            l.lifecyclePass !== "initial" &&
+            l.lifecyclePass !== "revalidated"
+          ) {
+            P(
+              `${at}.lifecyclePass must be initial|revalidated for ApprovalRecorded`,
+            );
+          }
+        }
       });
       validateExecutableLedgerOrder(c.expectedLedgerEvents, eligible, P);
+      validateApprovalLedgerQuorums(
+        c.expectedLedgerEvents,
+        eligible,
+        auth,
+        P,
+      );
     }
 
     // expected verification state
