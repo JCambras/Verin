@@ -103,8 +103,9 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
 the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
-route case's imported component, the dynamic page's reachable return, the exact ordered clickable
-journey controls, and screenshots that verify the corresponding URL and loaded marker. CI then runs
+route case's imported component, the dynamic page's reachable return and query-derived approval input,
+the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
+verify the corresponding URL and loaded marker. CI then runs
 `scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
 upload-artifact fails when missing, conditionally disabled, or failure-neutralized.
 Landing a real path = replace the corresponding builder and remove
@@ -257,10 +258,12 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
   assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
   Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
-  required tests and their registered hooks, requires stable positive helper provenance, follows bound
-  and transitively invoked local neutralizers, and fails closed on unresolved local callable indirection,
-  proves Playwright forbids focused exclusion and selects the required specs, and binds every public,
-  authenticated, and demo route to its loaded-state scan. Required route collections cannot be supplied
+  required tests and their registered hooks, requires stable positive helper provenance, follows
+  neutralizers invoked through `bind`, `call`, or `apply` and transitively invoked local helpers, and
+  fails closed on unresolved local callable indirection, proves Playwright forbids focused exclusion and
+  selects the required specs, and binds every public, authenticated, and demo route to its loaded-state
+  scan. Required callbacks admit only their typed loops and canonical uninstrumented login call.
+  Required specifications may register no Playwright hooks. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the

@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, and the captain-approved callback, assertion, renderer-ID, and runner-ratchet review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, and the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -239,8 +239,11 @@ or immutable alias rather than a later assignment, and any reachable callback ex
 the scan non-evidence. The shared AST control-flow proof applies the same rule to canonical screenshots.
 Positive Axe-helper proof also requires stable imported callable provenance: a later assignment, including
 one hidden in unreachable control flow, cannot turn a no-op alias into evidence. Neutralizer provenance
-follows bound Playwright members and transitively invoked local helpers; unresolved local callable
-indirection fails closed.
+follows Playwright members invoked through `bind`, `call`, or `apply` and transitively invoked local
+helpers; unresolved local callable indirection fails closed. A required route-scan callback admits only
+its typed route loops and a stable canonical login call. The login helper is pinned to its uninstrumented
+browser flow, and required specifications may register no Playwright hooks. `addInitScript`, response
+replacement, or comparable caller-side page setup therefore cannot mask the surfaces before analysis.
 Configuration property names are normalized across direct and computed literal syntax at the root and
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
@@ -252,10 +255,13 @@ SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract. Every dynamic
 component imported from the manifest's exact component path, every component exists, and the dynamic
 page's validated return must be provably reachable. The page passes the exact resolved scenario and firm
 identifiers to `getJourney`, and an exhaustive scenario-by-firm proof checks that the service preserves
-the recorded branch, firm, outcome class, and disposition. The canonical journey must click the complete
-ordered set of accessible product controls, including the source-verification button. Its complete
-top-level statement graph is restricted to those clicks, read-only loaded-state assertions, and sanctioned
-helpers, so DOM mutation, injected controls, or alternate navigation cannot manufacture the route graph.
+the recorded branch, firm, outcome class, and disposition. The renderer's approval input is bound by
+symbol to the exact `first(sp.approved) === "1"` query-derived declaration. The canonical journey must
+click the complete ordered set of accessible product controls, including the source-verification button.
+Its complete top-level statement graph is restricted to those clicks, read-only loaded-state assertions,
+and sanctioned helpers, and the specification may register no Playwright hooks. DOM mutation, injected
+controls, screenshot stubbing, or alternate navigation therefore cannot manufacture the route graph or
+its evidence.
 It directly awaits each surface
 screenshot in order. Each `snap` call names its manifest station,
 and the helper verifies the station URL plus its surface-specific loaded marker before directly awaiting
@@ -418,8 +424,11 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   including when a later unreachable assignment appears benign.
   TestInfo neutralizers are also resolved from callback parameters and from `test.info()` return values,
   including aliases and destructuring. Sanctioned Axe-helper aliases must have stable, unreassigned
-  imported provenance. Bound neutralizers and local helpers that invoke neutralizers are followed
-  transitively, while unresolved local callable indirection is non-evidence.
+  imported provenance. Neutralizers invoked through `bind`, `call`, or `apply`, plus local helpers that
+  invoke neutralizers, are followed transitively, while unresolved local callable indirection is
+  non-evidence. Required route callbacks admit only their typed loops and stable canonical login call;
+  the login helper itself is pinned to the uninstrumented browser flow, and required specifications may
+  register no Playwright hooks.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -430,8 +439,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
   manifest, each route case's imported component, the dynamic page's resolved station argument and loaded
   marker through a provably reachable return, the resolved scenario and firm inputs to `getJourney`,
-  every supported scenario-by-firm outcome, the complete ordered clickable-control route graph, and
-  direct awaited ordered screenshots with no `page.goto` substitute. Both the launcher and station screenshot helpers verify
+  every supported scenario-by-firm outcome, the exact query-derived approval input, the complete ordered
+  clickable-control route graph, and direct awaited ordered screenshots with no `page.goto` substitute.
+  The canonical specification cannot register hooks that inject controls or replace screenshots. Both
+  the launcher and station screenshot helpers verify
   their corresponding URL and loaded marker, write only to the pinned artifact directory, and reject an
   empty capture. A dedicated post-Playwright command validates every canonical artifact,
   and upload-artifact fails when the directory is missing or its execution or failure is neutralized.

@@ -114,9 +114,11 @@ identities in the SHA-pinned ratified demo contract, every component and dynamic
 canonical route binds each station to its manifest component, the dynamic page passes its resolved station
 to that renderer and its loaded marker through a provably reachable return, and the resolved scenario and
 firm identifiers feed the journey service unchanged. Every supported scenario-by-firm outcome is checked
-exhaustively. The journey clicks the exact ordered product controls and its complete top-level statement
-graph rejects DOM mutation, injected controls, and alternate navigation before directly awaiting all
-twelve screenshots in order.
+exhaustively, and the renderer's approval input is bound to the exact
+`first(sp.approved) === "1"` query-derived declaration. The journey clicks the exact ordered product
+controls, rejects registered Playwright hooks, and restricts its complete top-level statement graph
+against DOM mutation, injected controls, screenshot replacement, and alternate navigation before
+directly awaiting all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
 assert the result is non-empty. CI separately verifies that every canonical artifact exists and is
 non-empty, then configures upload-artifact to fail when the directory is missing or the upload is
@@ -135,9 +137,11 @@ route collections and entries are frozen. Neutralizer aliases fail closed across
 assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
 wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
 and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
-must be stable and unreassigned; bound neutralizers and transitively invoked local neutralizer helpers are
-followed, and unresolved local callable indirection fails closed. Conditional callback exits before a
-required scan are rejected as non-evidence.
+must be stable and unreassigned; neutralizers invoked through `bind`, `call`, or `apply` and transitively
+invoked local neutralizer helpers are followed, and unresolved local callable indirection fails closed.
+Required route callbacks admit only their typed loops and stable canonical login call, and the shared
+login helper is pinned to the uninstrumented browser flow. Required specifications may register no
+Playwright hooks. Conditional callback exits before a required scan are rejected as non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

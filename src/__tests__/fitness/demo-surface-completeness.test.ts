@@ -250,8 +250,59 @@ function routePageUsesResolvedStation(source: string): boolean {
       .find((declaration) => declaration.getName() === name);
   const scenarioId = directConst("scenarioId");
   const firmId = directConst("firmId");
+  const spDeclaration = directConst("sp");
+  const approvedDeclaration = directConst("approved");
   const journeyDeclaration = directConst("journey");
   const idsDeclaration = directConst("ids");
+  const pageParameter = page.getParameters()[0]?.getNameNode();
+  const searchParamsBinding = Node.isObjectBindingPattern(pageParameter)
+    ? pageParameter
+        .getElements()
+        .find((element) => element.getName() === "searchParams")
+        ?.getNameNode()
+    : undefined;
+  const spInitializer = spDeclaration?.getInitializer();
+  const approvedInitializer = approvedDeclaration?.getInitializer();
+  const firstFunction = file.getFunction("first");
+  if (
+    !Node.isIdentifier(searchParamsBinding) ||
+    !Node.isAwaitExpression(spInitializer) ||
+    !Node.isIdentifier(spInitializer.getExpression()) ||
+    spInitializer.getExpression().getSymbol() !==
+      searchParamsBinding.getSymbol() ||
+    !Node.isBinaryExpression(approvedInitializer) ||
+    approvedInitializer.getOperatorToken().getKind() !==
+      SyntaxKind.EqualsEqualsEqualsToken
+  ) {
+    return false;
+  }
+  const approvalCall = approvedInitializer.getLeft();
+  const approvalValue = approvedInitializer.getRight();
+  if (
+    firstFunction === undefined ||
+    !Node.isCallExpression(approvalCall) ||
+    approvalCall.getArguments().length !== 1
+  ) {
+    return false;
+  }
+  const approvalCallee = approvalCall.getExpression();
+  const approvalArgument = approvalCall.getArguments()[0];
+  if (
+    !Node.isIdentifier(approvalCallee) ||
+    approvalCallee
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => declaration === firstFunction) !== true ||
+    !Node.isPropertyAccessExpression(approvalArgument) ||
+    approvalArgument.getName() !== "approved" ||
+    !Node.isIdentifier(approvalArgument.getExpression()) ||
+    approvalArgument.getExpression().getSymbol() !==
+      spDeclaration?.getSymbol() ||
+    !Node.isStringLiteral(approvalValue) ||
+    approvalValue.getLiteralText() !== "1"
+  ) {
+    return false;
+  }
   const isResolvedInput = (
     declaration: typeof scenarioId,
     resolver: string,
@@ -369,7 +420,8 @@ function routePageUsesResolvedStation(source: string): boolean {
   }
   const call = childExpressions[0];
   const expression = call.getExpression();
-  const [stationArgument, journey, ids, approved] = call.getArguments();
+  const [stationArgument, journey, ids, approvedArgument] =
+    call.getArguments();
   return (
     Node.isIdentifier(expression) &&
     expression
@@ -383,7 +435,8 @@ function routePageUsesResolvedStation(source: string): boolean {
     journey.getSymbol() === journeyDeclaration?.getSymbol() &&
     Node.isIdentifier(ids) &&
     ids.getSymbol() === idsDeclaration?.getSymbol() &&
-    approved?.getText() === "approved"
+    Node.isIdentifier(approvedArgument) &&
+    approvedArgument.getSymbol() === approvedDeclaration?.getSymbol()
   );
 }
 
@@ -404,6 +457,257 @@ function isNamedImportIdentifier(
           importModuleOf(declaration) === moduleName,
       ) ?? false
   );
+}
+
+function unwrapCallableExpression(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+function staticMemberAccess(
+  node: Node,
+): { receiver: Node; name: string | undefined } | undefined {
+  const normalized = unwrapCallableExpression(node);
+  if (Node.isPropertyAccessExpression(normalized)) {
+    return {
+      receiver: normalized.getExpression(),
+      name: normalized.getName(),
+    };
+  }
+  if (Node.isElementAccessExpression(normalized)) {
+    const argument = normalized.getArgumentExpression();
+    return {
+      receiver: normalized.getExpression(),
+      name: Node.isStringLiteral(argument)
+        ? argument.getLiteralText()
+        : undefined,
+    };
+  }
+  return undefined;
+}
+
+function precedingAssignmentValues(node: Node): Node[] {
+  if (!Node.isIdentifier(node)) return [];
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return [];
+  return node
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() ===
+          SyntaxKind.EqualsToken &&
+        candidate.getStart() < node.getStart() &&
+        Node.isIdentifier(candidate.getLeft()) &&
+        candidate.getLeft().getSymbol() === symbol,
+    )
+    .map((candidate) => candidate.getRight());
+}
+
+function isPlaywrightNamespace(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapCallableExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (!Node.isIdentifier(normalized)) return false;
+  if (
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .some(
+        (declaration) =>
+          Node.isNamespaceImport(declaration) &&
+          importModuleOf(declaration) === "@playwright/test",
+      )
+  ) {
+    return true;
+  }
+  return [
+    ...precedingAssignmentValues(normalized),
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+  ].some((source) =>
+    isPlaywrightNamespace(source, new Set(seen)),
+  );
+}
+
+function isPlaywrightTestValue(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapCallableExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (
+    isNamedImportIdentifier(
+      normalized,
+      "@playwright/test",
+      "test",
+    )
+  ) {
+    return true;
+  }
+  const access = staticMemberAccess(normalized);
+  if (
+    access?.name === "test" &&
+    isPlaywrightNamespace(access.receiver, new Set(seen))
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(normalized)) return false;
+  if (
+    precedingAssignmentValues(normalized).some((source) =>
+      isPlaywrightTestValue(source, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            isPlaywrightTestValue(initializer, new Set(seen))
+          );
+        }
+        if (!Node.isBindingElement(declaration)) return false;
+        const property =
+          declaration.getPropertyNameNode() ??
+          declaration.getNameNode();
+        if (
+          (!Node.isIdentifier(property) &&
+            !Node.isStringLiteral(property)) ||
+          (Node.isIdentifier(property)
+            ? property.getText()
+            : property.getLiteralText()) !== "test"
+        ) {
+          return false;
+        }
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        return (
+          initializer !== undefined &&
+          isPlaywrightNamespace(initializer, new Set(seen))
+        );
+      }) ?? false
+  );
+}
+
+function indirectCallableTarget(node: Node): Node | undefined {
+  const normalized = unwrapCallableExpression(node);
+  if (Node.isCallExpression(normalized)) {
+    const access = staticMemberAccess(normalized.getExpression());
+    return access?.name === "bind" ? access.receiver : undefined;
+  }
+  const access = staticMemberAccess(normalized);
+  return access !== undefined &&
+    ["call", "apply"].includes(access.name ?? "")
+    ? access.receiver
+    : undefined;
+}
+
+const PLAYWRIGHT_HOOKS = new Set([
+  "beforeAll",
+  "beforeEach",
+  "afterAll",
+  "afterEach",
+]);
+
+function isPlaywrightHookValue(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapCallableExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  const access = staticMemberAccess(normalized);
+  if (
+    access !== undefined &&
+    isPlaywrightTestValue(access.receiver, new Set(seen))
+  ) {
+    return (
+      access.name === undefined ||
+      PLAYWRIGHT_HOOKS.has(access.name)
+    );
+  }
+  const indirect = indirectCallableTarget(normalized);
+  if (
+    indirect !== undefined &&
+    isPlaywrightHookValue(indirect, new Set(seen))
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(normalized)) return false;
+  if (
+    precedingAssignmentValues(normalized).some((source) =>
+      isPlaywrightHookValue(source, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            isPlaywrightHookValue(initializer, new Set(seen))
+          );
+        }
+        if (!Node.isBindingElement(declaration)) return false;
+        const property =
+          declaration.getPropertyNameNode() ??
+          declaration.getNameNode();
+        const name = Node.isIdentifier(property)
+          ? property.getText()
+          : Node.isStringLiteral(property)
+            ? property.getLiteralText()
+            : undefined;
+        if (name === undefined || !PLAYWRIGHT_HOOKS.has(name)) {
+          return false;
+        }
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        return (
+          initializer !== undefined &&
+          isPlaywrightTestValue(initializer, new Set(seen))
+        );
+      }) ?? false
+  );
+}
+
+function hasRegisteredPlaywrightHook(file: SourceFile): boolean {
+  return file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) => isPlaywrightHookValue(call.getExpression()));
 }
 
 function screenshotSequence(
@@ -737,7 +1041,8 @@ function canonicalJourneyStatementGraphIsSanctioned(
   if (
     callback === undefined ||
     !Node.isBlock(body) ||
-    !hasSanctionedDevBadgeHelper(file)
+    !hasSanctionedDevBadgeHelper(file) ||
+    hasRegisteredPlaywrightHook(file)
   ) {
     return false;
   }
@@ -1214,6 +1519,10 @@ describe("demo-surface-completeness fence", () => {
           "const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };",
           "const ids = { scenarioId: journey.firmId, firmId: journey.scenarioId };",
         ),
+        route.replace(
+          'const approved = first(sp.approved) === "1";',
+          "const approved = true;",
+        ),
       ]) {
         expect(
           surfaceCompletenessProblems(
@@ -1418,6 +1727,45 @@ ${workspaceControl}`,
           ),
           invalidHelper,
         ).not.toEqual([]);
+      }
+    });
+
+    it("rejects registered hooks that can alter the canonical journey", () => {
+      for (const hook of [
+        `test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    document.documentElement.dataset.injectedControls = "true";
+  });
+});`,
+        `test.beforeEach(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
+        `test["beforeEach"](async ({ page }) => {
+  await page.addInitScript(() => {
+    document.documentElement.dataset.injectedControls = "true";
+  });
+});`,
+        `const { beforeEach: install } = test;
+install(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
+      ]) {
+        const hookedJourney = e2e.replace(
+          `test("${JOURNEY_TEST}"`,
+          `${hook}\n\ntest("${JOURNEY_TEST}"`,
+        );
+        expect(
+          surfaceCompletenessProblems(
+            contract,
+            DEMO_SURFACES,
+            route,
+            hookedJourney,
+            exists,
+          ),
+          hookedJourney,
+        ).toContain(
+          `${E2E_PATH}:1 canonical journey must traverse the complete product route graph through its expected clickable controls`,
+        );
       }
     });
 

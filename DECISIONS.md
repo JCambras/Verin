@@ -6394,6 +6394,16 @@ moves into the shared gate library and is invoked by both the registry fence and
 mechanism tuple to that shared ratchet in the same PR. PF-024, PF-031, and PF-032 record the red
 reproductions, companions, and restored proofs.
 
+The captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review
+(2026-07-29) amended ADR-0030 in place a nineteenth time: **(1)** Playwright neutralizer provenance
+resolves invocations through `Function.call` and `Function.apply` as well as `bind`; **(2)** required Axe
+route callbacks admit only their typed loops and a stable canonical login call, whose helper is pinned
+to the uninstrumented browser flow, and required specifications may register no Playwright hooks;
+**(3)** the canonical Gate 0 journey rejects registered Playwright hooks that could inject controls or
+replace screenshot evidence; and **(4)** the renderer's approval input is bound to the exact
+`first(sp.approved) === "1"` query-derived declaration. PF-031 and PF-032 record the red reproductions,
+focused companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

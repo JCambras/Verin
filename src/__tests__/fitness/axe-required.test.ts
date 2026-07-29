@@ -24,6 +24,7 @@ import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
+const E2E_HELPERS_PATH = "e2e/helpers.ts";
 const PLAYWRIGHT_CONFIG_PATH = "playwright.config.ts";
 const AXE_HELPER_EXPORT = "assertNoAxeViolations";
 const REQUIRED_AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
@@ -315,11 +316,16 @@ function memberAccess(
   return undefined;
 }
 
-function boundCallableTarget(node: Node): Node | undefined {
+function indirectCallableTarget(node: Node): Node | undefined {
   const normalized = unwrapExpression(node);
-  if (!Node.isCallExpression(normalized)) return undefined;
-  const access = memberAccess(normalized.getExpression());
-  return access?.name === "bind" ? access.receiver : undefined;
+  if (Node.isCallExpression(normalized)) {
+    const access = memberAccess(normalized.getExpression());
+    return access?.name === "bind" ? access.receiver : undefined;
+  }
+  const access = memberAccess(normalized);
+  return access !== undefined && ["call", "apply"].includes(access.name)
+    ? access.receiver
+    : undefined;
 }
 
 function staticPropertyName(node: Node): string | undefined {
@@ -374,7 +380,7 @@ function isNamedImportMemberExpression(
   ) {
     return true;
   }
-  const boundTarget = boundCallableTarget(normalized);
+  const boundTarget = indirectCallableTarget(normalized);
   if (
     boundTarget !== undefined &&
     isNamedImportMemberExpression(
@@ -515,7 +521,7 @@ function couldBeNamedImportMemberExpression(
   ) {
     return true;
   }
-  const boundTarget = boundCallableTarget(normalized);
+  const boundTarget = indirectCallableTarget(normalized);
   if (
     boundTarget !== undefined &&
     couldBeNamedImportMemberExpression(
@@ -538,6 +544,30 @@ function couldBeNamedImportMemberExpression(
       new Set(seen),
     ),
   );
+}
+
+const PLAYWRIGHT_HOOK_MEMBERS = [
+  "beforeAll",
+  "beforeEach",
+  "afterAll",
+  "afterEach",
+] as const;
+
+function hasRegisteredPlaywrightHook(
+  sourceFile: SourceFile,
+): boolean {
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) =>
+      PLAYWRIGHT_HOOK_MEMBERS.some((member) =>
+        couldBeNamedImportMemberExpression(
+          call.getExpression(),
+          "@playwright/test",
+          "test",
+          member,
+        ),
+      ),
+    );
 }
 
 function isFunctionNode(node: Node): node is FunctionNode {
@@ -683,7 +713,7 @@ function couldBeTestInfoMember(
   ) {
     return true;
   }
-  const boundTarget = boundCallableTarget(normalized);
+  const boundTarget = indirectCallableTarget(normalized);
   if (
     boundTarget !== undefined &&
     couldBeTestInfoMember(
@@ -775,7 +805,7 @@ function localCallableFunctions(
   if (seen.has(normalized)) return [];
   seen.add(normalized);
   if (isFunctionNode(normalized)) return [normalized];
-  const boundTarget = boundCallableTarget(normalized);
+  const boundTarget = indirectCallableTarget(normalized);
   if (boundTarget !== undefined) {
     return localCallableFunctions(boundTarget, new Set(seen));
   }
@@ -806,7 +836,7 @@ function localCallableIsUnresolved(
   if (seen.has(normalized)) return false;
   seen.add(normalized);
   if (isFunctionNode(normalized)) return false;
-  if (boundCallableTarget(normalized) !== undefined) return false;
+  if (indirectCallableTarget(normalized) !== undefined) return false;
   if (!Node.isIdentifier(normalized)) return false;
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   if (
@@ -831,7 +861,7 @@ function localCallableIsUnresolved(
   if (sources.length === 0) return true;
   return sources.some((source) => {
     const value = unwrapExpression(source);
-    if (isFunctionNode(value) || boundCallableTarget(value) !== undefined) {
+    if (isFunctionNode(value) || indirectCallableTarget(value) !== undefined) {
       return false;
     }
     if (Node.isIdentifier(value)) {
@@ -1112,14 +1142,63 @@ function routeLoopIsSanctioned(
   );
 }
 
+function routeScanCallbackIsSanctioned(callback: Callback): boolean {
+  const body = callback.getBody();
+  const pageName = pageParameterName(callback);
+  if (!Node.isBlock(body) || pageName === undefined) return false;
+  const routeGroups = Object.values(REQUIRED_ROUTE_GROUPS).flat();
+  return body.getStatements().every((statement) => {
+    if (Node.isForOfStatement(statement)) {
+      return routeGroups.some(
+        (group) =>
+          isStableNamedImportIdentifier(
+            statement.getExpression(),
+            "./axe-routes",
+            group.imported,
+          ) &&
+          routeLoopIsSanctioned(
+            statement,
+            callback,
+            group.requiresLogin,
+          ),
+      );
+    }
+    return awaitedCall(statement, (call) => {
+      if (
+        !isStableNamedImportCall(call, "./helpers", "login") ||
+        call.getArguments()[0]?.getText() !== pageName
+      ) {
+        return false;
+      }
+      const principal = call.getArguments()[1];
+      return (
+        call.getArguments().length === 1 ||
+        (call.getArguments().length === 2 &&
+          principal !== undefined &&
+          isStableNamedImportIdentifier(
+            principal,
+            "./helpers",
+            "PRINCIPAL",
+          ))
+      );
+    });
+  });
+}
+
 function specCoversRouteGroup(
   sourceFile: SourceFile,
   imported: string,
   requiresLogin: boolean,
 ): boolean {
+  if (hasRegisteredPlaywrightHook(sourceFile)) return false;
   return enabledTestCallbacks(sourceFile).some((callback) => {
     const body = callback.getBody();
-    if (!Node.isBlock(body)) return false;
+    if (
+      !Node.isBlock(body) ||
+      !routeScanCallbackIsSanctioned(callback)
+    ) {
+      return false;
+    }
     return body
       .getStatements()
       .filter(Node.isForOfStatement)
@@ -1542,6 +1621,40 @@ function helperIsSanctioned(sourceFile: SourceFile): boolean {
   return isDirectViolationAssertion(assertion!, resultName.getText());
 }
 
+function loginHelperIsSanctioned(sourceFile: SourceFile): boolean {
+  const helpers = sourceFile
+    .getFunctions()
+    .filter(
+      (fn) =>
+        fn.getName() === "login" &&
+        fn.isExported() &&
+        fn.isAsync(),
+    );
+  if (helpers.length !== 1) return false;
+  const helper = helpers[0]!;
+  const body = helper.getBody();
+  if (
+    !Node.isBlock(body) ||
+    helper
+      .getParameters()
+      .map((parameter) => parameter.getName())
+      .join(",") !== "page,creds"
+  ) {
+    return false;
+  }
+  return JSON.stringify(
+    body.getStatements().map((statement) => statement.getText()),
+  ) ===
+    JSON.stringify([
+      'await page.goto("/login");',
+      'await page.getByLabel("Email").fill(creds.email);',
+      'await page.getByLabel("Password").fill(creds.password);',
+      'await page.getByRole("button", { name: "Sign in" }).click();',
+      "await page.waitForURL(/\\/app$/, { timeout: 15_000 });",
+      'await expect(page.getByRole("heading", { name: "What do you want to do?" })).toBeVisible();',
+    ]);
+}
+
 export function axeCoverageProblems(sources: Readonly<Record<string, string>>): string[] {
   const project = new Project({ useInMemoryFileSystem: true });
   const problems: string[] = [];
@@ -1555,6 +1668,15 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
   } else if (!helperIsSanctioned(helper)) {
     problems.push(
       `${AXE_HELPER_PATH}:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations`,
+    );
+  }
+  const loginHelper = sourceFiles.get(E2E_HELPERS_PATH);
+  if (
+    loginHelper === undefined ||
+    !loginHelperIsSanctioned(loginHelper)
+  ) {
+    problems.push(
+      `${E2E_HELPERS_PATH}:1 required Axe login setup must use the uninstrumented canonical browser flow`,
     );
   }
   const config = sourceFiles.get(PLAYWRIGHT_CONFIG_PATH);
@@ -1606,6 +1728,16 @@ export async function assertNoAxeViolations(page: Page, context: string): Promis
 const VALID_CONFIG = `import { defineConfig } from "@playwright/test";
 export default defineConfig({ testDir: "./e2e", forbidOnly: true });`;
 
+const VALID_LOGIN_HELPER = `import { expect, type Page } from "@playwright/test";
+export async function login(page: Page, creds: { email: string; password: string }): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(creds.email);
+  await page.getByLabel("Password").fill(creds.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL(/\\/app$/, { timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "What do you want to do?" })).toBeVisible();
+}`;
+
 const VALID_SPECS: Record<(typeof REQUIRED_AXE_SPECS)[number], string> = {
   "e2e/smoke.spec.ts": `import { expect, test } from "@playwright/test";
 import { assertNoAxeViolations } from "./axe";
@@ -1654,6 +1786,7 @@ function completeSources(
 ): Record<string, string> {
   return {
     [AXE_HELPER_PATH]: helper,
+    [E2E_HELPERS_PATH]: VALID_LOGIN_HELPER,
     [PLAYWRIGHT_CONFIG_PATH]: VALID_CONFIG,
     ...VALID_SPECS,
     ...overrides,
@@ -1665,6 +1798,7 @@ describe("axe-required fence", () => {
     const paths = [
       PLAYWRIGHT_CONFIG_PATH,
       AXE_HELPER_PATH,
+      E2E_HELPERS_PATH,
       ...REQUIRED_AXE_SPECS,
     ];
     const sources = Object.fromEntries(paths.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]));
@@ -2093,6 +2227,8 @@ test("axe", async ({ page }) => {
       const neutralizers = [
         `const disable = test.${"skip"}.bind(test);
 disable(true, "file disabled");`,
+        `test.${"skip"}.call(test, true, "file disabled");`,
+        `test.${"fixme"}.apply(test, [true, "file disabled"]);`,
         `function disable() {
   test.info().${"fixme"}(true, "file disabled");
 }
@@ -2135,6 +2271,65 @@ test("axe", async ({ page }) => {
           "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
         );
       }
+    });
+
+    it("rejects page instrumentation before required route scans", () => {
+      for (const setup of [
+        `await page.addInitScript(() => {
+  document.documentElement.dataset.hideInaccessible = "true";
+});`,
+        `await page.route("**/*", async (route) => {
+  await route.fulfill({ body: "<main><h1>Accessible replacement</h1></main>" });
+});`,
+      ]) {
+        const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  ${setup}
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+        expect(
+          axeCoverageProblems(
+            completeSources({ "e2e/smoke.spec.ts": spec }),
+          ),
+          spec,
+        ).toContain(
+          "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
+        );
+      }
+      const hooked = VALID_SPECS["e2e/smoke.spec.ts"].replace(
+        'test("axe"',
+        `test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    document.documentElement.dataset.hideInaccessible = "true";
+  });
+});
+test("axe"`,
+      );
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": hooked }),
+        ),
+        hooked,
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
+      );
+      const sources = completeSources();
+      sources[E2E_HELPERS_PATH] = VALID_LOGIN_HELPER.replace(
+        '  await page.goto("/login");',
+        `  await page.addInitScript(() => {
+    document.documentElement.dataset.hideInaccessible = "true";
+  });
+  await page.goto("/login");`,
+      );
+      expect(axeCoverageProblems(sources)).toContain(
+        "e2e/helpers.ts:1 required Axe login setup must use the uninstrumented canonical browser flow",
+      );
     });
 
     it("rejects caught, transformed, incomplete, or masked helper assertions", () => {

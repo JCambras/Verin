@@ -11018,3 +11018,80 @@ navigation after a valid click while preserving the required control sequence.
 files and all 20 tests; the complete fitness suite passed all 447 tests.
 
 **Date:** 2026-07-29.
+
+### PF-031 (continued) · indirect neutralizers and uninstrumented route scans
+
+**Invariant (charter #9):** required Axe scans cannot be disabled through `Function.call` or
+`Function.apply`, and the route-scan callback plus its login helper cannot instrument or replace the
+page before accessibility analysis.
+
+**Injection 22 - invoke `test.skip` through `Function.call`.** Added
+`test.skip.call(test, true, "disabled")` immediately before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 23 - instrument every future navigation.** Added `page.addInitScript(...)` immediately
+before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Injection 24 - instrument the page from a registered hook.** Registered a module-scope
+`test.beforeEach` that called `page.addInitScript(...)` before every public Axe test.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Companions added:** in-memory required specifications reject `test.skip.call`,
+`test.fixme.apply`, direct `page.addInitScript`, response replacement through `page.route`, and
+instrumentation inserted into the shared login helper or a registered hook. Required route callbacks now
+admit only their typed route loops and the stable canonical login call, while the login helper is pinned
+to its uninstrumented browser flow and required specifications may register no Playwright hooks.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both fence
+files and all 22 tests.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · canonical hook isolation and approval binding
+
+**Invariant (Gate 0, ADR-0030):** no Playwright hook may inject controls or replace screenshot evidence
+for the canonical journey, and policy activation must derive only from the resolved
+`first(sp.approved) === "1"` query input.
+
+**Injection 17 - replace screenshots from a module-scope hook.** Registered a `test.beforeEach` that
+reassigned `page.screenshot` before the canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Injection 18 - hardcode policy approval.** Replaced
+`const approved = first(sp.approved) === "1"` with `const approved = true` in the dynamic demo page.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companions added:** in-memory journeys reject direct, computed, and destructured Playwright hook
+registrations that inject page setup or stub screenshots. In-memory route sources reject a hardcoded
+approval value, and the renderer argument is bound by symbol to the exact query-derived declaration.
+
+**Revert:** both real injections were removed immediately. The restored focused run passed both fence
+files and all 22 tests.
+
+**Date:** 2026-07-29.
