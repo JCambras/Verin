@@ -180,6 +180,12 @@ the canonical `YYYY-MM-DDTHH:MM:SS.mmmZ` UTC form; descriptive dates below rende
 America/New_York zone. Shared numbers: planned withdrawals $8,000/month, so the Firm A reserve is
 $48,000 and the Firm B reserve is $96,000.
 
+Every execution-eligible ledger follows one governed sequence: the decision is recorded, required
+approvals are recorded, evidence is revalidated immediately before execution, the reservation is
+created against the still-current approved and revalidated decision, and only then may execution
+start. If revalidation changes material evidence, stale approvals are invalidated, a derived
+decision is recorded, and its required approvals are acquired before the reservation.
+
 ### GC-01-firm-a-happy-path - Firm A happy path
 
 - **Trigger:** advisor enters "The Smiths need $75,000 for their home renovation by August 15."
@@ -199,8 +205,9 @@ $48,000 and the Firm B reserve is $96,000.
   `conflict:smiths-liquidity`; evidence-fresh-at-execution and hash-bound-approval preconditions.
 - **Expected explanation nodes:** source-account-selected; cash-reserve-preserved;
   dual-approval-required.
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ApprovalRecorded ×2 → ExecutionStarted → ExecutionSucceeded → StatusObserved.
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded ×2 →
+  EvidenceSnapshotRecorded (pre-execution revalidation) → ReservationCreated → ExecutionStarted →
+  ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted` - and submitted is not presented as settled.
 - **Signoff:** signed (captain, 2026-07-28).
 
@@ -220,8 +227,9 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected execution eligibility:** eligible; own idempotency key and reservation.
 - **Expected explanation nodes:** source-account-selected; cash-reserve-preserved (twelve-month);
   dual-approval-not-required (policy changed, not a prompt).
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ExecutionStarted → ExecutionSucceeded → StatusObserved.
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → EvidenceSnapshotRecorded
+  (pre-execution revalidation) → ReservationCreated → ExecutionStarted → ExecutionSucceeded →
+  StatusObserved.
 - **Expected verification state:** reached; `submitted`.
 - **Signoff:** signed (captain, 2026-07-28).
 
@@ -244,8 +252,8 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected explanation nodes:** recent-bank-change-detected; specialist-review-required;
   dual-approval-required.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded
-  (specialist) → ApprovalRecorded ×2 (ops) → ReservationCreated → ExecutionStarted →
-  ExecutionSucceeded → StatusObserved.
+  (specialist) → ApprovalRecorded ×2 (ops) → EvidenceSnapshotRecorded (pre-execution revalidation)
+  → ReservationCreated → ExecutionStarted → ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`.
 - **Signoff:** signed (captain, 2026-07-28).
 
@@ -383,10 +391,12 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected disposition:** proceed.
 - **Expected authority stages:** `ops-dual-approval` as GC-01.
 - **Expected execution eligibility:** eligible - holds reservation `res:GC-10:liquidity` on
-  `conflict:smiths-liquidity`; ordering is decided by decision commit order, deterministically.
+  `conflict:smiths-liquidity`; ordering is decided by governed approval and revalidation commit
+  order, deterministically.
 - **Expected explanation nodes:** individually-valid; reservation-acquired.
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ApprovalRecorded ×2 → ExecutionStarted → ExecutionSucceeded → StatusObserved.
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded ×2 →
+  EvidenceSnapshotRecorded (pre-execution revalidation) → ReservationCreated → ExecutionStarted →
+  ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`; the reservation is released on
   VerificationClosed or expiry.
 - **Signoff:** signed (captain, 2026-07-28).
@@ -426,9 +436,10 @@ $48,000 and the Firm B reserve is $96,000.
   the click, so all three attempts carry the same key.
 - **Expected explanation nodes:** stable-idempotency-key; duplicate-suppressed (one external
   instruction; retries annotated against it, original handle returned).
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ApprovalRecorded ×2 → ExecutionStarted (exactly one - duplicates absorbed, never re-recorded) →
-  ExecutionSucceeded → StatusObserved (once).
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded ×2 →
+  EvidenceSnapshotRecorded (pre-execution revalidation) → ReservationCreated → ExecutionStarted
+  (exactly one - duplicates absorbed, never re-recorded) → ExecutionSucceeded → StatusObserved
+  (once).
 - **Expected verification state:** reached; `submitted`; provable against the fake adapter now,
   re-proven against the real sandbox when the trigger fires.
 - **Signoff:** signed (captain, 2026-07-28).
@@ -450,9 +461,10 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected explanation nodes:** partial-outcome-recorded (completed `instruction-created`,
   incomplete `disbursement-scheduled`, exact sourceStatus - nothing rounded up to success);
   exception-requires-judgment (derived decision, never a silent retry - v3 invariant 24).
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ApprovalRecorded ×2 → ExecutionStarted → **ExecutionPartiallySucceeded** → StatusObserved
-  (Unknown; raw sourceStatus preserved) → **ExceptionDecisionRequested**.
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded ×2 →
+  EvidenceSnapshotRecorded (pre-execution revalidation) → ReservationCreated → ExecutionStarted →
+  **ExecutionPartiallySucceeded** → StatusObserved (Unknown; raw sourceStatus preserved) →
+  **ExceptionDecisionRequested**.
 - **Expected verification state:** reached; `unknown` - verification cannot close; the completed
   part is proven, the incomplete part is not, and the surface says exactly that.
 - **Deferral:** the whole case is specified against the in-memory fake ExecutionTarget/StatusSource
@@ -476,9 +488,10 @@ $48,000 and the Firm B reserve is $96,000.
 - **Expected explanation nodes:** submitted-not-settled-vindicated (the product never claimed
   settlement, so the late NIGO contradicts nothing); delayed-nigo-ingested (exact custodian reason
   preserved; remediation via derived exception decision).
-- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ReservationCreated →
-  ExecutionStarted → ExecutionSucceeded → StatusObserved (Submitted) → StatusObserved (NIGO,
-  ingested late) → ExceptionDecisionRequested (resubmit-with-corrected-paperwork vs cancel).
+- **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → EvidenceSnapshotRecorded
+  (pre-execution revalidation) → ReservationCreated → ExecutionStarted → ExecutionSucceeded →
+  StatusObserved (Submitted) → StatusObserved (NIGO, ingested late) →
+  ExceptionDecisionRequested (resubmit-with-corrected-paperwork vs cancel).
 - **Expected verification state:** reached; `nigo` - the original decision is never retroactively
   reopened; the NIGO is a new observed fact.
 - **Signoff:** signed (captain, 2026-07-28).

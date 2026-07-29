@@ -348,6 +348,22 @@ export function buildVerification(
         ],
     nextPoll: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
     appended,
+    exceptionDecision: spec.partial
+      ? {
+          eventType: "ExceptionDecisionRequested",
+          reason: "partial-execution",
+          priorDecisionId: "dec-smiths-renovation-2026-0726",
+          triggeringLedgerEvent: "ExecutionPartiallySucceeded",
+          requestedAt: formatDemoInstant(
+            timeline.exceptionDecisionRequestedAt,
+            undefined,
+            true,
+          ),
+          requestedAtIso: timeline.exceptionDecisionRequestedAt,
+          summary:
+            "The partial receipt opened a governed exception decision while the incomplete disbursement remains unknown and unconfirmed.",
+        }
+      : null,
     fakeClass: "fake-adapter-response",
   };
 }

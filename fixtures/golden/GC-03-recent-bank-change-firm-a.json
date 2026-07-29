@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft assumes both Firm A stages apply at $75,000: specialist review for the recent bank change AND dual operations approval above $25,000. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft assumes both Firm A stages apply at $75,000: specialist review for the recent bank change AND dual operations approval above $25,000. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected approval-revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -162,7 +162,8 @@
     {"type": "ApprovalRecorded", "note": "Bank-change specialist approves the recent change (stage 1)."},
     {"type": "ApprovalRecorded", "note": "First operations approver approves (stage 2)."},
     {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves (stage 2); quorum satisfied."},
-    {"type": "ReservationCreated", "note": "Liquidity reservation created before execution."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final operations approval."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created after final approval and revalidation, before execution."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle."},
     {"type": "StatusObserved", "note": "Returned status observed as submitted."}

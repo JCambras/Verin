@@ -3468,3 +3468,26 @@ causal order that actually authorized execution. Presence-only checks and scenar
 could make contradictory records appear internally complete.
 **Revert path:** the authority predicate, timeline projection, view-model additions, navigation pass,
 and pure semantic checks are isolated to the demo fake-service and its fences.
+
+### D-069 · 2026-07-28 · reversible · Reservation follows current authority and revalidation
+
+The executable ledger sequence is decision, required approval, pre-execution evidence
+revalidation, reservation, then execution. If revalidation changes material evidence, the changed
+snapshot invalidates stale approval, a derived decision is recorded, its authority is acquired
+afresh, and only then is the reservation created. `ReservationCreated` therefore always follows the
+final still-valid `ApprovalRecorded` when approval is required and precedes `ExecutionStarted`.
+Signed fixtures, demo timelines, normative demo documents, generated semantic snapshots, and
+adversarial fences carry this order.
+
+The revalidated GC-15 pass now persists through Verification, Comparison, Policy Authoring, Record,
+and return navigation. Comparison uses the refreshed snapshot and displays $237,000 of Firm A
+headroom. GC-13 carries `ExceptionDecisionRequested` as typed verification state and prints it in
+the examiner record with `partial-execution`, its prior decision, and the triggering
+`ExecutionPartiallySucceeded` event. The exact completed and incomplete receipt parts and the
+unknown, unconfirmed movement state remain unchanged.
+
+**Why:** presentation sorting could hide invalid production chronology, query navigation could
+silently select stale evidence, and an affordance label could not preserve a signed event in a
+printable record.
+**Revert path:** the chronology projector, pass-aware comparison path, typed exception state, and
+their companion mutations are isolated to the demo fake-service and golden-case fences.

@@ -75,10 +75,10 @@ export default async function DemoStationPage({
     case "verification":
       return <VerificationSurface vm={journey.verification} {...ids} stopNote={journey.stopNote} querySuffix={querySuffix} />;
     case "comparison":
-      return <ComparisonSurface vm={journey.comparison} {...ids} />;
+      return <ComparisonSurface vm={journey.comparison} {...ids} querySuffix={querySuffix} />;
     case "policy-authoring":
-      return <PolicyAuthoringSurface vm={journey.policyAuthoring} {...ids} approved={approved} />;
+      return <PolicyAuthoringSurface vm={journey.policyAuthoring} {...ids} approved={approved} querySuffix={querySuffix} />;
     case "record":
-      return <RecordSurface vm={journey.record} {...ids} />;
+      return <RecordSurface vm={journey.record} {...ids} querySuffix={querySuffix} />;
   }
 }

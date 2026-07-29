@@ -230,6 +230,61 @@ const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 const isNonEmptyArray = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0;
 
+function validateExecutableLedgerOrder(
+  events: unknown[],
+  eligible: boolean | undefined,
+  P: (msg: string) => void,
+): void {
+  if (eligible !== true || !events.every(isObj)) return;
+  const types = events.map((event) => event.type);
+  const initialDecisionIndex = types.indexOf("DecisionRecorded");
+  const decisionIndex = types.lastIndexOf("DecisionRecorded");
+  const finalApprovalIndex = types.lastIndexOf("ApprovalRecorded");
+  const revalidationIndex = types.lastIndexOf("EvidenceSnapshotRecorded");
+  const invalidationIndex = types.lastIndexOf("ApprovalInvalidated");
+  const reservationIndex = types.indexOf("ReservationCreated");
+  const executionIndex = types.indexOf("ExecutionStarted");
+
+  if (invalidationIndex >= 0) {
+    if (
+      !(
+        initialDecisionIndex >= 0 &&
+        initialDecisionIndex < revalidationIndex &&
+        revalidationIndex < invalidationIndex &&
+        invalidationIndex < decisionIndex &&
+        decisionIndex < finalApprovalIndex &&
+        finalApprovalIndex < reservationIndex &&
+        reservationIndex < executionIndex
+      )
+    ) {
+      P(
+        "approval invalidation chronology must record changed evidence, ApprovalInvalidated, a derived DecisionRecorded, fresh ApprovalRecorded entries, ReservationCreated, then ExecutionStarted",
+      );
+    }
+    return;
+  }
+
+  if (
+    decisionIndex < 0 ||
+    revalidationIndex <= decisionIndex ||
+    reservationIndex <= revalidationIndex ||
+    executionIndex <= reservationIndex
+  ) {
+    P(
+      "eligible ledger chronology must record the current decision, pre-execution revalidation, ReservationCreated, then ExecutionStarted",
+    );
+  }
+  if (
+    finalApprovalIndex >= 0 &&
+    (finalApprovalIndex >= revalidationIndex ||
+      finalApprovalIndex >= reservationIndex)
+  ) {
+    P(
+      "ReservationCreated must follow the final still-valid ApprovalRecorded and its pre-execution revalidation",
+    );
+  }
+}
+
 /**
  * The signed money figures a case states as STRUCTURED data. Amounts are first-class
  * fields rather than numbers regexed out of signed prose, so a captain rewording a
@@ -715,6 +770,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
         if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event (${AUTHORITY_LAPSE_EVENT_TYPES.join("|")}), got ${JSON.stringify(l.type)}`);
         if (!isNonEmptyString(l.note)) P(`${at}.note missing or empty`);
       });
+      validateExecutableLedgerOrder(c.expectedLedgerEvents, eligible, P);
     }
 
     // expected verification state

@@ -5668,3 +5668,39 @@ execution. Axe checks the changed record and authority markup.
 **Revert:** all adversarial mutations remain inside companion tests.
 
 **Date:** 2026-07-28 (review corrections, D-068).
+
+## F108 · governed reservation order, refreshed comparison, and printable exception decisions
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** every execution-eligible signed ledger and unsorted production timeline records the
+current decision and required authority, performs pre-execution evidence revalidation, creates its
+reservation after the final still-valid approval, and starts execution only after reservation.
+GC-15 carries its revalidated pass and $237,000 refreshed headroom through Comparison and back.
+GC-13 renders and prints its typed `ExceptionDecisionRequested` after the partial receipt and
+unknown observed status.
+
+A production-fixture injection moved GC-01's reservation ahead of both approvals while preserving
+every event member. The focused fence failed at
+`src/__tests__/fitness/golden-cases.test.ts:70` with:
+
+```text
+fixtures/golden/GC-01-firm-a-happy-path.json :: ReservationCreated must follow the final still-valid ApprovalRecorded and its pre-execution revalidation
+```
+
+Companion mutations remove automatic-authority revalidation, move GC-15's reservation ahead of
+fresh approval, exchange GC-12's approval and reservation event kinds without disturbing monotonic
+timestamps, hide GC-13's exception event, replace GC-15's refreshed Comparison headroom with the
+initial $252,000 value, and remove the typed exception from both Verification and Record. Each
+mutation produces its named chronology, latest-snapshot, or printable-exception diagnostic.
+
+Browser coverage carries GC-15 from reached Verification into Comparison and back with
+`pass=revalidated`, proves $237,000 is visible and $252,000 is absent, and proves both the GC-13
+Verification and printable Record expose `ExceptionDecisionRequested` with `partial-execution`.
+
+**Revert:** the production-fixture injection was removed. All remaining mutations live only in
+companion tests. All 569 Vitest cases, all 18 Playwright cases with axe, the golden validator,
+typecheck, lint, knip, the v3 invariant report, and the production build pass on the corrected
+state.
+
+**Date:** 2026-07-28 (review corrections, D-069).

@@ -69,9 +69,40 @@ export function VerificationSurface({
         </section>
       ) : null}
 
+      {vm.exceptionDecision ? (
+        <section
+          aria-label="Exception decision"
+          className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4"
+          data-testid="exception-decision-requested"
+        >
+          <h2 className="text-base font-semibold text-slate-900">Exception decision requested</h2>
+          <p className="text-sm text-slate-700">{vm.exceptionDecision.summary}</p>
+          <dl className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-600">Ledger event</dt>
+              <dd className="font-mono text-xs text-slate-800">{vm.exceptionDecision.eventType}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Reason</dt>
+              <dd className="font-mono text-xs text-slate-800">{vm.exceptionDecision.reason}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Triggering event</dt>
+              <dd className="font-mono text-xs text-slate-800">{vm.exceptionDecision.triggeringLedgerEvent}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Requested</dt>
+              <dd className="text-slate-800">
+                <time dateTime={vm.exceptionDecision.requestedAtIso}>{vm.exceptionDecision.requestedAt}</time>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      ) : null}
+
       <JourneyNav
         back={{ href: demoHref("execution", scenarioId, firmId, querySuffix), label: "Back to execution" }}
-        forward={{ href: demoHref("comparison", scenarioId, firmId), label: "Compare Firm A and Firm B" }}
+        forward={{ href: demoHref("comparison", scenarioId, firmId, querySuffix), label: "Compare Firm A and Firm B" }}
       />
     </SurfaceShell>
   );

@@ -10,7 +10,17 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type ComparisonVM } from "../model";
 import { JourneyNav, SecondaryLink, SurfaceShell, demoHref } from "./shared";
 
-export function ComparisonSurface({ vm, scenarioId, firmId }: { vm: ComparisonVM; scenarioId: string; firmId: string }) {
+export function ComparisonSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: ComparisonVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   const otherFirm = firmId === "firm-a" ? "firm-b" : "firm-a";
   const otherName = firmId === "firm-a" ? "Firm B" : "Firm A";
   return (
@@ -24,8 +34,8 @@ export function ComparisonSurface({ vm, scenarioId, firmId }: { vm: ComparisonVM
       <ComparisonColumns columns={vm.columns} rows={vm.rows} />
       <SecondaryLink href={demoHref("decision", scenarioId, otherFirm)}>Rerun this request under {otherName}</SecondaryLink>
       <JourneyNav
-        back={{ href: demoHref("verification", scenarioId, firmId), label: "Back to verification" }}
-        forward={{ href: demoHref("policy-authoring", scenarioId, firmId), label: "Author a policy change" }}
+        back={{ href: demoHref("verification", scenarioId, firmId, querySuffix), label: "Back to verification" }}
+        forward={{ href: demoHref("policy-authoring", scenarioId, firmId, querySuffix), label: "Author a policy change" }}
       />
     </SurfaceShell>
   );

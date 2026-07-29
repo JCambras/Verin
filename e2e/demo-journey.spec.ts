@@ -380,6 +380,13 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.getByRole("link", { name: "Execute the movement" }).click();
   await page.getByRole("link", { name: "View verification" }).click();
   await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
+  await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
+  await expect(page).toHaveURL(/pass=revalidated/);
+  await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$252,000.00", { exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Back to verification" }).click();
+  await expect(page).toHaveURL(/pass=revalidated/);
+  await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
 
   await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
   const lifecycle = page.getByTestId("signed-lifecycle-event");
@@ -428,6 +435,16 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByText("Completed part: instruction-created")).toBeVisible();
   await expect(page.getByText("Incomplete part: disbursement-scheduled")).toBeVisible();
   await expect(page.getByText(/settled/i)).toHaveCount(0);
+  await expect(page.getByTestId("exception-decision-requested")).toContainText(
+    "ExceptionDecisionRequested",
+  );
+  await expect(page.getByTestId("exception-decision-requested")).toContainText(
+    "partial-execution",
+  );
+  await page.goto("/app/demo/record?scenario=partial-salesforce-success&firm=firm-a");
+  await expect(page.getByTestId("exception-decision-requested")).toContainText(
+    "ExceptionDecisionRequested",
+  );
 
   await page.goto("/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a");
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();

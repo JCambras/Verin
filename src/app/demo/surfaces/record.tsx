@@ -74,7 +74,17 @@ function ExecutionDocRow({ row }: { row: ExecutionRowVM }) {
 
 const NOT_REACHED = "Not reached - this record ends where the journey ended.";
 
-export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenarioId: string; firmId: string }) {
+export function RecordSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: RecordVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   const running = `${vm.header.watermark ? `${vm.header.watermark} · ` : ""}${vm.header.decisionId}`;
   return (
     /* ADR-0022: the running header and footer of EVERY printed page. thead/tfoot
@@ -359,6 +369,28 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                         </ul>
                       </div>
                     ) : null}
+                    {vm.verification.exceptionDecision ? (
+                      <div
+                        className="flex flex-col gap-1 print-avoid-break"
+                        data-testid="exception-decision-requested"
+                      >
+                        <p className="text-sm font-medium text-slate-800">
+                          Exception decision requested
+                        </p>
+                        <p className="text-sm text-slate-700">
+                          {vm.verification.exceptionDecision.summary}
+                        </p>
+                        <p className="font-mono text-xs text-slate-600">
+                          {vm.verification.exceptionDecision.eventType} · reason{" "}
+                          {vm.verification.exceptionDecision.reason} · trigger{" "}
+                          {vm.verification.exceptionDecision.triggeringLedgerEvent} · prior decision{" "}
+                          {vm.verification.exceptionDecision.priorDecisionId} ·{" "}
+                          <time dateTime={vm.verification.exceptionDecision.requestedAtIso}>
+                            {vm.verification.exceptionDecision.requestedAt}
+                          </time>
+                        </p>
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <p className="text-sm text-slate-600">{vm.stopNote ?? NOT_REACHED}</p>
@@ -398,7 +430,7 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                 </p>
               </DocSection>
 
-              <JourneyNav back={{ href: demoHref("policy-authoring", scenarioId, firmId), label: "Back to policy authoring" }} />
+              <JourneyNav back={{ href: demoHref("policy-authoring", scenarioId, firmId, querySuffix), label: "Back to policy authoring" }} />
             </SurfaceShell>
           </td>
         </tr>

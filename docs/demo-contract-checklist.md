@@ -116,6 +116,11 @@ Backing: refreshed `EvidenceSnapshotRecorded` entries, `ReservationCreated` (con
 expiry); on the invalidation branch `ApprovalInvalidated` (+ `ReservationReleased` where a
 reservation is given up).
 
+Structural order: `ReservationCreated` follows the final still-valid `ApprovalRecorded` when
+approval is required and the pre-execution evidence revalidation, then precedes
+`ExecutionStarted`. A material change records `ApprovalInvalidated`, a derived decision, and fresh
+required approvals before reservation.
+
 ## Minute 4:05-5:00 - Real execution `[deferred-pending-sandbox]`
 
 Surface: **8 Execution timeline**.

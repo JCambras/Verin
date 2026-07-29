@@ -32,6 +32,7 @@ export interface DemoTimeline {
   readonly retryAt: string;
   readonly completionVerifiedAt: string;
   readonly nextPollAt: string;
+  readonly exceptionDecisionRequestedAt: string;
   readonly delayedExceptionAt: string;
   readonly escalatedAt: string;
   readonly expiredAt: string;
@@ -44,40 +45,56 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   const specialist =
     scenario.spec.bankChanged && firm.bankChangeHandling === "specialist-review";
   const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
+  const competing = scenario.spec.competing;
   const approvalOneOffset = invalidation
     ? 6 * MINUTE
     : specialist
       ? 32 * MINUTE
-      : 12 * MINUTE;
+      : competing
+        ? 12 * SECOND
+        : 12 * MINUTE;
   const approvalTwoOffset = invalidation
     ? 9 * MINUTE
     : specialist
       ? 47 * MINUTE
-      : 21 * MINUTE;
-  const revalidationOffset = specialist ? 50 * MINUTE : 25 * MINUTE;
+      : competing
+        ? 18 * SECOND
+        : 21 * MINUTE;
+  const revalidationOffset = specialist
+    ? 50 * MINUTE
+    : competing
+      ? 20 * SECOND
+      : 25 * MINUTE;
   const executionOffset = specialist ? 54 * MINUTE : 29 * MINUTE;
   const executionAt = add(requestAt, executionOffset);
+  const approvalOneAt = add(requestAt, approvalOneOffset);
+  const approvalTwoAt = add(requestAt, approvalTwoOffset);
   const revalidatedAt =
     authority.kind === "signed" &&
     authority.preExecutionRevalidationAt
       ? authority.preExecutionRevalidationAt
       : add(requestAt, revalidationOffset);
-  const reservationAt = invalidation
-    ? add(revalidatedAt, 10 * MINUTE)
-    : scenario.spec.competing
-      ? add(decisionAt, 5 * SECOND)
-      : add(revalidatedAt, MINUTE);
+  const freshApprovalOneAt = add(revalidatedAt, 6 * MINUTE);
+  const freshApprovalTwoAt = add(revalidatedAt, 9 * MINUTE);
+  const finalApprovalAt = invalidation ? freshApprovalTwoAt : approvalTwoAt;
+  const reservationBasis = Math.max(
+    new Date(revalidatedAt).getTime(),
+    new Date(finalApprovalAt).getTime(),
+  );
+  const reservationAt = new Date(
+    reservationBasis + (competing ? 5 * SECOND : MINUTE),
+  ).toISOString();
   return {
     requestAt,
     decisionAt,
     specialistReviewedAt: add(requestAt, 15 * MINUTE),
-    approvalOneAt: add(requestAt, approvalOneOffset),
-    approvalTwoAt: add(requestAt, approvalTwoOffset),
+    approvalOneAt,
+    approvalTwoAt,
     revalidatedAt,
     approvalInvalidatedAt: add(revalidatedAt, SECOND),
     derivedDecisionAt: add(revalidatedAt, 10 * SECOND),
-    freshApprovalOneAt: add(revalidatedAt, 6 * MINUTE),
-    freshApprovalTwoAt: add(revalidatedAt, 9 * MINUTE),
+    freshApprovalOneAt,
+    freshApprovalTwoAt,
     reservationAt,
     executionAt,
     executionSucceededAt: add(executionAt, 10 * SECOND),
@@ -85,6 +102,7 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     retryAt: add(executionAt, MINUTE),
     completionVerifiedAt: add(executionAt, 98 * MINUTE),
     nextPollAt: add(executionAt, 12 * 60 * MINUTE),
+    exceptionDecisionRequestedAt: add(executionAt, 21 * SECOND),
     delayedExceptionAt: add(executionAt, 2 * DAY),
     escalatedAt: add(requestAt, DAY),
     expiredAt: add(requestAt, 2 * DAY),

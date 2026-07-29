@@ -158,6 +158,12 @@ Visible proof:
 After approval, Verin refreshes material evidence, checks pending actions, creates reservations, and
 invalidates approval if facts changed.
 
+For every executable decision, `ReservationCreated` follows the final still-valid
+`ApprovalRecorded` when approval is required, follows pre-execution evidence revalidation, and
+precedes `ExecutionStarted`. If revalidation changes material evidence, Verin records
+`ApprovalInvalidated`, derives the current decision, acquires its required approvals afresh, and
+only then creates the reservation.
+
 Visible proof:
 
 - pre-execution revalidation timestamp;

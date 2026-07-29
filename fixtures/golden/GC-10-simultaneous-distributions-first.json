@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by decision commit order, deterministically - never by racing external submissions. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by the governed sequence, deterministically - never by racing external submissions. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected approval-revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -151,9 +151,10 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet."},
     {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity."},
-    {"type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity - the ordering fact that decides the pair."},
     {"type": "ApprovalRecorded", "note": "First operations approver approves."},
     {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final approval and before the sibling request arrives."},
+    {"type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity after final approval and revalidation - the ordering fact that decides the pair."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction."},
     {"type": "StatusObserved", "note": "Returned status observed as submitted."}

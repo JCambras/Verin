@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. NOTE FOR SIGNOFF: Firm B's sub-$100,000 approval requirement is a demo-contract silence (recorded as null in scenarios.yaml); this draft treats the $75,000 movement as automatic authority for Firm B. The captain confirms or replaces this. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. NOTE FOR SIGNOFF: Firm B's sub-$100,000 approval requirement is a demo-contract silence (recorded as null in scenarios.yaml); this draft treats the $75,000 movement as automatic authority for Firm B. The captain confirms or replaces this. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -137,7 +137,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Snapshots pinned into the Firm B input bundle (same evidence, different active policy version)."},
     {"type": "DecisionRecorded", "note": "Proceed decision under firm-b-policy@2026.07.1 with automatic authority."},
-    {"type": "ReservationCreated", "note": "Liquidity reservation created on conflict:smiths-liquidity."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated under automatic authority against the still-current decision basis."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created on conflict:smiths-liquidity after revalidation."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle."},
     {"type": "StatusObserved", "note": "Returned status observed as submitted - not yet settled."}

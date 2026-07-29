@@ -28,11 +28,13 @@ export function PolicyAuthoringSurface({
   scenarioId,
   firmId,
   approved,
+  querySuffix,
 }: {
   vm: PolicyAuthoringVM;
   scenarioId: string;
   firmId: string;
   approved: boolean;
+  querySuffix?: string;
 }) {
   return (
     <SurfaceShell
@@ -106,16 +108,16 @@ export function PolicyAuthoringSurface({
             </span>
           </p>
           <p className="text-sm text-slate-700">{vm.changedRerunResult}</p>
-          <PrimaryLink href={demoHref("record", scenarioId, firmId)}>View the printable decision record</PrimaryLink>
+          <PrimaryLink href={demoHref("record", scenarioId, firmId, querySuffix)}>View the printable decision record</PrimaryLink>
         </section>
       ) : (
         <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
-          <PrimaryLink href={demoHref("policy-authoring", scenarioId, firmId, "&approved=1")}>{vm.gateLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("policy-authoring", scenarioId, firmId, `${querySuffix ?? ""}&approved=1`)}>{vm.gateLabel}</PrimaryLink>
         </section>
       )}
 
-      <JourneyNav back={{ href: demoHref("comparison", scenarioId, firmId), label: "Back to the comparison" }} />
+      <JourneyNav back={{ href: demoHref("comparison", scenarioId, firmId, querySuffix), label: "Back to the comparison" }} />
     </SurfaceShell>
   );
 }

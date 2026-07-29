@@ -141,6 +141,7 @@ export interface DemoSemanticSnapshot {
     revalidatedVerificationReached: boolean;
     revalidatedExecutionStatuses: string[];
     revalidatedVerificationProves: string[];
+    revalidatedComparisonHeadroomMinor: number | null;
     recordBindings: Array<{
       kind: "original" | "derived";
       decisionHash: string;
@@ -163,6 +164,18 @@ export interface DemoSemanticSnapshot {
     statusLabels: string[];
     proves: string[];
     notProvenYet: string[];
+    exceptionDecision: {
+      eventType: "ExceptionDecisionRequested";
+      reason: "partial-execution";
+      priorDecisionId: string;
+      triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+    } | null;
+    recordExceptionDecision: {
+      eventType: "ExceptionDecisionRequested";
+      reason: "partial-execution";
+      priorDecisionId: string;
+      triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+    } | null;
   };
   invalidationPolicySimulation: {
     currentHeadroomMinor: number | null;
@@ -583,6 +596,62 @@ function validateSourceTimelines(
     ) {
       problems.push(`${sourceId}: visible timeline does not begin with its signed request`);
     }
+    const eligibility = isObj(source?.expectedExecutionEligibility)
+      ? source.expectedExecutionEligibility.eligible
+      : undefined;
+    const expectedLedgerTypes = Array.isArray(source?.expectedLedgerEvents)
+      ? source.expectedLedgerEvents.flatMap((entry) =>
+          isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
+        )
+      : [];
+    const eventKinds = timeline.events.map(({ kind }) => kind);
+    if (eligibility === true) {
+      const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
+      const decisionIndex = eventKinds.lastIndexOf("DecisionRecorded");
+      const finalApprovalIndex = eventKinds.lastIndexOf("ApprovalRecorded");
+      const revalidationIndex = eventKinds.lastIndexOf("revalidation");
+      const invalidationIndex = eventKinds.lastIndexOf("ApprovalInvalidated");
+      const reservationIndex = eventKinds.indexOf("ReservationCreated");
+      const executionIndex = eventKinds.indexOf("ExecutionStarted");
+      const validStandardOrder =
+        invalidationIndex < 0 &&
+        decisionIndex >= 0 &&
+        decisionIndex < revalidationIndex &&
+        (finalApprovalIndex < 0 || finalApprovalIndex < revalidationIndex) &&
+        revalidationIndex < reservationIndex &&
+        reservationIndex < executionIndex;
+      const validInvalidationOrder =
+        invalidationIndex >= 0 &&
+        initialDecisionIndex >= 0 &&
+        initialDecisionIndex < revalidationIndex &&
+        revalidationIndex < invalidationIndex &&
+        invalidationIndex < decisionIndex &&
+        decisionIndex < finalApprovalIndex &&
+        finalApprovalIndex < reservationIndex &&
+        reservationIndex < executionIndex;
+      if (!validStandardOrder && !validInvalidationOrder) {
+        problems.push(
+          `${sourceId}: unsorted production timeline must keep the signed decision, final still-valid approval, pre-execution revalidation, reservation, and execution in governed order`,
+        );
+      }
+    }
+    if (
+      expectedLedgerTypes.includes("ExecutionPartiallySucceeded") &&
+      expectedLedgerTypes.includes("ExceptionDecisionRequested")
+    ) {
+      const partialIndex = eventKinds.indexOf("ExecutionPartiallySucceeded");
+      const observedIndex = eventKinds.indexOf("StatusObserved");
+      const exceptionIndex = eventKinds.indexOf("ExceptionDecisionRequested");
+      if (
+        partialIndex < 0 ||
+        observedIndex <= partialIndex ||
+        exceptionIndex <= observedIndex
+      ) {
+        problems.push(
+          `${sourceId}: ExceptionDecisionRequested must remain visible after the partial receipt and unknown StatusObserved event`,
+        );
+      }
+    }
     let previous = Number.NEGATIVE_INFINITY;
     for (const [index, event] of timeline.events.entries()) {
       const instant = new Date(event.instant).getTime();
@@ -979,7 +1048,7 @@ export function validateGoldenDemoSemantics(
       !(reservation < execution) ||
       !sourceTimeline?.events.some(
         ({ kind, instant }) =>
-          kind === "reservation" && instant === causal.reservationAt,
+          kind === "ReservationCreated" && instant === causal.reservationAt,
       )
     ) {
       problems.push(
@@ -1055,9 +1124,17 @@ export function validateGoldenDemoSemantics(
   const gc13Verification = isObj(gc13?.expectedVerificationState)
     ? gc13.expectedVerificationState
     : null;
+  const gc13LedgerTypes = Array.isArray(gc13?.expectedLedgerEvents)
+    ? gc13.expectedLedgerEvents.flatMap((entry) =>
+        isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
+      )
+    : [];
+  const exceptionDecision = demo.partialReceipt.exceptionDecision;
+  const recordExceptionDecision = demo.partialReceipt.recordExceptionDecision;
   if (
     !gc13Explanation.includes("instruction-created") ||
     !gc13Explanation.includes("disbursement-scheduled") ||
+    !gc13LedgerTypes.includes("ExceptionDecisionRequested") ||
     gc13Verification?.observedStatus !== "unknown" ||
     demo.partialReceipt.completedParts.join(",") !== "instruction-created" ||
     demo.partialReceipt.incompleteParts.join(",") !==
@@ -1071,10 +1148,22 @@ export function validateGoldenDemoSemantics(
     ) ||
     !demo.partialReceipt.notProvenYet.includes(
       "Incomplete part: disbursement-scheduled",
-    )
+    ) ||
+    exceptionDecision?.eventType !== "ExceptionDecisionRequested" ||
+    exceptionDecision.reason !== "partial-execution" ||
+    exceptionDecision.triggeringLedgerEvent !==
+      "ExecutionPartiallySucceeded" ||
+    !isNonEmptyString(exceptionDecision.priorDecisionId) ||
+    recordExceptionDecision?.eventType !==
+      "ExceptionDecisionRequested" ||
+    recordExceptionDecision.reason !== "partial-execution" ||
+    recordExceptionDecision.triggeringLedgerEvent !==
+      "ExecutionPartiallySucceeded" ||
+    recordExceptionDecision.priorDecisionId !==
+      exceptionDecision.priorDecisionId
   ) {
     problems.push(
-      "GC-13 must render the exact completed and incomplete receipt parts while the movement remains unknown and unconfirmed",
+      "GC-13 must render and print ExceptionDecisionRequested with the exact partial receipt while the movement remains unknown and unconfirmed",
     );
   }
 
@@ -1115,10 +1204,11 @@ export function validateGoldenDemoSemantics(
     demo.invalidationPolicySimulation.currentHeadroomMinor !==
       currentGc15Headroom ||
     demo.invalidationPolicySimulation.draftedHeadroomMinor !==
-      draftedGc15Headroom
+      draftedGc15Headroom ||
+    lifecycle.revalidatedComparisonHeadroomMinor !== currentGc15Headroom
   ) {
     problems.push(
-      "GC-15 policy simulation must use the latest pre-execution liquidity snapshot",
+      "GC-15 comparison and policy simulation must use the latest pre-execution liquidity snapshot",
     );
   }
   return problems;

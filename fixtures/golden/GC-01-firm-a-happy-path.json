@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff (build-sequence prompt 2). The agent drafted them; only the captain may mark this case signed. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff (build-sequence prompt 2). The agent drafted them; only the captain may mark this case signed. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected approval-revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -162,9 +162,10 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Account, liquidity, planned-withdrawal, bank-instruction, and household-instruction snapshots pinned into the input bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with recommendation, authority requirement, and execution plan; bound to the input-bundle hash."},
-    {"type": "ReservationCreated", "note": "Liquidity reservation created on conflict key conflict:smiths-liquidity."},
     {"type": "ApprovalRecorded", "note": "First operations approver approves against the decision hash."},
     {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after approval against the still-current decision basis."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created on conflict key conflict:smiths-liquidity after final approval and revalidation."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionSucceeded", "note": "External capability accepts the instruction and returns a submitted handle."},
     {"type": "StatusObserved", "note": "Returned status observed as submitted - not yet settled."}

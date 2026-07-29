@@ -314,12 +314,22 @@ export interface ExecutionVM {
   readonly deferredNote: string;
   readonly fakeClass: FakeClass;
 }
+export interface ExceptionDecisionVM {
+  readonly eventType: "ExceptionDecisionRequested";
+  readonly reason: "partial-execution";
+  readonly priorDecisionId: string;
+  readonly triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+  readonly requestedAt: string;
+  readonly requestedAtIso: string;
+  readonly summary: string;
+}
 export interface VerificationVM {
   readonly spine: DecisionSpineVM;
   readonly proves: readonly FactVM[];
   readonly notProvenYet: readonly string[];
   readonly nextPoll: string;
   readonly appended: readonly ExecutionRowVM[]; // delayed NIGO / stuck rows
+  readonly exceptionDecision: ExceptionDecisionVM | null;
   readonly fakeClass: FakeClass;
 }
 

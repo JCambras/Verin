@@ -138,6 +138,48 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(problems.some((p) => p.includes("must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event"))).toBe(true);
   });
 
+  it("rejects reservation chronology that bypasses approval or revalidation", () => {
+    const beforeApproval = clone();
+    const beforeApprovalEvents = caseById(
+      beforeApproval,
+      "GC-01-firm-a-happy-path",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    const reservation = beforeApprovalEvents.splice(5, 1)[0]!;
+    beforeApprovalEvents.splice(2, 0, reservation);
+    expect(
+      run(beforeApproval).some((problem) =>
+        problem.includes(
+          "ReservationCreated must follow the final still-valid ApprovalRecorded",
+        ),
+      ),
+    ).toBe(true);
+
+    const missingRevalidation = clone();
+    const automaticEvents = caseById(
+      missingRevalidation,
+      "GC-02-firm-b-happy-path",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    automaticEvents.splice(2, 1);
+    expect(
+      run(missingRevalidation).some((problem) =>
+        problem.includes("pre-execution revalidation"),
+      ),
+    ).toBe(true);
+
+    const staleApproval = clone();
+    const invalidationEvents = caseById(
+      staleApproval,
+      "GC-15-approval-invalidation",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    const invalidationReservation = invalidationEvents.splice(9, 1)[0]!;
+    invalidationEvents.splice(7, 0, invalidationReservation);
+    expect(
+      run(staleApproval).some((problem) =>
+        problem.includes("approval invalidation chronology"),
+      ),
+    ).toBe(true);
+  });
+
   it("flags a ledger vocabulary that drifts from the pinned v3 union or shadows it", () => {
     const dropped = realContracts.replace("  | VerificationStuck\n", "");
     expect(
@@ -545,6 +587,48 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         p.includes("signed evidence retrieval"),
       ),
     ).toBe(true);
+
+    const plantedInversion = demoClone();
+    const invertedTimeline = plantedInversion.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-12-duplicate-retry",
+    )!;
+    const finalApproval = invertedTimeline.events.find(
+      ({ kind }, index) =>
+        kind === "ApprovalRecorded" &&
+        !invertedTimeline.events
+          .slice(index + 1)
+          .some((event) => event.kind === "ApprovalRecorded"),
+    )!;
+    const reservationEvent = invertedTimeline.events.find(
+      ({ kind }) => kind === "ReservationCreated",
+    )!;
+    [finalApproval.kind, reservationEvent.kind] = [
+      reservationEvent.kind,
+      finalApproval.kind,
+    ];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, plantedInversion).some(
+        (problem) =>
+          problem.includes("GC-12-duplicate-retry") &&
+          problem.includes("unsorted production timeline"),
+      ),
+    ).toBe(true);
+
+    const hiddenException = demoClone();
+    const partialTimeline = hiddenException.sourceTimelines.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId === "GC-13-partial-salesforce-success",
+    )!;
+    partialTimeline.events.find(
+      ({ kind }) => kind === "ExceptionDecisionRequested",
+    )!.kind = "execution-receipt";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, hiddenException).some(
+        (problem) =>
+          problem.includes("GC-13-partial-salesforce-success") &&
+          problem.includes("ExceptionDecisionRequested must remain visible"),
+      ),
+    ).toBe(true);
   });
 
   it("flags GC-02's rendered arithmetic drifting from its own signed fixture", () => {
@@ -736,6 +820,8 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     incompleteLifecycle.approvalInvalidationLifecycle.recordBindings.pop();
     incompleteLifecycle.approvalInvalidationLifecycle.unsupportedFirmEventCount =
       13;
+    incompleteLifecycle.approvalInvalidationLifecycle.revalidatedComparisonHeadroomMinor =
+      25_200_000;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, incompleteLifecycle).some(
         (problem) => problem.includes("GC-15 visible lifecycle"),
@@ -746,9 +832,11 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     roundedUpPartial.partialReceipt.incompleteParts = [];
     roundedUpPartial.partialReceipt.observedStatuses = ["completed", "completed"];
     roundedUpPartial.partialReceipt.statusLabels = ["Settled · verified"];
+    roundedUpPartial.partialReceipt.exceptionDecision = null;
+    roundedUpPartial.partialReceipt.recordExceptionDecision = null;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, roundedUpPartial).some(
-        (problem) => problem.includes("GC-13 must render the exact"),
+        (problem) => problem.includes("GC-13 must render and print"),
       ),
     ).toBe(true);
 
@@ -759,7 +847,8 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       20_400_000;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, staleSimulation).some(
-        (problem) => problem.includes("latest pre-execution liquidity snapshot"),
+        (problem) =>
+          problem.includes("latest pre-execution liquidity snapshot"),
       ),
     ).toBe(true);
   });

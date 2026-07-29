@@ -40,6 +40,7 @@ import {
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   type FirmData,
+  type JourneyPass,
   type ScenarioData,
 } from "./data";
 
@@ -51,13 +52,16 @@ function thresholdMetric(firm: FirmData): DisplayMetric {
   return { value: firm.dualApprovalThresholdMinor, format: "currency-minor", provenance: prov("synthetic-fixture", firm.policyActiveSince) };
 }
 
-export function buildComparison(scenario: ScenarioData): ComparisonVM {
+export function buildComparison(
+  scenario: ScenarioData,
+  pass: JourneyPass = "initial",
+): ComparisonVM {
   const a = FIRMS["firm-a"]!;
   const b = FIRMS["firm-b"]!;
   const dispA = dispositionFor(scenario, a.id);
   const dispB = dispositionFor(scenario, b.id);
-  const headroomA = headroomMetric(scenario, a);
-  const headroomB = headroomMetric(scenario, b);
+  const headroomA = headroomMetric(scenario, a, pass);
+  const headroomB = headroomMetric(scenario, b, pass);
   const rows: ComparisonRowVM[] = [
     { dimension: "Household", a: { display: "The Smith Household" }, b: { display: "The Smith Household" }, differs: false },
     { dimension: "Requested amount", a: { metric: amountMetric() }, b: { metric: amountMetric() }, differs: false },

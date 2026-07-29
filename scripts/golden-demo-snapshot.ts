@@ -164,7 +164,7 @@ function sourceTimelines(): SourceTimeline[] {
             ),
             ...[
               event(
-                "decision-recorded",
+                "DecisionRecorded",
                 journey.record.header.createdAtIso,
                 journey.record.header.createdAt,
                 true,
@@ -174,7 +174,7 @@ function sourceTimelines(): SourceTimeline[] {
                   actor.timestampIso
                     ? [
                         event(
-                          "approval",
+                          "ApprovalRecorded",
                           actor.timestampIso,
                           actor.statusLabel,
                         ),
@@ -200,7 +200,7 @@ function sourceTimelines(): SourceTimeline[] {
                     journey.safety.reservationAt
                       ? [
                           event(
-                            "reservation",
+                            "ReservationCreated",
                             journey.safety.reservationAtIso,
                             journey.safety.reservationAt,
                             true,
@@ -209,17 +209,47 @@ function sourceTimelines(): SourceTimeline[] {
                       : []),
                   ]
                 : []),
-              ...(journey.execution?.rows ?? []).map((row) =>
-                event("execution", row.timestampIso, row.timestamp),
-              ),
+              ...(scenario.spec.partial && journey.execution
+                ? [
+                    event(
+                      "ExecutionStarted",
+                      journey.execution.rows[0]!.timestampIso,
+                      journey.execution.rows[0]!.timestamp,
+                    ),
+                    event(
+                      "ExecutionPartiallySucceeded",
+                      journey.execution.rows[1]!.timestampIso,
+                      `${journey.execution.rows[0]!.timestamp} · ${journey.execution.rows[1]!.timestamp}`,
+                    ),
+                    event(
+                      "StatusObserved",
+                      journey.execution.rows[1]!.timestampIso,
+                      journey.execution.rows[1]!.timestamp,
+                    ),
+                  ]
+                : (journey.execution?.rows ?? []).map((row, index) =>
+                    event(
+                      index === 0
+                        ? "ExecutionStarted"
+                        : "execution-receipt",
+                      row.timestampIso,
+                      row.timestamp,
+                    ),
+                  )),
+              ...(journey.verification?.exceptionDecision
+                ? [
+                    event(
+                      journey.verification.exceptionDecision.eventType,
+                      journey.verification.exceptionDecision.requestedAtIso,
+                      `${journey.verification.exceptionDecision.requestedAt} · ${journey.verification.exceptionDecision.summary}`,
+                      true,
+                    ),
+                  ]
+                : []),
               ...(journey.verification?.appended ?? []).map((row) =>
                 event("verification-appended", row.timestampIso, row.timestamp),
               ),
-            ].sort(
-              (left, right) =>
-                new Date(left.instant).getTime() -
-                new Date(right.instant).getTime(),
-            ),
+            ],
           ];
       const primary: SourceTimeline = {
         sourceCaseId: authority.sourceCaseId,
@@ -250,7 +280,7 @@ function sourceTimelines(): SourceTimeline[] {
                   true,
                 ),
                 event(
-                  "decision-recorded",
+                  "DecisionRecorded",
                   relatedDecision.decidedAtIso,
                   relatedDecision.decidedAt,
                   true,
@@ -481,6 +511,12 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         revalidatedInvalidationJourney.verification?.proves.map(
           (proof) => proof.display,
         ) ?? [],
+      revalidatedComparisonHeadroomMinor:
+        revalidatedInvalidationJourney.comparison.rows.find(
+          (row) =>
+            row.dimension === "Available after reserve" &&
+            row.a.metric !== undefined,
+        )?.a.metric?.value ?? null,
       recordBindings: invalidationJourney.record.decisionBindings.map(
         (binding) => ({ ...binding }),
       ),
@@ -507,6 +543,9 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       proves:
         partialJourney.verification?.proves.map((proof) => proof.display) ?? [],
       notProvenYet: [...(partialJourney.verification?.notProvenYet ?? [])],
+      exceptionDecision: partialJourney.verification?.exceptionDecision ?? null,
+      recordExceptionDecision:
+        partialJourney.record.verification?.exceptionDecision ?? null,
     },
     invalidationPolicySimulation: {
       currentHeadroomMinor:

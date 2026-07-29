@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. DECISION DRAFTED HERE (flagged for the captain): after ApprovalInvalidated, the request re-evaluates on the refreshed bundle; a still-proceed result re-runs the SAME approval stages bound to the NEW decision hash (prior approvals never carry over); a no-longer-proceed result becomes the blocked/prohibited decision the new facts dictate. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. DECISION DRAFTED HERE (flagged for the captain): after ApprovalInvalidated, the request re-evaluates on the refreshed bundle; a still-proceed result re-runs the SAME approval stages bound to the NEW decision hash (prior approvals never carry over); a no-longer-proceed result becomes the blocked/prohibited decision the new facts dictate. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected invalidation-reapproval-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",

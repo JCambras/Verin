@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected approval-revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -145,9 +145,10 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan."},
-    {"type": "ReservationCreated", "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete."},
     {"type": "ApprovalRecorded", "note": "First operations approver approves."},
     {"type": "ApprovalRecorded", "note": "Second, distinct operations approver approves."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated after the final approval."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created after final approval and revalidation; NOT released while parts remain incomplete."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionPartiallySucceeded", "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string."},
     {"type": "StatusObserved", "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside."},

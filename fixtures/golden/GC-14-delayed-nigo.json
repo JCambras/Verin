@@ -12,7 +12,7 @@
     "authority": "captain",
     "signedBy": "captain",
     "signedAt": "2026-07-28",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision. Captain reapproved the explicit evidence-completeness matrix and canonical UTC timestamps on 2026-07-28."
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision. Captain reapproved the explicit evidence-completeness matrix, canonical UTC timestamps, and corrected revalidation-reservation chronology on 2026-07-28."
   },
   "trigger": {
     "kind": "human_request",
@@ -131,7 +131,8 @@
   "expectedLedgerEvents": [
     {"type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle."},
     {"type": "DecisionRecorded", "note": "Proceed decision with automatic authority under Firm B."},
-    {"type": "ReservationCreated", "note": "Liquidity reservation created before execution."},
+    {"type": "EvidenceSnapshotRecorded", "note": "Pre-execution evidence revalidated under automatic authority."},
+    {"type": "ReservationCreated", "note": "Liquidity reservation created after revalidation and before execution."},
     {"type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key."},
     {"type": "ExecutionSucceeded", "note": "Instruction accepted; handle returned; status submitted."},
     {"type": "StatusObserved", "note": "Initial poll observes Submitted - displayed as submitted, never settled."},
