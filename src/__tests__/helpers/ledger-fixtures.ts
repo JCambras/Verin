@@ -14,6 +14,7 @@ import {
 } from "@contracts/decision-core/ledger";
 import {
   CANONICAL_SERIALIZER_VERSION,
+  bundleHashPreimage,
   canonicalJson,
   decisionHashPreimage,
 } from "@contracts/decision-core/serialization";
@@ -158,6 +159,68 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
       bundleHash: first.inputBundle.bundleHash,
     })],
     provenance: LEDGER_PROVENANCE,
+  };
+}
+
+export function decisionRecordingInputWithEvidenceCount(
+  count: number,
+): RecordDecisionInput {
+  const input = decisionRecordingInput();
+  const extras = Array.from({
+    length: Math.max(0, count - input.evidenceSnapshots.length),
+  }, (_, index) =>
+    EvidenceSnapshotRefSchema.parse({
+      ...input.evidenceSnapshots[index % input.evidenceSnapshots.length]!,
+      id: `evs:bounded:${String(index).padStart(4, "0")}`,
+      subjectRef: {
+        firmId: LEDGER_ORG,
+        id: `subject:bounded:${String(index).padStart(4, "0")}`,
+      },
+      encryptedStorageRef: {
+        firmId: LEDGER_ORG,
+        id: `blob:bounded:${String(index).padStart(4, "0")}`,
+      },
+      contentHash: createHash("sha256")
+        .update(`bounded-evidence:${index}`, "utf8")
+        .digest("hex"),
+    }));
+  const evidenceSnapshots = [
+    ...input.evidenceSnapshots,
+    ...extras,
+  ].slice(0, count);
+  const bundleCandidate = DecisionInputBundleSchema.parse({
+    ...input.inputBundle,
+    evidenceSnapshotRefs: evidenceSnapshots.map(({ firmId, id }) => ({
+      firmId,
+      id,
+    })),
+    bundleHash: "0".repeat(64),
+  });
+  const inputBundle = DecisionInputBundleSchema.parse({
+    ...bundleCandidate,
+    bundleHash: canonicalHash(bundleHashPreimage(bundleCandidate)),
+  });
+  return {
+    ...input,
+    evidenceSnapshots,
+    inputBundle,
+    events: [
+      ...evidenceSnapshots.map((snapshot, index) =>
+        LedgerEntrySchema.parse({
+          ...base(`ledger:bounded-evidence:${index}`),
+          type: "EvidenceSnapshotRecorded",
+          evidenceSnapshotRef: {
+            firmId: snapshot.firmId,
+            id: snapshot.id,
+          },
+          contentHash: snapshot.contentHash,
+          snapshotHash: canonicalHash(snapshot),
+        })),
+      LedgerEntrySchema.parse({
+        ...input.events.at(-1)!,
+        bundleHash: inputBundle.bundleHash,
+      }),
+    ],
   };
 }
 

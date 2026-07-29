@@ -31,12 +31,16 @@ export function decisionReplayPinsMatchBundle(
   const instructions = new Set(
     bundle.householdInstructionVersionRefs.map(referenceKey),
   );
+  const regulations = new Set(
+    bundle.regulatoryVersionRefs.map(referenceKey),
+  );
   const policy = referenceKey(bundle.policyVersionRef);
   const matchesSource = (source: VersionedSourceRef): boolean =>
-    source.sourceType === "regulatory" ||
-    (source.sourceType === "firm_policy"
+    source.sourceType === "regulatory"
+      ? regulations.has(referenceKey(source.versionRef))
+      : source.sourceType === "firm_policy"
       ? referenceKey(source.versionRef) === policy
-      : instructions.has(referenceKey(source.versionRef)));
+      : instructions.has(referenceKey(source.versionRef));
   const explanation = [...record.explanationTrace];
   while (explanation.length > 0) {
     const node = explanation.pop()!;

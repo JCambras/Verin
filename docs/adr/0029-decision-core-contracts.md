@@ -35,8 +35,10 @@ parse time, not by reviewer discipline. Three constraints meet here:
   `src/__tests__/fitness/decision-core-illegal-states.test.ts` (registered for invariants 7–9;
   proof PF-027). Canonical-serialization fixtures live in `fixtures/decision-core/` (synthetic test
   vectors, labeled in their README).
-- **Hash preimages:** bundle and decision hashes use distinct domain-qualified version-1.7.0
-  envelopes and explicitly enumerated projections. The bundle projection excludes its identity and
+- **Hash preimages:** bundle and decision hashes use distinct domain-qualified, versioned
+  envelopes and explicitly enumerated projections. The current bundle uses
+  `decision-input-bundle/1.8.0`; the decision remains on `decision-record/1.7.0`.
+  The bundle projection excludes its identity and
   stored hash; the decision projection excludes only its stored hash. Both projections run through
   the same pure collection normalizers used by their parse boundaries, including recursive
   explanation citations, execution steps, and compensating actions. This defensive normalization
@@ -55,13 +57,17 @@ parse time, not by reviewer discipline. Three constraints meet here:
   re-pin is permitted only once evidence shows the project-owned schema semantics AND the canonical
   projection bytes are unchanged - the fixture digest tests must pass unmodified. The fingerprint stays
   blocking precisely so a dependency bump forces that review instead of silently altering the contract.
-- **Replay-input boundary:** `DecisionInputBundle` accepts only the implemented 1.7.0 schema and
-  1.0.0 canonical serializer. Its `timeZone` must belong to the registry the bundle's OWN
+- **Replay-input boundary:** the current `DecisionInputBundle` accepts schema 1.8.0 with
+  canonical serializer 1.0.0. Its immutable, duplicate-free
+  `regulatoryVersionRefs` set is tenant-scoped, canonicalized, and hash-bound beside
+  policy, instruction, and evidence pins. The retained 1.7.0 codec remains readable
+  through the recorded-source registry and upcasts with an empty regulatory set.
+  Its `timeZone` must belong to the registry the bundle's OWN
   `timeZoneDataVersion` names - today all 341 `Zone` identifiers derived from `iana-tzdb/2026b`'s
   primary data files in the SHA-256-locked registry. It canonicalizes
   identifier casing, and rejects `Link` aliases, so replay validation never
-  changes with host ICU data or gives aliases distinct replay bytes. Set-like instruction-version
-  and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
+  changes with host ICU data or gives aliases distinct replay bytes. Set-like instruction-version,
+  regulatory-version, and evidence-snapshot collections reject duplicates and are sorted in parsed evaluator input,
   not only in the hash projection. The parsed bundle remains deeply frozen.
 - **Time-zone registry versions are a MAP, and the map is CONSULTED:** `timeZoneDataVersion` is an
   enum derived from the keys of a supported-release map (`iana-tzdb/2026b` is the only shipped

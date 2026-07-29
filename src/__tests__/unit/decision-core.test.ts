@@ -35,11 +35,13 @@ import {
 import { ExecutionPlanSchema } from "@contracts/decision-core/execution";
 import {
   BUNDLE_HASH_PAYLOAD_KEYS,
+  BUNDLE_HASH_PREIMAGE_V1_8_0,
   BUNDLE_HASH_PREIMAGE_VERSION,
   CANONICAL_SERIALIZER_VERSION,
   DECISION_HASH_PAYLOAD_KEYS,
   DECISION_HASH_PREIMAGE_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
+  DECISION_CORE_SCHEMA_V1_8_0,
   HASH_PROJECTION_SCHEMA_FINGERPRINTS,
   bundleHashPreimage,
   canonicalJson,
@@ -119,6 +121,7 @@ const validBundle = {
   domainConfigVersionRef: { firmId: "firm-a", id: "dcv:money-movement:1" },
   policyVersionRef: { firmId: "firm-a", id: "pv:firm-a:1" },
   householdInstructionVersionRefs: [{ firmId: "firm-a", id: "hiv:smiths:1" }],
+  regulatoryVersionRefs: [],
   evidenceSnapshotRefs: [{ firmId: "firm-a", id: "evs:u:1" }],
   asOf: timestamp,
   timeZone: "America/New_York",
@@ -190,6 +193,12 @@ describe("tenant scoping - unscoped persisted records are unrepresentable (v3 in
       },
       {
         ...validBundle,
+        regulatoryVersionRefs: [
+          { firmId: "firm-b", id: "regulation:foreign" },
+        ],
+      },
+      {
+        ...validBundle,
         evidenceSnapshotRefs: [{ ...validBundle.evidenceSnapshotRefs[0]!, firmId: "firm-b" }],
       },
     ]) {
@@ -234,6 +243,12 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
   });
 
   it("rejects replay metadata versions without a matching implementation", () => {
+    expect(DECISION_CORE_SCHEMA_VERSION).toBe(
+      DECISION_CORE_SCHEMA_V1_8_0,
+    );
+    expect(BUNDLE_HASH_PREIMAGE_VERSION).toBe(
+      BUNDLE_HASH_PREIMAGE_V1_8_0,
+    );
     expect(DecisionInputBundleSchema.safeParse({ ...validBundle, schemaVersion: "2.0.0" }).success).toBe(false);
     expect(
       DecisionInputBundleSchema.safeParse({ ...validBundle, canonicalSerializerVersion: "2.0.0" }).success,
@@ -649,15 +664,25 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     },
   );
 
+  it("rejects duplicate regulatory replay pins", () => {
+    const ref = { firmId: "firm-a", id: "regulation:2026.1" };
+    expect(DecisionInputBundleSchema.safeParse({
+      ...validBundle,
+      regulatoryVersionRefs: [ref, ref],
+    }).success).toBe(false);
+  });
+
   it("canonicalizes set-like replay collections in parsed evaluator input", () => {
     const fixture = JSON.parse(readFixture("decision-input-bundle")) as typeof validBundle;
     const canonical = DecisionInputBundleSchema.parse(fixture);
     const reversed = DecisionInputBundleSchema.parse({
       ...fixture,
       householdInstructionVersionRefs: [...fixture.householdInstructionVersionRefs].reverse(),
+      regulatoryVersionRefs: [...fixture.regulatoryVersionRefs].reverse(),
       evidenceSnapshotRefs: [...fixture.evidenceSnapshotRefs].reverse(),
     });
     expect(reversed.householdInstructionVersionRefs).toEqual(canonical.householdInstructionVersionRefs);
+    expect(reversed.regulatoryVersionRefs).toEqual(canonical.regulatoryVersionRefs);
     expect(reversed.evidenceSnapshotRefs).toEqual(canonical.evidenceSnapshotRefs);
   });
 
@@ -806,8 +831,15 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
       hashPreimage(
         bundleHashPreimage({
           ...bundle,
-          householdInstructionVersionRefs: [...bundle.householdInstructionVersionRefs].reverse(),
-          evidenceSnapshotRefs: [...bundle.evidenceSnapshotRefs].reverse(),
+          householdInstructionVersionRefs: [
+            ...bundle.householdInstructionVersionRefs,
+          ].reverse(),
+          regulatoryVersionRefs: [
+            ...bundle.regulatoryVersionRefs,
+          ].reverse(),
+          evidenceSnapshotRefs: [
+            ...bundle.evidenceSnapshotRefs,
+          ].reverse(),
         }),
       ),
     ).toBe(bundle.bundleHash);
@@ -1363,9 +1395,11 @@ describe("canonical serialization (replay metadata, v3 §5 / prompt 19 groundwor
     const preimage = bundleHashPreimage({
       ...DecisionInputBundleSchema.parse(validBundle),
       householdInstructionVersionRefs: crossTenant,
+      regulatoryVersionRefs: crossTenant,
       evidenceSnapshotRefs: crossTenant,
     } as unknown as Parameters<typeof bundleHashPreimage>[0]);
     expect(preimage.payload.householdInstructionVersionRefs).toEqual(byFirmThenId);
+    expect(preimage.payload.regulatoryVersionRefs).toEqual(byFirmThenId);
     expect(preimage.payload.evidenceSnapshotRefs).toEqual(byFirmThenId);
     // A single-tenant list is canonicalized identically by parse and by preimage.
     const bundle = DecisionInputBundleSchema.parse({

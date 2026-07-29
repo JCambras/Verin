@@ -34,6 +34,12 @@ settle now.
   schema, serializer, engine, primitive-set, and time-zone registry versions
   needed for later replay are retained. This prompt stores replay inputs but does
   not evaluate or re-evaluate a decision.
+- Decision-input bundle schema 1.8.0 carries an immutable, duplicate-free,
+  tenant-scoped `regulatoryVersionRefs` collection. The canonical bundle hash binds
+  its deterministic order. Every regulatory citation in a decision result,
+  precedence trace, or recursive explanation must match an exact bundle pin.
+  Bundle schema 1.7.0 remains readable through its frozen codec and upcasts with an
+  empty regulatory collection.
 - `recordDecision` writes evidence, bundle, immutable decision, its recording
   events, the chain anchor, and derived projection state in one transaction.
   Later facts use `appendDecisionEvents`. Both lock the tenant row before reading
@@ -74,8 +80,10 @@ settle now.
   triggers. A ts-morph anti-fork fence assigns each table to one exact insert-owning
   module, scans operator scripts, and resolves side-effect-free static string
   composition before matching. A statically rooted query or exec argument that
-  cannot be resolved fails closed, while bound parameter values are not interpreted
-  as SQL text. Repository exports expose no immutable update or delete operation.
+  cannot be resolved fails closed. Callee provenance follows direct, bound,
+  reassigned, destructured, and object-literal query or exec wrappers, while bound
+  parameter values are not interpreted as SQL text. Repository exports expose no
+  immutable update or delete operation.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
@@ -102,7 +110,10 @@ settle now.
   tenant-scoped partial index with an ordered lateral `LIMIT 1` lookup and then
   compared with the verified window start. Any replay-source failure returns all
   L1-L4 levels, no trusted decisions, and a bounded PII-safe reason. Only the gate's
-  unbounded run is examiner-grade.
+  unbounded run is examiner-grade. Evidence membership reads stop at the maximum
+  number of recording facts that can fit before the decision in the exact window,
+  plus one sentinel row. A larger bundle is marked incomplete without materializing
+  the rest of its membership.
 - The seeded `/app/ledger` register is read-only, uses typed view models, and shows
   both the raw event register and replayed decision state, so the projection fold is
   reachable in the PR that lands it. Rows produced by a synthetic source carry the
@@ -112,8 +123,8 @@ settle now.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
-- Amend ADR-0018 ceilings from contracts 3500 to 4300 and infrastructure 2500 to
-  6100. Measured final state is contracts 4185 and infrastructure 5986. Domain
+- Amend ADR-0018 ceilings from contracts 3500 to 4700 and infrastructure 2500 to
+  6250. Measured final state is contracts 4525 and infrastructure 6106. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
@@ -132,8 +143,10 @@ lists every ledger schema version this build can decode and grows only by append
 version literals, never on the current-version constants. Each entry owns its frozen
 schema, canonical serializer, and hash or chain-preimage function; replay-source
 entries also own their upcast. The retained ledger family lives under `ledger-v1/`;
-the retained decision-core graph lives under `v1-7/` and imports its exact timezone
-data, normalizers, and serializer without passing through current wrappers. Recorded
+the retained decision-core graphs live under `v1-7/` and `v1-8/` and import their
+exact timezone data, normalizers, and serializer without passing through current
+wrappers. Each ledger codec also owns its closed provenance vocabulary, parser, and
+canonicalizer, so historical reads never consult the live source vocabulary. Recorded
 versions select reads; current constants select writes only. `decision_ledger` and
 every immutable source table refuse DELETE,
 so dropping or redirecting a key would leave committed rows permanently

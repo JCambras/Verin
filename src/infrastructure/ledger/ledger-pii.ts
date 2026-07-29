@@ -122,7 +122,8 @@ addPaths("retained-reference", ["evidence.attribution"]);
 addRefs([
   "evidence.sourceRef", "evidence.subjectRef", "evidence.encryptedStorageRef",
   "bundle.domainConfigVersionRef", "bundle.policyVersionRef",
-  "bundle.householdInstructionVersionRefs[]", "bundle.evidenceSnapshotRefs[]",
+  "bundle.householdInstructionVersionRefs[]", "bundle.regulatoryVersionRefs[]",
+  "bundle.evidenceSnapshotRefs[]",
   "decision.intentRef", "decision.inputBundleRef", "decision.derivedFromDecisionRef",
   "decision.createdBy.roleIds[]",
   "decision.result.recommendation.parameters.*",

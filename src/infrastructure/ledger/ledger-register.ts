@@ -2,7 +2,6 @@ import type { SqlDb, SqlTx } from "@infra/store/db";
 import { appError, isAppError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
-  parseRecordProvenance,
   type DerivedProvenance,
 } from "@contracts/provenance";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
@@ -16,7 +15,10 @@ import {
   type DecisionLedgerRow,
   type LedgerVerification,
 } from "./ledger-verification";
-import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
+import {
+  parseRecordedLedgerEvent,
+  parseRecordedLedgerProvenance,
+} from "./ledger-schema-registry";
 import {
   loadVerifiedReplayDecision,
   verifyReplayEvidence,
@@ -92,16 +94,20 @@ async function replayRegisterWindow(
         windowStart,
         row.sequence,
       );
-      if (coverage.some((item) => !item.hasPrecedingRecording)) {
+      if (!coverage.complete) {
+        incompleteDecisions.add(event.decisionRef.id);
+        continue;
+      }
+      if (coverage.items.some((item) => !item.hasPrecedingRecording)) {
         throw appError(
           "STORE_CONSTRAINT",
           "decision evidence has no recording ledger fact",
         );
       }
-      if (coverage.some((item) => item.recordedSequence === null)) {
+      if (coverage.items.some((item) => item.recordedSequence === null)) {
         continue;
       }
-      if (coverage.some((item) => !verifiedEvidence.has(item.id))) {
+      if (coverage.items.some((item) => !verifiedEvidence.has(item.id))) {
         throw appError(
           "STORE_CONSTRAINT",
           "decision evidence is missing from the verified window",
@@ -123,11 +129,15 @@ async function replayRegisterWindow(
       ...(decisionRecord ? { decisionRecord } : {}),
     });
     if (!projection) continue;
-    const provenance = parseRecordProvenance({
-      source: row.provSource,
-      asOf: row.provAsOf,
-      confidence: row.provConfidence,
-    });
+    const provenance = parseRecordedLedgerProvenance(
+      row.schemaVersion,
+      row.serializerVersion,
+      {
+        source: row.provSource,
+        asOf: row.provAsOf,
+        confidence: row.provConfidence,
+      },
+    );
     if (!provenance) {
       throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
     }

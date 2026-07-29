@@ -6,11 +6,16 @@ export async function listReplayDecisionEvidenceCoverage(
   event: DecisionRecorded,
   windowStart: number,
   decisionSequence: number,
-): Promise<Array<{
-  readonly id: string;
-  readonly recordedSequence: number | null;
-  readonly hasPrecedingRecording: boolean;
-}>> {
+): Promise<{
+  readonly items: Array<{
+    readonly id: string;
+    readonly recordedSequence: number | null;
+    readonly hasPrecedingRecording: boolean;
+  }>;
+  readonly complete: boolean;
+}> {
+  const maximumInWindow = Math.max(0, decisionSequence - windowStart);
+  const resultLimit = maximumInWindow + 1;
   const result = await tx.query<{
     evidence_snapshot_id: string;
     recorded_sequence: number | string | null;
@@ -31,18 +36,28 @@ export async function listReplayDecisionEvidenceCoverage(
           LIMIT 1
        ) recording ON TRUE
       WHERE r.org_id = $1 AND r.id = $2
-      ORDER BY m.ordinal ASC`,
-    [event.firmId, event.decisionRef.id, decisionSequence],
+      ORDER BY m.ordinal ASC
+      LIMIT $4`,
+    [
+      event.firmId,
+      event.decisionRef.id,
+      decisionSequence,
+      resultLimit,
+    ],
   );
-  return result.rows.map((row) => {
-    const latest = row.recorded_sequence === null
-      ? null
-      : Number(row.recorded_sequence);
-    return {
-      id: row.evidence_snapshot_id,
-      recordedSequence:
-        latest !== null && latest >= windowStart ? latest : null,
-      hasPrecedingRecording: latest !== null,
-    };
-  });
+  const complete = result.rows.length <= maximumInWindow;
+  return {
+    complete,
+    items: result.rows.slice(0, maximumInWindow).map((row) => {
+      const latest = row.recorded_sequence === null
+        ? null
+        : Number(row.recorded_sequence);
+      return {
+        id: row.evidence_snapshot_id,
+        recordedSequence:
+          latest !== null && latest >= windowStart ? latest : null,
+        hasPrecedingRecording: latest !== null,
+      };
+    }),
+  };
 }

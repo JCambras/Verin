@@ -2,7 +2,6 @@ import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
-  parseRecordProvenance,
   type DerivedProvenance,
   type RecordProvenance,
 } from "@contracts/provenance";
@@ -11,6 +10,7 @@ import type {
   EvidenceSnapshotRecorded,
   LedgerEntry,
 } from "@contracts/decision-core/ledger";
+import { parseRecordedLedgerProvenance } from "./ledger-schema-registry";
 
 type SourceKind = "evidence" | "bundle" | "decision";
 
@@ -23,6 +23,8 @@ interface BindingRow {
   readonly prov_source: string;
   readonly prov_asof: string;
   readonly prov_confidence: string;
+  readonly schema_version: string;
+  readonly serializer_version: string;
 }
 
 function bindingProvenance(
@@ -38,11 +40,15 @@ function bindingProvenance(
       (kind === "decision"
         ? row.decision_id === id
         : row.input_bundle_id === id);
-  const provenance = parseRecordProvenance({
-    source: row.prov_source,
-    asOf: row.prov_asof,
-    confidence: row.prov_confidence,
-  });
+  const provenance = parseRecordedLedgerProvenance(
+    row.schema_version,
+    row.serializer_version,
+    {
+      source: row.prov_source,
+      asOf: row.prov_asof,
+      confidence: row.prov_confidence,
+    },
+  );
   if (!matches || row.has_earlier_recording || !provenance) {
     throw appError(
       "STORE_CONSTRAINT",
@@ -81,7 +87,8 @@ async function loadBinding(
                      AND earlier_record.input_bundle_id = binding.source_id)
                  )
             ) AS has_earlier_recording,
-            ledger.prov_source, ledger.prov_asof, ledger.prov_confidence
+            ledger.prov_source, ledger.prov_asof, ledger.prov_confidence,
+            ledger.schema_version, ledger.serializer_version
        FROM decision_replay_source_provenance binding
        JOIN decision_ledger ledger
          ON ledger.org_id = binding.org_id

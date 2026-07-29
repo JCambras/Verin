@@ -36,7 +36,9 @@ import {
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
+  CANONICAL_SERIALIZER_VERSION,
   canonicalJson,
+  DECISION_CORE_SCHEMA_VERSION,
   decisionHashPreimage,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
@@ -174,8 +176,8 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [LEDGER_ORG, "bundle:GC-01:0001"],
     );
     expect(replayMetadata.rows[0]).toEqual({
-      schema_version: "1.7.0",
-      serializer_version: "1.0.0",
+      schema_version: DECISION_CORE_SCHEMA_VERSION,
+      serializer_version: CANONICAL_SERIALIZER_VERSION,
       engine_version: "0.0.0",
       primitive_set_version: "0",
       time_zone_data_version: "iana-tzdb/2026b",
@@ -1077,6 +1079,157 @@ describe("decision ledger storage and L1-L4 verification", () => {
       expect(result.ok ? null : result.error.code).toBe("VALIDATION");
     }
     expect((await listDecisionLedger(db, LEDGER_ORG))).toEqual([]);
+  });
+
+  it("binds every regulatory citation to the exact immutable bundle", async () => {
+    const regulatory = {
+      sourceType: "regulatory" as const,
+      sourceRef: {
+        firmId: LEDGER_ORG,
+        id: "reg-distribution-holds",
+      },
+      versionRef: {
+        firmId: LEDGER_ORG,
+        id: "reg-distribution-holds@2026.02",
+      },
+    };
+    const build = (
+      input: ReturnType<typeof decisionRecordingInput>,
+      pinnedVersion: string | null,
+      placements: readonly (
+        "result" | "precedence" | "explanation-root" | "explanation-child"
+      )[] = [
+        "result",
+        "precedence",
+        "explanation-root",
+        "explanation-child",
+      ],
+    ) => {
+      const candidate = DecisionRecordSchema.parse({
+        ...input.decisionRecord,
+        result: placements.includes("result")
+          ? {
+              kind: "prohibited",
+              prohibition: {
+                source: regulatory,
+                scopeRef: {
+                  firmId: LEDGER_ORG,
+                  id: "scope:account:smiths-joint-taxable",
+                },
+                reasonCode: "active-legal-hold",
+                explanation: "active-legal-hold",
+              },
+            }
+          : input.decisionRecord.result,
+        precedenceTrace: input.decisionRecord.precedenceTrace.map(
+          (step, index) =>
+            placements.includes("precedence") && index === 0
+              ? { ...step, left: regulatory }
+              : step,
+        ),
+        explanationTrace: input.decisionRecord.explanationTrace.map(
+          (node, index) =>
+            index === 0
+              ? {
+                  ...node,
+                  sourceRefs: placements.includes("explanation-root")
+                    ? [...node.sourceRefs, regulatory]
+                    : node.sourceRefs,
+                  childNodes: node.childNodes.map((child, childIndex) =>
+                    placements.includes("explanation-child") &&
+                      childIndex === 0
+                      ? {
+                          ...child,
+                          sourceRefs: [...child.sourceRefs, regulatory],
+                        }
+                      : child),
+                }
+              : node,
+        ),
+        reevaluateWhen: placements.includes("result")
+          ? []
+          : input.decisionRecord.reevaluateWhen,
+        decisionHash: "0".repeat(64),
+      });
+      const decisionRecord = DecisionRecordSchema.parse({
+        ...candidate,
+        decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+      });
+      const bundleCandidate = DecisionInputBundleSchema.parse({
+        ...input.inputBundle,
+        regulatoryVersionRefs: pinnedVersion === null
+          ? []
+          : [{
+              firmId: LEDGER_ORG,
+              id: pinnedVersion,
+            }],
+        bundleHash: "0".repeat(64),
+      });
+      const inputBundle = DecisionInputBundleSchema.parse({
+        ...bundleCandidate,
+        bundleHash: hashPreimage(bundleHashPreimage(bundleCandidate)),
+      });
+      return {
+        ...input,
+        inputBundle,
+        decisionRecord,
+        events: [
+          ...input.events.slice(0, -1),
+          LedgerEntrySchema.parse({
+            ...input.events.at(-1)!,
+            decisionHash: decisionRecord.decisionHash,
+            bundleHash: inputBundle.bundleHash,
+          }),
+        ],
+      };
+    };
+
+    const input = decisionRecordingInput();
+    const { regulatoryVersionRefs: _removed, ...withoutRegulatoryPins } =
+      input.inputBundle;
+    expect(_removed).toEqual([]);
+    expect(
+      DecisionInputBundleSchema.safeParse(withoutRegulatoryPins).success,
+    ).toBe(false);
+    expect(DecisionInputBundleSchema.safeParse({
+      ...input.inputBundle,
+      regulatoryVersionRefs: [
+        regulatory.versionRef,
+        regulatory.versionRef,
+      ],
+    }).success).toBe(false);
+    expect(DecisionInputBundleSchema.safeParse({
+      ...input.inputBundle,
+      regulatoryVersionRefs: [{
+        ...regulatory.versionRef,
+        firmId: LEDGER_OTHER_ORG,
+      }],
+    }).success).toBe(false);
+
+    for (const placement of [
+      "result",
+      "precedence",
+      "explanation-root",
+      "explanation-child",
+    ] as const) {
+      const absent = await recordDecision(
+        db,
+        build(input, null, [placement]),
+      );
+      expect(absent.ok, placement).toBe(false);
+      expect(absent.ok ? null : absent.error.code).toBe("VALIDATION");
+    }
+    const mismatched = await recordDecision(
+      db,
+      build(input, "reg-distribution-holds@2026.03"),
+    );
+    expect(mismatched.ok).toBe(false);
+    expect(mismatched.ok ? null : mismatched.error.code).toBe("VALIDATION");
+    const accepted = await recordDecision(
+      db,
+      build(input, regulatory.versionRef.id),
+    );
+    expect(accepted.ok, accepted.ok ? "" : accepted.error.message).toBe(true);
   });
 
   it("refuses retained names and unformatted account numbers without rewriting bytes", async () => {

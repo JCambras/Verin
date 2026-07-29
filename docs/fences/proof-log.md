@@ -5905,3 +5905,57 @@ and ignore insert-shaped dynamic parameter values.
 capability, SQL ownership, tenant, migration, and projection companions pass.
 
 **Date:** 2026-07-28 (review corrections L1-L5, ADR-0033, D-111).
+
+## Recorded provenance, regulatory pins, bounded membership, and SQL aliases (D-112)
+
+**Invariants:** historical ledger provenance is parsed and canonicalized only by
+the row's recorded codec; every regulatory citation matches an exact immutable
+bundle pin; bounded register replay reads no more evidence members than the exact
+window can contain plus one; destructured and object-literal SQL aliases cannot
+bypass the one-owner immutable-insert fence.
+
+Importing the live provenance parser into a historical row reader was detected:
+
+```text
+× enforces: historical row readers never import live provenance parsing
+expected [ 'parseRecordProvenance' ] to deeply equal []
+src/__tests__/fitness/ledger-schema-registry.test.ts:299
+```
+
+The regulatory matcher was weakened to accept every regulatory source. The
+end-to-end write boundary then accepted a citation absent from the bundle:
+
+```text
+× binds every regulatory citation to the exact immutable bundle
+expected true to be false
+src/__tests__/integration/decision-ledger.test.ts:1192
+```
+
+The source-membership limit was weakened to 1,000 rows. A six-entry verified
+window then materialized all 50 bundle members instead of its five-member capacity
+plus one sentinel:
+
+```text
+× bounds bundle membership reads to verified-window capacity
+expected [ 50 ] to deeply equal [ 6 ]
+src/__tests__/integration/ledger-projections.test.ts:590
+```
+
+A real operator script invoked a destructured query alias:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+scripts/ledger-destructured-violation-probe.ts:3
+```
+
+The in-memory companion also covers a renamed destructured sink, an object method,
+and a destructured object property backed by a bound query method. The retained
+codec companion requires fixed canonical bytes and hashes for both source schema
+1.7.0 and source schema 1.8.0.
+
+**Revert:** the live import, permissive regulatory branch, enlarged membership
+limit, and planted operator script were restored or removed. The focused registry,
+decision-ledger, projection, and anti-fork suites pass.
+
+**Date:** 2026-07-28 (review corrections M1-M4, ADR-0033, D-112).

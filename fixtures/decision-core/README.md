@@ -5,10 +5,10 @@ decision). The bundle and the proceed record ARE seeded, as labeled-synthetic de
 for the demo tenant (`scripts/seed-decision-ledger.ts`, D-061): every row they produce carries
 `prov_source = 'fixture'`, and `/app/ledger` renders that state behind the shared synthetic-fixture
 provenance badge. Nothing here may reach a surface unlabeled, and `canFeedComplianceDecision` refuses
-all of it. The files contain one `DecisionInputBundle`,
-three `DecisionRecord` values committed in canonical byte form (`canonicalJson` in
-`src/contracts/decision-core/serialization.ts`, schema version 1.7.0 and serializer version
-1.0.0), and one digest lock for the canonical bytes of every prompt-7 ledger event
+all of it. The files contain one current schema-1.8.0 `DecisionInputBundle`,
+three schema-1.7.0 `DecisionRecord` values committed in canonical byte form
+(`canonicalJson` in `src/contracts/decision-core/serialization.ts`, serializer
+version 1.0.0), and one digest lock for the canonical bytes of every prompt-7 ledger event
 shape at ledger schema 1.1.0. The record and bundle keys are sorted at every depth with no insignificant
 whitespace and one trailing newline.
 
@@ -20,18 +20,25 @@ forever, and these committed bytes fail the build the moment one is dropped or
 altered. Add a block here whenever `LEDGER_SCHEMA_VERSIONS` gains a version; never
 edit an existing one.
 
+`recorded-replay-sources.json` preserves exact schema-1.7.0 evidence, bundle, and
+decision source bytes. `decision-input-bundle-v1-8.json` preserves the exact
+schema-1.8.0 bundle bytes; the evidence and decision shapes are unchanged, so the
+registry fence pairs them with the retained source bytes. Every registered source
+encoding must have fixed canonical bytes and hashes.
+
 `src/__tests__/unit/decision-core.test.ts` proves each fixture parses through
 its schema and re-serializes byte-identically. It also hashes the canonical, domain-separated
 preimage bytes with SHA-256 and requires the digest to equal the fixture's stored `bundleHash` or
 `decisionHash`.
 
-Bundle preimage version `decision-input-bundle/1.7.0` excludes `id` and `bundleHash`, because
-identity is not a material evaluation input, and sorts the instruction-version and
-evidence-snapshot reference collections by firm then opaque id - the SAME comparator the schema
+Bundle preimage version `decision-input-bundle/1.8.0` excludes `id` and `bundleHash`, because
+identity is not a material evaluation input, and sorts the instruction-version,
+regulatory-version, and evidence-snapshot reference collections by firm then opaque id - the SAME comparator the schema
 canonicalizes with, so the preimage cannot order a list differently from the record it hashes.
 Decision preimage version `decision-record/1.7.0`
 excludes only `decisionHash`; the decision ID and all order-significant traces, stages, and plan
-steps remain bound. The 1.7.0 shapes tenant-scope every named configuration, evidence, subject, scope,
+steps remain bound. The retained bundle preimage `decision-input-bundle/1.7.0`
+and its fixed bytes remain registered. The shapes tenant-scope every named configuration, evidence, subject, scope,
 approval, execution, reservation, verification, and secure-storage reference, require retry-safe
 compensation, canonicalize set-like evaluator inputs, validate each bundle's `timeZone` against the
 registry its own recorded `timeZoneDataVersion` names while a standalone `TimeZone` spans every supported

@@ -16,7 +16,6 @@ import {
   verifyStoredByteChain,
   type ChainVerdict,
 } from "@infra/audit/hash-chain";
-import { parseRecordProvenance } from "@contracts/provenance";
 import {
   canonicalizeRecordedLedgerValue,
   decisionLedgerChainPreimage,
@@ -271,19 +270,16 @@ function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
   const { rows, stored } = snapshot;
   const chainRows = [];
   for (const row of rows) {
-    const provenance = parseRecordProvenance({
-      source: row.provSource,
-      asOf: row.provAsOf,
-      confidence: row.provConfidence,
-    });
-    const preimage = provenance
-      ? decisionLedgerChainPreimage(
-          row.schemaVersion,
-          row.serializerVersion,
-          row.payloadJson,
-          provenance,
-        )
-      : null;
+    const preimage = decisionLedgerChainPreimage(
+      row.schemaVersion,
+      row.serializerVersion,
+      row.payloadJson,
+      {
+        source: row.provSource,
+        asOf: row.provAsOf,
+        confidence: row.provConfidence,
+      },
+    );
     if (!preimage) {
       const l1 = level(
         "L1",

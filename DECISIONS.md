@@ -3438,3 +3438,34 @@ exact when callers can import its raw writers or alias the SQL sink.
 **Revert path:** none while Prompt 7 promises least-trust replay provenance,
 bundle-bound decisions, ordered evidence facts, and exact immutable write
 ownership.
+
+### D-112 · 2026-07-28 · reversible · Recorded provenance, regulatory pins, bounded membership, and SQL aliases are codec-owned
+
+Ledger provenance parsing and canonicalization now dispatch through the exact
+recorded ledger schema and serializer codec. Each registered codec owns the closed
+source and confidence vocabularies used by its chain preimage. Verification,
+rebuild, register replay, and immutable-source provenance binding no longer consult
+the live provenance parser for historical rows.
+
+Decision-input bundle schema 1.8.0 adds a duplicate-free, tenant-scoped
+`regulatoryVersionRefs` collection to the canonical hash projection. Every
+regulatory citation in a prohibition, precedence step, or recursive explanation
+must match an exact immutable bundle pin. The frozen schema-1.7.0 source codec and
+bytes remain registered and upcast with an empty regulatory collection.
+
+Bounded register replay reads at most the number of evidence recordings that can
+fit before a decision in the exact verified window, plus one sentinel member.
+Larger bundles are incomplete and do not materialize unbounded membership under
+the tenant lock. The immutable-insert fence now follows destructured query or exec
+sinks and object-literal methods or properties in addition to direct, bound,
+wrapped, and reassigned aliases.
+
+The composed implementation measures contracts at 5133 lines and infrastructure
+at 7381 lines. ADR-0033 amends ADR-0018 ceilings to 5200 and 7500 respectively,
+leaving bounded headroom while retaining the 500-line file cap.
+
+**Why:** recorded history cannot depend on future provenance vocabulary, replayable
+decisions cannot cite unpinned regulatory versions, bounded reads cannot scale with
+bundle size, and exact SQL ownership must cover ordinary alias forms.
+**Revert path:** none while Prompt 7 promises additive recorded codecs, exact replay
+pins, bounded register reads, and one immutable insert owner.

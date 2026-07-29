@@ -409,6 +409,20 @@ function assignedValueBefore(
       values.push({ position: declaration.getStart(), value: declaration });
       continue;
     }
+    if (Node.isMethodDeclaration(declaration)) {
+      values.push({ position: declaration.getStart(), value: declaration });
+      continue;
+    }
+    if (Node.isPropertyAssignment(declaration)) {
+      const initializer = declaration.getInitializer();
+      if (initializer) {
+        values.push({
+          position: declaration.getStart(),
+          value: initializer,
+        });
+      }
+      continue;
+    }
     if (!Node.isVariableDeclaration(declaration)) continue;
     const initializer = declaration.getInitializer();
     if (initializer) {
@@ -436,6 +450,56 @@ function assignedValueBefore(
     .sort((left, right) => right.position - left.position)[0]?.value ?? null;
 }
 
+function destructuredSqlCallableParameter(
+  node: Node,
+  before: number,
+  seen: Set<Node>,
+): number | null {
+  const symbol = symbolOf(node);
+  if (!symbol) return null;
+  for (const declaration of symbol.getDeclarations()) {
+    if (!Node.isBindingElement(declaration)) continue;
+    const propertyNode =
+      declaration.getPropertyNameNode() ?? declaration.getNameNode();
+    const propertyName =
+      Node.isIdentifier(propertyNode)
+        ? propertyNode.getText()
+        : Node.isStringLiteral(propertyNode) ||
+            Node.isNoSubstitutionTemplateLiteral(propertyNode)
+          ? propertyNode.getLiteralText()
+          : staticString(propertyNode);
+    if (propertyName === "query" || propertyName === "exec") return 0;
+    const variable = declaration.getFirstAncestorByKind(
+      SyntaxKind.VariableDeclaration,
+    );
+    const initializer = variable?.getInitializer();
+    if (!initializer || propertyName === null) continue;
+    const source = Node.isIdentifier(initializer)
+      ? assignedValueBefore(initializer, before)
+      : initializer;
+    if (!source || !Node.isObjectLiteralExpression(source)) continue;
+    for (const property of source.getProperties()) {
+      if (
+        (
+          Node.isPropertyAssignment(property) ||
+          Node.isMethodDeclaration(property)
+        ) &&
+        property.getName() === propertyName
+      ) {
+        const parameter = sqlCallableParameter(
+          Node.isPropertyAssignment(property)
+            ? property.getInitializerOrThrow()
+            : property,
+          before,
+          new Set(seen),
+        );
+        if (parameter !== null) return parameter;
+      }
+    }
+  }
+  return null;
+}
+
 function sqlCallableParameter(
   node: Node,
   before: number,
@@ -461,13 +525,52 @@ function sqlCallableParameter(
       : null;
   }
   if (Node.isIdentifier(node)) {
+    const destructured = destructuredSqlCallableParameter(
+      node,
+      before,
+      seen,
+    );
+    if (destructured !== null) return destructured;
+    const value = assignedValueBefore(node, before);
+    return value ? sqlCallableParameter(value, before, seen) : null;
+  }
+  if (
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    const target = callTarget(node);
+    const receiver = target?.receiver;
+    const source = receiver && Node.isIdentifier(receiver)
+      ? assignedValueBefore(receiver, before)
+      : receiver;
+    if (target && source && Node.isObjectLiteralExpression(source)) {
+      for (const property of source.getProperties()) {
+        if (
+          (
+            Node.isPropertyAssignment(property) ||
+            Node.isMethodDeclaration(property)
+          ) &&
+          property.getName() === target.name
+        ) {
+          const parameter = sqlCallableParameter(
+            Node.isPropertyAssignment(property)
+              ? property.getInitializerOrThrow()
+              : property,
+            before,
+            new Set(seen),
+          );
+          if (parameter !== null) return parameter;
+        }
+      }
+    }
     const value = assignedValueBefore(node, before);
     return value ? sqlCallableParameter(value, before, seen) : null;
   }
   if (
     Node.isArrowFunction(node) ||
     Node.isFunctionExpression(node) ||
-    Node.isFunctionDeclaration(node)
+    Node.isFunctionDeclaration(node) ||
+    Node.isMethodDeclaration(node)
   ) {
     const parameters = node.getParameters();
     const body = node.getBody();
@@ -734,7 +837,7 @@ describe("decision-ledger append-only fence", () => {
         (item) => `${item.file}:${item.line}`,
       ).join("\n")}`,
     ).toEqual([]);
-  });
+  }, 60_000);
 
   it("immutable source writers require the validated ledger-store capability", () => {
     expect(sourceWriteBoundaryViolations(ledgerFenceFiles())).toEqual([]);
@@ -856,6 +959,38 @@ describe("decision-ledger append-only fence", () => {
           `};`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(3);
+    });
+
+    it("detects destructured sinks and object-method wrappers", () => {
+      const project = inMemoryProject({
+        "/scripts/destructured.ts":
+          `export const run = (db: { query(s: string): unknown }) => {\n` +
+          `  const { query: execute } = db;\n` +
+          `  return execute("INSERT INTO decision_ledger (id) VALUES ('x')");\n` +
+          `};`,
+        "/scripts/object-method.ts":
+          `export const run = (db: { exec(s: string): unknown }) => {\n` +
+          `  const operations = {\n` +
+          `    execute(sql: string) { return db.exec(sql); },\n` +
+          `  };\n` +
+          `  return operations.execute("INSERT INTO decision_records (id) VALUES ('x')");\n` +
+          `};`,
+        "/scripts/object-property.ts":
+          `export const run = (db: { query(s: string): unknown }) => {\n` +
+          `  const operations = { execute: db.query.bind(db) };\n` +
+          `  const { execute } = operations;\n` +
+          `  return execute("INSERT INTO evidence_snapshots (id) VALUES ('x')");\n` +
+          `};`,
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual([
+        "destructured.ts",
+        "object-method.ts",
+        "object-property.ts",
+      ]);
     });
 
     it("fails closed on an unresolved SQL-bearing alias", () => {

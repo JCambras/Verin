@@ -1,6 +1,6 @@
 import type { SqlDb } from "@infra/store/db";
 import { appError } from "@contracts/errors";
-import { parseRecordProvenance, type RecordProvenance } from "@contracts/provenance";
+import type { RecordProvenance } from "@contracts/provenance";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { verifyDecisionLedgerTransaction } from "./ledger-verification";
@@ -12,7 +12,10 @@ import {
   listDecisionProjections,
   type ProjectedDecision,
 } from "./ledger-projection-store";
-import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
+import {
+  parseRecordedLedgerEvent,
+  parseRecordedLedgerProvenance,
+} from "./ledger-schema-registry";
 import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
 
 export async function rebuildDecisionProjections(
@@ -52,11 +55,15 @@ export async function rebuildDecisionProjections(
         value,
       );
       if (!parsed.ok) throw appError("STORE_CONSTRAINT", parsed.reason);
-      const provenance = parseRecordProvenance({
-        source: row.provSource,
-        asOf: row.provAsOf,
-        confidence: row.provConfidence,
-      });
+      const provenance = parseRecordedLedgerProvenance(
+        row.schemaVersion,
+        row.serializerVersion,
+        {
+          source: row.provSource,
+          asOf: row.provAsOf,
+          confidence: row.provConfidence,
+        },
+      );
       if (!provenance) {
         throw appError("STORE_CONSTRAINT", "ledger replay provenance is invalid");
       }

@@ -18,6 +18,7 @@ import {
   canonicalizeRecordedLedgerValue,
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
+  parseRecordedLedgerProvenance,
   registeredLedgerEncodings,
 } from "@infra/ledger/ledger-schema-registry";
 import {
@@ -70,6 +71,30 @@ const REPLAY_FIXTURE = JSON.parse(
     "utf8",
   ),
 ) as RecordedReplayFixture;
+const REPLAY_BUNDLE_V1_8 = readFileSync(
+  join(
+    REPO_ROOT,
+    "fixtures/decision-core/decision-input-bundle-v1-8.json",
+  ),
+  "utf8",
+).trimEnd();
+const REPLAY_FIXTURES: readonly RecordedReplayFixture[] = [
+  REPLAY_FIXTURE,
+  {
+    schemaVersion: "1.8.0",
+    serializerVersion: "1.0.0",
+    sources: REPLAY_FIXTURE.sources.map((source) =>
+      source.kind === "bundle"
+        ? {
+            kind: "bundle",
+            canonical: REPLAY_BUNDLE_V1_8,
+            hash: (
+              JSON.parse(REPLAY_BUNDLE_V1_8) as { bundleHash: string }
+            ).bundleHash,
+          }
+        : source),
+  },
+];
 
 const TS = "2026-07-26T13:30:00.000Z";
 const encoding = (schemaVersion: string): string =>
@@ -99,6 +124,8 @@ const FROZEN_CODEC_FILES = [
   "src/contracts/decision-core/v1-7/serialization.ts",
   "src/contracts/decision-core/v1-7/time-zone.ts",
   "src/contracts/decision-core/v1-7/trigger.ts",
+  "src/contracts/decision-core/v1-8/evidence.ts",
+  "src/contracts/decision-core/v1-8/serialization.ts",
 ] as const;
 
 function liveCodecDependencies(source: SourceFile): string[] {
@@ -120,6 +147,7 @@ function unversionedRuntimeImports(source: SourceFile): string[] {
     return runtime &&
       specifier.startsWith("@contracts/decision-core/") &&
       !specifier.includes("/v1-7/") &&
+      !specifier.includes("/v1-8/") &&
       !specifier.includes("/ledger-v1/")
       ? [`${source.getBaseName()}:${declaration.getStartLineNumber()}:${specifier}`]
       : [];
@@ -128,12 +156,14 @@ function unversionedRuntimeImports(source: SourceFile): string[] {
 
 function frozenDependencyViolations(source: SourceFile): string[] {
   const ledger = source.getFilePath().includes("/ledger-v1/");
+  const current = source.getFilePath().includes("/v1-8/");
   return source.getImportDeclarations().flatMap((declaration) => {
     const specifier = declaration.getModuleSpecifierValue();
     const allowed = specifier === "zod" ||
       (ledger
         ? specifier.startsWith("../v1-7/")
         : specifier.startsWith("./") ||
+          (current && specifier.startsWith("../v1-7/")) ||
           specifier === "../../result" ||
           specifier === "../../errors" ||
           specifier.startsWith("../../iana-time-zone"));
@@ -225,12 +255,48 @@ describe("decision-ledger schema registry fence", () => {
       [...LEDGER_SCHEMA_VERSIONS].sort(),
     );
     for (const kind of ["evidence", "bundle", "decision"] as const) {
-      expect(registeredSourceEncodings(kind)).toEqual([
-        `${REPLAY_FIXTURE.schemaVersion}|${REPLAY_FIXTURE.serializerVersion}`,
-      ]);
+      expect([...registeredSourceEncodings(kind)].sort()).toEqual(
+        REPLAY_FIXTURES.map((fixture) =>
+          `${fixture.schemaVersion}|${fixture.serializerVersion}`).sort(),
+      );
       expect(registeredSourceEncodings(kind)).toContain(
         `${DECISION_CORE_SCHEMA_VERSION}|${CANONICAL_SERIALIZER_VERSION}`,
       );
+    }
+  });
+
+  it("enforces: recorded provenance dispatches through each ledger codec", () => {
+    for (const schemaVersion of LEDGER_SCHEMA_VERSIONS) {
+      expect(parseRecordedLedgerProvenance(
+        schemaVersion,
+        FIXTURE.serializerVersion,
+        FIXTURE.provenance,
+      )).toEqual(FIXTURE.provenance);
+      expect(parseRecordedLedgerProvenance(
+        schemaVersion,
+        FIXTURE.serializerVersion,
+        {
+          ...FIXTURE.provenance,
+          source: "future-live-source",
+        },
+      )).toBeNull();
+    }
+  });
+
+  it("enforces: historical row readers never import live provenance parsing", () => {
+    const project = realProject();
+    for (const file of [
+      "src/infrastructure/ledger/ledger-verification.ts",
+      "src/infrastructure/ledger/ledger-register.ts",
+      "src/infrastructure/ledger/ledger-rebuild.ts",
+      "src/infrastructure/ledger/ledger-source-provenance.ts",
+    ]) {
+      const source = project.getSourceFileOrThrow(file);
+      expect(
+        source.getImportDeclarations().flatMap((declaration) =>
+          declaration.getNamedImports().map((item) => item.getName()))
+          .filter((name) => name === "parseRecordProvenance"),
+      ).toEqual([]);
     }
   });
 
@@ -283,15 +349,19 @@ describe("decision-ledger schema registry fence", () => {
   );
 
   it("enforces: every retained replay-source codec reproduces its recorded bytes and hash", () => {
-    for (const source of REPLAY_FIXTURE.sources) {
-      const parsed = parseRecordedReplaySource(
-        source.kind,
-        REPLAY_FIXTURE.schemaVersion,
-        REPLAY_FIXTURE.serializerVersion,
-        JSON.parse(source.canonical),
-      );
-      expect(parsed.ok ? parsed.canonicalBytes : parsed.reason).toBe(source.canonical);
-      expect(parsed.ok ? parsed.recordedHash : "").toBe(source.hash);
+    for (const fixture of REPLAY_FIXTURES) {
+      for (const source of fixture.sources) {
+        const parsed = parseRecordedReplaySource(
+          source.kind,
+          fixture.schemaVersion,
+          fixture.serializerVersion,
+          JSON.parse(source.canonical),
+        );
+        expect(
+          parsed.ok ? parsed.canonicalBytes : parsed.reason,
+        ).toBe(source.canonical);
+        expect(parsed.ok ? parsed.recordedHash : "").toBe(source.hash);
+      }
     }
   });
 

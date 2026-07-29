@@ -16,6 +16,7 @@ type ParseResult =
 interface RecordedLedgerCodec {
   readonly parse: (value: unknown) => LedgerEntry | undefined;
   readonly canonicalize: (value: unknown) => string | undefined;
+  readonly parseProvenance: (value: unknown) => RecordProvenance | undefined;
   readonly chainPreimage: (
     payloadJson: string,
     provenance: RecordProvenance,
@@ -36,6 +37,48 @@ const chainPreimageV1_0_0 = (
     provenance.confidence,
   ]);
 
+const PROVENANCE_SOURCES_V1_0_0 = new Set([
+  "verin-crm",
+  "salesforce",
+  "csv-import",
+  "computed",
+  "user-input",
+  "estimate",
+  "default",
+  "fixture",
+]);
+const PROVENANCE_CONFIDENCES_V1_0_0 = new Set([
+  "high",
+  "medium",
+  "low",
+]);
+
+function parseProvenanceV1_0_0(
+  value: unknown,
+): RecordProvenance | undefined {
+  if (value === null || typeof value !== "object") return undefined;
+  const candidate = value as {
+    readonly source?: unknown;
+    readonly asOf?: unknown;
+    readonly confidence?: unknown;
+  };
+  if (
+    typeof candidate.source !== "string" ||
+    !PROVENANCE_SOURCES_V1_0_0.has(candidate.source) ||
+    typeof candidate.asOf !== "string" ||
+    Number.isNaN(Date.parse(candidate.asOf)) ||
+    typeof candidate.confidence !== "string" ||
+    !PROVENANCE_CONFIDENCES_V1_0_0.has(candidate.confidence)
+  ) {
+    return undefined;
+  }
+  return {
+    source: candidate.source as RecordProvenance["source"],
+    asOf: new Date(candidate.asOf).toISOString(),
+    confidence: candidate.confidence as RecordProvenance["confidence"],
+  };
+}
+
 function codecV1_0_0(schema: {
   safeParse(value: unknown):
     | { success: true; data: unknown }
@@ -50,6 +93,7 @@ function codecV1_0_0(schema: {
       const serialized = canonicalJsonV1_0_0(value as JsonValue);
       return serialized.ok ? serialized.value : undefined;
     },
+    parseProvenance: parseProvenanceV1_0_0,
     chainPreimage: chainPreimageV1_0_0,
   };
 }
@@ -73,10 +117,21 @@ export function decisionLedgerChainPreimage(
   schemaVersion: string,
   serializerVersion: string,
   payloadJson: string,
-  provenance: RecordProvenance,
+  provenance: unknown,
 ): string | null {
   const codec = LEDGER_CODEC_REGISTRY.get(encodingKey(schemaVersion, serializerVersion));
-  return codec ? codec.chainPreimage(payloadJson, provenance) : null;
+  const parsed = codec?.parseProvenance(provenance);
+  return codec && parsed ? codec.chainPreimage(payloadJson, parsed) : null;
+}
+
+export function parseRecordedLedgerProvenance(
+  schemaVersion: string,
+  serializerVersion: string,
+  value: unknown,
+): RecordProvenance | null {
+  return LEDGER_CODEC_REGISTRY
+    .get(encodingKey(schemaVersion, serializerVersion))
+    ?.parseProvenance(value) ?? null;
 }
 
 export function canonicalizeRecordedLedgerValue(

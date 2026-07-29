@@ -439,7 +439,18 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "decision.ts:RecommendationSchema": recommendation,
   "evidence.ts:DecisionInputBundleSchema":
     fixture("decision-input-bundle"),
-  "evidence.ts:DecisionInputBundleV1_7_0Schema":
+  "evidence.ts:DecisionInputBundleV1_7_0Schema": JSON.parse(
+    (JSON.parse(readFileSync(
+      join(
+        REPO_ROOT,
+        "fixtures/decision-core/recorded-replay-sources.json",
+      ),
+      "utf8",
+    )) as {
+      sources: Array<{ kind: string; canonical: string }>;
+    }).sources.find(({ kind }) => kind === "bundle")!.canonical,
+  ),
+  "evidence.ts:DecisionInputBundleV1_8_0Schema":
     fixture("decision-input-bundle"),
   "execution.ts:CompensatingActionSchema": compensatingAction,
   "execution.ts:ExecutionPlanSchema": proceedResult.executionPlan,
@@ -628,6 +639,7 @@ describe("decision-core tenant-scope fence", () => {
       domainConfigVersionRef: { firmId: string };
       policyVersionRef: { firmId: string };
       householdInstructionVersionRefs: Array<{ firmId: string }>;
+      regulatoryVersionRefs: Array<{ firmId: string }>;
       evidenceSnapshotRefs: Array<{ firmId: string }>;
     };
     const crossTenant = [
@@ -640,6 +652,12 @@ describe("decision-core tenant-scope fence", () => {
         ...bundle,
         householdInstructionVersionRefs: [
           { ...bundle.householdInstructionVersionRefs[0]!, firmId: "firm-b" },
+        ],
+      },
+      {
+        ...bundle,
+        regulatoryVersionRefs: [
+          { firmId: "firm-b", id: "regulation:foreign" },
         ],
       },
       {

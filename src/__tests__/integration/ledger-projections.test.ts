@@ -32,6 +32,7 @@ import {
   LEDGER_TIME,
   allLedgerEventSamples,
   decisionRecordingInput,
+  decisionRecordingInputWithEvidenceCount,
   laterEvidenceRecording,
   reusedBundleRecordingInput,
 } from "../helpers/ledger-fixtures";
@@ -515,6 +516,9 @@ describe("deterministic decision-ledger projections", () => {
     expect(coverageQuery).toMatch(
       /ORDER BY l\.sequence DESC\s+LIMIT 1/is,
     );
+    expect(coverageQuery).toMatch(
+      /ORDER BY m\.ordinal ASC\s+LIMIT \$4/is,
+    );
     expect(coverageQuery).not.toMatch(/\b(max|count)\s*\(/i);
   });
 
@@ -545,6 +549,45 @@ describe("deterministic decision-ledger projections", () => {
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.decisions.map(({ projection }) =>
       projection.decisionId)).toEqual(["dec:GC-01:0002"]);
+  });
+
+  it("bounds bundle membership reads to verified-window capacity", async () => {
+    expect(
+      (await recordDecision(
+        db,
+        decisionRecordingInputWithEvidenceCount(50),
+      )).ok,
+    ).toBe(true);
+    const membershipResults: number[] = [];
+    const measured: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) =>
+          fn({
+            ...tx,
+            async query<U>(
+              sql: string,
+              params?: unknown[],
+            ): Promise<SqlResult<U>> {
+              const result = await tx.query<U>(sql, params);
+              if (sql.includes("LEFT JOIN LATERAL")) {
+                membershipResults.push(result.rows.length);
+              }
+              return result;
+            },
+          }));
+      },
+    };
+    const snapshot = await readVerifiedDecisionRegister(
+      measured,
+      LEDGER_ORG,
+      6,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsTotal).toBe(0);
+    expect(membershipResults).toEqual([6]);
   });
 
   it("refuses a status whose cited evidence has no preceding recording fact", async () => {
