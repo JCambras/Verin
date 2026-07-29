@@ -336,6 +336,23 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "a destructured globalThis-namespaced receiver",
+        [
+          "const { process: platform } = globalThis as any;",
+          `const load = platform.getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
+        "an assignment-destructured globalThis-namespaced receiver",
+        [
+          "let platform: any;",
+          "({ process: platform = {} } = globalThis as any);",
+          `const load = platform.getBuiltinModule("node:module").createRequire(import.meta.url);`,
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      ],
+      [
         "a computed globalThis member",
         [
           `const load = globalThis["process"].getBuiltinModule("node:module").createRequire(import.meta.url);`,
@@ -678,6 +695,18 @@ describe("dependency-rule fence", () => {
         "export const value = globalThis.Math.random();",
       ],
       [
+        "destructured globalThis clock",
+        "const { Date: Clock } = globalThis;\nexport const value = Clock.now();",
+      ],
+      [
+        "assignment-destructured globalThis clock",
+        [
+          "let Clock: DateConstructor;",
+          "({ Date: Clock = class {} as unknown as DateConstructor } = globalThis);",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
         "computed destructured clock",
         `const { ["now"]: now } = Date;\nexport const value = now();`,
       ],
@@ -707,6 +736,14 @@ describe("dependency-rule fence", () => {
             "const Math = { random: () => 0.5 };",
             "const Function = (value: string) => () => value;",
             "const model = { constructor: () => 7 };",
+            "const globals = {",
+            "  Date: { now: () => 2 },",
+            "  process: { getBuiltinModule: (value: string) => value },",
+            "};",
+            "const { Date: Clock, process: platform } = globals;",
+            "let AssignedClock = globals.Date;",
+            "let assignedPlatform = globals.process;",
+            "({ Date: AssignedClock, process: assignedPlatform } = globals);",
             "const { now } = Date;",
             "const { constructor: ctor } = model;",
             // The SHORTHAND spelling names a new local, so the source property has
@@ -722,6 +759,10 @@ describe("dependency-rule fence", () => {
             "  now(),",
             "  ctor(),",
             "  constructor(),",
+            "  Clock.now(),",
+            `  platform.getBuiltinModule("local"),`,
+            "  AssignedClock.now(),",
+            `  assignedPlatform.getBuiltinModule("local"),`,
             "];",
           ].join("\n"),
         }),

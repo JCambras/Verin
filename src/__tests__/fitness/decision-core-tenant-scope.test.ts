@@ -64,6 +64,32 @@ const TRANSPARENT_SCHEMA_TYPES = new Set([
   "success",
 ]);
 
+const LEAF_SCHEMA_TYPES = new Set([
+  "string",
+  "number",
+  "int",
+  "bigint",
+  "boolean",
+  "date",
+  "symbol",
+  "undefined",
+  "null",
+  "any",
+  "unknown",
+  "never",
+  "void",
+  "literal",
+  "enum",
+  "custom",
+  "transform",
+  "nan",
+  "file",
+]);
+
+const unsupportedSchemaType = (definition: SchemaDefinition): never => {
+  throw new Error(`unsupported Zod schema type: ${definition.type}`);
+};
+
 const unwrapSchema = (schema: z.ZodType): z.ZodType => {
   let current = schema;
   const seen = new Set<z.ZodType>();
@@ -71,8 +97,12 @@ const unwrapSchema = (schema: z.ZodType): z.ZodType => {
     seen.add(current);
     const definition = schemaDefinition(current);
     if (!TRANSPARENT_SCHEMA_TYPES.has(definition.type)) break;
-    if (!isSchema(definition.innerType)) break;
-    current = definition.innerType;
+    const inner = definition.innerType;
+    if (isSchema(inner)) {
+      current = inner;
+    } else {
+      unsupportedSchemaType(definition);
+    }
   }
   return current;
 };
@@ -89,7 +119,10 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
     case "array":
       return edge("[]", definition.element);
     case "record":
-      return edge("{}", definition.valueType);
+      return [
+        ...edge("{key}", definition.keyType),
+        ...edge("{}", definition.valueType),
+      ];
     case "tuple":
       return [
         ...(definition.items as unknown[]).flatMap((value, index) =>
@@ -120,8 +153,21 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
         ...edge("", definition.in),
         ...edge("", definition.out),
       ];
+    case "promise":
+      return edge("", definition.innerType);
+    case "function":
+      return [
+        ...edge("input", definition.input),
+        ...edge("output", definition.output),
+      ];
+    case "template_literal":
+      return (definition.parts as unknown[]).flatMap((value, index) =>
+        edge(`[${index}]`, value),
+      );
     default:
-      return [];
+      return LEAF_SCHEMA_TYPES.has(definition.type)
+        ? []
+        : unsupportedSchemaType(definition);
   }
 };
 
@@ -642,6 +688,38 @@ describe("decision-core tenant-scope fence", () => {
     );
     expect(audit.missing).toEqual([]);
     expect(audit.unsafe).toEqual(["probe.ts:OpaqueOwner"]);
+  });
+
+  it.each([
+    ["promise", z.promise(z.any())],
+    [
+      "function",
+      z.function({ input: [z.string()], output: z.unknown() }),
+    ],
+  ])("finds opaque nodes inside a %s schema", (_name, WrappedOpaque) => {
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { WrappedOpaque }]],
+      {},
+    ).unsafe).toEqual(["probe.ts:WrappedOpaque"]);
+  });
+
+  it("accepts a recognized child-bearing schema with transparent children", () => {
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { SafePromise: z.promise(z.string()) }]],
+      {},
+    ).unsafe).toEqual([]);
+  });
+
+  it("fails closed on an unknown child-bearing schema node", () => {
+    const FutureWrapper = z.any();
+    Object.assign(FutureWrapper._zod.def, {
+      type: "future-wrapper",
+      innerType: z.any(),
+    });
+    expect(() => tenantBoundaryAudit(
+      [["probe.ts", { FutureWrapper }]],
+      {},
+    )).toThrow(/unsupported Zod schema type/);
   });
 
   it("pins the exact opaque nodes the allowlist blesses", () => {

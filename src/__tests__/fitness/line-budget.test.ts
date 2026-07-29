@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import type { Project } from "ts-morph";
+import { Project, ts } from "ts-morph";
 import {
   localSpecifierTargets,
   moduleReferences,
@@ -122,23 +122,9 @@ function runtimeDataArtifactTargets(
   );
 }
 
-/** Does any configured alias point DIRECTLY at a `.json` file? */
-function mapsAliasOntoJson(project: Project): boolean {
-  return Object.values(project.getCompilerOptions().paths ?? {}).some((targets) =>
-    targets.some((target) => target.endsWith(".json")),
-  );
-}
-
 function runtimeDataArtifactPaths(project: Project): string[] {
-  // A specifier is spelled literally in its importing file, so a file whose text
-  // never says `.json` reaches an artifact only through a mapping that HIDES the
-  // extension. tsconfig configures none today, which is what makes skipping those
-  // files exact rather than a sampled shortcut - and the moment one is configured
-  // the whole tree is scanned instead of trusting the spelling.
-  const scanEveryFile = mapsAliasOntoJson(project);
   const paths = new Set<string>();
   for (const sourceFile of project.getSourceFiles()) {
-    if (!scanEveryFile && !sourceFile.getFullText().includes(".json")) continue;
     for (const reference of moduleReferences(sourceFile)) {
       for (const artifact of runtimeDataArtifactTargets(
         project,
@@ -264,13 +250,79 @@ describe("runtime JSON data-artifact budget", () => {
       }
     });
 
-    it("scans every file when an alias maps directly onto a .json target", () => {
-      expect(mapsAliasOntoJson(project)).toBe(false);
-      expect(
-        mapsAliasOntoJson({
-          getCompilerOptions: () => ({ paths: { "@registry": ["./src/contracts/big.json"] } }),
-        } as unknown as Project),
-      ).toBe(true);
+    it.each([
+      [
+        "package imports",
+        { name: "verin", type: "module", imports: { "#registry": "./src/contracts/probe.json" } },
+        "#registry",
+      ],
+      [
+        "package self-references",
+        { name: "verin", type: "module", exports: { "./registry": "./src/contracts/probe.json" } },
+        "verin/registry",
+      ],
+    ] as Array<[string, Record<string, unknown>, string]>)(
+      "discovers extension-hidden JSON through %s",
+      (_name, packageJson, specifier) => {
+        const mappedProject = new Project({
+          useInMemoryFileSystem: true,
+          compilerOptions: {
+            module: ts.ModuleKind.ESNext,
+            moduleResolution: ts.ModuleResolutionKind.Bundler,
+            resolveJsonModule: true,
+            resolvePackageJsonExports: true,
+            resolvePackageJsonImports: true,
+          },
+        });
+        mappedProject.createSourceFile(
+          join(REPO_ROOT, "package.json"),
+          JSON.stringify(packageJson),
+          { scriptKind: ts.ScriptKind.JSON },
+        );
+        mappedProject.createSourceFile(
+          join(CONTRACTS_RUNTIME_DATA_ROOT, "importer.ts"),
+          `import registry from "${specifier}";\nexport { registry };`,
+        );
+        mappedProject.createSourceFile(
+          join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.json"),
+          "{}",
+          { scriptKind: ts.ScriptKind.JSON },
+        );
+        expect(runtimeDataArtifactPaths(mappedProject)).toEqual([
+          join(CONTRACTS_RUNTIME_DATA_ROOT, "probe.json"),
+        ]);
+      },
+    );
+
+    it("does not count an extension-hidden JSON target outside contracts", () => {
+      const mappedProject = new Project({
+        useInMemoryFileSystem: true,
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          resolveJsonModule: true,
+          resolvePackageJsonImports: true,
+        },
+      });
+      mappedProject.createSourceFile(
+        join(REPO_ROOT, "package.json"),
+        JSON.stringify({
+          name: "verin",
+          type: "module",
+          imports: { "#registry": "./src/app/probe.json" },
+        }),
+        { scriptKind: ts.ScriptKind.JSON },
+      );
+      mappedProject.createSourceFile(
+        join(CONTRACTS_RUNTIME_DATA_ROOT, "importer.ts"),
+        `import registry from "#registry";\nexport { registry };`,
+      );
+      mappedProject.createSourceFile(
+        join(REPO_ROOT, "src/app/probe.json"),
+        "{}",
+        { scriptKind: ts.ScriptKind.JSON },
+      );
+      expect(runtimeDataArtifactPaths(mappedProject)).toEqual([]);
     });
 
     it("counts a trailing newline as termination, not an empty line", () => {
