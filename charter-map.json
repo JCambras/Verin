@@ -495,13 +495,14 @@
         },
         {
           "type": "ci-gate",
-          "ref": "v3-invariants"
+          "ref": "v3-invariants",
+          "command": "pnpm v3:invariants"
         }
       ]
     },
     {
       "id": "v3-gate-ordering",
-      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; the 30-invariant gate-assignment map and every gate's requirement set are ratcheted; Gate A requires 1/2/4/5, Gate B requires 3 (ADR-0030)",
+      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; activation ownership, complete gate metadata, and complete requirement sets are ratcheted; Gate A owns 1/2/4/5 and references prompt-5 guarantees 7/8/9, while Gate B requires 3 (ADR-0030)",
       "status": "enforced",
       "phase": "v3-0",
       "mechanisms": [
@@ -523,7 +524,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "v3-invariants"
+          "ref": "v3-invariants",
+          "command": "pnpm v3:invariants"
         }
       ]
     },

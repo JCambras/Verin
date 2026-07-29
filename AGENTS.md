@@ -15,20 +15,25 @@ G, H, I) declare `{wave, prompts, requires, entryGates, entryCondition, outcome}
 (`invariant`/`artifact`/`fitness`/`ci-gate`, plus `evidence` for an outcome clause nothing decides yet,
 which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
 gate must require every invariant it owns and may reference one another gate owns when it is fully proven
-by the time this gate closes. One shared rule
+by the time this gate closes. Gate B explicitly awaits prompt-10 schema validation and shared-engine
+binding for both domain YAML files; file existence alone proves nothing. One shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
 rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
-`ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A requires 1/2/4/5;
+`ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A owns 1/2/4/5 and
+references prompt-5 guarantees 7/8/9;
 invariant 3 is required at Gate B because its prerequisite is prompt 10). `ci-gate` evidence is a real
-YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a restricted shell-command parse. The required
+YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a restricted shell-command parse of the
+effective workflow/job/step shell. The required
 command must be a dedicated simple command whose exit status controls its step, and the job must BLOCK:
 a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
+Unsupported runners and custom shells also prove nothing.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
-`ci-gate` mechanisms through it too. Readiness computes every gate's structural `entryGates`, so a later
+`ci-gate` mechanisms through it too, with both v3 mappings pinned to `pnpm v3:invariants`. Readiness computes every gate's structural `entryGates`, so a later
 gate cannot report green while a predecessor is non-green. Three ratchets in the fence pin the
-30-invariant gate-assignment map, the predecessor chain, and every gate's COMPLETE TYPED requirement
+30-invariant gate-assignment map, complete gate metadata (wave, predecessor chain, entry condition,
+outcome), and every gate's COMPLETE TYPED requirement
 set including each non-invariant proof prompt: moving one, including deleting an `evidence` clause, is an
 ADR-0030 + ADR-0023 amendment, never a registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the

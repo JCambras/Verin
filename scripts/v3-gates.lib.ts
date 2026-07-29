@@ -20,8 +20,9 @@
  *    silently) and MAY additionally reference invariants owned by other gates,
  *    plus artifacts, fences, and CI gates. v3's Gate C, for instance, restates
  *    "no PII in LLM artifacts" (invariant 1) without taking it from Gate A, and
- *    Gate B requires invariant 16, whose closed policy-AST prohibition is fully
- *    proven at prompt 9 - inside Wave B - though Gate E owns its activation.
+ *    Gate A requires the prompt-5 structural guarantees of invariants 7, 8, and
+ *    9 while Gate D owns their activation; Gate B requires invariant 16, whose
+ *    closed policy-AST prohibition is proven at prompt 9 though Gate E owns it.
  *
  * THE ORDERING RULE: nothing a gate requires may land after that gate closes.
  * A gate that requires something unreachable inside its own wave can only ever
@@ -176,6 +177,7 @@ export interface CiJob {
 
 export interface CiStep {
   neutralizedBy?: string;
+  unsupportedShell?: string;
   commands: string[];
   blockingCommand?: string;
   blockingTokens?: string[];
@@ -195,6 +197,23 @@ function neutralizerOf(node: unknown): string | undefined {
   if (cont !== undefined && cont !== false) return `continue-on-error: ${String(cont)}`;
   if (n.if !== undefined) return `if: ${String(n.if)}`;
   return undefined;
+}
+
+function configuredRunShell(node: unknown): unknown {
+  const defaults = (node as { defaults?: unknown } | null)?.defaults;
+  const run = (defaults as { run?: unknown } | null)?.run;
+  return (run as { shell?: unknown } | null)?.shell;
+}
+
+function shellProblem(shell: unknown, runsOn: unknown): string | undefined {
+  if (shell === undefined) {
+    if (typeof runsOn === "string" && /^(?:ubuntu|macos)-/i.test(runsOn)) return undefined;
+    return `implicit shell on unsupported runner '${String(runsOn)}'`;
+  }
+  if (typeof shell !== "string") return `non-string shell '${String(shell)}'`;
+  const normalized = collapse(shell).toLowerCase();
+  if (normalized === "bash" || normalized === "sh") return undefined;
+  return `unsupported shell '${shell}'`;
 }
 
 function simpleShellCommand(script: string): { text: string; tokens: string[] } | undefined {
@@ -284,8 +303,9 @@ function commandMatches(actual: readonly string[] | undefined, required: readonl
  * class here, and `continue-on-error: true` is its cheapest spelling: the command
  * still runs, its failure just stops mattering.
  *
- * A workflow this cannot parse yields NO jobs, so every ci-gate reads unmet - the
- * honest answer when the evidence cannot be read at all.
+ * Effective shell selection follows workflow defaults, job defaults, and step
+ * overrides. Only implicit POSIX hosted-runner shells and the built-in `bash`
+ * and `sh` shells are supported; every other shell fails closed.
  */
 export function parseCiJobs(yamlText: string): Map<string, CiJob> {
   const jobs = new Map<string, CiJob>();
@@ -297,15 +317,23 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
   }
   const declared = (doc as { jobs?: unknown } | null)?.jobs;
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
+  const workflowShell = configuredRunShell(doc);
   for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
     const steps = (job as { steps?: unknown } | null)?.steps;
+    const jobShell = configuredRunShell(job);
+    const defaultShell = jobShell === undefined ? workflowShell : jobShell;
+    const runsOn = (job as { "runs-on"?: unknown } | null)?.["runs-on"];
     const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
       const run = (step as { run?: unknown } | null)?.run;
       if (typeof run !== "string") return [];
-      const simple = simpleShellCommand(run);
+      const stepShell = (step as { shell?: unknown } | null)?.shell;
+      const effectiveShell = stepShell === undefined ? defaultShell : stepShell;
+      const unsupportedShell = shellProblem(effectiveShell, runsOn);
+      const simple = unsupportedShell === undefined ? simpleShellCommand(run) : undefined;
       return [
         {
           ...(neutralizerOf(step) === undefined ? {} : { neutralizedBy: neutralizerOf(step) }),
+          ...(unsupportedShell === undefined ? {} : { unsupportedShell }),
           commands: shellCommandLines(run),
           ...(simple === undefined ? {} : { blockingCommand: simple.text, blockingTokens: simple.tokens }),
         },
@@ -335,7 +363,7 @@ export type CiCommandStatus =
   | { state: "missing-job" }
   | { state: "invalid-command" }
   | { state: "neutralized"; reason: string }
-  | { state: "unsafe-shell" }
+  | { state: "unsafe-shell"; reason?: string }
   | { state: "missing-command" };
 
 export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, command: string): CiCommandStatus {
@@ -359,6 +387,10 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   if (neutralized?.neutralizedBy !== undefined) {
     return { state: "neutralized", reason: `step ${neutralized.neutralizedBy}` };
   }
+  const unsupported = relevant.find((step) => step.unsupportedShell !== undefined);
+  if (unsupported?.unsupportedShell !== undefined) {
+    return { state: "unsafe-shell", reason: unsupported.unsupportedShell };
+  }
   if (relevant.length > 0) return { state: "unsafe-shell" };
   return { state: "missing-command" };
 }
@@ -375,7 +407,9 @@ export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: 
     case "neutralized":
       return `ci job '${ref}' command '${command}' is neutralized by ${status.reason}`;
     case "unsafe-shell":
-      return `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`;
+      return status.reason === undefined
+        ? `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`
+        : `ci job '${ref}' command '${command}' uses ${status.reason}`;
     default:
       return `ci job '${ref}' does not run '${command}' in a dedicated blocking step`;
   }

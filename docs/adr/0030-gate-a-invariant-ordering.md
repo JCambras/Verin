@@ -1,6 +1,6 @@
-# ADR-0030: Gate A requires invariants 1, 2, 4, and 5; invariant 3 is gated at B
+# ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, and the captain-approved outcome-completeness review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, and the captain-approved earliest-proof/completeness review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -85,6 +85,11 @@ instead of narrowing the outcomes to whatever the current invariant list happens
 23's proof point now includes prompt 26 because its subject includes status occurrences, not execution
 events alone.
 
+Gate B also carries a prompt-10 `evidence` requirement that both domain YAML files parse against the
+domain schema and bind through the shared engine without domain-specific core branches. The two artifact
+requirements prove only that files exist. Until prompt 10 lands an adversarial schema-and-binding fitness
+mechanism, empty or invalid YAML remains explicitly unverifiable and Gate B cannot turn green.
+
 **Proof points, not status (review ruling `gatea-fix-review-2`).** The first cut of the ordering rule
 read an already-`active` invariant as needing no future prompt, which made the reference DIRECTION
 undecidable: `gates.A.requires` could name invariant 7, which Gate D owns, and pass. The rule now
@@ -93,14 +98,19 @@ gate's closing prompt. An invariant's proof point is the last of its `activation
 declares none, the closing prompt of the gate that owns it, read off the canonical ordered gate ranges.
 This is deliberately STATUS-INDEPENDENT: a rule whose verdict flips the moment an invariant activates is
 not a structural rule, and the fallback is fail-closed, so `activationPrompts` is a permanent record of
-when an invariant landed rather than a to-do list. Dropping it on activation breaks every earlier gate
-that requires the invariant, which is where a reader will see it.
+when an invariant landed rather than a to-do list. Invariants 7, 8, and 9 permanently record prompt 5 as
+their proof point, and Gate A requires those structural guarantees at the earliest gate that can fully
+prove them. Their activation ownership stays at Gate D, which later re-asserts the distinct evaluator
+behavior. Dropping the prompt-5 record makes the proof point fall back to Gate D's close and breaks Gate
+A, rather than silently postponing an already-proven invariant.
 
 **Requirements sit at the earliest gate that can prove the WHOLE invariant** (same ruling), never at the
-first gate that touches part of one. Gate B therefore requires invariant 16 - the closed policy AST and
-its load-time validator are complete at prompt 9, inside Wave B - and Gate C requires invariant 11, whose
-validation stage is complete at prompt 15, inside Wave C. Ruling `gatea-fix-review-3` applies the same
-test to the two remaining outliers: **Gate D additionally requires invariants 18 and 19**, whose approval-stage
+first gate that touches part of one. Gate A therefore requires invariants 7, 8, and 9 because their
+contract-level illegal states are fully excluded at prompt 5. Gate B requires invariant 16 - the closed
+policy AST and its load-time validator are complete at prompt 9, inside Wave B - and Gate C requires
+invariant 11, whose validation stage is complete at prompt 15, inside Wave C. Ruling
+`gatea-fix-review-3` applies the same test to the two remaining outliers:
+**Gate D additionally requires invariants 18 and 19**, whose approval-stage
 definition and approval-invalidation-on-hash-change are both complete at prompt 18, inside Wave D. None of
 these four changes ACTIVATION ownership: 16 stays owned by Gate E, 11 by Gate D, and 18 and 19 by Gate F,
 each re-asserting it over the subject that gate builds. Invariant 6 stays a Gate D requirement only,
@@ -124,8 +134,8 @@ owned by the same or an earlier gate, never a later gate") and its specific inst
 REQUIRE invariant 16 ... invariant 16 stays owned by gate E") cannot both hold literally. The specific
 instruction governs, and the general rule is implemented in its provable form: a gate may reference an
 invariant any gate owns **as long as that invariant's proof point is at or before the referencing gate's
-close**. That still rejects the case the ruling asked to be verified - Gate A referencing the active,
-Gate-D-owned invariant 7 - and it stays correct when invariant 16 activates.
+close**. Gate A therefore legally references the active, Gate-D-owned invariants 7, 8, and 9 at their
+recorded prompt-5 proof point, and the same rule stays correct when invariant 16 activates.
 
 **A CI job NAME is not evidence** (same ruling). `ci-gate` requirements and `ci-gate` invariant
 mechanisms previously matched by substring, so a three-character token like `e2e` stayed "met" off a
@@ -146,6 +156,12 @@ or any other compound or multi-command script may mention the required bytes but
 command executes and gates the step. The audit seed and chain verification therefore run in separate CI
 steps. A workflow that cannot be parsed yields no jobs, so every `ci-gate` reads unmet.
 
+The parser resolves the effective shell through workflow `defaults.run.shell`, job
+`defaults.run.shell`, and step `shell` precedence. It supports the implicit POSIX shell only on a
+literal Ubuntu or macOS hosted runner and the built-in `bash` and `sh` shells. Unsupported runners,
+non-string shells, and custom shell templates such as `echo {0}` fail closed because the restricted
+command grammar cannot prove their execution or exit-status semantics.
+
 **A present command that cannot fail the build is not a blocking gate** (ruling `gatea-fix-review-3`).
 Parsing `jobs.<key>.steps[].run` proves a command is THERE; the failure message, the registry, and this
 ADR all claim more than that - a BLOCKING job. `continue-on-error: true` at either the job or the step
@@ -165,15 +181,20 @@ its own leftover comment (proved: injection 24). Check (a') now goes through the
 Name-only charter-map entries prove the weaker claim that the job exists and blocks. Command-bearing
 entries prove the dedicated command too. Charter rule 9 now names `e2e` plus `pnpm test:e2e` and maps an
 Axe-specific fitness fence that proves the public, authenticated, and demo E2E specifications execute
-Axe. Keeping an ordinary Playwright job while deleting every Axe scan can no longer leave
-charter-drift green.
+Axe through an enabled and reachable Playwright test, awaits the analysis, and routes its violations
+into a failing assertion. Skipped descriptions, runtime skips, statically dead branches, unawaited
+analysis or helpers, and unasserted results prove nothing. Keeping an ordinary Playwright job while
+deleting or neutralizing every Axe scan can no longer leave charter-drift green. Both v3 governance mappings are ratcheted to the exact blocking
+`pnpm v3:invariants` command, so either mapping cannot regress to a name-only job check.
 
 **Entry conditions are executable dependencies, not display copy.** Every gate declares structural
 `entryGates` alongside its human-readable `entryCondition`. The rule set requires both forms to agree,
 requires every predecessor to be registered and earlier, and ratchets the chain
 `0 -> A -> B -> C -> D -> E -> F -> G -> H -> I`. Readiness is computed in that order and a gate remains
 non-green while any predecessor is non-green. Gate B therefore cannot report green while Gate A is
-non-green, even when every local Gate B requirement is met.
+non-green, even when every local Gate B requirement is met. The same metadata ratchet pins each gate's
+`wave`, `entryGates`, `entryCondition`, and `outcome`, so a material outcome cannot be added or narrowed
+without the corresponding typed requirements and ADR amendment.
 
 **A gate's `awaiting:` line names everything holding it back** (ruling `gatea-review-3`). The report previously
 listed the unmet requirements OR, only when there were none, the undecidable ones - so gate C printed
@@ -197,9 +218,10 @@ green.**
 verbatim and SHA-256-pinned; per `docs/v3/README.md` and v3 orchestrator rule 4, a conflict between v3's
 letter and this repo is resolved by an ADR, never by a silent edit to the ratified text (the same
 mechanism used by ADR-0024 for prompt 27 and ADR-0026 for §18's stack). That sentence is therefore read
-through this ADR: **Gate A's requirement set is `{1, 2, 4, 5}`, and `v3-invariants.json` is the
-authoritative, executable statement of every gate's requirements.** Invariant 3 is not weakened, waived,
-or deferred without a trigger - it is required, in full, at Gate B.
+through this ADR: **Gate A owns foundation invariants `{1, 2, 4, 5}` and also requires the prompt-5
+structural guarantees `{7, 8, 9}` at their earliest proof point; `v3-invariants.json` is the
+authoritative, executable statement of every gate's complete requirements.** Invariant 3 is not
+weakened, waived, or deferred without a trigger - it is required, in full, at Gate B.
 
 ## Alternatives Rejected
 
@@ -244,16 +266,18 @@ or deferred without a trigger - it is required, in full, at Gate B.
   lists; invariant 3 moves to gate B with `activationArtifacts`; invariant 4's `activatesWhen` now names
   its Wave A activation subjects (prompts 5-7) explicitly, since Gate A requires it - later waves extend
   the same §16 fence family without re-gating it (ADR-0026).
-- Gate A's requirement set is unchanged by any review round: `{1, 2, 4, 5}`, all four owned by A. Gate
-  B requires invariants 3 and 16, prompt 10's two `config/domains/*.yaml` artifacts, and prompt 11's
-  stable-corpus evidence. Gate C requires
+- Gate A owns invariants `{1, 2, 4, 5}` and additionally requires the prompt-5 structural guarantees
+  `{7, 8, 9}` without moving their Gate D activation ownership. Gate B requires invariants 3 and 16,
+  prompt 10's two `config/domains/*.yaml` artifacts, prompt 10's schema-and-shared-engine binding
+  evidence, and prompt 11's stable-corpus evidence. Gate C requires
   invariants 1 and 11. Gate D requires 6-13 plus 18 and 19; Gate E still requires 14-17; Gate F still
   requires 18-25 plus prompt 26 verification-reconciler evidence. The merged `G/H` becomes Gate G
   (26, 28, 30) and Gate H (27, 29) plus timing, measured-results, and cold-review evidence. Beyond that split, no
   invariant changed ACTIVATION ownership: 16 is owned by E, 11 by D, and 18 and 19 by F, each additionally
   required at the earlier gate that can prove it.
 - Three RATCHETS live in the fence file, where review sees the edit: the complete 30-invariant
-  activation-ownership map, the structural predecessor chain, and every gate's COMPLETE TYPED
+  activation-ownership map, complete gate metadata (`wave`, predecessor chain, `entryCondition`,
+  `outcome`), and every gate's COMPLETE TYPED
   requirement set - `kind` plus id/ref and proof prompt, and the `command` for a `ci-gate`, not invariant
   ids alone. Changing any of them fails CI until the ratchet, this
   ADR, ADR-0023 where applicable, and the proof evidence are amended together. Deleting an `evidence`
@@ -262,11 +286,14 @@ or deferred without a trigger - it is required, in full, at Gate B.
   blocking job runs, checked against a real YAML parse of `.github/workflows/ci.yml` plus a restricted
   shell-command parse. Only a dedicated simple command can prove execution. Comments, echo arguments,
   short-circuited expressions, heredocs, compound commands, step names, environment values, and `uses:`
-  paths are rejected; so is a job or step carrying `continue-on-error` or any `if:`. An unparseable
+  paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
+  effective shell, or an implicit shell on an unsupported runner. An unparseable
   workflow yields no jobs, so every `ci-gate` reads unmet rather than passing on a file nothing could read.
 - `parseCiJobs` is the repo's one structured CI authority, read by three call sites - the gate
   requirements, the invariant mechanisms (`v3-invariants.test.ts`), and charter-drift check (a'). The
-  charter rule 9 additionally names `pnpm test:e2e` and the Axe-specific fitness fence.
+  charter rule 9 additionally names `pnpm test:e2e` and the Axe-specific fitness fence. The
+  `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
+  `pnpm v3:invariants`.
 - A gate's `awaiting:` line lists EVERY requirement holding it back, undecidable ones included, with a
   second `no mechanism decides:` line naming the subset nothing here can close. The report can no longer
   understate what a gate needs.
@@ -280,9 +307,10 @@ or deferred without a trigger - it is required, in full, at Gate B.
   a rule cannot be enforced in one and missing in the other.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
   orphan and ratchet checks cover the new fence.
-- Wave B's entry condition is recorded on gate B: prompts 5, 6, and 7 landed **and** invariants 1, 2, 4,
-  5 active and green. The structural `entryGates` chain makes that state control readiness. Prompt 5
-  landed with ADR-0029; prompts 6 and 7 remain open.
+- Wave B's entry condition is recorded on gate B: prompts 5, 6, and 7 landed and Gate A is green,
+  including owned invariants 1, 2, 4, and 5 plus earliest-proof references 7, 8, and 9. The structural
+  `entryGates` chain makes that state control readiness. Prompt 5 landed with ADR-0029; prompts 6 and 7
+  remain open.
 - The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
   Axe-specific charter proof is PF-031.
 - This does **not** change what invariant 3 requires, when prompt 10 runs, or the deferral of prompt 27
@@ -299,11 +327,12 @@ or deferred without a trigger - it is required, in full, at Gate B.
   no test edit. If the fence cannot be written without domain-named exceptions, the primitive vocabulary
   is overfit and ADR-0025's revisit trigger fires first.
 - A mechanism lands that decides an `evidence` requirement (gate 0's §4 surface-completeness clause,
-  gate B's stable-corpus clause, gate C's validated-bundle clause, gate F's verification-reconciler
-  clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the
+  gate B's domain-schema/shared-engine binding or stable-corpus clauses, gate C's validated-bundle
+  clause, gate F's verification-reconciler clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the
   `invariant` / `fitness` / `artifact` requirement that decides it, in the same PR. An `evidence` entry
   is a named gap, never a permanent excuse.
-- Any gate's `requires` list - of ANY requirement kind - its `entryGates`, or any invariant's `gate`, is proposed for
+- Any gate's `requires` list - of ANY requirement kind - its `wave`, `entryGates`, `entryCondition`,
+  `outcome`, or any invariant's `gate`, is proposed for
   change: that is an amendment to this ADR, to ADR-0023's phase-gated commitment, and to all three ratchets in
   `src/__tests__/fitness/v3-gate-ordering.test.ts`, with fresh proof-log evidence - never a registry edit
   alone. A registry-only edit fails CI (proved: PF-030).
@@ -311,6 +340,9 @@ or deferred without a trigger - it is required, in full, at Gate B.
   the `ci-gate` rules read either as neutralizing, so that job stops being evidence. Point the requirement
   at a job that does block, or extend `parseCiJobs` to decide the specific expression - do NOT drop the
   neutralization check, which is what "blocking" means in every claim this ADR makes.
+- A blocking job needs a runner or shell outside the supported implicit Ubuntu/macOS, `bash`, or `sh`
+  semantics: extend the restricted parser to decide that exact execution model and add adversarial
+  companions before using it as evidence. Unsupported custom shells remain non-evidence.
 - A `charter-map.json` `ci-gate` entry needs to prove a specific command: give that mechanism a `command`
   field. Name-only mappings continue to prove only that the job exists and blocks.
 - An invariant that has been referenced by an earlier gate is activated: keep its `activationPrompts`.

@@ -32,10 +32,10 @@ import {
  * report - the report is itself a document bound by ruling clause 5, so it may
  * not emit a claim this fence would reject. One core, two callers, no drift.
  * This file owns the ADVERSARIAL half (charter #4: detection is not
- * verification) plus the captain's ruled requirement sets and the two ratchets
+ * verification) plus the captain's ruled requirement sets and the three ratchets
  * that keep those sets from moving by a registry edit alone: the 30-invariant
- * activation-ownership map, and every gate's COMPLETE typed requirement set -
- * ids alone left an `evidence` clause deletable into a green gate.
+ * activation-ownership map, complete gate metadata, and every gate's COMPLETE
+ * typed requirement set.
  *
  * The rules:
  *  (a) every gate is well-formed - an integer prompt range inside the 30-prompt
@@ -60,8 +60,8 @@ import {
  *      is proven at the last of its `activationPrompts`, or - when it declares
  *      none - at the closing prompt of the gate that owns it, read off the
  *      canonical ordered gate ranges. So re-gating invariant 3 at A (proof point
- *      10 > gate A's 7) fails, and so does Gate A referencing invariant 7, which
- *      Gate D owns, even though invariant 7 is already active;
+ *      10 > gate A's 7) fails, while Gate A can reference invariants 7, 8, and 9
+ *      because their structural proof point is permanently recorded as prompt 5;
  *  (f) prose cannot drift from the structured field: every prompt number named
  *      in `activatesWhen` must appear in `activationPrompts`, so the ordering
  *      rule cannot be dodged by understating the prerequisite in the
@@ -119,21 +119,73 @@ const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
   26: "G", 27: "H", 28: "G", 29: "H", 30: "G",
 };
 
-const GATE_ENTRY_RATCHET: Record<string, string[]> = {
-  "0": [],
-  A: ["0"],
-  B: ["A"],
-  C: ["B"],
-  D: ["C"],
-  E: ["D"],
-  F: ["E"],
-  G: ["F"],
-  H: ["G"],
-  I: ["H"],
+type RatchetedGateMetadata = Pick<Gate, "wave" | "entryGates" | "entryCondition" | "outcome">;
+
+const GATE_METADATA_RATCHET: Record<string, RatchetedGateMetadata> = {
+  "0": {
+    wave: "0",
+    entryGates: [],
+    entryCondition: "None - Wave 0 opens the build sequence.",
+    outcome: "The seven-minute journey is clickable on static/fake data, every required screen exists, and the UI does not invent decisions (Wave 0, prompts 1-3; ADR-0027 labeled fakes).",
+  },
+  A: {
+    wave: "A",
+    entryGates: ["0"],
+    entryCondition: "Gate 0 is green: Wave 0 (prompts 1-3) has landed and the seven-minute journey is clickable on labeled fake data (ADR-0027).",
+    outcome: "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7), and the prompt-5 structural guarantees of invariants 7, 8, and 9 are required at their earliest complete proof point without moving their Gate D activation ownership. Gate D later re-asserts invariants 7, 8, and 9 over evaluator behavior. Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030).",
+  },
+  B: {
+    wave: "B",
+    entryGates: ["A"],
+    entryCondition: "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A is green: its owned foundation invariants 1, 2, 4, and 5 and its earliest-proof references to invariants 7, 8, and 9 are active and green (ADR-0030).",
+    outcome: "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030).",
+  },
+  C: {
+    wave: "C",
+    entryGates: ["B"],
+    entryCondition: "Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).",
+    outcome: "The canonical request reaches a validated immutable input bundle with no PII in LLM artifacts (Wave C, prompts 12-15).",
+  },
+  D: {
+    wave: "D",
+    entryGates: ["C"],
+    entryCondition: "Gate C is green: the canonical request reaches a validated immutable input bundle (Wave C, prompts 12-15).",
+    outcome: "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green, and the prompt-18 authority/approval guarantees (invariants 18 and 19) are proven where they land (Wave D, prompts 16-19).",
+  },
+  E: {
+    wave: "E",
+    entryGates: ["D"],
+    entryCondition: "Gate D is green.",
+    outcome: "A natural-language draft becomes simulated and approved structured policy; policy invariants 14-17 green (Wave E, prompts 20-22).",
+  },
+  F: {
+    wave: "F",
+    entryGates: ["E"],
+    entryCondition: "Gate E is green.",
+    outcome: "Concurrent, repeated, failed, and delayed execution paths are safe and recorded; approval/execution invariants 18-25 green against fakes (Wave F, prompts 23-26).",
+  },
+  G: {
+    wave: "G",
+    entryGates: ["F"],
+    entryCondition: "Gate F is green. Prompt 27 is DEFERRED pending sandbox access (ADR-0024); until the trigger fires no external status claim may be presented as real, and Phase 1 is never declared complete on fakes.",
+    outcome: "The full journey uses a real Salesforce invocation and an honestly labeled returned status; the assembled vertical proves Firm B differs only through configuration and the printable record reconstructs from ledger + replay (invariants 26, 28, 30; Wave G, prompts 27-28).",
+  },
+  H: {
+    wave: "H",
+    entryGates: ["G"],
+    entryCondition: "Gate G is green: the full journey uses a real Salesforce invocation with an honestly labeled returned status (Wave G, prompts 27-28).",
+    outcome: "The demo runs in seven minutes and emits measured proof: the UI distinguishes every decision and execution state, the natural-language policy path is choreographed end to end, and a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work (invariants 27 and 29; Wave H, prompt 29; Phase 1 completion).",
+  },
+  I: {
+    wave: "I",
+    entryGates: ["H"],
+    entryCondition: "Gate H is green: the demo runs in seven minutes on a real Salesforce invocation with an honestly labeled returned status.",
+    outcome: "No unresolved critical finding; all accepted limitations are visible in the demo and documentation (Wave I, prompt 30).",
+  },
 };
 
 /**
- * RATCHET 2 - the COMPLETE typed requirement set of every gate, not merely its
+ * RATCHET 3 - the COMPLETE typed requirement set of every gate, not merely its
  * invariant ids. Pinning ids alone left a gate's `artifact` / `fitness` /
  * `ci-gate` / `evidence` requirements editable by a registry change nothing
  * ratcheted: gate 0's only non-met requirement is its `evidence` clause, so
@@ -142,7 +194,8 @@ const GATE_ENTRY_RATCHET: Record<string, string[]> = {
  * passing (ruling `gatea-fix-review-3`). A gate cannot be talked into readiness by
  * dropping what it cannot yet prove.
  *
- * The ruled sets: Gate A is `{1, 2, 4, 5}` and invariant 3 is required at Gate B
+ * The ruled sets: Gate A owns `{1, 2, 4, 5}` and references the prompt-5
+ * structural guarantees `{7, 8, 9}`; invariant 3 is required at Gate B
  * (ruling `gate-a-ordering`). Gate C references invariant 1; Gate B additionally
  * requires invariant 16, Gate C invariant 11, and Gate D invariants 18 and 19,
  * because each is complete inside that gate's own prompt range (rulings
@@ -160,12 +213,13 @@ const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
     "ci-gate:e2e runs 'pnpm test:e2e' @ prompt 3",
     "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton @ prompt 3",
   ],
-  A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5"],
+  A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5", "invariant:7", "invariant:8", "invariant:9"],
   B: [
     "invariant:3",
     "invariant:16",
     "artifact:config/domains/account-opening.yaml @ prompt 10",
     "artifact:config/domains/money-movement.yaml @ prompt 10",
+    "evidence:both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches @ prompt 10",
     "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
   ],
   C: [
@@ -218,8 +272,13 @@ const requirementKey = (r: GateRequirement): string =>
     : `${r.kind}:${r.ref}${r.kind === "ci-gate" ? ` runs '${r.command}'` : ""} @ prompt ${r.prompt}`;
 
 const ownershipOf = (reg: Registry): Record<string, string> => Object.fromEntries(reg.invariants.map((i) => [String(i.id), i.gate]));
-const entryGatesOf = (reg: Registry): Record<string, string[]> =>
-  Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, gate.entryGates]));
+const metadataOf = (reg: Registry): Record<string, RatchetedGateMetadata> =>
+  Object.fromEntries(
+    Object.entries(reg.gates).map(([key, gate]) => [
+      key,
+      { wave: gate.wave, entryGates: gate.entryGates, entryCondition: gate.entryCondition, outcome: gate.outcome },
+    ]),
+  );
 const requirementsOf = (reg: Registry): Record<string, string[]> =>
   Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, (gate.requires ?? []).map(requirementKey)]));
 const clone = (reg: Registry): Registry => JSON.parse(JSON.stringify(reg)) as Registry;
@@ -236,7 +295,7 @@ describe("v3 gate-ordering fence", () => {
   });
 
   it("enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry", () => {
-    expect(requiredInvariantIds(registry.gates.A)).toEqual([1, 2, 4, 5]);
+    expect(requiredInvariantIds(registry.gates.A)).toEqual([1, 2, 4, 5, 7, 8, 9]);
     expect(requiredInvariantIds(registry.gates.B)).toContain(3);
     expect(registry.invariants.find((i) => i.id === 3)?.gate).toBe("B");
     // Invariant 3 may only be claimed implemented once prompt 10's artifacts exist,
@@ -252,8 +311,8 @@ describe("v3 gate-ordering fence", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
   });
 
-  it("enforces (ratchet): every gate's structural entry predecessors are the ruled ones", () => {
-    expect(entryGatesOf(registry)).toEqual(GATE_ENTRY_RATCHET);
+  it("enforces (ratchet): every gate's wave, structural entry condition, and outcome are the ruled ones", () => {
+    expect(metadataOf(registry)).toEqual(GATE_METADATA_RATCHET);
   });
 
   it("enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one", () => {
@@ -297,19 +356,18 @@ describe("v3 gate-ordering fence", () => {
       entryCondition: entryGates.length === 0 ? "None." : `Gate ${entryGates.join(" and Gate ")} is green.`,
       outcome: "green",
     });
-    // Mirrors the ruled shape: gate B REFERENCES invariant 16, which gate D owns
-    // but which is complete at prompt 9 - inside B - while invariant 7 is already
-    // active and owned by the later gate D.
+    // Mirrors the ruled shape: gates A and B reference invariants proved inside
+    // their prompt ranges while later gates retain activation ownership.
     const base = (): Registry => ({
       gates: {
-        A: gate("A", [4, 7], [inv(1)]),
+        A: gate("A", [4, 7], [inv(1), inv(7)]),
         B: gate("B", [8, 11], [inv(3), inv(16)], ["A"]),
         D: gate("D", [16, 19], [inv(7), inv(16)], ["B"]),
       },
       invariants: [
         { id: 1, gate: "A", name: "one", status: "not-yet-active", activatesWhen: "the surface lands (Wave A prompt 6)", activationPrompts: [6] },
         { id: 3, gate: "B", name: "three", status: "not-yet-active", activatesWhen: "account opening becomes config (Wave B prompt 10)", activationPrompts: [10] },
-        { id: 7, gate: "D", name: "seven", status: "active" },
+        { id: 7, gate: "D", name: "seven", status: "active", activationPrompts: [5] },
         { id: 16, gate: "D", name: "sixteen", status: "not-yet-active", activatesWhen: "the closed policy AST lands (Wave B prompt 9)", activationPrompts: [9] },
       ],
     });
@@ -328,11 +386,17 @@ describe("v3 gate-ordering fence", () => {
       const problems = gateOrderingProblems(reg, () => true);
       expect(problems.some((p) => p.includes("activation owned by gate B") && p.includes("AFTER this gate closes at prompt 7"))).toBe(true);
     });
-    it("flags a gate referencing an ALREADY-ACTIVE invariant a later gate owns (no prompt to short-circuit on)", () => {
+    it("accepts an already-active invariant at its recorded earliest proof point without moving ownership", () => {
       const reg = base();
       reg.gates.A!.requires = [inv(1), inv(7)];
       const problems = gateOrderingProblems(reg, () => true);
-      expect(problems.some((p) => p.includes("activation owned by gate D") && p.includes("where gate D proves its activation"))).toBe(true);
+      expect(problems).toEqual([]);
+    });
+    it("flags an early reference when its recorded proof point is dropped", () => {
+      const reg = base();
+      delete reg.invariants[2]!.activationPrompts;
+      const problems = gateOrderingProblems(reg, () => true);
+      expect(problems.some((p) => p.includes("gate A") && p.includes("activation owned by gate D") && p.includes("where gate D proves its activation"))).toBe(true);
     });
     it("flags a referenced invariant whose activation prompts are dropped, so only its owner gate can place it", () => {
       const reg = base();
@@ -474,11 +538,13 @@ describe("v3 gate-ordering fence", () => {
           "name: ci",
           "jobs:",
           "  e2e:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - name: e2e + axe",
           "        run: pnpm test:e2e",
           "      # golden-cases screenshots are uploaded by e2e/demo-journey.spec.ts",
           "  quality:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: pnpm lint",
           "",
@@ -506,6 +572,7 @@ describe("v3 gate-ordering fence", () => {
           "name: ci",
           "jobs:",
           "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: |",
           "          # pnpm audit:chain temporarily disabled while we debug",
@@ -517,7 +584,7 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
       // but a `#` inside a quoted argument stays part of a dedicated command
       const quoted = parseCiJobs(
-        ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain '# strict'", ""].join("\n"),
+        ["name: ci", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm audit:chain '# strict'", ""].join("\n"),
       );
       expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain '# strict'")).toBe(true);
       expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
@@ -529,10 +596,12 @@ describe("v3 gate-ordering fence", () => {
           "name: ci",
           "jobs:",
           "  quality:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: pnpm lint",
           "# ---- verification gates ----",
           "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: pnpm audit:chain",
           "",
@@ -548,6 +617,7 @@ describe("v3 gate-ordering fence", () => {
           "name: ci",
           "jobs:",
           "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - name: pnpm audit:chain",
           "        run: echo hello",
@@ -571,13 +641,46 @@ describe("v3 gate-ordering fence", () => {
       ];
       for (const script of scripts) {
         const jobs = parseCiJobs(
-          ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: |", ...script.split("\n").map((line) => `          ${line}`), ""].join(
+          ["name: ci", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: |", ...script.split("\n").map((line) => `          ${line}`), ""].join(
             "\n",
           ),
         );
         expect(ciJobCommandStatus(jobs, "audit-chain-verify", "pnpm audit:chain").state, script).toBe("unsafe-shell");
         expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain"), script).toBe(false);
       }
+    });
+
+    it("resolves workflow, job, and step shells and rejects unsupported execution semantics", () => {
+      const workflow = (workflowShell: string, jobShell: string, stepShell: string) =>
+        parseCiJobs(
+          [
+            "name: ci",
+            ...(workflowShell === "" ? [] : ["defaults:", "  run:", `    shell: ${workflowShell}`]),
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            ...(jobShell === "" ? [] : ["    defaults:", "      run:", `        shell: ${jobShell}`]),
+            "    steps:",
+            ...(stepShell === "" ? [] : [`      - shell: ${stepShell}`]),
+            ...(stepShell === "" ? ["      - run: pnpm audit:chain"] : ["        run: pnpm audit:chain"]),
+            "",
+          ].join("\n"),
+        );
+      const status = (workflowShell: string, jobShell: string, stepShell: string) =>
+        ciJobCommandStatus(workflow(workflowShell, jobShell, stepShell), "audit-chain-verify", "pnpm audit:chain");
+
+      expect(status("echo {0}", "", "")).toEqual({ state: "unsafe-shell", reason: "unsupported shell 'echo {0}'" });
+      expect(status("bash", "echo {0}", "")).toEqual({ state: "unsafe-shell", reason: "unsupported shell 'echo {0}'" });
+      expect(status("bash", "sh", "echo {0}")).toEqual({ state: "unsafe-shell", reason: "unsupported shell 'echo {0}'" });
+      expect(status("echo {0}", "bash", "")).toEqual({ state: "proven" });
+      expect(status("bash", "echo {0}", "sh")).toEqual({ state: "proven" });
+      expect(
+        ciJobCommandStatus(
+          parseCiJobs(["jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain", ""].join("\n")),
+          "audit-chain-verify",
+          "pnpm audit:chain",
+        ),
+      ).toEqual({ state: "unsafe-shell", reason: "implicit shell on unsupported runner 'undefined'" });
     });
 
     it("refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)", () => {
@@ -627,11 +730,13 @@ describe("v3 gate-ordering fence", () => {
           "name: ci",
           "jobs:",
           "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: |",
           "          pnpm db:seed",
           "          pnpm audit:chain --strict",
           "  sast:",
+          "    runs-on: ubuntu-latest",
           "    steps:",
           "      - run: >-",
           "          semgrep scan",
@@ -655,9 +760,9 @@ describe("v3 gate-ordering fence", () => {
 
     it("diagnoses a neutralized command separately from a missing command", () => {
       const neutralized = parseCiJobs(
-        ["jobs:", "  quality:", "    steps:", "      - continue-on-error: true", "        run: pnpm lint", ""].join("\n"),
+        ["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - continue-on-error: true", "        run: pnpm lint", ""].join("\n"),
       );
-      const missing = parseCiJobs(["jobs:", "  quality:", "    steps:", "      - run: pnpm typecheck", ""].join("\n"));
+      const missing = parseCiJobs(["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm typecheck", ""].join("\n"));
       expect(ciJobRunProblem(neutralized, "quality", "pnpm lint")).toContain("neutralized by step continue-on-error: true");
       expect(ciJobRunProblem(missing, "quality", "pnpm lint")).toContain("does not run");
     });
@@ -675,11 +780,41 @@ describe("v3 gate-ordering fence", () => {
       const relinked = clone(registry);
       relinked.gates.B!.entryGates = [];
       relinked.gates.B!.entryCondition = "None.";
-      expect(entryGatesOf(relinked)).not.toEqual(GATE_ENTRY_RATCHET);
+      expect(metadataOf(relinked)).not.toEqual(GATE_METADATA_RATCHET);
+      const renamedWave = clone(registry);
+      renamedWave.gates.B!.wave = "Vocabulary";
+      expect(metadataOf(renamedWave)).not.toEqual(GATE_METADATA_RATCHET);
+      const narrowedOutcome = clone(registry);
+      narrowedOutcome.gates.B!.outcome = "Both domain files exist.";
+      expect(metadataOf(narrowedOutcome)).not.toEqual(GATE_METADATA_RATCHET);
+      const softenedEntry = clone(registry);
+      softenedEntry.gates.B!.entryCondition = "Gate A is advisory.";
+      expect(metadataOf(softenedEntry)).not.toEqual(GATE_METADATA_RATCHET);
       // the pinned maps must match the registry they are pinning (no always-failing ratchet)
       expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
-      expect(entryGatesOf(registry)).toEqual(GATE_ENTRY_RATCHET);
+      expect(metadataOf(registry)).toEqual(GATE_METADATA_RATCHET);
       expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
+    });
+
+    it("holds Gate B below green until both domain files are schema-valid and bound through the shared engine", () => {
+      const reg = clone(registry);
+      reg.gates = {
+        B: {
+          ...reg.gates.B!,
+          entryGates: [],
+          entryCondition: "None.",
+          requires: reg.gates.B!.requires.filter(
+            (requirement) =>
+              requirement.kind === "artifact" ||
+              requirement.ref === "both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches",
+          ),
+        },
+      };
+      const deps = { invariantState: () => "active-pass", exists: () => true, ciRuns: () => true, fitnessPassed: () => true };
+      expect(gateReadiness(reg, deps)[0]!.state).toBe("not-yet-verifiable");
+      reg.gates.B!.requires = reg.gates.B!.requires.filter((requirement) => requirement.kind !== "evidence");
+      expect(gateReadiness(reg, deps)[0]!.state).toBe("green");
+      expect(requirementsOf(reg)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
     it("flags a gate DELETING the requirement it cannot yet prove - the one-line edit that turned gate 0 green", () => {

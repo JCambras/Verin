@@ -6153,7 +6153,7 @@ impossibilities).
 `evaluate-primitives.ts`, and delete the evaluate case, property family H, and the two
 temporal-typed world paths (`standing-preference.effectiveOn`, `intent.requestedOn`).
 
-### D-061 · 2026-07-28 · captain-decision · Gate A requires invariants 1, 2, 4, 5; invariant 3 is gated at B
+### D-061 · 2026-07-28 · captain-decision · Gate A owns invariants 1, 2, 4, 5; invariant 3 is gated at B
 
 Gate A (Wave A, prompts 4-7) required all five foundation invariants, but invariant 3 ("no core module,
 directory, or evaluator branch is named for a decision domain") cannot activate until prompt 10 migrates
@@ -6257,10 +6257,25 @@ the public, authenticated, and demo E2E specifications execute Axe; **(6)** the 
 uniquely PF-030, and the Axe proof is PF-031; **(7)** the v3 reading guide now names ADRs 0023-0030.
 All ten gates remain non-green.
 
+The captain-approved earliest-proof/completeness review (2026-07-28) amended ADR-0030 in place a sixth
+time: **(1)** invariants 7, 8, and 9 permanently record prompt 5 as their structural proof point and
+become Gate A requirements without moving Gate D activation ownership; Gate D keeps the distinct
+evaluator/property-test re-assertion; **(2)** Gate B gains prompt-10 schema-validation and shared-engine
+binding evidence for both domain YAML files, so empty or invalid files cannot satisfy the gate by
+existence; **(3)** the metadata ratchet now pins every gate's `wave`, `entryGates`, `entryCondition`, and
+`outcome`, while the requirement ratchet continues to pin every typed proof prompt; **(4)**
+`parseCiJobs` resolves effective workflow, job, and step shells and fails closed on unsupported runners
+or custom shell semantics; **(5)** both v3 charter mappings name and ratchet the exact blocking
+`pnpm v3:invariants` command; **(6)** the Axe fence accepts only an enabled, reachable test that awaits
+analysis and fails on its violations, rejecting skipped, dead, unawaited, unasserted, or unawaited-helper
+scans; **(7)** the ADR index's related-governance range now includes ADR-0030. Focused companions and
+real injection evidence extend PF-030 and PF-031.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
-list - of any requirement kind, including deleting an `evidence` clause - its `entryGates`, or any
+list - of any requirement kind, including deleting an `evidence` clause - its `wave`, `entryGates`,
+`entryCondition`, `outcome`, or any
 invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all three ratchets in
 `src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.

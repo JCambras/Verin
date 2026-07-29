@@ -9978,3 +9978,92 @@ names `pnpm test:e2e`, so charter-drift proves the scanning specifications run i
 **Revert:** the Axe import was restored with `apply_patch`; the focused fence passes.
 
 **Date:** 2026-07-28.
+
+### PF-030 (continued, 6th review round) · earliest proof points, complete metadata, shell semantics, and exact command bindings
+
+**Invariant:** a gate requires every invariant at its earliest complete proof point without moving
+activation ownership; Gate B cannot become green without schema-valid, shared-engine-bound domain
+configuration; the complete gate metadata is ratcheted; and CI evidence uses the effective supported
+shell and the exact mapped blocking command.
+
+**Injection 29 - remove invariant 7's prompt-5 proof point.** Removed only
+`activationPrompts: [5]` from invariant 7 while Gate A continued to require it.
+
+**Observed failure (abridged):**
+```text
+gate A (closes at prompt 7) requires #7, not proven until prompt 19, where gate D proves its activation. That is AFTER the gate closes.
+```
+
+**Injection 30 - delete Gate B's domain-schema and shared-engine evidence.** Removed only the
+prompt-10 evidence requirement while preserving both domain artifact requirements and invariants 3 and
+16.
+
+**Observed failure (abridged):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > keeps Gate B unverifiable until both domain YAML files are schema-valid and bound to the shared engine
+expected 'green' not to be 'green'
+```
+
+**Injection 31 - narrow Gate B's declared outcome.** Replaced its outcome with
+`Both domain files exist.` without changing its typed requirements.
+
+**Observed failure (abridged):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's wave, entry condition, and outcome are the ruled ones
+-     "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch is named for a decision domain) is active and green once prompt 10 migrates account opening into config/domains/ (...).",
++     "outcome": "Both domain files exist.",
+```
+
+**Injection 32 - print the v3 command through a custom shell.** Added `shell: echo {0}` to the
+workflow step whose run text is `pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm v3:invariants' uses unsupported shell 'echo {0}'
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm v3:invariants' uses unsupported shell 'echo {0}'
+```
+
+**Injection 33 - remove an exact charter command binding.** Deleted only the
+`pnpm v3:invariants` command from the `v3-invariants-phase-gated` CI mechanism.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (e') ratchet: load-bearing CI mappings stay bound to their exact blocking commands
+v3-invariants-phase-gated -> ci-gate:v3-invariants must run 'pnpm v3:invariants'
+```
+
+**Companions added:** the gate-ordering fence accepts Gate A's earliest prompt-5 references to
+invariants 7, 8, and 9, then rejects an omitted proof-point record; keeps Gate B unverifiable until its
+domain evidence is independently proven; and rejects changes to every gate's wave, entry condition,
+and outcome. The structured CI companions resolve workflow, job, and step shell precedence and reject
+custom shells and unknown implicit runners. Charter-drift independently ratchets both exact v3 command
+bindings.
+
+**Revert:** all five injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved earliest-proof review).
+
+### PF-031 (continued) · awaited, reachable, assertion-bearing Axe scans
+
+**Invariant (charter #9):** each required E2E surface executes an enabled and reachable Axe analysis,
+awaits it, and makes its reported violations capable of failing the Playwright test.
+
+**Injection:** removed the violations assertion from `e2e/smoke.spec.ts` while retaining the Axe import
+and awaited analysis.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute Axe
+AssertionError: e2e/smoke.spec.ts:1 must execute an enabled, reachable, awaited Axe analysis whose violations fail the Playwright test
+```
+
+**Companions added:** in-memory sources reject scans inside skipped suites and tests, literal dead
+branches, statements after an unconditional return, unawaited analyses, runtime skips, and analyses
+whose violations are never asserted. They accept both direct awaited assertions and awaited helpers
+whose violation assertions gate the calling test, while rejecting the same helper when unawaited.
+
+**Revert:** the assertion was restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28.

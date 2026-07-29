@@ -74,6 +74,11 @@ const RATCHETED_ENFORCED_IDS = [
   "replay-corpus-substrate",
 ];
 
+const RATCHETED_CI_COMMANDS = [
+  { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm v3:invariants" },
+  { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm v3:invariants" },
+] as const;
+
 function blockingCiJobs(): Map<string, CiJob> {
   // ONLY the blocking workflow counts: gate names also appear in the non-blocking
   // scheduled.yml, so a whole-directory scan would stay green after a gate is
@@ -143,6 +148,16 @@ describe("charter-drift fence", () => {
       else if (entry.status !== "enforced") regressions.push(`${id}: status flipped to '${entry.status}'`);
     }
     expect(regressions, `enforced charter entries regressed (the ratchet is monotonic):\n${regressions.join("\n")}`).toEqual([]);
+  });
+
+  it("(e') ratchet: load-bearing CI mappings stay bound to their exact blocking commands", () => {
+    const byId = new Map(allEntries.map((entry) => [String(entry.id), entry]));
+    const regressions = RATCHETED_CI_COMMANDS.flatMap(({ entryId, ref, command }) => {
+      const entry = byId.get(entryId);
+      const bound = entry?.mechanisms.some((mechanism) => mechanism.type === "ci-gate" && mechanism.ref === ref && mechanism.command === command);
+      return bound ? [] : [`${entryId} -> ci-gate:${ref} must run '${command}'`];
+    });
+    expect(regressions, `charter CI command bindings regressed:\n${regressions.join("\n")}`).toEqual([]);
   });
 
   it("(c) all 16 non-negotiables are present in the map", () => {

@@ -1,5 +1,5 @@
 {
-  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G, H, I - G and H are the two separate gates of the ratified wave map, prompts 27-28 and 29) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven, pinned for all 30 invariants by the fence's ratchet) is distinct from gate REQUIREMENT ('gates.<G>.requires', whose COMPLETE typed set is pinned by a second ratchet, so an 'evidence' clause cannot be deleted into a green gate): a gate must require every invariant it owns, and may additionally REFERENCE an invariant another gate owns as long as that invariant is fully proven by the time the referencing gate closes (Gate C restates invariant 1 without taking it from Gate A; Gate B requires invariant 16, whose closed policy AST is complete at prompt 9, though Gate E owns it; Gate D requires invariants 18 and 19, whose authority and approval-binding guarantees are complete at prompt 18, though Gate F owns them). A requirement is set at the EARLIEST gate that can prove the WHOLE invariant, never at the first gate that touches part of it - which is why invariant 6 is required only at Gate D (it needs prompt 15's bundle AND prompt 16's evaluator). ORDERING RULE: nothing a gate requires may land after that gate closes, decided from each requirement's PROOF POINT - the last of an invariant's 'activationPrompts', or, when it declares none, the closing prompt of the gate that owns it (so a reference to an invariant a LATER gate owns fails whether or not it is already active), and a non-invariant requirement's own 'prompt'. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. A 'ci-gate' requirement must name the 'command' its blocking job runs, and is proven only by a job that EXISTS, BLOCKS (no 'continue-on-error', no conditional), and RUNS that command: a job name matching a comment or a path is not evidence, and neither is a present-but-disabled command. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
+  "description": "V3 PHASE-GATED INVARIANT REGISTRY (ADR-0023, ADR-0030). Registers all 30 invariants from docs/v3/verin-architecture-v3.md §17 with their phase gate and ACTIVATION state. HONESTY RULE: this file may only record whether an invariant is 'active' or 'not-yet-active' - it can NEVER store a pass/fail result. active-pass vs active-fail is COMPUTED by running each active invariant's mapped fitness mechanisms (scripts/v3-invariants.ts, blocking CI job 'v3-invariants'; registry integrity fenced by src/__tests__/fitness/v3-invariants.test.ts). A not-yet-active invariant renders visibly distinct from a passing one - never fake green (v3 §17 preamble). GATE MODEL (ADR-0030): every gate of the ratified 30-prompt sequence is registered (0, A, B, C, D, E, F, G, H, I - G and H are the two separate gates of the ratified wave map, prompts 27-28 and 29) with its wave, prompt range, entry condition, outcome, and a list of TYPED requirements - 'invariant' | 'artifact' | 'fitness' | 'ci-gate' (machine-checkable) and 'evidence' (an outcome clause with no executable proof yet, which can never read green). Activation OWNERSHIP ('invariant.gate' - the one gate at which an invariant's activation is proven, pinned for all 30 invariants by the fence's ratchet) is distinct from gate REQUIREMENT ('gates.<G>.requires', whose COMPLETE typed set is pinned by a separate ratchet, so an 'evidence' clause cannot be deleted into a green gate): a gate must require every invariant it owns, and may additionally REFERENCE an invariant another gate owns as long as that invariant is fully proven by the time the referencing gate closes (Gate A references invariants 7, 8, and 9 at their prompt-5 structural proof point without moving Gate D ownership; Gate C restates invariant 1 without taking it from Gate A; Gate B requires invariant 16, whose closed policy AST is complete at prompt 9, though Gate E owns it; Gate D requires invariants 18 and 19, whose authority and approval-binding guarantees are complete at prompt 18, though Gate F owns them). A requirement is set at the EARLIEST gate that can prove the WHOLE invariant, never at the first gate that touches part of it - which is why invariant 6 is required only at Gate D (it needs prompt 15's bundle AND prompt 16's evaluator). ORDERING RULE: nothing a gate requires may land after that gate closes, decided from each requirement's PROOF POINT - the last of an invariant's 'activationPrompts', or, when it declares none, the closing prompt of the gate that owns it (so a reference to an invariant a LATER gate owns fails whether or not it is already active), and a non-invariant requirement's own 'prompt'. A gate with no machine-checkable requirement is rejected, because an empty set would read green merely by being registered. Gate B carries explicit prompt-10 evidence that both domain YAML files parse against their schema and bind through the shared engine; file existence alone never proves that outcome. A 'ci-gate' requirement must name the 'command' its blocking job runs, and is proven only by a job that EXISTS, BLOCKS (no 'continue-on-error', no conditional), and RUNS that command under a supported effective workflow/job/step shell: a job name matching a comment or a path is not evidence, and neither is a present-but-disabled command or one routed through an unsupported custom shell. An invariant naming 'activationArtifacts' may not be flipped to 'active' until those artifacts exist on disk. All of this is one shared rule set (scripts/v3-gates.lib.ts) enforced BOTH by the fence (src/__tests__/fitness/v3-gate-ordering.test.ts) and by the blocking runner, so the two cannot drift. Three ratchets pin activation ownership, complete gate metadata (wave, predecessor chain, entry condition, outcome), and every complete typed requirement set. The 'documents' pins are verified by src/__tests__/fitness/arch-version.test.ts so build work cannot silently target a stale or edited copy of the architecture; if a ratified document legitimately changes, update its sha256 here IN THE SAME PR and review every invariant below for drift.",
   "architectureVersion": "v3",
   "documents": [
     {
@@ -98,13 +98,25 @@
         {
           "kind": "invariant",
           "id": 5
+        },
+        {
+          "kind": "invariant",
+          "id": 7
+        },
+        {
+          "kind": "invariant",
+          "id": 8
+        },
+        {
+          "kind": "invariant",
+          "id": 9
         }
       ],
       "entryGates": [
         "0"
       ],
       "entryCondition": "Gate 0 is green: Wave 0 (prompts 1-3) has landed and the seven-minute journey is clickable on labeled fake data (ADR-0027).",
-      "outcome": "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7). Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030)."
+      "outcome": "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7), and the prompt-5 structural guarantees of invariants 7, 8, and 9 are required at their earliest complete proof point without moving their Gate D activation ownership. Gate D later re-asserts invariants 7, 8, and 9 over evaluator behavior. Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030)."
     },
     "B": {
       "wave": "B",
@@ -135,6 +147,12 @@
         },
         {
           "kind": "evidence",
+          "ref": "both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches",
+          "prompt": 10,
+          "note": "NO MECHANISM YET: the prompt-10 domain schema, loader, shared-engine binding, and both domain YAML files do not exist. File existence alone cannot prove valid configuration or shared-engine binding, so this clause stays unverifiable until prompt 10 replaces it with an adversarial fitness requirement covering invalid, empty, and domain-specific configurations."
+        },
+        {
+          "kind": "evidence",
           "ref": "the deterministic replay corpus and signed golden fixtures are stable",
           "prompt": 11,
           "note": "NO MECHANISM YET: prompt 11's deterministic synthetic corpus generator, immutable signed fixtures, expected hashes, and provenance-labeled real-derived cases do not exist, so nothing yet proves byte-identical regeneration or corpus reference integrity."
@@ -143,7 +161,7 @@
       "entryGates": [
         "A"
       ],
-      "entryCondition": "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A's corrected requirements (invariants 1, 2, 4, 5) are active and green (ADR-0030).",
+      "entryCondition": "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A is green: its owned foundation invariants 1, 2, 4, and 5 and its earliest-proof references to invariants 7, 8, and 9 are active and green (ADR-0030).",
       "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030)."
     },
     "C": {
@@ -551,13 +569,16 @@
       "name": "A proceed decision cannot exist without authority and an execution plan",
       "status": "active",
       "activatesWhen": "",
+      "activationPrompts": [
+        5
+      ],
       "mechanisms": [
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
         }
       ],
-      "notes": "Structural since prompt 5 (ADR-0029): ProceedDecision is a strict schema REQUIRING authority + executionPlan (src/contracts/decision-core/decision.ts); the fence proves the missing/empty variants are parse errors. Prompt 17 adds property tests over the evaluator."
+      "notes": "Structural since prompt 5 (ADR-0029): ProceedDecision is a strict schema REQUIRING authority + executionPlan (src/contracts/decision-core/decision.ts); the fence proves the missing/empty variants are parse errors. Gate A requires this structural guarantee at its earliest complete proof point without moving activation ownership. Gate D re-asserts it over prompt 17 evaluator property tests."
     },
     {
       "id": 8,
@@ -566,13 +587,16 @@
       "name": "A blocked decision cannot carry authority or an execution plan",
       "status": "active",
       "activatesWhen": "",
+      "activationPrompts": [
+        5
+      ],
       "mechanisms": [
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
         }
       ],
-      "notes": "Structural since prompt 5 (ADR-0029): BlockedDecision is a strict schema with no authority/plan keys - a smuggled key is a parse error. Prompt 17 adds property tests over the evaluator."
+      "notes": "Structural since prompt 5 (ADR-0029): BlockedDecision is a strict schema with no authority/plan keys - a smuggled key is a parse error. Gate A requires this structural guarantee at its earliest complete proof point without moving activation ownership. Gate D re-asserts it over prompt 17 evaluator property tests."
     },
     {
       "id": 9,
@@ -581,13 +605,16 @@
       "name": "A prohibited decision cannot carry a resolving condition, authority, or execution plan",
       "status": "active",
       "activatesWhen": "",
+      "activationPrompts": [
+        5
+      ],
       "mechanisms": [
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/decision-core-illegal-states.test.ts"
         }
       ],
-      "notes": "Structural since prompt 5 (ADR-0029): ProhibitedDecision/Prohibition are strict schemas with no authority, plan, or resolving-evidence channel, and a prohibited DecisionRecord admits no revaluation conditions. Prompt 17 adds property tests over the evaluator."
+      "notes": "Structural since prompt 5 (ADR-0029): ProhibitedDecision/Prohibition are strict schemas with no authority, plan, or resolving-evidence channel, and a prohibited DecisionRecord admits no revaluation conditions. Gate A requires this structural guarantee at its earliest complete proof point without moving activation ownership. Gate D re-asserts it over prompt 17 evaluator property tests."
     },
     {
       "id": 10,

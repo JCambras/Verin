@@ -47,7 +47,7 @@ on its own and is subordinate to the ratified documents below.
 | [0041](../adr/0041-sibling-decision-ledger.md) | Prompt 7 landed: the append-only `decision_ledger` as a SIBLING of the operational `audit_log` (never an extension of it), with immutable replay sources, the vocabulary frozen at 16 event types (v3's 14 plus `ApprovalStageExpired`/`ApprovalStageEscalated`), deterministic projections, and the read-only register at `/app/ledger`; amends ADR-0007, ADR-0018, and ADR-0019, and is itself amended by ADR-0042, ADR-0044, ADR-0046, and ADR-0047 (with the rest of the ADR-0042..0051 series carrying the line budgets); invariant 5's mechanisms and invariant 2's tenancy notes extended, while invariants 4 and 23 gain substrate mechanisms and stay not-yet-active |
 | [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11 landed: the §2.4 replay corpus as a deterministic synthetic substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; `scripts/**` becomes a measured `tooling` budget (amends ADR-0018); no invariant is activated |
 | [0053](../adr/0053-policy-ast-and-interpreter.md) | Prompt 9 landed: the §6.1 constrained policy AST as a CLOSED grammar in `src/contracts/decision-core/policy.ts` (grammar 1.0.0 active; 1.1.0 adds only the reserved `elapsed` op, refused by the loader as grammar-only) plus the pure deterministic interpreter `src/domain/policy/` (seven-check loader, conservative effect-conflict rejection, four-phase fail-closed evaluator); invariant 16 activates; contracts and domain ceilings re-baselined by [ADR-0054](../adr/0054-line-budget-policy-ast.md) (amends ADR-0041 and ADR-0051) |
-| [0030](../adr/0030-gate-a-invariant-ordering.md) | Gate A requires invariants 1, 2, 4, and 5; invariant 3 is gated at **B** (its prerequisite is prompt 10) - the circular Gate A dependency is removed without faking green (amends ADR-0023) |
+| [0030](../adr/0030-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, and 5 and requires prompt-5 guarantees 7, 8, and 9; invariant 3 is gated at **B** (its prerequisite is prompt 10) |
 
 ## The 30 invariants, phase-gated
 
@@ -65,7 +65,8 @@ condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, 
 green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
 every invariant it owns, and may additionally reference an invariant another gate owns as long as that
 invariant is fully proven by the time the referencing gate closes. A requirement is set at the EARLIEST
-gate that can prove the WHOLE invariant - so Gate B requires invariant 16 (closed policy AST, complete at
+gate that can prove the WHOLE invariant - so Gate A requires the prompt-5 structural guarantees of
+invariants 7, 8, and 9 without moving their Gate D ownership, Gate B requires invariant 16 (closed policy AST, complete at
 prompt 9), Gate C requires invariant 11 (validation stage, complete at prompt 15), and Gate D requires
 invariants 18 and 19 (approval stages and approval invalidation, complete at prompt 18) without taking
 any of them from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
@@ -75,24 +76,29 @@ set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
 declares no machine-checkable requirement (an empty set would read green merely by being registered), or
 if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
-parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of each `run` script. The
+parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of each `run` script and its
+effective workflow/job/step shell. The
 required command must be a dedicated simple command whose exit status controls its step, so a command
 named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
 `env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
 neutralized by `continue-on-error` or an `if:`.
+An unsupported runner or custom shell is non-evidence because its execution semantics are not proven.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too. A gate's
 `awaiting:` line names every requirement holding it back, undecidable ones included. Three ratchets in
-the fence pin the complete 30-invariant gate-assignment map, every gate's structural predecessor chain,
-and every gate's COMPLETE TYPED requirement set including each non-invariant proof prompt. Readiness
+the fence pin the complete 30-invariant gate-assignment map, complete gate metadata (wave, structural
+predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED requirement set including
+each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered gate 0
-green. Gate B includes prompt 11's stable-corpus evidence, Gate F includes prompt 26's verification
+green. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
+stable-corpus evidence, Gate F includes prompt 26's verification
 reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
-("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
-4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
+("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,
+4, and 5 and also requires prompt-5 structural guarantees 7, 8, and 9 at their earliest proof point**;
+invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
 opening becomes domain configuration - is in Wave B. Invariant 3 is not weakened or waived: until prompt
 10 exists, no document, proof, or UI may claim it is implemented.
 
