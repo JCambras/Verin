@@ -10863,3 +10863,78 @@ the existing `!cancelled()` predicate remains accepted.
 fence files and all 17 tests.
 
 **Date:** 2026-07-29.
+
+### PF-031 (continued) · stable positive helpers and transitive neutralizers
+
+**Invariant (charter #9):** a required Axe scan must call the sanctioned helper through stable imported
+provenance, and no bound or transitively invoked Playwright neutralizer may disable that scan. Local
+callable indirection that cannot be resolved is non-evidence.
+
+**Injection 17 - make the positive helper assignment unreachable.** Replaced the public scan with a
+runtime no-op alias and assigned the sanctioned helper only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 18 - bind the skip annotation.** Bound `test.skip` to a local `disable` function and invoked
+it before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 19 - invoke a local neutralizer helper.** Added a local function that calls
+`test.info().fixme(...)`, then invoked it before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reproduce the unreachable positive-helper assignment,
+the bound neutralizer, the invoked local helper, and an unresolved conditional callable. Stable imported
+aliases remain accepted.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both
+fence files and all 20 tests; the complete fitness suite passed all 447 tests.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · resolved journey inputs and closed callback graph
+
+**Invariant (Gate 0, ADR-0030):** the dynamic page must request the exact resolved scenario and firm, and
+the canonical clickable journey must use the real product controls without manufacturing replacements
+or navigating through another test-side mechanism.
+
+**Injection 14 - replace the resolved scenario.** Changed the route's service call from
+`getJourney(scenarioId, firmId)` to `getJourney("safe-proceed", firmId)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 15 - inject a replacement product control.** Added `page.evaluate` before the canonical
+intent transition to append a link with the expected accessible name and destination, then clicked it.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** in-memory routes reject either resolved input being replaced; the journey service
+is exercised across every scenario and firm; and canonical callbacks reject DOM injection plus alternate
+navigation after a valid click while preserving the required control sequence.
+
+**Revert:** both real injections were removed immediately. The restored focused run passed both fence
+files and all 20 tests; the complete fitness suite passed all 447 tests.
+
+**Date:** 2026-07-29.

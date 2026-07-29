@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, and the captain-approved reachability and delivery review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, and the captain-approved callable-provenance and Gate 0 route-graph review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -234,6 +234,10 @@ earlier selection settings. Each sanctioned route loop is a direct statement of 
 test, outside uncalled functions and caught branches. Its route collection must come from a stable import
 or immutable alias rather than a later assignment, and any reachable callback exit before the loop makes
 the scan non-evidence. The shared AST control-flow proof applies the same rule to canonical screenshots.
+Positive Axe-helper proof also requires stable imported callable provenance: a later assignment, including
+one hidden in unreachable control flow, cannot turn a no-op alias into evidence. Neutralizer provenance
+follows bound Playwright members and transitively invoked local helpers; unresolved local callable
+indirection fails closed.
 Configuration property names are normalized across direct and computed literal syntax at the root and
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
@@ -243,8 +247,13 @@ instead of leaving open a hidden selection override.
 `docs/demo-contract.md` section 4 list, and both are ratcheted to the exact twelve identities in the
 SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract. Every dynamic route case returns the
 component imported from the manifest's exact component path, every component exists, and the dynamic
-page's validated return must be provably reachable. The canonical journey must click the complete ordered
-set of accessible product controls, may not substitute `page.goto`, and directly awaits each surface
+page's validated return must be provably reachable. The page passes the exact resolved scenario and firm
+identifiers to `getJourney`, and an exhaustive scenario-by-firm proof checks that the service preserves
+the recorded branch, firm, outcome class, and disposition. The canonical journey must click the complete
+ordered set of accessible product controls, including the source-verification button. Its complete
+top-level statement graph is restricted to those clicks, read-only loaded-state assertions, and sanctioned
+helpers, so DOM mutation, injected controls, or alternate navigation cannot manufacture the route graph.
+It directly awaits each surface
 screenshot in order. Each `snap` call names its manifest station,
 and the helper verifies the station URL plus its surface-specific loaded marker before directly awaiting
 `page.screenshot` into `demo-screens` and asserting that the returned capture is non-empty. The
@@ -404,7 +413,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   rejected if any preceding assignment source resolves to `test.skip`, `test.fixme`, or `test.fail`,
   including when a later unreachable assignment appears benign.
   TestInfo neutralizers are also resolved from callback parameters and from `test.info()` return values,
-  including aliases and destructuring.
+  including aliases and destructuring. Sanctioned Axe-helper aliases must have stable, unreassigned
+  imported provenance. Bound neutralizers and local helpers that invoke neutralizers are followed
+  transitively, while unresolved local callable indirection is non-evidence.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -414,7 +425,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
   manifest, each route case's imported component, the dynamic page's resolved station argument and loaded
-  marker through a provably reachable return, the complete ordered clickable-control route graph, and
+  marker through a provably reachable return, the resolved scenario and firm inputs to `getJourney`,
+  every supported scenario-by-firm outcome, the complete ordered clickable-control route graph, and
   direct awaited ordered screenshots with no `page.goto` substitute. Both the launcher and station screenshot helpers verify
   their corresponding URL and loaded marker, write only to the pinned artifact directory, and reject an
   empty capture. A dedicated post-Playwright command validates every canonical artifact,

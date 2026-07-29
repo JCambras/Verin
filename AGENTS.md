@@ -256,7 +256,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
   assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
   Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
-  required tests and their registered hooks,
+  required tests and their registered hooks, requires stable positive helper provenance, follows bound
+  and transitively invoked local neutralizers, and fails closed on unresolved local callable indirection,
   proves Playwright forbids focused exclusion and selects the required specs, and binds every public,
   authenticated, and demo route to its loaded-state scan. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.

@@ -23,6 +23,12 @@ import {
   DEMO_SURFACES,
   type DemoSurfaceDefinition,
 } from "../../app/demo/surface-contract";
+import {
+  dispositionFor,
+  FIRMS,
+  SCENARIOS,
+} from "../../app/demo/data";
+import { getJourney } from "../../app/demo/journey";
 import { DEMO_SEQUENCE } from "../../app/demo/model";
 import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
@@ -35,21 +41,22 @@ const CI_PATH = ".github/workflows/ci.yml";
 const ARTIFACT_COMMAND =
   "pnpm exec tsx scripts/demo-screen-artifacts.ts";
 const JOURNEY_TEST = "the seven-minute journey is clickable end-to-end on labeled fakes";
-const CANONICAL_JOURNEY_LINKS = [
-  "Demo",
-  "Run the seven-minute journey",
-  "Ask Verin about this household",
-  "Gather evidence",
-  "View the recommendation",
-  "View the policy trace",
-  "Continue to authority",
-  "Approve this movement",
-  "Execute the movement",
-  "View verification",
-  "Compare Firm A and Firm B",
-  "Author a policy change",
-  "Approve and activate FA-4.3",
-  "View the printable decision record",
+const CANONICAL_JOURNEY_CONTROLS = [
+  "link:Demo",
+  "link:Run the seven-minute journey",
+  "link:Ask Verin about this household",
+  "link:Gather evidence",
+  "link:View the recommendation",
+  "link:View the policy trace",
+  "link:Continue to authority",
+  "link:Approve this movement",
+  "button:Verify source",
+  "link:Execute the movement",
+  "link:View verification",
+  "link:Compare Firm A and Firm B",
+  "link:Author a policy change",
+  "link:Approve and activate FA-4.3",
+  "link:View the printable decision record",
 ] as const;
 const RATIFIED_SURFACE_RATCHET = [
   "Household workspace",
@@ -230,6 +237,62 @@ function routePageUsesResolvedStation(source: string): boolean {
   ) {
     return false;
   }
+  const directConst = (name: string) =>
+    body
+      .getStatements()
+      .filter(Node.isVariableStatement)
+      .filter(
+        (variable) =>
+          variable.getDeclarationKind() ===
+          VariableDeclarationKind.Const,
+      )
+      .flatMap((variable) => variable.getDeclarations())
+      .find((declaration) => declaration.getName() === name);
+  const scenarioId = directConst("scenarioId");
+  const firmId = directConst("firmId");
+  const journeyDeclaration = directConst("journey");
+  const isResolvedInput = (
+    declaration: typeof scenarioId,
+    resolver: string,
+    query: string,
+  ) => {
+    const resolution = declaration?.getInitializer();
+    return (
+      resolution !== undefined &&
+      Node.isCallExpression(resolution) &&
+      isNamedImportIdentifier(
+        resolution.getExpression(),
+        "@app/demo/data",
+        resolver,
+      ) &&
+      resolution.getArguments().length === 1 &&
+      resolution.getArguments()[0]?.getText() === `first(sp.${query})`
+    );
+  };
+  const journeyInitializer = journeyDeclaration?.getInitializer();
+  if (
+    !isResolvedInput(scenarioId, "resolveScenarioId", "scenario") ||
+    !isResolvedInput(firmId, "resolveFirmId", "firm") ||
+    !Node.isCallExpression(journeyInitializer) ||
+    !isNamedImportIdentifier(
+      journeyInitializer.getExpression(),
+      "@app/demo/journey",
+      "getJourney",
+    ) ||
+    journeyInitializer.getArguments().length !== 2
+  ) {
+    return false;
+  }
+  const [scenarioArgument, firmArgument] =
+    journeyInitializer.getArguments();
+  if (
+    !Node.isIdentifier(scenarioArgument) ||
+    scenarioArgument.getSymbol() !== scenarioId?.getSymbol() ||
+    !Node.isIdentifier(firmArgument) ||
+    firmArgument.getSymbol() !== firmId?.getSymbol()
+  ) {
+    return false;
+  }
   const returnStatement = body.getStatements().find(Node.isReturnStatement);
   if (
     returnStatement === undefined ||
@@ -281,7 +344,8 @@ function routePageUsesResolvedStation(source: string): boolean {
     call.getArguments().length === 4 &&
     Node.isIdentifier(stationArgument) &&
     stationArgument.getSymbol() === resolved.getSymbol() &&
-    journey?.getText() === "journey" &&
+    Node.isIdentifier(journey) &&
+    journey.getSymbol() === journeyDeclaration?.getSymbol() &&
     ids?.getText() === "ids" &&
     approved?.getText() === "approved"
   );
@@ -373,7 +437,7 @@ function nearestFunction(node: Node): Node | undefined {
     );
 }
 
-function linkClickLabel(statement: Node): string | undefined {
+function controlClickKey(statement: Node): string | undefined {
   if (!Node.isExpressionStatement(statement)) return undefined;
   const awaited = statement.getExpression();
   if (!Node.isAwaitExpression(awaited)) return undefined;
@@ -401,8 +465,12 @@ function linkClickLabel(statement: Node): string | undefined {
   const [role, options] = getByRole.getArguments();
   if (
     !Node.isStringLiteral(role) ||
-    role.getLiteralText() !== "link" ||
-    !Node.isObjectLiteralExpression(options)
+    !Node.isObjectLiteralExpression(options) ||
+    options.getProperties().some(
+      (property) =>
+        !Node.isPropertyAssignment(property) ||
+        !["name", "exact"].includes(property.getName()),
+    )
   ) {
     return undefined;
   }
@@ -410,12 +478,20 @@ function linkClickLabel(statement: Node): string | undefined {
   const initializer = Node.isPropertyAssignment(name)
     ? name.getInitializer()
     : undefined;
+  const exact = options.getProperty("exact");
+  if (
+    exact !== undefined &&
+    (!Node.isPropertyAssignment(exact) ||
+      exact.getInitializer()?.getKind() !== SyntaxKind.TrueKeyword)
+  ) {
+    return undefined;
+  }
   return Node.isStringLiteral(initializer)
-    ? initializer.getLiteralText()
+    ? `${role.getLiteralText()}:${initializer.getLiteralText()}`
     : undefined;
 }
 
-function canonicalJourneyControlLabels(source: string): string[] {
+function canonicalJourneyControlKeys(source: string): string[] {
   const file = parsedSourceFile("/demo.spec.ts", source);
   const callback = canonicalJourneyCallback(file);
   const body = callback?.getBody();
@@ -428,9 +504,214 @@ function canonicalJourneyControlLabels(source: string): string[] {
   }
   return body.getStatements().flatMap((statement) => {
     if (!isProvablyReachable(statement, callback)) return [];
-    const label = linkClickLabel(statement);
-    return label === undefined ? [] : [label];
+    const key = controlClickKey(statement);
+    return key === undefined ? [] : [key];
   });
+}
+
+function isLocalFunctionCall(
+  call: Node,
+  file: SourceFile,
+  name: string,
+): boolean {
+  if (!Node.isCallExpression(call)) return false;
+  const expression = call.getExpression();
+  const fn = file.getFunction(name);
+  return (
+    fn !== undefined &&
+    Node.isIdentifier(expression) &&
+    expression
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => declaration === fn) === true
+  );
+}
+
+function isSideEffectFreeLiteralStructure(node: Node): boolean {
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNumericLiteral(node) ||
+    Node.isRegularExpressionLiteral(node)
+  ) {
+    return true;
+  }
+  if (
+    node.getKind() === SyntaxKind.TrueKeyword ||
+    node.getKind() === SyntaxKind.FalseKeyword
+  ) {
+    return true;
+  }
+  if (!Node.isObjectLiteralExpression(node)) return false;
+  return node.getProperties().every((property) => {
+    if (!Node.isPropertyAssignment(property)) return false;
+    const name = property.getNameNode();
+    if (!Node.isIdentifier(name) && !Node.isStringLiteral(name)) {
+      return false;
+    }
+    const initializer = property.getInitializer();
+    return (
+      initializer !== undefined &&
+      isSideEffectFreeLiteralStructure(initializer)
+    );
+  });
+}
+
+function isSanctionedPageRead(node: Node | undefined): boolean {
+  if (node === undefined) return false;
+  const expression = Node.isAwaitExpression(node)
+    ? node.getExpression()
+    : node;
+  if (!Node.isCallExpression(expression)) return false;
+  const access = expression.getExpression();
+  if (!Node.isPropertyAccessExpression(access)) return false;
+  const receiver = access.getExpression();
+  if (
+    Node.isIdentifier(receiver) &&
+    receiver.getText() === "page" &&
+    ["getByRole", "getByText", "getByTestId"].includes(
+      access.getName(),
+    )
+  ) {
+    return expression
+      .getArguments()
+      .every(isSideEffectFreeLiteralStructure);
+  }
+  return (
+    ["first", "count"].includes(access.getName()) &&
+    expression.getArguments().length === 0 &&
+    isSanctionedPageRead(receiver)
+  );
+}
+
+function isSanctionedAssertion(statement: Node): boolean {
+  if (!Node.isExpressionStatement(statement)) return false;
+  const outer = statement.getExpression();
+  const matcherCall = Node.isAwaitExpression(outer)
+    ? outer.getExpression()
+    : outer;
+  if (!Node.isCallExpression(matcherCall)) return false;
+  const matcher = matcherCall.getExpression();
+  if (!Node.isPropertyAccessExpression(matcher)) return false;
+  const expectation = matcher.getExpression();
+  if (
+    !Node.isCallExpression(expectation) ||
+    !isNamedImportIdentifier(
+      expectation.getExpression(),
+      "@playwright/test",
+      "expect",
+    ) ||
+    expectation.getArguments().length !== 1 ||
+    !isSanctionedPageRead(expectation.getArguments()[0])
+  ) {
+    return false;
+  }
+  const args = matcherCall.getArguments();
+  switch (matcher.getName()) {
+    case "toBeVisible":
+      return args.length === 0;
+    case "toHaveCount":
+    case "toBeGreaterThan":
+      return (
+        args.length === 1 &&
+        Node.isNumericLiteral(args[0])
+      );
+    case "toContainText":
+      return (
+        args.length === 1 &&
+        Node.isStringLiteral(args[0])
+      );
+    default:
+      return false;
+  }
+}
+
+function isSanctionedHelperCall(
+  statement: Node,
+  file: SourceFile,
+): boolean {
+  if (!Node.isExpressionStatement(statement)) return false;
+  const awaited = statement.getExpression();
+  if (!Node.isAwaitExpression(awaited)) return false;
+  const call = awaited.getExpression();
+  if (!Node.isCallExpression(call)) return false;
+  const args = call.getArguments();
+  if (
+    isNamedImportIdentifier(
+      call.getExpression(),
+      "./helpers",
+      "login",
+    )
+  ) {
+    return (
+      args.length === 2 &&
+      args[0]?.getText() === "page" &&
+      args[1]?.getText() === "PRINCIPAL"
+    );
+  }
+  if (
+    isNamedImportIdentifier(
+      call.getExpression(),
+      "./axe",
+      "assertNoAxeViolations",
+    )
+  ) {
+    return (
+      args.length === 2 &&
+      args[0]?.getText() === "page" &&
+      Node.isStringLiteral(args[1])
+    );
+  }
+  if (isLocalFunctionCall(call, file, "snapLauncher")) {
+    return args.length === 1 && args[0]?.getText() === "page";
+  }
+  if (isLocalFunctionCall(call, file, "expectDevBadge")) {
+    return args.length === 1 && args[0]?.getText() === "page";
+  }
+  return (
+    isLocalFunctionCall(call, file, "snap") &&
+    args.length === 4 &&
+    args[0]?.getText() === "page" &&
+    Node.isNumericLiteral(args[1]) &&
+    Node.isStringLiteral(args[2]) &&
+    Node.isStringLiteral(args[3])
+  );
+}
+
+function hasSanctionedDevBadgeHelper(file: SourceFile): boolean {
+  const helper = file.getFunction("expectDevBadge");
+  const body = helper?.getBody();
+  return (
+    helper !== undefined &&
+    helper.isAsync() &&
+    helper.getParameters().map((parameter) => parameter.getName()).join(",") ===
+      "page" &&
+    Node.isBlock(body) &&
+    body.getStatements().length === 1 &&
+    body.getStatements()[0]?.getText() ===
+      'expect(await page.getByTestId("dev-provenance-badge").count()).toBeGreaterThan(0);'
+  );
+}
+
+function canonicalJourneyStatementGraphIsSanctioned(
+  source: string,
+): boolean {
+  const file = parsedSourceFile("/demo.spec.ts", source);
+  const callback = canonicalJourneyCallback(file);
+  const body = callback?.getBody();
+  if (
+    callback === undefined ||
+    !Node.isBlock(body) ||
+    !hasSanctionedDevBadgeHelper(file)
+  ) {
+    return false;
+  }
+  return body.getStatements().every(
+    (statement) =>
+      isProvablyReachable(statement, callback) &&
+      (controlClickKey(statement) !== undefined ||
+        isSanctionedAssertion(statement) ||
+        isSanctionedHelperCall(statement, file)),
+  );
 }
 
 function canonicalJourneyUsesProgrammaticNavigation(source: string): boolean {
@@ -667,7 +948,7 @@ export function surfaceCompletenessProblems(
   }
   if (!routePageUsesResolvedStation(route)) {
     problems.push(
-      `${ROUTE_PATH}:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker`,
+      `${ROUTE_PATH}:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker`,
     );
   }
 
@@ -691,8 +972,9 @@ export function surfaceCompletenessProblems(
   }
   if (
     canonicalJourneyUsesProgrammaticNavigation(e2e) ||
-    JSON.stringify(canonicalJourneyControlLabels(e2e)) !==
-      JSON.stringify(CANONICAL_JOURNEY_LINKS)
+    !canonicalJourneyStatementGraphIsSanctioned(e2e) ||
+    JSON.stringify(canonicalJourneyControlKeys(e2e)) !==
+      JSON.stringify(CANONICAL_JOURNEY_CONTROLS)
   ) {
     problems.push(
       `${E2E_PATH}:1 canonical journey must traverse the complete product route graph through its expected clickable controls`,
@@ -880,6 +1162,14 @@ describe("demo-surface-completeness fence", () => {
           "  return (\n    <div data-demo-surface={resolvedStation}>",
           '  if (true) return <div data-demo-surface="workspace"><WorkspaceSurface vm={journey.workspace} {...ids} /></div>;\n  return (\n    <div data-demo-surface={resolvedStation}>',
         ),
+        route.replace(
+          "getJourney(scenarioId, firmId)",
+          'getJourney("safe-proceed", firmId)',
+        ),
+        route.replace(
+          "getJourney(scenarioId, firmId)",
+          'getJourney(scenarioId, "firm-a")',
+        ),
       ]) {
         expect(
           surfaceCompletenessProblems(
@@ -918,6 +1208,26 @@ describe("demo-surface-completeness fence", () => {
         e2e.replace(
           workspaceControl,
           '  await page.getByRole("link", { name: "Different control" }).click();',
+        ),
+        e2e.replace(
+          workspaceControl,
+          `  await page.evaluate(() => {
+    const link = document.createElement("a");
+    link.href = "/app/demo/intent?scenario=recent-bank-change-block&firm=firm-a";
+    link.textContent = "Ask Verin about this household";
+    document.body.append(link);
+  });
+${workspaceControl}`,
+        ),
+        e2e.replace(
+          workspaceControl,
+          '  await page.getByRole("link", { name: "Ask Verin about this household", ...(await page.evaluate(() => ({ exact: false }))) }).click();',
+        ),
+        e2e.replace(
+          workspaceControl,
+          `${workspaceControl}
+  await page.goBack();
+  await page.goForward();`,
         ),
       ]) {
         expect(
@@ -1064,6 +1374,22 @@ describe("demo-surface-completeness fence", () => {
           ),
           invalidHelper,
         ).not.toEqual([]);
+      }
+    });
+
+    it("preserves every supported scenario and firm outcome through the journey service", () => {
+      for (const scenario of SCENARIOS) {
+        for (const firm of Object.values(FIRMS)) {
+          const journey = getJourney(scenario.id, firm.id);
+          expect(journey.scenarioId).toBe(scenario.id);
+          expect(journey.firmId).toBe(firm.id);
+          expect(journey.scenarioTitle).toBe(scenario.title);
+          expect(journey.firmName).toBe(firm.name);
+          expect(journey.outcomeClass).toBe(scenario.outcomeClass);
+          expect(journey.recommendation.disposition.kind).toBe(
+            dispositionFor(scenario, firm.id),
+          );
+        }
       }
     });
 

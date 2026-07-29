@@ -6372,6 +6372,17 @@ complete ordered accessible-control graph and cannot substitute `page.goto`; and
 `demo-screens` upload rejects false conditions and `continue-on-error` while allowing the current
 `!cancelled()` predicate. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
 
+The captain-approved callable-provenance and Gate 0 route-graph review (2026-07-29) amended ADR-0030
+in place a seventeenth time: **(1)** positive Axe-helper aliases must have stable imported provenance,
+so an unreachable reassignment cannot make a runtime no-op count as the sanctioned scan; **(2)** bound
+Playwright neutralizers and transitively invoked local neutralizer helpers are resolved, while unresolved
+local callable indirection fails closed; **(3)** the dynamic demo page passes its exact resolved scenario
+and firm identifiers to `getJourney`, with every supported scenario-by-firm outcome checked exhaustively;
+and **(4)** the canonical clickable journey admits only the complete ordered product-control graph,
+read-only loaded-state assertions, and sanctioned helpers, so DOM mutation, injected controls, and
+alternate navigation are non-evidence. PF-031 and PF-032 record the red reproductions, companions, and
+restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

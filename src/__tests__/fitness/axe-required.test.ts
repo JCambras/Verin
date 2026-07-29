@@ -315,6 +315,13 @@ function memberAccess(
   return undefined;
 }
 
+function boundCallableTarget(node: Node): Node | undefined {
+  const normalized = unwrapExpression(node);
+  if (!Node.isCallExpression(normalized)) return undefined;
+  const access = memberAccess(normalized.getExpression());
+  return access?.name === "bind" ? access.receiver : undefined;
+}
+
 function staticPropertyName(node: Node): string | undefined {
   if (Node.isIdentifier(node) || Node.isStringLiteral(node)) {
     return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
@@ -364,6 +371,19 @@ function isNamedImportMemberExpression(
   if (
     access?.name === member &&
     isNamedImportIdentifier(access.receiver, moduleName, imported)
+  ) {
+    return true;
+  }
+  const boundTarget = boundCallableTarget(normalized);
+  if (
+    boundTarget !== undefined &&
+    isNamedImportMemberExpression(
+      boundTarget,
+      moduleName,
+      imported,
+      member,
+      new Set(seen),
+    )
   ) {
     return true;
   }
@@ -492,6 +512,19 @@ function couldBeNamedImportMemberExpression(
   if (
     access?.name === member &&
     couldBeNamedImportIdentifier(access.receiver, moduleName, imported)
+  ) {
+    return true;
+  }
+  const boundTarget = boundCallableTarget(normalized);
+  if (
+    boundTarget !== undefined &&
+    couldBeNamedImportMemberExpression(
+      boundTarget,
+      moduleName,
+      imported,
+      member,
+      new Set(seen),
+    )
   ) {
     return true;
   }
@@ -650,6 +683,18 @@ function couldBeTestInfoMember(
   ) {
     return true;
   }
+  const boundTarget = boundCallableTarget(normalized);
+  if (
+    boundTarget !== undefined &&
+    couldBeTestInfoMember(
+      boundTarget,
+      origins,
+      member,
+      new Set(seen),
+    )
+  ) {
+    return true;
+  }
   if (!Node.isIdentifier(normalized)) return false;
   if (
     precedingAssignmentValues(normalized).some((assigned) =>
@@ -691,8 +736,13 @@ function couldBeTestInfoMember(
   );
 }
 
-function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
-  const parameter = callback.getParameters()[1]?.getNameNode();
+function testInfoOrigins(
+  fn: FunctionNode,
+): {
+  origins: ReadonlySet<MorphSymbol>;
+  destructuredMembers: ReadonlyMap<MorphSymbol, string>;
+} {
+  const parameter = fn.getParameters()[1]?.getNameNode();
   const origins = new Set<MorphSymbol>();
   const destructuredMembers = new Map<MorphSymbol, string>();
   if (Node.isIdentifier(parameter)) {
@@ -714,9 +764,94 @@ function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
       }
     }
   }
-  return ownedCalls(callback).some((call) =>
+  return { origins, destructuredMembers };
+}
+
+function localCallableFunctions(
+  node: Node,
+  seen = new Set<Node>(),
+): FunctionNode[] {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return [];
+  seen.add(normalized);
+  if (isFunctionNode(normalized)) return [normalized];
+  const boundTarget = boundCallableTarget(normalized);
+  if (boundTarget !== undefined) {
+    return localCallableFunctions(boundTarget, new Set(seen));
+  }
+  if (!Node.isIdentifier(normalized)) return [];
+  return [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration): FunctionNode[] => {
+        if (Node.isFunctionDeclaration(declaration)) return [declaration];
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined
+          ? []
+          : localCallableFunctions(initializer, new Set(seen));
+      }) ?? []),
+    ...precedingAssignmentValues(normalized).flatMap((assigned) =>
+      localCallableFunctions(assigned, new Set(seen)),
+    ),
+  ];
+}
+
+function localCallableIsUnresolved(
+  node: Node,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isFunctionNode(normalized)) return false;
+  if (boundCallableTarget(normalized) !== undefined) return false;
+  if (!Node.isIdentifier(normalized)) return false;
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  if (
+    declarations.some(
+      (declaration) =>
+        Node.isImportSpecifier(declaration) ||
+        Node.isNamespaceImport(declaration) ||
+        Node.isFunctionDeclaration(declaration),
+    )
+  ) {
+    return false;
+  }
+  const variables = declarations.filter(Node.isVariableDeclaration);
+  if (variables.length === 0) return false;
+  const sources = [
+    ...variables.flatMap((declaration) => {
+      const initializer = declaration.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }),
+    ...precedingAssignmentValues(normalized),
+  ];
+  if (sources.length === 0) return true;
+  return sources.some((source) => {
+    const value = unwrapExpression(source);
+    if (isFunctionNode(value) || boundCallableTarget(value) !== undefined) {
+      return false;
+    }
+    if (Node.isIdentifier(value)) {
+      return localCallableIsUnresolved(value, new Set(seen));
+    }
+    return true;
+  });
+}
+
+function functionHasNeutralizer(
+  fn: FunctionNode,
+  seen = new Set<FunctionNode>(),
+): boolean {
+  if (seen.has(fn)) return false;
+  seen.add(fn);
+  const { origins, destructuredMembers } = testInfoOrigins(fn);
+  return ownedCalls(fn).some((call) =>
     ["skip", "fixme", "fail"].some(
       (member) =>
+        isNeutralizingAnnotation(call) ||
         couldBeTestInfoMember(
           call.getExpression(),
           origins,
@@ -727,8 +862,16 @@ function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
             destructuredMember === member &&
             derivesFromSymbol(call.getExpression(), symbol),
         ),
-    ),
+    ) ||
+    localCallableFunctions(call.getExpression()).some((target) =>
+      functionHasNeutralizer(target, new Set(seen)),
+    ) ||
+    localCallableIsUnresolved(call.getExpression()),
   );
+}
+
+function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
+  return functionHasNeutralizer(callback);
 }
 
 function scopeHasTestInfoNeutralizer(scope: SourceFile | Callback): boolean {
@@ -803,7 +946,11 @@ function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
     if (callback === undefined || testIsDisabled(callback)) return false;
     return ownedCalls(callback).some(
       (nested) =>
-        isNamedImportCall(nested, "./axe", AXE_HELPER_EXPORT) &&
+        isStableNamedImportCall(
+          nested,
+          "./axe",
+          AXE_HELPER_EXPORT,
+        ) &&
         Node.isAwaitExpression(nested.getParent()) &&
         isProvablyReachable(nested, callback) &&
         !isInsideTry(nested, callback),
@@ -919,7 +1066,7 @@ function routeLoopIsSanctioned(
   });
   const scans = awaitedCall(scan!, (call) => {
     return (
-      isNamedImportCall(call, "./axe", AXE_HELPER_EXPORT) &&
+      isStableNamedImportCall(call, "./axe", AXE_HELPER_EXPORT) &&
       call.getArguments()[0]?.getText() === pageName &&
       call.getArguments()[1]?.getText() === `${route}.path`
     );
@@ -1088,6 +1235,18 @@ function isStableNamedImportIdentifier(
         )
       );
     })
+  );
+}
+
+function isStableNamedImportCall(
+  call: CallExpression,
+  moduleName: string,
+  imported: string,
+): boolean {
+  return isStableNamedImportIdentifier(
+    unwrapExpression(call.getExpression()),
+    moduleName,
+    imported,
   );
 }
 
@@ -1580,6 +1739,28 @@ pw.test("axe", async ({ page }) => {
       ).toEqual([]);
     });
 
+    it("rejects sanctioned-helper aliases assigned only in unreachable control flow", () => {
+      const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  let scan = async () => {};
+  if (false) scan = assertNoAxeViolations;
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await scan(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": spec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+      );
+    });
+
     it("rejects unreachable, disabled, expected-failure, unawaited, and caught helper calls", () => {
       const wrap = (body: string) =>
         `import { test } from "@playwright/test";\nimport { assertNoAxeViolations } from "./axe";\n${body}`;
@@ -1853,6 +2034,47 @@ import { assertNoAxeViolations } from "./axe";
 import { PUBLIC_AXE_ROUTES } from "./axe-routes";
 ${neutralizer}
 test("axe", async ({ page }) => {
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+        expect(
+          axeCoverageProblems(
+            completeSources({ "e2e/smoke.spec.ts": spec }),
+          ),
+          spec,
+        ).toContain(
+          "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+        );
+      }
+    });
+
+    it("rejects bound and transitively invoked Playwright neutralizers", () => {
+      const neutralizers = [
+        `const disable = test.${"skip"}.bind(test);
+disable(true, "file disabled");`,
+        `function disable() {
+  test.info().${"fixme"}(true, "file disabled");
+}
+disable();`,
+        `function neutralize() {
+  test.info().${"fixme"}(true, "file disabled");
+}
+const disable = neutralize;
+disable();`,
+        `const disable = Math.random() > 2
+  ? () => test.info().${"fail"}(true, "expected failure")
+  : () => {};
+disable();`,
+      ];
+      for (const neutralizer of neutralizers) {
+        const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  ${neutralizer}
   for (const route of PUBLIC_AXE_ROUTES) {
     await page.goto(route.path);
     await expect(page.locator(route.readySelector)).toBeVisible();
