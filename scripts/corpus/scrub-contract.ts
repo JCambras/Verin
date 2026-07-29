@@ -11,6 +11,7 @@ import {
 } from "./real-derived-policy";
 import {
   pendingActionProblems,
+  realDerivedOutcomeProblems,
   realDerivedSemanticContractProblems,
   realDerivedSemanticDefects,
   realDerivedTopologyProblems,
@@ -35,9 +36,12 @@ type JsonSchemaNode = {
   readonly $ref?: unknown;
   readonly additionalProperties?: unknown;
   readonly items?: unknown;
+  readonly allOf?: unknown;
+  readonly anyOf?: unknown;
   readonly oneOf?: unknown;
   readonly properties?: unknown;
   readonly const?: unknown;
+  readonly uniqueItems?: unknown;
 };
 
 const caseJsonSchema = schemaFromSpec("real-derived-case-schema.json");
@@ -135,6 +139,72 @@ function closedSchemaPaths(
   ];
 }
 
+function duplicateSchemaPaths(
+  value: unknown,
+  unresolved: JsonSchemaNode,
+  root: Record<string, unknown>,
+  path: Array<string | number> = [],
+): Array<Array<string | number>> {
+  const schema = resolveSchema(unresolved, root);
+  const composed = Array.isArray(schema.allOf)
+    ? schema.allOf as JsonSchemaNode[]
+    : [];
+  const alternatives = [schema.oneOf, schema.anyOf].flatMap((branches) =>
+    Array.isArray(branches)
+      ? (branches as JsonSchemaNode[]).filter((branch) =>
+          branchMatches(value, branch)
+        )
+      : []
+  );
+  const nested = [...composed, ...alternatives].flatMap((branch) =>
+    duplicateSchemaPaths(value, branch, root, path)
+  );
+  if (Array.isArray(value)) {
+    const seen = new Set<string>();
+    const duplicates = schema.uniqueItems === true
+      ? value.flatMap((entry, index) => {
+          const serialized = canonicalJson(entry as JsonValue);
+          const key = serialized.ok ? serialized.value : `invalid:${index}`;
+          if (seen.has(key)) return [[...path, index]];
+          seen.add(key);
+          return [];
+        })
+      : [];
+    const children =
+      schema.items !== null && typeof schema.items === "object"
+        ? value.flatMap((entry, index) =>
+            duplicateSchemaPaths(
+              entry,
+              schema.items as JsonSchemaNode,
+              root,
+              [...path, index],
+            )
+          )
+        : [];
+    return [...nested, ...duplicates, ...children];
+  }
+  if (value === null || typeof value !== "object") return nested;
+  const properties =
+    schema.properties !== null &&
+    typeof schema.properties === "object" &&
+    !Array.isArray(schema.properties)
+      ? schema.properties as Record<string, JsonSchemaNode>
+      : {};
+  return [
+    ...nested,
+    ...Object.entries(properties).flatMap(([key, child]) =>
+      Object.hasOwn(value, key)
+        ? duplicateSchemaPaths(
+            (value as Record<string, unknown>)[key],
+            child,
+            root,
+            [...path, key],
+          )
+        : [],
+    ),
+  ];
+}
+
 const ReplayPayloadSchema = z.fromJSONSchema(replayJsonSchema) as z.ZodType<ReplayPayload>;
 const ParsedCaseSchema = z.fromJSONSchema(caseJsonSchema)
   .superRefine((value, context) => {
@@ -147,10 +217,24 @@ const ParsedCaseSchema = z.fromJSONSchema(caseJsonSchema)
   });
 const ClosedRawCaseSchema = z.unknown().superRefine((value, context) => {
   const paths = closedSchemaPaths(value, caseJsonSchema, caseJsonSchema);
+  const duplicatePaths = duplicateSchemaPaths(
+    value,
+    caseJsonSchema,
+    caseJsonSchema,
+  );
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const replayValue = (value as Record<string, unknown>).replayPayload;
     paths.push(
       ...closedSchemaPaths(
-        (value as Record<string, unknown>).replayPayload,
+        replayValue,
+        replayJsonSchema,
+        replayJsonSchema,
+        ["replayPayload"],
+      ),
+    );
+    duplicatePaths.push(
+      ...duplicateSchemaPaths(
+        replayValue,
         replayJsonSchema,
         replayJsonSchema,
         ["replayPayload"],
@@ -162,6 +246,13 @@ const ClosedRawCaseSchema = z.unknown().superRefine((value, context) => {
       code: "custom",
       path,
       message: "unrecognized field",
+    });
+  }
+  for (const path of duplicatePaths) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message: "must contain unique items",
     });
   }
 });
@@ -234,28 +325,13 @@ export function realDerivedCaseProblems(
   const payloadProblem = (path: string, invalid: boolean): void => {
     reject(invalid, `replayPayload.${path} is inconsistent`);
   };
-  const duplicated = (values: readonly string[]): boolean =>
-    new Set(values).size !== values.length;
-  payloadProblem(
-    "unique references",
-    [
-      parsed.data.subjects,
-      parsed.data.reservations.map((item) => item.conflictKey),
-      payload.identity.candidateRefs,
-      payload.destination.ownerRefs,
-      payload.liquidity.sources.map((source) => source.accountRef),
-      payload.liquidity.selectedFundingRefs,
-      payload.instructionConflict.instructionRefs,
-      payload.instructionConflict.impactedSubjectRefs,
-      payload.evidenceRefs,
-      payload.execution.reservationKeys,
-      payload.execution.preconditions,
-    ].some(duplicated),
-  );
   for (const problem of pendingActionProblems(parsed.data)) {
     reject(true, problem);
   }
   for (const problem of realDerivedTopologyProblems(parsed.data)) {
+    reject(true, problem);
+  }
+  for (const problem of realDerivedOutcomeProblems(parsed.data)) {
     reject(true, problem);
   }
   const expectedThreshold =
@@ -305,7 +381,7 @@ export function realDerivedCaseProblems(
   if (parsed.data.label.kind === "defect") {
     reject(
       !semanticDefects.includes(parsed.data.label.defectClassId),
-      "label.defectClassId does not match replay semantics",
+      "label.defectClassId does not match replay expected-versus-observed semantics",
     );
   } else {
     reject(

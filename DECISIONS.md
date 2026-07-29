@@ -4717,3 +4717,26 @@ pending.
 **Why:** signed cases cannot change meaning under an unchanged digest, and disconnected evidence or
 implicit funding cannot substantiate either a defect label or a clean control.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-086 · 2026-07-29 · captain-decision · Replay defects require typed outcome mismatches
+
+The `verin-corpus/1.6.0` preimage binds `verin-real-derived-replay/1.2.0` and
+`verin-real-derived-semantics/1.1.0`. The semantic registry separates awkward context from system
+treatment. Every supported class has one closed context rule, expected treatment, and defective
+treatment. A defect requires the relevant context and a typed expected-versus-observed mismatch; a clean
+control records the expected treatment for every class. Context without a mismatch cannot substantiate
+a defect.
+
+Instruction-conflict witnesses bind the exact request and tenant household. Each referenced instruction
+belongs to that household, and impacted subjects intersect the request source account or destination
+instruction. Identity resolution, every schema-declared unique array, set-like synthetic assumptions,
+and nondeterministic call origins are validated at their ownership boundaries.
+
+The tooling ceiling rises from 5900 to 6200 against 5996 measured lines, leaving 204 lines of explicit
+headroom for the separated semantic, topology, schema, and determinism authorities. The post-prompt-19
+ratchet-down point remains unchanged. The real-derived partition stays deferred and empty, and captain
+signoff stays pending.
+
+**Why:** awkward data is legitimate evidence context, not a product failure, and disconnected conflict
+references or laundered nondeterminism cannot define signed replay truth.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

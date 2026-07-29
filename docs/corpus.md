@@ -59,7 +59,7 @@ manifest, included in `corpusDigest`, and supplied to the provenance-specific re
 | # | Rule |
 |---|---|
 | 1 | Bytes come from `canonicalJson` (`src/contracts/decision-core/serialization.ts`) plus exactly one trailing `\n`. |
-| 2 | No `Math.random`, `Date.now`, argless `new Date()`, `crypto.randomUUID`, `performance.now`, `process.hrtime` anywhere under `scripts/corpus/`, including named imports, aliases, and destructured globals. AST-fenced. |
+| 2 | No `Math.random`, callable or argless `Date`, `crypto.randomUUID`, random-byte or random-integer APIs, `crypto.getRandomValues`, `performance.now`, or `process.hrtime` anywhere under `scripts/corpus/`, including imports, aliases, assignments, parameters, local returns, and dynamic imports. AST-fenced. |
 | 3 | No wall clock. Every instant descends from `spec.clock.asOf` by an explicit offset. |
 | 4 | No locale API and no `Intl` in generator code. Local time is derived from the chronologically latest qualifying pinned tz transition; duplicate transition instants are rejected. |
 | 5 | No `Set`/`Map` iteration-order dependence: every collection is sorted by a named comparator before emission. |
@@ -76,8 +76,9 @@ mid-spec and requiring exactly one changed file. The inserted household is keyed
 deliberate **prefix collision** with the existing `smiths`: every cross-record reference resolves by
 exact structured parse (`legalHoldSubject`), never by substring, so a neighbouring key cannot leak into
 a foreign subgraph. Rule 5 covers the same ground for input ORDER: a case's conflict scope is read off
-its evidence *after* sorting, so a semantically neutral reorder in `cases.json` cannot move a conflict
-key, a case's bytes, or `corpusDigest`.
+its evidence *after* sorting, and every emitted set-like collection is independently sorted, so a
+semantically neutral reorder in `cases.json` cannot move a conflict key, assumption, case byte, or
+`corpusDigest`.
 
 Seed: `verin-corpus/2026.07.0`. World clock: `2026-07-26T13:30:00.000Z`, `America/New_York`,
 `iana-tzdb/2026b`.
@@ -147,12 +148,21 @@ corpus with no clean controls fails validation, and coverage computed without co
 
 **A clean control may not carry the defect being measured.** Controls are the false-positive
 *denominator*, so one that quietly carries a defect signature makes the very rate it exists to produce
-meaningless - a correct detector flagging it would read as a false positive. Every control is checked
-against the mechanical signature of each taxonomy class over its own emitted bytes: no stale evidence,
-no authority lapsing inside the evidence interval, no restriction recorded but out of force, no
-unverified or last-four-colliding destination, no evidence pointing at a record absent from its own
-subgraph, no infeasible deadline, and no asserted awkward structure. The companion drives the rule by
-relabeling real defect cases as controls and requiring each to be caught.
+meaningless - a correct detector flagging it would read as a false positive. Synthetic controls are
+checked against the mechanical signature of every taxonomy class over their emitted subgraph.
+
+For real-derived intake, an awkward fact or boundary is context, not a defect. Each supported class
+records a typed expected treatment and observed treatment. A defect exists only when the relevant
+context is present, the expected treatment matches the signed class rule, and the observed treatment is
+that class's closed defective treatment. A clean control must record the expected treatment for every
+class, including verified cross-household destinations, segmented reserves, valid holds, exact
+thresholds, and time-zone boundaries. Missing, duplicate, unknown, or context-free treatment assertions
+fail closed.
+
+Instruction-conflict context is also request-bound. Its witness names the exact request and household,
+each referenced instruction belongs to that household, and impacted subjects must intersect the
+request's source account or destination instruction. Same-household opaque references that do not
+connect to the governed request cannot substantiate either a label or a control.
 
 ---
 
@@ -256,10 +266,11 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.5.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.6.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.0.0`: the strict declarative rule registry,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.1.0`: the strict declarative context,
+expected-treatment, defective-treatment, topology, and outcome registry,
 its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers
 its identifier, exact bytes, and canonical semantic projection. Relabeling an inventory entry, changing
 what a defect class means, changing a freshness window, changing either schema, or changing a replay

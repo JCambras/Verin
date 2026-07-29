@@ -273,8 +273,11 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
     };
   });
 
-  const assumptions = spec.cases.assumptions.filter((row) =>
-    corpusCase.assumptionIds.includes(row.id),
+  const assumptions = sortedBy(
+    spec.cases.assumptions.filter((row) =>
+      corpusCase.assumptionIds.includes(row.id),
+    ),
+    (row) => row.id,
   );
 
   const value: JsonValue = {

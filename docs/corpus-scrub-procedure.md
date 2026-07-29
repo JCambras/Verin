@@ -125,7 +125,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.1.0 closed payload
+replayPayload   verin-real-derived-replay/1.2.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{family, conflictKey}]
 ```
@@ -138,6 +138,7 @@ The replay payload contains only the typed inputs needed by the supported defect
 - approval grant, scope, lifecycle, policy version, threshold comparison, restriction, and legal-hold state;
 - tax-review and instruction-conflict state;
 - event time and pinned time-zone-rule identity;
+- one typed expected and observed treatment for every supported defect class;
 - exact evidence references, reservation keys, and execution preconditions.
 
 Absent, additional, ambiguous, or mutually incompatible fields fail. Request and destination identity,
@@ -152,6 +153,9 @@ interval must cite the payload's grant, destination evidence must cite its instr
 evidence must cite the corresponding liquidity source. The selected funding set is explicit, unique,
 same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and reducing
 pending actions. Unknown source tax classes fail, and tax risk is derived from every selected source.
+An instruction-conflict witness must name the exact request and household, every referenced instruction
+must belong to that household, and impacted subjects must intersect the request source account or
+destination instruction.
 
 Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
 `fresh | stale` value. Missing source observation uses `observationState: "missing"`,
@@ -164,9 +168,11 @@ digest are included in the captain-signed corpus preimage.
 Clean controls carry a `controlRationaleId` from a closed list, not prose - the same rule that keeps free
 text out of defect cases.
 
-Each supported defect class has one closed signature derived from this payload. The declared label must
-match a present signature, and a clean control must satisfy the absence signature for every supported
-class. The signature registry must exactly equal the signed taxonomy.
+Each supported defect class has one closed context rule, expected treatment, and defective treatment.
+Awkward context alone is not a defect. The declared defect label must match a typed
+expected-versus-observed mismatch for that class, and a clean control must record the expected treatment
+for every supported class. Missing, duplicate, unknown, contradictory, or context-free mismatches fail
+closed. The semantic registry must exactly equal the signed taxonomy.
 
 **Deliver labeled clean controls alongside defect cases.** After the deferral is lifted, the collection
 must contain at least one valid defect and at least one valid clean control. A one-sided collection is

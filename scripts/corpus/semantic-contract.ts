@@ -16,16 +16,19 @@ export const REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION =
   "verin-real-derived-semantics-digest/1.0.0";
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/real-derived-semantics.ts",
+  "scripts/corpus/real-derived-topology.ts",
   "scripts/corpus/scrub-contract.ts",
   "scripts/corpus/pending-actions.ts",
   "scripts/corpus/real-derived-policy.ts",
 ] as const;
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.0.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.1.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    rule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    expectedTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    defectTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   })).min(1),
   evidencePlanes: z.array(z.strictObject({
     plane: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -47,6 +50,16 @@ const SemanticContractSchema = z.strictObject({
       "must-resolve-once-to-request-household-and-source-owner",
     ),
     materialEvidence: z.literal("kind-subject-source-exactly-once"),
+    instructionConflict: z.literal(
+      "binds-request-household-instructions-and-impacted-subjects",
+    ),
+  }),
+  outcomes: z.strictObject({
+    completeness: z.literal(
+      "one-expected-observed-treatment-per-defect-class",
+    ),
+    defect: z.literal("context-and-mismatched-treatment"),
+    control: z.literal("all-observed-treatments-match-expected"),
   }),
 });
 

@@ -55,13 +55,14 @@ const CEILINGS = {
   // the graph, intake, signoff, and measurement review findings. ADR-0034 raises
   // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. D-082
   // raises it to 4900; D-084 records 4900 measured lines after the final
-  // replay-intake review. D-085 raises it to 5900 against 5747 measured lines
-  // for signed executable semantics, typed topology, exact evidence support,
-  // explicit funding selection, and strict hand-owned JSON intake. The 153-line
-  // buffer keeps the boundary maintainable. The ratchet-down after the corpus generator's first
+  // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
+  // D-086 raises it to 6200 against 5996 measured lines for outcome-based
+  // semantics, request-bound conflict topology, schema-driven uniqueness, and
+  // assignment-aware determinism enforcement. The 204-line buffer keeps the
+  // boundary maintainable. The ratchet-down after the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 5900,
+  tooling: 6200,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

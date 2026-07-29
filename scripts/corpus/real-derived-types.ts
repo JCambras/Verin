@@ -35,6 +35,12 @@ export type LiquiditySource = {
     | "unknown";
 };
 
+export type TreatmentOutcome = {
+  defectClassId: string;
+  expectedTreatment: string;
+  observedTreatment: string;
+};
+
 export type ReplayPayload = {
   request: {
     requestRef: string;
@@ -100,7 +106,12 @@ export type ReplayPayload = {
   };
   instructionConflict: {
     conflictState: "none" | "present" | "resolved";
-    instructionRefs: string[];
+    requestRef: string;
+    householdRef: string;
+    instructions: Array<{
+      instructionRef: string;
+      householdRef: string;
+    }>;
     impactedSubjectRefs: string[];
     evidenceSourceRef: string;
   };
@@ -116,6 +127,7 @@ export type ReplayPayload = {
     transitionState: "standard" | "daylight" | "boundary";
     evidenceSourceRef: string;
   };
+  outcomes: TreatmentOutcome[];
   evidenceRefs: string[];
   execution: {
     reservationKeys: string[];

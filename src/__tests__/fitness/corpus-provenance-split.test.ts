@@ -36,6 +36,7 @@ import {
 } from "../../../scripts/corpus/real-derived-policy";
 import {
   REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+  loadRealDerivedSemanticContract,
   realDerivedSemanticContractBinding,
 } from "../../../scripts/corpus/semantic-contract";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";
@@ -136,6 +137,18 @@ const PENDING_ACTION_REF = `pending-action:${TOKEN}`;
 const TIME_ZONE_RULE_REF = `time-zone-rule:${TOKEN}`;
 const EVIDENCE_SOURCE_REF = `evidence-source:${TOKEN}`;
 const EVIDENCE_SOURCE_REF_ALT = `evidence-source:${TOKEN_ALT}`;
+const semanticContract = loadRealDerivedSemanticContract();
+const treatmentOutcomes = (
+  defectClassId?: string,
+): Array<Record<string, string>> =>
+  semanticContract.defectRules.map((entry) => ({
+    defectClassId: entry.id,
+    expectedTreatment: entry.expectedTreatment,
+    observedTreatment:
+      entry.id === defectClassId
+        ? entry.defectTreatment
+        : entry.expectedTreatment,
+  }));
 const canonicalFixtureBytes = (value: unknown): string => {
   const result = canonicalJson(value as any);
   if (!result.ok) throw result.error;
@@ -176,6 +189,16 @@ const realDerivedCase = (
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => {
   const evidence = baselineEvidence();
+  const label = overrides.label as
+    | { kind: "defect"; defectClassId: string }
+    | { kind: "clean-control" }
+    | undefined;
+  const defectClassId =
+    label?.kind === "defect"
+      ? label.defectClassId
+      : label?.kind === "clean-control"
+        ? undefined
+        : "destination-integrity-defect";
   return {
   caseId: "RD-00112233445566aa",
   corpusVersion: "2026.07.0",
@@ -212,7 +235,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.1.0",
+    schemaVersion: "verin-real-derived-replay/1.2.0",
     request: {
       requestRef: REQUEST_REF,
       householdRef: HOUSEHOLD_REF,
@@ -294,7 +317,9 @@ const realDerivedCase = (
     taxReviewEvidenceSourceRef: EVIDENCE_SOURCE_REF,
     instructionConflict: {
       conflictState: "none",
-      instructionRefs: [],
+      requestRef: REQUEST_REF,
+      householdRef: HOUSEHOLD_REF,
+      instructions: [],
       impactedSubjectRefs: [],
       evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
@@ -304,6 +329,7 @@ const realDerivedCase = (
       transitionState: "daylight",
       evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
+    outcomes: treatmentOutcomes(defectClassId),
     evidenceRefs: evidence.map((entry) => String(entry.id)),
     execution: {
       reservationKeys: [
@@ -341,7 +367,18 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "instruction-conflict-unresolved":
       payload.instructionConflict = {
         conflictState: "present",
-        instructionRefs: [INSTRUCTION_REF, INSTRUCTION_REF_ALT],
+        requestRef: REQUEST_REF,
+        householdRef: HOUSEHOLD_REF,
+        instructions: [
+          {
+            instructionRef: INSTRUCTION_REF,
+            householdRef: HOUSEHOLD_REF,
+          },
+          {
+            instructionRef: INSTRUCTION_REF_ALT,
+            householdRef: HOUSEHOLD_REF,
+          },
+        ],
         impactedSubjectRefs: [ACCOUNT_REF],
         evidenceSourceRef: EVIDENCE_SOURCE_REF,
       };
@@ -424,7 +461,18 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "blast-radius-underestimation": {
       payload.instructionConflict = {
         conflictState: "resolved",
-        instructionRefs: [INSTRUCTION_REF, INSTRUCTION_REF_ALT],
+        requestRef: REQUEST_REF,
+        householdRef: HOUSEHOLD_REF,
+        instructions: [
+          {
+            instructionRef: INSTRUCTION_REF,
+            householdRef: HOUSEHOLD_REF,
+          },
+          {
+            instructionRef: INSTRUCTION_REF_ALT,
+            householdRef: HOUSEHOLD_REF,
+          },
+        ],
         impactedSubjectRefs: [ACCOUNT_REF, ACCOUNT_REF_ALT],
         evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
       };
@@ -902,7 +950,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.1.0",
-      "verin-real-derived-replay/1.1.0",
+      "verin-real-derived-replay/1.2.0",
     ]);
     expect(
       corpusDigest(
@@ -1357,14 +1405,81 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       "real-derived/RD-mislabeled-defect.json",
     );
     expect(problems.join("\n")).toContain(
-      "label.defectClassId does not match replay semantics",
+      "label.defectClassId does not match replay expected-versus-observed semantics",
     );
   });
+
+  it("awkward context is clean when the recorded treatment is correct", () => {
+    const control = realDerivedCase({
+      label: {
+        kind: "clean-control",
+        controlRationaleId: "no-defect-present",
+      },
+    });
+    const payload = control.replayPayload as Record<string, any>;
+    payload.destination.discriminatorState = "unique";
+    payload.destination.householdRef = HOUSEHOLD_REF_ALT;
+    payload.destination.ownership = "cross-household";
+    (control.subjects as string[]).push(HOUSEHOLD_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        control,
+        classes,
+        "real-derived/RD-correct-cross-household.json",
+      ),
+    ).toEqual([]);
+  });
+
+  it("a defect claim requires a typed expected-versus-observed mismatch", () => {
+    const contextOnly = realDerivedDefectCase(
+      "destination-integrity-defect",
+    );
+    const outcome = (
+      (contextOnly.replayPayload as Record<string, any>).outcomes as Array<
+        Record<string, string>
+      >
+    ).find(
+      (candidate) =>
+        candidate.defectClassId === "destination-integrity-defect",
+    )!;
+    outcome.observedTreatment = outcome.expectedTreatment!;
+    expect(
+      realDerivedCaseProblems(
+        contextOnly,
+        classes,
+        "real-derived/RD-context-only.json",
+      ).join("\n"),
+    ).toContain("expected-versus-observed");
+  });
+
+  it.each([...classes])(
+    "%s context remains clean under its expected treatment",
+    (defectClassId) => {
+      const control = realDerivedDefectCase(defectClassId);
+      control.label = {
+        kind: "clean-control",
+        controlRationaleId: "resolved-before-execution",
+      };
+      const outcome = (
+        (control.replayPayload as Record<string, any>).outcomes as Array<
+          Record<string, string>
+        >
+      ).find((candidate) => candidate.defectClassId === defectClassId)!;
+      outcome.observedTreatment = outcome.expectedTreatment!;
+      expect(
+        realDerivedCaseProblems(
+          control,
+          classes,
+          `real-derived/RD-${defectClassId}-correct-treatment.json`,
+        ),
+      ).toEqual([]);
+    },
+  );
 
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.0.0",
+      "verin-real-derived-semantics/1.1.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1381,6 +1496,9 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/real-derived-policy.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/real-derived-topology.ts",
     );
   });
 
@@ -1459,15 +1577,95 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toContain("schema validation failed");
   });
 
-  it("selected funding is explicit and aggregate sufficiency drives tax risk", () => {
-    const control = realDerivedCase({
-      label: {
-        kind: "clean-control",
-        controlRationaleId: "defect-class-absent",
+  it("unique identity resolution binds its sole candidate to the resolved subject", () => {
+    const item = realDerivedCase();
+    const payload = item.replayPayload as Record<string, any>;
+    payload.identity.candidateRefs = [ACTOR_REF_ALT];
+    (item.subjects as string[]).push(ACTOR_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-unrelated-identity-candidate.json",
+      ).join("\n"),
+    ).toContain("unique identity candidate must equal identity.subjectRef");
+
+    const empty = realDerivedCase();
+    (empty.replayPayload as Record<string, any>).identity.candidateRefs = [];
+    expect(
+      realDerivedCaseProblems(
+        empty,
+        classes,
+        "real-derived/RD-empty-identity-candidate.json",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("instruction conflicts bind to the governed request and its actual subjects", () => {
+    const item = realDerivedDefectCase(
+      "instruction-conflict-unresolved",
+    );
+    const payload = item.replayPayload as Record<string, any>;
+    payload.instructionConflict.instructions = [
+      {
+        instructionRef: INSTRUCTION_REF_ALT,
+        householdRef: HOUSEHOLD_REF,
       },
-    });
-    const payload = control.replayPayload as Record<string, any>;
-    payload.destination.discriminatorState = "unique";
+      {
+        instructionRef: `instruction:tok:0011223344556677`,
+        householdRef: HOUSEHOLD_REF,
+      },
+    ];
+    payload.instructionConflict.impactedSubjectRefs = [OWNER_REF_ALT];
+    (item.subjects as string[]).push(
+      `instruction:tok:0011223344556677`,
+      OWNER_REF_ALT,
+    );
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-disconnected-conflict.json",
+      ).join("\n"),
+    ).toContain("instruction conflict");
+  });
+
+  it("instruction conflict topology rejects wrong request, household, and instruction ownership", () => {
+    const mutations: Array<(item: Record<string, any>) => void> = [
+      (item) => {
+        item.replayPayload.instructionConflict.requestRef =
+          "request:tok:0011223344556677";
+        item.subjects.push("request:tok:0011223344556677");
+      },
+      (item) => {
+        item.replayPayload.instructionConflict.householdRef =
+          HOUSEHOLD_REF_ALT;
+        item.subjects.push(HOUSEHOLD_REF_ALT);
+      },
+      (item) => {
+        item.replayPayload.instructionConflict.instructions[0].householdRef =
+          HOUSEHOLD_REF_ALT;
+        item.subjects.push(HOUSEHOLD_REF_ALT);
+      },
+    ];
+    for (const mutate of mutations) {
+      const item = realDerivedDefectCase(
+        "instruction-conflict-unresolved",
+      ) as Record<string, any>;
+      mutate(item);
+      expect(
+        realDerivedCaseProblems(
+          item,
+          classes,
+          "real-derived/RD-wrong-conflict-topology.json",
+        ).join("\n"),
+      ).toContain("instruction conflict");
+    }
+  });
+
+  it("selected funding is explicit and aggregate sufficiency supports tax outcome attribution", () => {
+    const defect = realDerivedDefectCase("tax-consequence-blindness");
+    const payload = defect.replayPayload as Record<string, any>;
     payload.taxReviewState = "required-pending";
     payload.liquidity.sources = [
       {
@@ -1481,15 +1679,15 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       {
         accountRef: ACCOUNT_REF_ALT,
         householdRef: HOUSEHOLD_REF,
-        ownerRefs: [OWNER_REF_ALT],
+        ownerRefs: [OWNER_REF],
         evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
         availableMinor: 6_000,
         sourceTaxClass: "retirement",
       },
     ];
     payload.liquidity.selectedFundingRefs = [ACCOUNT_REF, ACCOUNT_REF_ALT];
-    (control.subjects as string[]).push(ACCOUNT_REF_ALT, OWNER_REF_ALT);
-    const evidence = control.evidence as Array<Record<string, unknown>>;
+    (defect.subjects as string[]).push(ACCOUNT_REF_ALT);
+    const evidence = defect.evidence as Array<Record<string, unknown>>;
     evidence.push(
       observedEvidence(
         "balance",
@@ -1501,11 +1699,11 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     payload.evidenceRefs = evidence.map((entry) => entry.id);
     expect(
       realDerivedCaseProblems(
-        control,
+        defect,
         classes,
         "real-derived/RD-aggregate-funding.json",
-      ).join("\n"),
-    ).toContain("tax-consequence-blindness");
+      ),
+    ).toEqual([]);
   });
 
   it("selected funding rejects missing, duplicate, unsupported, insufficient, cross-household, and unknown-tax selections", () => {
@@ -1591,7 +1789,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     for (const mutate of [
       (evidence: Record<string, unknown>) => {
         evidence.evidenceKind = "request";
-        evidence.id = `evs:${TOKEN}:request`;
+        evidence.id = `evs:${TOKEN_ALT}:request`;
       },
       (evidence: Record<string, unknown>) => {
         evidence.subjectRef = INSTRUCTION_REF_ALT;
@@ -1779,6 +1977,50 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         ).length,
       ).toBeGreaterThan(0);
     }
+  });
+
+  it("every schema-declared uniqueItems collection is enforced recursively", () => {
+    const item = realDerivedCase();
+    const payload = item.replayPayload as Record<string, any>;
+    payload.liquidity.sources[0].ownerRefs.push(OWNER_REF);
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-duplicate-source-owner.json",
+      ).join("\n"),
+    ).toContain("replayPayload.liquidity.sources.0.ownerRefs.1");
+  });
+
+  it("outcome assertions are complete, unique, and class-compatible", () => {
+    const duplicate = realDerivedCase();
+    const duplicateOutcomes = (
+      duplicate.replayPayload as Record<string, any>
+    ).outcomes as Array<Record<string, string>>;
+    duplicateOutcomes[1]!.defectClassId =
+      duplicateOutcomes[0]!.defectClassId!;
+    expect(
+      realDerivedCaseProblems(
+        duplicate,
+        classes,
+        "real-derived/RD-duplicate-outcome.json",
+      ).join("\n"),
+    ).toContain("exactly one expected-versus-observed");
+
+    const incompatible = realDerivedCase();
+    const outcome = (
+      (incompatible.replayPayload as Record<string, any>).outcomes as Array<
+        Record<string, string>
+      >
+    )[0]!;
+    outcome.expectedTreatment = "render-with-time-zone-rules";
+    expect(
+      realDerivedCaseProblems(
+        incompatible,
+        classes,
+        "real-derived/RD-incompatible-outcome.json",
+      ).join("\n"),
+    ).toContain("closed treatment vocabulary");
   });
 
   it("duplicate JSON keys are rejected before a delivered value can enter inventory", () => {

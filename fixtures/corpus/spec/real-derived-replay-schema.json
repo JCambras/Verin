@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.1.0",
+  "$id": "verin-real-derived-replay/1.2.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -16,11 +16,12 @@
     "taxReviewEvidenceSourceRef",
     "instructionConflict",
     "temporal",
+    "outcomes",
     "evidenceRefs",
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.1.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.2.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -268,16 +269,28 @@
       "additionalProperties": false,
       "required": [
         "conflictState",
-        "instructionRefs",
+        "requestRef",
+        "householdRef",
+        "instructions",
         "impactedSubjectRefs",
         "evidenceSourceRef"
       ],
       "properties": {
         "conflictState": { "enum": ["none", "present", "resolved"] },
-        "instructionRefs": {
+        "requestRef": { "$ref": "#/$defs/requestRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
+        "instructions": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/instructionRef" }
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instructionRef", "householdRef"],
+            "properties": {
+              "instructionRef": { "$ref": "#/$defs/instructionRef" },
+              "householdRef": { "$ref": "#/$defs/householdRef" }
+            }
+          }
         },
         "impactedSubjectRefs": {
           "type": "array",
@@ -286,6 +299,13 @@
         },
         "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
+    },
+    "outcomes": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/treatmentOutcome" }
     },
     "temporal": {
       "type": "object",
@@ -359,6 +379,7 @@
                 "resolution": { "const": "unique" },
                 "candidateRefs": {
                   "type": "array",
+                  "minItems": 1,
                   "maxItems": 1,
                   "items": { "$ref": "#/$defs/actorRef" }
                 }
@@ -531,15 +552,23 @@
               "type": "object",
               "required": [
                 "conflictState",
-                "instructionRefs",
+                "instructions",
                 "impactedSubjectRefs"
               ],
               "properties": {
                 "conflictState": { "const": "none" },
-                "instructionRefs": {
+                "instructions": {
                   "type": "array",
                   "maxItems": 0,
-                  "items": { "$ref": "#/$defs/instructionRef" }
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instructionRef", "householdRef"],
+                    "properties": {
+                      "instructionRef": { "$ref": "#/$defs/instructionRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" }
+                    }
+                  }
                 },
                 "impactedSubjectRefs": {
                   "type": "array",
@@ -558,15 +587,23 @@
               "type": "object",
               "required": [
                 "conflictState",
-                "instructionRefs",
+                "instructions",
                 "impactedSubjectRefs"
               ],
               "properties": {
                 "conflictState": { "enum": ["present", "resolved"] },
-                "instructionRefs": {
+                "instructions": {
                   "type": "array",
                   "minItems": 2,
-                  "items": { "$ref": "#/$defs/instructionRef" }
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["instructionRef", "householdRef"],
+                    "properties": {
+                      "instructionRef": { "$ref": "#/$defs/instructionRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" }
+                    }
+                  }
                 },
                 "impactedSubjectRefs": {
                   "type": "array",
@@ -761,6 +798,59 @@
     "conflictKey": {
       "type": "string",
       "pattern": "^conflict:tok:[0-9a-f]{16}:(liquidity|bank-instruction|account-registration|household-instruction|regulatory-hold|party-authority|model-rebalance)$"
+    },
+    "treatment": {
+      "enum": [
+        "accept-ineffective-authority",
+        "accept-infeasible-deadline",
+        "accept-nonintegral-destination",
+        "apply-inclusive-threshold-boundary",
+        "apply-restriction-lifecycle",
+        "apply-strict-threshold-boundary",
+        "auto-bind-ambiguous-identity",
+        "calculate-scalar-reserve",
+        "calculate-structured-reserve",
+        "collapse-evidence-interval",
+        "collapse-instruction-conflict",
+        "compare-canonical-identities",
+        "compare-raw-identities",
+        "count-nonreducing-pending",
+        "exclude-nonreducing-pending",
+        "exclude-stale-evidence",
+        "ignore-restriction-lifecycle",
+        "preserve-evidence-interval",
+        "preserve-hold-scope",
+        "proceed-without-completed-tax-review",
+        "reevaluate-all-impacted-subjects",
+        "reevaluate-partial-subjects",
+        "reject-ineffective-authority",
+        "reject-infeasible-deadline",
+        "render-with-fixed-offset",
+        "render-with-time-zone-rules",
+        "require-completed-tax-review",
+        "require-human-selection",
+        "require-integral-destination",
+        "surface-instruction-conflict",
+        "use-stale-evidence",
+        "widen-or-ignore-hold-scope"
+      ]
+    },
+    "treatmentOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defectClassId",
+        "expectedTreatment",
+        "observedTreatment"
+      ],
+      "properties": {
+        "defectClassId": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "expectedTreatment": { "$ref": "#/$defs/treatment" },
+        "observedTreatment": { "$ref": "#/$defs/treatment" }
+      }
     },
     "pendingAction": {
       "type": "object",

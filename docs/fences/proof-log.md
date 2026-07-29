@@ -7317,3 +7317,100 @@ file.
 companions passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 6).
+
+---
+
+## PF-101 · outcome-based replay truth and request-bound topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-086, ADR-0034):** awkward context is not itself a defect; a signed defect requires the
+class's typed expected-versus-observed mismatch; instruction conflicts connect to the exact request and
+household; identity and every schema-declared unique array fail closed.
+
+**Injection 1 - context treated as failure.** Evaluated a verified cross-household destination using the
+old context-only destination predicate.
+
+**Observed failure:**
+```
+awkward context remains a clean control when every treatment is correct
+expected ['destination-integrity-defect'] to deeply equal []
+```
+
+**Injection 2 - outcome authority omitted.** Labeled awkward destination context as a defect without a
+typed treatment mismatch.
+
+**Observed failure:**
+```
+awkward context cannot substantiate a defect without an outcome mismatch
+expected '' to contain 'expected-versus-observed'
+```
+
+**Injection 3 - request topology disconnected.** Used arbitrary same-household instruction and impacted
+subject references that did not connect to the governed request.
+
+**Observed failure:**
+```
+instruction conflict evidence must connect to the exact governed request
+expected '' to contain 'instruction conflict'
+```
+
+**Injection 4 - identity candidate unrelated.** Declared unique identity resolution with a sole candidate
+different from the governed identity subject.
+
+**Observed failure:**
+```
+unique identity resolution requires exactly the governed subject
+expected '' to contain 'unique identity candidate'
+```
+
+**Injection 5 - nested uniqueness omitted.** Duplicated one liquidity source owner while relying on the
+signed schema's `uniqueItems`.
+
+**Observed failure:**
+```
+every signed-schema uniqueItems array rejects duplicates
+expected '' to contain 'unique items'
+```
+
+**Standing companions:** all 16 awkward contexts remain clean with expected treatments; all 16 defect
+classes require their closed mismatch; wrong request, household, instruction ownership, and impacted
+subjects fail; zero and unrelated unique identity candidates fail; all nested schema unique arrays are
+driven adversarially.
+
+**Revert:** all five injections were reverted with patch edits, and the focused companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
+
+---
+
+## PF-102 · set-order and nondeterminism-flow closure · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-086, ADR-0034):** set-like spec order cannot change emitted bytes, and banned
+nondeterministic APIs cannot be laundered through assignments, parameters, local returns, or dynamic
+imports.
+
+**Injection 1 - assumptions emitted in source order.** Reversed the hand-owned assumption collection
+without sorting the filtered case assumptions.
+
+**Observed failure:**
+```
+assumption order is semantically neutral
+expected changed files to deeply equal []
+received ['CS-retirement-only-sufficient-source.json']
+```
+
+**Injection 2 - callable origins laundered.** Assigned `Date`, passed `randomBytes` through a function
+parameter and return, and called a function obtained through dynamic import.
+
+**Observed failure:**
+```
+nondeterministic APIs cannot be laundered through assignments, parameters, returns, or dynamic imports
+expected [] to deeply equal expected Date and randomBytes findings
+```
+
+**Standing companions:** household insertion isolation, complete spec reorder invariance, assumption-only
+reorder invariance, direct and imported nondeterministic sources, aliases, destructuring, assignments,
+parameters, returns, literal dynamic imports, and nonliteral dynamic-import rejection.
+
+**Revert:** both injections were reverted with patch edits, and the focused companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
