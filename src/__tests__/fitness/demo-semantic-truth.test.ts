@@ -28,6 +28,8 @@ import {
 } from "@app/demo/data";
 import {
   approvalReceiptHashFor,
+  decisionAuthorityClaimFor,
+  decisionBundlePreimageFor,
   decisionAuthorityRequirementsFor,
   decisionInputIdentitiesFor,
   decisionRecordPreimageFor,
@@ -38,11 +40,19 @@ import {
 } from "@app/demo/decision-identity";
 import { headroomMinor } from "@app/demo/build-decision";
 import { buildSafety } from "@app/demo/build-outcome";
-import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric } from "@app/demo/provenance";
+import {
+  ACTIVATED_RESERVE_HORIZON,
+  RESERVE_FLOOR_INPUTS,
+  derivedMetric,
+  fixtureMetric,
+  headroomInputs,
+  reserveFloorInputs,
+} from "@app/demo/provenance";
 import { getJourney } from "@app/demo/journey";
 import {
   activateMoneyMovementSetup,
   buildActivatedRecord,
+  setupActivationAuthorityClaims,
 } from "@app/demo/setup-evaluator";
 import {
   setupActivationPreimageFor,
@@ -61,7 +71,11 @@ import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type { DisplayMetric } from "@contracts/metric";
 import type { JsonValue } from "@contracts/decision-core/serialization";
 import { isDemonstration } from "@contracts/provenance";
-import type { RecordReserveVM, RecordVM } from "@app/demo/model";
+import type {
+  AuthorityPlanVM,
+  RecordReserveVM,
+  RecordVM,
+} from "@app/demo/model";
 import { REPO_ROOT } from "./_fence-utils";
 import { setupActivationAuthority } from "../helpers/setup-activation";
 
@@ -101,6 +115,10 @@ interface GoldenCase {
   }[];
   readonly expectedDisposition: "proceed" | "blocked" | "prohibited";
   readonly expectedExecutionEligibility: { readonly eligible: boolean };
+  readonly expectedAuthority: {
+    readonly mode: string;
+    readonly stages: readonly unknown[];
+  };
   readonly signoff: { readonly status: string; readonly authority: string };
 }
 
@@ -117,6 +135,10 @@ export interface SemanticTruth {
   readonly lowHeadroom: LiquidityBasis & {
     readonly reserveMonths: number;
     readonly disposition: "proceed" | "blocked" | "prohibited";
+  };
+  readonly automaticAuthority: {
+    readonly happyFirmB: string;
+    readonly delayedNigoFirmB: string;
   };
   readonly firms: Record<
     "firm-a" | "firm-b",
@@ -142,6 +164,10 @@ export interface DemoSemanticFacts {
   readonly lowHeadroomFacts: string;
   /** Whether the low-headroom card's Firm B outcome is blocked, as GC-05 records. */
   readonly lowHeadroomFirmBStatus: string;
+  readonly automaticAuthority: {
+    readonly happyFirmB: string;
+    readonly delayedNigoFirmB: string;
+  };
   readonly firms: Record<
     "firm-a" | "firm-b",
     {
@@ -734,6 +760,7 @@ export function goldenSemanticTruth(): SemanticTruth {
   const recentA = signed(loadGolden("GC-03-recent-bank-change-firm-a.json"));
   const recentB = signed(loadGolden("GC-04-recent-bank-change-firm-b.json"));
   const lowHeadroom = signed(loadGolden("GC-05-insufficient-liquidity.json"));
+  const delayedNigo = signed(loadGolden("GC-14-delayed-nigo.json"));
   const monthlyA = monthlyMinorFrom(happyA);
   const monthlyB = monthlyMinorFrom(happyB);
   const monthlyLow = monthlyMinorFrom(lowHeadroom);
@@ -755,6 +782,16 @@ export function goldenSemanticTruth(): SemanticTruth {
   if (basisViolations.length > 0) {
     throw new Error(`signed cases disagree on the Smiths liquidity basis: ${basisViolations.join("; ")}`);
   }
+  for (const caseFile of [happyB, delayedNigo]) {
+    if (
+      caseFile.expectedAuthority.mode === "automatic" &&
+      caseFile.expectedAuthority.stages.length !== 0
+    ) {
+      throw new Error(
+        `${caseFile.caseId} carries approval stages under automatic authority`,
+      );
+    }
+  }
 
   const firm = (
     happy: GoldenCase,
@@ -774,6 +811,10 @@ export function goldenSemanticTruth(): SemanticTruth {
       ...basisOf(lowHeadroom),
       reserveMonths: lowHeadroom.firmConfiguration.cashReserveMonths,
       disposition: lowHeadroom.expectedDisposition,
+    },
+    automaticAuthority: {
+      happyFirmB: happyB.expectedAuthority.mode,
+      delayedNigoFirmB: delayedNigo.expectedAuthority.mode,
     },
     firms: {
       "firm-a": firm(happyA, recentA),
@@ -970,6 +1011,14 @@ export function demoSemanticFacts(): DemoSemanticFacts {
     lowHeadroomFirmBStatus:
       initialOptionOf(lowHeadroomGroup, "firm-b").signedCaseEffect?.status.status ??
       "(the low-headroom group carries no signed-case effect)",
+    automaticAuthority: {
+      happyFirmB:
+        getJourney("safe-proceed", "firm-b").record.authority?.mode ??
+        "not-reached",
+      delayedNigoFirmB:
+        getJourney("delayed-nigo", "firm-b").record.authority?.mode ??
+        "not-reached",
+    },
     firms: { "firm-a": firm("firm-a"), "firm-b": firm("firm-b") },
   };
 }
@@ -1029,6 +1078,19 @@ export function semanticTruthViolations(
     violations.push(
       `${sourceRef("src/app/demo/build-setup.ts", "function reserveOption")} :: the low-headroom card shows firm-b "${actual.lowHeadroomFirmBStatus}" where GC-05 records "${signedLowHeadroomStatus}"`,
     );
+  }
+  for (const caseKey of [
+    "happyFirmB",
+    "delayedNigoFirmB",
+  ] as const) {
+    if (
+      actual.automaticAuthority[caseKey] !==
+      truth.automaticAuthority[caseKey]
+    ) {
+      violations.push(
+        `${sourceRef("src/app/demo/build-decision.ts", "export function buildAuthorityPlan")} :: ${caseKey} authority mode "${actual.automaticAuthority[caseKey]}" differs from captain-signed "${truth.automaticAuthority[caseKey]}"`,
+      );
+    }
   }
   for (const [firmIndex, firmId] of (["firm-a", "firm-b"] as const).entries()) {
     const got = actual.firms[firmId];
@@ -1108,8 +1170,8 @@ export interface ExportIdentity {
   readonly configurationProvenance: string;
   readonly disposition: string;
   readonly explanation: string;
-  readonly authorityReached: string;
-  readonly authorityStages: string;
+  readonly authorityMode: string;
+  readonly authorityPlan: string;
   readonly exportHref: string;
 }
 
@@ -1159,8 +1221,8 @@ export function exportIdentityViolations(
       "configurationProvenance",
       "disposition",
       "explanation",
-      "authorityReached",
-      "authorityStages",
+      "authorityMode",
+      "authorityPlan",
     ] as const) {
       if (identity[field] !== target[field]) {
         violations.push(
@@ -1215,8 +1277,8 @@ function renderedIdentity(
       record.activatedConfiguration.configurationProvenance,
     disposition: record.disposition.kind,
     explanation: record.disposition.why.reason,
-    authorityReached: String(record.approvalStages !== null),
-    authorityStages: JSON.stringify(record.approvalStages ?? []),
+    authorityMode: record.authority?.mode ?? "not-reached",
+    authorityPlan: JSON.stringify(record.authority),
     exportHref: `/app/demo/record?scenario=${record.identity.scenario.id}&firm=${record.identity.firm.id}&activation=${record.activatedConfiguration.snapshotHash}`,
   };
 }
@@ -1240,8 +1302,12 @@ function claimedIdentities(
     configurationProvenance: firm.configurationProvenance,
     disposition: firm.disposition.kind,
     explanation: firm.disposition.why.reason,
-    authorityReached: String(firm.authorityPlan.reached),
-    authorityStages: JSON.stringify(firm.authorityPlan.stages),
+    authorityMode: firm.authorityPlan.mode,
+    authorityPlan: JSON.stringify(
+      firm.authorityPlan.mode === "not-reached"
+        ? null
+        : firm.authorityPlan,
+    ),
     exportHref: firm.exportHref,
   });
   return [identity(snapshot.firms[0]), identity(snapshot.firms[1])];
@@ -1286,10 +1352,16 @@ describe("demo semantic-truth fence", () => {
       draft.generation,
       "principal-a",
     );
+    const setupVm = buildMoneyMovementSetup();
     const preimage = setupActivationPreimageFor(
-      buildMoneyMovementSetup(),
+      setupVm,
       draft,
       authority,
+      setupActivationAuthorityClaims(
+        setupVm,
+        draft.selections,
+        authority,
+      ),
     );
     const unchanged = hashCanonicalPreimage(preimage);
     const changed = [
@@ -1340,6 +1412,17 @@ describe("demo semantic-truth fence", () => {
         jsonObject(jsonField(authorityValue, "actor")).opaqueId =
           "principal-b";
       }),
+      changedPreimageHash(preimage, (copy) => {
+        const plans = jsonField(
+          jsonObject(jsonField(copy, "payload")),
+          "decisionAuthority",
+        );
+        if (!Array.isArray(plans)) {
+          throw new Error("decisionAuthority missing");
+        }
+        jsonObject(jsonField(jsonObject(plans[0]!), "authority")).mode =
+          "automatic";
+      }),
     ];
     expect(changed).not.toContain(unchanged);
     expect(new Set(changed).size).toBe(changed.length);
@@ -1362,15 +1445,18 @@ describe("demo semantic-truth fence", () => {
     expect(new Set(materialInputs).size).toBe(materialInputs.length);
 
     const journey = getJourney("safe-proceed", "firm-a");
+    expect(journey.approvals?.mode).toBe("staged");
+    if (journey.approvals?.mode !== "staged") return;
+    expect(journey.record.authority?.mode).toBe("staged");
+    if (journey.record.authority?.mode !== "staged") return;
+    const authorityClaim = decisionAuthorityClaimFor(
+      journey.record.authority,
+    );
+    if (authorityClaim.mode !== "staged") return;
     const claims = {
       disposition: journey.recommendation.disposition,
       precedence: journey.policyTrace.rows,
-      authority: {
-        reached: true,
-        requirements: decisionAuthorityRequirementsFor(
-          journey.approvals?.stages ?? [],
-        ),
-      },
+      authority: authorityClaim,
     };
     const firm = firmById("firm-a");
     const configuration = decisionConfigurationFor(firm);
@@ -1432,15 +1518,16 @@ describe("demo semantic-truth fence", () => {
   it("enforces: approval receipts never alter the earlier decision identity", () => {
     const journey = getJourney("safe-proceed", "firm-a");
     expect(journey.approvals).not.toBeNull();
-    expect(journey.record.approvalStages).not.toBeNull();
+    expect(journey.record.authority?.mode).toBe("staged");
+    if (journey.record.authority?.mode !== "staged") return;
     expect(journey.approvals?.binding.decisionHash).toBe(
       journey.record.identity.decisionHash,
     );
 
     const requirements = decisionAuthorityRequirementsFor(
-      journey.record.approvalStages ?? [],
+      journey.record.authority.stages,
     );
-    const changedReceipts = (journey.record.approvalStages ?? []).map(
+    const changedReceipts = journey.record.authority.stages.map(
       (stage) => ({
         ...stage,
         stepState: "active" as const,
@@ -1458,7 +1545,13 @@ describe("demo semantic-truth fence", () => {
     expect(
       approvalReceiptHashFor(
         journey.record.identity.decisionHash,
-        changedReceipts,
+        {
+          ...journey.record.authority,
+          stages: [
+            changedReceipts[0]!,
+            ...changedReceipts.slice(1),
+          ],
+        },
       ),
     ).not.toBe(journey.record.hashes.approvalReceiptHash);
     expect(journey.record.hashes.approvalReceiptHash).toMatch(
@@ -1470,13 +1563,16 @@ describe("demo semantic-truth fence", () => {
     const journey = getJourney("safe-proceed", "firm-a");
     const scenario = scenarioById("safe-proceed");
     const firm = firmById("firm-a");
-    const requirements = decisionAuthorityRequirementsFor(
-      journey.record.approvalStages ?? [],
-    );
+    expect(journey.record.authority?.mode).toBe("staged");
+    if (journey.record.authority?.mode !== "staged") return;
+    const authority = decisionAuthorityClaimFor(journey.record.authority);
+    expect(authority.mode).toBe("staged");
+    if (authority.mode !== "staged") return;
+    const requirements = authority.requirements;
     const claims = {
       disposition: journey.recommendation.disposition,
       precedence: journey.policyTrace.rows,
-      authority: { reached: true, requirements },
+      authority,
     };
     const base = hashCanonicalPreimage(
       decisionRecordPreimageFor(
@@ -1494,13 +1590,73 @@ describe("demo semantic-truth fence", () => {
         {
           ...claims,
           authority: {
-            reached: true,
+            mode: "staged",
             requirements: requirements.map((requirement, index) =>
               index === 0
                 ? { ...requirement, expiry: "Expires after 4 days" }
                 : requirement,
             ),
           },
+        },
+      ),
+    );
+    expect(changed).not.toBe(base);
+  });
+
+  it("enforces: automatic authority binds exact fields without approval receipts", () => {
+    for (const scenarioId of ["safe-proceed", "delayed-nigo"] as const) {
+      const journey = getJourney(scenarioId, "firm-b");
+      const authority = journey.record.authority;
+      expect(authority?.mode).toBe("automatic");
+      if (authority?.mode !== "automatic") return;
+      expect(Number(authority.threshold.value)).toBe(10_000_000);
+      expect(authority.policySource).toBe("FB-2.1 §4");
+      expect(authority.rule).toBe(
+        "$75,000 is below Firm B's $100,000 dual-approval threshold, so no approval stage applies.",
+      );
+      expect(authority.executionMode).toBe(
+        "Automatic - no human approval action",
+      );
+      expect(authority.state).toBe("Authority resolved automatically");
+      expect("stages" in authority).toBe(false);
+      expect(journey.approvals?.mode).toBe("automatic");
+      expect(journey.record.hashes.approvalReceiptHash).toBeNull();
+      expect(
+        approvalReceiptHashFor(
+          journey.record.identity.decisionHash,
+          authority,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("detects: changing an automatic authority field changes bundle identity", () => {
+    const scenario = scenarioById("safe-proceed");
+    const firm = firmById("firm-b");
+    const configuration = decisionConfigurationFor(firm);
+    const recordAuthority =
+      getJourney("safe-proceed", "firm-b").record.authority;
+    expect(recordAuthority?.mode).toBe("automatic");
+    if (recordAuthority?.mode !== "automatic") return;
+    const authority = decisionAuthorityClaimFor(recordAuthority);
+    expect(authority.mode).toBe("automatic");
+    if (authority.mode !== "automatic") return;
+    const base = hashCanonicalPreimage(
+      decisionBundlePreimageFor(
+        scenario,
+        firm,
+        configuration,
+        authority,
+      ),
+    );
+    const changed = hashCanonicalPreimage(
+      decisionBundlePreimageFor(
+        scenario,
+        firm,
+        configuration,
+        {
+          ...authority,
+          thresholdMinor: authority.thresholdMinor + 1,
         },
       ),
     );
@@ -1869,18 +2025,19 @@ describe("demo semantic-truth fence", () => {
   it("enforces: the evaluator freezes ordered authority stages and export consumes them unchanged", () => {
     const snapshot = activatedSnapshot();
     const firmA = snapshot.firms[0];
-    expect(firmA.authorityPlan.reached).toBe(true);
+    expect(firmA.authorityPlan.mode).toBe("staged");
+    if (firmA.authorityPlan.mode !== "staged") return;
     expect(firmA.authorityPlan.stages.map((stage) => stage.title)).toEqual([
       "Stage 1 - Bank-instruction specialist review",
       "Stage 2 - Dual operations approval",
     ]);
     const record = buildActivatedRecord(snapshot, "firm-a");
-    expect(record.approvalStages).toBe(firmA.authorityPlan.stages);
-    expect(record.approvalStages).toEqual(firmA.authorityPlan.stages);
+    expect(record.authority).toBe(firmA.authorityPlan);
+    expect(record.authority).toEqual(firmA.authorityPlan);
     expect(Object.isFrozen(firmA.authorityPlan.stages)).toBe(true);
   });
 
-  it("enforces: records preserve null when authority was never reached", () => {
+  it("enforces: records preserve a typed not-reached authority state", () => {
     for (const [scenarioId, firmId] of [
       ["permanent-prohibition", "firm-a"],
       ["stale-evidence", "firm-a"],
@@ -1888,7 +2045,7 @@ describe("demo semantic-truth fence", () => {
     ] as const) {
       const journey = getJourney(scenarioId, firmId);
       expect(journey.approvals).toBeNull();
-      expect(journey.record.approvalStages).toBeNull();
+      expect(journey.record.authority).toBeNull();
       expect(journey.record.hashes.approvalReceiptHash).toBeNull();
       expect(journey.record.stopNote).toContain(
         "stopped at Decision",
@@ -1896,14 +2053,38 @@ describe("demo semantic-truth fence", () => {
     }
   });
 
-  it("detects: an empty authority collection is not a not-reached state", () => {
-    const blocked = getJourney("stale-evidence", "firm-a").record;
-    const structurallyReached = {
-      ...blocked,
-      approvalStages: [],
-    };
-    expect(blocked.approvalStages).toBeNull();
-    expect(structurallyReached.approvalStages).not.toBeNull();
+  it("detects: empty staged authority and mixed automatic fields fail closed", () => {
+    const emptyStages = {
+      mode: "staged",
+      summary: "Staged",
+      detail: "No stages",
+      stages: [],
+    } as unknown as AuthorityPlanVM;
+    expect(() => decisionAuthorityClaimFor(emptyStages)).toThrow(
+      "requires at least one stage",
+    );
+
+    const automatic = getJourney(
+      "safe-proceed",
+      "firm-b",
+    ).record.authority;
+    expect(automatic?.mode).toBe("automatic");
+    if (automatic?.mode !== "automatic") return;
+    const mixed = {
+      ...automatic,
+      stages: [],
+    } as unknown as AuthorityPlanVM;
+    expect(() => decisionAuthorityClaimFor(mixed)).toThrow(
+      "Unsupported authority field mixture",
+    );
+
+    expect(() =>
+      decisionAuthorityClaimFor({
+        mode: "delegated",
+        summary: "Invented mode",
+        detail: "Unsupported",
+      } as unknown as AuthorityPlanVM),
+    ).toThrow("Unsupported authority mode");
   });
 
   it("enforces: activation, decision, authority, and evidence age share the July 28 timeline", () => {
@@ -1914,7 +2095,10 @@ describe("demo semantic-truth fence", () => {
 
     const snapshot = activatedSnapshot();
     expect(snapshot.activatedAt).toBe(DEMO_ACTIVATION_EFFECTIVE_AT);
-    const firmAStages = snapshot.firms[0].authorityPlan.stages;
+    const firmAAuthority = snapshot.firms[0].authorityPlan;
+    expect(firmAAuthority.mode).toBe("staged");
+    if (firmAAuthority.mode !== "staged") return;
+    const firmAStages = firmAAuthority.stages;
     expect(firmAStages[0]?.actors[0]?.statusLabel).toBe(
       `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
     );
@@ -1946,15 +2130,17 @@ describe("demo semantic-truth fence", () => {
 
     const record = buildActivatedRecord(snapshot, "firm-a");
     expect(record.header.createdAt).toBe(DEMO_RECORD_CREATED_AT);
-    const journeyStages = getJourney(
+    const journeyAuthority = getJourney(
       "recent-bank-change-block",
       "firm-a",
-    ).record.approvalStages;
-    expect(journeyStages?.map((stage) => stage.title)).toEqual([
+    ).record.authority;
+    expect(journeyAuthority?.mode).toBe("staged");
+    if (journeyAuthority?.mode !== "staged") return;
+    expect(journeyAuthority.stages.map((stage) => stage.title)).toEqual([
       "Stage 1 - Bank-instruction specialist review",
       "Stage 2 - Dual operations approval",
     ]);
-    expect(journeyStages?.[0]?.actors[0]?.statusLabel).toBe(
+    expect(journeyAuthority.stages[0]?.actors[0]?.statusLabel).toBe(
       `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
     );
     expect(BANK_INSTRUCTION.changedAgeDays).toBe(6);
@@ -1964,13 +2150,15 @@ describe("demo semantic-truth fence", () => {
       )?.facts,
     ).toContain("49 days old");
 
-    const expired = getJourney(
+    const expiredAuthority = getJourney(
       "specialist-review-expiration",
       "firm-a",
-    ).record.approvalStages;
-    expect(expired?.[0]?.stepState).toBe("active");
-    expect(expired?.[1]?.stepState).toBe("pending");
-    expect(expired?.[1]?.actors.every((actor) => actor.status !== "done")).toBe(
+    ).record.authority;
+    expect(expiredAuthority?.mode).toBe("staged");
+    if (expiredAuthority?.mode !== "staged") return;
+    expect(expiredAuthority.stages[0]?.stepState).toBe("active");
+    expect(expiredAuthority.stages[1]?.stepState).toBe("pending");
+    expect(expiredAuthority.stages[1]?.actors.every((actor) => actor.status !== "done")).toBe(
       true,
     );
   });
@@ -1989,6 +2177,8 @@ describe("demo semantic-truth fence", () => {
       selections["firm-b"]["bank-change"] = "specialist";
     });
     const belowThresholdPlan = belowThreshold.firms[1].authorityPlan;
+    expect(belowThresholdPlan.mode).toBe("staged");
+    if (belowThresholdPlan.mode !== "staged") return;
     expect(belowThresholdPlan.stages.map((stage) => stage.title)).toEqual([
       "Stage 1 - Bank-instruction specialist review",
     ]);
@@ -1997,8 +2187,8 @@ describe("demo semantic-truth fence", () => {
     ).not.toContainEqual(
       expect.objectContaining({ requesterExcluded: true }),
     );
-    expect(buildActivatedRecord(belowThreshold, "firm-b").approvalStages).toBe(
-      belowThresholdPlan.stages,
+    expect(buildActivatedRecord(belowThreshold, "firm-b").authority).toBe(
+      belowThresholdPlan,
     );
 
     const dualApproval = activatedSnapshot((selections) => {
@@ -2006,6 +2196,8 @@ describe("demo semantic-truth fence", () => {
       selections["firm-b"].threshold = "25000";
     });
     const dualPlan = dualApproval.firms[1].authorityPlan;
+    expect(dualPlan.mode).toBe("staged");
+    if (dualPlan.mode !== "staged") return;
     expect(dualPlan.stages.map((stage) => stage.title)).toEqual([
       "Stage 1 - Bank-instruction specialist review",
       "Stage 2 - Dual operations approval",
@@ -2435,7 +2627,10 @@ describe("demo semantic-truth fence", () => {
   it("enforces: the journey approval clock is the shared catalog entry its id hashes", () => {
     const clock = APPROVAL_CLOCKS[decisionConfigurationFor(firmById("firm-a")).approvalClockId];
     expect(clock, "the hashed approval-clock id has no catalog entry").toBeDefined();
-    const stage = getJourney("safe-proceed", "firm-a").approvals?.stages[0];
+    const approvals = getJourney("safe-proceed", "firm-a").approvals;
+    expect(approvals?.mode).toBe("staged");
+    if (approvals?.mode !== "staged") return;
+    const stage = approvals.stages[0];
     expect(stage?.escalation).toBe(clock!.escalation);
     expect(stage?.expiry).toBe(clock!.expiry);
   });
@@ -2461,6 +2656,17 @@ describe("demo semantic-truth fence", () => {
         `reserve-floor provenance drift:\n${violations.join("\n")}`,
       ).toEqual([]);
     }
+  });
+
+  it("enforces: reserve floor lineage excludes headroom-only balance inputs", () => {
+    const floor = reserveFloorInputs(ACTIVATED_RESERVE_HORIZON);
+    const headroom = headroomInputs(ACTIVATED_RESERVE_HORIZON);
+    expect(floor).toEqual(RESERVE_FLOOR_INPUTS);
+    expect(floor).toHaveLength(2);
+    expect(headroom).toHaveLength(5);
+    expect(floor).not.toContain(headroom[0]);
+    expect(floor).toContain(headroom[2]);
+    expect(floor).toContain(headroom[4]);
   });
 
   it("detects: a reserve floor missing the administrator-chosen horizon leaf cannot pass", () => {
@@ -2898,6 +3104,28 @@ describe("demo semantic-truth fence", () => {
         violation.includes("firm-b") &&
         violation.includes("execution reachability"),
       )).toBe(true);
+    });
+
+    it("flags invented Firm B approval authority in signed automatic cases", () => {
+      const actual = demoSemanticFacts();
+      const violations = semanticTruthViolations(
+        {
+          ...actual,
+          automaticAuthority: {
+            happyFirmB: "staged",
+            delayedNigoFirmB: "staged",
+          },
+        },
+        goldenSemanticTruth(),
+      );
+      expect(violations).toHaveLength(2);
+      expect(
+        violations.every(
+          (violation) =>
+            violation.includes("src/app/demo/build-decision.ts:") &&
+            violation.includes('captain-signed "automatic"'),
+        ),
+      ).toBe(true);
     });
   });
 });

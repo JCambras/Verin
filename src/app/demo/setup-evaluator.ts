@@ -15,17 +15,23 @@ import {
   type FirmData,
 } from "./data";
 import {
-  decisionAuthorityRequirementsFor,
+  decisionAuthorityClaimFor,
   decisionIdentityFor,
   hashCanonicalPreimage,
   toJsonValue,
 } from "./decision-identity";
-import { ACTIVATED_RESERVE_HORIZON, RESERVE_FLOOR_INPUTS, derivedMetric } from "./provenance";
+import {
+  ACTIVATED_RESERVE_HORIZON,
+  RESERVE_FLOOR_INPUTS,
+  derivedMetric,
+  prov,
+} from "./provenance";
 import {
   POSTURE_CONFIGURATION_LABEL,
   POSTURE_OPTION_LABEL,
   POSTURE_STATUS,
   SETUP_ATTESTATION_STATEMENT_VERSION,
+  SETUP_FIRM_IDS,
   SETUP_POLICY_GROUP_IDS,
   configurationPosture,
   optionPosture,
@@ -205,6 +211,8 @@ function evaluateFirm(
     disposition,
     dualApproval,
     approvalClock,
+    configuration.bankChangeHandling === "specialist-review",
+    prov("user-entered-demo-input", DEMO_NOW),
   );
   const identity = decisionIdentityFor(
     scenario,
@@ -217,12 +225,7 @@ function evaluateFirm(
         firm,
         disposition.kind,
       ).rows,
-      authority: {
-        reached: evaluatedAuthority.reached,
-        requirements: decisionAuthorityRequirementsFor(
-          evaluatedAuthority.stages,
-        ),
-      },
+      authority: decisionAuthorityClaimFor(evaluatedAuthority),
     },
   );
   return {
@@ -254,16 +257,41 @@ function evaluateFirm(
       ? "Reserve evidence is fresh under the activated window."
       : "Reserve evidence is outside the activated freshness window.",
     freshnessDetail: `${configuration.freshnessDays} calendar days in the activated configuration.`,
-    strongestProofTitle: evaluatedAuthority.reached
-      ? "Submitted · not verified"
-      : "Blocked decision recorded",
-    strongestProofDetail: evaluatedAuthority.reached
-      ? "One idempotent instruction reached the labeled fake adapter. Settlement and Salesforce parity remain unproven."
-      : "No authority, reservation, execution plan, adapter call, or external status exists for this branch.",
+    strongestProofTitle:
+      evaluatedAuthority.mode === "not-reached"
+        ? "Blocked decision recorded"
+        : evaluatedAuthority.mode === "automatic"
+          ? "Automatic authority · submitted, not verified"
+          : "Submitted · not verified",
+    strongestProofDetail:
+      evaluatedAuthority.mode === "not-reached"
+        ? "No authority, reservation, execution plan, adapter call, or external status exists for this branch."
+        : evaluatedAuthority.mode === "automatic"
+          ? "Authority resolved without approval stages. One idempotent instruction reached the labeled fake adapter; settlement and Salesforce parity remain unproven."
+          : "One idempotent instruction reached the labeled fake adapter. Settlement and Salesforce parity remain unproven.",
     selectedOptions,
     approvalClock,
     exportLabel: `${profile.firmLabel} decision record`,
   };
+}
+
+export function setupActivationAuthorityClaims(
+  vm: MoneyMovementSetupVM,
+  selections: SetupSelections,
+  authority: SetupActivationAuthorityBinding,
+) {
+  return SETUP_FIRM_IDS.map((firmId) => ({
+    firmId,
+    authority: decisionAuthorityClaimFor(
+      evaluateFirm(
+        vm,
+        firmId,
+        selections,
+        "0".repeat(64),
+        authority,
+      ).authorityPlan,
+    ),
+  }));
 }
 
 function deepFreeze<T>(value: T): T {
@@ -303,8 +331,18 @@ export function activateMoneyMovementSetup(
     };
   }
   const vm = buildMoneyMovementSetup();
+  const authorityPlans = setupActivationAuthorityClaims(
+    vm,
+    draft.selections,
+    authority,
+  );
   const snapshotHash = hashCanonicalPreimage(
-    setupActivationPreimageFor(vm, draft, authority),
+    setupActivationPreimageFor(
+      vm,
+      draft,
+      authority,
+      authorityPlans,
+    ),
   );
   const snapshotVersion = `MM-DEMO-SNAPSHOT-${snapshotHash
     .slice(0, 12)
@@ -365,11 +403,11 @@ export function buildActivatedRecord(
   }
   const firm = runtimeFirm(firmId, snapshot.selections, evaluated.policyVersion);
   const reached = {
-    authority: evaluated.authorityPlan.reached,
-    safety: evaluated.authorityPlan.reached,
-    execution: evaluated.authorityPlan.reached,
+    authority: evaluated.authorityPlan.mode !== "not-reached",
+    safety: evaluated.authorityPlan.mode !== "not-reached",
+    execution: evaluated.authorityPlan.mode !== "not-reached",
   };
-  const stopNote = evaluated.authorityPlan.reached
+  const stopNote = evaluated.authorityPlan.mode !== "not-reached"
     ? null
     : "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
   return buildRecord(
@@ -385,9 +423,7 @@ export function buildActivatedRecord(
         bundleHash: evaluated.bundleHash,
       },
       disposition: evaluated.disposition,
-      approvalStages: evaluated.authorityPlan.reached
-        ? evaluated.authorityPlan.stages
-        : null,
+      authority: evaluated.authorityPlan,
       activatedConfiguration: {
         snapshotVersion: snapshot.snapshotVersion,
         snapshotHash: snapshot.snapshotHash,

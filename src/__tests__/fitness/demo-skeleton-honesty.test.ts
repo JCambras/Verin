@@ -10,7 +10,12 @@ import {
   type Type,
   type TypeLiteralNode,
 } from "ts-morph";
-import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
+import {
+  walk,
+  REPO_ROOT,
+  inMemoryProject,
+  moduleReferences,
+} from "./_fence-utils";
 import { SCENARIOS, FIRMS } from "@app/demo/data";
 
 /**
@@ -134,12 +139,11 @@ const SURFACES_DIR = "src/app/demo/surfaces";
  * vocabulary, contract TYPES, and surface-local siblings. Nothing that carries data
  * or builds view models. */
 const ALLOWED = [
-  /^react$/,
+  /^react(?:\/jsx-runtime)?$/,
   /^next\//,
   /^@app\/presentation\//,
   /^\.\.\/model$/,
   /^\.\.\/setup-model$/,
-  /^@contracts\//,
   /^\.\//,
 ];
 
@@ -158,6 +162,10 @@ export function importBoundaryViolations(files: {
     for (const { spec, line, typeOnly } of f.specifiers) {
       const actionContract =
         spec === "../setup-activation-contract" && typeOnly;
+      const contractType =
+        /^@contracts\//.test(spec) && typeOnly;
+      const runtimeContract =
+        /^@contracts\//.test(spec) && !typeOnly;
       // A ".." segment anywhere (beyond the one allowed "../model") escapes the
       // sibling allowlist by traversal - "./../data" must not read as a sibling.
       const traversal =
@@ -165,8 +173,11 @@ export function importBoundaryViolations(files: {
         !["../model", "../setup-model"].includes(spec) &&
         spec.split("/").includes("..");
       if (
+        runtimeContract ||
         traversal ||
-        (!actionContract && !ALLOWED.some((re) => re.test(spec)))
+        (!actionContract &&
+          !contractType &&
+          !ALLOWED.some((re) => re.test(spec)))
       ) {
         out.push(`${f.path}:${line} :: import "${spec}" - surfaces render view models only (no data, service, or builder imports)`);
       }
@@ -185,33 +196,47 @@ function specifiersOf(project: Project): {
   return project.getSourceFiles().map((sf) => {
     const specifiers: SurfaceModuleSpecifier[] = [];
     for (const d of sf.getImportDeclarations()) {
+      const named = d.getNamedImports();
+      const everyBindingTypeOnly =
+        d.isTypeOnly() ||
+        (d.getDefaultImport() === undefined &&
+          d.getNamespaceImport() === undefined &&
+          named.length > 0 &&
+          named.every((binding) => binding.isTypeOnly()));
       specifiers.push({
         spec: d.getModuleSpecifierValue(),
         line: d.getStartLineNumber(),
-        typeOnly: d.isTypeOnly(),
+        typeOnly: everyBindingTypeOnly,
       });
     }
     for (const d of sf.getExportDeclarations()) {
       const spec = d.getModuleSpecifierValue();
       if (spec !== undefined) {
+        const named = d.getNamedExports();
         specifiers.push({
           spec,
           line: d.getStartLineNumber(),
-          typeOnly: d.isTypeOnly(),
+          typeOnly:
+            d.isTypeOnly() ||
+            (named.length > 0 &&
+              named.every((binding) => binding.isTypeOnly())),
         });
       }
     }
-    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const expr = call.getExpression();
-      if (expr.getKind() !== SyntaxKind.ImportKeyword && expr.getText() !== "require") continue;
-      const arg = call.getArguments()[0];
-      const lit = arg?.asKind(SyntaxKind.StringLiteral) ?? arg?.asKind(SyntaxKind.NoSubstitutionTemplateLiteral);
+    for (const reference of moduleReferences(sf)) {
+      if (reference.kind === "import" || reference.kind === "export") {
+        continue;
+      }
       specifiers.push({
-        spec: lit
-          ? lit.getLiteralText()
-          : "(non-literal dynamic specifier)",
-        line: call.getStartLineNumber(),
-        typeOnly: false,
+        spec:
+          reference.specifier ??
+          `(unresolved ${reference.kind})`,
+        line: reference.line,
+        typeOnly:
+          reference.kind === "import-type" ||
+          reference.kind === "reference-types" ||
+          reference.kind === "reference-path" ||
+          reference.kind === "reference-lib",
       });
     }
     return { path: relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"), specifiers };
@@ -797,6 +822,23 @@ describe("demo-skeleton-honesty fence", () => {
       expect(importBoundaryViolations(specifiersOf(runtime))).toHaveLength(1);
     });
 
+    it("RULE B allows contract types and rejects runtime or mixed contract imports", () => {
+      const typeOnly = inMemoryProject({
+        "/src/app/demo/surfaces/contract-type.tsx": `import { type DisplayMetric } from "@contracts/metric";\nexport type Props = { metric: DisplayMetric };`,
+      });
+      expect(importBoundaryViolations(specifiersOf(typeOnly))).toEqual([]);
+
+      const runtime = inMemoryProject({
+        "/src/app/demo/surfaces/contract-runtime.tsx": `import { metric } from "@contracts/metric";\nexport const value = metric;`,
+      });
+      expect(importBoundaryViolations(specifiersOf(runtime))).toHaveLength(1);
+
+      const mixed = inMemoryProject({
+        "/src/app/demo/surfaces/contract-mixed.tsx": `import { type DisplayMetric, metric } from "@contracts/metric";\nexport const value: DisplayMetric | typeof metric = metric;`,
+      });
+      expect(importBoundaryViolations(specifiersOf(mixed))).toHaveLength(1);
+    });
+
     it("RULE B's walk sees plain-.ts files too - a .ts helper importing the data is caught on disk", () => {
       const dir = mkdtempSync(join(tmpdir(), "surfaces-fence-"));
       try {
@@ -832,13 +874,39 @@ describe("demo-skeleton-honesty fence", () => {
       expect(violations[0]).toContain(`"../data"`);
     });
 
+    it.each([
+      [
+        "direct",
+        `export const leaked = require("../data");`,
+      ],
+      [
+        "ambient alias",
+        `const load = require;\nexport const leaked = load("../data");`,
+      ],
+      [
+        "module member",
+        `export const leaked = module.require("../data");`,
+      ],
+      [
+        "destructured member",
+        `const { require: load } = module;\nexport const leaked = load("../data");`,
+      ],
+    ])("RULE B flags %s CommonJS loaders", (_name, source) => {
+      const project = inMemoryProject({
+        "/src/app/demo/surfaces/loader.ts": source,
+      });
+      const violations = importBoundaryViolations(specifiersOf(project));
+      expect(violations.length).toBeGreaterThan(0);
+      expect(violations[0]).toContain("loader.ts:");
+    });
+
     it("RULE B flags a non-literal dynamic specifier - unverifiable cannot pass", () => {
       const project = inMemoryProject({
         "/src/app/demo/surfaces/opaque.tsx": `const target = "../data";\nexport const p = import(target);`,
       });
       const violations = importBoundaryViolations(specifiersOf(project));
       expect(violations.length).toBe(1);
-      expect(violations[0]).toContain("(non-literal dynamic specifier)");
+      expect(violations[0]).toContain("(unresolved dynamic-import)");
     });
 
     it("RULE B flags traversal specifiers disguised as sibling imports", () => {

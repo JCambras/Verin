@@ -13,11 +13,11 @@ import type { DecisionJourneyVM } from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import {
   buildApprovals,
-  buildDecisionAuthorityStages,
+  buildAuthorityPlan,
   buildPolicyTrace,
   buildRecommendation,
-  buildStages,
 } from "./build-decision";
+import { buildDecisionAuthorityPlan } from "./decision-authority";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { buildRecord } from "./build-summary";
 import {
@@ -27,7 +27,7 @@ import {
   scenarioById,
 } from "./data";
 import {
-  decisionAuthorityRequirementsFor,
+  decisionAuthorityClaimFor,
   decisionIdentityFor,
 } from "./decision-identity";
 
@@ -60,14 +60,8 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
   const recommendation = buildRecommendation(scenario, firm);
   const disposition = recommendation.disposition;
   const policyTrace = buildPolicyTrace(scenario, firm, disposition.kind);
-  const approvalStages = reached.authority
-    ? buildStages(scenario, firm, "final")
-    : null;
-  const authorityRequirements = reached.authority
-    ? decisionAuthorityRequirementsFor(
-        buildDecisionAuthorityStages(scenario, firm),
-      )
-    : [];
+  const decisionAuthority = buildDecisionAuthorityPlan(scenario, firm);
+  const finalAuthority = buildAuthorityPlan(scenario, firm, "final");
   const identity = decisionIdentityFor(
     scenario,
     firm,
@@ -75,10 +69,7 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     {
       disposition,
       precedence: policyTrace.rows,
-      authority: {
-        reached: reached.authority,
-        requirements: authorityRequirements,
-      },
+      authority: decisionAuthorityClaimFor(decisionAuthority),
     },
   );
   return {
@@ -89,7 +80,9 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     evidence: buildEvidence(scenario),
     recommendation,
     policyTrace,
-    approvals: reached.authority ? buildApprovals(scenario, firm, identity) : null,
+    approvals: reached.authority
+      ? buildApprovals(scenario, firm, identity, decisionAuthority)
+      : null,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario) : null,
     verification: reached.execution ? buildVerification(scenario) : null,
@@ -97,7 +90,7 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     record: buildRecord(scenario, firm, reached, stopNote, {
       identity,
       disposition,
-      approvalStages,
+      authority: finalAuthority,
     }),
   };
 }

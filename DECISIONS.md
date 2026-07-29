@@ -3400,3 +3400,34 @@ actually existed at that point.
 
 **Revert path:** none while approval binds to a pre-event decision hash and GC-15 retains
 separate original and refreshed evidence snapshots.
+
+### D-070 · 2026-07-28 · reversible · Automatic authority is a distinct closed state
+
+Firm B's captain-signed GC-02 and GC-14 outcomes now carry automatic authority for the
+$75,000 request below its $100,000 dual-approval threshold. Automatic authority states
+the exact rule, threshold, policy source, execution mode, and resulting state. It has no
+approval stages, actors, human approval action, approval receipt, or receipt hash.
+Staged authority requires at least one stage, and runtime identity construction rejects
+unknown modes or any mixture of automatic and staged fields. Records that never reach
+authority remain `null` as required by D-069.
+
+Activation, policy-bearing bundle, decision, and printable-record identities bind the
+authority mode and only the fields that mode owns. Completed staged actors and times
+remain confined to the separate receipt identity. The signed-case semantic projection
+compares both Firm B automatic outcomes to their captain-signed fixtures.
+
+Two ownership corrections travel with the authority state. Demo surfaces may import
+contract modules only through type-only bindings, and the shared hardened module
+reference collector now detects direct, member, ambient, destructured, aliased, and
+unresolved runtime loaders at the presentation boundary. Reserve-floor provenance
+contains only the planned-withdrawal schedule and selected horizon; available balance
+remains a headroom-only input.
+
+**Why:** automatic execution cannot be represented as an empty or invented approval
+stage without changing the signed outcome and manufacturing approval evidence that did
+not exist. Presentation and provenance boundaries must reject the same class of
+misrepresentation before it reaches an export.
+
+**Revert path:** replace automatic authority only with a new captain ruling that changes
+GC-02 and GC-14. The loader, type-only import, closed-mode, and exact-lineage boundaries
+remain independently reversible.

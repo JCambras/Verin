@@ -6189,3 +6189,28 @@ the original and refreshed input hashes printed by the invalidation view model.
 
 **Adversarial proof:** a planted original retrieval at 14:00:30 after an observation moved
 to 14:01 fails with `original retrieval occurs before original observation`.
+
+## PF-setup-35 · automatic authority and presentation boundary stay closed
+
+**Date:** 2026-07-28.
+
+**Invariant:** Firm B's signed GC-02 and GC-14 outcomes use automatic authority with no
+approval stages, actors, action, receipt, or receipt hash. Automatic and staged fields
+cannot mix. Demo surfaces consume only presentation values, view models, and contract
+types. Reserve-floor lineage excludes the available-balance input used only by headroom.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` projects both signed
+automatic cases, rejects empty staged plans, unknown modes, and mixed fields, proves
+automatic fields alter bundle identity, requires null receipt identity, and checks the
+floor and headroom leaf sets. `src/__tests__/fitness/demo-skeleton-honesty.test.ts`
+uses the shared module-reference collector and rejects runtime or mixed contract imports
+plus direct, member, ambient, destructured, aliased, and unresolved loaders.
+
+**Adversarial proof:** a temporary surface runtime-imported `metric` and aliased ambient
+`require` to load `../data`. The focused RULE B run failed at
+`src/app/demo/surfaces/__proof-loader.ts:1` for the runtime contract import and line 3
+for the unresolved require reference. Removing the injected file returned the same
+focused run to green. Companion mutations invent staged authority for both signed Firm B
+cases, add `stages` to automatic authority, empty staged authority, alter the automatic
+threshold claim, and add the balance leaf to the reserve floor; each is rejected or
+changes the governed identity.

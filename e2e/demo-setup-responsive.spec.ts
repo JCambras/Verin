@@ -331,3 +331,57 @@ test("invalid activation references fail closed without echo or overflow", async
   await assertNoPageOverflow(page);
   await assertAxe(page, "invalid-activation");
 });
+
+test("automatic Firm B authority has no human approval artifacts", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  for (const viewport of WIDTHS) {
+    await page.setViewportSize(viewport);
+    await page.goto(
+      "/app/demo/authority?scenario=safe-proceed&firm=firm-b",
+    );
+    const authority = page.getByTestId("automatic-authority");
+    await expect(authority).toContainText("Automatic authority");
+    await expect(authority).toContainText("$100,000.00");
+    await expect(authority).toContainText("FB-2.1 §4");
+    await expect(authority).toContainText(
+      "$75,000 is below Firm B's $100,000 dual-approval threshold, so no approval stage applies.",
+    );
+    await expect(authority).toContainText(
+      "Automatic - no human approval action",
+    );
+    await expect(authority).toContainText(
+      "Authority resolved automatically",
+    );
+    await expect(
+      page.getByRole("link", { name: "Approve this movement" }),
+    ).toHaveCount(0);
+    await assertNoPageOverflow(page);
+    await assertAxe(page, `${viewport.width}-automatic-authority`);
+
+    await page.goto(
+      "/app/demo/record?scenario=delayed-nigo&firm=firm-b",
+    );
+    await expect(page.getByTestId("record-automatic-authority")).toContainText(
+      "$100,000.00",
+    );
+    await expect(page.getByTestId("record-automatic-authority")).toContainText(
+      "FB-2.1 §4",
+    );
+    await expect(page.getByText("Approval receipt hash")).toHaveCount(0);
+    await expect(page.getByText(/Stage \d/)).toHaveCount(0);
+    await assertNoPageOverflow(page);
+    await assertAxe(page, `${viewport.width}-automatic-record`);
+  }
+
+  await page.setViewportSize(WIDTHS[0]);
+  await page.goto(
+    "/app/demo/authority?scenario=safe-proceed&firm=firm-b",
+  );
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = "200%";
+  });
+  await expect(page.getByTestId("automatic-authority")).toBeVisible();
+  await assertNoPageOverflow(page);
+});

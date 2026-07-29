@@ -8,7 +8,7 @@
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import type { Role } from "@contracts/roles";
-import type { ApprovalStageVM, DispositionVM, FakeClass } from "./model";
+import type { AuthorityPlanVM, DispositionVM, FakeClass } from "./model";
 
 export const SETUP_FIRM_IDS = ["firm-a", "firm-b"] as const;
 export type SetupFirmId = (typeof SETUP_FIRM_IDS)[number];
@@ -263,12 +263,7 @@ export interface SetupProofFirmVM {
   readonly configurationPosture: SetupAuthorityPosture;
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
-  readonly authorityPlan: {
-    readonly reached: boolean;
-    readonly summary: string;
-    readonly detail: string;
-    readonly stages: readonly ApprovalStageVM[];
-  };
+  readonly authorityPlan: AuthorityPlanVM;
   readonly reserveMetric: DisplayMetric;
   readonly reserveSummary: string;
   readonly reserveDetail: string;

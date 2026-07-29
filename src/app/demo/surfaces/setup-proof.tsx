@@ -7,6 +7,7 @@
  */
 import { StatusBadge } from "@app/presentation/ui";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { Metric } from "@app/presentation/metric";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS } from "../model";
 import {
   POSTURE_OPTION_LABEL,
@@ -81,10 +82,65 @@ function Trail({
           <p className="mt-1 text-xs text-slate-600">{identity.disposition.headline}</p>
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
-          <CategoryLabel>{identity.authorityPlan.reached ? "Adapter fact" : "Universal safety"}</CategoryLabel>
+          <CategoryLabel>
+            {identity.authorityPlan.mode === "not-reached"
+              ? "Universal safety"
+              : "Authority result"}
+          </CategoryLabel>
           <p className="mt-2 text-sm font-medium text-slate-900">
-            5. {identity.authorityPlan.reached ? "Authority, revalidation, and one submission" : "Path stops safely"}
+            5.{" "}
+            {identity.authorityPlan.mode === "not-reached"
+              ? "Path stops safely"
+              : identity.authorityPlan.mode === "automatic"
+                ? "Automatic authority, revalidation, and one submission"
+                : "Staged authority, revalidation, and one submission"}
           </p>
+          <p className="mt-1 text-xs font-medium text-slate-800">
+            {identity.authorityPlan.summary}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            {identity.authorityPlan.detail}
+          </p>
+          {identity.authorityPlan.mode === "automatic" ? (
+            <dl className="mt-2 grid min-w-0 gap-2 text-xs">
+              <div>
+                <dt className="text-slate-600">Dual-approval threshold</dt>
+                <dd className="text-slate-800">
+                  <Metric metric={identity.authorityPlan.threshold} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-600">Policy source</dt>
+                <dd className="break-all font-mono text-slate-800">
+                  {identity.authorityPlan.policySource}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-600">Execution mode</dt>
+                <dd className="text-slate-800">
+                  {identity.authorityPlan.executionMode}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-600">Resulting authority state</dt>
+                <dd className="text-slate-800">
+                  {identity.authorityPlan.state}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-slate-600">Signed automatic rule</dt>
+                <dd className="text-slate-800">{identity.authorityPlan.rule}</dd>
+              </div>
+            </dl>
+          ) : identity.authorityPlan.mode === "staged" ? (
+            <ol className="mt-2 flex flex-col gap-1 text-xs text-slate-700">
+              {identity.authorityPlan.stages.map((stage) => (
+                <li key={stage.title}>
+                  {stage.title}: {stage.requirement}
+                </li>
+              ))}
+            </ol>
+          ) : null}
           <p className="mt-1 text-xs text-slate-600">
             {identity.strongestProofDetail}
           </p>

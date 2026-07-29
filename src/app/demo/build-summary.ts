@@ -6,7 +6,7 @@
 import type { RecordProvenance } from "@contracts/provenance";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
 import type {
-  ApprovalStageVM,
+  AuthorityPlanVM,
   DispositionVM,
   RecordReserveVM,
   RecordVM,
@@ -14,14 +14,14 @@ import type {
 import { FIXTURE_RESERVE_HORIZON, prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
+  buildAuthorityPlan,
   buildDisposition,
-  buildDecisionAuthorityStages,
   buildPolicyTrace,
-  buildStages,
   headroomMetric,
   reserveFloorMetric,
   reserveHorizonPhrase,
 } from "./build-decision";
+import { buildDecisionAuthorityPlan } from "./decision-authority";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import {
   DEMO_NOW,
@@ -35,14 +35,14 @@ import {
 } from "./data";
 import {
   approvalReceiptHashFor,
-  decisionAuthorityRequirementsFor,
+  decisionAuthorityClaimFor,
   decisionIdentityFor,
 } from "./decision-identity";
 
 export interface RecordBuildOptions {
   readonly identity?: DecisionIdentity;
   readonly disposition?: DispositionVM;
-  readonly approvalStages?: readonly ApprovalStageVM[] | null;
+  readonly authority?: AuthorityPlanVM;
   readonly activatedConfiguration?: RecordVM["activatedConfiguration"];
   /** Where the reserve horizon came from - a FIRMS fixture on the journey, the
    * administrator's activated choice after setup. It changes the ADR-0022 leaf
@@ -97,12 +97,13 @@ export function buildRecord(
     firm,
     disposition.kind,
   ).rows;
-  const approvalStages =
-    options.approvalStages !== undefined
-      ? options.approvalStages
-      : reached.authority
-        ? buildStages(scenario, firm, "final")
-        : null;
+  const authority =
+    options.authority ??
+    (reached.authority
+      ? buildAuthorityPlan(scenario, firm, "final")
+      : buildDecisionAuthorityPlan(scenario, firm));
+  const recordAuthority =
+    authority.mode === "not-reached" ? null : authority;
   const identity =
     options.identity ??
     decisionIdentityFor(
@@ -112,15 +113,9 @@ export function buildRecord(
       {
         disposition,
         precedence,
-        authority: {
-          reached: approvalStages !== null,
-          requirements:
-            approvalStages === null
-              ? []
-              : decisionAuthorityRequirementsFor(
-                  buildDecisionAuthorityStages(scenario, firm),
-                ),
-        },
+        authority: decisionAuthorityClaimFor(
+          buildDecisionAuthorityPlan(scenario, firm),
+        ),
       },
     );
   return {
@@ -142,7 +137,7 @@ export function buildRecord(
       auditPosition: IDS.auditPosition,
       approvalReceiptHash: approvalReceiptHashFor(
         identity.decisionHash,
-        approvalStages,
+        authority,
       ),
     },
     activatedConfiguration: options.activatedConfiguration ?? null,
@@ -156,7 +151,7 @@ export function buildRecord(
       disposition,
       reserveHorizon,
     ),
-    approvalStages,
+    authority: recordAuthority,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario).rows : null,
     verification: reached.execution ? buildVerification(scenario) : null,

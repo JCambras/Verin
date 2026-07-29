@@ -208,13 +208,59 @@ export interface ApprovalStageVM {
   readonly expiry?: string;
   readonly escalation?: string;
 }
-export interface ApprovalVM {
+
+export interface UnreachedAuthorityVM {
+  readonly mode: "not-reached";
+  readonly summary: string;
+  readonly detail: string;
+}
+
+export interface AutomaticAuthorityVM {
+  readonly mode: "automatic";
+  readonly summary: string;
+  readonly detail: string;
+  readonly rule: string;
+  readonly threshold: DisplayMetric;
+  readonly policySource: string;
+  readonly executionMode: string;
+  readonly state: string;
+}
+
+export interface StagedAuthorityVM {
+  readonly mode: "staged";
+  readonly summary: string;
+  readonly detail: string;
+  readonly stages: readonly [ApprovalStageVM, ...ApprovalStageVM[]];
+}
+
+export type AuthorityPlanVM =
+  | UnreachedAuthorityVM
+  | AutomaticAuthorityVM
+  | StagedAuthorityVM;
+
+export type ReachedAuthorityPlanVM =
+  | AutomaticAuthorityVM
+  | StagedAuthorityVM;
+
+interface ApprovalCommonVM {
   readonly spine: DecisionSpineVM;
-  readonly stages: readonly ApprovalStageVM[];
   readonly binding: { readonly decisionHash: string; readonly bundleHash: string };
-  readonly gate: { readonly restatement: string; readonly figures: readonly DispositionFigureVM[]; readonly primaryLabel: string };
   readonly fakeClass: FakeClass;
 }
+
+export type ApprovalVM =
+  | (ApprovalCommonVM &
+      AutomaticAuthorityVM & {
+        readonly continueLabel: string;
+      })
+  | (ApprovalCommonVM &
+      StagedAuthorityVM & {
+        readonly gate: {
+          readonly restatement: string;
+          readonly figures: readonly DispositionFigureVM[];
+          readonly primaryLabel: string;
+        };
+      });
 
 // ── Surface 7: Pre-execution safety check (+ the invalidation moment §7.3) ───────────
 export interface SafetyCheckVM {
@@ -352,7 +398,7 @@ export interface RecordVM {
   readonly reserve: RecordReserveVM;
   /** Sections the record never reached print as an explicit "not reached" line -
    * the paper record is as honest as the screen (§9). */
-  readonly approvalStages: readonly ApprovalStageVM[] | null;
+  readonly authority: ReachedAuthorityPlanVM | null;
   readonly safety: SafetyVM | null;
   readonly execution: readonly ExecutionRowVM[] | null;
   readonly verification: VerificationVM | null;

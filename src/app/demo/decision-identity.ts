@@ -7,6 +7,7 @@ import {
 import { IANA_TIME_ZONE_DATA_VERSION } from "@contracts/time-zone";
 import type {
   ApprovalStageVM,
+  AuthorityPlanVM,
   DispositionVM,
   PrecedenceRowVM,
 } from "./model";
@@ -33,9 +34,9 @@ import {
 } from "./data";
 
 export const DEMO_DECISION_SCHEMA_VERSION =
-  "money-movement-demo-decision/4.0.0";
+  "money-movement-demo-decision/5.0.0";
 export const DEMO_DECISION_ENGINE_VERSION =
-  "money-movement-demo-engine/3.0.0";
+  "money-movement-demo-engine/4.0.0";
 
 export interface DecisionAuthorityRequirementClaim {
   readonly order: number;
@@ -48,11 +49,26 @@ export interface DecisionAuthorityRequirementClaim {
 export interface DecisionIdentityClaims {
   readonly disposition: DispositionVM;
   readonly precedence: readonly PrecedenceRowVM[];
-  readonly authority: {
-    readonly reached: boolean;
-    readonly requirements: readonly DecisionAuthorityRequirementClaim[];
-  };
+  readonly authority: DecisionAuthorityClaim;
 }
+
+export type DecisionAuthorityClaim =
+  | {
+      readonly mode: "not-reached";
+      readonly reason: string;
+    }
+  | {
+      readonly mode: "automatic";
+      readonly rule: string;
+      readonly thresholdMinor: number;
+      readonly policySource: string;
+      readonly executionMode: string;
+      readonly state: string;
+    }
+  | {
+      readonly mode: "staged";
+      readonly requirements: readonly DecisionAuthorityRequirementClaim[];
+    };
 
 export interface DecisionInputOverrides {
   readonly canonicalSerializerVersion?: string;
@@ -258,18 +274,92 @@ export function decisionAuthorityRequirementsFor(
   }));
 }
 
+function assertAuthorityPlan(plan: AuthorityPlanVM): void {
+  const mode: unknown = plan.mode;
+  if (
+    mode !== "not-reached" &&
+    mode !== "automatic" &&
+    mode !== "staged"
+  ) {
+    throw new Error(`Unsupported authority mode: ${String(mode)}`);
+  }
+  const expectedKeys =
+    plan.mode === "not-reached"
+      ? ["detail", "mode", "summary"]
+      : plan.mode === "automatic"
+        ? [
+            "detail",
+            "executionMode",
+            "mode",
+            "policySource",
+            "rule",
+            "state",
+            "summary",
+            "threshold",
+          ]
+        : ["detail", "mode", "stages", "summary"];
+  const actualKeys = Object.keys(plan).sort();
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    throw new Error(
+      `Unsupported authority field mixture for mode ${plan.mode}`,
+    );
+  }
+  if (plan.mode === "automatic") {
+    if (
+      typeof plan.threshold.value !== "number" ||
+      !Number.isFinite(plan.threshold.value)
+    ) {
+      throw new Error("Automatic authority requires one finite threshold");
+    }
+  }
+  if (
+    plan.mode === "staged" &&
+    plan.stages.length === 0
+  ) {
+    throw new Error("Staged authority requires at least one stage");
+  }
+}
+
+export function decisionAuthorityClaimFor(
+  plan: AuthorityPlanVM,
+): DecisionAuthorityClaim {
+  assertAuthorityPlan(plan);
+  switch (plan.mode) {
+    case "not-reached":
+      return { mode: plan.mode, reason: plan.detail };
+    case "automatic":
+      return {
+        mode: plan.mode,
+        rule: plan.rule,
+        thresholdMinor: Number(plan.threshold.value),
+        policySource: plan.policySource,
+        executionMode: plan.executionMode,
+        state: plan.state,
+      };
+    case "staged":
+      return {
+        mode: plan.mode,
+        requirements: decisionAuthorityRequirementsFor(plan.stages),
+      };
+  }
+}
+
 export function approvalReceiptHashFor(
   decisionHash: string,
-  stages: readonly ApprovalStageVM[] | null,
+  authority: AuthorityPlanVM,
 ): string | null {
-  if (stages === null) return null;
+  assertAuthorityPlan(authority);
+  if (authority.mode !== "staged") return null;
   return hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-approval-receipt",
     preimageVersion:
       "money-movement-demo-approval-receipt/1.0.0",
     payload: {
       decisionHash,
-      stages,
+      stages: authority.stages,
     },
   }));
 }
@@ -278,11 +368,12 @@ export function decisionBundlePreimageFor(
   scenario: ScenarioData,
   firm: FirmData,
   configuration: DecisionConfiguration,
+  authority: DecisionAuthorityClaim,
 ): JsonValue {
   const inputPreimage = decisionInputPreimageFor(scenario);
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
-    preimageVersion: "money-movement-demo-bundle/3.0.0",
+    preimageVersion: "money-movement-demo-bundle/4.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -291,6 +382,7 @@ export function decisionBundlePreimageFor(
       inputHash: hashCanonicalPreimage(inputPreimage),
       input: inputPreimage,
       configuration,
+      authority,
     },
   });
 }
@@ -305,10 +397,11 @@ export function decisionRecordPreimageFor(
     scenario,
     firm,
     configuration,
+    claims.authority,
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
-    preimageVersion: "money-movement-demo-record/3.0.0",
+    preimageVersion: "money-movement-demo-record/4.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -333,7 +426,12 @@ export function decisionIdentityFor(
 ): DecisionIdentity {
   const inputHash = decisionInputHashFor(scenario);
   const bundleHash = hashCanonicalPreimage(
-    decisionBundlePreimageFor(scenario, firm, configuration),
+    decisionBundlePreimageFor(
+      scenario,
+      firm,
+      configuration,
+      claims.authority,
+    ),
   );
   const decisionHash = hashCanonicalPreimage(
     decisionRecordPreimageFor(scenario, firm, configuration, claims),

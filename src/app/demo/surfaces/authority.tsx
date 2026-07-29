@@ -36,6 +36,79 @@ export function AuthoritySurface({
       </SurfaceShell>
     );
   }
+  if (vm.mode === "automatic") {
+    return (
+      <SurfaceShell
+        spine={vm.spine}
+        title="Authority"
+        description="The exact policy rule and resulting authority state for this movement."
+      >
+        <section
+          aria-labelledby="automatic-authority-title"
+          className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-surface p-4"
+          data-testid="automatic-authority"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
+                Authority mode
+              </p>
+              <h2
+                id="automatic-authority-title"
+                className="mt-1 text-base font-semibold text-slate-900"
+              >
+                {vm.summary}
+              </h2>
+            </div>
+            <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+          </div>
+          <p className="text-sm text-slate-700">{vm.detail}</p>
+          <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-600">Dual-approval threshold</dt>
+              <dd className="text-sm text-slate-900">
+                <Metric metric={vm.threshold} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Policy source</dt>
+              <dd className="break-all font-mono text-xs text-slate-800">
+                {vm.policySource}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Execution mode</dt>
+              <dd className="text-sm text-slate-800">{vm.executionMode}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Resulting authority state</dt>
+              <dd className="text-sm text-slate-800">{vm.state}</dd>
+            </div>
+          </dl>
+          <p className="text-sm text-slate-700">{vm.rule}</p>
+        </section>
+        <p className="font-mono text-xs text-slate-500">
+          Automatic authority is bound to decision {shortHash(vm.binding.decisionHash)} · input bundle{" "}
+          {shortHash(vm.binding.bundleHash)}
+        </p>
+        {journeyContinues ? (
+          <PrimaryLink href={demoHref("safety", scenarioId, firmId)}>
+            {vm.continueLabel}
+          </PrimaryLink>
+        ) : (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {stopNote}
+          </p>
+        )}
+        <JourneyNav
+          back={{
+            href: demoHref("policy-trace", scenarioId, firmId),
+            label: "Back to the policy trace",
+          }}
+        />
+      </SurfaceShell>
+    );
+  }
   return (
     <SurfaceShell spine={vm.spine} title="Authority" description="Who must approve this movement, in what order, and what their approval binds to.">
       <div className="flex flex-col gap-2">

@@ -16,6 +16,7 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionRowVM, type RecordVM, type WhyVM } from "../model";
 import { JourneyNav, SurfaceShell } from "./shared";
 import { PrintButton } from "./print-button";
+import { RecordAuthority } from "./record-authority";
 
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -347,31 +348,10 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
               </DocSection>
 
               <DocSection n={5} title="Authority and approvals">
-                {vm.approvalStages ? (
-                  vm.approvalStages.map((s) => (
-                    <div key={s.title} className="flex flex-col gap-1 print-avoid-break">
-                      <p className="text-sm font-medium text-slate-800">{s.title}</p>
-                      <p className="text-sm text-slate-600">{s.requirement}</p>
-                      <ul className="flex flex-col gap-1">
-                        {s.actors.map((a) => (
-                          // Receded rows use slate-800 so 0.7 opacity keeps the AA floor (§12.1).
-                          <li key={a.name} className={`text-sm ${a.status === "voided" ? "text-slate-800" : "text-slate-700"}`} style={a.status === "voided" ? { opacity: 0.7 } : undefined}>
-                            {a.name} · {a.role}: {a.requesterExcluded ? (a.note ?? a.statusLabel) : a.statusLabel}
-                          </li>
-                        ))}
-                      </ul>
-                      {s.expiry || s.escalation ? (
-                        <p className="text-xs text-slate-600">
-                          {s.expiry}
-                          {s.expiry && s.escalation ? " · " : ""}
-                          {s.escalation}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-600">{vm.stopNote ?? NOT_REACHED}</p>
-                )}
+                <RecordAuthority
+                  authority={vm.authority}
+                  notReached={vm.stopNote ?? NOT_REACHED}
+                />
               </DocSection>
 
               <DocSection n={6} title="Safety revalidation">

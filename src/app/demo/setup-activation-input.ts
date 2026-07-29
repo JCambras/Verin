@@ -20,6 +20,7 @@ import {
   decisionInputPreimageFor,
   hashCanonicalPreimage,
   toJsonValue,
+  type DecisionAuthorityClaim,
 } from "./decision-identity";
 import {
   SETUP_ATTESTATION_STATEMENT_VERSION,
@@ -306,10 +307,14 @@ export function setupActivationPreimageFor(
   vm: MoneyMovementSetupVM,
   draft: Extract<ValidatedSetupDraft, { readonly ok: true }>,
   authority: SetupActivationAuthorityBinding,
+  authorityPlans: readonly {
+    readonly firmId: SetupFirmId;
+    readonly authority: DecisionAuthorityClaim;
+  }[],
 ): JsonValue {
   return toJsonValue({
     hashKind: "money-movement-demo-activation",
-    preimageVersion: "money-movement-demo-activation/2.0.0",
+    preimageVersion: "money-movement-demo-activation/3.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -332,6 +337,7 @@ export function setupActivationPreimageFor(
         canonicalConfiguration: draft.canonicalConfiguration,
         selections: selectionPreimage(draft.selections),
       },
+      decisionAuthority: authorityPlans,
       authority,
     },
   });

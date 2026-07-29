@@ -203,11 +203,43 @@ function OutcomeCard({
         </div>
         <div className="rounded-md border border-slate-200 bg-surface p-3">
           <dt className="text-xs font-medium text-slate-600">
-            {firm.authorityPlan.reached ? "Authority path" : "Resolving condition"}
+            {firm.authorityPlan.mode === "not-reached"
+              ? "Resolving condition"
+              : "Authority mode"}
           </dt>
           <dd className="mt-1 text-sm text-slate-800">{firm.authorityPlan.summary}</dd>
           <dd className="mt-1 text-xs text-slate-600">{firm.authorityPlan.detail}</dd>
-          {firm.authorityPlan.stages.length > 0 ? (
+          {firm.authorityPlan.mode === "automatic" ? (
+            <dd>
+              <dl className="mt-2 grid min-w-0 gap-2 text-xs">
+                <div>
+                  <dt className="text-slate-600">Dual-approval threshold</dt>
+                  <dd className="text-slate-800">
+                    <Metric metric={firm.authorityPlan.threshold} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-600">Policy source</dt>
+                  <dd className="break-all font-mono text-slate-800">
+                    {firm.authorityPlan.policySource}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-600">Execution mode</dt>
+                  <dd className="text-slate-800">
+                    {firm.authorityPlan.executionMode}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-600">Resulting authority state</dt>
+                  <dd className="text-slate-800">{firm.authorityPlan.state}</dd>
+                </div>
+              </dl>
+              <p className="mt-2 text-xs text-slate-700">
+                {firm.authorityPlan.rule}
+              </p>
+            </dd>
+          ) : firm.authorityPlan.mode === "staged" ? (
             <dd>
               <ol className="mt-2 flex flex-col gap-1 text-xs text-slate-700">
                 {firm.authorityPlan.stages.map((stage) => (

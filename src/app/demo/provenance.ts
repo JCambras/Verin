@@ -67,7 +67,7 @@ export const ACTIVATED_RESERVE_HORIZON: RecordProvenance = prov("user-entered-de
 
 /** The reserve FLOOR is months x the signed monthly schedule. */
 export function reserveFloorInputs(horizon: RecordProvenance): readonly RecordProvenance[] {
-  return [SIGNED_BALANCE, SIGNED_SCHEDULE, horizon];
+  return [SIGNED_SCHEDULE, horizon];
 }
 
 /** The post-reserve HEADROOM is the whole signed basis minus the floor, so it declares

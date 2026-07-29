@@ -10,7 +10,7 @@
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
-import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
+import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type AuthorityPlanVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
 import {
   FIXTURE_RESERVE_HORIZON,
   derivedMetric,
@@ -29,6 +29,7 @@ import {
   DEMO_NOW,
   DEMO_TIMELINE,
   DESTINATION_RESTRICTION,
+  OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
@@ -39,6 +40,10 @@ import {
   type FirmData,
   type ScenarioData,
 } from "./data";
+import {
+  automaticAuthorityPlan,
+  unreachedAuthorityPlan,
+} from "./setup-authority";
 
 /** The ONE reserve projection behind every displayed floor and headroom for a firm -
  * DERIVED figures (ADR-0022): computed from synthetic inputs, so they render as
@@ -161,7 +166,10 @@ export function buildDisposition(
   const authoritySummary = dualApproval
     ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
       (scenario.spec.bankChanged ? " The recent bank-instruction change adds a specialist-review stage." : "")
-    : "Below this firm's dual-approval threshold at this amount - a standard approval stage applies.";
+    : scenario.spec.bankChanged &&
+        firm.bankChangeHandling === "specialist-review"
+      ? "Requires specialist review. No dual-approval stage applies at this amount."
+      : "Authority resolves automatically because this request is at or below the firm's dual-approval threshold.";
   return {
     kind,
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
@@ -291,7 +299,7 @@ export function buildPolicyTrace(
  * printed escalation and expiry can never disagree with the hashed clock id. The
  * setup-activated path never reaches here: its stages are evaluator-owned and frozen
  * in the snapshot (F9). */
-export function buildStages(
+function buildStages(
   scenario: ScenarioData,
   firm: FirmData,
   phase: "gate" | "final",
@@ -404,67 +412,75 @@ export function buildStages(
       expiry: approvalClock.expiry,
       escalation: approvalClock.escalation,
     });
-  } else {
-    const approver =
-      spec.invalidation && phase === "final"
-        ? { name: CAST.opsApprover1, role: "Operations", status: "voided", statusLabel: "Approval voided - evidence changed" }
-        : specialistComplete && (spec.invalidation || phase === "final")
-          ? {
-              name: CAST.opsApprover1,
-              role: "Operations",
-              status: "done",
-              statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At)}`,
-            }
-          : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
-    stages.push({
-      title: `Stage ${operationsStage} - Approval`,
-      requirement: `Below ${firm.name}'s dual-approval threshold at this amount. ${firm.name} policy does not name an approver role for this stage.`,
-      stepState:
-        phase === "final" && specialistComplete && !spec.invalidation
-          ? "done"
-          : !specialistComplete
-            ? "pending"
-            : "active",
-      actors: [approver],
-      expiry: approvalClock.expiry,
-      escalation: approvalClock.escalation,
-    });
   }
   return stages;
 }
 
-export function buildDecisionAuthorityStages(
+export function buildAuthorityPlan(
   scenario: ScenarioData,
   firm: FirmData,
-): ApprovalStageVM[] {
-  return buildStages(
-    {
-      ...scenario,
-      spec: {
-        ...scenario.spec,
-        invalidation: false,
-        specialistExpired: false,
-      },
-    },
-    firm,
-    "gate",
-  );
+  phase: "gate" | "final",
+): AuthorityPlanVM {
+  const disposition = dispositionFor(scenario, firm.id);
+  if (disposition !== "proceed") {
+    return unreachedAuthorityPlan(
+      disposition === "prohibited"
+        ? "The binding prohibition ended the journey before authority."
+        : "The named conditions must be resolved before authority can be requested.",
+    );
+  }
+  const stages = buildStages(scenario, firm, phase);
+  if (stages.length === 0) {
+    return automaticAuthorityPlan(
+      firm,
+      prov("synthetic-fixture", OBSERVED_RECENT),
+    );
+  }
+  const hasSpecialist = scenario.spec.bankChanged &&
+    firm.bankChangeHandling === "specialist-review";
+  return {
+    mode: "staged",
+    summary: hasSpecialist
+      ? CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor
+        ? "Specialist review, then two distinct operations approvers"
+        : "Specialist review; no dual approval at this amount"
+      : "Two distinct operations approvers",
+    detail: `${DEFAULT_APPROVAL_CLOCK.escalation}. ${DEFAULT_APPROVAL_CLOCK.expiry}.`,
+    stages: [stages[0]!, ...stages.slice(1)],
+  };
 }
 
 export function buildApprovals(
   scenario: ScenarioData,
   firm: FirmData,
   identity: DecisionIdentity,
+  authority: AuthorityPlanVM = buildAuthorityPlan(scenario, firm, "gate"),
 ): ApprovalVM {
-  return {
+  if (authority.mode === "not-reached") {
+    throw new Error("An authority surface cannot be built for an unreached plan");
+  }
+  const common = {
     spine: buildSpine("Authority"),
-    stages: buildStages(scenario, firm, "gate"),
-    binding: { decisionHash: identity.decisionHash, bundleHash: identity.bundleHash },
+    binding: {
+      decisionHash: identity.decisionHash,
+      bundleHash: identity.bundleHash,
+    },
+    fakeClass: "synthetic-fixture" as const,
+  };
+  if (authority.mode === "automatic") {
+    return {
+      ...common,
+      ...authority,
+      continueLabel: "Continue to pre-execution safety",
+    };
+  }
+  return {
+    ...common,
+    ...authority,
     gate: {
       restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
       figures: [{ label: "Amount", metric: amountMetric() }],
       primaryLabel: "Approve this movement",
     },
-    fakeClass: "synthetic-fixture",
   };
 }
