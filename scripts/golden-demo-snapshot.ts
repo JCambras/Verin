@@ -230,6 +230,8 @@ function displayedDecisions(): DisplayedDecision[] {
         simulatedFloorMinor: simulated.floorMinor,
         simulatedHeadroomMinor: simulated.headroomMinor,
         simulatedDisposition: simulated.disposition,
+        policyApprovalAvailable:
+          journey.policyAuthoring.approval.kind === "available",
       };
       const related =
         authority.kind === "signed"
@@ -319,6 +321,7 @@ function displayedDecisions(): DisplayedDecision[] {
                   simulatedFloorMinor: null,
                   simulatedHeadroomMinor: null,
                   simulatedDisposition: null,
+                  policyApprovalAvailable: false,
                 };
               },
             )
@@ -824,20 +827,29 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
             sourceCase?.evidence.some(
               (entry) => entry.evidenceKind === "bank-instruction",
             ) ?? false,
+          exactBankInstructionPostReviewEvidence:
+            sourceCase?.evidence.some(
+              (entry) =>
+                entry.evidenceKind === "bank-instruction" &&
+                entry.liquidityPhase ===
+                  "pre-execution-revalidation",
+            ) ?? false,
           safetyChecks:
             journey.safety?.checks.map(
-              ({ label, status, statusLabel }) => ({
+              ({ label, status, statusLabel, detail }) => ({
                 label,
                 status,
                 statusLabel,
+                detail: detail ?? null,
               }),
             ) ?? [],
           recordSafetyChecks:
             journey.record.safety?.checks.map(
-              ({ label, status, statusLabel }) => ({
+              ({ label, status, statusLabel, detail }) => ({
                 label,
                 status,
                 statusLabel,
+                detail: detail ?? null,
               }),
             ) ?? [],
           reservationVisible: Boolean(journey.safety?.reservationId),

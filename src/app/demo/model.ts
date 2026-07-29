@@ -428,15 +428,27 @@ export interface SimulationDeltaRowVM {
   readonly before: ComparisonCellVM;
   readonly after: ComparisonCellVM;
 }
+export type PolicyApprovalVM =
+  | {
+      readonly kind: "available";
+      readonly gateLabel: string;
+      readonly activation: {
+        readonly fromVersion: string;
+        readonly toVersion: string;
+      };
+      readonly changedRerunResult: string;
+    }
+  | {
+      readonly kind: "unavailable";
+      readonly reason: string;
+    };
 export interface PolicyAuthoringVM {
   readonly spine: DecisionSpineVM;
   readonly sentence: string;
   readonly draft: { readonly rows: readonly DraftRowVM[]; readonly label: string; readonly fakeClass: FakeClass };
   readonly interpretation: string;
   readonly simulationDelta: readonly SimulationDeltaRowVM[];
-  readonly gateLabel: string;
-  readonly activation: { readonly fromVersion: string; readonly toVersion: string };
-  readonly changedRerunResult: string;
+  readonly approval: PolicyApprovalVM;
   readonly fakeClass: FakeClass;
 }
 

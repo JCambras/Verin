@@ -3718,3 +3718,24 @@ policy projection, and shape-only hash checks could all make a gate green while 
 bound different product truth.
 **Revert path:** none while D-073 through D-079 require exact-case authority and fail-closed signed
 truth across every route, surface, record, and validation boundary.
+
+### D-081 · 2026-07-29 · reversible · Signed route, Safety, and policy activation boundaries fail closed
+
+Every demo station now requires an explicit case whenever the selected scenario and firm own signed
+variants. The route resolver no longer selects the first variant, so case-less URLs cannot substitute
+GC-06 for GC-07 or any other signed truth.
+
+Bank-instruction Safety checks distinguish the signed decision-time finding from a separately
+structured pre-execution revalidation finding. Decision-time evidence alone renders the exact finding
+with post-review evidence unavailable. It cannot produce an unchanged or Verified claim, and the
+printable record consumes the same check.
+
+Policy Authoring carries approval as a discriminated available or unavailable state. Missing exact
+schedule or numeric authority exposes the simulation gap with no approval link, and direct activation
+URLs return not found. Approval, activation, and changed rerun copy exist only when the exact-case
+simulation can compute.
+
+**Why:** array-order fallback, evidence-presence inference, and an always-present approval model each
+allowed one examiner-facing surface to claim more than its exact signed inputs established.
+**Revert path:** none while D-073 through D-080 require exact signed identity and fail-closed evidence
+and simulation authority across every demo surface.

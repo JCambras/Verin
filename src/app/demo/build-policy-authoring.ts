@@ -227,6 +227,40 @@ export function buildPolicyAuthoring(
     !planned || currentFloor === null
       ? "Re-run not calculated: this exact case has no signed planned-withdrawal schedule, and no canonical schedule was substituted."
       : "Re-run not calculated: this branch and firm have no captain-signed numeric liquidity case, and no unrelated case was substituted.";
+  const approval =
+    !planned || currentFloor === null || newHeadroom === null
+      ? {
+          kind: "unavailable" as const,
+          reason: noResult,
+        }
+      : {
+          kind: "available" as const,
+          gateLabel: isFirmA
+            ? "Approve and activate FA-4.3"
+            : "Approve (no effective change for Firm B)",
+          activation: isFirmA
+            ? { fromVersion: "FA-4.2", toVersion: "FA-4.3" }
+            : { fromVersion: "FB-2.1", toVersion: "FB-2.1" },
+          changedRerunResult: isFirmA
+            ? {
+                proceed:
+                  "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor.",
+                blocked:
+                  disposition === "proceed"
+                    ? "Re-run under FA-4.3: the Smith request no longer proceeds - twelve months of planned withdrawals leave less than this movement needs."
+                    : "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
+                prohibited:
+                  "Re-run under FA-4.3: the Smith request remains prohibited - the destination restriction is not resolvable by a reserve-policy change.",
+              }[simulatedDisposition ?? disposition]
+            : {
+                proceed:
+                  "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
+                blocked:
+                  "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the named conditions still block this request.",
+                prohibited:
+                  "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the destination restriction is not resolvable by a reserve-policy change.",
+              }[disposition],
+        };
   return {
     spine: buildSpine("Decision", {
       status: "pending",
@@ -256,34 +290,7 @@ export function buildPolicyAuthoring(
     interpretation:
       "Reserve floor becomes twelve times the planned monthly withdrawal for each household, evaluated before any discretionary movement.",
     simulationDelta,
-    gateLabel: isFirmA
-      ? "Approve and activate FA-4.3"
-      : "Approve (no effective change for Firm B)",
-    activation: isFirmA
-      ? { fromVersion: "FA-4.2", toVersion: "FA-4.3" }
-      : { fromVersion: "FB-2.1", toVersion: "FB-2.1" },
-    changedRerunResult:
-      newHeadroom === null
-        ? noResult
-        : isFirmA
-          ? {
-              proceed:
-                "Re-run under FA-4.3: the Smith request still proceeds, with a narrower margin above the reserve floor.",
-              blocked:
-                disposition === "proceed"
-                  ? "Re-run under FA-4.3: the Smith request no longer proceeds - twelve months of planned withdrawals leave less than this movement needs."
-                  : "Re-run under FA-4.3: the Smith request is still blocked - the reserve change does not resolve the named conditions.",
-              prohibited:
-                "Re-run under FA-4.3: the Smith request remains prohibited - the destination restriction is not resolvable by a reserve-policy change.",
-            }[simulatedDisposition ?? disposition]
-          : {
-              proceed:
-                "Re-run under FB-2.1: no change - Firm B already preserves twelve months.",
-              blocked:
-                "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the named conditions still block this request.",
-              prohibited:
-                "Re-run under FB-2.1: no reserve change - Firm B already preserves twelve months, and the destination restriction is not resolvable by a reserve-policy change.",
-            }[disposition],
+    approval,
     fakeClass: "deterministic-engine-output",
   };
 }

@@ -107,6 +107,7 @@ export interface DisplayedDecision {
   simulatedFloorMinor: number | null;
   simulatedHeadroomMinor: number | null;
   simulatedDisposition: string | null;
+  policyApprovalAvailable: boolean;
 }
 
 export interface SourceTimelineEvent {
@@ -205,15 +206,18 @@ export interface DemoSemanticSnapshot {
     sourceCaseId: string | null;
     signedLiquidityAuthority: boolean;
     exactBankInstructionEvidence: boolean;
+    exactBankInstructionPostReviewEvidence: boolean;
     safetyChecks: Array<{
       label: string;
       status: string;
       statusLabel: string;
+      detail: string | null;
     }>;
     recordSafetyChecks: Array<{
       label: string;
       status: string;
       statusLabel: string;
+      detail: string | null;
     }>;
     reservationVisible: boolean;
     executionReached: boolean;
@@ -1354,6 +1358,19 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     }
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
+    if (d.decisionRole === "primary") {
+      const exactSimulationAvailable =
+        expectedPlannedMonthly !== null &&
+        availableMinor !== null &&
+        pendingMinor !== null;
+      if (
+        d.policyApprovalAvailable !== exactSimulationAvailable
+      ) {
+        problems.push(
+          `${at}: policy approval and activation must remain unavailable until the exact-case simulation delta is computed`,
+        );
+      }
+    }
     if (availableMinor === null || pendingMinor === null) {
       if (!isNonEmptyString(d.liquidityAuthorityMissing)) {
         problems.push(
@@ -2198,8 +2215,41 @@ export function validateGoldenDemoSemantics(
   }
 
   for (const guard of demo.executionGuards) {
+    const guardSource =
+      guard.sourceCaseId === null
+        ? null
+        : caseData(cases, guard.sourceCaseId);
+    const signedBankRows = (
+      Array.isArray(guardSource?.householdEvidence)
+        ? guardSource.householdEvidence
+        : []
+    ).filter(
+      (entry) =>
+        isObj(entry) &&
+        entry.evidenceKind === "bank-instruction",
+    );
+    const signedBankFinding = signedBankRows.find(
+      (entry) =>
+        isObj(entry) &&
+        entry.liquidityPhase !== "pre-execution-revalidation",
+    );
+    const exactPostReviewEvidence = signedBankRows.some(
+      (entry) =>
+        isObj(entry) &&
+        entry.liquidityPhase === "pre-execution-revalidation",
+    );
     if (
-      !guard.exactBankInstructionEvidence &&
+      guard.exactBankInstructionEvidence !==
+        (signedBankRows.length > 0) ||
+      guard.exactBankInstructionPostReviewEvidence !==
+        exactPostReviewEvidence
+    ) {
+      problems.push(
+        `${guard.scenarioId}/${guard.firmId}: bank-instruction Safety authority drifts from the exact signed initial and post-review evidence`,
+      );
+    }
+    if (
+      !guard.exactBankInstructionPostReviewEvidence &&
       guard.safetyChecks.length > 0
     ) {
       const unsupportedClaim = guard.safetyChecks.some((check) => {
@@ -2212,15 +2262,26 @@ export function validateGoldenDemoSemantics(
             check.statusLabel.toLowerCase() === "verified")
         );
       });
+      const expectedLabel = guard.exactBankInstructionEvidence
+        ? "Bank-instruction revalidation not evaluated"
+        : "Bank-instruction check not evaluated";
+      const expectedStatusLabel = guard.exactBankInstructionEvidence
+        ? "Post-review evidence unavailable"
+        : "Evidence unavailable";
       const unavailableCheck = guard.safetyChecks.some(
         (check) =>
-          check.label === "Bank-instruction check not evaluated" &&
+          check.label === expectedLabel &&
           check.status === "pending" &&
-          check.statusLabel === "Evidence unavailable",
+          check.statusLabel === expectedStatusLabel &&
+          (!guard.exactBankInstructionEvidence ||
+            (isObj(signedBankFinding) &&
+              isNonEmptyString(signedBankFinding.summary) &&
+              check.detail?.includes(signedBankFinding.summary) ===
+                true)),
       );
       if (unsupportedClaim || !unavailableCheck) {
         problems.push(
-          `${guard.scenarioId}/${guard.firmId}: missing exact bank-instruction evidence must remain unavailable on Safety and cannot support a verified unchanged claim`,
+          `${guard.scenarioId}/${guard.firmId}: missing exact post-review bank-instruction evidence must remain unavailable on Safety, preserve the signed finding, and cannot support a verified unchanged claim`,
         );
       }
       if (

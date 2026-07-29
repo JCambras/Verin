@@ -6012,3 +6012,34 @@ typecheck, lint, knip, v3 invariant report, production build, file-size ratchet,
 on the corrected state.
 
 **Date:** 2026-07-29 (review corrections, D-080).
+
+## F118 · exact signed routes, post-review Safety, and simulation-gated activation
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** every station requires exact case identity when signed variants exist; an initial
+bank-instruction finding cannot establish a post-review result; and policy approval, activation, and
+changed rerun state require a computed exact-case simulation delta.
+
+The production browser first reproduced all three violations. A case-less permanent-prohibition URL
+returned 200 and rendered GC-06 by array order. GC-03 Safety displayed "Bank instruction unchanged
+since the decision" and "Verified" beside the signed finding that the instruction changed and was not
+yet independently verified. GC-06 Policy Authoring exposed "Approve and activate FA-4.3", then rendered
+an activated version beside "Re-run not calculated".
+
+Semantic companions require an explicit case, replace GC-03's unavailable post-review state with a
+verified unchanged claim, invent post-review authority, enable activation without signed schedule
+evidence, and suppress activation despite a complete simulation. Each mutation produces its named
+identity, Safety-authority, signed-finding, or simulation diagnostic.
+
+Browser coverage proves all twelve stations reject omitted case identity, GC-03 Safety and Record
+preserve the changed signed finding without an unchanged or Verified claim, schedule-less cases expose
+no approval link, and direct activation URLs return 404.
+
+All 595 Vitest cases, all 27 production Chromium cases, signed-golden validation, typecheck, lint,
+knip, v3 invariant reporting, the production build, and whitespace validation pass on the corrected
+state.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+**Date:** 2026-07-29 (review corrections, D-081).

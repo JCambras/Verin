@@ -189,22 +189,22 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await login(page, PRINCIPAL);
 
   // Same request, same evidence, Firm B: BLOCKED with resolving affordances (amber).
-  await page.goto("/app/demo/decision?scenario=recent-bank-change-block&firm=firm-b");
+  await page.goto("/app/demo/decision?scenario=recent-bank-change-block&firm=firm-b&case=GC-04-recent-bank-change-firm-b");
   await expect(page.getByTestId("disposition-blocked")).toBeVisible();
   await expect(page.getByTestId("blocker-row")).toBeVisible();
   await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
   await checkAxe(page, "decision-blocked");
   await snap(page, 13, "decision-blocked-firm-b");
   // Downstream stations honestly do not exist for a blocked journey.
-  await page.goto("/app/demo/authority?scenario=recent-bank-change-block&firm=firm-b");
+  await page.goto("/app/demo/authority?scenario=recent-bank-change-block&firm=firm-b&case=GC-04-recent-bank-change-firm-b");
   await expect(page.getByText("Authority not reached")).toBeVisible();
-  await page.goto("/app/demo/execution?scenario=recent-bank-change-block&firm=firm-b");
+  await page.goto("/app/demo/execution?scenario=recent-bank-change-block&firm=firm-b&case=GC-04-recent-bank-change-firm-b");
   await expect(page.getByText("Execution not reached")).toBeVisible();
 
   // Competing liquidity: Firm A's signed branch authority proves the first request
   // proceeds. Firm B's recorded outcome blocks before reservation, but no signed
   // numeric case binds that branch-and-firm pair, so no unrelated figure is copied.
-  await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-a");
+  await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
   await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-b");
@@ -221,10 +221,10 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await snap(page, 18, "decision-blocked-reserve-firm-b");
   await page.goto("/app/demo/workspace?scenario=competing-liquidity&firm=firm-b");
   await expect(page.getByText("Missing signed liquidity authority")).toBeVisible();
-  await page.goto("/app/demo/comparison?scenario=competing-liquidity&firm=firm-a");
+  await page.goto("/app/demo/comparison?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("Missing signed branch-and-firm liquidity authority")).toBeVisible();
-  await page.goto("/app/demo/safety?scenario=competing-liquidity&firm=firm-a");
+  await page.goto("/app/demo/safety?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
   const sibling = page.locator(
     '[data-related-source-case="GC-11-simultaneous-distributions-second"]',
   );
@@ -247,7 +247,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(sibling).toContainText(
     "GC-11-simultaneous-distributions-second",
   );
-  await page.goto("/app/demo/execution?scenario=competing-liquidity&firm=firm-a");
+  await page.goto("/app/demo/execution?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
   const competingExecutionAt = await page
     .getByTestId("timeline-event")
     .first()
@@ -327,8 +327,12 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await checkAxe(page, "regulatory-prohibition-record");
   const canonicalRequestInstants: string[] = [];
   for (const firm of ["firm-a", "firm-b"]) {
+    const exactCase =
+      firm === "firm-a"
+        ? "&case=GC-06-household-restriction"
+        : "";
     await page.goto(
-      `/app/demo/intent?scenario=permanent-prohibition&firm=${firm}`,
+      `/app/demo/intent?scenario=permanent-prohibition&firm=${firm}${exactCase}`,
     );
     await expect(
       page.getByText(
@@ -346,7 +350,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   expect(new Set(canonicalRequestInstants)).toEqual(
     new Set(["2026-07-26T13:30:00.000Z"]),
   );
-  await page.goto("/app/demo/evidence?scenario=safe-proceed&firm=firm-a");
+  await page.goto("/app/demo/evidence?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path");
   await expect(
     page.getByText(
       /Traditional IRA balance 610000 USD; a distribution here is a taxable event/,
@@ -382,7 +386,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   ).toHaveCount(2);
   await page.getByRole("link", { name: "Ask Verin about this household" }).click();
   await expect(page).toHaveURL(/case=GC-01-firm-a-happy-path/);
-  await page.goto("/app/demo/evidence?scenario=permanent-prohibition&firm=firm-a");
+  await page.goto("/app/demo/evidence?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction");
   await expect(
     page.getByText(
       /bank instruction · bank-instruction:contractor-business · house-crm · fresh/,
@@ -393,26 +397,26 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
       /Standing destination restriction: distributions may ONLY go to bank instructions titled to the household/,
     ),
   ).toBeVisible();
-  await page.goto("/app/demo/workspace?scenario=stale-evidence&firm=firm-a");
+  await page.goto("/app/demo/workspace?scenario=stale-evidence&firm=firm-a&case=GC-09-stale-evidence");
   const staleLiquidity = page.getByRole("region", { name: "Liquidity" });
   await expect(staleLiquidity).toContainText(
     "Sample data · as of 2026-06-09",
   );
-  await page.goto("/app/demo/intent?scenario=stale-evidence&firm=firm-a");
+  await page.goto("/app/demo/intent?scenario=stale-evidence&firm=firm-a&case=GC-09-stale-evidence");
   await expect(
     page.getByText("Exact signed source unavailable", { exact: true }),
   ).toBeVisible();
-  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
+  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a&case=GC-09-stale-evidence");
   await expect(
     page.getByText(/Planned-withdrawal schedule last observed 2026-06-09/),
   ).toBeVisible();
   await expect(page.getByText(/47 days before asOf/)).toBeVisible();
   await expect(page.getByText("retrieved Jul 26, 14:00:05").first()).toBeVisible();
-  await page.goto("/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a");
+  await page.goto("/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a&case=GC-08-ambiguous-household");
   await expect(page.getByText(/subject:smiths-robert-ana/)).toBeVisible();
   await expect(page.getByText(/subject:smith-family-trust/)).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
+  await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction");
   await expect(
     page
       .getByTestId("disposition-prohibited")
@@ -426,7 +430,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
     ),
   ).toBeLessThanOrEqual(0);
   await checkAxe(page, "decision-prohibition-mobile");
-  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
+  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a&case=GC-09-stale-evidence");
   await expect(page.getByText(/47 days before asOf/)).toBeVisible();
   expect(
     await page.evaluate(
@@ -436,15 +440,15 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await checkAxe(page, "evidence-exact-mobile");
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   const invalidationRequestAt = await page
     .getByTestId("request-timestamp")
     .getAttribute("data-event-instant");
   for (const surface of ["workspace", "evidence", "decision", "authority"]) {
-    await page.goto(`/app/demo/${surface}?scenario=approval-invalidation&firm=firm-a`);
+    await page.goto(`/app/demo/${surface}?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation`);
     await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
   }
-  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   const invalidationRevalidatedAt = await page
     .getByTestId("revalidation-timestamp")
     .getAttribute("data-event-instant");
@@ -461,24 +465,24 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByRole("link", { name: "Re-evaluate with current evidence" })).toBeVisible();
   await checkAxe(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");
-  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   await expect(page.getByText("$15,000.00", { exact: true }).first()).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app/demo/workspace?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/workspace?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
-  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
   await checkAxe(page, "safety-invalidation-mobile");
   await snap(page, 19, "safety-invalidation-mobile");
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // Duplicate retry: the product claim in plain words, keys matching byte-for-byte.
-  await page.goto("/app/demo/intent?scenario=duplicate-retry&firm=firm-a");
+  await page.goto("/app/demo/intent?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
   const duplicateRequestAt = await page
     .getByTestId("request-timestamp")
     .getAttribute("data-event-instant");
-  await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a");
+  await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
   await expect(page.getByText("Already submitted once - Verin did not send it again.")).toBeVisible();
   await expect(page.getByText("Duplicate suppressed")).toBeVisible();
   const duplicateEvents = page.getByTestId("timeline-event");
@@ -496,7 +500,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(duplicateEvents.nth(1)).toContainText("Jul 26, 16:40");
   await snap(page, 16, "execution-duplicate-suppressed");
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a");
+  await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
   await expect(page.getByTestId("timeline-event").nth(0)).toContainText(
     "Jul 26, 16:39",
   );
@@ -506,13 +510,13 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // Delayed NIGO: first-class appended row with its resolving affordance.
-  await page.goto("/app/demo/safety?scenario=delayed-nigo&firm=firm-b");
+  await page.goto("/app/demo/safety?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo");
   await page.getByRole("button", { name: "Verify source" }).click();
   await expect(page.getByText("idem:GC-14:smiths-75000-2026-08-15")).toBeVisible();
   await expect(page.getByText("res:GC-14:liquidity")).toBeVisible();
   await expect(page.getByText("PT30M")).toBeVisible();
   await expect(page.getByText("conflict:smiths-liquidity")).toBeVisible();
-  await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-b");
+  await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo");
   await expect(page.getByText("Returned NIGO", { exact: true })).toBeVisible();
   await expect(page.getByText(/signature date predates form version/).first()).toBeVisible();
   await expect(page.getByText(/Status polling stopped after terminal NIGO/)).toBeVisible();
@@ -538,7 +542,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-b");
   await expect(page.getByText("Authority not reached")).toBeVisible();
 
-  await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
+  await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a&case=GC-16-specialist-review-expiration");
   await expect(page.getByText("Escalated, then expired")).toBeVisible();
   await expect(page.getByText("escalated to the operations manager, then expired unresolved")).toBeVisible();
   await expect(page.getByText(/Execution mode: sequential · expires after P2D/)).toBeVisible();
@@ -571,7 +575,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.goto("/app/demo/verification?scenario=partial-salesforce-success&firm=firm-b");
   await expect(page.getByText("Verification not reached")).toBeVisible();
 
-  await page.goto("/app/demo/authority?scenario=safe-proceed&firm=firm-b");
+  await page.goto("/app/demo/authority?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path");
   await expect(page.getByTestId("automatic-authority")).toBeVisible();
   await expect(page.getByText("Automatic authority", { exact: true })).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toHaveCount(0);
@@ -610,7 +614,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(initialPolicyHeadroom).toContainText("$252,000.00");
   await expect(initialPolicyHeadroom).toContainText("$204,000.00");
 
-  await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a");
+  await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   await expect(page.getByText(/Approved ·/)).toHaveCount(2);
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
   await expect(page.getByTestId("voided-approval")).toHaveCount(2);
@@ -722,7 +726,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   );
   expect(unsupportedRevalidation?.status()).toBe(404);
 
-  await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-a");
+  await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success");
   const completedPart = page.getByTestId("timeline-event").filter({ hasText: "instruction-created" });
   const incompletePart = page.getByTestId("timeline-event").filter({ hasText: "disbursement-scheduled" });
   await expect(completedPart).toContainText("Completed part");
@@ -746,13 +750,13 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByTestId("exception-decision-requested")).toContainText(
     "partial-execution",
   );
-  await page.goto("/app/demo/record?scenario=partial-salesforce-success&firm=firm-a");
+  await page.goto("/app/demo/record?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success");
   await expect(page.getByTestId("exception-decision-requested")).toContainText(
     "ExceptionDecisionRequested",
   );
 
   await page.goto(
-    "/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a&pass=revalidated",
+    "/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
   );
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$189,000.00", { exact: true })).toBeVisible();
@@ -760,7 +764,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByText("$204,000.00", { exact: true })).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&pass=revalidated");
+  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated");
   await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
   await checkAxe(page, "approval-invalidation-revalidated-mobile");
   await snap(page, 23, "approval-invalidation-revalidated-mobile");
@@ -768,7 +772,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
 
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {
   await login(page, PRINCIPAL);
-  await page.goto("/app/demo/record?scenario=recent-bank-change-block&firm=firm-a");
+  await page.goto("/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a");
   await page.emulateMedia({ media: "print" });
   // Design §9: wordmark, watermark chip, decision id, and the FULL hashes stay on paper.
   await expect(page.getByTestId("record-watermark")).toBeVisible();
@@ -783,7 +787,7 @@ test("print posture: the record's identity header prints complete; app chrome an
   await expect(page.getByRole("button", { name: "Print this record" })).toBeHidden();
 });
 
-test("unknown branch ids 404 instead of silently rendering a different branch", async ({ page }) => {
+test("invalid or omitted signed case identity 404s instead of substituting truth", async ({ page }) => {
   await login(page, PRINCIPAL);
   const badScenario = await page.goto("/app/demo/decision?scenario=not-a-branch&firm=firm-a");
   expect(badScenario?.status()).toBe(404);
@@ -797,10 +801,27 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
     "/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-01-firm-a-happy-path",
   );
   expect(substitutedCase?.status()).toBe(404);
-  // Absent params still land on the default branch.
+  for (const station of [
+    "workspace",
+    "intent",
+    "evidence",
+    "decision",
+    "policy-trace",
+    "authority",
+    "safety",
+    "execution",
+    "verification",
+    "comparison",
+    "policy-authoring",
+    "record",
+  ]) {
+    const caseLess = await page.goto(
+      `/app/demo/${station}?scenario=permanent-prohibition&firm=firm-a`,
+    );
+    expect(caseLess?.status(), station).toBe(404);
+  }
   const defaulted = await page.goto("/app/demo/decision");
-  expect(defaulted?.status()).toBe(200);
-  await expect(page.getByTestId("disposition-proceed")).toBeVisible();
+  expect(defaulted?.status()).toBe(404);
 });
 
 test("the launcher exposes every exact signed firm and case variant", async ({ page }) => {
@@ -862,6 +883,35 @@ test("missing bank-instruction evidence fails closed on Safety and Record", asyn
     await expect(surface).toContainText("Evidence missing");
     await expect(surface).toContainText("Bank-instruction check not evaluated");
     await expect(surface).toContainText("Evidence unavailable");
+    await expect(surface).not.toContainText(
+      "Bank instruction unchanged since the decision",
+    );
+  }
+
+  const changedContext =
+    "scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a";
+  for (const station of ["safety", "record"]) {
+    await page.goto(`/app/demo/${station}?${changedContext}`);
+    const surface =
+      station === "safety"
+        ? page.locator(
+            'section[aria-label="Revalidation checks"]',
+          )
+        : page.getByRole("region", {
+            name: "Safety revalidation",
+          });
+    await expect(surface).toContainText(
+      "Bank-instruction revalidation not evaluated",
+    );
+    await expect(surface).toContainText(
+      "Post-review evidence unavailable",
+    );
+    await expect(surface).toContainText(
+      "changed on 2026-07-22",
+    );
+    await expect(surface).toContainText(
+      "No exact signed post-review result was recorded",
+    );
     await expect(surface).not.toContainText(
       "Bank instruction unchanged since the decision",
     );
@@ -1185,6 +1235,21 @@ test("exact schedules and cross-firm reruns fail closed", async ({ page }) => {
     await expect(
       page.getByText(route.reserve, { exact: true }),
     ).toHaveCount(0);
+    await expect(
+      page.getByTestId("policy-approval-unavailable"),
+    ).toContainText(
+      "Human approval and policy activation remain unavailable until the exact-case simulation delta is computed.",
+    );
+    await expect(
+      page.getByRole("link", {
+        name: /Approve/,
+      }),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("policy-activated")).toHaveCount(0);
+    const unsupportedActivation = await page.goto(
+      `/app/demo/policy-authoring?${context}&approved=1`,
+    );
+    expect(unsupportedActivation?.status(), context).toBe(404);
   }
 
   for (const rerun of [
@@ -1228,7 +1293,7 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     "record",
   ];
   for (const s of surfaces) {
-    await page.goto(`/app/demo/${s}?scenario=recent-bank-change-block&firm=firm-a`);
+    await page.goto(`/app/demo/${s}?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect(await page.getByTestId("dev-provenance-badge").count(), `surface ${s} must carry a dev provenance badge`).toBeGreaterThan(0);
   }

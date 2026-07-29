@@ -512,7 +512,16 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       expect(decision?.simulatedFloorMinor, caseId).toBeNull();
       expect(decision?.simulatedHeadroomMinor, caseId).toBeNull();
       expect(decision?.simulatedDisposition, caseId).toBeNull();
+      expect(decision?.policyApprovalAvailable, caseId).toBe(false);
     }
+    expect(
+      realDemo.decisions.find(
+        (decision) =>
+          decision.sourceCaseId ===
+            "GC-01-firm-a-happy-path" &&
+          decision.decisionRole === "primary",
+      )?.policyApprovalAvailable,
+    ).toBe(true);
 
     const borrowed = demoClone();
     const gc06 = borrowed.decisions.find(
@@ -522,14 +531,42 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     gc06.plannedWithdrawalMonthlyMinor = 800_000;
     gc06.reserveFloorMinor = 4_800_000;
     gc06.simulatedFloorMinor = 9_600_000;
+    gc06.policyApprovalAvailable = true;
+    const borrowedProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      borrowed,
+    );
+    expect(
+      borrowedProblems.some((problem) =>
+        problem.includes(
+          "missing planned-withdrawal evidence must leave reserve and policy simulation unavailable",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      borrowedProblems.some((problem) =>
+        problem.includes(
+          "policy approval and activation must remain unavailable until the exact-case simulation delta is computed",
+        ),
+      ),
+    ).toBe(true);
+
+    const suppressed = demoClone();
+    suppressed.decisions.find(
+      (decision) =>
+        decision.sourceCaseId ===
+          "GC-01-firm-a-happy-path" &&
+        decision.decisionRole === "primary",
+    )!.policyApprovalAvailable = false;
     expect(
       validateGoldenDemoSemantics(
         clone(),
         realRefs,
-        borrowed,
+        suppressed,
       ).some((problem) =>
         problem.includes(
-          "missing planned-withdrawal evidence must leave reserve and policy simulation unavailable",
+          "policy approval and activation must remain unavailable until the exact-case simulation delta is computed",
         ),
       ),
     ).toBe(true);
@@ -1072,6 +1109,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         label: "Bank instruction unchanged since the decision",
         status: "done",
         statusLabel: "Verified",
+        detail: null,
       },
     ];
     dualApproval.recordSafetyChecks = dualApproval.safetyChecks.map(
@@ -1084,7 +1122,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         inferred,
       ).some((problem) =>
         problem.includes(
-          "missing exact bank-instruction evidence must remain unavailable",
+          "missing exact post-review bank-instruction evidence must remain unavailable",
         ),
       ),
     ).toBe(true);
@@ -1103,6 +1141,68 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ).some((problem) =>
         problem.includes(
           "printable Record safety checks must preserve the fail-closed Safety claims",
+        ),
+      ),
+    ).toBe(true);
+
+    const changedFinding = demoClone();
+    const gc03 = changedFinding.executionGuards.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId ===
+        "GC-03-recent-bank-change-firm-a",
+    )!;
+    expect(gc03.exactBankInstructionEvidence).toBe(true);
+    expect(
+      gc03.exactBankInstructionPostReviewEvidence,
+    ).toBe(false);
+    expect(gc03.safetyChecks).toContainEqual(
+      expect.objectContaining({
+        label: "Bank-instruction revalidation not evaluated",
+        status: "pending",
+        statusLabel: "Post-review evidence unavailable",
+        detail: expect.stringContaining(
+          "changed on 2026-07-22",
+        ),
+      }),
+    );
+    gc03.safetyChecks = [
+      {
+        label: "Bank instruction unchanged since the decision",
+        status: "done",
+        statusLabel: "Verified",
+        detail:
+          "Destination bank instruction changed and remains unverified.",
+      },
+    ];
+    gc03.recordSafetyChecks = gc03.safetyChecks.map(
+      (check) => ({ ...check }),
+    );
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        changedFinding,
+      ).some((problem) =>
+        problem.includes(
+          "missing exact post-review bank-instruction evidence must remain unavailable",
+        ),
+      ),
+    ).toBe(true);
+
+    const inventedPostReview = demoClone();
+    inventedPostReview.executionGuards.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId ===
+        "GC-03-recent-bank-change-firm-a",
+    )!.exactBankInstructionPostReviewEvidence = true;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        inventedPostReview,
+      ).some((problem) =>
+        problem.includes(
+          "bank-instruction Safety authority drifts from the exact signed initial and post-review evidence",
         ),
       ),
     ).toBe(true);

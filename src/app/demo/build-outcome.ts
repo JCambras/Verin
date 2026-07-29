@@ -93,9 +93,9 @@ export function buildSafety(
       entry.evidenceKind === "pending-actions" &&
       entry.liquidityPhase === "pre-execution-revalidation",
   );
-  const bankInstruction = sourceCase?.evidence.find(
+  const bankInstructionEvidence = sourceCase?.evidence.filter(
     (entry) => entry.evidenceKind === "bank-instruction",
-  );
+  ) ?? [];
   const invalidatedPass = invalidationAuthority && pass === "initial";
   const executionEligible =
     authority.kind === "signed" &&
@@ -167,7 +167,7 @@ export function buildSafety(
     } as (typeof checks)[number]);
   } else {
     checks.push(
-      buildBankInstructionSafetyCheck(bankInstruction?.summary ?? null),
+      buildBankInstructionSafetyCheck(bankInstructionEvidence),
     );
   }
   if (invalidationAuthority && pass === "revalidated") {

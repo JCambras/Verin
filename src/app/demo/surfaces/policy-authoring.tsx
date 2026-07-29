@@ -95,21 +95,34 @@ export function PolicyAuthoringSurface({
         </div>
       </section>
 
-      {approved ? (
+      {vm.approval.kind === "unavailable" ? (
+        <section
+          aria-label="Approval unavailable"
+          className="flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 bg-surface p-4"
+          data-testid="policy-approval-unavailable"
+        >
+          <StatusBadge status="pending" label="Simulation required" />
+          <p className="text-sm text-slate-700">{vm.approval.reason}</p>
+          <p className="text-sm text-slate-600">
+            Human approval and policy activation remain unavailable until the
+            exact-case simulation delta is computed.
+          </p>
+        </section>
+      ) : approved ? (
         <section aria-label="Activation" role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="policy-activated">
           <p className="flex flex-wrap items-center gap-2 text-sm text-slate-800">
             <StatusBadge status="done" label="Approved and activated" />
             <span className="font-mono text-xs text-slate-800">
-              {vm.activation.fromVersion} → {vm.activation.toVersion}
+              {vm.approval.activation.fromVersion} → {vm.approval.activation.toVersion}
             </span>
           </p>
-          <p className="text-sm text-slate-700">{vm.changedRerunResult}</p>
+          <p className="text-sm text-slate-700">{vm.approval.changedRerunResult}</p>
           <PrimaryLink href={demoHref("record", routeContext)}>View the printable decision record</PrimaryLink>
         </section>
       ) : (
         <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
-          <PrimaryLink href={demoHref("policy-authoring", routeContext, { approved: true })}>{vm.gateLabel}</PrimaryLink>
+          <PrimaryLink href={demoHref("policy-authoring", routeContext, { approved: true })}>{vm.approval.gateLabel}</PrimaryLink>
         </section>
       )}
 

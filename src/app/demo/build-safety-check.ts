@@ -1,20 +1,38 @@
 import type { SafetyCheckVM } from "./model";
+import type { SignedEvidenceData } from "./signed-case-types";
 
 export function buildBankInstructionSafetyCheck(
-  evidenceSummary: string | null,
+  evidence: readonly SignedEvidenceData[],
 ): SafetyCheckVM {
-  return evidenceSummary === null
-    ? {
-        label: "Bank-instruction check not evaluated",
-        status: "pending",
-        statusLabel: "Evidence unavailable",
-        detail:
-          "Exact signed bank-instruction evidence is unavailable. No unchanged claim was made.",
-      }
-    : {
-        label: "Bank instruction unchanged since the decision",
-        status: "done",
-        statusLabel: "Verified",
-        detail: evidenceSummary,
-      };
+  const initialEvidence = evidence.find(
+    (entry) =>
+      entry.liquidityPhase !== "pre-execution-revalidation",
+  );
+  const postReviewEvidence = evidence.find(
+    (entry) =>
+      entry.liquidityPhase === "pre-execution-revalidation",
+  );
+  if (postReviewEvidence) {
+    return {
+      label: "Bank-instruction post-review finding recorded",
+      status: "done",
+      statusLabel: "Recorded",
+      detail: postReviewEvidence.summary,
+    };
+  }
+  if (initialEvidence) {
+    return {
+      label: "Bank-instruction revalidation not evaluated",
+      status: "pending",
+      statusLabel: "Post-review evidence unavailable",
+      detail: `${initialEvidence.summary} No exact signed post-review result was recorded, so no unchanged or Verified claim was made.`,
+    };
+  }
+  return {
+    label: "Bank-instruction check not evaluated",
+    status: "pending",
+    statusLabel: "Evidence unavailable",
+    detail:
+      "Exact signed bank-instruction evidence is unavailable. No unchanged or Verified claim was made.",
+  };
 }

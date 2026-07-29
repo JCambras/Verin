@@ -278,16 +278,15 @@ export function resolveSourceCaseId(
   firmId: string,
   requestedCaseId: string | undefined,
 ): SignedCaseId | null {
+  if (requestedCaseId === undefined) return null;
   const candidates = sourceCaseIdsFor(scenario, firmId);
-  const candidate = requestedCaseId ?? candidates[0];
   if (
-    !candidate ||
-    !candidates.includes(candidate as SignedCaseId) ||
-    !ownsSourceCase(scenario, firmId, candidate as SignedCaseId)
+    !candidates.includes(requestedCaseId as SignedCaseId) ||
+    !ownsSourceCase(scenario, firmId, requestedCaseId as SignedCaseId)
   ) {
     return null;
   }
-  return candidate as SignedCaseId;
+  return requestedCaseId as SignedCaseId;
 }
 export function bindExactSourceCase(
   scenario: ScenarioData,

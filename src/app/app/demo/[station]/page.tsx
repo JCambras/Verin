@@ -14,6 +14,7 @@ import {
   resolveScenarioId,
   resolveSourceCaseId,
   scenarioById,
+  sourceCaseIdsFor,
   type JourneyPass,
 } from "@app/demo/data";
 import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/surfaces/shared";
@@ -49,13 +50,20 @@ export default async function DemoStationPage({
   const scenarioId = resolveScenarioId(first(sp.scenario));
   const firmId = resolveFirmId(first(sp.firm));
   if (!scenarioId || !firmId) notFound();
+  const scenario = scenarioById(scenarioId);
   const requestedCaseId = first(sp.case);
   const sourceCaseId = resolveSourceCaseId(
-    scenarioById(scenarioId),
+    scenario,
     firmId,
     requestedCaseId,
   );
-  if (requestedCaseId !== undefined && sourceCaseId === null) notFound();
+  if (
+    (requestedCaseId === undefined &&
+      sourceCaseIdsFor(scenario, firmId).length > 0) ||
+    (requestedCaseId !== undefined && sourceCaseId === null)
+  ) {
+    notFound();
+  }
   const approved = first(sp.approved) === "1";
   const requestedPass = first(sp.pass);
   if (requestedPass !== undefined && requestedPass !== "revalidated") notFound();
@@ -64,11 +72,11 @@ export default async function DemoStationPage({
     !hasSignedInvalidationAuthority(
       sourceCaseId
         ? bindExactSourceCase(
-            scenarioById(scenarioId),
+            scenario,
             firmId,
             sourceCaseId,
           )
-        : scenarioById(scenarioId),
+        : scenario,
       firmId,
     )
   ) {
@@ -81,6 +89,13 @@ export default async function DemoStationPage({
     pass,
     sourceCaseId ?? undefined,
   );
+  if (
+    station === "policy-authoring" &&
+    approved &&
+    journey.policyAuthoring.approval.kind === "unavailable"
+  ) {
+    notFound();
+  }
   const routeContext = {
     scenarioId: journey.scenarioId,
     firmId: journey.firmId,
