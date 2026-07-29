@@ -38,6 +38,9 @@ const TRACER = "src/infrastructure/observability/tracer.ts";
 const LOGGER = "src/infrastructure/observability/logger.ts";
 const SAFE_VALUES = "src/domain/observability/safe-values.ts";
 const RECORD_ID = "src/infrastructure/observability/record-id.ts";
+const SECRET = "src/contracts/secret.ts";
+const CONFIG = "src/infrastructure/config/index.ts";
+const RECORD_ID_KEY_PURPOSE = "verin:observability-record-id:key:v1";
 /**
  * READ OFF the imported symbol, never spelled. detectShippedTestVocabularyUse
  * resolves (name, declaring file) and reports nothing when either half goes stale,
@@ -288,12 +291,25 @@ function isNormalizedRecordDigestInput(
     resolvesToDeclaration(lowerCase.getExpression(), valueParameter);
 }
 
-function hmacUpdateInputs(node: CallExpression): readonly Node[] | null {
+interface HmacDigestTrace {
+  readonly inputs: readonly Node[];
+  readonly key: Node;
+}
+
+function hmacDigestTrace(
+  node: CallExpression,
+  encoding: "hex" | null,
+): HmacDigestTrace | null {
   const digest = node.getExpression();
   if (
     !Node.isPropertyAccessExpression(digest) ||
     digest.getName() !== "digest" ||
-    literalText(node.getArguments()[0]) !== "hex"
+    (
+      encoding === null
+        ? node.getArguments().length !== 0
+        : node.getArguments().length !== 1 ||
+          literalText(node.getArguments()[0]) !== encoding
+    )
   ) {
     return null;
   }
@@ -302,7 +318,10 @@ function hmacUpdateInputs(node: CallExpression): readonly Node[] | null {
   for (;;) {
     if (!Node.isCallExpression(receiver)) return null;
     if (importedCreateHmac(receiver)) {
-      return literalText(receiver.getArguments()[0]) === "sha256" ? inputs : null;
+      const key = receiver.getArguments()[1];
+      return literalText(receiver.getArguments()[0]) === "sha256" && key
+        ? { inputs, key }
+        : null;
     }
     const update = receiver.getExpression();
     const [input] = receiver.getArguments();
@@ -318,16 +337,84 @@ function hmacUpdateInputs(node: CallExpression): readonly Node[] | null {
   }
 }
 
+function isSessionSecret(node: Node): boolean {
+  if (
+    !Node.isCallExpression(node) ||
+    !resolvesTo(node.getExpression(), SECRET, "revealSecret") ||
+    node.getArguments().length !== 1
+  ) {
+    return false;
+  }
+  const secret = node.getArguments()[0];
+  if (
+    !secret ||
+    !Node.isPropertyAccessExpression(secret) ||
+    secret.getName() !== "secret"
+  ) {
+    return false;
+  }
+  const session = secret.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(session) ||
+    session.getName() !== "session"
+  ) {
+    return false;
+  }
+  const config = session.getExpression();
+  return Node.isCallExpression(config) &&
+    config.getArguments().length === 0 &&
+    resolvesTo(config.getExpression(), CONFIG, "getConfig");
+}
+
+function isSecretDerivedPurposeKey(node: Node): boolean {
+  if (!Node.isIdentifier(node)) return false;
+  return node.getDefinitionNodes().some((definition) => {
+    if (!Node.isVariableDeclaration(definition)) return false;
+    const statement = definition.getVariableStatement();
+    if (
+      !statement?.getDeclarationKindKeywords().some((keyword) =>
+        keyword.getKind() === SyntaxKind.ConstKeyword
+      )
+    ) {
+      return false;
+    }
+    const name = definition.getNameNode();
+    if (!Node.isIdentifier(name)) return false;
+    const references = name.findReferencesAsNodes();
+    if (
+      references.length !== 1 ||
+      references[0]!.getSourceFile() !== node.getSourceFile() ||
+      references[0]!.getStart() !== node.getStart() ||
+      references[0]!.getEnd() !== node.getEnd()
+    ) {
+      return false;
+    }
+    const initializer = definition.getInitializer();
+    if (!initializer || !Node.isCallExpression(initializer)) return false;
+    const trace = hmacDigestTrace(initializer, null);
+    return Boolean(
+      trace &&
+      isSessionSecret(trace.key) &&
+      trace.inputs.length === 1 &&
+      literalText(trace.inputs[0]) === RECORD_ID_KEY_PURPOSE,
+    );
+  });
+}
+
 function hmacDigestInitializer(node: Node, owner: FunctionDeclaration): boolean {
   if (!Node.isIdentifier(node)) return false;
   return node.getDefinitionNodes().some((definition) => {
     if (!Node.isVariableDeclaration(definition)) return false;
     const initializer = definition.getInitializer();
     if (!initializer || !Node.isCallExpression(initializer)) return false;
-    const inputs = hmacUpdateInputs(initializer);
-    return Boolean(inputs?.some((input) =>
-      isNormalizedRecordDigestInput(input, owner)
-    ));
+    const trace = hmacDigestTrace(initializer, "hex");
+    return Boolean(
+      trace &&
+      isSecretDerivedPurposeKey(trace.key) &&
+      trace.inputs.some((input) =>
+        isNormalizedRecordDigestInput(input, owner)
+      ),
+    );
   });
 }
 
@@ -961,6 +1048,93 @@ describe("observability-vocabulary fence (charter #14)", () => {
           export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
             const digest = createHmac("sha256", "secret")
               .update(JSON.stringify(["v1", tenant.orgId, field]))
+              .digest("hex");
+            return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
+          }
+        `,
+      });
+      const violations = detectUntrustedObservabilityRecordMints(project);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(
+        "keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      );
+    });
+
+    it("rejects a public emitted key with an unused secret-derived HMAC", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `
+          export interface SecretValue { readonly kind: "secret" }
+          export function revealSecret(value: SecretValue): string {
+            return value.kind;
+          }
+        `,
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/config/index.ts": `
+          import type { SecretValue } from "@contracts/secret";
+          declare const secret: SecretValue;
+          export function getConfig(): { session: { secret: SecretValue } } {
+            return { session: { secret } };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { createHmac } from "node:crypto";
+          import { revealSecret } from "@contracts/secret";
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          import { getConfig } from "@infra/config";
+          export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
+            const purposeKey = createHmac("sha256", revealSecret(getConfig().session.secret))
+              .update("verin:observability-record-id:key:v1")
+              .digest();
+            const digest = createHmac("sha256", "public-observability-key")
+              .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
+              .digest("hex");
+            return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
+          }
+        `,
+      });
+      const violations = detectUntrustedObservabilityRecordMints(project);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(
+        "keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      );
+    });
+
+    it("rejects a purpose key reassigned after secret derivation", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `
+          export interface SecretValue { readonly kind: "secret" }
+          export function revealSecret(value: SecretValue): string {
+            return value.kind;
+          }
+        `,
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/config/index.ts": `
+          import type { SecretValue } from "@contracts/secret";
+          declare const secret: SecretValue;
+          export function getConfig(): { session: { secret: SecretValue } } {
+            return { session: { secret } };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { createHmac } from "node:crypto";
+          import { revealSecret } from "@contracts/secret";
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          import { getConfig } from "@infra/config";
+          export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
+            let purposeKey: string | Buffer = createHmac("sha256", revealSecret(getConfig().session.secret))
+              .update("verin:observability-record-id:key:v1")
+              .digest();
+            purposeKey = "public-observability-key";
+            const digest = createHmac("sha256", purposeKey)
+              .update(JSON.stringify(["v1", tenant.orgId, field, value.toLowerCase()]))
               .digest("hex");
             return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
           }

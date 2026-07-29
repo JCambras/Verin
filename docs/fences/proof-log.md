@@ -5266,3 +5266,38 @@ corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
                                                              # 5 tests passed
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+
+### PF-186 emitted observability digests use the secret-derived purpose key
+
+The keyed-record provenance fence proved the emitted SHA-256 algorithm and
+normalized input but did not inspect the emitted HMAC key. Replacing that key
+with a public constant while retaining the secret-derived purpose HMAC therefore
+created a recovery oracle while both security fences stayed green.
+
+**Adversarial proof:** before the correction, the live record-id implementation
+was changed from `createHmac("sha256", purposeKey)` to
+`createHmac("sha256", "public-observability-key")`. The observability and secret
+fitness files still passed all 77 tests. After the correction, the same
+injection failed the observability fence at
+`src/infrastructure/observability/record-id.ts:33`, while the secret-containment
+file still passed all 40 tests. The new in-memory companion retains an unused,
+valid secret-derived purpose HMAC beside the public emitted key and receives the
+same provenance violation. A second companion reassigns a valid purpose key
+before emission and is also refused. The injection was reverted, and the
+focused observability, secret, and runtime suites passed all 95 tests.
+
+### PF-186 verification
+
+```
+corepack pnpm test                                           # 56 files, 1,211 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+corepack pnpm test:e2e                                       # production build and 17 tests passed
+```

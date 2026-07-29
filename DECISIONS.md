@@ -2941,3 +2941,35 @@ field can still collapse to one correlation value).
 
 **Revert path:** revert this changeset to restore descendant-only HMAC
 detection and omit the same-tenant, same-field distinct-value companion.
+
+## D-095 - Emitted record digests retain secret key provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, D-094,
+ADR-0013, ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The keyed-record provenance fence now traces the key argument of the exact
+SHA-256 HMAC receiver whose hex digest is emitted. That key must resolve to a
+single-use immutable purpose key derived by a second SHA-256 HMAC over the
+validated session secret and the exact observability record-id domain separator.
+The emitted receiver must still consume the canonical tuple containing version,
+tenant, field, and lowercase record value.
+
+A public emitted key with an otherwise valid but unused secret-derived HMAC now
+fails the observability fence, as does reassignment after valid derivation. The
+secret-containment fence remains responsible for limiting raw secret access,
+while this fence proves that the access governs the emitted digest rather than
+unrelated work in the same function.
+
+Only the fitness analyzer, its adversarial companion, decision evidence, and
+proof evidence changed. Runtime behavior and platform line measurements remain
+unchanged.
+
+**Alternatives rejected:** accept any SHA-256 HMAC key when the function also
+reveals a secret (an unused secret HMAC leaves the emitted digest recoverable);
+make the secret-containment fence infer emitted dataflow (it owns access
+containment, not observability provenance); and rely only on runtime separation
+tests (a public constant can preserve tenant and field separation while creating
+a recovery oracle).
+
+**Revert path:** revert this changeset to restore input-only emitted-digest
+tracing and remove the public-key companion.
