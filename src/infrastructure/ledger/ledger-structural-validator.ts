@@ -430,6 +430,11 @@ export async function assertRecordedLedgerStructure(
   const seenEntries = new Map<string, StructuralLedgerEntry>();
   const seenDecisions = new Map<string, StructuralLedgerEntry>();
   const seenEvidence = new Map<string, StructuralLedgerEntry>();
+  const activeReservations = new Map<
+    string,
+    StructuralLedgerEntry | null
+  >();
+  const releasedReservations = new Set<string>();
   const overlay: LedgerStructureLookup = {
     decision: base.decision,
     entry: async (id) => seenEntries.get(id) ?? base.entry(id),
@@ -446,26 +451,15 @@ export async function assertRecordedLedgerStructure(
         : base.evidenceRecording(id, before);
     },
     activeReservation: async (id, before) => {
-      const prior = [...seenEntries.values()].filter(
-        (item) => item.sequence < before,
-      );
-      const released = new Set(
-        prior.flatMap((item) =>
-          item.event.type === "ReservationReleased"
-            ? [item.event.reservationCreationRef.id]
-            : []),
-      );
-      const seen = prior
-        .filter(
-          (item) =>
-            item.event.type === "ReservationCreated" &&
-            item.event.reservationRef.id === id &&
-            !released.has(item.event.id),
-        )
-        .sort((left, right) => right.sequence - left.sequence)[0];
-      if (seen) return seen;
+      if (activeReservations.has(id)) {
+        return activeReservations.get(id) ?? null;
+      }
       const stored = await base.activeReservation(id, before);
-      return stored && !released.has(stored.event.id) ? stored : null;
+      const active = stored && !releasedReservations.has(stored.event.id)
+        ? stored
+        : null;
+      activeReservations.set(id, active);
+      return active;
     },
   };
   for (const item of [...entries].sort(
@@ -478,6 +472,17 @@ export async function assertRecordedLedgerStructure(
     }
     if (item.event.type === "EvidenceSnapshotRecorded") {
       seenEvidence.set(item.event.evidenceSnapshotRef.id, item);
+    }
+    if (item.event.type === "ReservationCreated") {
+      activeReservations.set(item.event.reservationRef.id, item);
+    }
+    if (item.event.type === "ReservationReleased") {
+      const creationId = item.event.reservationCreationRef.id;
+      releasedReservations.add(creationId);
+      const current = activeReservations.get(item.event.reservationRef.id);
+      if (current?.event.id === creationId) {
+        activeReservations.set(item.event.reservationRef.id, null);
+      }
     }
   }
 }

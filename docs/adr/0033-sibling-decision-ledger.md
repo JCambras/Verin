@@ -121,17 +121,24 @@ settle now.
   it. The latest evidence recording at or before a decision is selected through the
   tenant-scoped partial index with an ordered lateral `LIMIT 1` lookup and then
   compared with the verified window start. Any replay-source failure returns all
-  L1-L4 levels, no trusted decisions, and a bounded PII-safe reason. Only the gate's
-  unbounded run is examiner-grade. Evidence membership reads stop at the maximum
-  number of recording facts that can fit before the decision in the exact window,
-  plus one sentinel row. A larger bundle is marked incomplete without materializing
-  the rest of its membership.
+  L1-L4 levels, no trusted decisions, and a bounded PII-safe reason. The gate's
+  unbounded run is an integrity-verification control, not an examiner export.
+  Evidence membership reads stop at the maximum number of recording facts that can
+  fit before the decision in the exact window, plus one sentinel row. A larger
+  bundle is marked incomplete without materializing the rest of its membership.
 - The seeded `/app/ledger` register is read-only, uses typed view models, and shows
   both the raw event register and replayed decision state, so the projection fold is
   reachable in the PR that lands it. Rows produced by a synthetic source carry the
   shared `synthetic fixture` badge, derived from parsed stored provenance. Invalid
   provenance renders as `untrusted provenance`, never as real. No fake decision,
   status, or execution history is presented as real.
+- The unbounded full-source examiner export is explicitly deferred. The bounded
+  register returns recent summaries, truncated hashes, and no replay-source
+  payloads, so it cannot satisfy that contract. A later design must resolve
+  authorization, streaming or pagination, retention of generated exports, and
+  resource bounds before adding a delivery path. The trigger is an external
+  examiner or regulated-customer export requirement, before the capability is
+  represented as available.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
@@ -185,7 +192,7 @@ claim those capabilities are shipped until their prompt lands them.
 |---|---|
 | Extend `audit_log` | Breaks its frozen hash form or leaves typed data unhashed; asynchronous delivery cannot be authoritative decision state. |
 | A second orchestration engine | Prompt 7 is persistence and replay foundation only; the existing workflow engine remains the orchestration substrate. |
-| Projection rows as source of truth | Mutable caches cannot provide replay or examiner-grade history; rebuild equality is the stronger contract. |
+| Projection rows as source of truth | Mutable caches cannot provide replay or auditable immutable history; rebuild equality is the stronger contract. |
 | Repository-only immutability | Any bypass with ordinary database write access could silently edit history; practical database triggers close that class. |
 | Recompute old payload bytes during verification | Serializer evolution could change old bytes; L1 must hash the exact stored preimage forever. |
 

@@ -3049,6 +3049,8 @@ migration, and ADR-0018 ceiling amendments.
 
 ### D-099 · 2026-07-28 · reversible · Ledger provenance, reservation ownership, and register verification scope
 
+**Examiner-export characterization superseded by D-119.**
+
 Review of D-098 surfaced four storage-level gaps, all fixed in the same forward-only
 migration rather than a follow-up one.
 
@@ -3076,8 +3078,9 @@ bundle id, is refused with a legible error instead of an opaque constraint viola
 **Verification scope is honest.** `verifyAndListDecisionLedger` accepts a window, and the
 register verifies its most recent 200 entries against the stored hash of their predecessor
 instead of re-running L1-L4 over the whole chain on every page load under the store's single
-connection. The unbounded form remains the examiner-grade check the `audit-chain-verify`
-gate runs, and the UI states which scope it is showing.
+connection. The unbounded form remains the full integrity check the
+`audit-chain-verify` gate runs, not an examiner export, and the UI states which
+scope it is showing.
 
 `ExceptionDecisionRequested.triggeringEntryRef` is now a promoted, foreign-keyed column
 checked by L3, so a causal link to a nonexistent entry cannot be stored. The register also
@@ -3515,8 +3518,8 @@ Rebuild apply prints the verified plan through a read-only view of the same
 exclusive tenant transaction that clears and replays derived state. Preview-only
 mode remains non-mutating. Bounded register provenance checks the binding entry
 against the exact verified window before parsing it and performs no historical
-correspondence scan; the full verifier and append path retain that examiner-grade
-check.
+correspondence scan; the full verifier and append path retain that unbounded
+source-correspondence check.
 
 **Why:** failed cryptographic snapshots cannot expose untrusted PII-bearing
 metadata, an append-only side table cannot preclaim or orphan future truth, a
@@ -3615,3 +3618,34 @@ security fence cannot infer tenant scope or immutable-row ownership from an
 unbounded subquery or an unresolved SQL method selector.
 **Revert path:** none while Prompt 7 promises least-trust provenance, tenant isolation,
 and one immutable write owner.
+
+### D-119 · 2026-07-29 · captain-decision · Ledger ownership, replay cost, and export scope are explicit
+
+Unresolved SQL passed through a dynamic query or exec selector fails the immutable-row
+ownership fence even when the SQL argument has no static string root. Non-literal
+dynamic imports fail the immutable-source ownership fence outside the exact
+`ledger-store.ts` owner, so a computed module path cannot acquire a raw source writer
+or its nominal capability.
+
+Recorded structural validation maintains active reservation generations incrementally
+during its ordered pass. It loads the pre-window immutable generation at most once per
+reservation identifier, then applies creation and generation-bound release facts in
+constant time. Whole-ledger verification and rebuild therefore remain linear in
+reservation history rather than repeatedly rescanning prior entries.
+
+The shipped audit and decision-ledger endpoints are bounded operational registers and
+integrity-verification surfaces. They return recent entries or summaries, truncate
+displayed hashes, and omit full immutable replay sources. They are not examiner-grade
+exports. The `audit-chain-verify` gate performs unbounded integrity verification but
+does not deliver records. An unbounded full-source examiner export is explicitly
+deferred until authorization, streaming or pagination, generated-export retention,
+and resource-bounding design are resolved. The trigger is the first external examiner
+or regulated-customer export requirement, before Verin represents that capability as
+available. This supersedes the examiner-export characterization in D-099 and D-114
+without changing their integrity controls.
+
+**Why:** exact ownership must fail closed under runtime indirection, retained replay
+must stay linear under tenant lock, and an operational integrity view cannot stand in
+for a complete examiner delivery contract.
+**Revert path:** none while Prompt 7 promises one immutable write owner, scalable
+whole-ledger verification, and honest capability labeling.

@@ -5757,7 +5757,7 @@ The bounded path statement capture exposed the tenant-wide aggregate:
 ```
 
 The companion now refuses any bounded `count(*)` plus `max(sequence)` ledger query,
-while the examiner-grade path separately proves that exact aggregate remains.
+while the unbounded integrity path separately proves that exact aggregate remains.
 
 Finally, deterministic call composition bypassed the exact insert-owner fence:
 
@@ -5879,7 +5879,7 @@ batch, and bound SQL aliases were invisible:
 
 The replay-source companion records the same evidence again under a different
 producer, bypasses the append-only trigger to move its provenance binding to the
-later matching entry, and proves examiner-grade verification fails with the
+later matching entry, and proves unbounded integrity verification fails with the
 bounded reason `immutable replay source provenance binding is invalid`.
 The migration companion also proves bundle provenance lookup retains its
 tenant-and-input-bundle index instead of scanning decision history.
@@ -6028,7 +6028,7 @@ projection, anti-fork, and typecheck suites pass.
 
 **Invariants:** an unverified register exposes no actor or event metadata; every
 immutable replay source has exactly one valid provenance binding; rebuild apply
-mutates the exact state it previewed; bounded provenance reads do no examiner-grade
+mutates the exact state it previewed; bounded provenance reads do no unbounded
 history scan; every statically resolvable immutable row-creation form has one owner;
 restricted capability imports resolve through emitted extensions.
 
@@ -6148,7 +6148,7 @@ trusted:
 × rejects event references that the immutable decision does not authorize
   promise resolved instead of rejecting
 
-× examiner verification and rebuild reject a valid chain with invalid decision subreferences
+× whole-ledger verification and rebuild reject a valid chain with invalid decision subreferences
   expected true to be false
 ```
 
@@ -6191,10 +6191,10 @@ The four permanent companions were first run against the pre-fix implementation:
 ```
 
 A valid chain containing two unreleased generations of one reservation then
-passed examiner integrity verification:
+passed whole-ledger integrity verification:
 
 ```text
-× examiner verification rejects competing active reservation generations
+× whole-ledger verification rejects competing active reservation generations
   expected true to be false
   src/__tests__/integration/decision-ledger.test.ts:845
 ```
@@ -6212,7 +6212,7 @@ scripts/ledger-unresolved-sql-violation-probe.ts:5
 
 The shared recorded-version structural validator now requires an eligible
 approver-role intersection and derives active reservation generations from prior
-immutable creation and release events. Append, examiner verification, bounded
+immutable creation and release events. Append, whole-ledger verification, bounded
 register replay, and rebuild use that same authority. The mutable reservation
 index is only rebuilt cache state. `appendDecisionEvents` maps and logs the
 original failure only after rolling its savepoint back.
@@ -6323,3 +6323,56 @@ cases use isolated PGlite transactions. The focused ledger integration, tenant,
 append-only, line-budget, typecheck, and lint checks pass.
 
 **Date:** 2026-07-29 (review corrections S1-S3, D-118).
+
+## Dynamic ownership, incremental reservations, and honest export scope (D-119)
+
+**Invariants:** a dynamic query or exec selector cannot hide unresolved SQL; a
+computed module path cannot acquire immutable-source write authority outside its
+exact owner; whole-ledger reservation validation is linear in ordered history;
+bounded operational registers are not represented as full-source examiner
+exports.
+
+The permanent companions first ran against the pre-fix implementation:
+
+```text
+× fails closed for unresolved SQL through a dynamic selector
+  expected [] to have a length of 1 but got 0
+
+× rejects unresolved dynamic imports outside the exact source owner
+  expected [] to have a length of 1 but got 0
+
+× tracks alternating reservation generations incrementally
+  expected 250 to be 1
+```
+
+The immutable-row fence now treats the first argument to an unresolved
+element-access call on a SQL-capable receiver as SQL even when neither the
+selector nor argument resolves statically. The source-write fence rejects every
+non-literal dynamic import outside `ledger-store.ts`. The structural validator
+caches the pre-window active generation once per reservation identifier and
+updates creation and release state during its ordered pass.
+
+With the fixes present, `scripts/ledger-dynamic-violation-probe.ts` planted both
+runtime-indirection forms in the real operator-script tree:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+scripts/ledger-dynamic-violation-probe.ts:6
+
+× immutable source writers require the validated ledger-store capability
+scripts/ledger-dynamic-violation-probe.ts:10
+```
+
+ADR-0019 and ADR-0033 now describe `/app/audit` and `/app/ledger` as bounded
+operational registers and integrity surfaces. The unbounded integrity gate is
+not an export. Full-source examiner delivery remains explicitly deferred until
+authorization, streaming or pagination, generated-export retention, and
+resource-bounding design are resolved.
+
+**Revert:** the real-tree probe was removed. The permanent companions retain the
+combined dynamic-selector/dynamic-SQL case, the computed-import case with its
+exact-owner escape, and 250 alternating reservation generations with one base
+lookup.
+
+**Date:** 2026-07-29 (review corrections T1-T4, ADR-0019/0033, D-119).

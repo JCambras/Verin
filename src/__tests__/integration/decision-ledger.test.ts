@@ -886,7 +886,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
-  it("examiner verification and rebuild reject a valid chain with invalid decision subreferences", async () => {
+  it("whole-ledger verification and rebuild reject a valid chain with invalid decision subreferences", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
     const sample = allLedgerEventSamples().find(
@@ -956,7 +956,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
   });
 
-  it("examiner verification rejects competing active reservation generations", async () => {
+  it("whole-ledger verification rejects competing active reservation generations", async () => {
     const first = decisionRecordingInput();
     expect((await recordDecision(db, first)).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");
@@ -1015,7 +1015,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
         }),
       "decision may be recorded only once",
     ],
-  ])("examiner verification rejects a valid chain with %s", async (
+  ])("whole-ledger verification rejects a valid chain with %s", async (
     _case,
     buildEvent,
     reason,
@@ -2099,7 +2099,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
     const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
     expect(broken.ok).toBe(false);
-    // The specific, PII-safe reason survives into the examiner-grade result: a gate
+    // The specific, PII-safe reason survives into the unbounded integrity result: a gate
     // that reports only BROKEN leaves an unverifiable ledger undiagnosable.
     expect(broken.replaySourceReason).toBe(
       "unsupported evidence encoding 9.0.0/1.0.0 during replay",

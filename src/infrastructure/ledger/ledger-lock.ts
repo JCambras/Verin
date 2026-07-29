@@ -10,7 +10,7 @@ import { appError } from "@contracts/errors";
  * snapshot cannot move under the reader, while letting concurrent verified reads of
  * one tenant proceed together. Verification and replay are O(entries); an exclusive
  * lock there would serialize every `GET /api/ledger` against every other one and
- * block appends for the whole examiner-grade sweep.
+ * block appends for the whole unbounded integrity sweep.
  */
 export type DecisionLedgerLockMode = "append" | "verify";
 

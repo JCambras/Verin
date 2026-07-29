@@ -329,8 +329,8 @@ function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
 /**
  * Reading and verifying the whole chain is O(entries) work under the store's single
  * connection, so callers on a request path pass `window` to verify the most recent
- * entries against the stored hash of their predecessor. The unbounded form stays the
- * examiner-grade check and is what the audit-chain-verify gate runs.
+ * entries against the stored hash of their predecessor. The audit-chain-verify gate
+ * runs the unbounded integrity form.
  */
 export async function verifyAndListDecisionLedger(
   db: SqlDb,
@@ -454,8 +454,8 @@ export async function verifyDecisionLedgerIntegrity(
       };
     } catch (error) {
       // `verifyReplaySources` raises a specific, PII-safe reason for every distinct
-      // failure; collapsing them into one constant would leave the examiner-grade
-      // gate undiagnosable. Anything that is not a typed AppError (a driver fault)
+      // failure; collapsing them into one constant would leave the unbounded
+      // integrity gate undiagnosable. Anything that is not a typed AppError (a driver fault)
       // is reported generically so raw source or driver text never escapes.
       return {
         ok: false,

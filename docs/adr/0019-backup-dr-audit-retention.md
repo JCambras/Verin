@@ -26,8 +26,20 @@ retention (SEC 17a-4 aware) and an examiner-export path. Meridian had no DR plan
   can never override the 204-2 retention hold; deletion cites the regulatory basis per record class.
   No retention, archival, or pruning path may preserve replay-source bytes while
   discarding the provenance binding required to verify them.
-- **Examiner-export path:** an endpoint exports an org's operational audit and
-  decision-ledger registers with chain verification for an examiner.
+- **Shipped register surfaces:** `/app/audit` verifies the operational audit
+  chain and returns its latest 200 entries. `/app/ledger` verifies and replays
+  a bounded window of at most 200 decision events, returns recent decision
+  summaries, truncates displayed hashes, and omits immutable replay-source
+  payloads. These RBAC-gated surfaces support operations and integrity
+  diagnosis. Neither is an examiner export.
+- **Examiner export is deferred:** the unbounded full-source export required by
+  the charter is later work. Its authorization policy, streaming or pagination
+  protocol, generated-export retention, and resource-bounding behavior remain
+  unresolved and must be designed together instead of inferred from the
+  operational registers. The `audit-chain-verify` gate performs unbounded
+  integrity verification for operating evidence; it does not export records.
+  **Un-defer trigger:** before Verin represents an examiner export as available
+  to a regulated customer or external examiner.
 
 ## Alternatives Rejected
 
@@ -38,15 +50,17 @@ retention (SEC 17a-4 aware) and an examiner-export path. Meridian had no DR plan
 
 ## Trade-offs and Costs
 
-- **Gained:** verified restore, defined RPO/RTO, examiner-ready retention + export, DSAR that respects holds.
-- **Sacrificed:** retention storage cost; the drill must be re-run periodically.
+- **Gained:** verified restore, defined RPO/RTO, examiner-aware retention, honest bounded registers, and DSAR handling that respects holds.
+- **Sacrificed:** retention storage cost; the drill must be re-run periodically; the full-source examiner export remains unshipped.
 
 ## Consequences
 
 Charter-map id 11 (`backup-and-restore` runbook). The executed drill's evidence goes in FOUNDATION.md.
-The WORM archive + full DSAR workflow are deferred design contracts with triggers.
+The WORM archive, full DSAR workflow, and full-source examiner export are
+deferred design contracts with triggers.
 
 ## Revisit When
 
-The first Tier-1 audit entry nears 6 years (forces the WORM archive), a regulated customer requires
-17a-4(f) WORM immediately, or a real restore incident produces a postmortem.
+The first Tier-1 audit entry nears 6 years (forces the WORM archive), a regulated
+customer requires 17a-4(f) WORM immediately, an examiner export is required for
+external use, or a real restore incident produces a postmortem.

@@ -1164,19 +1164,25 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       if (expression === null) {
         const rooted = call.getArguments().find((argument) =>
           hasStaticStringRoot(argument));
+        const possibleSqlSink = hasSqlCallableRoot(
+          call.getExpression(),
+          call.getStart(),
+        );
+        const unresolvedSqlSelector =
+          Node.isElementAccessExpression(call.getExpression()) &&
+          callTarget(call.getExpression()) === null;
+        const candidate = rooted ??
+          (unresolvedSqlSelector ? call.getArguments()[0] : undefined);
         if (
-          rooted &&
-          hasSqlCallableRoot(
-            call.getExpression(),
-            call.getStart(),
-          )
+          candidate &&
+          possibleSqlSink
         ) {
-          const key = `${rel}:${rooted.getStartLineNumber()}:sql-alias`;
+          const key = `${rel}:${candidate.getStartLineNumber()}:sql-alias`;
           if (!seen.has(key)) {
             seen.add(key);
             violations.push({
               file: rel,
-              line: rooted.getStartLineNumber(),
+              line: candidate.getStartLineNumber(),
             });
           }
         }
@@ -1363,10 +1369,14 @@ function sourceWriteBoundaryViolations(
         reference.kind === "dynamic-import" ||
         reference.kind === "require" ||
         reference.kind === "import-equals";
+      const unresolvedDynamicImport =
+        reference.kind === "dynamic-import" &&
+        reference.specifier === null;
       if (
         rel !== "src/infrastructure/ledger/ledger-store.ts" &&
         (
           indirectLoader ||
+          unresolvedDynamicImport ||
           (indirectRestricted &&
             reference.specifier !== null &&
             restrictedSourceModule(reference.specifier))
@@ -1518,6 +1528,16 @@ describe("decision-ledger append-only fence", () => {
           `db[method]("INSERT INTO decision_records (id) VALUES ('x')");`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
+    });
+
+    it("fails closed for unresolved SQL through a dynamic selector", () => {
+      const project = inMemoryProject({
+        "/scripts/dynamic-selector-and-sql.ts":
+          `export const run = (` +
+          `db: { query(s: string): unknown; exec(s: string): unknown }, ` +
+          `method: "query" | "exec", sql: string) => db[method](sql);`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
     });
 
     it("fails closed for unresolved SQL parameters and loop values except the migration runner", () => {
@@ -1770,6 +1790,18 @@ describe("decision-ledger append-only fence", () => {
       expect(
         sourceWriteBoundaryViolations(project.getSourceFiles()),
       ).toHaveLength(7);
+    });
+
+    it("rejects unresolved dynamic imports outside the exact source owner", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil-computed-import.ts":
+          `export const load = (moduleName: string) => import(moduleName);`,
+        "/src/infrastructure/ledger/ledger-store.ts":
+          `export const load = (moduleName: string) => import(moduleName);`,
+      });
+      expect(
+        sourceWriteBoundaryViolations(project.getSourceFiles()),
+      ).toHaveLength(1);
     });
 
     it("rejects restricted modules loaded through aliased and createRequire loaders", () => {
