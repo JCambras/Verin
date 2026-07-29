@@ -137,7 +137,7 @@ describe("v3-invariant registry fence", () => {
     const deps = {
       exists: () => true,
       ciJobs: parseCiJobs(
-        ["name: ci", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm audit:chain", ""].join("\n"),
+        ["name: ci", "on:", "  push:", "  pull_request:", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm audit:chain", ""].join("\n"),
       ),
     };
     // Ratcheted ids must be active in fixtures that test OTHER failure classes.

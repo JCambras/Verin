@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 
 export default function DemoLauncherPage() {
   return (
-    <div className="flex flex-col gap-6 animate-fade-in">
+    <div data-demo-launcher className="flex flex-col gap-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Money-movement demo</h1>
         <p className="mt-1 text-sm text-slate-600">

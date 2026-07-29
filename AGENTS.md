@@ -26,7 +26,9 @@ gate's closing prompt) falls after that gate closes, a gate with no machine-chec
 references prompt-5 guarantees 7/8/9;
 invariant 3 is required at Gate B because its prerequisite is prompt 10). `ci-gate` evidence is a real
 YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a restricted shell-command parse of the
-effective workflow/job/step shell. The required
+effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
+push and pull request events, every mapped command runs from the repository root, and mapped controls
+invoke their owned entry points directly. The required
 command must be a dedicated simple command whose exit status controls its step, and the job must BLOCK:
 a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
@@ -36,7 +38,7 @@ invariants 7, 8, and 9 are pinned exactly.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
 `ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
 empty, unsupported-shell, and fully skipped jobs prove nothing. Both v3 mappings pin
-`pnpm v3:invariants`. Readiness computes every gate's structural `entryGates`, so a later
+`pnpm exec tsx scripts/v3-invariants.ts`. Readiness computes every gate's structural `entryGates`, so a later
 gate cannot report green while a predecessor is non-green. Five ratchets in the fence pin the
 30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
 activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
@@ -93,7 +95,9 @@ The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
 `src/app/demo/surfaces/` fenced to import only view models + presentation (both rules:
-`src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Landing a real path = replace the
+`src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
+`src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
+the typed manifest, route switch, components, and ordered screenshots. Landing a real path = replace the
 corresponding builder and remove its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
 The decision-primitive vocabulary (v3 prompt 8, ADR-0039) lives at `src/contracts/primitives/`
@@ -241,7 +245,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
   contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins the
   exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
-  assertion, and rejects scope skips and expected failures.
+  assertion, rejects scope skips and expected failures through direct or aliased Playwright symbols,
+  proves Playwright forbids focused exclusion and selects the required specs, and binds every public,
+  authenticated, and demo route
+  to its loaded-state scan.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

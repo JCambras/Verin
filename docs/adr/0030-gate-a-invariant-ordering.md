@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, and the captain-approved enforcement-completeness review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, and the captain-approved execution-reachability review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -171,6 +171,12 @@ literal Ubuntu or macOS hosted runner and the built-in `bash` and `sh` shells. U
 non-string shells, and custom shell templates such as `echo {0}` fail closed because the restricted
 command grammar cannot prove their execution or exit-status semantics.
 
+The workflow itself must run on every normal `push` and `pull_request`. Manual-only activation and
+branch, path, or event filters make every mapped command non-evidence. Effective
+`working-directory` is resolved through workflow defaults, job defaults, and step overrides; mapped
+commands must execute at the repository root. Every CI-backed requirement invokes its owned binary or
+entry point directly, so changing a same-named `package.json` script to a no-op cannot preserve proof.
+
 **A present command that cannot fail the build is not a blocking gate** (ruling `gatea-fix-review-3`).
 Parsing `jobs.<key>.steps[].run` proves a command is THERE; the failure message, the registry, and this
 ADR all claim more than that - a BLOCKING job. `continue-on-error: true` at either the job or the step
@@ -192,10 +198,10 @@ than attempting to model GitHub's transitive job-result semantics.
 **One structural CI authority, three call sites** (same ruling). `charter-map.json`'s enforced `ci-gate`
 mechanisms were still proven by `ci.includes(ref)` in the charter-drift fence, so a deleted job matched
 its own leftover comment (proved: injection 24). Check (a') now goes through the same `parseCiJobs`.
-Every enforced charter-map entry names and ratchets its exact command. The lower-level
+Every enforced charter-map entry names and ratchets its exact direct command. The lower-level
 `ciJobBlocks` query still fails unless a job contains at least one valid non-neutralized executable
 step, so an empty job cannot satisfy even the weaker job-level claim. Charter rule 9 now names `e2e`
-plus `pnpm test:e2e` and maps an
+plus `pnpm exec playwright test` and maps an
 Axe-specific fitness fence that proves the public, authenticated, and demo E2E specifications execute
 Axe through an enabled and reachable Playwright test. The required specifications await one sanctioned
 helper, and the fence pins that helper to the exact non-mutating document-animation settlement, a complete
@@ -207,7 +213,18 @@ statically dead branches, unawaited helper calls, caught helper calls, and tests
 functions prove nothing.
 Keeping an ordinary Playwright job while deleting or neutralizing every Axe scan can no longer leave
 charter-drift green. Both v3 governance mappings are ratcheted to the exact blocking
-`pnpm v3:invariants` command, so either mapping cannot regress to a name-only job check.
+`pnpm exec tsx scripts/v3-invariants.ts` command, so either mapping cannot regress to a name-only job
+check. The fence also parses `playwright.config.ts`, forbids focused-test exclusion, rejects selectors that exclude required tests,
+binds each required specification to its typed route group and loaded-state assertion, and resolves
+direct, computed, destructured, and aliased Playwright neutralization calls through their imported
+symbols.
+
+**Gate 0 surface completeness is executable.** The prompt-3 evidence gap is replaced by
+`demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
+`docs/demo-contract.md` section 4 list, the dynamic route renders every station, every component exists,
+and the canonical journey screenshots each surface in order. The blocking E2E gate reaches every typed
+demo route and waits for its surface-specific loaded marker. Gate 0 now computes green, and remains the
+structural predecessor of Gate A.
 
 **Entry conditions are executable dependencies, not display copy.** Every gate declares structural
 `entryGates` alongside its human-readable `entryCondition`. The rule set requires both forms to agree,
@@ -242,7 +259,8 @@ the invariant's live mechanism list, so an unrelated naming fence cannot produce
 Charter CI mappings all name and ratchet their exact commands; malformed, empty, unsupported-shell, or
 fully skipped jobs prove nothing. Required Axe tests reject module- and describe-scope skip/fixme
 annotations and `test.fail`, while the sanctioned helper pins the exact non-mutating document-animation
-settlement before its complete WCAG scan.
+settlement before its complete WCAG scan. Playwright selection settings, route groups, loaded-state
+markers, and imported annotation aliases are part of that proof.
 
 **Reading key for the ratified documents.** `docs/v3/verin-prompt-sequence-v3.md:186` still reads
 "Gate A: Foundation invariants 1-5 are active and green." The ratified v3 documents are committed
@@ -281,6 +299,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Infer arbitrary per-spec Axe result transformations and assertions | Dataflow inference admitted filters that erased every violation and assertions swallowed by `catch`. One sanctioned helper makes the executable accessibility contract small enough to fence structurally. |
 | Let a name-only charter CI mapping prove an empty job | A job key with no executable blocking step says nothing about enforcement, and setup commands do not prove the named control. Every enforced mapping now binds and ratchets the exact command it claims. |
 | Let any awaited `page.evaluate` count as animation settlement | An evaluate callback can clear or rewrite the DOM before Axe scans it. The helper has one sanctioned, non-mutating settlement expression, so masking callbacks fail structurally. |
+| Treat a filtered or manual-only workflow as normal CI evidence | A valid command that does not run for ordinary pushes and pull requests is not a blocking repository control. Trigger filters therefore invalidate the whole workflow as evidence. |
+| Accept package-script names as owned entry points | A script body can become `true` while the workflow and every exact command mapping stay unchanged. Mapped controls invoke their binary or owned source entry point directly. |
+| Prove Axe from required spec source without parsing Playwright selection or route state | `testIgnore`, `testMatch`, `grep`, a wrong route, or a pre-load scan can leave source text intact while the required UI never gates. Configuration, route groups, and loaded markers are one structural proof. |
 
 ## Trade-offs and Costs
 
@@ -321,7 +342,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   clause is therefore a governance amendment, not a registry edit.
 - Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
   blocking job runs, checked against a real YAML parse of `.github/workflows/ci.yml` plus a restricted
-  shell-command parse. Only a dedicated simple command can prove execution. Comments, echo arguments,
+  shell-command parse. The workflow must carry unfiltered normal `push` and `pull_request` triggers,
+  effective working directories must resolve to the repository root, and mapped controls invoke direct
+  owned entry points rather than `package.json` scripts. Only a dedicated simple command can prove execution. Comments, echo arguments,
   short-circuited expressions, heredocs, compound commands, step names, environment values, and `uses:`
   paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
   effective shell, an implicit shell on an unsupported runner, or a job carrying a non-empty `needs`
@@ -331,22 +354,25 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   requirements, the invariant mechanisms (`v3-invariants.test.ts`), and charter-drift check (a'). The
   charter mappings all name and ratchet their exact commands. The weakest `ciJobBlocks` query also
   requires at least one valid non-neutralized executable step, so malformed, empty, unsupported-shell,
-  and fully skipped jobs are not blocking evidence. Charter rule 9 additionally names `pnpm test:e2e`
+  and fully skipped jobs are not blocking evidence. Charter rule 9 additionally names
+  `pnpm exec playwright test`
   and the Axe-specific fitness fence. All required surface specifications await `e2e/axe.ts`, whose
   non-mutating animation settlement, complete scan, and direct unmodified-violations assertion are
   structurally pinned by that fence. Module/file/describe scope annotations and expected-failure tests
-  cannot neutralize the required scans. The
+  cannot neutralize the required scans, including computed, destructured, and aliased annotation calls.
+  Playwright configuration must reject focused-test exclusion and select the required specifications,
+  and typed public, authenticated,
+  and demo route groups bind each scan to navigation plus its loaded-state marker. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
-  `pnpm v3:invariants`.
+  `pnpm exec tsx scripts/v3-invariants.ts`.
 - A gate's `awaiting:` line lists EVERY requirement holding it back, undecidable ones included, with a
   second `no mechanism decides:` line naming the subset nothing here can close. The report can no longer
   understate what a gate needs.
-- Registering a gate cannot make it green, and neither can deleting what it cannot prove. Today gate 0
-  reads `not-yet-verifiable` (no mechanism decides completeness against the demo contract's §4
-  required-surface list - the skeleton-honesty fence proves contract parity and the surface import
-  boundary, and the e2e walkthrough screenshots a hard-coded path, but a dropped surface would fail
-  nothing), and gates A through I read `not yet green` against their own unmet requirements.
-  `pnpm v3:invariants` prints all ten; none is green.
+- Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
+  reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
+  manifest, route switch, component inventory, and ordered screenshots, while the blocking E2E gate
+  reaches every typed route after its loaded marker. Gates A through I remain non-green against their
+  own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
   a rule cannot be enforced in one and missing in the other.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
@@ -371,8 +397,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   binding for both YAML files. The fence asserts no invariant's CURRENT status, so the flip needs no
   ratchet edit. If the fence cannot be written without domain-named exceptions, the primitive vocabulary
   is overfit and ADR-0025's revisit trigger fires first.
-- A mechanism lands that decides an `evidence` requirement (gate 0's §4 surface-completeness clause,
-  gate B's domain-schema/shared-engine binding or stable-corpus clauses, gate C's validated-bundle
+- A mechanism lands that decides an `evidence` requirement (gate B's domain-schema/shared-engine
+  binding or stable-corpus clauses, gate C's validated-bundle
   clause, gate F's verification-reconciler clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the
   `invariant` / `fitness` / `artifact` requirement that decides it, in the same PR. An `evidence` entry
   is a named gap, never a permanent excuse.
@@ -391,6 +417,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A blocking job needs a runner or shell outside the supported implicit Ubuntu/macOS, `bash`, or `sh`
   semantics: extend the restricted parser to decide that exact execution model and add adversarial
   companions before using it as evidence. Unsupported custom shells remain non-evidence.
+- A mapped command must legitimately run outside the repository root: add a typed governed-root field
+  and validate its complete ownership boundary before relaxing the current root-only contract.
+- The required demo surface list changes: update the typed manifest, route, canonical screenshots,
+  loaded-state route group, Gate 0 requirement ratchet, and PF-032 evidence together.
 - A `charter-map.json` `ci-gate` entry changes its command: update the mapping, its exact-command ratchet,
   and the proof evidence in the same PR. Name-only enforced mappings are invalid.
 - An invariant that has been referenced by an earlier gate is activated: keep its `activationPrompts`.

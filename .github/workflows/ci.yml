@@ -4,9 +4,7 @@ name: ci
 # charter #15). Tests and E2E run on a NON-UTC clock (charter #8; retro #39).
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
 
 # Least-privilege token (charter #15): every job reads the repo, nothing writes.
 permissions:
@@ -56,7 +54,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: unit + integration + fitness
-        run: pnpm test
+        run: pnpm exec vitest run
 
   knip:
     name: knip (dead-export / dead-code)
@@ -70,7 +68,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: knip
-        run: pnpm knip
+        run: pnpm exec knip
 
   e2e:
     name: e2e (Playwright + axe)
@@ -85,7 +83,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - name: e2e + axe
-        run: pnpm test:e2e
+        run: pnpm exec playwright test
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
@@ -162,7 +160,7 @@ jobs:
       - name: pnpm audit (high+)
         run: pnpm audit --audit-level=high
       - name: license audit (reviewed allowlist, deny GPL/AGPL/unknown)
-        run: pnpm license:audit
+        run: pnpm exec tsx scripts/license-audit.ts
 
   provenance-trace:
     name: provenance-trace (displayed metric -> source, charter #3)
@@ -195,9 +193,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: seed audit evidence
-        run: pnpm db:seed
+        run: pnpm exec tsx scripts/db-seed.ts
       - name: verify org audit chains
-        run: pnpm audit:chain
+        run: pnpm exec tsx scripts/audit-chain-verify.ts
 
   v3-invariants:
     name: v3-invariants (phase-gated three-state report, ADR-0023)
@@ -211,7 +209,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: v3 invariant report (active-pass / active-fail / not-yet-active; fails on active-fail)
-        run: pnpm v3:invariants
+        run: pnpm exec tsx scripts/v3-invariants.ts
 
   golden-cases:
     name: golden-cases (prompt-2 truth-set completeness, captain-signoff-gated)
@@ -225,7 +223,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: golden-case validation (every required field populated; vocabulary aligned; signoff honest)
-        run: pnpm golden:validate
+        run: pnpm exec tsx scripts/golden-cases-validate.ts
 
   corpus:
     name: corpus (prompt-11 replay-corpus regeneration + provenance split)
@@ -255,4 +253,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: load-smoke
-        run: pnpm load:smoke
+        env:
+          LOG_LEVEL: warn
+        run: pnpm exec tsx scripts/load-smoke.ts

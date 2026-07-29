@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
 
 /**
  * Phase-0 smoke. Makes the E2E gate REAL from the first UI commit (charter #8 —
@@ -18,6 +19,9 @@ test("health endpoint reports ok", async ({ request }) => {
 });
 
 test("landing has no Axe violations (WCAG 2.2 AA)", async ({ page }) => {
-  await page.goto("/");
-  await assertNoAxeViolations(page, "landing");
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
 });

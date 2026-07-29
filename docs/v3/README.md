@@ -77,7 +77,10 @@ fails the build if a gate requires anything whose PROOF POINT falls after that g
 declares no machine-checkable requirement (an empty set would read green merely by being registered), or
 if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
 parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of each `run` script and its
-effective workflow/job/step shell. The
+effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
+`push` and `pull_request` events, mapped commands must execute from the repository root, and CI-backed
+requirements invoke their owned binaries or source entry points directly rather than through mutable
+package-script aliases. The
 required command must be a dedicated simple command whose exit status controls its step, so a command
 named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
 `env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
@@ -99,10 +102,15 @@ the fence pin the complete 30-invariant gate-assignment map, the prompt-5 proof 
 (wave, structural predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED
 requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
-moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered gate 0
-green. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
+moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
+typed manifest is equal to the normative demo contract, every component and dynamic route exists, the
+canonical journey screenshots all twelve surfaces in order, and blocking E2E reaches every typed route
+after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
 stable-corpus evidence, Gate F includes prompt 26's verification
 reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
+The Axe-specific fence also parses Playwright selection settings, forbids focused-test exclusion, binds public, authenticated, and demo
+route groups to loaded-state scans, and resolves direct, computed, destructured, and aliased
+neutralization calls through imported Playwright symbols.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

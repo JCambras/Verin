@@ -12,24 +12,12 @@ import Link from "next/link";
 import { DecisionSpine } from "@app/presentation/decision-spine";
 import type { ExecutionTimelineRow } from "@app/presentation/execution-timeline";
 import { EmptyState } from "@app/presentation/ui";
-import { DEV_BADGE_TEXT, type DecisionSpineVM, type ExecutionRowVM } from "../model";
-
-/** Route per journey station, in click order (the demo route runs this sequence). */
-export const DEMO_SEQUENCE = [
-  "workspace",
-  "intent",
-  "evidence",
-  "decision",
-  "policy-trace",
-  "authority",
-  "safety",
-  "execution",
-  "verification",
-  "comparison",
-  "policy-authoring",
-  "record",
-] as const;
-export type DemoStation = (typeof DEMO_SEQUENCE)[number];
+import {
+  DEV_BADGE_TEXT,
+  type DecisionSpineVM,
+  type DemoStation,
+  type ExecutionRowVM,
+} from "../model";
 
 export function demoHref(station: DemoStation, scenarioId: string, firmId: string, extra?: string): string {
   return `/app/demo/${station}?scenario=${scenarioId}&firm=${firmId}${extra ?? ""}`;

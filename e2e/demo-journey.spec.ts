@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { login, PRINCIPAL } from "./helpers";
 import { assertNoAxeViolations } from "./axe";
+import { DEMO_AXE_ROUTES } from "./axe-routes";
 
 /**
  * Walking-skeleton E2E (v3 prompt 3, Gate 0): the seven-minute journey is clickable
@@ -237,5 +238,14 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     await page.goto(`/app/demo/${s}?scenario=recent-bank-change-block&firm=firm-a`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect(await page.getByTestId("dev-provenance-badge").count(), `surface ${s} must carry a dev provenance badge`).toBeGreaterThan(0);
+  }
+});
+
+test("every required demo route has no Axe violations after its loaded state", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  for (const route of DEMO_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
   }
 });

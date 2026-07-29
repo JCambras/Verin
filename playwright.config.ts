@@ -20,7 +20,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
+  forbidOnly: true,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",

@@ -8,7 +8,7 @@
 import { notFound } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
-import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/surfaces/shared";
+import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/model";
 import { WorkspaceSurface } from "@app/demo/surfaces/workspace";
 import { IntentSurface } from "@app/demo/surfaces/intent";
 import { EvidenceSurface } from "@app/demo/surfaces/evidence";
@@ -28,24 +28,13 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export default async function DemoStationPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ station: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const { station } = await params;
-  if (!(DEMO_SEQUENCE as readonly string[]).includes(station)) notFound();
-  const sp = await searchParams;
-  const scenarioId = resolveScenarioId(first(sp.scenario));
-  const firmId = resolveFirmId(first(sp.firm));
-  if (!scenarioId || !firmId) notFound();
-  const approved = first(sp.approved) === "1";
-  const journey = getJourney(scenarioId, firmId);
-  const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
-
-  switch (station as DemoStation) {
+function renderStation(
+  station: DemoStation,
+  journey: ReturnType<typeof getJourney>,
+  ids: { scenarioId: string; firmId: string },
+  approved: boolean,
+) {
+  switch (station) {
     case "workspace":
       return <WorkspaceSurface vm={journey.workspace} {...ids} />;
     case "intent":
@@ -71,4 +60,28 @@ export default async function DemoStationPage({
     case "record":
       return <RecordSurface vm={journey.record} {...ids} />;
   }
+}
+
+export default async function DemoStationPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ station: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { station } = await params;
+  if (!(DEMO_SEQUENCE as readonly string[]).includes(station)) notFound();
+  const sp = await searchParams;
+  const scenarioId = resolveScenarioId(first(sp.scenario));
+  const firmId = resolveFirmId(first(sp.firm));
+  if (!scenarioId || !firmId) notFound();
+  const approved = first(sp.approved) === "1";
+  const journey = getJourney(scenarioId, firmId);
+  const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
+  const resolvedStation = station as DemoStation;
+  return (
+    <div data-demo-surface={resolvedStation}>
+      {renderStation(resolvedStation, journey, ids, approved)}
+    </div>
+  );
 }

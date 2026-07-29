@@ -6292,6 +6292,18 @@ exact future `domain-configuration` fitness mechanism as activation prerequisite
 naming-only fence cannot produce `active-pass`. Focused companions and real injections extend PF-030
 and PF-031.
 
+The captain-approved execution-reachability review (2026-07-28) amended ADR-0030 in place a ninth time:
+**(1)** Gate 0's unmechanized surface clause becomes the executable
+`demo-surface-completeness` fitness requirement, binding the normative section 4 list to one typed
+manifest, all dynamic route cases, component existence, and the canonical ordered screenshots; blocking
+E2E reaches every typed demo route after its loaded marker, so Gate 0 now computes green; **(2)** normal
+CI evidence requires unfiltered `push` and `pull_request` triggers, repository-root execution after
+workflow/job/step working-directory resolution, and direct owned entry points rather than mutable
+package-script aliases; **(3)** the Axe fence parses Playwright selection configuration, binds required
+public, authenticated, and demo route groups to navigation and loaded-state assertions, and resolves
+direct, computed, destructured, and aliased neutralization calls through imported symbols. PF-030,
+PF-031, and new PF-032 record focused companions and real injections.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

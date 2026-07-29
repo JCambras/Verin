@@ -82,6 +82,8 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 const registry = JSON.parse(readFileSync(root + "v3-invariants.json", "utf8")) as Registry;
 const ciJobs = parseCiJobs(existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "");
+const parseCiFixture = (yamlText: string) =>
+  parseCiJobs(["on:", "  push:", "  pull_request:", yamlText].join("\n"));
 
 /**
  * The TEN gates of the ratified prompt sequence, over their ratified prompt ranges
@@ -228,10 +230,10 @@ const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
     "artifact:docs/demo-contract.md @ prompt 1",
     "artifact:config/demo/scenarios.yaml @ prompt 1",
     "artifact:docs/golden-cases.md @ prompt 2",
-    "ci-gate:golden-cases runs 'pnpm golden:validate' @ prompt 2",
+    "ci-gate:golden-cases runs 'pnpm exec tsx scripts/golden-cases-validate.ts' @ prompt 2",
     "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts @ prompt 3",
-    "ci-gate:e2e runs 'pnpm test:e2e' @ prompt 3",
-    "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton @ prompt 3",
+    "ci-gate:e2e runs 'pnpm exec playwright test' @ prompt 3",
+    "fitness:src/__tests__/fitness/demo-surface-completeness.test.ts @ prompt 3",
   ],
   A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5", "invariant:7", "invariant:8", "invariant:9"],
   B: [
@@ -355,6 +357,25 @@ describe("v3 gate-ordering fence", () => {
 
   it("enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one", () => {
     expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
+  });
+
+  it("enforces: Gate 0 has executable surface-completeness proof", () => {
+    expect(registry.gates["0"]?.requires).toContainEqual({
+      kind: "fitness",
+      ref: "src/__tests__/fitness/demo-surface-completeness.test.ts",
+      prompt: 3,
+    });
+    expect(registry.gates["0"]?.requires.some((requirement) => requirement.kind === "evidence")).toBe(false);
+  });
+
+  it("enforces: CI-backed gate requirements invoke owned entry points directly", () => {
+    const packageScriptShims = Object.entries(registry.gates).flatMap(([gate, value]) =>
+      value.requires
+        .filter((requirement) => requirement.kind === "ci-gate")
+        .filter((requirement) => /^pnpm\s+(?!exec\b|audit\b)/.test(requirement.command ?? ""))
+        .map((requirement) => `gate ${gate}: ${requirement.command}`),
+    );
+    expect(packageScriptShims).toEqual([]);
   });
 
   it("enforces: every ci-gate requirement names a blocking job that exists and runs its command", () => {
@@ -587,7 +608,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("proves a ci-gate only by a declared job that RUNS the command, not by a mention", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "name: ci",
           "jobs:",
@@ -612,16 +633,16 @@ describe("v3 gate-ordering fence", () => {
       // a requirement with no command can never be evidence
       expect(ciJobRuns(jobs, "e2e", "")).toBe(false);
       // and the real workflow still satisfies the registry's own ci-gates
-      expect(ciJobRuns(ciJobs, "e2e", "pnpm test:e2e")).toBe(true);
-      expect(ciJobRuns(ciJobs, "golden-cases", "pnpm golden:validate")).toBe(true);
-      expect(ciJobRuns(ciJobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+      expect(ciJobRuns(ciJobs, "e2e", "pnpm exec playwright test")).toBe(true);
+      expect(ciJobRuns(ciJobs, "golden-cases", "pnpm exec tsx scripts/golden-cases-validate.ts")).toBe(true);
+      expect(ciJobRuns(ciJobs, "audit-chain-verify", "pnpm exec tsx scripts/audit-chain-verify.ts")).toBe(true);
     });
 
     it("refuses a command that survives only as a SHELL comment inside a block scalar", () => {
       // A `#` inside `run: |` is literal script text, not YAML syntax, so the YAML
       // parser hands the whole line over - the shell is what disables it. Counting it
       // would let a PR switch a blocking gate off and keep its invariant reading green.
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "name: ci",
           "jobs:",
@@ -637,7 +658,7 @@ describe("v3 gate-ordering fence", () => {
       expect(jobs.get("audit-chain-verify")?.commands).toEqual(["echo skip"]);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
       // but a `#` inside a quoted argument stays part of a dedicated command
-      const quoted = parseCiJobs(
+      const quoted = parseCiFixture(
         ["name: ci", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm audit:chain '# strict'", ""].join("\n"),
       );
       expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain '# strict'")).toBe(true);
@@ -645,7 +666,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("keeps every job declared after a column-0 comment inside the jobs block", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "name: ci",
           "jobs:",
@@ -666,7 +687,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("refuses a command that appears only in a step name, an env value, or a path", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "name: ci",
           "jobs:",
@@ -694,7 +715,7 @@ describe("v3 gate-ordering fence", () => {
         "pnpm audit:chain || true",
       ];
       for (const script of scripts) {
-        const jobs = parseCiJobs(
+        const jobs = parseCiFixture(
           ["name: ci", "jobs:", "  audit-chain-verify:", "    runs-on: ubuntu-latest", "    steps:", "      - run: |", ...script.split("\n").map((line) => `          ${line}`), ""].join(
             "\n",
           ),
@@ -706,7 +727,7 @@ describe("v3 gate-ordering fence", () => {
 
     it("resolves workflow, job, and step shells and rejects unsupported execution semantics", () => {
       const workflow = (workflowShell: string, jobShell: string, stepShell: string) =>
-        parseCiJobs(
+        parseCiFixture(
           [
             "name: ci",
             ...(workflowShell === "" ? [] : ["defaults:", "  run:", `    shell: ${workflowShell}`]),
@@ -730,7 +751,7 @@ describe("v3 gate-ordering fence", () => {
       expect(status("bash", "echo {0}", "sh")).toEqual({ state: "proven" });
       expect(
         ciJobCommandStatus(
-          parseCiJobs(["jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain", ""].join("\n")),
+          parseCiFixture(["jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain", ""].join("\n")),
           "audit-chain-verify",
           "pnpm audit:chain",
         ),
@@ -739,7 +760,7 @@ describe("v3 gate-ordering fence", () => {
 
     it("refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)", () => {
       const workflow = (jobLevel: string, stepLevel: string) =>
-        parseCiJobs(
+        parseCiFixture(
           [
             "name: ci",
             "jobs:",
@@ -779,7 +800,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("does not treat malformed, empty, unsupported, or fully skipped jobs as blocking", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "jobs:",
           "  malformed: null",
@@ -813,7 +834,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("refuses an evidence job with a needs dependency that can prevent it from running", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "jobs:",
           "  disabled:",
@@ -834,8 +855,65 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRunProblem(jobs, "audit-chain-verify", "pnpm audit:chain")).toContain("needs: disabled");
     });
 
+    it("refuses manual-only and filtered workflows as CI evidence", () => {
+      const workflow = (trigger: string) =>
+        parseCiJobs(
+          [
+            "name: ci",
+            "on:",
+            ...trigger.split("\n").map((line) => `  ${line}`),
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            "      - run: pnpm audit:chain",
+            "",
+          ].join("\n"),
+        );
+      for (const trigger of [
+        "workflow_dispatch:",
+        "push:\n  branches: [main]\npull_request:",
+        "push:\n  paths: [src/**]\npull_request:",
+        "push:\npull_request:\n  branches-ignore: [release]",
+      ]) {
+        expect(ciJobRuns(workflow(trigger), "audit-chain-verify", "pnpm audit:chain"), trigger).toBe(false);
+      }
+      expect(ciJobRuns(workflow("push:\npull_request:"), "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+    });
+
+    it("requires mapped CI commands to run from the repository root", () => {
+      const workflow = (workflowDirectory: string, jobDirectory: string, stepDirectory: string) =>
+        parseCiJobs(
+          [
+            "name: ci",
+            "on:",
+            "  push:",
+            "  pull_request:",
+            ...(workflowDirectory === "" ? [] : ["defaults:", "  run:", `    working-directory: ${workflowDirectory}`]),
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            ...(jobDirectory === "" ? [] : ["    defaults:", "      run:", `        working-directory: ${jobDirectory}`]),
+            "    steps:",
+            ...(stepDirectory === "" ? ["      - run: pnpm audit:chain"] : [`      - working-directory: ${stepDirectory}`, "        run: pnpm audit:chain"]),
+            "",
+          ].join("\n"),
+        );
+      const proves = (workflowDirectory: string, jobDirectory: string, stepDirectory: string) =>
+        ciJobRuns(
+          workflow(workflowDirectory, jobDirectory, stepDirectory),
+          "audit-chain-verify",
+          "pnpm audit:chain",
+        );
+      expect(proves("", "", "")).toBe(true);
+      expect(proves(".", "", "")).toBe(true);
+      expect(proves("packages/stub", "", "")).toBe(false);
+      expect(proves("", "packages/stub", "")).toBe(false);
+      expect(proves("", "", "packages/stub")).toBe(false);
+    });
+
     it("requires a dedicated command step and still reads a folded simple command", () => {
-      const jobs = parseCiJobs(
+      const jobs = parseCiFixture(
         [
           "name: ci",
           "jobs:",
@@ -869,10 +947,10 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("diagnoses a neutralized command separately from a missing command", () => {
-      const neutralized = parseCiJobs(
+      const neutralized = parseCiFixture(
         ["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - continue-on-error: true", "        run: pnpm lint", ""].join("\n"),
       );
-      const missing = parseCiJobs(["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm typecheck", ""].join("\n"));
+      const missing = parseCiFixture(["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - run: pnpm typecheck", ""].join("\n"));
       expect(ciJobRunProblem(neutralized, "quality", "pnpm lint")).toContain("neutralized by step continue-on-error: true");
       expect(ciJobRunProblem(missing, "quality", "pnpm lint")).toContain("does not run");
     });
@@ -975,11 +1053,11 @@ describe("v3 gate-ordering fence", () => {
       expect(requirementsOf(reg)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
-    it("flags a gate DELETING the requirement it cannot yet prove - the one-line edit that turned gate 0 green", () => {
-      // Gate 0's every other requirement is already met on disk and in ci.yml, so its
-      // lone `evidence` clause is the only thing holding it below green.
+    it("flags a gate deleting its ruled surface-completeness requirement", () => {
       const gutted = clone(registry);
-      gutted.gates["0"]!.requires = gutted.gates["0"]!.requires.filter((r) => r.kind !== "evidence");
+      gutted.gates["0"]!.requires = gutted.gates["0"]!.requires.filter(
+        (r) => r.ref !== "src/__tests__/fitness/demo-surface-completeness.test.ts",
+      );
       expect(gateOrderingProblems(gutted, () => true)).toEqual([]); // every structural rule still passes...
       expect(requirementsOf(gutted)).not.toEqual(GATE_REQUIREMENTS_RATCHET); // ...and the ratchet is what catches it
       const view = gateReadiness(gutted, {

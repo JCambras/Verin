@@ -131,7 +131,7 @@
         {
           "type": "ci-gate",
           "ref": "knip",
-          "command": "pnpm knip"
+          "command": "pnpm exec knip"
         },
         {
           "type": "config",
@@ -204,7 +204,7 @@
         {
           "type": "ci-gate",
           "ref": "e2e",
-          "command": "pnpm test:e2e"
+          "command": "pnpm exec playwright test"
         },
         {
           "type": "config",
@@ -221,7 +221,7 @@
         {
           "type": "ci-gate",
           "ref": "e2e",
-          "command": "pnpm test:e2e"
+          "command": "pnpm exec playwright test"
         },
         {
           "type": "fitness",
@@ -261,7 +261,7 @@
         {
           "type": "ci-gate",
           "ref": "load-smoke",
-          "command": "pnpm load:smoke"
+          "command": "pnpm exec tsx scripts/load-smoke.ts"
         },
         {
           "type": "procedure",
@@ -310,7 +310,7 @@
         {
           "type": "ci-gate",
           "ref": "audit-chain-verify",
-          "command": "pnpm audit:chain"
+          "command": "pnpm exec tsx scripts/audit-chain-verify.ts"
         },
         {
           "type": "fitness",
@@ -346,7 +346,7 @@
         {
           "type": "ci-gate",
           "ref": "test",
-          "command": "pnpm test"
+          "command": "pnpm exec vitest run"
         }
       ]
     },
@@ -374,7 +374,7 @@
         {
           "type": "ci-gate",
           "ref": "dependency-audit",
-          "command": "pnpm license:audit"
+          "command": "pnpm exec tsx scripts/license-audit.ts"
         },
         {
           "type": "config",
@@ -510,7 +510,7 @@
         {
           "type": "ci-gate",
           "ref": "v3-invariants",
-          "command": "pnpm v3:invariants"
+          "command": "pnpm exec tsx scripts/v3-invariants.ts"
         }
       ]
     },
@@ -539,7 +539,7 @@
         {
           "type": "ci-gate",
           "ref": "v3-invariants",
-          "command": "pnpm v3:invariants"
+          "command": "pnpm exec tsx scripts/v3-invariants.ts"
         }
       ]
     },
@@ -576,7 +576,7 @@
         {
           "type": "ci-gate",
           "ref": "golden-cases",
-          "command": "pnpm golden:validate"
+          "command": "pnpm exec tsx scripts/golden-cases-validate.ts"
         }
       ]
     },
@@ -589,6 +589,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-surface-completeness.test.ts"
         }
       ]
     },

@@ -11,9 +11,17 @@ import {
   type FunctionExpression,
   type SourceFile,
 } from "ts-morph";
+import {
+  AUTHENTICATED_AXE_ROUTES,
+  DEMO_AXE_ROUTES,
+  LOGIN_AXE_ROUTES,
+  PUBLIC_AXE_ROUTES,
+} from "../../../e2e/axe-routes";
+import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { REPO_ROOT } from "./_fence-utils";
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
+const PLAYWRIGHT_CONFIG_PATH = "playwright.config.ts";
 const AXE_HELPER_EXPORT = "assertNoAxeViolations";
 const REQUIRED_AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
 const REQUIRED_AXE_SPECS = [
@@ -21,6 +29,21 @@ const REQUIRED_AXE_SPECS = [
   "e2e/walkthrough.spec.ts",
   "e2e/demo-journey.spec.ts",
 ] as const;
+const REQUIRED_ROUTE_GROUPS: Record<
+  (typeof REQUIRED_AXE_SPECS)[number],
+  readonly { readonly imported: string; readonly requiresLogin: boolean }[]
+> = {
+  "e2e/smoke.spec.ts": [
+    { imported: "PUBLIC_AXE_ROUTES", requiresLogin: false },
+  ],
+  "e2e/walkthrough.spec.ts": [
+    { imported: "LOGIN_AXE_ROUTES", requiresLogin: false },
+    { imported: "AUTHENTICATED_AXE_ROUTES", requiresLogin: true },
+  ],
+  "e2e/demo-journey.spec.ts": [
+    { imported: "DEMO_AXE_ROUTES", requiresLogin: true },
+  ],
+};
 
 type Callback = ArrowFunction | FunctionExpression;
 type FunctionNode = Callback | FunctionDeclaration;
@@ -29,7 +52,7 @@ function importModuleOf(node: Node): string | undefined {
   return node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)?.getModuleSpecifierValue();
 }
 
-function isNamedImportIdentifier(node: Node, moduleName: string, imported: string): boolean {
+function isDirectNamedImportIdentifier(node: Node, moduleName: string, imported: string): boolean {
   if (!Node.isIdentifier(node)) return false;
   return (
     node
@@ -41,6 +64,58 @@ function isNamedImportIdentifier(node: Node, moduleName: string, imported: strin
           declaration.getName() === imported &&
           importModuleOf(declaration) === moduleName,
       ) ?? false
+  );
+}
+
+function isNamedImportIdentifier(
+  node: Node,
+  moduleName: string,
+  imported: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (isDirectNamedImportIdentifier(node, moduleName, imported)) return true;
+  if (!Node.isIdentifier(node)) return false;
+  return (
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            isNamedImportIdentifier(
+              initializer,
+              moduleName,
+              imported,
+              new Set(seen),
+            )
+          );
+        }
+        if (!Node.isBindingElement(declaration)) return false;
+        const property = declaration.getPropertyNameNode() ?? declaration.getNameNode();
+        if (
+          !Node.isIdentifier(property) ||
+          property.getText() !== imported
+        ) {
+          return false;
+        }
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        return (
+          initializer !== undefined &&
+          isNamedImportIdentifier(
+            initializer,
+            moduleName,
+            imported,
+            new Set(seen),
+          )
+        );
+      }) ?? false
   );
 }
 
@@ -71,10 +146,90 @@ function isNamedImportMemberCall(
   member: string,
 ): boolean {
   const expression = call.getExpression();
+  return isNamedImportMemberExpression(
+    expression,
+    moduleName,
+    imported,
+    member,
+  );
+}
+
+function memberAccess(
+  node: Node,
+): { receiver: Node; name: string } | undefined {
+  if (Node.isPropertyAccessExpression(node)) {
+    return { receiver: node.getExpression(), name: node.getName() };
+  }
+  if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    if (Node.isStringLiteral(argument)) {
+      return { receiver: node.getExpression(), name: argument.getLiteralText() };
+    }
+  }
+  return undefined;
+}
+
+function staticPropertyName(node: Node): string | undefined {
+  if (Node.isIdentifier(node) || Node.isStringLiteral(node)) {
+    return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
+  }
+  return undefined;
+}
+
+function isNamedImportMemberExpression(
+  node: Node,
+  moduleName: string,
+  imported: string,
+  member: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  const access = memberAccess(node);
+  if (
+    access?.name === member &&
+    isNamedImportIdentifier(access.receiver, moduleName, imported)
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(node)) return false;
   return (
-    Node.isPropertyAccessExpression(expression) &&
-    expression.getName() === member &&
-    isNamedImportIdentifier(expression.getExpression(), moduleName, imported)
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            isNamedImportMemberExpression(
+              initializer,
+              moduleName,
+              imported,
+              member,
+              new Set(seen),
+            )
+          );
+        }
+        if (!Node.isBindingElement(declaration)) return false;
+        const property = declaration.getPropertyNameNode() ?? declaration.getNameNode();
+        if (staticPropertyName(property) !== member) {
+          return false;
+        }
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        return (
+          initializer !== undefined &&
+          isNamedImportIdentifier(
+            initializer,
+            moduleName,
+            imported,
+            new Set(seen),
+          )
+        );
+      }) ?? false
   );
 }
 
@@ -187,6 +342,188 @@ function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
         !isInsideTry(nested, callback),
     );
   });
+}
+
+function pageParameterName(callback: Callback): string | undefined {
+  const parameter = callback.getParameters()[0]?.getNameNode();
+  if (!Node.isObjectBindingPattern(parameter)) return undefined;
+  const page = parameter
+    .getElements()
+    .find((element) => {
+      const property = element.getPropertyNameNode() ?? element.getNameNode();
+      return Node.isIdentifier(property) && property.getText() === "page";
+    });
+  const name = page?.getNameNode();
+  return Node.isIdentifier(name) ? name.getText() : undefined;
+}
+
+function enabledTestCallbacks(sourceFile: SourceFile): Callback[] {
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .flatMap((call): Callback[] => {
+      if (!isNamedImportCall(call, "@playwright/test", "test")) return [];
+      const scope = registrationScopeOf(call, sourceFile);
+      if (
+        scope === undefined ||
+        scopeHasNeutralizingAnnotation(sourceFile) ||
+        (scope !== sourceFile && scopeHasNeutralizingAnnotation(scope))
+      ) {
+        return [];
+      }
+      const callback = callbackOf(call);
+      return callback === undefined || testIsDisabled(callback) ? [] : [callback];
+    });
+}
+
+function awaitedCall(
+  statement: Node,
+  predicate: (call: CallExpression) => boolean,
+): boolean {
+  if (!Node.isExpressionStatement(statement)) return false;
+  const awaited = statement.getExpression();
+  if (!Node.isAwaitExpression(awaited)) return false;
+  const call = awaited.getExpression();
+  return Node.isCallExpression(call) && predicate(call);
+}
+
+function routeLoopIsSanctioned(
+  loop: Node,
+  callback: Callback,
+  requiresLogin: boolean,
+): boolean {
+  if (!Node.isForOfStatement(loop)) return false;
+  const initializer = loop.getInitializer();
+  if (!Node.isVariableDeclarationList(initializer)) return false;
+  const routeName = initializer.getDeclarations()[0]?.getNameNode();
+  const pageName = pageParameterName(callback);
+  const body = loop.getStatement();
+  if (
+    !Node.isIdentifier(routeName) ||
+    pageName === undefined ||
+    !Node.isBlock(body) ||
+    body.getStatements().length !== 3
+  ) {
+    return false;
+  }
+  const route = routeName.getText();
+  const [navigate, ready, scan] = body.getStatements();
+  const navigates = awaitedCall(navigate!, (call) => {
+    const expression = call.getExpression();
+    return (
+      Node.isPropertyAccessExpression(expression) &&
+      expression.getExpression().getText() === pageName &&
+      expression.getName() === "goto" &&
+      call.getArguments()[0]?.getText() === `${route}.path`
+    );
+  });
+  const waitsUntilLoaded = awaitedCall(ready!, (call) => {
+    const matcher = call.getExpression();
+    if (
+      !Node.isPropertyAccessExpression(matcher) ||
+      matcher.getName() !== "toBeVisible"
+    ) {
+      return false;
+    }
+    const expectation = matcher.getExpression();
+    if (
+      !Node.isCallExpression(expectation) ||
+      !isNamedImportCall(expectation, "@playwright/test", "expect")
+    ) {
+      return false;
+    }
+    const locator = expectation.getArguments()[0];
+    if (!Node.isCallExpression(locator)) return false;
+    const locatorExpression = locator.getExpression();
+    return (
+      Node.isPropertyAccessExpression(locatorExpression) &&
+      locatorExpression.getExpression().getText() === pageName &&
+      locatorExpression.getName() === "locator" &&
+      locator.getArguments()[0]?.getText() === `${route}.readySelector`
+    );
+  });
+  const scans = awaitedCall(scan!, (call) => {
+    return (
+      isNamedImportCall(call, "./axe", AXE_HELPER_EXPORT) &&
+      call.getArguments()[0]?.getText() === pageName &&
+      call.getArguments()[1]?.getText() === `${route}.path`
+    );
+  });
+  if (!navigates || !waitsUntilLoaded || !scans) return false;
+  if (!requiresLogin) return true;
+  return ownedCalls(callback).some(
+    (call) =>
+      call.getStart() < loop.getStart() &&
+      isNamedImportCall(call, "./helpers", "login") &&
+      Node.isAwaitExpression(call.getParent()) &&
+      call.getArguments()[0]?.getText() === pageName,
+  );
+}
+
+function specCoversRouteGroup(
+  sourceFile: SourceFile,
+  imported: string,
+  requiresLogin: boolean,
+): boolean {
+  return enabledTestCallbacks(sourceFile).some((callback) =>
+    callback
+      .getDescendantsOfKind(SyntaxKind.ForOfStatement)
+      .some(
+        (loop) =>
+          isNamedImportIdentifier(
+            loop.getExpression(),
+            "./axe-routes",
+            imported,
+          ) && routeLoopIsSanctioned(loop, callback, requiresLogin),
+      ),
+  );
+}
+
+function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
+  const exported = sourceFile.getExportAssignments()[0]?.getExpression();
+  if (!Node.isCallExpression(exported)) return false;
+  if (!isNamedImportCall(exported, "@playwright/test", "defineConfig")) {
+    return false;
+  }
+  const config = exported.getArguments()[0];
+  if (!Node.isObjectLiteralExpression(config)) return false;
+  if (config.getProperties().some(Node.isSpreadAssignment)) return false;
+  const testDir = config.getProperty("testDir");
+  const testDirInitializer = Node.isPropertyAssignment(testDir)
+    ? testDir.getInitializer()
+    : undefined;
+  if (
+    !Node.isStringLiteral(testDirInitializer) ||
+    !["e2e", "./e2e"].includes(testDirInitializer.getLiteralText())
+  ) {
+    return false;
+  }
+  const forbidOnly = config.getProperty("forbidOnly");
+  if (
+    !Node.isPropertyAssignment(forbidOnly) ||
+    forbidOnly.getInitializer()?.getKind() !== SyntaxKind.TrueKeyword
+  ) {
+    return false;
+  }
+  const banned = ["testIgnore", "testMatch", "grep", "grepInvert"];
+  if (banned.some((name) => config.getProperty(name) !== undefined)) return false;
+  const projects = config.getProperty("projects");
+  if (projects === undefined) return true;
+  if (!Node.isPropertyAssignment(projects)) return false;
+  const initializer = projects.getInitializer();
+  if (
+    !Node.isArrayLiteralExpression(initializer) ||
+    initializer.getElements().length === 0
+  ) {
+    return false;
+  }
+  return initializer.getElements().every(
+    (element) =>
+      Node.isObjectLiteralExpression(element) &&
+      !element.getProperties().some(Node.isSpreadAssignment) &&
+      [...banned, "testDir"].every(
+        (name) => element.getProperty(name) === undefined,
+      ),
+  );
 }
 
 function pageArgumentUsesParameter(call: CallExpression, pageName: string): boolean {
@@ -344,12 +681,39 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
       `${AXE_HELPER_PATH}:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations`,
     );
   }
+  const config = sourceFiles.get(PLAYWRIGHT_CONFIG_PATH);
+  if (config === undefined || !playwrightConfigSelectsRequiredSpecs(config)) {
+    problems.push(
+      `${PLAYWRIGHT_CONFIG_PATH}:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters`,
+    );
+  }
   for (const path of REQUIRED_AXE_SPECS) {
     const sourceFile = sourceFiles.get(path);
     if (sourceFile === undefined) {
       problems.push(`${path}:1 required Axe E2E specification is missing`);
     } else if (!specAwaitsSanctionedHelper(sourceFile)) {
       problems.push(`${path}:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe`);
+    } else {
+      for (const group of REQUIRED_ROUTE_GROUPS[path]) {
+        if (
+          !specCoversRouteGroup(
+            sourceFile,
+            group.imported,
+            group.requiresLogin,
+          )
+        ) {
+          const label =
+            path === "e2e/smoke.spec.ts"
+              ? "public"
+              : path === "e2e/walkthrough.spec.ts"
+                ? "authenticated"
+                : "demo";
+          problems.push(
+            `${path}:1 must scan every required ${label} route after its loaded-state assertion`,
+          );
+          break;
+        }
+      }
     }
   }
   return problems;
@@ -363,47 +727,153 @@ export async function assertNoAxeViolations(page: Page, context: string): Promis
   expect(results.violations, context).toEqual([]);
 }`;
 
-const VALID_SPEC = `import { test } from "@playwright/test";
-import { assertNoAxeViolations } from "./axe";
-test("axe", async ({ page }) => {
-  await assertNoAxeViolations(page, "surface");
-});`;
+const VALID_CONFIG = `import { defineConfig } from "@playwright/test";
+export default defineConfig({ testDir: "./e2e", forbidOnly: true });`;
 
-function completeSources(spec = VALID_SPEC, helper = VALID_HELPER): Record<string, string> {
+const VALID_SPECS: Record<(typeof REQUIRED_AXE_SPECS)[number], string> = {
+  "e2e/smoke.spec.ts": `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`,
+  "e2e/walkthrough.spec.ts": `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { AUTHENTICATED_AXE_ROUTES, LOGIN_AXE_ROUTES } from "./axe-routes";
+import { login } from "./helpers";
+test("axe", async ({ page }) => {
+  for (const route of LOGIN_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+  await login(page);
+  for (const route of AUTHENTICATED_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`,
+  "e2e/demo-journey.spec.ts": `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { DEMO_AXE_ROUTES } from "./axe-routes";
+import { login } from "./helpers";
+test("axe", async ({ page }) => {
+  await login(page);
+  for (const route of DEMO_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`,
+};
+
+function completeSources(
+  overrides: Partial<Record<(typeof REQUIRED_AXE_SPECS)[number], string>> = {},
+  helper = VALID_HELPER,
+): Record<string, string> {
   return {
     [AXE_HELPER_PATH]: helper,
-    ...Object.fromEntries(REQUIRED_AXE_SPECS.map((path) => [path, spec])),
+    [PLAYWRIGHT_CONFIG_PATH]: VALID_CONFIG,
+    ...VALID_SPECS,
+    ...overrides,
   };
 }
 
 describe("axe-required fence", () => {
   it("enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion", () => {
-    const paths = [AXE_HELPER_PATH, ...REQUIRED_AXE_SPECS];
+    const paths = [
+      PLAYWRIGHT_CONFIG_PATH,
+      AXE_HELPER_PATH,
+      ...REQUIRED_AXE_SPECS,
+    ];
     const sources = Object.fromEntries(paths.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]));
     const problems = axeCoverageProblems(sources);
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
+  it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
+    expect(PUBLIC_AXE_ROUTES).toEqual([
+      { path: "/", readySelector: "h1" },
+    ]);
+    expect(LOGIN_AXE_ROUTES).toEqual([
+      { path: "/login", readySelector: "#email" },
+    ]);
+    expect(AUTHENTICATED_AXE_ROUTES).toEqual([
+      { path: "/app", readySelector: "main h1" },
+      {
+        path: "/app/account-opening",
+        readySelector: 'input[name="householdName"]',
+      },
+      {
+        path: "/app/console",
+        readySelector: '[data-testid="household-list"]',
+      },
+      {
+        path: "/app/audit",
+        readySelector: '[data-testid="audit-verdict"]',
+      },
+    ]);
+    expect(DEMO_AXE_ROUTES).toEqual([
+      {
+        path: "/app/demo",
+        readySelector: "[data-demo-launcher]",
+      },
+      ...DEMO_SURFACES.map((surface) => ({
+        path: `/app/demo/${surface.station}?scenario=recent-bank-change-block&firm=firm-a`,
+        readySelector: `[data-demo-surface="${surface.station}"]`,
+      })),
+    ]);
+  });
+
   describe("detects (companion): accessibility enforcement cannot become false-green", () => {
     it("rejects a required spec without an awaited sanctioned scan", () => {
-      const sources = completeSources();
-      sources["e2e/walkthrough.spec.ts"] = `import { test } from "@playwright/test"; test("page works", async ({ page }) => page.goto("/"));`;
+      const sources = completeSources({
+        "e2e/walkthrough.spec.ts":
+          `import { test } from "@playwright/test"; test("page works", async ({ page }) => page.goto("/"));`,
+      });
       expect(axeCoverageProblems(sources)).toEqual([
         "e2e/walkthrough.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
       ]);
     });
 
     it("accepts aliases at module scope and directly inside enabled test.describe", () => {
-      const moduleSpec = `import { test as check } from "@playwright/test";
+      const moduleSpec = `import { expect as verify, test as check } from "@playwright/test";
 import { assertNoAxeViolations as scan } from "./axe";
-check("axe", async ({ page }) => { await scan(page, "surface"); });`;
-      expect(axeCoverageProblems(completeSources(moduleSpec))).toEqual([]);
-      const describeSpec = `import { test as check } from "@playwright/test";
-import { assertNoAxeViolations as scan } from "./axe";
-check.describe("group", () => {
-  check("axe", async ({ page }) => { await scan(page, "surface"); });
+import { PUBLIC_AXE_ROUTES as routes } from "./axe-routes";
+check("axe", async ({ page }) => {
+  for (const route of routes) {
+    await page.goto(route.path);
+    await verify(page.locator(route.readySelector)).toBeVisible();
+    await scan(page, route.path);
+  }
 });`;
-      expect(axeCoverageProblems(completeSources(describeSpec))).toEqual([]);
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": moduleSpec }),
+        ),
+      ).toEqual([]);
+      const describeSpec = `import { expect as verify, test as check } from "@playwright/test";
+import { assertNoAxeViolations as scan } from "./axe";
+import { PUBLIC_AXE_ROUTES as routes } from "./axe-routes";
+check.describe("group", () => {
+  check("axe", async ({ page }) => {
+    for (const route of routes) {
+      await page.goto(route.path);
+      await verify(page.locator(route.readySelector)).toBeVisible();
+      await scan(page, route.path);
+    }
+  });
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": describeSpec }),
+        ),
+      ).toEqual([]);
     });
 
     it("rejects unreachable, disabled, expected-failure, unawaited, and caught helper calls", () => {
@@ -422,10 +892,59 @@ check.describe("group", () => {
         wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
         wrap(`test.describe("group", () => { const test = (...args: unknown[]) => args; test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
+        wrap(`test["skip"](() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`const skip = test.${"skip"}; skip(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`const { fixme: disable } = test; disable(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`const disable = test["skip"]; disable(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`const { ["fixme"]: disable } = test; disable(() => true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
       ];
       for (const spec of invalid) {
-        expect(axeCoverageProblems(completeSources(spec)), spec).toHaveLength(REQUIRED_AXE_SPECS.length);
+        const overrides = Object.fromEntries(
+          REQUIRED_AXE_SPECS.map((path) => [path, spec]),
+        );
+        expect(
+          axeCoverageProblems(completeSources(overrides)),
+          spec,
+        ).toHaveLength(REQUIRED_AXE_SPECS.length);
       }
+    });
+
+    it("rejects Playwright configuration that excludes required accessibility tests", () => {
+      for (const selector of [
+        'testIgnore: ["**/smoke.spec.ts"]',
+        'testMatch: ["**/console.spec.ts"]',
+        'grep: /unrelated/',
+        'grepInvert: /Axe/',
+        'projects: []',
+        'projects: [{ name: "filtered", testDir: "./other" }]',
+      ]) {
+        const sources = completeSources();
+        sources[PLAYWRIGHT_CONFIG_PATH] =
+          `import { defineConfig } from "@playwright/test"; export default defineConfig({ testDir: "./e2e", forbidOnly: true, ${selector} });`;
+        expect(axeCoverageProblems(sources), selector).toContain(
+          "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
+        );
+      }
+      const focused = completeSources();
+      focused[PLAYWRIGHT_CONFIG_PATH] =
+        `import { defineConfig } from "@playwright/test"; export default defineConfig({ testDir: "./e2e", forbidOnly: false });`;
+      expect(axeCoverageProblems(focused)).toContain(
+        "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
+      );
+    });
+
+    it("rejects a required specification that scans the wrong route or an unloaded state", () => {
+      const sources = completeSources({
+        "e2e/walkthrough.spec.ts": `import { test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+test("axe", async ({ page }) => {
+  await page.goto("/");
+  await assertNoAxeViolations(page, "wrong route");
+});`,
+      });
+      expect(axeCoverageProblems(sources)).toContain(
+        "e2e/walkthrough.spec.ts:1 must scan every required authenticated route after its loaded-state assertion",
+      );
     });
 
     it("rejects caught, transformed, incomplete, or masked helper assertions", () => {
@@ -445,7 +964,7 @@ check.describe("group", () => {
         ),
       ];
       for (const helper of invalid) {
-        expect(axeCoverageProblems(completeSources(VALID_SPEC, helper)), helper).toContain(
+        expect(axeCoverageProblems(completeSources({}, helper)), helper).toContain(
           "e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations",
         );
       }

@@ -50,7 +50,7 @@
         {
           "kind": "ci-gate",
           "ref": "golden-cases",
-          "command": "pnpm golden:validate",
+          "command": "pnpm exec tsx scripts/golden-cases-validate.ts",
           "prompt": 2
         },
         {
@@ -61,14 +61,13 @@
         {
           "kind": "ci-gate",
           "ref": "e2e",
-          "command": "pnpm test:e2e",
+          "command": "pnpm exec playwright test",
           "prompt": 3
         },
         {
-          "kind": "evidence",
-          "ref": "every demo-contract §4 required surface exists and is reachable in the walking skeleton",
-          "prompt": 3,
-          "note": "NO MECHANISM YET, so this gate can never read green. The skeleton-honesty fence proves contract PARITY (scenario/firm/disposition) and the surface import boundary, and e2e/demo-journey.spec.ts walks and screenshots a hard-coded path - neither decides COMPLETENESS against the contract's §4 required-surface list, so a dropped surface would fail nothing. Supplying that mechanism is what flips gate 0 to decidable."
+          "kind": "fitness",
+          "ref": "src/__tests__/fitness/demo-surface-completeness.test.ts",
+          "prompt": 3
         }
       ],
       "entryGates": [],
@@ -541,7 +540,7 @@
         {
           "type": "ci-gate",
           "ref": "audit-chain-verify",
-          "command": "pnpm audit:chain"
+          "command": "pnpm exec tsx scripts/audit-chain-verify.ts"
         },
         {
           "type": "file",

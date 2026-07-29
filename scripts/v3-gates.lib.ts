@@ -194,9 +194,14 @@ export interface CiJob {
 export interface CiStep {
   neutralizedBy?: string;
   unsupportedShell?: string;
+  unsupportedWorkingDirectory?: string;
   commands: string[];
   blockingCommand?: string;
   blockingTokens?: string[];
+}
+
+export interface CiWorkflow extends Map<string, CiJob> {
+  workflowProblem?: string;
 }
 
 /**
@@ -229,6 +234,40 @@ function configuredRunShell(node: unknown): unknown {
   return (run as { shell?: unknown } | null)?.shell;
 }
 
+function configuredRunWorkingDirectory(node: unknown): unknown {
+  const defaults = (node as { defaults?: unknown } | null)?.defaults;
+  const run = (defaults as { run?: unknown } | null)?.run;
+  return (run as { "working-directory"?: unknown } | null)?.["working-directory"];
+}
+
+function workflowTriggerProblem(doc: unknown): string | undefined {
+  const trigger = (doc as { on?: unknown } | null)?.on;
+  if (Array.isArray(trigger)) {
+    const events = new Set(trigger);
+    return events.has("push") && events.has("pull_request")
+      ? undefined
+      : "workflow must run on every push and pull_request event";
+  }
+  if (trigger === null || typeof trigger !== "object") {
+    return "workflow must run on every push and pull_request event";
+  }
+  const configured = trigger as Record<string, unknown>;
+  for (const event of ["push", "pull_request"]) {
+    if (!Object.hasOwn(configured, event)) {
+      return `workflow is missing the '${event}' trigger`;
+    }
+    const value = configured[event];
+    if (
+      value !== null &&
+      value !== undefined &&
+      (typeof value !== "object" || Array.isArray(value) || Object.keys(value as Record<string, unknown>).length > 0)
+    ) {
+      return `workflow '${event}' trigger carries branch, path, or event filters`;
+    }
+  }
+  return undefined;
+}
+
 function shellProblem(shell: unknown, runsOn: unknown): string | undefined {
   if (shell === undefined) {
     if (typeof runsOn === "string" && /^(?:ubuntu|macos)-/i.test(runsOn)) return undefined;
@@ -238,6 +277,14 @@ function shellProblem(shell: unknown, runsOn: unknown): string | undefined {
   const normalized = collapse(shell).toLowerCase();
   if (normalized === "bash" || normalized === "sh") return undefined;
   return `unsupported shell '${shell}'`;
+}
+
+function workingDirectoryProblem(directory: unknown): string | undefined {
+  if (directory === undefined) return undefined;
+  if (typeof directory !== "string") return `non-string working-directory '${String(directory)}'`;
+  const normalized = directory.trim().replace(/\/+$/, "");
+  if (normalized === "" || normalized === ".") return undefined;
+  return `working-directory '${directory}' is not the repository root`;
 }
 
 function simpleShellCommand(script: string): { text: string; tokens: string[] } | undefined {
@@ -331,21 +378,28 @@ function commandMatches(actual: readonly string[] | undefined, required: readonl
  * overrides. Only implicit POSIX hosted-runner shells and the built-in `bash`
  * and `sh` shells are supported; every other shell fails closed.
  */
-export function parseCiJobs(yamlText: string): Map<string, CiJob> {
-  const jobs = new Map<string, CiJob>();
+export function parseCiJobs(yamlText: string): CiWorkflow {
+  const jobs = new Map<string, CiJob>() as CiWorkflow;
   let doc: unknown;
   try {
     doc = parseYaml(yamlText);
   } catch {
     return jobs;
   }
+  const activationProblem = workflowTriggerProblem(doc);
+  if (activationProblem !== undefined) {
+    jobs.workflowProblem = activationProblem;
+  }
   const declared = (doc as { jobs?: unknown } | null)?.jobs;
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
   const workflowShell = configuredRunShell(doc);
+  const workflowDirectory = configuredRunWorkingDirectory(doc);
   for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
     const steps = (job as { steps?: unknown } | null)?.steps;
     const jobShell = configuredRunShell(job);
     const defaultShell = jobShell === undefined ? workflowShell : jobShell;
+    const jobDirectory = configuredRunWorkingDirectory(job);
+    const defaultDirectory = jobDirectory === undefined ? workflowDirectory : jobDirectory;
     const runsOn = (job as { "runs-on"?: unknown } | null)?.["runs-on"];
     const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
       const run = (step as { run?: unknown } | null)?.run;
@@ -353,11 +407,18 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
       const stepShell = (step as { shell?: unknown } | null)?.shell;
       const effectiveShell = stepShell === undefined ? defaultShell : stepShell;
       const unsupportedShell = shellProblem(effectiveShell, runsOn);
-      const simple = unsupportedShell === undefined ? simpleShellCommand(run) : undefined;
+      const stepDirectory = (step as { "working-directory"?: unknown } | null)?.["working-directory"];
+      const effectiveDirectory = stepDirectory === undefined ? defaultDirectory : stepDirectory;
+      const unsupportedWorkingDirectory = workingDirectoryProblem(effectiveDirectory);
+      const simple =
+        unsupportedShell === undefined && unsupportedWorkingDirectory === undefined
+          ? simpleShellCommand(run)
+          : undefined;
       return [
         {
           ...(neutralizerOf(step) === undefined ? {} : { neutralizedBy: neutralizerOf(step) }),
           ...(unsupportedShell === undefined ? {} : { unsupportedShell }),
+          ...(unsupportedWorkingDirectory === undefined ? {} : { unsupportedWorkingDirectory }),
           commands: shellCommandLines(run),
           ...(simple === undefined ? {} : { blockingCommand: simple.text, blockingTokens: simple.tokens }),
         },
@@ -379,12 +440,14 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
 export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
   const job = jobs.get(ref);
   return (
+    (jobs as CiWorkflow).workflowProblem === undefined &&
     job !== undefined &&
     job.neutralizedBy === undefined &&
     job.steps.some(
       (step) =>
         step.neutralizedBy === undefined &&
         step.unsupportedShell === undefined &&
+        step.unsupportedWorkingDirectory === undefined &&
         step.blockingCommand !== undefined,
     )
   );
@@ -394,8 +457,10 @@ export type CiCommandStatus =
   | { state: "proven" }
   | { state: "missing-job" }
   | { state: "invalid-command" }
+  | { state: "inactive-workflow"; reason: string }
   | { state: "neutralized"; reason: string }
   | { state: "unsafe-shell"; reason?: string }
+  | { state: "unsafe-working-directory"; reason: string }
   | { state: "missing-command" };
 
 export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, command: string): CiCommandStatus {
@@ -403,6 +468,8 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   if (required === undefined) return { state: "invalid-command" };
   const job = jobs.get(ref);
   if (job === undefined) return { state: "missing-job" };
+  const workflowProblem = (jobs as CiWorkflow).workflowProblem;
+  if (workflowProblem !== undefined) return { state: "inactive-workflow", reason: workflowProblem };
   const relevant = job.steps.filter(
     (step) =>
       commandMatches(step.blockingTokens, required.tokens) ||
@@ -423,6 +490,10 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   if (unsupported?.unsupportedShell !== undefined) {
     return { state: "unsafe-shell", reason: unsupported.unsupportedShell };
   }
+  const wrongDirectory = relevant.find((step) => step.unsupportedWorkingDirectory !== undefined);
+  if (wrongDirectory?.unsupportedWorkingDirectory !== undefined) {
+    return { state: "unsafe-working-directory", reason: wrongDirectory.unsupportedWorkingDirectory };
+  }
   if (relevant.length > 0) return { state: "unsafe-shell" };
   return { state: "missing-command" };
 }
@@ -436,12 +507,16 @@ export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: 
       return `ci job '${ref}' is missing from the blocking workflow`;
     case "invalid-command":
       return `required command '${command}' is not a dedicated simple command`;
+    case "inactive-workflow":
+      return `ci workflow does not provide normal blocking evidence: ${status.reason}`;
     case "neutralized":
       return `ci job '${ref}' command '${command}' is neutralized by ${status.reason}`;
     case "unsafe-shell":
       return status.reason === undefined
         ? `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`
         : `ci job '${ref}' command '${command}' uses ${status.reason}`;
+    case "unsafe-working-directory":
+      return `ci job '${ref}' command '${command}' uses ${status.reason}`;
     default:
       return `ci job '${ref}' does not run '${command}' in a dedicated blocking step`;
   }

@@ -81,12 +81,12 @@ const RATCHETED_CI_COMMANDS = [
     command:
       "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts",
   },
-  { entryId: "5", ref: "knip", command: "pnpm knip" },
-  { entryId: "8", ref: "e2e", command: "pnpm test:e2e" },
-  { entryId: "9", ref: "e2e", command: "pnpm test:e2e" },
-  { entryId: "11", ref: "load-smoke", command: "pnpm load:smoke" },
-  { entryId: "13", ref: "audit-chain-verify", command: "pnpm audit:chain" },
-  { entryId: "14", ref: "test", command: "pnpm test" },
+  { entryId: "5", ref: "knip", command: "pnpm exec knip" },
+  { entryId: "8", ref: "e2e", command: "pnpm exec playwright test" },
+  { entryId: "9", ref: "e2e", command: "pnpm exec playwright test" },
+  { entryId: "11", ref: "load-smoke", command: "pnpm exec tsx scripts/load-smoke.ts" },
+  { entryId: "13", ref: "audit-chain-verify", command: "pnpm exec tsx scripts/audit-chain-verify.ts" },
+  { entryId: "14", ref: "test", command: "pnpm exec vitest run" },
   {
     entryId: "15",
     ref: "secret-scan",
@@ -99,10 +99,10 @@ const RATCHETED_CI_COMMANDS = [
       "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error",
   },
   { entryId: "15", ref: "dependency-audit", command: "pnpm audit --audit-level=high" },
-  { entryId: "15", ref: "dependency-audit", command: "pnpm license:audit" },
-  { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm v3:invariants" },
-  { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm v3:invariants" },
-  { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm golden:validate" },
+  { entryId: "15", ref: "dependency-audit", command: "pnpm exec tsx scripts/license-audit.ts" },
+  { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
+  { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
+  { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm exec tsx scripts/golden-cases-validate.ts" },
 ] as const;
 
 function blockingCiJobs(): Map<string, CiJob> {

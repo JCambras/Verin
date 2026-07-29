@@ -10212,3 +10212,110 @@ complete scan, and direct assertion continue to pass.
 **Revert:** both injections were restored immediately with `apply_patch`.
 
 **Date:** 2026-07-28.
+
+### PF-032 · Gate 0 demo surface completeness · `src/__tests__/fitness/demo-surface-completeness.test.ts`
+
+**Invariant (Gate 0, ADR-0030):** every required `docs/demo-contract.md` section 4 product surface is
+represented by the typed surface manifest, backed by an existing component and dynamic route case,
+captured in contract order by the canonical journey, and reached after a loaded-state assertion by the
+blocking E2E suite.
+
+**Injection 1 - drift the typed manifest from the normative surface contract.** Changed the manifest's
+twelfth `contractName` from `Printable examiner-grade decision artifact` to `Missing decision artifact`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: docs/demo-contract.md:1 typed demo surface manifest does not exactly match the ordered §4 surface contract
+```
+
+**Companion:** the in-memory adversarial test independently removes or corrupts the contract numbering,
+typed manifest, route case, component, and screenshot. Each incomplete form produces at least one
+problem, while the real contract and implementation produce none.
+
+**Revert:** the manifest value was restored immediately. The focused surface-completeness and
+skeleton-honesty fences pass, and `pnpm v3:invariants` reports Gate 0 `green`.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+
+### PF-030 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
+
+**Invariant:** CI-backed requirements prove repository controls only when the workflow runs on every
+normal push and pull request, the effective working directory is the repository root, and the mapped
+step invokes the owned entry point directly.
+
+**Injection 38 - filter normal push activation.** Added `branches: [main]` to the real workflow's
+`push` trigger.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+3 -> ci workflow does not provide normal blocking evidence: workflow 'push' trigger carries branch, path, or event filters
+```
+
+Every other enforced CI mapping reported the same workflow-level cause, and the gate-ordering fence
+reported both Gate 0 CI requirements as unproven.
+
+**Injection 39 - redirect mapped commands into an ungoverned subtree.** Added workflow
+`defaults.run.working-directory: packages/stub`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' uses working-directory 'packages/stub' is not the repository root
+```
+
+**Injection 40 - restore package-script indirection.** Replaced only the real `v3-invariants` step's
+direct entry point with `pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+v3-invariants-phase-gated -> ci job 'v3-invariants' does not run 'pnpm exec tsx scripts/v3-invariants.ts' in a dedicated blocking step
+v3-gate-ordering -> ci job 'v3-invariants' does not run 'pnpm exec tsx scripts/v3-invariants.ts' in a dedicated blocking step
+```
+
+**Companions added:** in-memory workflows reject manual-only activation plus branch and path filters,
+resolve workflow/job/step working-directory precedence, reject every non-root level, and accept the
+unfiltered root case. The Gate 0 requirement ratchet pins both direct commands, and the charter ratchet
+pins every enforced CI command.
+
+**Revert:** all three workflow injections were removed immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+
+### PF-031 (continued) · Playwright selection, required routes, and annotation aliases
+
+**Invariant (charter #9):** required Axe coverage is selected by the real Playwright configuration,
+navigates every typed public, authenticated, and demo route, waits for each loaded-state marker, and
+cannot be disabled through a direct, computed, destructured, or aliased Playwright annotation.
+
+**Injection 5 - exclude a required specification in Playwright configuration.** Added
+`testIgnore: ["**/smoke.spec.ts"]` to the real configuration.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Injection 6 - disable through a computed alias.** Added
+`const disableAxe = test["skip"]; disableAxe(() => true, "temporarily disabled");` to the public
+surface specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory configurations reject top-level and project-level `testIgnore`,
+`testMatch`, `grep`, `grepInvert`, `forbidOnly: false`, alternate project `testDir`, and an empty project set. Required
+specifications fail when they scan the wrong route or omit the loaded-state assertion. Annotation
+companions cover computed member access, direct aliases, destructured aliases, and computed destructured
+aliases while valid imported aliases remain accepted.
+
+**Revert:** both real injections were removed immediately with `apply_patch`; the focused Axe fence
+passes.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
