@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Node,
@@ -8,7 +17,10 @@ import {
   type SourceFile,
 } from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
-import { fitnessInventoryProblems } from "../../../scripts/fitness-tests.lib";
+import {
+  fitnessInventoryProblems,
+  fitnessTestFiles,
+} from "../../../scripts/fitness-tests.lib";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
@@ -35,6 +47,7 @@ import { fitnessInventoryProblems } from "../../../scripts/fitness-tests.lib";
  */
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const p = (rel: string) => root + rel;
+const fitnessFiles = fitnessTestFiles(root);
 
 interface Mechanism {
   type: string;
@@ -572,24 +585,21 @@ describe("charter-drift fence", () => {
   });
 
   it("(b) no fitness fence is disabled or focused (this file included)", () => {
-    const dir = p("src/__tests__/fitness");
     const project = new Project({
       useInMemoryFileSystem: true,
       skipAddingFilesFromTsConfig: true,
     });
-    const offenders = readdirSync(dir)
-      .filter((file) => file.endsWith(".test.ts"))
-      .flatMap((file) =>
-        disabledVitestRegistrationProblemsInFile(
-          project.createSourceFile(
-            `/${file}`,
-            readFileSync(`${dir}/${file}`, "utf8"),
-          ),
-          file,
+    const offenders = fitnessFiles.flatMap((file) =>
+      disabledVitestRegistrationProblemsInFile(
+        project.createSourceFile(
+          `/${file}`,
+          readFileSync(p(file), "utf8"),
         ),
-      );
+        file,
+      ),
+    );
     expect(offenders, `disabled/focused fences found:\n${offenders.join("\n")}`).toEqual([]);
-  });
+  }, 60_000);
 
   it("(b companion) detects every supported Vitest neutralizer through aliases and computed chains", () => {
     const disabled = [
@@ -670,6 +680,38 @@ test.runIf(true)("runs too", () => {});`,
     ).toEqual([]);
   });
 
+  it("(b' companion) recursively inventories nested fitness tests", () => {
+    const fixtureRoot = mkdtempSync(
+      join(tmpdir(), "verin-fitness-inventory-"),
+    );
+    try {
+      const fixtureDirectory = join(
+        fixtureRoot,
+        "src",
+        "__tests__",
+        "fitness",
+      );
+      mkdirSync(join(fixtureDirectory, "nested", "deeper"), {
+        recursive: true,
+      });
+      writeFileSync(join(fixtureDirectory, "top.test.ts"), "");
+      writeFileSync(
+        join(fixtureDirectory, "nested", "deeper", "nested.test.ts"),
+        "",
+      );
+      writeFileSync(
+        join(fixtureDirectory, "nested", "deeper", "helper.ts"),
+        "",
+      );
+      expect(fitnessTestFiles(fixtureRoot)).toEqual([
+        "src/__tests__/fitness/nested/deeper/nested.test.ts",
+        "src/__tests__/fitness/top.test.ts",
+      ]);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   it("(e) ratchet: every id that shipped as 'enforced' is still enforced", () => {
     const byId = new Map(allEntries.map((e) => [String(e.id), e]));
     const regressions: string[] = [];
@@ -739,13 +781,8 @@ test.runIf(true)("runs too", () => {});`,
   });
 
   it("(d) every active fitness fence file is referenced by the map", () => {
-    const dir = p("src/__tests__/fitness");
     const refs = new Set(allEntries.flatMap((e) => e.mechanisms.map((m) => m.ref)));
-    const orphans: string[] = [];
-    for (const f of readdirSync(dir).filter((f) => f.endsWith(".test.ts"))) {
-      const rel = `src/__tests__/fitness/${f}`;
-      if (!refs.has(rel)) orphans.push(rel);
-    }
+    const orphans = fitnessFiles.filter((file) => !refs.has(file));
     expect(orphans, `fitness fences not referenced by charter-map.json (silently added?):\n${orphans.join("\n")}`).toEqual([]);
   });
 });

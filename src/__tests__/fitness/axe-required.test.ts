@@ -1952,7 +1952,7 @@ describe("axe-required fence", () => {
     const sources = Object.fromEntries(paths.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]));
     const problems = axeCoverageProblems(sources);
     expect(problems, problems.join("\n")).toEqual([]);
-  });
+  }, 60_000);
 
   it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
     const inventoryProblems = pageRouteInventoryProblems(
@@ -2454,6 +2454,23 @@ invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
         `Reflect.apply(
   Reflect.apply,
   Reflect,
+  [test.${"fail"}, test, [true, "expected failure"]],
+);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(
+  test.${"skip"},
+  test,
+  [true, "file disabled"],
+);`,
+        `const invokeBound = Reflect.apply.bind(Reflect);
+invokeBound(test.${"fixme"}, test, [true, "file disabled"]);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply).call(
+  undefined,
+  test.${"skip"},
+  test,
+  [true, "file disabled"],
+);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply).apply(
+  undefined,
   [test.${"fail"}, test, [true, "expected failure"]],
 );`,
         `function disable() {

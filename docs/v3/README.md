@@ -93,8 +93,9 @@ That parse is the repo's one structured CI authority; the charter-drift fence re
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
-The blocking test job also invokes a direct fitness-inventory runner that enumerates every fitness file
-and requires a passing per-file result, so Vitest include or exclude drift cannot silently omit a fence.
+The blocking test job also invokes a direct fitness-inventory runner that recursively enumerates every
+fitness file and shares that inventory with charter disabled/orphan analysis and the companion meta-fence,
+so Vitest include or exclude drift cannot silently omit a fence or nested subtree.
 The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
 requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
@@ -142,8 +143,9 @@ route collections and entries are frozen. Neutralizer aliases fail closed across
 assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
 wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
 and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
-must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or `Reflect.apply`
-and transitively invoked local neutralizer helpers are followed, including nested reflective invocation,
+must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or direct and bound
+`Reflect.apply` values are followed through stable aliases and nested reflective invocation, as are
+transitively invoked local neutralizer helpers,
 and unresolved local callable
 indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared

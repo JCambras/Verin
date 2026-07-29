@@ -1810,7 +1810,7 @@ test("${JOURNEY_TEST}"`,
           reassignedHelper,
         ).not.toEqual([]);
       }
-    });
+    }, 60_000);
 
     it("rejects registered hooks that can alter the canonical journey", () => {
       for (const hook of [
@@ -1849,6 +1849,31 @@ install(test.beforeEach, test, [async ({ page }) => {
         `Reflect.apply(Reflect.apply, Reflect, [test.beforeEach, test, [async ({ page }) => {
   page.screenshot = async () => Buffer.from("not a screenshot") as never;
 }]]);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(
+  test.beforeEach,
+  test,
+  [async ({ page }) => {
+    page.screenshot = async () => Buffer.from("not a screenshot") as never;
+  }],
+);`,
+        `const installBound = Reflect.apply.bind(Reflect);
+installBound(test.beforeEach, test, [async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+}]);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply).call(
+  undefined,
+  test.beforeEach,
+  test,
+  [async ({ page }) => {
+    page.screenshot = async () => Buffer.from("not a screenshot") as never;
+  }],
+);`,
+        `(Reflect.apply.bind(Reflect) as typeof Reflect.apply).apply(
+  undefined,
+  [test.beforeEach, test, [async ({ page }) => {
+    page.screenshot = async () => Buffer.from("not a screenshot") as never;
+  }]],
+);`,
       ]) {
         const hookedJourney = e2e.replace(
           `test("${JOURNEY_TEST}"`,

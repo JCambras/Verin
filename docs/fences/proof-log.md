@@ -10397,6 +10397,90 @@ type, reference, exact command, and effective status.
 
 **Date:** 2026-07-29.
 
+### PF-001 (continued) · recursive fitness inventory
+
+**Invariant (charter operating model and #4):** every fitness test below the fitness tree is executed,
+checked for disabled or focused registration, mapped by charter-drift, and inspected by the companion
+meta-fence regardless of directory depth.
+
+**Injection - add a nested disabled, unmapped fence without a companion.** Added
+`src/__tests__/fitness/f84-bypass/nested-disabled.test.ts` with a failing test inside
+`describe.only`, then ran the blocking inventory command and both meta-fences directly.
+
+**Observed failures (verbatim):**
+```text
+fitness inventory failed:
+  - fitness invocation exited 1
+  - src/__tests__/fitness/charter-drift.test.ts FAILED
+  - src/__tests__/fitness/detection-not-verification.test.ts FAILED
+  - src/__tests__/fitness/f84-bypass/nested-disabled.test.ts FAILED
+```
+
+```text
+AssertionError: disabled/focused fences found:
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts:3 disabled/focused Vitest registration describe.only
+
+AssertionError: fitness fences not referenced by charter-map.json (silently added?):
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts
+```
+
+```text
+AssertionError: fences without a live companion:
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts (no 'describe("detects…")' companion with a live test case)
+```
+
+**Companion added:** a temporary nested fitness tree proves the shared inventory returns top-level and
+deep test files in one stable repository-relative order while excluding non-test helpers. The runner,
+charter disabled/orphan checks, and companion meta-fence all consume that same inventory.
+
+**Revert:** the injected nested fence was removed immediately. The restored focused meta-fences and
+blocking inventory command passed.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · bound Reflect.apply neutralizers
+
+**Invariant (charter #9):** binding `Reflect.apply` cannot hide a Playwright neutralizer from required
+accessibility enforcement.
+
+**Injection - invoke `test.skip` through bound reflection.** Added
+`(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(test.skip, test, [true, "disabled"])` to the
+real public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications cover a direct bound invocation, a stable bound
+alias, and bound reflective callables invoked through `call` and `apply`.
+
+**Revert:** the real neutralizer was removed immediately. The restored focused Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · bound Reflect.apply hook registration
+
+**Invariant (Gate 0, ADR-0030):** binding `Reflect.apply` cannot hide a Playwright hook from canonical
+journey isolation.
+
+**Injection - register `test.beforeEach` through bound reflection.** Added a bound
+`Reflect.apply` invocation that registered an empty `beforeEach` hook in the real canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** in-memory canonical journeys cover a direct bound invocation, a stable bound alias,
+and bound reflective callables invoked through `call` and `apply`.
+
+**Revert:** the real hook was removed immediately. The restored focused Gate 0 fence passed.
+
+**Date:** 2026-07-29.
+
 ### PF-001 (continued) · complete fitness execution and Vitest neutralizers
 
 **Invariant (charter operating model and #4):** every load-bearing fitness file produces a result in

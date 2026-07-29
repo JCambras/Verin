@@ -6428,6 +6428,16 @@ hooks; and **(6)** Gate 0 requires stable unreassigned screenshot helpers and id
 every supported URL scenario and firm resolver. PF-001, PF-024, PF-031, and PF-032 record the red
 reproductions, continuous companions, and restored green proofs.
 
+The captain-approved recursive-inventory and bound-reflection review (2026-07-29) amended ADR-0030
+in place a twenty-second time: **(1)** one shared recursive fitness inventory now drives the blocking
+runner, charter-drift disabled and orphan analysis, and the detection-not-verification meta-fence, so
+a nested subtree cannot escape execution or governance; and **(2)** shared reflective-call resolution
+follows direct and aliased `Reflect.apply.bind(...)` values, including bound callables invoked through
+`call` or `apply`, for both Axe neutralizers and Gate 0 hook registration. The three unchanged,
+AST-intensive enforcement checks that exceeded the global 20-second per-test limit under full-suite worker
+contention have explicit 60-second budgets; no assertion was removed. PF-001, PF-031, and PF-032 record
+the real red reproductions, focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

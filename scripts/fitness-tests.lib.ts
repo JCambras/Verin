@@ -1,3 +1,6 @@
+import { readdirSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+
 export interface FitnessTestResult {
   name: string;
   status: string;
@@ -5,6 +8,25 @@ export interface FitnessTestResult {
 
 function normalizedPath(path: string): string {
   return path.replace(/\\/g, "/");
+}
+
+export function fitnessTestFiles(root: string): string[] {
+  const resolvedRoot = resolve(root);
+  const fitnessDirectory = join(
+    resolvedRoot,
+    "src",
+    "__tests__",
+    "fitness",
+  );
+  const visit = (directory: string): string[] =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return visit(path);
+      return entry.isFile() && entry.name.endsWith(".test.ts")
+        ? [normalizedPath(relative(resolvedRoot, path))]
+        : [];
+    });
+  return visit(fitnessDirectory).sort();
 }
 
 export function fitnessInventoryProblems(

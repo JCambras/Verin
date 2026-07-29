@@ -184,8 +184,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
-The test job also runs `scripts/fitness-tests.ts`, which requires a per-file result for the complete
-fitness inventory even if Vitest include or exclude configuration drifts.
+The test job also runs `scripts/fitness-tests.ts`, which recursively enumerates the complete fitness
+inventory and requires a per-file result even if Vitest include or exclude configuration drifts.
 
 ## Sharp edges (hard-won — read before touching these areas)
 
@@ -261,7 +261,8 @@ fitness inventory even if Vitest include or exclude configuration drifts.
   assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
   Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
   required tests and their registered hooks, requires stable positive helper provenance, follows
-  neutralizers invoked through `bind`, `call`, `apply`, or `Reflect.apply` and transitively invoked local helpers, and
+  neutralizers invoked through `bind`, `call`, `apply`, or direct and bound `Reflect.apply` values and
+  transitively invoked local helpers, and
   fails closed on unresolved local callable indirection, proves Playwright forbids focused exclusion and
   selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
   authenticated, and demo route to its loaded-state

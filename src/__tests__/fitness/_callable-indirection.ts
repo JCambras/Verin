@@ -66,6 +66,21 @@ function precedingAssignmentValues(identifier: Node): Node[] {
     .map((candidate) => candidate.getRight());
 }
 
+function identifierValueSources(identifier: Node): Node[] {
+  if (!Node.isIdentifier(identifier)) return [];
+  return [
+    ...(identifier
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingAssignmentValues(identifier),
+  ];
+}
+
 function isGlobalReflect(node: Node): boolean {
   const normalized = unwrapExpression(node);
   if (!Node.isIdentifier(normalized) || normalized.getText() !== "Reflect") {
@@ -145,17 +160,7 @@ function staticArrayElements(
     return elements.every(Node.isExpression) ? elements : undefined;
   }
   if (!Node.isIdentifier(normalized)) return undefined;
-  const sources = [
-    ...(normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .flatMap((declaration) => {
-        if (!Node.isVariableDeclaration(declaration)) return [];
-        const initializer = declaration.getInitializer();
-        return initializer === undefined ? [] : [initializer];
-      }) ?? []),
-    ...precedingAssignmentValues(normalized),
-  ];
+  const sources = identifierValueSources(normalized);
   const values = sources
     .map((source) => staticArrayElements(source, new Set(seen)))
     .filter((value): value is Node[] => value !== undefined);
@@ -173,6 +178,26 @@ function compositionalReflectApplyTarget(
   const normalized = unwrapExpression(callable);
   if (seen.has(normalized)) return undefined;
   seen.add(normalized);
+  if (Node.isCallExpression(normalized)) {
+    const bound = staticMemberAccess(normalized.getExpression());
+    if (bound?.name === "bind") {
+      return compositionalReflectApplyTarget(
+        bound.receiver,
+        [...normalized.getArguments().slice(1), ...args],
+        new Set(seen),
+      );
+    }
+  }
+  if (Node.isIdentifier(normalized)) {
+    for (const source of identifierValueSources(normalized)) {
+      const target = compositionalReflectApplyTarget(
+        source,
+        args,
+        new Set(seen),
+      );
+      if (target !== undefined) return target;
+    }
+  }
   const access = staticMemberAccess(normalized);
   if (access?.name === "call") {
     return compositionalReflectApplyTarget(

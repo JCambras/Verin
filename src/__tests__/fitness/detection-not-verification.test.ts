@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Project, SyntaxKind } from "ts-morph";
+import { fitnessTestFiles } from "../../../scripts/fitness-tests.lib";
 
 /**
  * DETECTION-IS-NOT-VERIFICATION META-FENCE (charter #4). Every PASS-emitting
@@ -16,11 +18,14 @@ import { Project, SyntaxKind } from "ts-morph";
  * @companion:proof-log — this meta fence's own adversarial proof is PF-META in
  * docs/fences/proof-log.md; the inline "detects" block below double-covers it.
  */
-const dir = fileURLToPath(new URL(".", import.meta.url));
+const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 // The two self-referential meta fences prove themselves via the proof log, not an
 // inline "detects" block (a meta fence cannot cleanly feed itself a fixture).
-const PROOF_LOG_EXEMPT = new Set(["charter-drift.test.ts", "detection-not-verification.test.ts"]);
+const PROOF_LOG_EXEMPT = new Set([
+  "src/__tests__/fitness/charter-drift.test.ts",
+  "src/__tests__/fitness/detection-not-verification.test.ts",
+]);
 
 /** AST check: a describe whose title starts with "detects" containing >=1 live `it`/`test` case. */
 export function hasLiveCompanion(text: string): boolean {
@@ -47,12 +52,12 @@ function hasProofLogTag(text: string): boolean {
 }
 
 describe("detection-is-not-verification meta-fence", () => {
-  const fenceFiles = readdirSync(dir).filter((f) => f.endsWith(".test.ts"));
+  const fenceFiles = fitnessTestFiles(root);
 
   it("enforces: every fence ships a NON-HOLLOW companion (live 'detects' test case or a proof-log tag)", () => {
     const missing: string[] = [];
     for (const f of fenceFiles) {
-      const text = readFileSync(`${dir}/${f}`, "utf8");
+      const text = readFileSync(join(root, f), "utf8");
       if (PROOF_LOG_EXEMPT.has(f)) {
         if (!hasProofLogTag(text)) missing.push(`${f} (meta fence must carry @companion:proof-log)`);
         continue;

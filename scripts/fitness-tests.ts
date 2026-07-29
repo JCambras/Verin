@@ -2,23 +2,19 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  fitnessTestFiles,
   fitnessInventoryProblems,
   type FitnessTestResult,
 } from "./fitness-tests.lib";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const FITNESS_DIR = join(ROOT, "src/__tests__/fitness");
-const fitnessFiles = readdirSync(FITNESS_DIR)
-  .filter((file) => file.endsWith(".test.ts"))
-  .sort()
-  .map((file) => `src/__tests__/fitness/${file}`);
+const fitnessFiles = fitnessTestFiles(ROOT);
 const outputDirectory = mkdtempSync(join(tmpdir(), "verin-fitness-"));
 const outputFile = join(outputDirectory, "vitest.json");
 const vitestEntry = join(ROOT, "node_modules/vitest/vitest.mjs");
