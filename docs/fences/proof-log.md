@@ -5811,3 +5811,37 @@ the v3 invariant report, file-size ratchet, production build, and live Chrome in
 the corrected state.
 
 **Date:** 2026-07-29 (review corrections, D-072).
+
+## F112 · exact prohibition variants and workspace account authority
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** every signed case variant is independently reachable by exact case identity and is
+fenced as that exact case. A prohibition's controlling rule comes from its signed source, so a
+regulatory hold cannot be rendered as a violated household instruction. Workspace account cards
+reuse the same exact signed evidence projection as Evidence and label absent account metadata
+unavailable.
+
+Before correction, permanent-prohibition always selected GC-06 by scenario, firm, and disposition,
+leaving GC-07 unreachable. The policy trace classified every prohibition as a household destination
+restriction, even though GC-07 signs a regulatory hold and records that household instruction as
+satisfied. Workspace separately rendered static account balances, including a $310,000 IRA beside
+GC-01's signed $610,000 IRA evidence.
+
+Companions remove GC-07 from the rendered exact-case set, replace its regulatory controlling rule
+with a household violation, detach the examiner record from the policy trace, and substitute the
+old static IRA value into Workspace. Each mutation produces its named exact-variant, source
+classification, record agreement, or workspace-evidence diagnostic.
+
+Browser coverage proves both GC-06 and GC-07 launcher routes, exact case identity across navigation,
+the regulatory hold and satisfied household instruction across Decision, policy trace, and record,
+and the same $420,000 joint-taxable and $610,000 IRA evidence in Workspace and Evidence. The changed
+paths pass Axe.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+All 574 Vitest cases, the relevant production Playwright paths with Axe, the golden validator,
+typecheck, lint, knip, the v3 invariant report, file-size ratchet, and production build pass on the
+corrected state.
+
+**Date:** 2026-07-29 (review corrections, D-073).

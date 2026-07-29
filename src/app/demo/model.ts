@@ -1,6 +1,7 @@
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
 import type { ExecutionReceiptId, ObservedStatusId, VerificationProjectionId } from "@contracts/execution-status";
+import type { SignedCaseId } from "./signed-case-types";
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
@@ -102,15 +103,13 @@ export interface DispositionVM {
 // ── Surface 1: Household workspace ──────────────────────────────────────────────────
 export interface AccountVM {
   readonly id: string;
-  readonly name: string;
-  readonly kind: string; // "Taxable brokerage", "Roth IRA"
-  readonly balance: DisplayMetric;
-  readonly custodian: FactVM;
-  readonly fakeClass: FakeClass;
+  readonly evidence: Extract<EvidenceRowVM, { readonly kind: "fact" | "metric" }>;
+  readonly unavailableFields: readonly string[];
 }
 export interface WorkspaceVM {
   readonly household: { readonly name: string; readonly advisor: string; readonly provenance: RecordProvenance; readonly fakeClass: FakeClass };
   readonly accounts: readonly AccountVM[];
+  readonly accountsUnavailable: string | null;
   readonly liquidity: DisplayMetric | null;
   readonly plannedMonthlyWithdrawal: DisplayMetric;
   readonly pendingActivity: FactVM | null;
@@ -476,6 +475,7 @@ export interface RecordVM {
 export interface DecisionJourneyVM {
   readonly scenarioId: string;
   readonly firmId: string;
+  readonly sourceCaseId: SignedCaseId | null;
   readonly scenarioTitle: string;
   readonly firmName: string;
   readonly outcomeClass: string;

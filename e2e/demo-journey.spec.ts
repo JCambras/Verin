@@ -228,7 +228,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   );
 
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
-  await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
+  await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction");
   const card = page.getByTestId("disposition-prohibited");
   await expect(card).toBeVisible();
   await expect(card.getByText("Prohibited", { exact: true })).toBeVisible();
@@ -252,6 +252,50 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
+  await page.goto("/app/demo");
+  await expect(
+    page.getByRole("link", {
+      name: /Permanent prohibition.*GC-07-regulatory-prohibition/,
+    }),
+  ).toBeVisible();
+  await page.goto(
+    "/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-07-regulatory-prohibition",
+  );
+  const regulatoryCard = page.getByTestId("disposition-prohibited");
+  await expect(
+    regulatoryCard.getByText("reg-distribution-holds@2026.02"),
+  ).toBeVisible();
+  await expect(
+    regulatoryCard.getByText("reg-distribution-holds", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    regulatoryCard.getByText("active-legal-hold", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "View the policy trace" }).click();
+  await expect(page).toHaveURL(/case=GC-07-regulatory-prohibition/);
+  await expect(
+    page.getByRole("cell", { name: "Regulatory legal hold" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "The destination is on-list; the household instruction is satisfied and is NOT the prohibition source here.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText("reg-distribution-holds@2026.02").first(),
+  ).toBeVisible();
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a&case=GC-07-regulatory-prohibition",
+  );
+  await expect(
+    page.getByText("reg-distribution-holds@2026.02").first(),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Precedence trace" })
+      .getByText(/Regulatory legal hold: An active legal hold/),
+  ).toBeVisible();
+  await checkAxe(page, "regulatory-prohibition-record");
   const canonicalRequestInstants: string[] = [];
   for (const firm of ["firm-a", "firm-b"]) {
     await page.goto(
@@ -281,6 +325,34 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   ).toBeVisible();
   await expect(page.getByText("$610,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$420,000.00", { exact: true })).toBeVisible();
+  await page.goto(
+    "/app/demo/workspace?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+  );
+  const accountRegion = page.getByRole("region", { name: "Accounts" });
+  await expect(
+    accountRegion.getByText("Signed account reference: subject:smiths-joint-taxable", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    accountRegion.getByText("Signed account reference: subject:smiths-ira", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    accountRegion.getByText("$610,000.00", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    accountRegion.getByText("$310,000.00", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    accountRegion.getByText(
+      "account name, account type, custodian unavailable in this signed case",
+      { exact: true },
+    ),
+  ).toHaveCount(2);
+  await page.getByRole("link", { name: "Ask Verin about this household" }).click();
+  await expect(page).toHaveURL(/case=GC-01-firm-a-happy-path/);
   await page.goto("/app/demo/evidence?scenario=permanent-prohibition&firm=firm-a");
   await expect(
     page.getByText(
@@ -619,6 +691,14 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
   expect(badScenario?.status()).toBe(404);
   const badFirm = await page.goto("/app/demo/decision?scenario=safe-proceed&firm=firm-c");
   expect(badFirm?.status()).toBe(404);
+  const badCase = await page.goto(
+    "/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-99-invented",
+  );
+  expect(badCase?.status()).toBe(404);
+  const substitutedCase = await page.goto(
+    "/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-01-firm-a-happy-path",
+  );
+  expect(substitutedCase?.status()).toBe(404);
   // Absent params still land on the default branch.
   const defaulted = await page.goto("/app/demo/decision");
   expect(defaulted?.status()).toBe(200);

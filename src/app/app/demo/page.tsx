@@ -6,12 +6,25 @@
  */
 import Link from "next/link";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { SCENARIOS, DEFAULT_FIRM, launcherFirmFor, outcomeClassFor } from "@app/demo/data";
+import {
+  SCENARIOS,
+  DEFAULT_FIRM,
+  launcherFirmFor,
+  outcomeClassFor,
+  sourceCaseIdsFor,
+} from "@app/demo/data";
 import { PrimaryLink, demoHref } from "@app/demo/surfaces/shared";
 
 export const runtime = "nodejs";
 
 export default function DemoLauncherPage() {
+  const launcherEntries = SCENARIOS.flatMap((scenario) => {
+    const firmId = launcherFirmFor(scenario);
+    const sourceCaseIds = sourceCaseIdsFor(scenario, firmId);
+    return (sourceCaseIds.length ? sourceCaseIds : [null]).map(
+      (sourceCaseId) => ({ scenario, firmId, sourceCaseId }),
+    );
+  });
   return (
     <div className="flex flex-col gap-6 animate-fade-in">
       <div>
@@ -30,18 +43,29 @@ export default function DemoLauncherPage() {
 
       <section aria-label="Scenario branches" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Scenario branches</h2>
-        <p className="text-sm text-slate-600">The twelve contract branches (demo contract §5), each clickable end to end.</p>
+        <p className="text-sm text-slate-600">The twelve contract branches and each exact signed variant, all clickable end to end.</p>
         <ul className="grid gap-3 sm:grid-cols-2">
-          {SCENARIOS.map((s) => {
-            const firmId = launcherFirmFor(s);
+          {launcherEntries.map(({ scenario: s, firmId, sourceCaseId }) => {
             return (
-              <li key={s.id}>
+              <li key={`${s.id}:${firmId}:${sourceCaseId ?? "unsigned"}`}>
                 <Link
-                  href={demoHref("workspace", s.id, firmId)}
+                  href={demoHref(
+                    "workspace",
+                    s.id,
+                    firmId,
+                    sourceCaseId
+                      ? `&case=${encodeURIComponent(sourceCaseId)}`
+                      : undefined,
+                  )}
                   className="block h-full rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-400 focus-visible:border-slate-500"
                 >
                   <p className="text-sm font-semibold text-slate-900">{s.title}</p>
                   <p className="mt-1 text-sm text-slate-600">{s.description}</p>
+                  {sourceCaseId ? (
+                    <p className="mt-2 font-mono text-xs text-slate-600">
+                      Signed case: {sourceCaseId}
+                    </p>
+                  ) : null}
                   <p className="mt-2 text-xs text-slate-600">Outcome class: {outcomeClassFor(s, firmId)}</p>
                 </Link>
               </li>

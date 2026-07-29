@@ -173,7 +173,7 @@ scenarios:
     exercises: [proceed, blocked, awaiting-approval]
 
   - id: permanent-prohibition
-    description: The requested movement violates the household-specific destination restriction; no approval can waive it.
+    description: The exact signed case determines whether a household restriction or regulatory legal hold controls the same prohibited scenario.
     disposition: prohibited
     outcome_class: permanent prohibition
     exercises: [prohibited]

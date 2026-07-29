@@ -15,6 +15,7 @@ import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-d
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
 import {
+  bindExactSourceCase,
   dispositionFor,
   executionEligibilityFor,
   firmById,
@@ -22,8 +23,10 @@ import {
   liquidityAuthorityFor,
   outcomeClassFor,
   scenarioById,
+  sourceCaseIdsFor,
   type JourneyPass,
 } from "./data";
+import type { SignedCaseId } from "./signed-cases";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
 function reachOf(scenarioId: string, firmId: string, pass: JourneyPass) {
@@ -61,9 +64,15 @@ export function getJourney(
   scenarioId: string,
   firmId: string,
   pass: JourneyPass = "initial",
+  sourceCaseId?: SignedCaseId,
 ): DecisionJourneyVM {
-  const scenario = scenarioById(scenarioId);
+  const baseScenario = scenarioById(scenarioId);
   const firm = firmById(firmId);
+  const exactCaseId =
+    sourceCaseId ?? sourceCaseIdsFor(baseScenario, firm.id)[0];
+  const scenario = exactCaseId
+    ? bindExactSourceCase(baseScenario, firm.id, exactCaseId)
+    : baseScenario;
   if (
     pass === "revalidated" &&
     !hasSignedInvalidationAuthority(scenario, firm.id)
@@ -80,6 +89,7 @@ export function getJourney(
   return {
     scenarioId: scenario.id,
     firmId: firm.id,
+    sourceCaseId: exactCaseId ?? null,
     scenarioTitle: scenario.title,
     firmName: firm.name,
     outcomeClass: outcomeClassFor(scenario, firm.id),

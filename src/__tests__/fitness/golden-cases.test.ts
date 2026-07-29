@@ -1008,6 +1008,26 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const wrongWorkspaceMetric = demoClone();
+    const workspaceIra = wrongWorkspaceMetric.decisions
+      .find(
+        (decision) =>
+          decision.sourceCaseId === "GC-01-firm-a-happy-path",
+      )!
+      .workspaceAccounts.find(
+        ({ evidence }) => evidence.subjectRef === "subject:smiths-ira",
+      )!;
+    workspaceIra.evidence.renderedValueMinor = 31_000_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongWorkspaceMetric,
+      ).some((problem) =>
+        problem.includes("workspace account cards drift"),
+      ),
+    ).toBe(true);
+
     const wrongPolicyBinding = demoClone();
     const safePolicy = wrongPolicyBinding.decisions.find(
       (decision) =>
@@ -1098,6 +1118,79 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         (problem) =>
           problem.includes("GC-06-household-restriction") &&
           problem.includes("visible prohibition projection"),
+      ),
+    ).toBe(true);
+
+    const unreachableRegulatory = demoClone();
+    unreachableRegulatory.decisions =
+      unreachableRegulatory.decisions.filter(
+        (decision) =>
+          decision.sourceCaseId !== "GC-07-regulatory-prohibition",
+      );
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        unreachableRegulatory,
+      ).some((problem) =>
+        problem.includes(
+          "GC-07-regulatory-prohibition: exact signed branch-and-firm authority is not represented",
+        ),
+      ),
+    ).toBe(true);
+
+    const misclassifiedRegulatory = demoClone();
+    const regulatoryDecision = misclassifiedRegulatory.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-07-regulatory-prohibition",
+    )!;
+    regulatoryDecision.policyTraceRows = regulatoryDecision.policyTraceRows
+      .filter((row) => row.rule !== "Regulatory legal hold")
+      .map((row) =>
+        row.rule === "Household destination restriction"
+          ? {
+              ...row,
+              result: "Violated - this movement is prohibited",
+            }
+          : row,
+      );
+    regulatoryDecision.recordPrecedenceRows = [
+      ...regulatoryDecision.policyTraceRows,
+    ];
+    const regulatoryProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      misclassifiedRegulatory,
+    );
+    expect(
+      regulatoryProblems.some((problem) =>
+        problem.includes(
+          "controlling policy trace rule drifts from the signed prohibition source",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      regulatoryProblems.some((problem) =>
+        problem.includes(
+          "household-instruction trace does not preserve its exact signed result",
+        ),
+      ),
+    ).toBe(true);
+
+    const recordPrecedenceDrift = demoClone();
+    recordPrecedenceDrift.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-07-regulatory-prohibition",
+    )!.recordPrecedenceRows = [];
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        recordPrecedenceDrift,
+      ).some((problem) =>
+        problem.includes(
+          "policy trace and examiner record precedence projections disagree",
+        ),
       ),
     ).toBe(true);
   });

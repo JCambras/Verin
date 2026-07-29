@@ -48,6 +48,77 @@ export function buildExactPolicyTrace(
   const dualApproval = sourceCase?.authority.stages.some(
     (stage) => stage.stageId === "ops-dual-approval",
   );
+  const householdViolation =
+    prohibition?.source.sourceType === "household_instruction";
+  const controllingProhibition =
+    prohibition && !householdViolation
+      ? {
+          rule:
+            prohibition.source.sourceType === "regulatory"
+              ? "Regulatory legal hold"
+              : "Firm prohibition",
+          result: prohibition.explanation,
+          version: prohibition.source.versionId,
+          why: {
+            reason: prohibition.explanation,
+            ...(prohibition.source.sourceType === "regulatory"
+              ? { regulation: prohibition.source.versionId }
+              : {}),
+          },
+        }
+      : null;
+  const rows: Omit<PolicyTraceVM["rows"][number], "order">[] = [
+    ...(controllingProhibition ? [controllingProhibition] : []),
+    {
+      rule: "Household destination restriction",
+      result: householdViolation
+        ? prohibition.explanation
+        : instructionResult,
+      version:
+        instructionVersions.join(", ") ||
+        (householdViolation
+          ? prohibition.source.versionId
+          : "Exact signed source unavailable"),
+      why: {
+        reason: householdViolation
+          ? prohibition.explanation
+          : "Household instructions are evaluated independently and remain visible when a higher-precedence source controls the outcome.",
+      },
+    },
+    {
+      rule: "Cash-reserve floor (months of planned withdrawals)",
+      result: staleEvidence
+        ? "Cannot evaluate - liquidity evidence is older than policy allows"
+        : reserveHolds === null
+          ? "Cannot display - no signed numeric liquidity case covers this branch and firm"
+          : reserveHolds
+            ? "Satisfied after this movement"
+            : "Breached - this movement would leave the household below the floor",
+      version: policy,
+      why: {
+        reason: `${firm.name} preserves ${reserveHorizonWord(firm)} months of planned withdrawals in cash.`,
+        regulation: `Firm policy ${policy}`,
+      },
+    },
+    {
+      rule: "Recent bank-instruction change handling",
+      result: specialistReview
+        ? "Specialist review required before execution"
+        : blockedBankChange
+          ? "Blocked until independently verified"
+          : "Not triggered - no recent change",
+      version: policy,
+    },
+    {
+      rule: "Dual-approval threshold",
+      result: dualApproval
+        ? "Triggered - two distinct operations approvers required"
+        : sourceCase?.authority.mode === "automatic"
+          ? "Not triggered at this amount"
+          : "Exact signed authority unavailable",
+      version: policy,
+    },
+  ];
   return {
     spine: buildSpine(
       "Decision",
@@ -60,59 +131,7 @@ export function buildExactPolicyTrace(
     householdInstructionVersions: instructionVersions,
     regulatoryVersion:
       sourceCase?.policyVersions.regulatoryVersionId ?? null,
-    rows: [
-      {
-        order: 1,
-        rule: "Household destination restriction",
-        result: prohibition
-          ? "Violated - this movement is prohibited"
-          : instructionResult,
-        version:
-          instructionVersions.join(", ") ||
-          prohibition?.source.versionId ||
-          "Exact signed source unavailable",
-        why: {
-          reason:
-            "Household instructions take precedence over firm policy for destination checks. A violation here is a prohibition, not a blocker.",
-        },
-      },
-      {
-        order: 2,
-        rule: "Cash-reserve floor (months of planned withdrawals)",
-        result: staleEvidence
-          ? "Cannot evaluate - liquidity evidence is older than policy allows"
-          : reserveHolds === null
-            ? "Cannot display - no signed numeric liquidity case covers this branch and firm"
-            : reserveHolds
-              ? "Satisfied after this movement"
-              : "Breached - this movement would leave the household below the floor",
-        version: policy,
-        why: {
-          reason: `${firm.name} preserves ${reserveHorizonWord(firm)} months of planned withdrawals in cash.`,
-          regulation: `Firm policy ${policy}`,
-        },
-      },
-      {
-        order: 3,
-        rule: "Recent bank-instruction change handling",
-        result: specialistReview
-          ? "Specialist review required before execution"
-          : blockedBankChange
-            ? "Blocked until independently verified"
-            : "Not triggered - no recent change",
-        version: policy,
-      },
-      {
-        order: 4,
-        rule: "Dual-approval threshold",
-        result: dualApproval
-          ? "Triggered - two distinct operations approvers required"
-          : sourceCase?.authority.mode === "automatic"
-            ? "Not triggered at this amount"
-            : "Exact signed authority unavailable",
-        version: policy,
-      },
-    ],
+    rows: rows.map((row, index) => ({ ...row, order: index + 1 })),
     fakeClass: "deterministic-engine-output",
   };
 }

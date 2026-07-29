@@ -67,7 +67,21 @@ export interface DisplayedDecision {
   requestAmountMinor: number;
   signedTrigger: SignedTriggerProjection | null;
   visibleEvidence: VisibleEvidenceProjection[];
+  workspaceAccounts: Array<{
+    evidence: VisibleEvidenceProjection;
+    unavailableFields: string[];
+  }>;
   prohibition: ProhibitionProjection | null;
+  policyTraceRows: Array<{
+    rule: string;
+    result: string;
+    version: string;
+  }>;
+  recordPrecedenceRows: Array<{
+    rule: string;
+    result: string;
+    version: string;
+  }>;
   policyBindings: {
     domainConfigVersion: string;
     firmPolicyVersion: string;
@@ -668,6 +682,11 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       if (d.visibleEvidence.length > 0) {
         problems.push(`${at}: projects visible evidence without an exact source case`);
       }
+      if (d.workspaceAccounts.length > 0) {
+        problems.push(
+          `${at}: projects workspace accounts without an exact source case`,
+        );
+      }
       if (d.prohibition !== null) {
         problems.push(`${at}: projects prohibition authority without an exact source case`);
       }
@@ -796,6 +815,24 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
           `${at}: visible evidence projection drifts from exact signed case ${d.sourceCaseId}`,
         );
       }
+      const expectedWorkspaceAccounts = expectedEvidence
+        .filter(
+          (entry) =>
+            entry.evidenceKind === "account-balance" &&
+            entry.liquidityPhase !== "pre-execution-revalidation",
+        )
+        .map((evidence) => ({
+          evidence,
+          unavailableFields: ["account name", "account type", "custodian"],
+        }));
+      if (
+        JSON.stringify(d.workspaceAccounts) !==
+        JSON.stringify(expectedWorkspaceAccounts)
+      ) {
+        problems.push(
+          `${at}: workspace account cards drift from exact signed case ${d.sourceCaseId}`,
+        );
+      }
       const rawProhibition = isObj(source?.prohibition)
         ? source.prohibition
         : null;
@@ -828,6 +865,61 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
         problems.push(
           `${at}: visible prohibition projection drifts from exact signed case ${d.sourceCaseId}`,
         );
+      }
+      if (
+        JSON.stringify(d.policyTraceRows) !==
+        JSON.stringify(d.recordPrecedenceRows)
+      ) {
+        problems.push(
+          `${at}: policy trace and examiner record precedence projections disagree`,
+        );
+      }
+      if (rawProhibition && prohibitionSource) {
+        const controllingRuleByType: Record<string, string> = {
+          household_instruction: "Household destination restriction",
+          regulatory: "Regulatory legal hold",
+          firm_policy: "Firm prohibition",
+        };
+        const controllingRule =
+          controllingRuleByType[String(prohibitionSource.sourceType)];
+        const controllingRow = d.policyTraceRows.find(
+          (row) =>
+            row.rule === controllingRule &&
+            row.version === prohibitionSource.versionId,
+        );
+        if (
+          !controllingRow ||
+          controllingRow.result !== rawProhibition.explanation
+        ) {
+          problems.push(
+            `${at}: controlling policy trace rule drifts from the signed prohibition source`,
+          );
+        }
+        const rawInstructions = Array.isArray(source?.householdInstructions)
+          ? source.householdInstructions.filter(isObj)
+          : [];
+        const householdSummary = rawInstructions
+          .flatMap((instruction) =>
+            isNonEmptyString(instruction.summary)
+              ? [instruction.summary]
+              : [],
+          )
+          .join(" ");
+        const householdRow = d.policyTraceRows.find(
+          (row) => row.rule === "Household destination restriction",
+        );
+        const expectedHouseholdResult =
+          prohibitionSource.sourceType === "household_instruction"
+            ? rawProhibition.explanation
+            : householdSummary;
+        if (
+          !householdRow ||
+          householdRow.result !== expectedHouseholdResult
+        ) {
+          problems.push(
+            `${at}: household-instruction trace does not preserve its exact signed result`,
+          );
+        }
       }
       const policyVersions = isObj(source?.policyVersions)
         ? source.policyVersions
@@ -937,10 +1029,12 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     }
   }
   for (const candidates of candidatesByKey.values()) {
-    if (!candidates.some((candidate) => boundSourceIds.has(candidate.id))) {
-      problems.push(
-        `${candidates.map((candidate) => candidate.id).join("|")}: exact signed branch-and-firm authority is not represented by the demo`,
-      );
+    for (const candidate of candidates) {
+      if (!boundSourceIds.has(candidate.id)) {
+        problems.push(
+          `${candidate.id}: exact signed branch-and-firm authority is not represented by the demo`,
+        );
+      }
     }
   }
   return problems;

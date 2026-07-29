@@ -14,7 +14,6 @@ import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
-  ACCOUNTS,
   DEMO_NOW,
   HOUSEHOLD,
   OBSERVED_RECENT,
@@ -27,6 +26,7 @@ import {
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+import type { SignedEvidenceData } from "./signed-cases";
 
 /** The destination the interpreted intent binds to for this branch. */
 export function destinationFor(
@@ -39,6 +39,44 @@ export function destinationFor(
       )
     : undefined;
   return exactDestination?.subjectRef ?? "Exact signed source unavailable";
+}
+
+function evidenceLabel(entry: SignedEvidenceData): string {
+  return `${entry.evidenceKind.replaceAll("-", " ")} · ${entry.subjectRef} · ${entry.source} · ${entry.freshness}`;
+}
+
+function projectEvidenceRow(
+  entry: SignedEvidenceData,
+): Extract<EvidenceRowVM, { readonly kind: "fact" | "metric" }> {
+  const sourceBinding = { ...entry };
+  if (entry.displayValue) {
+    return {
+      kind: "metric",
+      label: evidenceLabel(entry),
+      metric: fixtureMetric(
+        entry.displayValue.valueMinor,
+        "currency-minor",
+        "synthetic-fixture",
+        entry.observedAt,
+      ),
+      summary: entry.summary,
+      retrievedAt: formatDemoInstant(entry.retrievedAt, undefined, true),
+      sourceBinding,
+      fakeClass: "synthetic-fixture",
+    };
+  }
+  return {
+    kind: "fact",
+    label: evidenceLabel(entry),
+    fact: fact(
+      entry.summary,
+      "synthetic-fixture",
+      entry.observedAt,
+      formatDemoInstant(entry.retrievedAt, undefined, true),
+    ),
+    sourceBinding,
+    fakeClass: "synthetic-fixture",
+  };
 }
 
 export function buildWorkspace(
@@ -77,6 +115,14 @@ export function buildWorkspace(
       entry.evidenceKind === "planned-withdrawals" &&
       entry.liquidityPhase !== "pre-execution-revalidation",
   );
+  const accountEvidence =
+    sourceCase?.evidence.filter(
+      (entry) =>
+        entry.evidenceKind === "account-balance" &&
+        (refreshed
+          ? entry.liquidityPhase === "pre-execution-revalidation"
+          : entry.liquidityPhase !== "pre-execution-revalidation"),
+    ) ?? [];
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -84,14 +130,15 @@ export function buildWorkspace(
       provenance: prov("synthetic-fixture", OBSERVED_RECENT),
       fakeClass: "synthetic-fixture",
     },
-    accounts: ACCOUNTS.map((a) => ({
-      id: a.id,
-      name: a.name,
-      kind: a.kind,
-      balance: fixtureMetric(a.balanceMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-      custodian: fact(a.custodian, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
-      fakeClass: "synthetic-fixture",
+    accounts: accountEvidence.map((entry) => ({
+      id: entry.subjectRef,
+      evidence: projectEvidenceRow(entry),
+      unavailableFields: ["account name", "account type", "custodian"],
     })),
+    accountsUnavailable:
+      accountEvidence.length === 0
+        ? `No exact signed account-balance evidence is available for ${scenario.id}/${firm.id}`
+        : null,
     liquidity: liquidity
       ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt)
       : null,
@@ -155,39 +202,7 @@ export function buildEvidence(
         pass === "revalidated" ||
         entry.liquidityPhase !== "pre-execution-revalidation",
     ) ?? [];
-  const labelFor = (entry: (typeof evidence)[number]): string =>
-    `${entry.evidenceKind.replaceAll("-", " ")} · ${entry.subjectRef} · ${entry.source} · ${entry.freshness}`;
-  const rows: EvidenceRowVM[] = evidence.map((entry) => {
-    const sourceBinding = { ...entry };
-    if (entry.displayValue) {
-      return {
-        kind: "metric",
-        label: labelFor(entry),
-        metric: fixtureMetric(
-          entry.displayValue.valueMinor,
-          "currency-minor",
-          "synthetic-fixture",
-          entry.observedAt,
-        ),
-        summary: entry.summary,
-        retrievedAt: formatDemoInstant(entry.retrievedAt, undefined, true),
-        sourceBinding,
-        fakeClass: "synthetic-fixture",
-      };
-    }
-    return {
-      kind: "fact",
-      label: labelFor(entry),
-      fact: fact(
-        entry.summary,
-        "synthetic-fixture",
-        entry.observedAt,
-        formatDemoInstant(entry.retrievedAt, undefined, true),
-      ),
-      sourceBinding,
-      fakeClass: "synthetic-fixture",
-    };
-  });
+  const rows: EvidenceRowVM[] = evidence.map(projectEvidenceRow);
   if (!sourceCase) {
     rows.push({
       kind: "missing",

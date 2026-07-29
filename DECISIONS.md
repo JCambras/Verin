@@ -3565,3 +3565,23 @@ surface still appeared internally complete.
 **Revert path:** this captain ruling is product truth and is not reversible without a new captain
 decision. The fixture fields, projection modules, and adversarial fences are isolated to the demo
 fake-service.
+
+### D-073 · 2026-07-29 · captain-decision · Signed prohibition variants are exact, reachable, and source-classified
+
+Every signed case eligible for one scenario and firm is reachable by its exact case identity. The
+journey binds that identity once and preserves it through every route, surface, record, and export;
+a case from another scenario, firm, or disposition is rejected instead of substituted. GC-06
+therefore renders the household destination restriction, while GC-07 renders the regulatory legal
+hold and separately preserves that the household instruction was satisfied.
+
+Workspace account cards use the same exact evidence-row projection as the Evidence surface.
+Balances, source identities, observation instants, retrieval instants, summaries, and units come
+from the selected case. Account names, types, and custodians that the case does not state render as
+unavailable instead of inheriting static demo-world values.
+
+**Why:** scenario and firm do not uniquely identify signed truth when two distinct authorities
+produce the same disposition. A default case and static workspace data could make a signed variant
+unreachable while displaying another case's rule and account facts.
+**Revert path:** this captain ruling is product truth and is not reversible without a new captain
+decision. Exact-case route binding, policy-source classification, workspace projection, and their
+adversarial fences are confined to the demo fake-service.

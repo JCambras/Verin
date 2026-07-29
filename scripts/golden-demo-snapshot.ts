@@ -20,11 +20,13 @@ import {
   FIRMS,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SCENARIOS,
+  bindExactSourceCase,
   dispositionFor,
   firmById,
   liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
+  sourceCaseIdsFor,
 } from "../src/app/demo/data";
 import { formatDemoInstant, timelineFor } from "../src/app/demo/timeline";
 import {
@@ -37,6 +39,7 @@ import type {
   RenderedMoney,
   SourceTimeline,
   SourceTimelineEvent,
+  VisibleEvidenceProjection,
 } from "./golden-demo-semantics.lib";
 
 const DRAFT_FLOOR_LABEL = "Smith household reserve floor";
@@ -70,43 +73,85 @@ function signedTrigger(sourceCase: SignedCaseVariant | null) {
   return sourceCase ? { ...sourceCase.trigger } : null;
 }
 
+function visibleEvidenceProjection(
+  sourceBinding: {
+    evidenceKind: string;
+    subjectRef: string;
+    observedAt: string;
+    retrievedAt: string;
+    freshness: string;
+    source: string;
+    provenance: string;
+    summary: string;
+    liquidityPhase: string | null;
+    observedAbsent: boolean;
+    displayValue: {
+      valueMinor: number;
+      unit: "USD" | "USD/month";
+    } | null;
+  },
+  renderedValueMinor: number | null,
+  renderedFormat: DisplayMetric["format"] | null,
+): VisibleEvidenceProjection {
+  return {
+    evidenceKind: sourceBinding.evidenceKind,
+    subjectRef: sourceBinding.subjectRef,
+    observedAt: sourceBinding.observedAt,
+    retrievedAt: sourceBinding.retrievedAt,
+    freshness: sourceBinding.freshness,
+    source: sourceBinding.source,
+    provenance: sourceBinding.provenance,
+    summary: sourceBinding.summary,
+    liquidityPhase: sourceBinding.liquidityPhase,
+    observedAbsent: sourceBinding.observedAbsent,
+    displayValueMinor: sourceBinding.displayValue?.valueMinor ?? null,
+    displayUnit: sourceBinding.displayValue?.unit ?? null,
+    renderedValueMinor,
+    renderedFormat,
+  };
+}
+
 /** Every decision the demo actually renders, with the liquidity arithmetic behind it. */
 function displayedDecisions(): DisplayedDecision[] {
-  return SCENARIOS.flatMap((scenario) =>
+  return SCENARIOS.flatMap((baseScenario) =>
     Object.values(FIRMS).flatMap((firm) => {
+      const caseIds = sourceCaseIdsFor(baseScenario, firm.id);
+      return (caseIds.length ? caseIds : [undefined]).flatMap((caseId) => {
+      const scenario = caseId
+        ? bindExactSourceCase(baseScenario, firm.id, caseId)
+        : baseScenario;
       const simulated = draftSimulation(scenario.id, firm.id);
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
-      const journey = getJourney(scenario.id, firm.id);
+      const journey = getJourney(scenario.id, firm.id, "initial", caseId);
       const visibleEvidence = journey.evidence.rows.flatMap((row) =>
         row.kind === "fact" || row.kind === "metric"
           ? [
-              {
-                evidenceKind: row.sourceBinding.evidenceKind,
-                subjectRef: row.sourceBinding.subjectRef,
-                observedAt: row.sourceBinding.observedAt,
-                retrievedAt: row.sourceBinding.retrievedAt,
-                freshness: row.sourceBinding.freshness,
-                source: row.sourceBinding.source,
-                provenance: row.sourceBinding.provenance,
-                summary: row.sourceBinding.summary,
-                liquidityPhase: row.sourceBinding.liquidityPhase,
-                observedAbsent: row.sourceBinding.observedAbsent,
-                displayValueMinor:
-                  row.sourceBinding.displayValue?.valueMinor ?? null,
-                displayUnit:
-                  row.sourceBinding.displayValue?.unit ?? null,
-                renderedValueMinor:
-                  row.kind === "metric" &&
+              visibleEvidenceProjection(
+                row.sourceBinding,
+                row.kind === "metric" &&
                   typeof row.metric.value === "number"
-                    ? row.metric.value
-                    : null,
-                renderedFormat:
-                  row.kind === "metric" ? row.metric.format : null,
-              },
+                  ? row.metric.value
+                  : null,
+                row.kind === "metric" ? row.metric.format : null,
+              ),
             ]
           : [],
       );
+      const workspaceAccounts = journey.workspace.accounts.map((account) => {
+        const row = account.evidence;
+        return {
+          evidence: visibleEvidenceProjection(
+            row.sourceBinding,
+            row.kind === "metric" &&
+              typeof row.metric.value === "number"
+              ? row.metric.value
+              : null,
+            row.kind === "metric" ? row.metric.format : null,
+          ),
+          unavailableFields: [...account.unavailableFields],
+        };
+      });
       const dispositionSource = journey.recommendation.disposition.source;
       const prohibition = dispositionSource
         ? {
@@ -131,7 +176,14 @@ function displayedDecisions(): DisplayedDecision[] {
         requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
         signedTrigger: signedTrigger(sourceCase),
         visibleEvidence,
+        workspaceAccounts,
         prohibition,
+        policyTraceRows: journey.policyTrace.rows.map(
+          ({ rule, result, version }) => ({ rule, result, version }),
+        ),
+        recordPrecedenceRows: journey.record.precedence.map(
+          ({ rule, result, version }) => ({ rule, result, version }),
+        ),
         policyBindings: {
           domainConfigVersion: journey.policyTrace.domainConfigVersion,
           firmPolicyVersion: journey.policyTrace.firmPolicyVersion,
@@ -171,7 +223,10 @@ function displayedDecisions(): DisplayedDecision[] {
                   requestAmountMinor: decision.requestAmountMinor,
                   signedTrigger: signedTrigger(relatedSource ?? null),
                   visibleEvidence: [],
+                  workspaceAccounts: [],
                   prohibition: null,
+                  policyTraceRows: [],
+                  recordPrecedenceRows: [],
                   policyBindings: {
                     domainConfigVersion:
                       relatedSource?.policyVersions
@@ -216,6 +271,7 @@ function displayedDecisions(): DisplayedDecision[] {
             )
           : [];
       return [primary, ...related];
+      });
     }),
   );
 }
@@ -232,12 +288,17 @@ function sourceTimelines(): SourceTimeline[] {
     display,
     renderedInstant: formatDemoInstant(instant, undefined, includeSeconds),
   });
-  return SCENARIOS.flatMap((scenario) =>
+  return SCENARIOS.flatMap((baseScenario) =>
     Object.values(FIRMS).flatMap((firm) => {
+      const caseIds = sourceCaseIdsFor(baseScenario, firm.id);
+      return (caseIds.length ? caseIds : [undefined]).flatMap((caseId) => {
+      const scenario = caseId
+        ? bindExactSourceCase(baseScenario, firm.id, caseId)
+        : baseScenario;
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
       if (!sourceCase) return [];
-      const journey = getJourney(scenario.id, firm.id);
+      const journey = getJourney(scenario.id, firm.id, "initial", caseId);
       const lifecycleEvents = journey.record.lifecycle.map((lifecycleEvent, index) =>
         event(
           lifecycleEvent.type === "EvidenceSnapshotRecorded" && index > 0
@@ -409,6 +470,7 @@ function sourceTimelines(): SourceTimeline[] {
         },
       );
       return [primary, ...related];
+      });
     }),
   );
 }

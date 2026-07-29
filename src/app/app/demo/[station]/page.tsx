@@ -7,7 +7,15 @@
  */
 import { notFound } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
-import { hasSignedInvalidationAuthority, resolveFirmId, resolveScenarioId, scenarioById, type JourneyPass } from "@app/demo/data";
+import {
+  bindExactSourceCase,
+  hasSignedInvalidationAuthority,
+  resolveFirmId,
+  resolveScenarioId,
+  resolveSourceCaseId,
+  scenarioById,
+  type JourneyPass,
+} from "@app/demo/data";
 import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/surfaces/shared";
 import { WorkspaceSurface } from "@app/demo/surfaces/workspace";
 import { IntentSurface } from "@app/demo/surfaces/intent";
@@ -41,18 +49,42 @@ export default async function DemoStationPage({
   const scenarioId = resolveScenarioId(first(sp.scenario));
   const firmId = resolveFirmId(first(sp.firm));
   if (!scenarioId || !firmId) notFound();
+  const requestedCaseId = first(sp.case);
+  const sourceCaseId = resolveSourceCaseId(
+    scenarioById(scenarioId),
+    firmId,
+    requestedCaseId,
+  );
+  if (requestedCaseId !== undefined && sourceCaseId === null) notFound();
   const approved = first(sp.approved) === "1";
   const requestedPass = first(sp.pass);
   if (requestedPass !== undefined && requestedPass !== "revalidated") notFound();
   if (
     requestedPass === "revalidated" &&
-    !hasSignedInvalidationAuthority(scenarioById(scenarioId), firmId)
+    !hasSignedInvalidationAuthority(
+      sourceCaseId
+        ? bindExactSourceCase(
+            scenarioById(scenarioId),
+            firmId,
+            sourceCaseId,
+          )
+        : scenarioById(scenarioId),
+      firmId,
+    )
   ) {
     notFound();
   }
   const pass: JourneyPass = requestedPass === "revalidated" ? "revalidated" : "initial";
-  const querySuffix = pass === "revalidated" ? "&pass=revalidated" : undefined;
-  const journey = getJourney(scenarioId, firmId, pass);
+  const querySuffix = [
+    sourceCaseId ? `&case=${encodeURIComponent(sourceCaseId)}` : "",
+    pass === "revalidated" ? "&pass=revalidated" : "",
+  ].join("") || undefined;
+  const journey = getJourney(
+    scenarioId,
+    firmId,
+    pass,
+    sourceCaseId ?? undefined,
+  );
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
 
   switch (station as DemoStation) {

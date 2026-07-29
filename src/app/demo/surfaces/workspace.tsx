@@ -7,7 +7,11 @@
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { EvidenceMissing } from "@app/presentation/evidence-row";
+import {
+  EvidenceMetricRow,
+  EvidenceMissing,
+  EvidenceRow,
+} from "@app/presentation/evidence-row";
 import { EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type WorkspaceVM } from "../model";
 import { PrimaryLink, SurfaceShell, demoHref } from "./shared";
@@ -38,18 +42,36 @@ export function WorkspaceSurface({
         <ul className="grid gap-3 sm:grid-cols-2">
           {vm.accounts.map((a) => (
             <li key={a.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-surface p-4">
-              <p className="text-sm font-medium text-slate-800">{a.name}</p>
-              <p className="text-xs text-slate-600">{a.kind}</p>
-              <p className="text-sm">
-                <Metric metric={a.balance} />
+              <p className="font-mono text-xs text-slate-600">
+                Signed account reference: {a.id}
               </p>
-              <p className="flex items-center gap-2 text-xs text-slate-600">
-                Custodian: <FreshValue provenance={a.custodian.provenance}>{a.custodian.display}</FreshValue>
-                <DevProvenanceBadge label={DEV_BADGE_TEXT[a.fakeClass]} />
-              </p>
+              {a.evidence.kind === "metric" ? (
+                <EvidenceMetricRow
+                  label={a.evidence.label}
+                  metric={a.evidence.metric}
+                  retrievedAt={a.evidence.retrievedAt}
+                  badgeLabel={DEV_BADGE_TEXT[a.evidence.fakeClass]}
+                >
+                  <p className="text-sm text-slate-700">
+                    {a.evidence.summary}
+                  </p>
+                </EvidenceMetricRow>
+              ) : (
+                <EvidenceRow
+                  label={a.evidence.label}
+                  fact={a.evidence.fact}
+                  badgeLabel={DEV_BADGE_TEXT[a.evidence.fakeClass]}
+                />
+              )}
+              <EvidenceMissing
+                text={`${a.unavailableFields.join(", ")} unavailable in this signed case`}
+              />
             </li>
           ))}
         </ul>
+        {vm.accountsUnavailable ? (
+          <EvidenceMissing text={vm.accountsUnavailable} />
+        ) : null}
       </section>
 
       <section aria-label="Liquidity" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
