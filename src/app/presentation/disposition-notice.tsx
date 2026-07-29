@@ -41,7 +41,13 @@ export interface DispositionProps {
   readonly authoritySummary?: string;
   readonly blockers?: readonly DispositionBlocker[];
   readonly prohibitedScope?: string;
-  readonly source?: { readonly ref: string; readonly provenance: RecordProvenance; readonly kindLabel: string };
+  readonly source?: {
+    readonly id: string;
+    readonly ref: string;
+    readonly reasonCode: string;
+    readonly provenance: RecordProvenance;
+    readonly kindLabel: string;
+  };
   readonly doctrine?: string;
   /** Prohibited only: the inspective links (view the trace, print the record). */
   readonly inspective?: ReactNode;
@@ -105,12 +111,24 @@ export function DispositionNotice(p: DispositionProps) {
             {p.prohibitedScope}
           </p>
           {p.source ? (
-            <p className="flex flex-wrap items-baseline gap-2 text-sm text-slate-800">
-              <span className="text-slate-600">Source ({p.source.kindLabel}):</span>
-              <FreshValue provenance={p.source.provenance}>
-                <span className="font-mono text-xs">{p.source.ref}</span>
-              </FreshValue>
-            </p>
+            <dl className="grid gap-1 text-sm text-slate-800">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <dt className="text-slate-600">Source ({p.source.kindLabel}):</dt>
+                <dd>
+                  <FreshValue provenance={p.source.provenance}>
+                    <span className="font-mono text-xs">{p.source.ref}</span>
+                  </FreshValue>
+                </dd>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <dt className="text-slate-600">Source identity:</dt>
+                <dd className="font-mono text-xs">{p.source.id}</dd>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <dt className="text-slate-600">Reason code:</dt>
+                <dd className="font-mono text-xs">{p.source.reasonCode}</dd>
+              </div>
+            </dl>
           ) : null}
         </>
       ) : null}

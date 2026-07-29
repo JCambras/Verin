@@ -5733,3 +5733,44 @@ cases with axe, the golden validator, typecheck, lint, knip, v3 invariant report
 build pass on the corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-070).
+
+## F110 · canonical requests, exact evidence, prohibition authority, and snapshot causality
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** the interactive journey keeps the canonical $75,000 Smiths request under both firms
+while its exact signed trigger remains a separate typed fact; every visible evidence item remains
+byte-bound to the selected signed case; prohibited decisions and records preserve exact source
+identity, version, scope, reason, and explanation; and an initial `EvidenceSnapshotRecorded`
+follows every included retrieval and precedes its dependent `DecisionRecorded`.
+This supersedes F109 only where that proof treated a case-specific trigger amount as the interactive
+request; the exact typed trigger itself remains required.
+
+A production injection made `requestFor` replace the canonical amount with the selected case's
+structured trigger amount. The focused fence failed at
+`src/__tests__/fitness/golden-cases.test.ts:70` with:
+
+```text
+permanent-prohibition/firm-a/primary: canonical request drift, demo journey=3000000, canonical=7500000
+```
+
+The production injection was reverted immediately. Companion mutations separately replace GC-08's
+visible evidence summary and observed instant, substitute $75,000 into GC-06's signed trigger,
+replace GC-06's prohibition source identity, version, scope, and reason with generic values, and
+move GC-01's initial snapshot back to the request instant. Each produces its named trigger,
+evidence, prohibition, or snapshot-causality diagnostic.
+
+Browser coverage proves both firms retain the canonical request, GC-06 displays the exact
+contractor account evidence and prohibition authority, GC-09 shows the signed June 9 observation
+and 47-day age, GC-08 exposes both signed subject references, and GC-15 records its first snapshot
+at the signed retrieval instant before its decision. The changed screens pass axe and remain
+contained at desktop and phone widths.
+
+**Revert:** the production injection was removed. All remaining mutations live only in companion
+tests.
+
+All 573 Vitest cases, the relevant production Playwright paths with axe, the golden validator,
+typecheck, lint, knip, the v3 invariant report, file-size ratchet, and production build pass on the
+corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-071).

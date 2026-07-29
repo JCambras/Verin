@@ -16,12 +16,12 @@ import { DISPOSITION_LABELS, type ApprovalStageVM, type ApprovalVM, type Blocker
 import { derivedMetric, fact, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { destinationFor } from "./build-context";
+import { buildProhibitedDisposition } from "./build-prohibition";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   CANONICAL_REQUEST,
   CAST,
   DEMO_NOW,
-  DESTINATION_RESTRICTION,
   IDS,
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
@@ -133,22 +133,7 @@ function proceedWhy(firm: FirmData, bankChanged: boolean | undefined, hasLiquidi
 export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): DispositionVM {
   const kind = dispositionFor(scenario, firm.id);
   if (kind === "prohibited") {
-    return {
-      kind,
-      headline: "This movement is prohibited for this household.",
-      prohibitedScope: "Distributions from household accounts to third-party or business destinations",
-      source: {
-        kind: "household-instruction",
-        ref: DESTINATION_RESTRICTION.ref,
-        provenance: prov("synthetic-fixture", "2026-02-14"),
-      },
-      doctrine: "Verin will not route this for approval: the restriction is not resolvable by evidence or authority.",
-      why: {
-        reason:
-          "The household instruction prohibits distributions to third-party or business accounts not owned by a household member. The requested destination is a third-party business account, so no approval path exists at any amount.",
-      },
-      fakeClass: "deterministic-engine-output",
-    };
+    return buildProhibitedDisposition(scenario, firm);
   }
   if (kind === "blocked") {
     return {
@@ -222,13 +207,14 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData, pass
 
 export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): PolicyTraceVM {
   const spec = scenario.spec;
+  const prohibition = sourceCaseFor(scenario, firm.id)?.prohibition;
   const reserveCite = firm.id === "firm-a" ? `${firm.policyVersion} §2` : `${firm.policyVersion} §3`;
   const rows = [
     {
       order: 1,
       rule: "Household destination restriction",
       result: spec.thirdPartyDestination ? "Violated - this movement is prohibited" : "Passes - destination owned by household members",
-      version: DESTINATION_RESTRICTION.ref,
+      version: prohibition?.source.versionId ?? "Exact signed source unavailable",
       why: { reason: "Household instructions take precedence over firm policy for destination checks. A violation here is a prohibition, not a blocker." },
     },
     {
@@ -267,7 +253,8 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: J
   return {
     spine: buildSpine("Decision", DISPOSITION_BADGES[dispositionFor(scenario, firm.id)]),
     firmPolicyVersion: firm.policyVersion,
-    householdInstructionVersion: "HH-INSTR-SMITH v3",
+    householdInstructionVersion:
+      prohibition?.source.versionId ?? "Exact signed source unavailable",
     rows,
     fakeClass: "deterministic-engine-output",
   };

@@ -43,6 +43,7 @@ function EvidenceDocRow({ row }: { row: EvidenceRowVM }) {
     case "metric":
       return (
         <EvidenceMetricRow label={row.label} metric={row.metric} retrievedAt={row.retrievedAt} badgeLabel={DEV_BADGE_TEXT[row.fakeClass]}>
+          <p className="text-sm text-slate-700">{row.summary}</p>
           {row.why ? <ExpandedWhy why={row.why} /> : null}
         </EvidenceMetricRow>
       );
@@ -79,12 +80,7 @@ export function RecordSurface({
   scenarioId,
   firmId,
   querySuffix,
-}: {
-  vm: RecordVM;
-  scenarioId: string;
-  firmId: string;
-  querySuffix?: string;
-}) {
+}: { vm: RecordVM; scenarioId: string; firmId: string; querySuffix?: string }) {
   const running = `${vm.header.watermark ? `${vm.header.watermark} · ` : ""}${vm.header.decisionId}`;
   return (
     /* ADR-0022: the running header and footer of EVERY printed page. thead/tfoot
@@ -209,9 +205,20 @@ export function RecordSurface({
                 ))}
                 {vm.disposition.prohibitedScope ? <p className="text-sm text-slate-700">Prohibited scope: {vm.disposition.prohibitedScope}</p> : null}
                 {vm.disposition.source ? (
-                  <p className="text-sm text-slate-700">
-                    Source: <span className="font-mono text-xs">{vm.disposition.source.ref}</span>
-                  </p>
+                  <dl className="grid gap-1 text-sm text-slate-700">
+                    <div>
+                      <dt className="inline">Source: </dt>
+                      <dd className="inline font-mono text-xs">{vm.disposition.source.ref}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Source identity: </dt>
+                      <dd className="inline font-mono text-xs">{vm.disposition.source.id}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline">Reason code: </dt>
+                      <dd className="inline font-mono text-xs">{vm.disposition.source.reasonCode}</dd>
+                    </div>
+                  </dl>
                 ) : null}
                 <ExpandedWhy why={vm.disposition.why} />
                 {vm.disposition.doctrine ? <p className="text-sm text-slate-600">{vm.disposition.doctrine}</p> : null}

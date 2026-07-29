@@ -10,6 +10,7 @@
  */
 import { metric } from "@contracts/metric";
 import type { EvidenceRowVM, EvidenceVM, IntentVM, WorkspaceVM } from "./model";
+import type { SignedEvidenceData } from "./signed-cases";
 import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { formatDemoInstant, timelineFor } from "./timeline";
@@ -17,7 +18,6 @@ import {
   ACCOUNTS,
   BANK_INSTRUCTION,
   DEMO_NOW,
-  DESTINATION_RESTRICTION,
   HOUSEHOLD,
   OBSERVED_RECENT,
   OBSERVED_STALE,
@@ -123,135 +123,93 @@ export function buildEvidence(
   firm: FirmData,
   pass: JourneyPass = "initial",
 ): EvidenceVM {
-  const spec = scenario.spec;
-  const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
-  const authority = liquidityAuthorityFor(scenario, firm.id);
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  const timeline = timelineFor(scenario, firm);
-  const refreshed =
-    pass === "revalidated" && authority.kind === "signed"
-      ? authority.preExecutionRevalidation
-      : undefined;
-  const liquidity =
-    authority.kind === "signed"
-      ? (refreshed ?? authority.initialDecision)
-      : null;
-  const liquidityObservedAt = refreshed ? timeline.revalidatedAt : liquidityAsOf;
-  const liquidityRetrievedAt = refreshed
-    ? formatDemoInstant(timeline.revalidatedAt)
-    : RETRIEVED_AT;
-  const rows: EvidenceRowVM[] = [
-    {
-      kind: "metric",
-      label: "Planned monthly withdrawal",
-      metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-      retrievedAt: RETRIEVED_AT,
-      fakeClass: "synthetic-fixture",
-    },
-    spec.bankChanged
-      ? {
-          kind: "fact",
-          label: "Bank instruction on file",
-          fact: fact(BANK_INSTRUCTION.changed, "synthetic-fixture", BANK_INSTRUCTION.changedOn, RETRIEVED_AT),
-          fakeClass: "synthetic-fixture",
-          why: { reason: "This instruction changed within the firm's recent-change window. Each firm's configured handling for a recent bank change applies to this movement." },
-        }
-      : {
-          kind: "fact",
-          label: "Bank instruction on file",
-          fact: fact(BANK_INSTRUCTION.stable, "synthetic-fixture", "2026-05-20", RETRIEVED_AT),
-          fakeClass: "synthetic-fixture",
-        },
-    {
-      kind: "fact",
-      label: `Household instruction ${DESTINATION_RESTRICTION.ref}`,
-      fact: fact(DESTINATION_RESTRICTION.text, "synthetic-fixture", "2026-02-14", RETRIEVED_AT),
-      fakeClass: "synthetic-fixture",
-      why: { reason: "A household-specific restriction. It takes precedence over firm policy defaults when the destination of a movement is checked." },
-    },
-  ];
-  if (liquidity) {
-    rows.unshift(
-      {
+  const evidence =
+    sourceCase?.evidence.filter(
+      (entry) =>
+        pass === "revalidated" ||
+        entry.liquidityPhase !== "pre-execution-revalidation",
+    ) ?? [];
+  const moneyValueFor = (entry: SignedEvidenceData): number | null => {
+    if (!sourceCase) return null;
+    const revalidated =
+      entry.liquidityPhase === "pre-execution-revalidation";
+    if (entry.evidenceKind === "account-balance") {
+      return revalidated
+        ? sourceCase.money.preExecutionRevalidation?.availableLiquidityMinor ??
+            null
+        : sourceCase.money.availableLiquidityMinor;
+    }
+    if (entry.evidenceKind === "planned-withdrawals") {
+      return sourceCase.money.plannedWithdrawalMonthlyMinor;
+    }
+    if (entry.evidenceKind === "pending-actions" && !entry.observedAbsent) {
+      return revalidated
+        ? sourceCase.money.preExecutionRevalidation?.pendingLiquidityMinor ??
+            null
+        : sourceCase.money.pendingLiquidityMinor;
+    }
+    return null;
+  };
+  const labelFor = (entry: SignedEvidenceData): string =>
+    `${entry.evidenceKind.replaceAll("-", " ")} · ${entry.subjectRef} · ${entry.source} · ${entry.freshness}`;
+  const rows: EvidenceRowVM[] = evidence.map((entry) => {
+    const value = moneyValueFor(entry);
+    const sourceBinding = { ...entry };
+    if (value !== null) {
+      return {
         kind: "metric",
-        label: refreshed
-          ? "Pre-execution revalidation · available cash across household accounts"
-          : "Available cash across household accounts",
-        metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt),
-        retrievedAt: liquidityRetrievedAt,
+        label: labelFor(entry),
+        metric: fixtureMetric(
+          value,
+          "currency-minor",
+          "synthetic-fixture",
+          entry.observedAt,
+        ),
+        summary: entry.summary,
+        retrievedAt: formatDemoInstant(entry.retrievedAt, undefined, true),
+        sourceBinding,
         fakeClass: "synthetic-fixture",
-      },
-      liquidity.pendingActivityMinor > 0
-        ? {
-            kind: "metric",
-            label: refreshed
-              ? "Pre-execution revalidation · pending approved distribution"
-              : "Pending approved distribution (not yet settled)",
-            metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt),
-            retrievedAt: liquidityRetrievedAt,
-            fakeClass: "synthetic-fixture",
-            why: { reason: `${liquidity.pendingNote}.` },
-          }
-        : {
-            kind: "fact",
-            label: "Pending or reserved liquidity activity",
-            fact: fact(`${liquidity.pendingNote}.`, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT),
-            fakeClass: "synthetic-fixture",
-            why: { reason: "Absence here is an observation, not a gap: the pending-activity source was read and returned nothing against this household." },
-          },
-    );
-  } else {
-    rows.unshift({
-      kind: "missing",
-      text: `Missing signed liquidity authority - ${authority.kind === "missing" ? authority.reason : "numeric evidence unavailable"}. No unrelated case was substituted.`,
-      fakeClass: "synthetic-fixture",
-    });
-  }
-  if (spec.conflictingInstruction) {
-    const directoryEvidence = sourceCase?.evidence.find(
-      (entry) => entry.evidenceKind === "household-directory",
-    );
-    const observedAt =
-      directoryEvidence?.observedAt ?? timeline.requestAt;
-    const retrievedAt =
-      directoryEvidence?.retrievedAt ?? timeline.requestAt;
-    rows.push({
-      kind: "conflict",
-      label: "Household directory match",
-      rule: "A human must select the intended household; Verin cannot guess between two equal candidates",
-      a: fact(
-        "Robert & Ana Smith · subject:smiths-robert-ana",
+      };
+    }
+    return {
+      kind: "fact",
+      label: labelFor(entry),
+      fact: fact(
+        entry.summary,
         "synthetic-fixture",
-        observedAt,
-        formatDemoInstant(retrievedAt, undefined, true),
-        "medium",
+        entry.observedAt,
+        formatDemoInstant(entry.retrievedAt, undefined, true),
       ),
-      b: fact(
-        "Smith Family Trust · subject:smith-family-trust",
-        "synthetic-fixture",
-        observedAt,
-        formatDemoInstant(retrievedAt, undefined, true),
-        "medium",
-      ),
+      sourceBinding,
       fakeClass: "synthetic-fixture",
-      blockerAffordance: "Select the intended household",
-    });
-  }
-  rows.push({
-    kind: "missing",
-    text: "Missing - planned-withdrawal schedule beyond twelve months unavailable from Verin CRM",
-    fakeClass: "synthetic-fixture",
+    };
   });
+  if (!sourceCase) {
+    rows.push({
+      kind: "missing",
+      text: `Missing exact signed evidence authority for ${scenario.id}/${firm.id}. No unrelated case was substituted.`,
+      fakeClass: "synthetic-fixture",
+    });
+  }
+  const latestRefresh = evidence
+    .filter(
+      (entry) => entry.liquidityPhase === "pre-execution-revalidation",
+    )
+    .sort((left, right) =>
+      left.retrievedAt.localeCompare(right.retrievedAt),
+    )
+    .at(-1);
   return {
     spine: buildSpine("Evidence"),
     rows,
-    refreshNotice: refreshed
+    refreshNotice: pass === "revalidated" && latestRefresh
       ? {
           fact: fact(
             "Refreshed evidence bundle recorded after the material change",
             "deterministic-engine-output",
-            timeline.revalidatedAt,
-            formatDemoInstant(timeline.revalidatedAt),
+            latestRefresh.retrievedAt,
+            formatDemoInstant(latestRefresh.retrievedAt, undefined, true),
           ),
           fakeClass: "deterministic-engine-output",
         }

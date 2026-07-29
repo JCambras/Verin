@@ -27,7 +27,10 @@ import {
   sourceCaseFor,
 } from "../src/app/demo/data";
 import { formatDemoInstant } from "../src/app/demo/timeline";
-import { SIGNED_CASE_VARIANTS } from "../src/app/demo/signed-cases";
+import {
+  SIGNED_CASE_VARIANTS,
+  type SignedCaseVariant,
+} from "../src/app/demo/signed-cases";
 import type {
   DemoSemanticSnapshot,
   DisplayedDecision,
@@ -63,6 +66,10 @@ function draftSimulation(scenarioId: string, firmId: string) {
   };
 }
 
+function signedTrigger(sourceCase: SignedCaseVariant | null) {
+  return sourceCase ? { ...sourceCase.trigger } : null;
+}
+
 /** Every decision the demo actually renders, with the liquidity arithmetic behind it. */
 function displayedDecisions(): DisplayedDecision[] {
   return SCENARIOS.flatMap((scenario) =>
@@ -71,20 +78,22 @@ function displayedDecisions(): DisplayedDecision[] {
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
       const journey = getJourney(scenario.id, firm.id);
-      const decisiveEvidence = journey.evidence.rows.flatMap((row) =>
-        row.kind === "conflict"
-          ? [
-              {
-                display: row.a.display,
-                observedAt: row.a.provenance.asOf,
-              },
-              {
-                display: row.b.display,
-                observedAt: row.b.provenance.asOf,
-              },
-            ]
+      const visibleEvidence = journey.evidence.rows.flatMap((row) =>
+        row.kind === "fact" || row.kind === "metric"
+          ? [{ ...row.sourceBinding }]
           : [],
       );
+      const dispositionSource = journey.recommendation.disposition.source;
+      const prohibition = dispositionSource
+        ? {
+            kind: dispositionSource.kind,
+            id: dispositionSource.id,
+            versionId: dispositionSource.ref,
+            scope: dispositionSource.scope,
+            reasonCode: dispositionSource.reasonCode,
+            explanation: journey.recommendation.disposition.why.reason,
+          }
+        : null;
       const initial = authority.kind === "signed" ? authority.initialDecision : null;
       const revalidation = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
       const reserveFloor = reserveFloorMinor(firm);
@@ -96,7 +105,9 @@ function displayedDecisions(): DisplayedDecision[] {
         sourceCaseId: sourceCase?.caseId ?? null,
         requestAt: sourceCase?.trigger.requestAt ?? null,
         requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
-        decisiveEvidence,
+        signedTrigger: signedTrigger(sourceCase),
+        visibleEvidence,
+        prohibition,
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
@@ -111,31 +122,39 @@ function displayedDecisions(): DisplayedDecision[] {
       const related =
         authority.kind === "signed"
           ? (authority.relatedDecisions ?? []).map(
-              (decision): DisplayedDecision => ({
-                scenarioId: scenario.id,
-                firmId: firm.id,
-                decisionRole: "competing-sibling",
-                disposition: decision.disposition,
-                sourceCaseId: decision.sourceCaseId,
-                requestAt: decision.requestAt,
-                requestAmountMinor: decision.requestAmountMinor,
-                decisiveEvidence: [],
-                liquidityAuthorityMissing: null,
-                availableCashMinor: decision.initialDecision.availableCashMinor,
-                pendingActivityMinor:
-                  decision.initialDecision.pendingActivityMinor,
-                reserveFloorMinor: reserveFloor,
-                headroomMinor: calculateHeadroomMinor(
-                  decision.initialDecision.availableCashMinor,
-                  decision.initialDecision.pendingActivityMinor,
-                  reserveFloor,
-                ),
-                revalidationAvailableCashMinor: null,
-                revalidationPendingActivityMinor: null,
-                simulatedFloorMinor: null,
-                simulatedHeadroomMinor: null,
-                simulatedDisposition: null,
-              }),
+              (decision): DisplayedDecision => {
+                const relatedSource = SIGNED_CASE_VARIANTS.find(
+                  (variant) => variant.caseId === decision.sourceCaseId,
+                );
+                return {
+                  scenarioId: scenario.id,
+                  firmId: firm.id,
+                  decisionRole: "competing-sibling",
+                  disposition: decision.disposition,
+                  sourceCaseId: decision.sourceCaseId,
+                  requestAt: decision.requestAt,
+                  requestAmountMinor: decision.requestAmountMinor,
+                  signedTrigger: signedTrigger(relatedSource ?? null),
+                  visibleEvidence: [],
+                  prohibition: null,
+                  liquidityAuthorityMissing: null,
+                  availableCashMinor:
+                    decision.initialDecision.availableCashMinor,
+                  pendingActivityMinor:
+                    decision.initialDecision.pendingActivityMinor,
+                  reserveFloorMinor: reserveFloor,
+                  headroomMinor: calculateHeadroomMinor(
+                    decision.initialDecision.availableCashMinor,
+                    decision.initialDecision.pendingActivityMinor,
+                    reserveFloor,
+                  ),
+                  revalidationAvailableCashMinor: null,
+                  revalidationPendingActivityMinor: null,
+                  simulatedFloorMinor: null,
+                  simulatedHeadroomMinor: null,
+                  simulatedDisposition: null,
+                };
+              },
             )
           : [];
       return [primary, ...related];
@@ -288,12 +307,19 @@ function sourceTimelines(): SourceTimeline[] {
           : []
       ).flatMap(
         (relatedAuthority) => {
+          const relatedSource = SIGNED_CASE_VARIANTS.find(
+            (variant) => variant.caseId === relatedAuthority.sourceCaseId,
+          );
           const relatedDecision = journey.safety?.checks.find(
             (check) =>
               check.relatedDecision?.sourceCaseId ===
               relatedAuthority.sourceCaseId,
           )?.relatedDecision;
-          if (!relatedDecision) return [];
+          const latestEvidenceAt = relatedSource?.evidence
+            .map((evidence) => evidence.retrievedAt)
+            .sort()
+            .at(-1);
+          if (!relatedDecision || !latestEvidenceAt) return [];
           return [
             {
               sourceCaseId: relatedAuthority.sourceCaseId,
@@ -305,6 +331,12 @@ function sourceTimelines(): SourceTimeline[] {
                   "request",
                   relatedDecision.requestAtIso,
                   relatedDecision.requestAt,
+                  true,
+                ),
+                event(
+                  "EvidenceSnapshotRecorded",
+                  latestEvidenceAt,
+                  formatDemoInstant(latestEvidenceAt, undefined, true),
                   true,
                 ),
                 event(
@@ -362,7 +394,9 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     revalidatedInvalidationJourney.evidence.rows.find(
       (row) =>
         row.kind === "metric" &&
-        row.label.includes("pending approved distribution"),
+        row.sourceBinding.evidenceKind === "pending-actions" &&
+        row.sourceBinding.liquidityPhase ===
+          "pre-execution-revalidation",
     );
   const authorityPlan = (
     scenarioId: string,

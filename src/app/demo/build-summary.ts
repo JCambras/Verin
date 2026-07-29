@@ -254,7 +254,7 @@ function signedLifecycle(
   const timeline = timelineFor(scenario, firm);
   if (hasSignedInvalidationAuthority(scenario, firm.id)) {
     const instants = [
-      timeline.requestAt,
+      timeline.initialEvidenceSnapshotAt,
       timeline.decisionAt,
       timeline.approvalOneAt,
       timeline.approvalTwoAt,
@@ -287,7 +287,9 @@ function signedLifecycle(
   const instantFor = (type: string): string => {
     if (type === "EvidenceSnapshotRecorded") {
       const instant =
-        evidenceIndex === 0 ? timeline.requestAt : timeline.revalidatedAt;
+        evidenceIndex === 0
+          ? timeline.initialEvidenceSnapshotAt
+          : timeline.revalidatedAt;
       evidenceIndex += 1;
       return instant;
     }
@@ -373,7 +375,9 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
     },
     hashes: {
       policyVersion: firm.policyVersion,
-      instructionVersion: "HH-INSTR-SMITH v3",
+      instructionVersion:
+        sourceCaseFor(scenario, firm.id)?.prohibition?.source.versionId ??
+        "Exact signed source unavailable",
       auditPosition: IDS.auditPosition,
     },
     decisionBindings: [

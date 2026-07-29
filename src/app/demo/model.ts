@@ -92,7 +92,10 @@ export interface BlockerVM {
 }
 export interface ProhibitionSourceVM {
   readonly kind: "firm-policy" | "household-instruction" | "regulatory";
+  readonly id: string;
   readonly ref: string; // versioned reference, font-mono
+  readonly scope: string;
+  readonly reasonCode: string;
   readonly provenance: RecordProvenance; // source · as of label
 }
 export interface DispositionVM {
@@ -154,9 +157,21 @@ export interface IntentVM {
 }
 
 // ── Surface 3: Evidence and conflict view ───────────────────────────────────────────
+export interface EvidenceSourceBindingVM {
+  readonly evidenceKind: string;
+  readonly subjectRef: string;
+  readonly observedAt: string;
+  readonly retrievedAt: string;
+  readonly freshness: string;
+  readonly source: string;
+  readonly provenance: string;
+  readonly summary: string;
+  readonly liquidityPhase: string | null;
+  readonly observedAbsent: boolean;
+}
 export type EvidenceRowVM =
-  | { readonly kind: "fact"; readonly label: string; readonly fact: FactVM; readonly fakeClass: FakeClass; readonly why?: WhyVM }
-  | { readonly kind: "metric"; readonly label: string; readonly metric: DisplayMetric; readonly retrievedAt: string; readonly fakeClass: FakeClass; readonly why?: WhyVM }
+  | { readonly kind: "fact"; readonly label: string; readonly fact: FactVM; readonly sourceBinding: EvidenceSourceBindingVM; readonly fakeClass: FakeClass; readonly why?: WhyVM }
+  | { readonly kind: "metric"; readonly label: string; readonly metric: DisplayMetric; readonly summary: string; readonly retrievedAt: string; readonly sourceBinding: EvidenceSourceBindingVM; readonly fakeClass: FakeClass; readonly why?: WhyVM }
   | { readonly kind: "conflict"; readonly label: string; readonly rule: string; readonly a: FactVM; readonly b: FactVM; readonly fakeClass: FakeClass; readonly blockerAffordance?: string }
   | { readonly kind: "missing"; readonly text: string; readonly fakeClass: FakeClass };
 export interface EvidenceVM {

@@ -17,6 +17,7 @@ function Row({ row }: { row: EvidenceRowVM }) {
     case "metric":
       return (
         <EvidenceMetricRow label={row.label} metric={row.metric} retrievedAt={row.retrievedAt} badgeLabel={DEV_BADGE_TEXT[row.fakeClass]}>
+          <p className="text-sm text-slate-700">{row.summary}</p>
           {row.why ? <WhyBubble reason={row.why.reason} {...(row.why.regulation ? { regulation: row.why.regulation } : {})} /> : null}
         </EvidenceMetricRow>
       );

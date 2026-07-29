@@ -46,7 +46,17 @@ export function RecommendationSurface({
         {...(d.authoritySummary ? { authoritySummary: d.authoritySummary } : {})}
         {...(d.blockers ? { blockers: d.blockers } : {})}
         {...(d.prohibitedScope ? { prohibitedScope: d.prohibitedScope } : {})}
-        {...(d.source ? { source: { ref: d.source.ref, provenance: d.source.provenance, kindLabel: SOURCE_KIND_LABELS[d.source.kind] } } : {})}
+        {...(d.source
+          ? {
+              source: {
+                id: d.source.id,
+                ref: d.source.ref,
+                reasonCode: d.source.reasonCode,
+                provenance: d.source.provenance,
+                kindLabel: SOURCE_KIND_LABELS[d.source.kind],
+              },
+            }
+          : {})}
         {...(d.doctrine ? { doctrine: d.doctrine } : {})}
         {...(d.kind === "prohibited"
           ? {

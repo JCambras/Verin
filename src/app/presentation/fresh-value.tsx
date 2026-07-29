@@ -29,9 +29,24 @@ function opacityForAge(asOf: string): number {
   return 0.7;
 }
 
-export function FreshValue({ provenance, children }: { provenance: RecordProvenance; children: ReactNode }) {
+export function FreshValue({
+  provenance,
+  children,
+  showLabel = true,
+}: {
+  provenance: RecordProvenance;
+  children: ReactNode;
+  showLabel?: boolean;
+}) {
   const label = provenanceLabel(provenance);
   const opacity = opacityForAge(provenance.asOf);
+  if (!showLabel) {
+    return (
+      <span className={opacity < 1 ? "text-slate-800" : undefined} style={{ opacity, transition: "opacity 150ms ease" }} title={label}>
+        {children}
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-baseline gap-1.5">
       <span className={opacity < 1 ? "text-slate-800" : undefined} style={{ opacity, transition: "opacity 150ms ease" }} title={label}>

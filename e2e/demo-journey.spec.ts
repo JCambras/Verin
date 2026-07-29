@@ -61,10 +61,15 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await checkAxe(page, "intent");
   await snap(page, 2, "intent");
 
-  // 3 - Evidence: sources, observed vs retrieved, an explicit gap row.
+  // 3 - Evidence: exact case sources with observed and retrieved instants.
   await page.getByRole("link", { name: "Gather evidence" }).click();
-  await expect(page.getByTestId("evidence-missing")).toBeVisible();
-  await expect(page.getByText("retrieved Jul 26, 09:14").first()).toBeVisible();
+  await expect(page.getByTestId("evidence-missing")).toHaveCount(0);
+  await expect(page.getByText("retrieved Jul 26, 09:30:05").first()).toBeVisible();
+  await expect(
+    page.getByText(
+      /bank instruction · bank-instruction:smiths-primary · house-crm · fresh/,
+    ),
+  ).toBeVisible();
   await expectDevBadge(page);
   await checkAxe(page, "evidence");
   await snap(page, 3, "evidence");
@@ -222,7 +227,18 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   const card = page.getByTestId("disposition-prohibited");
   await expect(card).toBeVisible();
   await expect(card.getByText("Prohibited", { exact: true })).toBeVisible();
-  await expect(card.getByText("HH-INSTR-SMITH-004 v3")).toBeVisible();
+  await expect(card.getByText("smiths-destination-restriction@v2")).toBeVisible();
+  await expect(
+    card.getByText("smiths-destination-restriction", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    card.getByText("destination-not-household-titled", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    card.getByText(
+      "scope:destination:bank-instruction:contractor-business",
+    ),
+  ).toBeVisible();
   await expect(card.getByText("Verin will not route this for approval")).toBeVisible();
   expect(await page.getByTestId("blocker-row").count()).toBe(0);
   // The only interactive elements are inspective: the WhyBubble and the two links.
@@ -231,12 +247,62 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
-  await page.goto("/app/demo/intent?scenario=permanent-prohibition&firm=firm-a");
-  await expect(page.getByText("$30,000.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("$75,000.00", { exact: true })).toHaveCount(0);
+  for (const firm of ["firm-a", "firm-b"]) {
+    await page.goto(
+      `/app/demo/intent?scenario=permanent-prohibition&firm=${firm}`,
+    );
+    await expect(
+      page.getByText(
+        /The Smiths need \$75,000 for their home renovation by August 15/,
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("$75,000.00", { exact: true })).toBeVisible();
+    await expect(page.getByText("$30,000.00", { exact: true })).toHaveCount(0);
+  }
+  await page.goto("/app/demo/evidence?scenario=permanent-prohibition&firm=firm-a");
+  await expect(
+    page.getByText(
+      /bank instruction · bank-instruction:contractor-business · house-crm · fresh/,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      /Standing destination restriction: distributions may ONLY go to bank instructions titled to the household/,
+    ),
+  ).toBeVisible();
+  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
+  await expect(
+    page.getByText(/Planned-withdrawal schedule last observed 2026-06-09/),
+  ).toBeVisible();
+  await expect(page.getByText(/47 days before asOf/)).toBeVisible();
+  await expect(page.getByText("retrieved Jul 26, 14:00:05").first()).toBeVisible();
   await page.goto("/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a");
-  await expect(page.getByText(/Robert & Ana Smith.*subject:smiths-robert-ana/)).toBeVisible();
-  await expect(page.getByText(/Smith Family Trust.*subject:smith-family-trust/)).toBeVisible();
+  await expect(page.getByText(/subject:smiths-robert-ana/)).toBeVisible();
+  await expect(page.getByText(/subject:smith-family-trust/)).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a");
+  await expect(
+    page
+      .getByTestId("disposition-prohibited")
+      .getByText(
+        "scope:destination:bank-instruction:contractor-business",
+      ),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+  await checkAxe(page, "decision-prohibition-mobile");
+  await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
+  await expect(page.getByText(/47 days before asOf/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+  await checkAxe(page, "evidence-exact-mobile");
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a");
   const invalidationRequestAt = await page
@@ -432,6 +498,13 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "ExecutionSucceeded",
     "StatusObserved",
   ]);
+  const lifecycleInstants = await lifecycle.evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute("data-event-instant")),
+  );
+  expect(lifecycleInstants[0]).toBe("2026-07-26T21:45:02.000Z");
+  expect(Date.parse(lifecycleInstants[0]!)).toBeLessThan(
+    Date.parse(lifecycleInstants[1]!),
+  );
   await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-b");
   await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(0);
   await expect(page.getByTestId("automatic-authority")).toBeVisible();

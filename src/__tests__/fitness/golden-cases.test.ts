@@ -588,6 +588,23 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const earlySnapshot = demoClone();
+    const gc01Timeline = earlySnapshot.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
+    )!;
+    gc01Timeline.events.find(
+      ({ kind }) => kind === "EvidenceSnapshotRecorded",
+    )!.instant = gc01Timeline.requestAt;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, earlySnapshot).some(
+        (problem) =>
+          problem.includes("GC-01-firm-a-happy-path") &&
+          problem.includes(
+            "EvidenceSnapshotRecorded must follow every included evidence retrieval",
+          ),
+      ),
+    ).toBe(true);
+
     const plantedInversion = demoClone();
     const invertedTimeline = plantedInversion.sourceTimelines.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-12-duplicate-retry",
@@ -881,7 +898,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
-  it("rejects missing nonnumeric variants and drifted decisive evidence", () => {
+  it("rejects drifted triggers, evidence, and prohibition authority", () => {
     const missingVariant = demoClone();
     missingVariant.signedCaseVariants =
       missingVariant.signedCaseVariants.filter(
@@ -906,9 +923,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       (decision) =>
         decision.sourceCaseId === "GC-08-ambiguous-household",
     )!;
-    ambiguous.decisiveEvidence[0]!.display =
+    ambiguous.visibleEvidence[0]!.summary =
       "Renovation funding instruction";
-    ambiguous.decisiveEvidence[0]!.observedAt =
+    ambiguous.visibleEvidence[0]!.observedAt =
       "2026-07-26T17:19:59.000Z";
     expect(
       validateGoldenDemoSemantics(
@@ -922,20 +939,58 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
-    const wrongProhibitionAmount = demoClone();
-    wrongProhibitionAmount.decisions.find(
+    const wrongCanonicalRequest = demoClone();
+    wrongCanonicalRequest.decisions.find(
       (decision) =>
         decision.sourceCaseId === "GC-06-household-restriction",
-    )!.requestAmountMinor = 7_500_000;
+    )!.requestAmountMinor = 3_000_000;
     expect(
       validateGoldenDemoSemantics(
         clone(),
         realRefs,
-        wrongProhibitionAmount,
+        wrongCanonicalRequest,
+      ).some(
+        (problem) =>
+          problem.includes("permanent-prohibition/firm-a") &&
+          problem.includes("canonical request drift"),
+      ),
+    ).toBe(true);
+
+    const wrongSignedTrigger = demoClone();
+    wrongSignedTrigger.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-06-household-restriction",
+    )!.signedTrigger!.requestAmountMinor = 7_500_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongSignedTrigger,
+      ).some(
+        (problem) =>
+          problem.includes("permanent-prohibition/firm-a") &&
+          problem.includes("signed trigger projection"),
+      ),
+    ).toBe(true);
+
+    const wrongProhibition = demoClone();
+    const prohibition = wrongProhibition.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-06-household-restriction",
+    )!.prohibition!;
+    prohibition.id = "generic-source";
+    prohibition.versionId = "HH-INSTR-SMITH-004 v3";
+    prohibition.scope = "scope:generic";
+    prohibition.reasonCode = "generic-prohibition";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongProhibition,
       ).some(
         (problem) =>
           problem.includes("GC-06-household-restriction") &&
-          problem.includes("request amount drift"),
+          problem.includes("visible prohibition projection"),
       ),
     ).toBe(true);
   });

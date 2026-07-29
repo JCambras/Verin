@@ -93,11 +93,6 @@ export const BANK_INSTRUCTION = {
   changedOn: OBSERVED_RECENT,
 } as const;
 
-// The household-specific destination restriction (drives the permanent prohibition).
-export const DESTINATION_RESTRICTION = {
-  text: "No distributions to third-party or business accounts not owned by a household member",
-  ref: "HH-INSTR-SMITH-004 v3",
-} as const;
 export const THIRD_PARTY_DESTINATION = "Hartwell Construction LLC operating account (third party)";
 
 // ── The two firms (contract §2; scenarios.yaml firms) ───────────────────────────────
@@ -257,13 +252,8 @@ export function requestFor(
 } {
   const sourceCase = sourceCaseFor(scenario, firmId);
   if (!sourceCase) return { ...CANONICAL_REQUEST, requestedAt: null };
-  const quotedRequest = sourceCase.trigger.description.match(
-    /Advisor enters: '([^']+)'/,
-  )?.[1];
   return {
     ...CANONICAL_REQUEST,
-    text: quotedRequest ?? CANONICAL_REQUEST.text,
-    amountMinor: sourceCase.money.requestAmountMinor,
     requestedAt: sourceCase.trigger.requestAt,
   };
 }
@@ -294,9 +284,14 @@ export function liquidityAuthorityFor(scenario: ScenarioData, firmId: string): L
       reason: `No captain-signed numeric liquidity case covers ${scenario.id} for ${firmId}`,
     };
   }
-  const revalidationEvidence = sourceCase.evidence.find(
-    (entry) => entry.liquidityPhase === "pre-execution-revalidation",
-  );
+  const revalidationEvidence = sourceCase.evidence
+    .filter(
+      (entry) => entry.liquidityPhase === "pre-execution-revalidation",
+    )
+    .sort((left, right) =>
+      left.retrievedAt.localeCompare(right.retrievedAt),
+    )
+    .at(-1);
   const relatedDecisions = scenario.relatedSourceCasesByFirm?.[firmId]
     ?.map((caseId): SignedRelatedDecisionAuthority | null => {
       const related = SIGNED_CASE_BY_ID[caseId];

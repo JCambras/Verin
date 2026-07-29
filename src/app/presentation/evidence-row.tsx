@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from "react";
 import type { DisplayMetric } from "@contracts/metric";
-import type { RecordProvenance } from "@contracts/provenance";
+import { provenanceLabel, type RecordProvenance } from "@contracts/provenance";
 import { FreshValue } from "./fresh-value";
 import { Metric } from "./metric";
 import { StatusBadge } from "./ui";
@@ -38,8 +38,11 @@ export function EvidenceRow({
   return (
     <div className="flex flex-col gap-1 py-2">
       {label ? <p className="text-xs text-slate-600">{label}</p> : null}
-      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-slate-800">
-        <FreshValue provenance={fact.provenance}>{fact.display}</FreshValue>
+      <p className="text-sm text-slate-800">
+        <FreshValue provenance={fact.provenance} showLabel={false}>{fact.display}</FreshValue>
+      </p>
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-slate-600">
+        <span>{provenanceLabel(fact.provenance)}</span>
         <Retrieved at={fact.retrievedAt} />
         {badgeLabel ? <DevProvenanceBadge label={badgeLabel} /> : null}
       </p>

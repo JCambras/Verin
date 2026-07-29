@@ -17,6 +17,7 @@ const add = (instant: string, milliseconds: number): string =>
 
 export interface DemoTimeline {
   readonly requestAt: string;
+  readonly initialEvidenceSnapshotAt: string;
   readonly decisionAt: string;
   readonly specialistReviewedAt: string;
   readonly approvalOneAt: string;
@@ -41,10 +42,31 @@ export interface DemoTimeline {
 
 export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimeline {
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const sourceCase = sourceCaseFor(scenario, firm.id);
   const requestAt =
-    sourceCaseFor(scenario, firm.id)?.trigger.requestAt ??
+    sourceCase?.trigger.requestAt ??
     (authority.kind === "signed" ? authority.requestAt : DEFAULT_REQUEST_AT);
-  const decisionAt = add(requestAt, 10 * SECOND);
+  const latestInitialEvidenceAt = sourceCase?.evidence
+    .filter(
+      (entry) => entry.liquidityPhase !== "pre-execution-revalidation",
+    )
+    .map((entry) => entry.retrievedAt)
+    .sort()
+    .at(-1);
+  const initialEvidenceSnapshotAt = new Date(
+    Math.max(
+      new Date(requestAt).getTime(),
+      latestInitialEvidenceAt
+        ? new Date(latestInitialEvidenceAt).getTime()
+        : Number.NEGATIVE_INFINITY,
+    ),
+  ).toISOString();
+  const decisionAt = new Date(
+    Math.max(
+      new Date(add(requestAt, 10 * SECOND)).getTime(),
+      new Date(initialEvidenceSnapshotAt).getTime() + SECOND,
+    ),
+  ).toISOString();
   const specialist =
     scenario.spec.bankChanged && firm.bankChangeHandling === "specialist-review";
   const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
@@ -94,6 +116,7 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
       : add(executionAt, 20 * SECOND);
   return {
     requestAt,
+    initialEvidenceSnapshotAt,
     decisionAt,
     specialistReviewedAt: add(requestAt, 15 * MINUTE),
     approvalOneAt,

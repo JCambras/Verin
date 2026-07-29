@@ -3512,3 +3512,31 @@ truth cases and allowed generic authority, identifiers, and stale polling expect
 case-specific signed facts.
 **Revert path:** the fixture parser, scenario-to-case map, view-model fields, and semantic companions
 are confined to the demo fake-service and golden-case fence.
+
+### D-071 · 2026-07-28 · captain-decision · Canonical journey and signed case facts remain separate
+
+The interactive comparison always uses the canonical Smiths $75,000 home-renovation request under
+both firms. A golden case's trigger remains a separate typed fact selected by exact case identity.
+GC-06 therefore preserves its signed $30,000 trigger, requester role, request reference, masked
+summary, and instant without replacing any interactive request field. Trigger amounts, subjects,
+and authority are read only from structured fixture fields, never recovered from prose.
+
+Every visible Evidence row projects the selected case's structured kind, subject, observed instant,
+retrieved instant, freshness, source, provenance, meaning, liquidity phase, and recorded absence.
+The GC-06 prohibition projects
+`smiths-destination-restriction@v2`, source identity
+`smiths-destination-restriction`, scope
+`scope:destination:bank-instruction:contractor-business`, and reason code
+`destination-not-household-titled` into the Decision and printable Record. Missing case authority
+fails closed instead of borrowing a global placeholder.
+
+`EvidenceSnapshotRecorded` is timestamped at or after the latest retrieval among every included
+initial evidence item and before its dependent `DecisionRecorded`. The same rule governs GC-15's
+first pass; its pre-execution evidence retains the separately signed revalidation instant.
+
+**Why:** interactive intent, signed test triggers, visible evidence, and prohibition authority are
+different truth objects. Conflating them can make the same journey change across firms or make an
+examiner record cite facts and authority from another case.
+**Revert path:** this captain ruling is product truth and is not reversible without a new captain
+decision. The typed projection, semantic fence, and browser companions are isolated to the demo
+fake-service.

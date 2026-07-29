@@ -20,6 +20,37 @@ export interface RenderedMoney {
   rendered: string;
 }
 
+export interface SignedTriggerProjection {
+  description: string;
+  requesterRole: string;
+  requestRef: string;
+  maskedRequestSummary: string;
+  requestAt: string;
+  requestAmountMinor: number;
+}
+
+export interface VisibleEvidenceProjection {
+  evidenceKind: string;
+  subjectRef: string;
+  observedAt: string;
+  retrievedAt: string;
+  freshness: string;
+  source: string;
+  provenance: string;
+  summary: string;
+  liquidityPhase: string | null;
+  observedAbsent: boolean;
+}
+
+export interface ProhibitionProjection {
+  kind: string;
+  id: string;
+  versionId: string;
+  scope: string;
+  reasonCode: string;
+  explanation: string;
+}
+
 /** One decision the demo actually puts on screen, with the liquidity arithmetic
  * standing behind its "Available after reserve" figure. */
 export interface DisplayedDecision {
@@ -30,10 +61,9 @@ export interface DisplayedDecision {
   sourceCaseId: string | null;
   requestAt: string | null;
   requestAmountMinor: number;
-  decisiveEvidence: Array<{
-    display: string;
-    observedAt: string;
-  }>;
+  signedTrigger: SignedTriggerProjection | null;
+  visibleEvidence: VisibleEvidenceProjection[];
+  prohibition: ProhibitionProjection | null;
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -327,7 +357,11 @@ function expectedSignedCaseVariant(
     disposition: data.expectedDisposition,
     trigger: {
       description: trigger.description,
+      requesterRole: trigger.requesterRole,
+      requestRef: trigger.requestRef,
+      maskedRequestSummary: trigger.maskedRequestSummary,
       requestAt: trigger.asOf,
+      requestAmountMinor: minorFromMajor(signed.requestAmountUsd),
     },
     money: {
       currency: signed.currency,
@@ -364,6 +398,14 @@ function expectedSignedCaseVariant(
       liquidityPhase: evidence.liquidityPhase ?? null,
       observedAbsent: evidence.observedAbsent ?? false,
     })),
+    prohibition: isObj(data.prohibition)
+      ? {
+          source: data.prohibition.source,
+          scope: data.prohibition.scope,
+          reasonCode: data.prohibition.reasonCode,
+          explanation: data.prohibition.explanation,
+        }
+      : null,
     authority: {
       mode: authority.mode,
       stages: authority.stages,
@@ -533,11 +575,28 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
   const boundSourceIds = new Set<string>();
   for (const d of demo.decisions) {
     const at = `${d.scenarioId}/${d.firmId}/${d.decisionRole}`;
+    if (
+      d.decisionRole === "primary" &&
+      d.requestAmountMinor !== demo.requestAmountMinor
+    ) {
+      problems.push(
+        `${at}: canonical request drift, demo journey=${d.requestAmountMinor}, canonical=${demo.requestAmountMinor}`,
+      );
+    }
     const candidates =
       candidatesByKey.get(
         sourceKey(d.scenarioId, d.firmId, d.disposition),
       ) ?? [];
     if (d.sourceCaseId === null) {
+      if (d.signedTrigger !== null) {
+        problems.push(`${at}: projects a signed trigger without an exact source case`);
+      }
+      if (d.visibleEvidence.length > 0) {
+        problems.push(`${at}: projects visible evidence without an exact source case`);
+      }
+      if (d.prohibition !== null) {
+        problems.push(`${at}: projects prohibition authority without an exact source case`);
+      }
       if (candidates.length > 0) {
         problems.push(
           `${at}: claims missing authority although exact signed candidate(s) exist: ${candidates.map(({ id }) => id).join(", ")}`,
@@ -577,12 +636,23 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     }
     const trigger = isObj(source?.trigger) ? source.trigger : null;
     const sourceRequestMinor = minorFromMajor(signed.requestAmountUsd);
+    const expectedTrigger =
+      trigger && sourceRequestMinor !== null
+        ? {
+            description: trigger.description,
+            requesterRole: trigger.requesterRole,
+            requestRef: trigger.requestRef,
+            maskedRequestSummary: trigger.maskedRequestSummary,
+            requestAt: trigger.asOf,
+            requestAmountMinor: sourceRequestMinor,
+          }
+        : null;
     if (
-      sourceRequestMinor === null ||
-      d.requestAmountMinor !== sourceRequestMinor
+      expectedTrigger === null ||
+      JSON.stringify(d.signedTrigger) !== JSON.stringify(expectedTrigger)
     ) {
       problems.push(
-        `${at}: request amount drift, ${d.sourceCaseId}=${sourceRequestMinor}, demo=${d.requestAmountMinor}`,
+        `${at}: signed trigger projection drifts from ${d.sourceCaseId}`,
       );
     }
     if (
@@ -598,12 +668,73 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       !candidates.some(
         ({ id, requestAmountMinor }) =>
           id === d.sourceCaseId &&
-          requestAmountMinor === d.requestAmountMinor,
+          requestAmountMinor === d.signedTrigger?.requestAmountMinor,
       )
     ) {
       problems.push(
         `${at}: source case "${d.sourceCaseId}" is not a signed exact match for branch, firm, disposition, request, currency, cadence, and reserve policy`,
       );
+    }
+    if (d.decisionRole === "primary") {
+      const expectedEvidence = Array.isArray(source?.householdEvidence)
+        ? source.householdEvidence
+            .filter(
+              (entry) =>
+                isObj(entry) &&
+                entry.liquidityPhase !== "pre-execution-revalidation",
+            )
+            .filter(isObj)
+            .map((entry) => ({
+              evidenceKind: entry.evidenceKind,
+              subjectRef: entry.subjectRef,
+              observedAt: entry.observedAt,
+              retrievedAt: entry.retrievedAt,
+              freshness: entry.freshness,
+              source: entry.source,
+              provenance: entry.provenance,
+              summary: entry.summary,
+              liquidityPhase: entry.liquidityPhase ?? null,
+              observedAbsent: entry.observedAbsent ?? false,
+            }))
+        : [];
+      if (JSON.stringify(d.visibleEvidence) !== JSON.stringify(expectedEvidence)) {
+        problems.push(
+          `${at}: visible evidence projection drifts from exact signed case ${d.sourceCaseId}`,
+        );
+      }
+      const rawProhibition = isObj(source?.prohibition)
+        ? source.prohibition
+        : null;
+      const prohibitionSource =
+        rawProhibition && isObj(rawProhibition.source)
+          ? rawProhibition.source
+          : null;
+      const sourceKindByType: Record<string, string> = {
+        household_instruction: "household-instruction",
+        regulatory: "regulatory",
+        firm_policy: "firm-policy",
+      };
+      const sourceKind =
+        sourceKindByType[String(prohibitionSource?.sourceType)];
+      const expectedProhibition =
+        rawProhibition && prohibitionSource && sourceKind
+          ? {
+              kind: sourceKind,
+              id: prohibitionSource.sourceId,
+              versionId: prohibitionSource.versionId,
+              scope: rawProhibition.scope,
+              reasonCode: rawProhibition.reasonCode,
+              explanation: rawProhibition.explanation,
+            }
+          : null;
+      if (
+        JSON.stringify(d.prohibition) !==
+        JSON.stringify(expectedProhibition)
+      ) {
+        problems.push(
+          `${at}: visible prohibition projection drifts from exact signed case ${d.sourceCaseId}`,
+        );
+      }
     }
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
@@ -765,6 +896,37 @@ function validateSourceTimelines(
     ) {
       problems.push(
         `${sourceId}: visible timeline belongs to ${timeline.scenarioId}/${timeline.firmId}, not ${String(source?.scenarioRef)}/${String(source?.firm)}`,
+      );
+    }
+    const latestInitialRetrieval = (
+      Array.isArray(source?.householdEvidence)
+        ? source.householdEvidence
+        : []
+    )
+      .flatMap((row) =>
+        isObj(row) &&
+        row.liquidityPhase !== "pre-execution-revalidation" &&
+        isNonEmptyString(row.retrievedAt)
+          ? [row.retrievedAt]
+          : [],
+      )
+      .sort()
+      .at(-1);
+    const initialSnapshot = timeline.events.find(
+      ({ kind }) => kind === "EvidenceSnapshotRecorded",
+    );
+    const initialDecision = timeline.events.find(
+      ({ kind }) => kind === "DecisionRecorded",
+    );
+    if (
+      !latestInitialRetrieval ||
+      !initialSnapshot ||
+      !initialDecision ||
+      Date.parse(initialSnapshot.instant) < Date.parse(latestInitialRetrieval) ||
+      Date.parse(initialSnapshot.instant) >= Date.parse(initialDecision.instant)
+    ) {
+      problems.push(
+        `${sourceId}: initial EvidenceSnapshotRecorded must follow every included evidence retrieval and precede the dependent DecisionRecorded`,
       );
     }
     const revalidationInstants = new Set(
@@ -1231,24 +1393,18 @@ export function validateGoldenDemoSemantics(
   const ambiguous = demo.decisions.find(
     (decision) => decision.sourceCaseId === "GC-08-ambiguous-household",
   );
+  const directoryEvidence = ambiguous?.visibleEvidence.find(
+    (evidence) => evidence.evidenceKind === "household-directory",
+  );
   if (
     ambiguous?.requestAt !== "2026-07-26T17:20:00.000Z" ||
-    ambiguous.decisiveEvidence.length !== 2 ||
-    !ambiguous.decisiveEvidence.some(
-      (evidence) =>
-        evidence.display.includes("Robert & Ana Smith") &&
-        evidence.display.includes("subject:smiths-robert-ana") &&
-        evidence.observedAt === "2026-07-26T17:20:00.000Z",
-    ) ||
-    !ambiguous.decisiveEvidence.some(
-      (evidence) =>
-        evidence.display.includes("Smith Family Trust") &&
-        evidence.display.includes("subject:smith-family-trust") &&
-        evidence.observedAt === "2026-07-26T17:20:00.000Z",
-    )
+    directoryEvidence?.observedAt !== "2026-07-26T17:20:00.000Z" ||
+    directoryEvidence.retrievedAt !== "2026-07-26T17:20:02.000Z" ||
+    !directoryEvidence.summary.includes("subject:smiths-robert-ana") ||
+    !directoryEvidence.summary.includes("subject:smith-family-trust")
   ) {
     problems.push(
-      "GC-08 must render both signed household candidates at the signed 17:20Z evidence instant",
+      "GC-08 must render both signed household candidates at the signed 17:20Z evidence and retrieval instants",
     );
   }
 
