@@ -176,6 +176,17 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
     }
   }
 
+  const activeIds = invs
+    .filter((inv) => inv.status === "active")
+    .map((inv) => inv.id)
+    .sort((left, right) => left - right);
+  const ratchetedIds = [...ACTIVE_RATCHET].sort((left, right) => left - right);
+  if (JSON.stringify(activeIds) !== JSON.stringify(ratchetedIds)) {
+    problems.push(
+      `active invariant ids must exactly match the shipped mechanism ratchet; expected ${JSON.stringify(ratchetedIds)}, received ${JSON.stringify(activeIds)}`,
+    );
+  }
+
   for (const id of ACTIVE_RATCHET) {
     const inv = invs.find((i) => i.id === id);
     if (!inv) continue; // already reported as missing above
@@ -290,12 +301,7 @@ describe("v3-invariant registry fence", () => {
         ]),
       );
       expect(validateRegistry(wrongCommand, deps).some((p) => p.includes("does not run 'pnpm lint'"))).toBe(true);
-      const honest = full(
-        new Map<number, Partial<Invariant>>([
-          ...ratchetActive,
-          [10, { status: "active", mechanisms: [{ type: "fitness", ref: "x.test.ts" }, { type: "ci-gate", ref: "audit-chain-verify", command: "pnpm audit:chain" }] }],
-        ]),
-      );
+      const honest = full(new Map(ratchetActive));
       expect(validateRegistry(honest, deps)).toEqual([]);
     });
     it("flags a ratcheted invariant regressing to not-yet-active, and a missing invariant", () => {
@@ -320,6 +326,25 @@ describe("v3-invariant registry fence", () => {
       expect(
         validateRegistry(repointed, deps).some((p) =>
           p.includes("shipped mechanism set drifted"),
+        ),
+      ).toBe(true);
+    });
+    it("flags a newly active invariant without a shipped mechanism ratchet", () => {
+      const overrides = new Map(ratchetActive);
+      overrides.set(4, {
+        status: "active",
+        mechanisms: [
+          {
+            type: "fitness",
+            ref: "src/__tests__/fitness/unrelated-passing.test.ts",
+          },
+        ],
+      });
+      expect(
+        validateRegistry(full(overrides), deps).some((p) =>
+          p.includes(
+            "active invariant ids must exactly match the shipped mechanism ratchet",
+          ),
         ),
       ).toBe(true);
     });

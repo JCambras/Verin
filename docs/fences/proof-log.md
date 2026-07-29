@@ -10397,6 +10397,82 @@ type, reference, exact command, and effective status.
 
 **Date:** 2026-07-29.
 
+### PF-024 (continued) · exact active-invariant ratchet membership
+
+**Invariant (v3 §17, ADR-0030):** every active invariant has a reviewed, pinned mechanism tuple set, and
+the set of active invariant IDs exactly equals the mechanism-ratchet keys.
+
+**Injection 5 - activate an unratcheted invariant.** Changed invariant 1 from `not-yet-active` to
+`active` and pointed it at the existing passing decision-core illegal-states fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+active invariant ids must exactly match the shipped mechanism ratchet; expected [2,5,7,8,9], received [1,2,5,7,8,9]
+```
+
+**Companion added:** the pure registry validator activates invariant 4 with an existing fitness file
+and asserts that exact active-ratchet membership fails.
+
+**Revert:** invariant 1 was restored to its recorded activation state and empty mechanism set.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · TestInfo and wrapped Playwright neutralizers
+
+**Invariant (charter #9):** required Axe scans cannot be skipped, marked fixme, or converted to expected
+failures through TestInfo or through parenthesized and TypeScript-asserted Playwright symbols.
+
+**Injection 14 - neutralize the public scan through TestInfo.** Added a `testInfo` parameter to the
+required public Axe test and called `testInfo.skip(true, "disabled")` before its route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 15 - wrap the imported neutralizer.** Added
+`(test.skip as typeof test.skip)(true, "disabled")` at module scope in the public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications cover TestInfo skip, fixme, and fail calls in required
+tests and directly registered hooks, a TestInfo member alias, an `as` assertion wrapper, and an angle
+bracket type assertion wrapper.
+
+**Revert:** both real neutralizers were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · exact ratified Gate 0 surface identities
+
+**Invariant (Gate 0, ADR-0030):** the mutable demo contract and typed manifest preserve the exact twelve
+surface identities ratified in the SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract.
+
+**Injection 10 - coordinate a mutable surface rename.** Renamed surface 11 from
+`Policy draft and simulation impact` to `Policy workshop` in both `docs/demo-contract.md` and the typed
+surface manifest. Before this correction the focused fence passed all three tests.
+
+**Observed failure after enforcement (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: docs/v3/verin-demo-contract-v1.md:1 mutable demo contract must preserve the exact ratified §4 surface identities
+docs/v3/verin-demo-contract-v1.md:1 typed demo surface manifest must preserve the exact ratified §4 surface identities
+```
+
+**Companion added:** the pure completeness validator applies the same coordinated rename to its mutable
+contract and manifest inputs and requires both ratified-identity diagnostics.
+
+**Revert:** both surface names were restored immediately.
+
+**Date:** 2026-07-29.
+
 ### PF-031 (continued) · computed Playwright configuration keys
 
 **Invariant (charter #9):** Playwright selection proof sees direct and computed configuration property

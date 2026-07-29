@@ -35,7 +35,8 @@ commented-out block-scalar line, or a job/step carrying `continue-on-error` or a
 Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
 jobs using `strategy.matrix` also prove nothing. Declared `activationPrompts` are validated for every
 status, the prompt-5 proof points for invariants 7, 8, and 9 are pinned exactly, and every shipped active
-invariant's complete mechanism tuple set is ratcheted.
+invariant's complete mechanism tuple set is ratcheted. The active invariant ID set must exactly match
+the mechanism-ratchet keys.
 That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
 `ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
 empty, unsupported-shell, and fully skipped jobs prove nothing. The charter ratchet pins every complete
@@ -100,8 +101,9 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/app/demo/surfaces/` fenced to import only view models + presentation (both rules:
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
-the typed manifest, each route case's imported component, and ordered screenshots that verify the
-corresponding URL and loaded marker. CI then runs `scripts/demo-screen-artifacts.ts` to require every
+the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
+route case's imported component, and ordered screenshots that verify the corresponding URL and loaded
+marker. CI then runs `scripts/demo-screen-artifacts.ts` to require every
 canonical artifact to exist and be non-empty, and upload-artifact fails on a missing directory.
 Landing a real path = replace the corresponding builder and remove
 its `DevProvenanceBadge` in the SAME PR (design §11.3).
@@ -251,7 +253,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
   contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins the
   exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
-  assertion, rejects scope skips and expected failures through direct or aliased Playwright symbols,
+  assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
+  Playwright symbols, rejects TestInfo neutralizers in required tests and their registered hooks,
   proves Playwright forbids focused exclusion and selects the required specs, and binds every public,
   authenticated, and demo route to its loaded-state scan. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.

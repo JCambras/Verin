@@ -26,12 +26,27 @@ import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 
 const CONTRACT_PATH = "docs/demo-contract.md";
+const RATIFIED_CONTRACT_PATH = "docs/v3/verin-demo-contract-v1.md";
 const ROUTE_PATH = "src/app/app/demo/[station]/page.tsx";
 const E2E_PATH = "e2e/demo-journey.spec.ts";
 const CI_PATH = ".github/workflows/ci.yml";
 const ARTIFACT_COMMAND =
   "pnpm exec tsx scripts/demo-screen-artifacts.ts";
 const JOURNEY_TEST = "the seven-minute journey is clickable end-to-end on labeled fakes";
+const RATIFIED_SURFACE_RATCHET = [
+  "Household workspace",
+  "Contextual intent panel",
+  "Evidence and conflict view",
+  "Recommendation and alternatives",
+  "Policy and precedence trace",
+  "Approval stages and actor status",
+  "Pre-execution safety check",
+  "Execution timeline",
+  "Verification state",
+  "Firm A / Firm B comparison",
+  "Policy draft and simulation impact",
+  "Printable examiner-grade decision artifact",
+] as const;
 const parsedSourceFiles = new Map<string, SourceFile>();
 
 function parsedSourceFile(path: string, source: string): SourceFile {
@@ -469,6 +484,22 @@ export function surfaceCompletenessProblems(
       `${CONTRACT_PATH}:1 typed demo surface manifest does not exactly match the ordered §4 surface contract`,
     );
   }
+  if (
+    JSON.stringify(contractNames) !==
+    JSON.stringify(RATIFIED_SURFACE_RATCHET)
+  ) {
+    problems.push(
+      `${RATIFIED_CONTRACT_PATH}:1 mutable demo contract must preserve the exact ratified §4 surface identities`,
+    );
+  }
+  if (
+    JSON.stringify(surfaceNames) !==
+    JSON.stringify(RATIFIED_SURFACE_RATCHET)
+  ) {
+    problems.push(
+      `${RATIFIED_CONTRACT_PATH}:1 typed demo surface manifest must preserve the exact ratified §4 surface identities`,
+    );
+  }
 
   const expectedNumbers = surfaces.map((_, index) => index + 1);
   if (
@@ -624,6 +655,28 @@ describe("demo-surface-completeness fence", () => {
           exists,
         ),
       ).not.toEqual([]);
+
+      const renamedContract = contract.replace(
+        "11. Policy draft and simulation impact",
+        "11. Policy workshop",
+      );
+      const renamedSurfaces = DEMO_SURFACES.map((surface) =>
+        surface.number === 11
+          ? { ...surface, contractName: "Policy workshop" }
+          : surface,
+      );
+      expect(
+        surfaceCompletenessProblems(
+          renamedContract,
+          renamedSurfaces,
+          route,
+          e2e,
+          exists,
+        ),
+      ).toEqual([
+        `${RATIFIED_CONTRACT_PATH}:1 mutable demo contract must preserve the exact ratified §4 surface identities`,
+        `${RATIFIED_CONTRACT_PATH}:1 typed demo surface manifest must preserve the exact ratified §4 surface identities`,
+      ]);
 
       const missingSurface = DEMO_SURFACES.slice(0, -1);
       expect(

@@ -6354,6 +6354,15 @@ required loop; and **(4)** the launcher capture proves its canonical URL and loa
 awaited `page.screenshot` to `00-launcher.png`, with the same non-empty assertion as every station
 capture. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
 
+The captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review (2026-07-29)
+amended ADR-0030 in place a fifteenth time: **(1)** active invariant IDs must exactly equal the shipped
+mechanism-ratchet keys, so a newly active invariant cannot point at an unreviewed passing fence;
+**(2)** required Axe tests and directly registered hooks reject `testInfo.skip`, `testInfo.fixme`, and
+`testInfo.fail`, including member aliases; **(3)** Playwright symbol resolution normalizes parentheses
+and TypeScript assertion wrappers before recognizing neutralizers; and **(4)** Gate 0 ratchets the
+mutable contract and typed manifest to the exact twelve surface identities from the SHA-pinned ratified
+demo contract. PF-024, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

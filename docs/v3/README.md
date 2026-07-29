@@ -94,7 +94,8 @@ Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evi
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
 The v3 registry fence separately pins the complete mechanism tuple set for every shipped active invariant,
-so an active guarantee cannot be redirected to an unrelated passing fence.
+and requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
+be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
 Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
 `domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
 an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
@@ -107,7 +108,8 @@ the fence pin the complete 30-invariant gate-assignment map, the prompt-5 proof 
 requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
-typed manifest is equal to the normative demo contract, every component and dynamic route exists, the
+typed manifest is equal to the normative demo contract, both are pinned to the exact twelve surface
+identities in the SHA-pinned ratified demo contract, every component and dynamic route exists, the
 canonical route binds each station to its manifest component, the dynamic page passes its resolved station
 to that renderer and its loaded marker, and the journey directly awaits all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
@@ -124,8 +126,9 @@ unresolved keys, and resolves direct, computed, destructured, aliased, and
 namespace-imported neutralization calls through imported Playwright symbols. Reassigned route aliases
 and route mutations, including array-mutator calls, are rejected before a required scan; the exported
 route collections and entries are frozen. Neutralizer aliases fail closed across every preceding
-assignment source, including a later unreachable benign overwrite. Conditional callback exits before a
-required scan are rejected as non-evidence.
+assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
+wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
+and fail annotations. Conditional callback exits before a required scan are rejected as non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

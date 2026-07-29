@@ -11,6 +11,7 @@ import {
   type FunctionDeclaration,
   type FunctionExpression,
   type SourceFile,
+  type Symbol as MorphSymbol,
 } from "ts-morph";
 import {
   AUTHENTICATED_AXE_ROUTES,
@@ -68,14 +69,29 @@ function routeCollectionImmutabilityProblems(
 type Callback = ArrowFunction | FunctionExpression;
 type FunctionNode = Callback | FunctionDeclaration;
 
+function unwrapExpression(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
 function importModuleOf(node: Node): string | undefined {
   return node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)?.getModuleSpecifierValue();
 }
 
 function isDirectNamedImportIdentifier(node: Node, moduleName: string, imported: string): boolean {
-  if (!Node.isIdentifier(node)) return false;
+  const normalized = unwrapExpression(node);
+  if (!Node.isIdentifier(normalized)) return false;
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some(
@@ -88,15 +104,16 @@ function isDirectNamedImportIdentifier(node: Node, moduleName: string, imported:
 }
 
 function isDirectNamespaceImportIdentifier(node: Node, moduleName: string): boolean {
-  if (!Node.isIdentifier(node)) return false;
+  const normalized = unwrapExpression(node);
+  if (!Node.isIdentifier(normalized)) return false;
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some(
         (declaration) =>
           Node.isNamespaceImport(declaration) &&
-          declaration.getName() === node.getText() &&
+          declaration.getName() === normalized.getText() &&
           importModuleOf(declaration) === moduleName,
       ) ?? false
   );
@@ -142,11 +159,12 @@ function isNamespaceImportIdentifier(
   moduleName: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
-  if (isDirectNamespaceImportIdentifier(node, moduleName)) return true;
-  if (!Node.isIdentifier(node)) return false;
-  const assigned = latestPrecedingAssignment(node);
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isDirectNamespaceImportIdentifier(normalized, moduleName)) return true;
+  if (!Node.isIdentifier(normalized)) return false;
+  const assigned = latestPrecedingAssignment(normalized);
   if (
     assigned !== undefined &&
     isNamespaceImportIdentifier(assigned, moduleName, new Set(seen))
@@ -154,7 +172,7 @@ function isNamespaceImportIdentifier(
     return true;
   }
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some((declaration) => {
@@ -174,18 +192,19 @@ function isNamedImportIdentifier(
   imported: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
-  if (isDirectNamedImportIdentifier(node, moduleName, imported)) return true;
-  const access = memberAccess(node);
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isDirectNamedImportIdentifier(normalized, moduleName, imported)) return true;
+  const access = memberAccess(normalized);
   if (
     access?.name === imported &&
     isNamespaceImportIdentifier(access.receiver, moduleName)
   ) {
     return true;
   }
-  if (!Node.isIdentifier(node)) return false;
-  const assigned = latestPrecedingAssignment(node);
+  if (!Node.isIdentifier(normalized)) return false;
+  const assigned = latestPrecedingAssignment(normalized);
   if (
     assigned !== undefined &&
     isNamedImportIdentifier(
@@ -198,7 +217,7 @@ function isNamedImportIdentifier(
     return true;
   }
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some((declaration) => {
@@ -238,16 +257,18 @@ function isNamedImportIdentifier(
 }
 
 function isDefaultImportIdentifier(node: Node, moduleName: string): boolean {
-  if (!Node.isIdentifier(node)) return false;
+  const normalized = unwrapExpression(node);
+  if (!Node.isIdentifier(normalized)) return false;
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some((declaration) => {
         const importDeclaration = declaration.getFirstAncestorByKind(SyntaxKind.ImportDeclaration);
         return (
           importDeclaration?.getModuleSpecifierValue() === moduleName &&
-          importDeclaration.getDefaultImport()?.getText() === node.getText()
+          importDeclaration.getDefaultImport()?.getText() ===
+            normalized.getText()
         );
       }) ?? false
   );
@@ -275,13 +296,20 @@ function isNamedImportMemberCall(
 function memberAccess(
   node: Node,
 ): { receiver: Node; name: string } | undefined {
-  if (Node.isPropertyAccessExpression(node)) {
-    return { receiver: node.getExpression(), name: node.getName() };
+  const normalized = unwrapExpression(node);
+  if (Node.isPropertyAccessExpression(normalized)) {
+    return {
+      receiver: normalized.getExpression(),
+      name: normalized.getName(),
+    };
   }
-  if (Node.isElementAccessExpression(node)) {
-    const argument = node.getArgumentExpression();
+  if (Node.isElementAccessExpression(normalized)) {
+    const argument = normalized.getArgumentExpression();
     if (Node.isStringLiteral(argument)) {
-      return { receiver: node.getExpression(), name: argument.getLiteralText() };
+      return {
+        receiver: normalized.getExpression(),
+        name: argument.getLiteralText(),
+      };
     }
   }
   return undefined;
@@ -329,17 +357,18 @@ function isNamedImportMemberExpression(
   member: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
-  const access = memberAccess(node);
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  const access = memberAccess(normalized);
   if (
     access?.name === member &&
     isNamedImportIdentifier(access.receiver, moduleName, imported)
   ) {
     return true;
   }
-  if (!Node.isIdentifier(node)) return false;
-  const assigned = latestPrecedingAssignment(node);
+  if (!Node.isIdentifier(normalized)) return false;
+  const assigned = latestPrecedingAssignment(normalized);
   if (
     assigned !== undefined &&
     isNamedImportMemberExpression(
@@ -353,7 +382,7 @@ function isNamedImportMemberExpression(
     return true;
   }
   return (
-    node
+    normalized
       .getSymbol()
       ?.getDeclarations()
       .some((declaration) => {
@@ -397,11 +426,12 @@ function couldBeNamespaceImportIdentifier(
   moduleName: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
-  if (isNamespaceImportIdentifier(node, moduleName)) return true;
-  if (!Node.isIdentifier(node)) return false;
-  return precedingAssignmentValues(node).some((assigned) =>
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isNamespaceImportIdentifier(normalized, moduleName)) return true;
+  if (!Node.isIdentifier(normalized)) return false;
+  return precedingAssignmentValues(normalized).some((assigned) =>
     couldBeNamespaceImportIdentifier(
       assigned,
       moduleName,
@@ -416,18 +446,19 @@ function couldBeNamedImportIdentifier(
   imported: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
-  if (isNamedImportIdentifier(node, moduleName, imported)) return true;
-  const access = memberAccess(node);
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (isNamedImportIdentifier(normalized, moduleName, imported)) return true;
+  const access = memberAccess(normalized);
   if (
     access?.name === imported &&
     couldBeNamespaceImportIdentifier(access.receiver, moduleName)
   ) {
     return true;
   }
-  if (!Node.isIdentifier(node)) return false;
-  return precedingAssignmentValues(node).some((assigned) =>
+  if (!Node.isIdentifier(normalized)) return false;
+  return precedingAssignmentValues(normalized).some((assigned) =>
     couldBeNamedImportIdentifier(
       assigned,
       moduleName,
@@ -444,11 +475,12 @@ function couldBeNamedImportMemberExpression(
   member: string,
   seen = new Set<Node>(),
 ): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
   if (
     isNamedImportMemberExpression(
-      node,
+      normalized,
       moduleName,
       imported,
       member,
@@ -456,15 +488,15 @@ function couldBeNamedImportMemberExpression(
   ) {
     return true;
   }
-  const access = memberAccess(node);
+  const access = memberAccess(normalized);
   if (
     access?.name === member &&
     couldBeNamedImportIdentifier(access.receiver, moduleName, imported)
   ) {
     return true;
   }
-  if (!Node.isIdentifier(node)) return false;
-  return precedingAssignmentValues(node).some((assigned) =>
+  if (!Node.isIdentifier(normalized)) return false;
+  return precedingAssignmentValues(normalized).some((assigned) =>
     couldBeNamedImportMemberExpression(
       assigned,
       moduleName,
@@ -525,21 +557,162 @@ function isNeutralizingAnnotation(call: CallExpression): boolean {
   );
 }
 
+function derivesFromSymbol(
+  node: Node,
+  origin: MorphSymbol,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  if (!Node.isIdentifier(normalized)) return false;
+  if (normalized.getSymbol() === origin) return true;
+  if (
+    precedingAssignmentValues(normalized).some((assigned) =>
+      derivesFromSymbol(assigned, origin, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return false;
+        const initializer = declaration.getInitializer();
+        return (
+          initializer !== undefined &&
+          derivesFromSymbol(initializer, origin, new Set(seen))
+        );
+      }) ?? false
+  );
+}
+
+function couldBeMemberOfSymbol(
+  node: Node,
+  origin: MorphSymbol,
+  member: string,
+  seen = new Set<Node>(),
+): boolean {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return false;
+  seen.add(normalized);
+  const access = memberAccess(normalized);
+  if (
+    access?.name === member &&
+    derivesFromSymbol(access.receiver, origin)
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(normalized)) return false;
+  if (
+    precedingAssignmentValues(normalized).some((assigned) =>
+      couldBeMemberOfSymbol(assigned, origin, member, new Set(seen)),
+    )
+  ) {
+    return true;
+  }
+  return (
+    normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (Node.isVariableDeclaration(declaration)) {
+          const initializer = declaration.getInitializer();
+          return (
+            initializer !== undefined &&
+            couldBeMemberOfSymbol(
+              initializer,
+              origin,
+              member,
+              new Set(seen),
+            )
+          );
+        }
+        if (!Node.isBindingElement(declaration)) return false;
+        const property =
+          declaration.getPropertyNameNode() ?? declaration.getNameNode();
+        if (staticPropertyName(property) !== member) return false;
+        const variable = declaration.getFirstAncestorByKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        return (
+          initializer !== undefined &&
+          derivesFromSymbol(initializer, origin)
+        );
+      }) ?? false
+  );
+}
+
+function callbackHasTestInfoNeutralizer(callback: Callback): boolean {
+  const parameter = callback.getParameters()[1]?.getNameNode();
+  if (!Node.isIdentifier(parameter)) return false;
+  const symbol = parameter.getSymbol();
+  if (symbol === undefined) return false;
+  return ownedCalls(callback).some((call) =>
+    ["skip", "fixme", "fail"].some((member) =>
+      couldBeMemberOfSymbol(call.getExpression(), symbol, member),
+    ),
+  );
+}
+
+function scopeHasTestInfoNeutralizer(scope: SourceFile | Callback): boolean {
+  const container = Node.isSourceFile(scope) ? scope : scope.getBody();
+  if (!Node.isSourceFile(container) && !Node.isBlock(container)) return true;
+  return container
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) => {
+      if (directCallContainer(call) !== container) return false;
+      if (
+        !["beforeAll", "beforeEach", "afterAll", "afterEach"].some(
+          (member) =>
+            isNamedImportMemberCall(
+              call,
+              "@playwright/test",
+              "test",
+              member,
+            ),
+        )
+      ) {
+        return false;
+      }
+      const callback = callbackOf(call);
+      return (
+        callback !== undefined &&
+        callbackHasTestInfoNeutralizer(callback)
+      );
+    });
+}
+
 function scopeHasNeutralizingAnnotation(scope: SourceFile | Callback): boolean {
   if (Node.isSourceFile(scope)) {
-    return scope
-      .getDescendantsOfKind(SyntaxKind.CallExpression)
-      .some(isNeutralizingAnnotation);
+    return (
+      scope
+        .getDescendantsOfKind(SyntaxKind.CallExpression)
+        .some(isNeutralizingAnnotation) ||
+      scopeHasTestInfoNeutralizer(scope)
+    );
   }
   const container = scope.getBody();
   if (!Node.isBlock(container)) return true;
-  return container
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some((call) => directCallContainer(call) === container && isNeutralizingAnnotation(call));
+  return (
+    container
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some(
+        (call) =>
+          directCallContainer(call) === container &&
+          isNeutralizingAnnotation(call),
+      ) || scopeHasTestInfoNeutralizer(scope)
+  );
 }
 
 function testIsDisabled(callback: Callback): boolean {
-  return ownedCalls(callback).some(isNeutralizingAnnotation);
+  return (
+    ownedCalls(callback).some(isNeutralizingAnnotation) ||
+    callbackHasTestInfoNeutralizer(callback)
+  );
 }
 
 function specAwaitsSanctionedHelper(sourceFile: SourceFile): boolean {
@@ -1347,6 +1520,12 @@ pw.test("axe", async ({ page }) => {
         wrap(`test("axe", async ({ page }) => { test.${"skip"}(); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { test.${"fail"}(); await assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { let disable: typeof test.${"fail"}; disable = test.${"fail"}; disable(); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`(test.${"skip"} as typeof test.${"skip"})(true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`(<typeof test.${"fixme"}>test.${"fixme"})(true, "file disabled"); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }, testInfo) => { testInfo.${"skip"}(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test("axe", async ({ page }, testInfo) => { const disable = testInfo.${"fixme"}; disable(true, "disabled"); await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test.beforeEach(async ({}, testInfo) => { testInfo.${"fixme"}(true, "disabled"); }); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); });`),
+        wrap(`test.describe("group", () => { test.beforeEach(async ({}, testInfo) => { testInfo.${"fail"}(true, "expected failure"); }); test("axe", async ({ page }) => { await assertNoAxeViolations(page, "surface"); }); });`),
         wrap(`test("axe", async ({ page }) => { assertNoAxeViolations(page, "surface"); });`),
         wrap(`test("axe", async ({ page }) => { try { await assertNoAxeViolations(page, "surface"); } catch {} });`),
         wrap(`test("axe", async () => { const assertNoAxeViolations = async () => {}; await assertNoAxeViolations(); });`),
