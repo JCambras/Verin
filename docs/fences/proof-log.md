@@ -5877,3 +5877,33 @@ and exact route context.
 companion tests.
 
 **Date:** 2026-07-29 (review corrections, D-075).
+
+## F114 · event-specific proof and exact signed-variant identity
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** every verification proof carries its establishing ledger event and instant. Every
+signed case owned by a scenario and firm is directly reachable with its own disposition, and every
+printable record preserves scenario, firm, exact case, and lifecycle pass in both its visible header
+and stable identity. A liquidity-driven blocked case remains arithmetically uncovered.
+
+Browser tests first reproduced three violations: GC-11 was absent from the launcher, GC-13 and GC-14
+proof rows exposed no event-specific instant, and printable records exposed no exact route context.
+A golden-case mutation also raised GC-05's available liquidity enough to cover its request while the
+validator continued to accept the blocked disposition.
+
+Companions now drift completed-part and submission-acceptance proofs to their final observations,
+remove GC-11 exact-case reach, reuse record identity across GC-06 and GC-07 or GC-15 lifecycle passes,
+and make GC-05 or GC-11 arithmetic cover the request. Each mutation produces its named provenance,
+reachability, record-context, identity, or liquidity diagnostic.
+
+Browser coverage proves GC-11 is blocked before authority, GC-13 part completion retains the July 26
+execution event, GC-14 distinguishes July 26 submission acceptance from the July 28 NIGO observation,
+and printable records distinguish GC-06 from GC-07 and initial from revalidated GC-15.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+All 576 Vitest cases, all 22 Playwright cases with Axe, the golden validator, typecheck, lint, knip,
+the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
+
+**Date:** 2026-07-29 (review corrections, D-076).

@@ -242,7 +242,23 @@ export function sourceCaseIdsFor(
   scenario: ScenarioData,
   firmId: string,
 ): readonly SignedCaseId[] {
-  return scenario.sourceCaseIdsByFirm?.[firmId] ?? [];
+  return [
+    ...new Set([
+      ...(scenario.sourceCaseIdsByFirm?.[firmId] ?? []),
+      ...(scenario.relatedSourceCasesByFirm?.[firmId] ?? []),
+    ]),
+  ];
+}
+function ownsSourceCase(
+  scenario: ScenarioData,
+  firmId: string,
+  caseId: SignedCaseId,
+): boolean {
+  const sourceCase = SIGNED_CASE_BY_ID[caseId];
+  return (
+    sourceCase.scenarioId === scenario.id &&
+    sourceCase.firmId === firmId
+  );
 }
 function isExactSourceCase(
   scenario: ScenarioData,
@@ -251,8 +267,7 @@ function isExactSourceCase(
 ): boolean {
   const sourceCase = SIGNED_CASE_BY_ID[caseId];
   return (
-    sourceCase.scenarioId === scenario.id &&
-    sourceCase.firmId === firmId &&
+    ownsSourceCase(scenario, firmId, caseId) &&
     sourceCase.disposition === dispositionFor(scenario, firmId)
   );
 }
@@ -266,7 +281,7 @@ export function resolveSourceCaseId(
   if (
     !candidate ||
     !candidates.includes(candidate as SignedCaseId) ||
-    !isExactSourceCase(scenario, firmId, candidate as SignedCaseId)
+    !ownsSourceCase(scenario, firmId, candidate as SignedCaseId)
   ) {
     return null;
   }
@@ -279,17 +294,29 @@ export function bindExactSourceCase(
 ): ScenarioData {
   if (
     !sourceCaseIdsFor(scenario, firmId).includes(caseId) ||
-    !isExactSourceCase(scenario, firmId, caseId)
+    !ownsSourceCase(scenario, firmId, caseId)
   ) {
     throw new TypeError(
       `${caseId} is not exact signed authority for ${scenario.id}/${firmId}`,
     );
   }
+  const sourceCase = SIGNED_CASE_BY_ID[caseId];
+  const siblingCaseIds = sourceCaseIdsFor(scenario, firmId).filter(
+    (candidate) => candidate !== caseId,
+  );
   return {
     ...scenario,
+    perFirm: {
+      ...scenario.perFirm,
+      [firmId]: sourceCase.disposition,
+    },
     sourceCaseIdsByFirm: {
       ...scenario.sourceCaseIdsByFirm,
       [firmId]: [caseId],
+    },
+    relatedSourceCasesByFirm: {
+      ...scenario.relatedSourceCasesByFirm,
+      [firmId]: siblingCaseIds,
     },
   };
 }
@@ -312,6 +339,14 @@ export function requestFor(
   void scenario;
   void firmId;
   return CANONICAL_REQUEST;
+}
+export function decisionIdentityFor(
+  scenario: ScenarioData,
+  firmId: string,
+  pass: JourneyPass,
+): string {
+  const caseId = sourceCaseFor(scenario, firmId)?.caseId ?? "unsigned";
+  return `dec:${scenario.id}:${firmId}:${caseId}:${pass}`;
 }
 function pendingNoteFor(
   sourceCase: SignedCaseVariant,
@@ -416,9 +451,16 @@ export function launcherVariantsFor(scenario: ScenarioData): readonly {
   readonly firmId: string;
   readonly sourceCaseId: SignedCaseId | null;
 }[] {
-  const variants = Object.entries(scenario.sourceCaseIdsByFirm ?? {}).flatMap(
-    ([firmId, sourceCaseIds]) =>
-      sourceCaseIds.map((sourceCaseId) => ({ firmId, sourceCaseId })),
+  const firmIds = new Set([
+    ...Object.keys(scenario.sourceCaseIdsByFirm ?? {}),
+    ...Object.keys(scenario.relatedSourceCasesByFirm ?? {}),
+  ]);
+  const variants = [...firmIds].flatMap(
+    (firmId) =>
+      sourceCaseIdsFor(scenario, firmId).map((sourceCaseId) => ({
+        firmId,
+        sourceCaseId,
+      })),
   );
   return variants.length
     ? variants

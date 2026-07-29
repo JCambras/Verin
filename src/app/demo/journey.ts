@@ -25,12 +25,16 @@ import {
   scenarioById,
   sourceCaseIdsFor,
   type JourneyPass,
+  type ScenarioData,
 } from "./data";
 import type { SignedCaseId } from "./signed-cases";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
-function reachOf(scenarioId: string, firmId: string, pass: JourneyPass) {
-  const scenario = scenarioById(scenarioId);
+function reachOf(
+  scenario: ScenarioData,
+  firmId: string,
+  pass: JourneyPass,
+) {
   const firm = firmById(firmId);
   const disposition = dispositionFor(scenario, firmId);
   const decisionOnly = disposition !== "proceed";
@@ -47,8 +51,11 @@ function reachOf(scenarioId: string, firmId: string, pass: JourneyPass) {
   return { authority, safety, execution, approvals };
 }
 
-function stopNoteOf(scenarioId: string, firmId: string, pass: JourneyPass): string | null {
-  const scenario = scenarioById(scenarioId);
+function stopNoteOf(
+  scenario: ScenarioData,
+  firmId: string,
+  pass: JourneyPass,
+): string | null {
   const disposition = dispositionFor(scenario, firmId);
   if (disposition === "prohibited") return "This journey stopped at Decision: the prohibition is not resolvable by evidence or authority.";
   if (disposition === "blocked") return "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
@@ -81,8 +88,8 @@ export function getJourney(
       `Revalidated pass has no exact signed authority for ${scenario.id}/${firm.id}`,
     );
   }
-  const reached = reachOf(scenario.id, firm.id, pass);
-  const stopNote = stopNoteOf(scenario.id, firm.id, pass);
+  const reached = reachOf(scenario, firm.id, pass);
+  const stopNote = stopNoteOf(scenario, firm.id, pass);
   const safety = reached.safety ? buildSafety(scenario, firm, pass) : null;
   const execution = reached.execution ? buildExecution(scenario, firm, pass) : null;
   const verification = reached.execution ? buildVerification(scenario, firm, pass) : null;

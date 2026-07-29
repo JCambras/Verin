@@ -37,7 +37,12 @@ export function VerificationSurface({
           <h2 className="text-base font-semibold text-slate-900">What this status proves</h2>
           <ul className="flex flex-col gap-2">
             {vm.proves.map((p) => (
-              <li key={p.display} className="flex flex-col gap-0.5 text-sm text-slate-800">
+              <li
+                key={p.display}
+                className="flex flex-col gap-0.5 text-sm text-slate-800"
+                data-proof-event={p.ledgerEvent}
+                data-event-instant={p.provenance.asOf}
+              >
                 <FreshValue provenance={p.provenance}>{p.display}</FreshValue>
                 <span className="text-xs text-slate-500">retrieved {p.retrievedAt}</span>
               </li>

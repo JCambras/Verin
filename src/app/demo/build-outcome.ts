@@ -8,11 +8,19 @@
  * minute 4:05 deferral annotation). Honest-status doctrine (§8): submitted is never
  * settled, green is earned, NIGO and stuck are first-class.
  */
-import type { ExecutionRowVM, ExecutionVM, SafetyCheckVM, SafetyVM, VerificationVM } from "./model";
+import type {
+  ExecutionRowVM,
+  ExecutionVM,
+  SafetyCheckVM,
+  SafetyVM,
+  VerificationVM,
+} from "./model";
 import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
+import { buildVerificationProofs } from "./build-verification-proofs";
 import {
   CAST,
+  decisionIdentityFor,
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -21,7 +29,11 @@ import {
   type JourneyPass,
   type ScenarioData,
 } from "./data";
-import { formatDemoInstant, relatedDecisionAt, timelineFor } from "./timeline";
+import {
+  formatDemoInstant,
+  relatedDecisionAt,
+  timelineFor,
+} from "./timeline";
 
 function executionIdentifiers(
   scenario: ScenarioData,
@@ -392,14 +404,7 @@ export function buildVerification(
     return null;
   }
   const verification = sourceCase.verification;
-  const proves = verification.proves.map((display) =>
-    fact(
-      display,
-      "fake-adapter-response",
-      verification.observedAt,
-      formatDemoInstant(verification.observedAt, undefined, true),
-    ),
-  );
+  const proves = buildVerificationProofs(verification, timeline);
   const appended: ExecutionRowVM[] = [];
   const identifiers = executionIdentifiers(scenario, firm);
   if (verification.observedStatus === "nigo") {
@@ -469,7 +474,11 @@ export function buildVerification(
       ? {
           eventType: "ExceptionDecisionRequested",
           reason: verification.exception.reason,
-          priorDecisionId: "dec-smiths-renovation-2026-0726",
+          priorDecisionId: decisionIdentityFor(
+            scenario,
+            firm.id,
+            pass,
+          ),
           triggeringLedgerEvent:
             verification.exception.triggeringLedgerEvent,
           requestedAt: formatDemoInstant(

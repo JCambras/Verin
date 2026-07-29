@@ -1,7 +1,9 @@
 import type { DisplayMetric } from "@contracts/metric";
-import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
+import type { RecordProvenance } from "@contracts/provenance";
 import type { ExecutionReceiptId, ObservedStatusId, VerificationProjectionId } from "@contracts/execution-status";
+import type { RecordVM } from "./record-model";
 import type { SignedCaseId } from "./signed-case-types";
+export type { RecordVM } from "./record-model";
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
@@ -51,6 +53,11 @@ export interface FactVM {
   readonly display: string;
   readonly provenance: RecordProvenance;
   readonly retrievedAt: string;
+}
+export interface VerificationProofVM extends FactVM {
+  readonly ledgerEvent:
+    | "ExecutionPartiallySucceeded"
+    | "StatusObserved";
 }
 export interface WhyVM {
   readonly reason: string;
@@ -360,7 +367,7 @@ export interface VerificationVM {
     readonly currentReason: string;
     readonly custodianReason: string | null;
   };
-  readonly proves: readonly FactVM[];
+  readonly proves: readonly VerificationProofVM[];
   readonly notProvenYet: readonly string[];
   readonly polling:
     | {
@@ -427,48 +434,6 @@ export interface PolicyAuthoringVM {
   readonly activation: { readonly fromVersion: string; readonly toVersion: string };
   readonly changedRerunResult: string;
   readonly fakeClass: FakeClass;
-}
-
-// ── Surface 12: Printable examiner-grade decision artifact (§9) ──────────────────────
-export interface RecordVM {
-  readonly header: {
-    readonly decisionId: string;
-    readonly createdAt: string;
-    readonly createdAtIso: string;
-    readonly provenance: DerivedProvenance;
-    readonly watermark: string | null; // DEMO_WATERMARK when demonstration-derived
-  };
-  readonly hashes: {
-    readonly policyVersion: string;
-    readonly instructionVersion: string;
-    readonly auditPosition: string;
-  };
-  readonly decisionBindings: readonly {
-    readonly kind: "original" | "derived";
-    readonly decisionHash: string;
-    readonly bundleHash: string;
-  }[];
-  readonly intent: IntentVM;
-  readonly evidence: readonly EvidenceRowVM[];
-  readonly disposition: DispositionVM;
-  readonly precedence: readonly PrecedenceRowVM[];
-  /** Sections the record never reached print as an explicit "not reached" line -
-   * the paper record is as honest as the screen (§9). */
-  readonly approvalStages: readonly ApprovalStageVM[] | null;
-  readonly authorityMode: ApprovalVM["mode"] | null;
-  readonly automaticAuthority: AutomaticAuthorityVM | null;
-  readonly executionEligibility: SafetyVM["executionEligibility"];
-  readonly safety: SafetyVM | null;
-  readonly execution: readonly ExecutionRowVM[] | null;
-  readonly verification: VerificationVM | null;
-  readonly lifecycle: readonly {
-    readonly type: string;
-    readonly timestampIso: string;
-    readonly display: string;
-    readonly note: string;
-  }[];
-  readonly stopNote: string | null;
-  readonly provenanceAppendix: readonly SourceSystem[];
 }
 
 // ── The full journey (one per scenario × firm) ──────────────────────────────────────

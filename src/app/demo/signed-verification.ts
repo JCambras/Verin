@@ -83,6 +83,7 @@ export function parseVerification(
     observedStatus === "submitted" &&
     settledClaim === "submitted-is-not-settled" &&
     custodianReason === null &&
+    proves.length === 1 &&
     pollingState === "scheduled" &&
     polling.interval === "PT12H" &&
     rawException === null
@@ -105,6 +106,7 @@ export function parseVerification(
     observedStatus === "unknown" &&
     settledClaim === "partial-is-not-settled" &&
     custodianReason === null &&
+    proves.length === 2 &&
     pollingState === "scheduled" &&
     polling.interval === "PT12H" &&
     rawException?.reason === "partial-execution" &&
@@ -135,6 +137,7 @@ export function parseVerification(
     observedStatus === "nigo" &&
     settledClaim === "submitted-is-not-settled" &&
     custodianReason !== null &&
+    proves.length === 2 &&
     pollingState === "stopped" &&
     polling.reason === "terminal-nigo-exception-opened" &&
     rawException?.reason === "delayed-nigo" &&

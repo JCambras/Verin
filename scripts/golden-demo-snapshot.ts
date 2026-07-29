@@ -24,6 +24,7 @@ import {
   dispositionFor,
   firmById,
   hasSignedInvalidationAuthority,
+  launcherVariantsFor,
   liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
@@ -218,7 +219,14 @@ function displayedDecisions(): DisplayedDecision[] {
       };
       const related =
         authority.kind === "signed"
-          ? (authority.relatedDecisions ?? []).map(
+          ? (authority.relatedDecisions ?? [])
+              .filter(
+                (decision) =>
+                  !sourceCaseIdsFor(baseScenario, firm.id).includes(
+                    decision.sourceCaseId as SignedCaseVariant["caseId"],
+                  ),
+              )
+              .map(
               (decision): DisplayedDecision => {
                 const relatedSource = SIGNED_CASE_VARIANTS.find(
                   (variant) => variant.caseId === decision.sourceCaseId,
@@ -441,7 +449,14 @@ function sourceTimelines(): SourceTimeline[] {
         authority.kind === "signed"
           ? (authority.relatedDecisions ?? [])
           : []
-      ).flatMap(
+      )
+        .filter(
+          (relatedAuthority) =>
+            !sourceCaseIdsFor(baseScenario, firm.id).includes(
+              relatedAuthority.sourceCaseId as SignedCaseVariant["caseId"],
+            ),
+        )
+        .flatMap(
         (relatedAuthority) => {
           const relatedSource = SIGNED_CASE_VARIANTS.find(
             (variant) => variant.caseId === relatedAuthority.sourceCaseId,
@@ -489,6 +504,42 @@ function sourceTimelines(): SourceTimeline[] {
       return [primary, ...related];
       });
     }),
+  );
+}
+
+function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
+  return SCENARIOS.flatMap((scenario) =>
+    launcherVariantsFor(scenario).flatMap(
+      ({ firmId, sourceCaseId }) => {
+        const selected = sourceCaseId
+          ? bindExactSourceCase(scenario, firmId, sourceCaseId)
+          : scenario;
+        const passes: Array<"initial" | "revalidated"> =
+          hasSignedInvalidationAuthority(selected, firmId)
+            ? ["initial", "revalidated"]
+            : ["initial"];
+        return passes.map((pass) => {
+          const record = getJourney(
+            scenario.id,
+            firmId,
+            pass,
+            sourceCaseId ?? undefined,
+          ).record;
+          return {
+            routeScenarioId: scenario.id,
+            routeFirmId: firmId,
+            routeSourceCaseId: sourceCaseId,
+            routePass: pass,
+            headerScenarioId: record.header.scenarioId,
+            headerFirmId: record.header.firmId,
+            headerSourceCaseId: record.header.sourceCaseId,
+            headerPass: record.header.pass,
+            decisionId: record.header.decisionId,
+            auditPosition: record.hashes.auditPosition,
+          };
+        });
+      },
+    ),
   );
 }
 
@@ -641,6 +692,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     signedCaseVariants: SIGNED_CASE_VARIANTS.map((variant) => variant),
     decisions: displayedDecisions(),
     sourceTimelines: sourceTimelines(),
+    recordIdentities: recordIdentities(),
     draftedReserveMonths: DRAFT_RESERVE_MONTHS,
     draftedReserveFloorMinor: draftSimulation(SCENARIOS[0]!.id, "firm-a").floorMinor,
     executionTimelineStatuses: SCENARIOS.flatMap((scenario) =>
@@ -741,7 +793,11 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
               }
             : null,
           verificationProves:
-            journey.verification?.proves.map((proof) => proof.display) ?? [],
+            journey.verification?.proves.map((proof) => ({
+              display: proof.display,
+              ledgerEvent: proof.ledgerEvent,
+              observedAtIso: proof.provenance.asOf,
+            })) ?? [],
           verificationNotProvenYet: [
             ...(journey.verification?.notProvenYet ?? []),
           ],

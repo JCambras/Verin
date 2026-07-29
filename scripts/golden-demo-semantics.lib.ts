@@ -137,6 +137,18 @@ export interface DemoSemanticSnapshot {
   signedCaseVariants: unknown[];
   decisions: DisplayedDecision[];
   sourceTimelines: SourceTimeline[];
+  recordIdentities: Array<{
+    routeScenarioId: string;
+    routeFirmId: string;
+    routeSourceCaseId: string | null;
+    routePass: "initial" | "revalidated";
+    headerScenarioId: string;
+    headerFirmId: string;
+    headerSourceCaseId: string | null;
+    headerPass: "initial" | "revalidated";
+    decisionId: string;
+    auditPosition: string;
+  }>;
   draftedReserveMonths: number;
   draftedReserveFloorMinor: number | null;
   executionTimelineStatuses: string[];
@@ -185,7 +197,11 @@ export interface DemoSemanticSnapshot {
       reason: "partial-execution" | "delayed-nigo";
       triggeringLedgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
     } | null;
-    verificationProves: string[];
+    verificationProves: Array<{
+      display: string;
+      ledgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
+      observedAtIso: string;
+    }>;
     verificationNotProvenYet: string[];
     executionRows: Array<{
       status: string;
@@ -1332,6 +1348,78 @@ function validateSourceTimelines(
   return problems;
 }
 
+function validateRecordIdentities(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+): string[] {
+  const problems: string[] = [];
+  const decisionIds = new Set<string>();
+  const auditPositions = new Set<string>();
+  for (const record of demo.recordIdentities) {
+    if (
+      record.headerScenarioId !== record.routeScenarioId ||
+      record.headerFirmId !== record.routeFirmId ||
+      record.headerSourceCaseId !== record.routeSourceCaseId ||
+      record.headerPass !== record.routePass
+    ) {
+      problems.push(
+        `${record.routeScenarioId}/${record.routeFirmId}/${record.routeSourceCaseId ?? "unsigned"}/${record.routePass}: printable record header loses exact route context`,
+      );
+    }
+    if (!isNonEmptyString(record.decisionId)) {
+      problems.push("printable record carries no stable decision identity");
+    } else if (decisionIds.has(record.decisionId)) {
+      problems.push(
+        `printable record decision identity is reused: ${record.decisionId}`,
+      );
+    }
+    if (!isNonEmptyString(record.auditPosition)) {
+      problems.push("printable record carries no stable audit position");
+    } else if (auditPositions.has(record.auditPosition)) {
+      problems.push(
+        `printable record audit position is reused: ${record.auditPosition}`,
+      );
+    }
+    decisionIds.add(record.decisionId);
+    auditPositions.add(record.auditPosition);
+  }
+  for (const { data } of cases) {
+    if (
+      !isObj(data) ||
+      !isNonEmptyString(data.caseId) ||
+      !isNonEmptyString(data.scenarioRef) ||
+      !isNonEmptyString(data.firm)
+    ) {
+      continue;
+    }
+    const initial = demo.recordIdentities.find(
+      (record) =>
+        record.routeScenarioId === data.scenarioRef &&
+        record.routeFirmId === data.firm &&
+        record.routeSourceCaseId === data.caseId &&
+        record.routePass === "initial",
+    );
+    if (!initial) {
+      problems.push(
+        `${data.caseId}: exact signed case has no independently reachable printable record`,
+      );
+    }
+    if (
+      data.caseId === "GC-15-approval-invalidation" &&
+      !demo.recordIdentities.some(
+        (record) =>
+          record.routeSourceCaseId === data.caseId &&
+          record.routePass === "revalidated",
+      )
+    ) {
+      problems.push(
+        "GC-15 revalidated lifecycle has no independently identified printable record",
+      );
+    }
+  }
+  return problems;
+}
+
 /** Cross-artifact signed truth fence. The fixtures supply the numbers. */
 export function validateGoldenDemoSemantics(
   cases: LoadedCase[],
@@ -1363,6 +1451,7 @@ export function validateGoldenDemoSemantics(
   problems.push(...validateDisplayedDecisions(cases, demo));
   problems.push(...validateSignedCaseVariants(cases, demo));
   problems.push(...validateSourceTimelines(cases, demo));
+  problems.push(...validateRecordIdentities(cases, demo));
 
   for (const [caseId, firmId] of canonicalCases) {
     const c = caseData(cases, caseId);
@@ -1626,6 +1715,33 @@ export function validateGoldenDemoSemantics(
         ? expectedVerification.exception
         : null;
       const renderedException = guard.exceptionDecision;
+      const timeline = demo.sourceTimelines.find(
+        ({ sourceCaseId }) => sourceCaseId === guard.sourceCaseId,
+      );
+      const statusObservedInstants =
+        timeline?.events
+          .filter(({ kind }) => kind === "StatusObserved")
+          .map(({ instant }) => instant) ?? [];
+      const partialSucceededAt = timeline?.events.find(
+        ({ kind }) => kind === "ExecutionPartiallySucceeded",
+      )?.instant;
+      const expectedProofEvents =
+        expectedVerification.observedStatus === "submitted"
+          ? [
+              {
+                ledgerEvent: "StatusObserved",
+                observedAtIso: expectedVerification.observedAt,
+              },
+            ]
+          : expectedVerification.observedStatus === "unknown"
+            ? expectedProves.map(() => ({
+                ledgerEvent: "ExecutionPartiallySucceeded",
+                observedAtIso: partialSucceededAt,
+              }))
+            : expectedProves.map((_, index) => ({
+                ledgerEvent: "StatusObserved",
+                observedAtIso: statusObservedInstants[index],
+              }));
       if (
         !guard.verificationReached ||
         !guard.verificationState ||
@@ -1639,7 +1755,9 @@ export function validateGoldenDemoSemantics(
           expectedVerification.currentReason ||
         guard.verificationState.custodianReason !==
           expectedVerification.custodianReason ||
-        JSON.stringify(guard.verificationProves) !==
+        JSON.stringify(
+          guard.verificationProves.map(({ display }) => display),
+        ) !==
           JSON.stringify(expectedProves) ||
         JSON.stringify(guard.verificationNotProvenYet) !==
           JSON.stringify(expectedNotProven) ||
@@ -1657,9 +1775,20 @@ export function validateGoldenDemoSemantics(
           `${guard.sourceCaseId}: rendered verification state drifts from its closed signed status, claim, reason, observation, polling, or exception state`,
         );
       }
-      const timeline = demo.sourceTimelines.find(
-        ({ sourceCaseId }) => sourceCaseId === guard.sourceCaseId,
-      );
+      if (
+        guard.verificationProves.length !== expectedProofEvents.length ||
+        guard.verificationProves.some(
+          (proof, index) =>
+            proof.ledgerEvent !==
+              expectedProofEvents[index]?.ledgerEvent ||
+            proof.observedAtIso !==
+              expectedProofEvents[index]?.observedAtIso,
+        )
+      ) {
+        problems.push(
+          `${guard.sourceCaseId}: verification proof provenance must bind each claim to its own signed ledger event instant`,
+        );
+      }
       const initialStatusObserved = timeline?.events.find(
         ({ kind }) => kind === "StatusObserved",
       )?.instant;
@@ -1722,7 +1851,7 @@ export function validateGoldenDemoSemantics(
     delayedNigo.exceptionDecision.reason !== "delayed-nigo" ||
     delayedNigo.exceptionDecision.triggeringLedgerEvent !== "StatusObserved" ||
     !delayedNigo.verificationProves.some((proof) =>
-      proof.includes("signature date predates form version"),
+      proof.display.includes("signature date predates form version"),
     ) ||
     delayedNigo.verificationNotProvenYet.some((claim) =>
       claim.includes("will not be returned"),

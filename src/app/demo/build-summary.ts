@@ -35,6 +35,7 @@ import {
   FIRMS,
   IDS,
   OBSERVED_RECENT,
+  decisionIdentityFor,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
   evidenceForPass,
@@ -413,7 +414,11 @@ export function buildRecord(
             : null;
   return {
     header: {
-      decisionId: "dec-smiths-renovation-2026-0726",
+      decisionId: decisionIdentityFor(scenario, firm.id, pass),
+      scenarioId: scenario.id,
+      firmId: firm.id,
+      sourceCaseId: sourceCase?.caseId ?? null,
+      pass,
       createdAt: formatDemoInstant(timeline.decisionAt, undefined, true),
       createdAtIso: timeline.decisionAt,
       provenance,
@@ -426,7 +431,7 @@ export function buildRecord(
       instructionVersion:
         sourceCase?.policyVersions.householdInstructionVersionIds.join(", ") ||
         "Exact signed source unavailable",
-      auditPosition: IDS.auditPosition,
+      auditPosition: `${IDS.auditPosition} · ${scenario.id} · ${firm.id} · ${sourceCase?.caseId ?? "unsigned"} · ${pass}`,
     },
     decisionBindings: [
       {

@@ -465,6 +465,15 @@ function validateSignedMoney(
   validateSignedLiquidity(c, signed, floorMinor, P);
 }
 
+const LIQUIDITY_BLOCK_EXPLANATION_CODES = new Set([
+  "cash-reserve-breach",
+  "individually-valid-jointly-overcommitted",
+]);
+const LIQUIDITY_BLOCK_CASE_IDS = new Set([
+  "GC-05-insufficient-liquidity",
+  "GC-11-simultaneous-distributions-second",
+]);
+
 /**
  * The liquidity half: available cash and pending activity are STRUCTURED signed
  * figures tied to the evidence rows that observed them, and a `proceed` case must
@@ -499,16 +508,38 @@ function validateSignedLiquidity(
   const availableMinor = minorFromMajor(available);
   const pendingMinor = minorFromMajor(pending);
   const requestMinor = minorFromMajor(signed.requestAmountUsd);
-  if (c.expectedDisposition !== "proceed") return;
+  const explanationCodes = new Set(
+    (Array.isArray(c.expectedExplanationNodes)
+      ? c.expectedExplanationNodes
+      : []
+    )
+      .filter(isObj)
+      .flatMap((node) =>
+        isNonEmptyString(node.code) ? [node.code] : [],
+      ),
+  );
+  const proceed = c.expectedDisposition === "proceed";
+  const liquidityBlocked =
+    c.expectedDisposition === "blocked" &&
+    ((isNonEmptyString(c.caseId) &&
+      LIQUIDITY_BLOCK_CASE_IDS.has(c.caseId)) ||
+      [...explanationCodes].some((code) =>
+        LIQUIDITY_BLOCK_EXPLANATION_CODES.has(code),
+      ));
+  if (!proceed && !liquidityBlocked) return;
   const missingAuthority = [
-    signed.plannedWithdrawalMonthlyUsd === null ? "plannedWithdrawalMonthlyUsd" : null,
+    proceed && signed.plannedWithdrawalMonthlyUsd === null
+      ? "plannedWithdrawalMonthlyUsd"
+      : null,
     floorMinor === null ? "reserveFloorUsd" : null,
     availableMinor === null ? "availableLiquidityUsd" : null,
     pendingMinor === null ? "pendingLiquidityUsd" : null,
     requestMinor === null ? "requestAmountUsd" : null,
   ].filter((field): field is string => field !== null);
   if (missingAuthority.length > 0) {
-    P(`proceed case is missing structured liquidity authority: ${missingAuthority.join(", ")}`);
+    P(
+      `${proceed ? "proceed" : "liquidity-blocked"} case is missing structured liquidity authority: ${missingAuthority.join(", ")}`,
+    );
     return;
   }
   const headroom = tryHeadroomMinor(availableMinor!, pendingMinor!, floorMinor!);
@@ -517,8 +548,15 @@ function validateSignedLiquidity(
     return;
   }
   if (headroom < requestMinor!) {
-    P(`a proceed case must leave the request covered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
+    if (proceed) {
+      P(`a proceed case must leave the request covered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} does not cover ${signed.requestAmountUsd}`);
+    }
+  } else if (liquidityBlocked) {
+    P(
+      `a liquidity-blocked case must leave the request uncovered: available ${available} - pending ${pending} - reserve ${signed.reserveFloorUsd} covers ${signed.requestAmountUsd}`,
+    );
   }
+  if (!proceed) return;
   const revalidation = signed.preExecutionRevalidation;
   if (!revalidation) return;
   const revalidationAvailableRows = rowsOfLiquidityPhase(c, "account-balance", "pre-execution-revalidation");

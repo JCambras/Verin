@@ -731,7 +731,11 @@ test("print posture: the record's identity header prints complete; app chrome an
   await page.emulateMedia({ media: "print" });
   // Design §9: wordmark, watermark chip, decision id, and the FULL hashes stay on paper.
   await expect(page.getByTestId("record-watermark")).toBeVisible();
-  await expect(page.getByText("dec-smiths-renovation-2026-0726").first()).toBeVisible();
+  await expect(
+    page.getByText(
+      "dec:recent-bank-change-block:firm-a:GC-03-recent-bank-change-firm-a:initial",
+    ).first(),
+  ).toBeVisible();
   await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
   // App chrome and interactive controls disappear.
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeHidden();
@@ -772,6 +776,7 @@ test("the launcher exposes every exact signed firm and case variant", async ({ p
     ["GC-08-ambiguous-household", "ambiguous-instruction", "firm-a"],
     ["GC-09-stale-evidence", "stale-evidence", "firm-a"],
     ["GC-10-simultaneous-distributions-first", "competing-liquidity", "firm-a"],
+    ["GC-11-simultaneous-distributions-second", "competing-liquidity", "firm-a"],
     ["GC-12-duplicate-retry", "duplicate-retry", "firm-a"],
     ["GC-13-partial-salesforce-success", "partial-salesforce-success", "firm-a"],
     ["GC-14-delayed-nigo", "delayed-nigo", "firm-b"],
@@ -787,6 +792,15 @@ test("the launcher exposes every exact signed firm and case variant", async ({ p
       `/app/demo/workspace?scenario=${scenarioId}&firm=${firmId}&case=${caseId}`,
     );
   }
+
+  await page.goto(
+    "/app/demo/decision?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
+  );
+  await expect(page.getByTestId("disposition-blocked")).toBeVisible();
+  await page.goto(
+    "/app/demo/authority?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
+  );
+  await expect(page.getByText("Authority not reached")).toBeVisible();
 });
 
 test("exact demo route context survives every inspective and dead-end link", async ({ page }) => {
@@ -820,6 +834,108 @@ test("exact demo route context survives every inspective and dead-end link", asy
     /scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated$/,
   );
   await expect(page.getByTestId("derived-decision")).toBeVisible();
+});
+
+test("verification proof provenance stays bound to each signed event", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  await page.goto(
+    "/app/demo/verification?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success",
+  );
+  const partialProofs = page.getByRole("region", {
+    name: "What this status proves",
+  });
+  await expect(
+    partialProofs.getByRole("listitem").filter({
+      hasText: "Submission accepted by the capability",
+    }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
+  await expect(
+    partialProofs.getByRole("listitem").filter({
+      hasText: "Completed part: instruction-created",
+    }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
+  await page.goto(
+    "/app/demo/record?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success",
+  );
+  await expect(
+    page
+      .getByRole("region", {
+        name: "Verification state at time of export",
+      })
+      .getByRole("listitem")
+      .filter({ hasText: "Completed part: instruction-created" }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
+
+  await page.goto(
+    "/app/demo/verification?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo",
+  );
+  const nigoProofs = page.getByRole("region", {
+    name: "What this status proves",
+  });
+  await expect(
+    nigoProofs.getByRole("listitem").filter({
+      hasText: "Submission accepted by the capability",
+    }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:20.000Z");
+  await expect(
+    nigoProofs.getByRole("listitem").filter({
+      hasText: "Custodian returned the instruction NIGO",
+    }),
+  ).toHaveAttribute("data-event-instant", "2026-07-28T21:44:00.000Z");
+  await page.goto(
+    "/app/demo/record?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo",
+  );
+  await expect(
+    page
+      .getByRole("region", {
+        name: "Verification state at time of export",
+      })
+      .getByRole("listitem")
+      .filter({ hasText: "Submission accepted by the capability" }),
+  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:20.000Z");
+});
+
+test("printable records carry exact route and lifecycle identity", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction",
+  );
+  await expect(page.getByTestId("record-context")).toContainText(
+    "permanent-prohibition",
+  );
+  await expect(page.getByTestId("record-context")).toContainText("firm-a");
+  await expect(page.getByTestId("record-context")).toContainText(
+    "GC-06-household-restriction",
+  );
+  await expect(page.getByTestId("record-context")).toContainText("initial");
+  const householdRecordId = await page
+    .getByTestId("record-decision-id")
+    .textContent();
+
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a&case=GC-07-regulatory-prohibition",
+  );
+  await expect(page.getByTestId("record-decision-id")).not.toHaveText(
+    householdRecordId ?? "",
+  );
+
+  await page.goto(
+    "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation",
+  );
+  const initialRecordId = await page
+    .getByTestId("record-decision-id")
+    .textContent();
+  await page.goto(
+    "/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
+  );
+  await expect(page.getByTestId("record-context")).toContainText(
+    "revalidated",
+  );
+  await expect(page.getByTestId("record-decision-id")).not.toHaveText(
+    initialRecordId ?? "",
+  );
 });
 
 test("every fake-backed demo surface carries a visible dev provenance badge", async ({ page }) => {

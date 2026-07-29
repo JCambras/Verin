@@ -3618,3 +3618,25 @@ appear as an initial alternative and made initial printable records indistinguis
 revalidated records.
 **Revert path:** none while D-068 through D-074 require exact lifecycle identity across navigation
 and examiner-facing surfaces.
+
+### D-076 · 2026-07-29 · captain-decision · Event and route identity preserve every signed variant
+
+Every verification proof binds to the ledger event and instant that established it. A later unknown
+or NIGO observation cannot replace the instant of submission acceptance or part completion on the
+verification surface or printable record.
+
+The launcher and route boundary enumerate every signed case owned by the selected scenario and
+firm, including related GC-11. Binding an exact case also binds its own disposition, so journey reach
+cannot be inherited from the branch's primary case. Printable records derive their stable decision
+and audit identities from scenario, firm, exact case, and lifecycle pass, and print all four fields.
+
+Liquidity-driven blocked cases require structured available, pending, reserve, and request amounts
+whose arithmetic leaves the request uncovered. The signed-case gate rejects a blocked disposition
+when those figures cover the request.
+
+**Why:** final-observation timestamps, primary-case disposition, fixed record identifiers, and
+one-sided proceed arithmetic could each make a valid surface or fixture state another signed case's
+truth.
+**Revert path:** this captain ruling is product truth and is not reversible without a new captain
+decision. The event projection, exact-case binding, record identity, and arithmetic companion are
+isolated to the demo and golden-case gates.

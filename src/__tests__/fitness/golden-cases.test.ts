@@ -563,6 +563,69 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("flags unreachable signed records, lost route context, and reused identities", () => {
+    const unreachable = demoClone();
+    unreachable.recordIdentities = unreachable.recordIdentities.filter(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId !==
+        "GC-11-simultaneous-distributions-second",
+    );
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        unreachable,
+      ).some((problem) =>
+        problem.includes(
+          "GC-11-simultaneous-distributions-second: exact signed case has no independently reachable printable record",
+        ),
+      ),
+    ).toBe(true);
+
+    const detached = demoClone();
+    const gc07 = detached.recordIdentities.find(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId === "GC-07-regulatory-prohibition",
+    )!;
+    gc07.headerSourceCaseId = "GC-06-household-restriction";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        detached,
+      ).some((problem) =>
+        problem.includes("printable record header loses exact route context"),
+      ),
+    ).toBe(true);
+
+    const reused = demoClone();
+    const gc06 = reused.recordIdentities.find(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId === "GC-06-household-restriction",
+    )!;
+    const duplicate = reused.recordIdentities.find(
+      ({ routeSourceCaseId }) =>
+        routeSourceCaseId === "GC-07-regulatory-prohibition",
+    )!;
+    duplicate.decisionId = gc06.decisionId;
+    duplicate.auditPosition = gc06.auditPosition;
+    const reusedProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      reused,
+    );
+    expect(
+      reusedProblems.some((problem) =>
+        problem.includes("printable record decision identity is reused"),
+      ),
+    ).toBe(true);
+    expect(
+      reusedProblems.some((problem) =>
+        problem.includes("printable record audit position is reused"),
+      ),
+    ).toBe(true);
+  });
+
   it("flags source-bound visible events that precede or misorder the signed request", () => {
     const beforeRequest = demoClone();
     const duplicate = beforeRequest.sourceTimelines.find(
@@ -783,6 +846,42 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         p.includes("GC-13") && p.includes("proceed case is missing structured liquidity authority: availableLiquidityUsd"),
       ),
     ).toBe(true);
+  });
+
+  it("flags liquidity-driven blocked cases whose own arithmetic covers the request", () => {
+    for (const caseId of [
+      "GC-05-insufficient-liquidity",
+      "GC-11-simultaneous-distributions-second",
+    ]) {
+      const cases = clone();
+      const blocked = caseById(cases, caseId);
+      const signedMoney = blocked.signedMoney as Record<string, unknown>;
+      signedMoney.availableLiquidityUsd = 300_000;
+      const evidence = blocked.householdEvidence as Array<
+        Record<string, unknown>
+      >;
+      const balance = evidence.find(
+        (row) => row.evidenceKind === "account-balance",
+      )!;
+      (balance.displayValue as Record<string, unknown>).value = 300_000;
+      balance.summary = "Available balance is 300000 USD.";
+      blocked.expectedExplanationNodes = (
+        blocked.expectedExplanationNodes as Array<Record<string, unknown>>
+      ).map((node, index) => ({
+        ...node,
+        code: `unclassified-block-${index}`,
+      }));
+      const problems = run(cases);
+      expect(
+        problems.some(
+          (problem) =>
+            problem.includes(caseId) &&
+            problem.includes(
+              "liquidity-blocked case must leave the request uncovered",
+            ),
+        ),
+      ).toBe(true);
+    }
   });
 
   it("flags GC-15 liquidity rendered in the wrong evidence phase", () => {
@@ -1272,7 +1371,11 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     };
     gc14.exceptionDecision = null;
     gc14.verificationProves = [
-      "Custodian returned the instruction NIGO: signature missing",
+      {
+        display: "Custodian returned the instruction NIGO: signature missing",
+        ledgerEvent: "StatusObserved",
+        observedAtIso: "2026-07-28T21:44:00.000Z",
+      },
     ];
     gc14.verificationNotProvenYet = [
       "That the instruction will not be returned not-in-good-order",
@@ -1333,6 +1436,26 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         receiptDrift,
       ).some((problem) =>
         problem.includes("wrong event-specific instant"),
+      ),
+    ).toBe(true);
+
+    const proofDrift = demoClone();
+    const gc13Proofs = proofDrift.executionGuards.find(
+      (guard) =>
+        guard.sourceCaseId === "GC-13-partial-salesforce-success",
+    )!;
+    for (const proof of gc13Proofs.verificationProves) {
+      proof.observedAtIso = "2026-07-28T21:14:00.000Z";
+    }
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        proofDrift,
+      ).some((problem) =>
+        problem.includes(
+          "verification proof provenance must bind each claim",
+        ),
       ),
     ).toBe(true);
 
