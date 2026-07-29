@@ -18,7 +18,7 @@ import {
   canonicalJson,
   decisionHashPreimage,
 } from "@contracts/decision-core/serialization";
-import type { RecordProvenance } from "@contracts/provenance";
+import type { DirectLedgerProducerProvenance } from "@contracts/provenance";
 import { unwrap } from "@contracts/result";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 import { retainedTextReference } from "@infra/ledger/ledger-pii";
@@ -29,7 +29,7 @@ export const LEDGER_OTHER_ORG = "firm-b";
 export const LEDGER_TIME = "2026-07-26T13:30:00.000Z";
 export const LEDGER_LATER = "2026-07-27T13:30:00.000Z";
 export const LEDGER_HASH = "a".repeat(64);
-export const LEDGER_PROVENANCE: RecordProvenance = {
+export const LEDGER_PROVENANCE: DirectLedgerProducerProvenance = {
   source: "fixture",
   asOf: LEDGER_TIME,
   confidence: "high",

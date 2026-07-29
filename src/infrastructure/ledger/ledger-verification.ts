@@ -3,9 +3,10 @@
  * the recorded schema and serializer and checks canonical round-trip, L3 checks
  * promoted columns, and L4 checks the independently maintained anchor.
  */
-import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
+import type { SqlDb, SqlTx } from "@infra/store/db";
 import { appError, isAppError } from "@contracts/errors";
 import { type LedgerEntry } from "@contracts/decision-core/ledger";
+import type { RecordProvenance } from "@contracts/provenance";
 import {
   promotedDecisionId,
   promotedEvidenceSnapshotId,
@@ -25,32 +26,15 @@ import { lockDecisionLedgerTenant } from "./ledger-lock";
 import { verifyReplaySources } from "./ledger-sources";
 import { storedLedgerStructureLookup } from "./ledger-structural-store";
 import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
-
-export interface DecisionLedgerRow {
-  readonly orgId: string;
-  readonly id: string;
-  readonly sequence: number;
-  readonly eventType: string;
-  readonly schemaVersion: string;
-  readonly serializerVersion: string;
-  readonly occurredAt: string;
-  readonly recordedAt: string;
-  readonly actorJson: string;
-  readonly correlationId: string;
-  readonly causationId: string | null;
-  readonly decisionId: string | null;
-  readonly evidenceSnapshotId: string | null;
-  readonly inputBundleId: string | null;
-  readonly expectedInputBundleId: string | null;
-  readonly triggeringEntryId: string | null;
-  readonly reservationCreationId: string | null;
-  readonly payloadJson: string;
-  readonly prevHash: string;
-  readonly entryHash: string;
-  readonly provSource: string;
-  readonly provAsOf: string;
-  readonly provConfidence: string;
-}
+import {
+  assertNoOrphanComputedProvenanceTraces,
+  verifyRecordedLedgerProvenance,
+} from "./ledger-producer-provenance";
+import {
+  listDecisionLedger,
+  type DecisionLedgerRow,
+} from "./ledger-rows";
+export { listDecisionLedger, type DecisionLedgerRow } from "./ledger-rows";
 
 export interface LedgerVerificationLevel extends ChainVerdict {
   readonly level: "L1" | "L2" | "L3" | "L4";
@@ -71,92 +55,6 @@ export interface DecisionLedgerIntegrityVerification {
   readonly replaySourceReason: string | null;
 }
 
-interface DbLedgerRow {
-  org_id: string;
-  id: string;
-  sequence: number | string;
-  event_type: string;
-  schema_version: string;
-  serializer_version: string;
-  occurred_at: string;
-  recorded_at: string;
-  actor_json: string;
-  correlation_id: string;
-  causation_id: string | null;
-  decision_id: string | null;
-  evidence_snapshot_id: string | null;
-  input_bundle_id: string | null;
-  expected_input_bundle_id: string | null;
-  triggering_entry_id: string | null;
-  reservation_creation_id: string | null;
-  payload_json: string;
-  prev_hash: string;
-  entry_hash: string;
-  prov_source: string;
-  prov_asof: string;
-  prov_confidence: string;
-}
-
-function toRow(row: DbLedgerRow): DecisionLedgerRow {
-  return {
-    orgId: row.org_id,
-    id: row.id,
-    sequence: Number(row.sequence),
-    eventType: row.event_type,
-    schemaVersion: row.schema_version,
-    serializerVersion: row.serializer_version,
-    occurredAt: row.occurred_at,
-    recordedAt: row.recorded_at,
-    actorJson: row.actor_json,
-    correlationId: row.correlation_id,
-    causationId: row.causation_id,
-    decisionId: row.decision_id,
-    evidenceSnapshotId: row.evidence_snapshot_id,
-    inputBundleId: row.input_bundle_id,
-    expectedInputBundleId: row.expected_input_bundle_id,
-    triggeringEntryId: row.triggering_entry_id,
-    reservationCreationId: row.reservation_creation_id,
-    payloadJson: row.payload_json,
-    prevHash: row.prev_hash,
-    entryHash: row.entry_hash,
-    provSource: row.prov_source,
-    provAsOf: row.prov_asof,
-    provConfidence: row.prov_confidence,
-  };
-}
-
-/** Ordered by sequence. `tail` reads only the most recent N entries. */
-export async function listDecisionLedger(
-  db: SqlQueryable,
-  orgId: string,
-  tail?: number,
-): Promise<DecisionLedgerRow[]> {
-  if (tail === undefined) {
-    const result = await db.query<DbLedgerRow>(
-      `SELECT ledger.*, record.input_bundle_id AS expected_input_bundle_id
-         FROM decision_ledger ledger
-         LEFT JOIN decision_records record
-           ON record.org_id = ledger.org_id
-          AND record.id = ledger.decision_id
-        WHERE ledger.org_id = $1
-        ORDER BY ledger.sequence ASC`,
-      [orgId],
-    );
-    return result.rows.map(toRow);
-  }
-  const result = await db.query<DbLedgerRow>(
-    `SELECT ledger.*, record.input_bundle_id AS expected_input_bundle_id
-       FROM decision_ledger ledger
-       LEFT JOIN decision_records record
-         ON record.org_id = ledger.org_id
-        AND record.id = ledger.decision_id
-      WHERE ledger.org_id = $1
-      ORDER BY ledger.sequence DESC
-      LIMIT $2`,
-    [orgId, tail],
-  );
-  return result.rows.map(toRow).reverse();
-}
 
 function level(
   name: LedgerVerificationLevel["level"],
@@ -304,6 +202,10 @@ function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
         source: row.provSource,
         asOf: row.provAsOf,
         confidence: row.provConfidence,
+        provenanceSchemaVersion: row.provenanceSchemaVersion,
+        provenanceSerializerVersion: row.provenanceSerializerVersion,
+        provenanceJson: row.provenanceJson,
+        provenanceTraceId: row.provenanceTraceId,
       },
     );
     if (!preimage) {
@@ -449,7 +351,18 @@ export async function verifyDecisionLedgerIntegrity(
     }
     const events: LedgerEntry[] = [];
     try {
+      const verifiedEntryIds = new Set(checked.rows.map((entry) => entry.id));
+      const provenanceCache = new Map<
+        string,
+        Promise<RecordProvenance>
+      >();
       for (const row of checked.rows) {
+        await verifyRecordedLedgerProvenance(
+          tx,
+          row,
+          verifiedEntryIds,
+          provenanceCache,
+        );
         const value = JSON.parse(row.payloadJson) as unknown;
         const parsed = parseRecordedLedgerEvent(
           row.eventType,
@@ -462,6 +375,7 @@ export async function verifyDecisionLedgerIntegrity(
         }
         events.push(parsed.event);
       }
+      await assertNoOrphanComputedProvenanceTraces(tx, orgId);
       await assertRecordedLedgerStructure(
         events.map((event, index) => ({
           event,

@@ -58,6 +58,15 @@ just leaf fields.
 - Two build-failing fences under charter-map #3, both run in the `provenance-trace` CI job:
   `metric-provenance` (no metric-class field renders without provenance — Vale V12) and `derived-provenance`
   (the derivation law: synthetic or demonstration input ⇒ demonstration ⇒ cannot feed compliance).
+- The decision-ledger producer boundary has a separate closed union. Direct producers use
+  `source`/`asOf`/`confidence` and cannot claim `source=computed`. A computed producer uses
+  `computed-v1.0.0` and must supply an exact algorithm identity, ordered tenant-scoped ledger-entry
+  references and their chain digests, observation time, confidence, a canonical derivation-trace
+  digest, and an append-only retained trace reference. The ledger chain binds the exact canonical
+  computed-provenance bytes. Replay recomputes the trace digest, verifies every referenced input,
+  and follows computed inputs transitively. Every transitive input must be compliance-eligible.
+  Fixture or demonstration ancestry is retained visibly and refused. Plain or legacy computed
+  provenance is ambiguous, remains readable as a demonstration, and cannot feed compliance.
 
 **What is deferred with a trigger (design contract):**
 - Rule 3 (demo audit class on persisted artifacts) lands with the first flow that computes and persists a
@@ -66,6 +75,8 @@ just leaf fields.
   Building either now, with no compliance artifact yet computed or exported, would be speculative
   (charter #5 / DO-NOT-PORT). The vocabulary they consume (`isDemonstration`, the demo audit class) ships
   now in `contracts/` as forward vocabulary, like `canFeedComplianceDecision` before it.
+  The retained producer trace above authenticates how a ledger fact was computed. It does not
+  replace the still-deferred audit classification for a persisted compliance artifact.
 
 ## Alternatives Rejected
 

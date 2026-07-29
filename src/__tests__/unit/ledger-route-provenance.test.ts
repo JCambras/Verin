@@ -20,7 +20,10 @@ import {
   ledgerRowProvenanceLabel,
   UNTRUSTED_PROVENANCE_LABEL,
 } from "@app/ledger/provenance";
-import { DEV_BADGE_TEXT } from "@contracts/provenance";
+import {
+  DEV_BADGE_TEXT,
+  deriveArtifactProvenance,
+} from "@contracts/provenance";
 
 describe("ledger route provenance", () => {
   it("suppresses row metadata when the verified snapshot fails", async () => {
@@ -88,6 +91,44 @@ describe("ledger route provenance", () => {
       asOf: "2026-07-26T13:30:00.000Z",
       confidence: "high",
     })).toBe(DEV_BADGE_TEXT["synthetic-fixture"]);
+  });
+
+  it("renders verified real-input computed rows as compliance-eligible", async () => {
+    const row = {
+      id: "ledger:computed",
+      sequence: 5,
+      occurredAt: "2026-07-26T13:30:00.000Z",
+      eventType: "ApprovalStageExpired",
+      actorJson: JSON.stringify({ systemId: "algorithm" }),
+      correlationId: "correlation:computed",
+      decisionId: "decision:computed",
+      entryHash: "1".repeat(64),
+    };
+    readVerifiedDecisionRegister.mockResolvedValueOnce({
+      verification: {
+        ok: true,
+        entriesChecked: 1,
+        entriesStored: 1,
+        levels: [],
+      },
+      rows: [row],
+      rowProvenance: new Map([[
+        row.id,
+        deriveArtifactProvenance([{
+          source: "verin-crm",
+          asOf: row.occurredAt,
+          confidence: "high",
+        }], row.occurredAt),
+      ]]),
+      decisions: [],
+      decisionsTotal: 0,
+      replaySourceReason: null,
+    });
+    const response = await GET(new NextRequest("http://localhost/api/ledger"));
+    const body = await response.json() as {
+      entries: Array<{ provenanceLabel: string | null }>;
+    };
+    expect(body.entries[0]!.provenanceLabel).toBeNull();
   });
 
   it.each([

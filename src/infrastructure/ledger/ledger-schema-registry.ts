@@ -7,7 +7,29 @@ import {
   canonicalJsonV1_0_0,
   type JsonValue,
 } from "@contracts/decision-core/v1-7/serialization";
-import type { RecordProvenance } from "@contracts/provenance";
+import {
+  COMPUTED_LEDGER_PROVENANCE_VERSION,
+  DIRECT_LEDGER_PROVENANCE_VERSION,
+  LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION,
+  LEDGER_PROVENANCE_SERIALIZER_VERSION,
+  parseLedgerProducerProvenance,
+  type ComputedLedgerProducerProvenance,
+  type RecordProvenance,
+} from "@contracts/provenance";
+
+export type RecordedLedgerProvenance =
+  | RecordProvenance
+  | ComputedLedgerProducerProvenance;
+
+export interface RecordedLedgerProvenanceFields {
+  readonly source: unknown;
+  readonly asOf: unknown;
+  readonly confidence: unknown;
+  readonly provenanceSchemaVersion?: unknown;
+  readonly provenanceSerializerVersion?: unknown;
+  readonly provenanceJson?: unknown;
+  readonly provenanceTraceId?: unknown;
+}
 
 type ParseResult =
   | { readonly ok: true; readonly event: LedgerEntry; readonly canonicalBytes: string }
@@ -16,11 +38,6 @@ type ParseResult =
 interface RecordedLedgerCodec {
   readonly parse: (value: unknown) => LedgerEntry | undefined;
   readonly canonicalize: (value: unknown) => string | undefined;
-  readonly parseProvenance: (value: unknown) => RecordProvenance | undefined;
-  readonly chainPreimage: (
-    payloadJson: string,
-    provenance: RecordProvenance,
-  ) => string;
 }
 
 const encodingKey = (schemaVersion: string, serializerVersion: string): string =>
@@ -93,8 +110,6 @@ function codecV1_0_0(schema: {
       const serialized = canonicalJsonV1_0_0(value as JsonValue);
       return serialized.ok ? serialized.value : undefined;
     },
-    parseProvenance: parseProvenanceV1_0_0,
-    chainPreimage: chainPreimageV1_0_0,
   };
 }
 
@@ -117,21 +132,110 @@ export function decisionLedgerChainPreimage(
   schemaVersion: string,
   serializerVersion: string,
   payloadJson: string,
-  provenance: unknown,
+  provenance: RecordedLedgerProvenanceFields,
 ): string | null {
   const codec = LEDGER_CODEC_REGISTRY.get(encodingKey(schemaVersion, serializerVersion));
-  const parsed = codec?.parseProvenance(provenance);
-  return codec && parsed ? codec.chainPreimage(payloadJson, parsed) : null;
+  const parsed = parseRecordedLedgerProvenanceFields(provenance);
+  if (!codec || !parsed) return null;
+  return parsed.kind === "computed"
+    ? JSON.stringify([
+        COMPUTED_LEDGER_PROVENANCE_VERSION,
+        payloadJson,
+        parsed.canonicalBytes,
+      ])
+    : chainPreimageV1_0_0(payloadJson, parsed.provenance);
+}
+
+type ParsedRecordedProvenance =
+  | {
+      readonly kind: "legacy";
+      readonly provenance: RecordProvenance;
+    }
+  | {
+      readonly kind: "computed";
+      readonly provenance: ComputedLedgerProducerProvenance;
+      readonly canonicalBytes: string;
+    };
+
+function parseRecordedLedgerProvenanceFields(
+  value: RecordedLedgerProvenanceFields,
+): ParsedRecordedProvenance | null {
+  const source = value.source;
+  const version = value.provenanceSchemaVersion ??
+    (source === "computed"
+      ? LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION
+      : DIRECT_LEDGER_PROVENANCE_VERSION);
+  const serializer = value.provenanceSerializerVersion ??
+    LEDGER_PROVENANCE_SERIALIZER_VERSION;
+  if (serializer !== LEDGER_PROVENANCE_SERIALIZER_VERSION) return null;
+  if (
+    version === DIRECT_LEDGER_PROVENANCE_VERSION ||
+    version === LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION
+  ) {
+    if (
+      (version === DIRECT_LEDGER_PROVENANCE_VERSION &&
+        source === "computed") ||
+      (version === LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION &&
+        source !== "computed") ||
+      (value.provenanceJson !== undefined &&
+        value.provenanceJson !== null) ||
+      (value.provenanceTraceId !== undefined &&
+        value.provenanceTraceId !== null)
+    ) {
+      return null;
+    }
+    const provenance = parseProvenanceV1_0_0({
+      source,
+      asOf: value.asOf,
+      confidence: value.confidence,
+    });
+    return provenance ? { kind: "legacy", provenance } : null;
+  }
+  if (
+    version !== COMPUTED_LEDGER_PROVENANCE_VERSION ||
+    source !== "computed" ||
+    typeof value.provenanceJson !== "string" ||
+    typeof value.provenanceTraceId !== "string"
+  ) {
+    return null;
+  }
+  let unknown: unknown;
+  try {
+    unknown = JSON.parse(value.provenanceJson);
+  } catch {
+    return null;
+  }
+  const provenance = parseLedgerProducerProvenance(unknown);
+  const serialized = canonicalJsonV1_0_0(unknown as JsonValue);
+  if (
+    !provenance ||
+    provenance.source !== "computed" ||
+    !serialized.ok ||
+    serialized.value !== value.provenanceJson ||
+    provenance.asOf !== value.asOf ||
+    provenance.confidence !== value.confidence ||
+    provenance.derivation.traceRef.id !== value.provenanceTraceId
+  ) {
+    return null;
+  }
+  return {
+    kind: "computed",
+    provenance,
+    canonicalBytes: serialized.value,
+  };
 }
 
 export function parseRecordedLedgerProvenance(
   schemaVersion: string,
   serializerVersion: string,
-  value: unknown,
-): RecordProvenance | null {
-  return LEDGER_CODEC_REGISTRY
-    .get(encodingKey(schemaVersion, serializerVersion))
-    ?.parseProvenance(value) ?? null;
+  value: RecordedLedgerProvenanceFields,
+): RecordedLedgerProvenance | null {
+  if (
+    !LEDGER_CODEC_REGISTRY.has(
+      encodingKey(schemaVersion, serializerVersion),
+    )
+  ) return null;
+  return parseRecordedLedgerProvenanceFields(value)?.provenance ?? null;
 }
 
 export function canonicalizeRecordedLedgerValue(

@@ -46,14 +46,17 @@ describe("recorded ledger structural validator", () => {
       );
     }
     let activeReservationReads = 0;
+    let decisionReads = 0;
     const base: LedgerStructureLookup = {
-      decision: async (id) =>
-        id === input.decisionRecord.id
+      decision: async (id) => {
+        decisionReads += 1;
+        return id === input.decisionRecord.id
           ? {
               record: input.decisionRecord,
               bundleHash: input.inputBundle.bundleHash,
             }
-          : null,
+          : null;
+      },
       entry: async () => null,
       decisionRecording: async () => null,
       evidenceRecording: async () => null,
@@ -70,5 +73,6 @@ describe("recorded ledger structural validator", () => {
     await expect(assertRecordedLedgerStructure(entries, base)).resolves
       .toBeUndefined();
     expect(activeReservationReads).toBe(1);
+    expect(decisionReads).toBe(1);
   });
 });

@@ -19,13 +19,16 @@ retention (SEC 17a-4 aware) and an examiner-export path. Meridian had no DR plan
   (`docs/runbooks/backup-and-restore.md`). Not a paper plan — actually run.
 - **Retention (per record class):** `audit_log`, `decision_ledger`,
   `evidence_snapshots`, `decision_input_bundles` and their evidence membership,
-  `decision_records`, and `decision_replay_source_provenance` bindings are retained
+  `decision_records`, `decision_replay_source_provenance` bindings, and
+  `decision_provenance_traces` are retained
   ≥ 6 years (SEC 17 CFR 275.204-2 / 17a-4 floor);
   both append-only hash-chain invariants are preserved for the whole window. A WORM archive tier (e.g. S3
   Object Lock) for 17a-4(f) is a design contract (un-defer trigger below). A DSAR/right-to-delete request
   can never override the 204-2 retention hold; deletion cites the regulatory basis per record class.
   No retention, archival, or pruning path may preserve replay-source bytes while
-  discarding the provenance binding required to verify them.
+  discarding the provenance binding required to verify them. The same rule forbids
+  preserving a computed ledger row while discarding its retained derivation trace,
+  or preserving that trace while discarding any retained ledger input it names.
 - **Shipped register surfaces:** `/app/audit` verifies the operational audit
   chain and returns its latest 200 entries. `/app/ledger` verifies and replays
   a bounded window of at most 200 decision events, returns recent decision

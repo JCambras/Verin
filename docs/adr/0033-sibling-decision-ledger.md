@@ -70,10 +70,24 @@ settle now.
   closed even if its leaf name is already used elsewhere. A schema traversal
   companion requires every declared string path to exist in that inventory, and
   submitted immutable bytes are never rewritten.
-- Every ledger row stores the provenance of the producer that appended it
-  (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
-  an unregistered source, the chain binds all three fields, and surfaces classify a
-  row from the stored value - never from an actor name.
+- Every ledger row stores versioned provenance for the producer that appended it.
+  A direct producer is the exact three-field `source`/`asOf`/`confidence` arm and
+  cannot claim `source=computed`. The `computed-v1.0.0` arm additionally binds exact
+  canonical provenance bytes containing the algorithm identity, ordered tenant-scoped
+  ledger-entry inputs and their entry hashes, observation time, confidence, trace
+  digest, and append-only trace reference. Both write paths reject missing, extra,
+  ambiguous, cross-tenant, unsupported-version, non-canonical, digest-mismatched, or
+  compliance-ineligible computed provenance. Legacy plain computed rows remain readable
+  only as demonstrations. Surfaces classify a row from the verified stored value,
+  never from an actor name.
+- Computed derivation traces live in append-only `decision_provenance_traces`.
+  A trace identity can be reused only for byte-identical content. Online append verifies
+  every named ledger input before retaining the trace. Replay checks the exact chain-bound
+  provenance bytes, recomputes the trace digest, matches the retained trace, verifies
+  every referenced entry hash and earlier sequence, and recursively rejects fixture or
+  demonstration ancestry. Whole-ledger verification and rebuild reject orphan traces.
+  Bounded replay excludes a decision when any computed input lies outside its verified
+  window instead of upgrading the mutable trace table into cryptographic authority.
 - Every immutable evidence, bundle, and decision source is bound to the exact
   chain entry that first recorded it. The binding is append-only and tenant-scoped,
   and provenance is read from the bound chain row instead of copied into mutable
@@ -85,7 +99,7 @@ settle now.
   equality, so an id collision with different bytes is refused, never overwritten.
   Each evidence-recording event binds a digest of the complete canonical snapshot
   metadata in addition to the encrypted content hash.
-- All immutable source tables reject UPDATE, DELETE, and TRUNCATE through database
+- All immutable source and computed-trace tables reject UPDATE, DELETE, and TRUNCATE through database
   triggers. A ts-morph anti-fork fence assigns each table to one exact insert-owning
   module, scans operator scripts, and resolves side-effect-free static string
   composition before matching. A statically rooted query or exec argument that
@@ -113,7 +127,8 @@ settle now.
   L3 re-derives promoted columns from the typed payload; L4 compares count,
   sequence, and head hash with the anchor. The existing CI chain gate verifies
   both audit-class stores unbounded, dispatches immutable evidence, bundle, and
-  decision rows through recorded source codecs, and refuses a zero-entry pass.
+  decision rows through recorded source codecs, verifies computed provenance and
+  its retained inputs transitively, and refuses a zero-entry pass.
 - A request path may verify a bounded window: the most recent entries, anchored to
   the stored hash of the row preceding them, with L4 still compared against tenant
   totals. The register verifies, reads, and replays that window under one tenant-locked
@@ -149,10 +164,13 @@ settle now.
   examiner or regulated-customer export requirement, before the capability is
   represented as available.
 - Extend ADR-0019's six-year audit-class retention to the ledger, evidence,
-  bundles, membership, and decision records. External anchor witnessing or HMAC
+  bundles, membership, decision records, replay-source bindings, and computed
+  provenance traces. A ledger row, its trace, and every retained input named by
+  that trace cannot be separated by retention, archival, or pruning. External anchor witnessing or HMAC
   now applies to both chains.
-- Amend ADR-0018 ceilings from contracts 3500 to 4700 and infrastructure 2500 to
-  7200. Measured final state is contracts 4525 and infrastructure 7094. Domain
+- Amend ADR-0018 ceilings from contracts 3500 to 4800 and infrastructure 2500 to
+  8050. The computed-provenance completion measures contracts at 4735 and
+  infrastructure at 8010. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
@@ -217,7 +235,10 @@ claim those capabilities are shipped until their prompt lands them.
 
 Migration version 3 is additive. Migration version 7 adds indexes only. Migration
 version 8 promotes the immutable input-bundle identity onto decision-recording
-ledger rows and adds its tenant-scoped ordering index. Existing
+ledger rows and adds its tenant-scoped ordering index. Migration version 9 adds
+the append-only computed-provenance trace table and versioned provenance columns,
+backfilling existing direct and legacy-computed rows without rewriting their
+historical chain preimages. Existing
 audit DDL, rows, preimages, outbox, and verification remain byte-compatible.
 Future event schema versions add dispatch entries and pure upcasts for projection
 use. They never rewrite an old row or hash. Prompt 19 owns decision re-evaluation,

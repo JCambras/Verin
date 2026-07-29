@@ -320,6 +320,10 @@ CREATE INDEX decision_ledger_decision_recorded
   WHERE event_type = 'DecisionRecorded';
 `;
 
+export {
+  DECISION_LEDGER_COMPUTED_PROVENANCE_SQL,
+} from "./decision-ledger-provenance-migration";
+
 export const DECISION_REPLAY_SOURCE_PROVENANCE_SQL = `
 CREATE TABLE IF NOT EXISTS decision_replay_source_provenance (
   org_id text NOT NULL REFERENCES orgs(id),

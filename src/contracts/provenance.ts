@@ -38,6 +38,202 @@ export interface RecordProvenance {
   readonly confidence: Confidence;
 }
 
+export const DIRECT_LEDGER_PROVENANCE_VERSION = "record-v1.0.0" as const;
+export const LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION =
+  "computed-legacy-v0.0.0" as const;
+export const COMPUTED_LEDGER_PROVENANCE_VERSION =
+  "computed-v1.0.0" as const;
+export const LEDGER_PROVENANCE_SERIALIZER_VERSION = "1.0.0" as const;
+
+type DirectSourceSystem = Exclude<SourceSystem, "computed">;
+
+export interface DirectLedgerProducerProvenance
+  extends Omit<RecordProvenance, "source"> {
+  readonly source: DirectSourceSystem;
+  readonly demonstration?: never;
+  readonly derivedFrom?: never;
+  readonly derivation?: never;
+}
+
+export interface ComputedProvenanceInput {
+  readonly kind: "ledger-entry";
+  readonly entryRef: {
+    readonly firmId: string;
+    readonly id: string;
+  };
+  readonly entryHash: string;
+}
+
+export interface ComputedProvenanceTrace {
+  readonly schemaVersion: typeof COMPUTED_LEDGER_PROVENANCE_VERSION;
+  readonly serializerVersion: typeof LEDGER_PROVENANCE_SERIALIZER_VERSION;
+  readonly traceRef: {
+    readonly firmId: string;
+    readonly id: string;
+  };
+  readonly producer: {
+    readonly kind: "algorithm";
+    readonly id: string;
+    readonly version: string;
+  };
+  readonly inputs: readonly ComputedProvenanceInput[];
+  readonly observedAt: string;
+  readonly confidence: Confidence;
+}
+
+export interface ComputedLedgerProducerProvenance {
+  readonly source: "computed";
+  readonly asOf: string;
+  readonly confidence: Confidence;
+  readonly derivation: ComputedProvenanceTrace & {
+    readonly traceDigest: string;
+  };
+  readonly demonstration?: never;
+  readonly derivedFrom?: never;
+}
+
+export type LedgerProducerProvenance =
+  | DirectLedgerProducerProvenance
+  | ComputedLedgerProducerProvenance;
+
+function exactKeys(
+  value: object,
+  expected: readonly string[],
+): boolean {
+  const keys = Reflect.ownKeys(value);
+  return keys.length === expected.length &&
+    expected.every((key) => keys.includes(key));
+}
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+    return false;
+  }
+  return new Date(value).toISOString() === value;
+}
+
+function lexicalId(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value);
+}
+
+function hash(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function scopedRef(
+  value: unknown,
+): value is { readonly firmId: string; readonly id: string } {
+  return value !== null &&
+    typeof value === "object" &&
+    exactKeys(value, ["firmId", "id"]) &&
+    lexicalId(Reflect.get(value, "firmId")) &&
+    lexicalId(Reflect.get(value, "id"));
+}
+
+export function computedProvenanceTrace(
+  provenance: ComputedLedgerProducerProvenance,
+): ComputedProvenanceTrace {
+  return {
+    schemaVersion: provenance.derivation.schemaVersion,
+    serializerVersion: provenance.derivation.serializerVersion,
+    traceRef: provenance.derivation.traceRef,
+    producer: provenance.derivation.producer,
+    inputs: provenance.derivation.inputs,
+    observedAt: provenance.derivation.observedAt,
+    confidence: provenance.derivation.confidence,
+  };
+}
+
+export function parseLedgerProducerProvenance(
+  value: unknown,
+): LedgerProducerProvenance | null {
+  if (value === null || typeof value !== "object") return null;
+  if (Reflect.get(value, "source") !== "computed") {
+    if (!exactKeys(value, ["source", "asOf", "confidence"])) return null;
+    const parsed = parseRecordProvenance(value);
+    return parsed && parsed.source !== "computed"
+      ? parsed as DirectLedgerProducerProvenance
+      : null;
+  }
+  if (!exactKeys(value, ["source", "asOf", "confidence", "derivation"])) {
+    return null;
+  }
+  const asOf = Reflect.get(value, "asOf");
+  const confidence = Reflect.get(value, "confidence");
+  const derivation = Reflect.get(value, "derivation");
+  if (
+    !canonicalTimestamp(asOf) ||
+    !CONFIDENCES.includes(confidence as Confidence) ||
+    derivation === null ||
+    typeof derivation !== "object" ||
+    !exactKeys(derivation, [
+      "schemaVersion",
+      "serializerVersion",
+      "traceRef",
+      "producer",
+      "inputs",
+      "observedAt",
+      "confidence",
+      "traceDigest",
+    ]) ||
+    Reflect.get(derivation, "schemaVersion") !==
+      COMPUTED_LEDGER_PROVENANCE_VERSION ||
+    Reflect.get(derivation, "serializerVersion") !==
+      LEDGER_PROVENANCE_SERIALIZER_VERSION ||
+    !scopedRef(Reflect.get(derivation, "traceRef")) ||
+    Reflect.get(derivation, "observedAt") !== asOf ||
+    Reflect.get(derivation, "confidence") !== confidence ||
+    !hash(Reflect.get(derivation, "traceDigest"))
+  ) {
+    return null;
+  }
+  const producer = Reflect.get(derivation, "producer");
+  const inputs = Reflect.get(derivation, "inputs");
+  if (
+    producer === null ||
+    typeof producer !== "object" ||
+    !exactKeys(producer, ["kind", "id", "version"]) ||
+    Reflect.get(producer, "kind") !== "algorithm" ||
+    !lexicalId(Reflect.get(producer, "id")) ||
+    typeof Reflect.get(producer, "version") !== "string" ||
+    !/^[0-9]+(?:\.[0-9]+){1,3}(?:-[a-z0-9.-]+)?$/.test(
+      Reflect.get(producer, "version") as string,
+    ) ||
+    !Array.isArray(inputs) ||
+    inputs.length === 0
+  ) {
+    return null;
+  }
+  const seen = new Set<string>();
+  for (const input of inputs) {
+    if (
+      input === null ||
+      typeof input !== "object" ||
+      !exactKeys(input, ["kind", "entryRef", "entryHash"]) ||
+      Reflect.get(input, "kind") !== "ledger-entry" ||
+      !scopedRef(Reflect.get(input, "entryRef")) ||
+      !hash(Reflect.get(input, "entryHash"))
+    ) {
+      return null;
+    }
+    const ref = Reflect.get(input, "entryRef") as {
+      readonly firmId: string;
+      readonly id: string;
+    };
+    if (
+      ref.firmId !== (
+        Reflect.get(derivation, "traceRef") as { readonly firmId: string }
+      ).firmId ||
+      seen.has(`${ref.firmId}\u0000${ref.id}`)
+    ) {
+      return null;
+    }
+    seen.add(`${ref.firmId}\u0000${ref.id}`);
+  }
+  return value as unknown as ComputedLedgerProducerProvenance;
+}
+
 export function parseRecordProvenance(value: unknown): RecordProvenance | null {
   if (value === null || typeof value !== "object") return null;
   const candidate = value as Partial<RecordProvenance>;
@@ -77,7 +273,14 @@ export function isSyntheticSource(source: SourceSystem): boolean {
  * to refuse both. Accepts a plain RecordProvenance or a DerivedProvenance.
  */
 export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenance): boolean {
-  return !isSyntheticSource(p.source) && !isDemonstration(p);
+  if (isSyntheticSource(p.source)) return false;
+  if (p.source !== "computed") return true;
+  if (!isDerived(p) || p.demonstration || p.derivedFrom.length === 0) {
+    return false;
+  }
+  const leafSources = p.derivedFrom.filter((source) => source !== "computed");
+  return leafSources.length > 0 &&
+    leafSources.every((source) => !isSyntheticSource(source));
 }
 
 // ── Charter #3 EXTENSION (ADR-0022): derived compliance artifacts ────────────────
@@ -110,7 +313,11 @@ function lowestConfidence(inputs: readonly RecordProvenance[]): Confidence {
 }
 
 function isDerived(p: RecordProvenance): p is DerivedProvenance {
-  return "derivedFrom" in p;
+  return p.source === "computed" &&
+    "demonstration" in p &&
+    typeof p.demonstration === "boolean" &&
+    "derivedFrom" in p &&
+    Array.isArray(p.derivedFrom);
 }
 
 /**
@@ -120,7 +327,10 @@ function isDerived(p: RecordProvenance): p is DerivedProvenance {
  * `derivedFrom` flattens nested traces so the trace always reaches leaf sources.
  */
 export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {
-  const demonstration = inputs.some((i) => isSyntheticSource(i.source) || isDemonstration(i));
+  const demonstration = inputs.some((i) =>
+    isSyntheticSource(i.source) ||
+    (i.source === "computed" && !isDerived(i)) ||
+    isDemonstration(i));
   const derivedFrom = [...new Set(inputs.flatMap((i) => (isDerived(i) ? [i.source, ...i.derivedFrom] : [i.source])))];
   return {
     source: "computed",

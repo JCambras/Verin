@@ -1,33 +1,20 @@
 /** Sole synchronous decision-ledger write path. There is no outbox. */
-import {
-  isSqlTransaction,
-  type SqlDb,
-  type SqlTx,
-} from "@infra/store/db";
+import { isSqlTransaction, type SqlDb, type SqlTx } from "@infra/store/db";
 import { GENESIS_HASH, computeChainHash } from "@infra/audit/hash-chain";
 import { assertNoPIIValues } from "@contracts/pii";
 import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
 import { log } from "@infra/observability/logger";
 import { isDriverConstraintError, logSafeReason } from "@infra/store/driver-errors";
 import { err, ok, type Result } from "@contracts/result";
-import {
-  parseRecordProvenance,
-  type RecordProvenance,
-} from "@contracts/provenance";
+import { type LedgerProducerProvenance } from "@contracts/provenance";
 import {
   EvidenceSnapshotRefSchema,
   DecisionInputBundleSchema,
   type EvidenceSnapshotRef,
   type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
-import {
-  DecisionRecordSchema,
-  type DecisionRecord,
-} from "@contracts/decision-core/decision";
-import {
-  LedgerEntrySchema,
-  type LedgerEntry,
-} from "@contracts/decision-core/ledger";
+import { DecisionRecordSchema, type DecisionRecord } from "@contracts/decision-core/decision";
+import { LedgerEntrySchema, type LedgerEntry } from "@contracts/decision-core/ledger";
 import {
   promotedDecisionId,
   promotedEvidenceSnapshotId,
@@ -65,13 +52,15 @@ import {
 } from "./ledger-pii";
 import { storedLedgerStructureLookup } from "./ledger-structural-store";
 import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
+import {
+  prepareLedgerProducerProvenance,
+  type PreparedLedgerProducerProvenance,
+} from "./ledger-producer-provenance";
+import { persistLedgerProducerProvenance } from "./ledger-producer-provenance-write";
 
 export { rebuildDecisionProjections } from "./ledger-rebuild";
+export type { LedgerProducerProvenance } from "@contracts/provenance";
 
-export type LedgerProducerProvenance = RecordProvenance & {
-  readonly demonstration?: never;
-  readonly derivedFrom?: never;
-};
 export interface RecordDecisionInput {
   readonly evidenceSnapshots: readonly EvidenceSnapshotRef[];
   readonly inputBundle: DecisionInputBundle;
@@ -91,17 +80,6 @@ interface PreparedEvent {
   readonly actorJson: string;
 }
 
-function parseLedgerProducerProvenance(
-  value: unknown,
-): LedgerProducerProvenance | null {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Reflect.ownKeys(value).some((key) =>
-      key !== "source" && key !== "asOf" && key !== "confidence")
-  ) return null;
-  return parseRecordProvenance(value);
-}
 function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   const parsed = LedgerEntrySchema.safeParse(input);
   if (!parsed.success) return err(appError("VALIDATION", "ledger event is invalid"));
@@ -162,7 +140,7 @@ async function appendPrepared(
   tx: SqlTx,
   orgId: string,
   events: readonly PreparedEvent[],
-  provenance: RecordProvenance,
+  provenance: PreparedLedgerProducerProvenance,
   sourceWrite: ReturnType<typeof issueValidatedLedgerSourceWrite>,
   decisionRecord?: DecisionRecord,
 ): Promise<AppendedLedgerEntry[]> {
@@ -174,6 +152,12 @@ async function appendPrepared(
   let prevHash = head.rows[0]?.entry_hash ?? GENESIS_HASH;
   const appended: AppendedLedgerEntry[] = [];
   const structure = storedLedgerStructureLookup(tx, orgId);
+  const producerProvenance = await persistLedgerProducerProvenance(
+    tx,
+    provenance,
+    sequence,
+    events[0]!.event.recordedAt,
+  );
   for (const prepared of events) {
     const { event, payloadJson, actorJson } = prepared;
     const inputBundleId = await assertLedgerSourceBindings(tx, event);
@@ -184,7 +168,7 @@ async function appendPrepared(
     const projectionProvenance = await deriveLedgerEventProvenance(
       tx,
       event,
-      provenance,
+      producerProvenance,
       event.type === "DecisionRecorded",
     );
     const projection = await prepareProjection(
@@ -198,7 +182,15 @@ async function appendPrepared(
       event.schemaVersion,
       event.serializerVersion,
       payloadJson,
-      provenance,
+      {
+        source: provenance.value.source,
+        asOf: provenance.value.asOf,
+        confidence: provenance.value.confidence,
+        provenanceSchemaVersion: provenance.schemaVersion,
+        provenanceSerializerVersion: provenance.serializerVersion,
+        provenanceJson: provenance.provenanceJson,
+        provenanceTraceId: provenance.traceId,
+      },
     );
     if (!chainPreimage) {
       throw appError("VALIDATION", "ledger chain preimage version is unsupported");
@@ -209,9 +201,11 @@ async function appendPrepared(
         (org_id,id,sequence,event_type,schema_version,serializer_version,
          occurred_at,recorded_at,actor_json,correlation_id,causation_id,
          decision_id,evidence_snapshot_id,input_bundle_id,triggering_entry_id,
-         payload_json,reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,prov_confidence)
+         payload_json,reservation_creation_id,prev_hash,entry_hash,prov_source,
+         prov_asof,prov_confidence,prov_schema_version,
+         prov_serializer_version,prov_json,prov_trace_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-               $18,$19,$20,$21,$22)`,
+               $18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
@@ -220,7 +214,10 @@ async function appendPrepared(
         event.type === "DecisionRecorded" ? inputBundleId : null,
         promotedTriggeringEntryId(event), payloadJson,
         promotedReservationCreationId(event), prevHash, entryHash,
-        provenance.source, provenance.asOf, provenance.confidence,
+        provenance.value.source, provenance.value.asOf,
+        provenance.value.confidence, provenance.schemaVersion,
+        provenance.serializerVersion, provenance.provenanceJson,
+        provenance.traceId,
       ],
     );
     if (
@@ -310,12 +307,8 @@ function validateDecisionInput(
   bundle: DecisionInputBundle;
   record: DecisionRecord;
   events: PreparedEvent[];
-  provenance: RecordProvenance;
+  provenance: PreparedLedgerProducerProvenance;
 }, AppError> {
-  const provenance = parseLedgerProducerProvenance(input.provenance);
-  if (!provenance) {
-    return err(appError("VALIDATION", "decision ledger provenance is invalid"));
-  }
   const snapshots = input.evidenceSnapshots.map((value) =>
     EvidenceSnapshotRefSchema.safeParse(value));
   if (snapshots.some((parsed) => !parsed.success)) {
@@ -326,6 +319,11 @@ function validateDecisionInput(
   if (!bundle.success || !record.success) {
     return err(appError("VALIDATION", "decision replay input is invalid"));
   }
+  const provenance = prepareLedgerProducerProvenance(
+    input.provenance,
+    record.data.firmId,
+  );
+  if (!provenance.ok) return provenance;
   const snapshotValues = snapshots.flatMap((parsed) =>
     parsed.success ? [parsed.data] : []);
   try {
@@ -381,7 +379,7 @@ function validateDecisionInput(
     bundle: bundle.data,
     record: record.data,
     events: events.value,
-    provenance,
+    provenance: provenance.value,
   });
 }
 
@@ -440,10 +438,11 @@ export async function appendDecisionEvents(
   if (!isSqlTransaction(tx)) {
     throw appError("VALIDATION", "decision events require an active transaction");
   }
-  const normalizedProvenance = parseLedgerProducerProvenance(provenance);
-  if (!normalizedProvenance) {
-    throw appError("VALIDATION", "decision ledger provenance is invalid");
-  }
+  const normalizedProvenance = prepareLedgerProducerProvenance(
+    provenance,
+    orgId,
+  );
+  if (!normalizedProvenance.ok) throw normalizedProvenance.error;
   const prepared = prepareEvents(inputs, orgId);
   if (!prepared.ok) throw prepared.error;
   if (prepared.value.some(({ event }) => event.type === "DecisionRecorded")) {
@@ -484,7 +483,7 @@ export async function appendDecisionEvents(
       tx,
       orgId,
       prepared.value,
-      normalizedProvenance,
+      normalizedProvenance.value,
       sourceWrite,
     );
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");

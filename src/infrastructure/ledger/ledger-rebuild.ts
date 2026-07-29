@@ -14,11 +14,14 @@ import {
 } from "./ledger-projection-store";
 import {
   parseRecordedLedgerEvent,
-  parseRecordedLedgerProvenance,
 } from "./ledger-schema-registry";
 import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
 import { storedLedgerStructureLookup } from "./ledger-structural-store";
 import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
+import {
+  assertNoOrphanComputedProvenanceTraces,
+  verifyRecordedLedgerProvenance,
+} from "./ledger-producer-provenance";
 
 export async function rebuildDecisionProjections(
   db: SqlDb,
@@ -44,6 +47,11 @@ export async function rebuildDecisionProjections(
       provenance: RecordProvenance;
       record?: DecisionRecord;
     }> = [];
+    const verifiedEntryIds = new Set(rows.map((row) => row.id));
+    const provenanceCache = new Map<
+      string,
+      Promise<RecordProvenance>
+    >();
     for (const row of rows) {
       let value: unknown;
       try {
@@ -58,24 +66,19 @@ export async function rebuildDecisionProjections(
         value,
       );
       if (!parsed.ok) throw appError("STORE_CONSTRAINT", parsed.reason);
-      const provenance = parseRecordedLedgerProvenance(
-        row.schemaVersion,
-        row.serializerVersion,
-        {
-          source: row.provSource,
-          asOf: row.provAsOf,
-          confidence: row.provConfidence,
-        },
+      const provenance = await verifyRecordedLedgerProvenance(
+        tx,
+        row,
+        verifiedEntryIds,
+        provenanceCache,
       );
-      if (!provenance) {
-        throw appError("STORE_CONSTRAINT", "ledger replay provenance is invalid");
-      }
       replay.push({
         row,
         event: parsed.event,
         provenance,
       });
     }
+    await assertNoOrphanComputedProvenanceTraces(tx, orgId);
     await assertRecordedLedgerStructure(
       replay.map((item) => ({
         event: item.event,

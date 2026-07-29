@@ -3599,6 +3599,11 @@ failures, and immutable reservation authority.
 
 ### D-118 · 2026-07-29 · reversible · Ledger producer provenance and SQL fences fail closed
 
+**Computed-provenance shape amended by D-085.** The exact three-field shape below
+remains the direct-producer arm and may not claim `source=computed`. D-085 adds the
+separate closed, versioned computed arm and does not restore ambiguous plain computed
+provenance.
+
 Ledger producer provenance is an exact boundary containing only `source`, `asOf`,
 and `confidence`. Its public type excludes the known derived-provenance fields, and
 both write paths reject every additional runtime field instead of silently dropping
@@ -3700,3 +3705,49 @@ triggers are not structural protection if application code can disable them and
 mutate immutable rows.
 **Revert path:** none while tenant isolation and append-only ledger ownership
 remain active controls.
+
+### D-122 · 2026-07-29 · reversible · Ledger provenance and query ownership remain verifiable
+
+Tenant predicates are evaluated in the query block that owns them. A nested
+`WHERE` can scope its own aliases or a correlated alias already scoped by the
+parent, but it cannot filter rows returned by the parent query. Alias shadowing
+removes the inherited binding. The permanent companion keeps the projection-only
+subquery bypass and a valid correlated control.
+
+Immutable ownership includes schema DDL. Dropping an immutable table, replacing
+or dropping `decision_source_append_only`, or altering immutable schema outside an
+exact reviewed migration fails the fence. Migration 10 is pinned by version, name,
+and SHA-256. It adds append-only `decision_provenance_traces` plus versioned
+provenance columns on `decision_ledger`; the trace writer is a separate exact-owner
+module that only `ledger-store.ts` may invoke.
+
+Ledger producer provenance is a closed union. Direct provenance keeps D-081's exact
+three fields and excludes `computed`. Computed provenance uses `computed-v1.0.0`
+and the canonical serializer to bind an exact algorithm identity, ordered
+tenant-scoped ledger-entry references and entry hashes, observation time,
+confidence, derivation-trace digest, and retained trace identity. Online append and
+replay verify canonical bytes, versions, the recomputed trace digest, retained trace
+bytes, input order and hashes, earlier sequence, and every transitive input.
+Fixture, demonstration, ambiguous plain computed, missing, extra, cross-tenant, or
+unverifiable ancestry fails closed. Legacy computed history stays visibly
+demonstration-only and cannot feed compliance.
+
+Bounded register replay uses indexed tenant-scoped predecessor checks for causal,
+reservation-generation, exception-trigger, decision-initialization, and derived
+decision dependencies outside the visible window. A real pre-window dependency
+makes only the affected decision incomplete; a reference absent from all preceding
+history still makes the verified snapshot fail. Structural validation memoizes each
+immutable decision binding for its ordered pass, so repeated events do not reload
+and re-hash the same record.
+
+ADR-0019 retains computed traces with their ledger rows and named inputs for the
+same six-year hold. ADR-0033 amends ADR-0018 to ceilings of 5500 contract lines and
+9400 infrastructure lines for the composed security and ledger implementation.
+The final fence measurement is 5343 contract lines and 9285 infrastructure lines,
+with the 500-line file cap preserved.
+
+**Why:** tenant filters must restrict the rows their query returns, append-only
+history must include its database guard, and computed trust cannot survive if its
+derivation can be erased, forged, detached, or skipped during bounded replay.
+**Revert path:** none while Prompt 7 permits computed producers, bounded register
+verification, or application-owned ledger schema.

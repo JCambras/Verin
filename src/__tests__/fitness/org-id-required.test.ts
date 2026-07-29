@@ -5,6 +5,7 @@ import { realProject, inMemoryProject, REPO_ROOT } from "./_fence-utils";
 import { MIGRATION_SQL, MIGRATIONS, type PreflightProbe } from "@infra/store/migrations";
 import {
   DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
+  DECISION_LEDGER_COMPUTED_PROVENANCE_SQL,
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "@infra/store/decision-ledger-migration";
@@ -31,6 +32,7 @@ const DATA_TABLES = [
   "decision_input_bundles",
   "decision_input_bundle_evidence",
   "decision_records",
+  "decision_provenance_traces",
   "decision_replay_source_provenance",
   "decision_ledger",
   "decision_ledger_anchor",
@@ -62,6 +64,10 @@ export function unclassifiedTables(ddl: string, dataTables: readonly string[], n
 // normalized SQL exactly: a substring/containment match would silently exempt
 // any superset query (e.g. the login query grown an "OR role = $2" arm).
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
+  {
+    sql: normalizeSql(DECISION_LEDGER_COMPUTED_PROVENANCE_SQL),
+    why: "forward-only migration 9 backfills provenance codec identities for every existing tenant",
+  },
   {
     sql: normalizeSql(DECISION_LEDGER_BUNDLE_IDENTITY_SQL),
     why: "forward-only migration 8 backfills the promoted bundle identity for every existing tenant",
@@ -222,7 +228,10 @@ function conditionClauses(sql: string): ConditionClause[] {
     "union", "where",
   ]);
   return words.flatMap((word, index): ConditionClause[] => {
-    if (word.word !== "where" && word.word !== "on") return [];
+    if (
+      word.depth !== 0 ||
+      (word.word !== "where" && word.word !== "on")
+    ) return [];
     let scopeEnd = sql.length;
     let depth = word.depth;
     for (let cursor = word.end; cursor < sql.length; cursor += 1) {
@@ -539,11 +548,18 @@ function hasTenantLiteral(sql: string): boolean {
     /'[^']*'|(?<![$\w])\d+(?!\w)/.test(match[1] ?? ""));
 }
 
-function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<string> {
-  const governed = new Set(aliases);
+function scopedTenantAliasesInScope(
+  sql: string,
+  aliases: readonly string[],
+  inheritedBound: ReadonlySet<string>,
+): Set<string> {
+  const governed = new Set([...aliases, ...inheritedBound]);
   const scoped = new Set<string>();
   if (hasTenantLiteral(sql)) return scoped;
-  let alternatives: ConstraintState[] = [{ bound: new Set(), edges: [] }];
+  let alternatives: ConstraintState[] = [{
+    bound: new Set(inheritedBound),
+    edges: [],
+  }];
   const clauses = conditionClauses(sql);
   for (const clause of clauses) {
     const next = constraintAlternatives(clause.sql, governed).map((state) =>
@@ -565,17 +581,84 @@ function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<strin
   return scoped;
 }
 
+function subqueryBodies(value: string): string[] {
+  const bodies: string[] = [];
+  for (let start = 0; start < value.length; start += 1) {
+    if (value[start] === "'") {
+      start += 1;
+      while (start < value.length) {
+        if (value[start] !== "'") {
+          start += 1;
+        } else if (value[start + 1] === "'") {
+          start += 2;
+        } else {
+          break;
+        }
+      }
+      continue;
+    }
+    if (value[start] !== "(") continue;
+    let depth = 1;
+    let end = start + 1;
+    for (; end < value.length && depth > 0; end += 1) {
+      if (value[end] === "'") {
+        end += 1;
+        while (end < value.length) {
+          if (value[end] !== "'") {
+            end += 1;
+          } else if (value[end + 1] === "'") {
+            end += 2;
+          } else {
+            break;
+          }
+        }
+      } else if (value[end] === "(") {
+        depth += 1;
+      } else if (value[end] === ")") {
+        depth -= 1;
+      }
+    }
+    const close = end - 1;
+    const body = value.slice(start + 1, close).trim();
+    if (
+      depth === 0 &&
+      /^(?:select|with|values)\b/i.test(body)
+    ) {
+      bodies.push(body);
+      start = close;
+    }
+  }
+  return bodies;
+}
+
+function queryScopeMissingOrgId(
+  sql: string,
+  inheritedBound: ReadonlySet<string>,
+): boolean {
+  const directSql = maskSubqueryBodies(sql);
+  const referencedAliases = tenantTableAliases(directSql);
+  const aliases = [...new Set(referencedAliases)];
+  if (aliases.length !== referencedAliases.length) return true;
+  const inherited = new Set(
+    [...inheritedBound].filter((alias) => !aliases.includes(alias)),
+  );
+  const scoped = scopedTenantAliasesInScope(
+    directSql,
+    aliases,
+    inherited,
+  );
+  if (aliases.some((alias) => !scoped.has(alias))) return true;
+  const childBound = new Set([...inherited, ...scoped]);
+  return subqueryBodies(sql).some((body) =>
+    queryScopeMissingOrgId(body, childBound));
+}
+
 export function detectMissingOrgId(sql: string): boolean {
   if (!/\b(SELECT|UPDATE|DELETE)\b/i.test(sql)) return false; // INSERTs include org_id as a column, checked structurally elsewhere
   const normalized = normalizeSql(sql);
   if (REVIEWED_ESCAPES.some((e) => normalized === e.sql)) return false;
   const identifierNormalized = normalizeSqlIdentifiers(normalized);
-  const referencedAliases = tenantTableAliases(identifierNormalized);
-  const aliases = [...new Set(referencedAliases)];
-  if (aliases.length === 0) return false;
-  if (aliases.length !== referencedAliases.length) return true;
-  const scoped = scopedTenantAliases(identifierNormalized, aliases);
-  return aliases.some((alias) => !scoped.has(alias));
+  return queryScopeMissingOrgId(identifierNormalized, new Set());
 }
 
 /**
@@ -825,7 +908,22 @@ describe("org-id-required fence", () => {
         ),
       ).toBe(false);
     });
+    it("does not use a nested query predicate to scope its outer query", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT h.*, (SELECT 1 WHERE h.org_id = $1) FROM households h",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT h.* FROM households h WHERE h.org_id = $1 AND EXISTS (SELECT 1 FROM decision_ledger dl WHERE dl.org_id = h.org_id)",
+        ),
+      ).toBe(false);
+    });
     it("limits migration-wide org_id escapes to the exact reviewed SQL", () => {
+      expect(
+        detectMissingOrgId(DECISION_LEDGER_COMPUTED_PROVENANCE_SQL),
+      ).toBe(false);
       expect(detectMissingOrgId(DECISION_LEDGER_GENERATIONS_SQL)).toBe(false);
       expect(
         detectMissingOrgId(DECISION_REPLAY_SOURCE_PROVENANCE_SQL),
@@ -834,6 +932,12 @@ describe("org-id-required fence", () => {
         detectMissingOrgId(
           `${DECISION_LEDGER_GENERATIONS_SQL}
 SELECT * FROM decision_ledger`,
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          `${DECISION_LEDGER_COMPUTED_PROVENANCE_SQL}
+SELECT * FROM decision_provenance_traces`,
         ),
       ).toBe(true);
     });

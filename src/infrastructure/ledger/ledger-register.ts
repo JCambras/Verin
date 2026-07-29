@@ -3,6 +3,7 @@ import { appError, isAppError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
   type DerivedProvenance,
+  type RecordProvenance,
 } from "@contracts/provenance";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
@@ -17,7 +18,6 @@ import {
 } from "./ledger-verification";
 import {
   parseRecordedLedgerEvent,
-  parseRecordedLedgerProvenance,
 } from "./ledger-schema-registry";
 import {
   loadVerifiedReplayDecisionBinding,
@@ -35,6 +35,10 @@ import {
   type StructuralDecision,
   type StructuralLedgerEntry,
 } from "./ledger-structural-validator";
+import {
+  UNVERIFIED_COMPUTED_PROVENANCE_INPUT,
+  verifyRecordedLedgerProvenance,
+} from "./ledger-producer-provenance";
 
 export interface VerifiedRegisterDecision {
   readonly projection: DecisionProjection;
@@ -44,6 +48,7 @@ export interface VerifiedRegisterDecision {
 export interface VerifiedRegisterSnapshot {
   readonly verification: LedgerVerification;
   readonly rows: readonly DecisionLedgerRow[];
+  readonly rowProvenance: ReadonlyMap<string, RecordProvenance>;
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
   readonly replaySourceReason: string | null;
@@ -66,6 +71,55 @@ function parseEvent(row: DecisionLedgerRow): LedgerEntry {
   return parsed.event;
 }
 
+async function hasPreWindowEntry(
+  tx: SqlTx,
+  orgId: string,
+  entryId: string,
+  beforeSequence: number,
+): Promise<boolean> {
+  const result = await tx.query<{ sequence: number | string }>(
+    `SELECT sequence
+       FROM decision_ledger
+      WHERE org_id = $1 AND id = $2 AND sequence < $3
+      ORDER BY sequence DESC
+      LIMIT 1`,
+    [orgId, entryId, beforeSequence],
+  );
+  return result.rows.length > 0;
+}
+
+async function hasPreWindowDecisionRecording(
+  tx: SqlTx,
+  orgId: string,
+  decisionId: string,
+  beforeSequence: number,
+): Promise<boolean> {
+  const result = await tx.query<{ sequence: number | string }>(
+    `SELECT sequence
+       FROM decision_ledger
+      WHERE org_id = $1
+        AND decision_id = $2
+        AND event_type = 'DecisionRecorded'
+        AND sequence < $3
+      ORDER BY sequence DESC
+      LIMIT 1`,
+    [orgId, decisionId, beforeSequence],
+  );
+  return result.rows.length > 0;
+}
+
+function directEntryReferences(event: LedgerEntry): readonly string[] {
+  return [
+    ...(event.causationRef ? [event.causationRef.id] : []),
+    ...(event.type === "ReservationReleased"
+      ? [event.reservationCreationRef.id]
+      : []),
+    ...(event.type === "ExceptionDecisionRequested"
+      ? [event.triggeringEntryRef.id]
+      : []),
+  ];
+}
+
 async function replayRegisterWindow(
   tx: SqlTx,
   rows: readonly DecisionLedgerRow[],
@@ -73,12 +127,41 @@ async function replayRegisterWindow(
 ): Promise<{
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly rowProvenance: ReadonlyMap<string, RecordProvenance>;
 }> {
   const verifiedEvidence = new Set<string>();
   const incompleteDecisions = new Set<string>();
   const decisions = new Map<string, VerifiedRegisterDecision>();
   const windowStart = rows[0]?.sequence ?? 0;
   const verifiedRecordingEntryIds = new Set(rows.map((row) => row.id));
+  const rowProvenance = new Map<string, RecordProvenance>();
+  const incompleteProvenance = new Set<string>();
+  const provenanceCache = new Map<
+    string,
+    Promise<RecordProvenance>
+  >();
+  for (const row of rows) {
+    try {
+      rowProvenance.set(
+        row.id,
+        await verifyRecordedLedgerProvenance(
+          tx,
+          row,
+          verifiedRecordingEntryIds,
+          provenanceCache,
+        ),
+      );
+    } catch (error) {
+      if (
+        isAppError(error) &&
+        error.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT
+      ) {
+        incompleteProvenance.add(row.id);
+        continue;
+      }
+      throw error;
+    }
+  }
   const entries = rows.map((row): StructuralLedgerEntry => ({
     event: parseEvent(row),
     sequence: row.sequence,
@@ -127,12 +210,42 @@ async function replayRegisterWindow(
   for (const [index, row] of rows.entries()) {
     const item = entries[index]!;
     const event = item.event;
+    const id = promotedDecisionId(event);
+    if (incompleteProvenance.has(row.id)) {
+      if (id) {
+        decisions.delete(id);
+        incompleteDecisions.add(id);
+      }
+      continue;
+    }
+    let hasUnverifiedDependency = false;
+    for (const referenceId of directEntryReferences(event)) {
+      if (
+        !entryById.has(referenceId) &&
+        await hasPreWindowEntry(
+          tx,
+          event.firmId,
+          referenceId,
+          item.sequence,
+        )
+      ) {
+        hasUnverifiedDependency = true;
+        break;
+      }
+    }
+    if (hasUnverifiedDependency) {
+      if (id) {
+        decisions.delete(id);
+        incompleteDecisions.add(id);
+        structuralDecisions.delete(id);
+      }
+      continue;
+    }
     if (event.type === "EvidenceSnapshotRecorded") {
       verifiedEvidence.add(await verifyReplayEvidence(tx, event));
       await assertRecordedLedgerStructure([item], structure);
       continue;
     }
-    const id = promotedDecisionId(event);
     if (
       id &&
       event.type !== "DecisionRecorded" &&
@@ -145,8 +258,16 @@ async function replayRegisterWindow(
       ) {
         throw appError("STORE_CONSTRAINT", DECISION_RECORDING_REQUIRED);
       }
-      incompleteDecisions.add(id);
-      continue;
+      if (await hasPreWindowDecisionRecording(
+        tx,
+        event.firmId,
+        id,
+        item.sequence,
+      )) {
+        incompleteDecisions.add(id);
+        continue;
+      }
+      throw appError("STORE_CONSTRAINT", DECISION_RECORDING_REQUIRED);
     }
     if (
       event.type === "StatusObserved" &&
@@ -192,6 +313,25 @@ async function replayRegisterWindow(
         verifiedEvidence,
       );
       decisionRecord = binding.record;
+      const parentId = binding.record.derivedFromDecisionRef?.id;
+      if (
+        parentId &&
+        (
+          incompleteDecisions.has(parentId) ||
+          (
+            !structuralDecisions.has(parentId) &&
+            await hasPreWindowDecisionRecording(
+              tx,
+              event.firmId,
+              parentId,
+              item.sequence,
+            )
+          )
+        )
+      ) {
+        incompleteDecisions.add(event.decisionRef.id);
+        continue;
+      }
       structuralDecisions.set(event.decisionRef.id, binding);
     }
     if (!id) continue;
@@ -207,31 +347,22 @@ async function replayRegisterWindow(
       ...(decisionRecord ? { decisionRecord } : {}),
     });
     if (!projection) continue;
-    const provenance = parseRecordedLedgerProvenance(
-      row.schemaVersion,
-      row.serializerVersion,
-      {
-        source: row.provSource,
-        asOf: row.provAsOf,
-        confidence: row.provConfidence,
-      },
-    );
-    if (!provenance) {
-      throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
-    }
     let eventProvenance;
     try {
       eventProvenance = await deriveLedgerEventProvenance(
         tx,
         event,
-        provenance,
+        rowProvenance.get(row.id)!,
         false,
         verifiedRecordingEntryIds,
       );
     } catch (error) {
       if (
         isAppError(error) &&
-        error.message === UNVERIFIED_REPLAY_SOURCE_PROVENANCE
+        (
+          error.message === UNVERIFIED_REPLAY_SOURCE_PROVENANCE ||
+          error.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT
+        )
       ) {
         decisions.delete(id);
         incompleteDecisions.add(id);
@@ -258,6 +389,7 @@ async function replayRegisterWindow(
   return {
     decisions: ordered.slice(0, decisionLimit),
     decisionsTotal: ordered.length,
+    rowProvenance,
   };
 }
 
@@ -278,6 +410,7 @@ export async function readVerifiedDecisionRegister(
         ...checked,
         decisions: [],
         decisionsTotal: 0,
+        rowProvenance: new Map(),
         replaySourceReason: null,
       };
     }
@@ -294,6 +427,7 @@ export async function readVerifiedDecisionRegister(
         verification: { ...checked.verification, ok: false },
         decisions: [],
         decisionsTotal: 0,
+        rowProvenance: new Map(),
         replaySourceReason: isAppError(error)
           ? error.message
           : "immutable replay source verification failed",

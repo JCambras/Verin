@@ -19,6 +19,7 @@ const IMMUTABLE_TABLES = [
   "decision_input_bundles",
   "decision_input_bundle_evidence",
   "decision_records",
+  "decision_provenance_traces",
   "decision_replay_source_provenance",
   "decision_ledger",
 ] as const;
@@ -30,9 +31,11 @@ type ImmutableMutationKind =
   | "update"
   | "delete"
   | "truncate"
-  | "trigger";
+  | "trigger"
+  | "schema";
 type ImmutableWriteTarget =
   | `${ImmutableMutationKind}:${ImmutableTable}`
+  | "guard"
   | "unresolved";
 const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   evidence_snapshots: "src/infrastructure/ledger/ledger-sources.ts",
@@ -40,6 +43,8 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   decision_input_bundle_evidence:
     "src/infrastructure/ledger/ledger-sources.ts",
   decision_records: "src/infrastructure/ledger/ledger-sources.ts",
+  decision_provenance_traces:
+    "src/infrastructure/ledger/ledger-producer-provenance-write.ts",
   decision_replay_source_provenance:
     "src/infrastructure/ledger/ledger-sources.ts",
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
@@ -52,14 +57,34 @@ const REVIEWED_IMMUTABLE_MIGRATIONS = [
     sha256: "b63ee91ed6c81fa9f48bb67cee37311e698a6c53b3234488e2c94160c46128bd",
   },
   {
+    version: 4,
+    name: "decision-ledger-reservation-generations",
+    sha256: "bb3044d0a85da31272a1266cb2129061fd2b6d449d5e6d4b9433a4e0c5f18796",
+  },
+  {
+    version: 5,
+    name: "decision-ledger-replay-coverage-index",
+    sha256: "8c32facbfef86d4631cb7f47d416cef07aa0768321c8f37ee6725034eebe74c4",
+  },
+  {
     version: 6,
     name: "decision-replay-source-provenance",
     sha256: "90eede11f7c297c033e465a196d72dc22f8d94cfe49c78364b2e46542e1a5aac",
   },
   {
+    version: 7,
+    name: "decision-ledger-reservation-lookup-indexes",
+    sha256: "afe03abb22f3a11bde4b350a77a1cdbae01e11a1d3dcfaaa8460d92d1bd321f6",
+  },
+  {
     version: 8,
     name: "decision-ledger-bundle-identity",
     sha256: "a9968958afe5c2147897c964dea3d7a742744bd04a49e26a3144ad3eef98e2d9",
+  },
+  {
+    version: 9,
+    name: "decision-ledger-computed-provenance",
+    sha256: "3b16a94f67c6da1c80ee9da163e6957d06e9b029faadb12f379ff02af6a0f350",
   },
 ] as const;
 const REVIEWED_UNRESOLVED_SQL_ESCAPE = Object.freeze({
@@ -101,7 +126,7 @@ function immutableWriteTargetParts(target: Exclude<ImmutableWriteTarget, "unreso
 }
 
 function immutableMutationRoot(value: string): boolean {
-  return /\b(?:insert\s+into|merge\s+into|copy|update|delete\s+from|truncate|alter\s+table|drop\s+trigger|session_replication_role)\b/i
+  return /\b(?:insert\s+into|merge\s+into|copy|update|delete\s+from|truncate|alter\s+(?:table|function)|create\s+(?:or\s+replace\s+)?(?:table|function|trigger)|drop\s+(?:table|trigger|function|schema)|session_replication_role)\b/i
     .test(value);
 }
 
@@ -218,10 +243,17 @@ function immutableTargetAt(
   if (
     tokens[targetIndex]?.kind === "identifier" &&
     tokens[targetIndex]?.value === "if" &&
-    tokens[targetIndex + 1]?.kind === "identifier" &&
-    tokens[targetIndex + 1]?.value === "exists"
+    tokens[targetIndex + 1]?.kind === "identifier"
   ) {
-    targetIndex += 2;
+    if (tokens[targetIndex + 1]?.value === "exists") {
+      targetIndex += 2;
+    } else if (
+      tokens[targetIndex + 1]?.value === "not" &&
+      tokens[targetIndex + 2]?.kind === "identifier" &&
+      tokens[targetIndex + 2]?.value === "exists"
+    ) {
+      targetIndex += 3;
+    }
   }
   if (
     tokens[targetIndex]?.kind === "identifier" &&
@@ -242,6 +274,51 @@ function immutableTargetAt(
   return targetValue && IMMUTABLE_TABLE_SET.has(targetValue)
     ? targetValue as ImmutableTable
     : null;
+}
+
+function guardFunctionAt(
+  tokens: readonly SqlToken[],
+  start: number,
+): boolean {
+  let targetIndex = start;
+  if (
+    tokens[targetIndex]?.kind === "identifier" &&
+    tokens[targetIndex]?.value === "if" &&
+    tokens[targetIndex + 1]?.kind === "identifier"
+  ) {
+    if (tokens[targetIndex + 1]?.value === "exists") {
+      targetIndex += 2;
+    } else if (
+      tokens[targetIndex + 1]?.value === "not" &&
+      tokens[targetIndex + 2]?.kind === "identifier" &&
+      tokens[targetIndex + 2]?.value === "exists"
+    ) {
+      targetIndex += 3;
+    }
+  }
+  const first = tokens[targetIndex];
+  if (first?.kind !== "identifier") return false;
+  let value = first.value;
+  while (
+    tokens[targetIndex + 1]?.kind === "dot" &&
+    tokens[targetIndex + 2]?.kind === "identifier"
+  ) {
+    targetIndex += 2;
+    value = tokens[targetIndex]!.value;
+  }
+  return value === "decision_source_append_only";
+}
+
+function statementHasGuardFunction(
+  tokens: readonly SqlToken[],
+  start: number,
+): boolean {
+  for (let index = start; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (token.kind === "other" && token.value === ";") return false;
+    if (guardFunctionAt(tokens, index)) return true;
+  }
+  return false;
 }
 
 function splitTopLevel(value: string, separator: string): string[] {
@@ -505,6 +582,7 @@ function immutableWriteTargets(
     ) {
       const table = immutableTargetAt(tokens, index + 2);
       if (table) {
+        targets.add(immutableWriteTarget("schema", table));
         for (let part = index + 3; part < tokens.length; part += 1) {
           const candidate = tokens[part]!;
           if (candidate.kind === "other" && candidate.value === ";") break;
@@ -519,6 +597,71 @@ function immutableWriteTargets(
           }
         }
       }
+    } else if (
+      token?.kind === "identifier" &&
+      (token.value === "create" || token.value === "drop") &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "table"
+    ) {
+      if (token.value === "create") {
+        const table = immutableTargetAt(tokens, index + 2);
+        if (table) targets.add(immutableWriteTarget("schema", table));
+      } else {
+        for (let part = index + 2; part < tokens.length; part += 1) {
+          const candidate = tokens[part]!;
+          if (candidate.kind === "other" && candidate.value === ";") break;
+          const table = immutableTargetAt(tokens, part);
+          if (table) targets.add(immutableWriteTarget("schema", table));
+        }
+      }
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "drop" &&
+      tokens[index + 1]?.kind === "identifier" &&
+      (tokens[index + 1]?.value === "schema" ||
+        tokens[index + 1]?.value === "owned")
+    ) {
+      targets.add("unresolved");
+    } else if (
+      token?.kind === "identifier" &&
+      token.value === "create"
+    ) {
+      let cursor = index + 1;
+      if (
+        tokens[cursor]?.kind === "identifier" &&
+        tokens[cursor]?.value === "or" &&
+        tokens[cursor + 1]?.kind === "identifier" &&
+        tokens[cursor + 1]?.value === "replace"
+      ) cursor += 2;
+      if (
+        tokens[cursor]?.kind === "identifier" &&
+        tokens[cursor]?.value === "function" &&
+        guardFunctionAt(tokens, cursor + 1)
+      ) {
+        targets.add("guard");
+      } else if (
+        tokens[cursor]?.kind === "identifier" &&
+        tokens[cursor]?.value === "index"
+      ) {
+        for (let part = cursor + 1; part < tokens.length; part += 1) {
+          if (
+            tokens[part]?.kind === "identifier" &&
+            tokens[part]?.value === "on"
+          ) {
+            const table = immutableTargetAt(tokens, part + 1);
+            if (table) targets.add(immutableWriteTarget("schema", table));
+            break;
+          }
+        }
+      }
+    } else if (
+      token?.kind === "identifier" &&
+      (token.value === "drop" || token.value === "alter") &&
+      tokens[index + 1]?.kind === "identifier" &&
+      tokens[index + 1]?.value === "function" &&
+      statementHasGuardFunction(tokens, index + 2)
+    ) {
+      targets.add("guard");
     } else if (
       token?.kind === "identifier" &&
       token.value === "drop" &&
@@ -603,6 +746,8 @@ const RESTRICTED_SOURCE_IMPORTS: Record<string, string> = {
     "src/infrastructure/ledger/ledger-store.ts",
   assertValidatedLedgerSourceWrite:
     "src/infrastructure/ledger/ledger-sources.ts",
+  persistLedgerProducerProvenance:
+    "src/infrastructure/ledger/ledger-store.ts",
 };
 
 function restrictedSourceModule(
@@ -613,10 +758,10 @@ function restrictedSourceModule(
   const normalized = specifier
     .split(/[?#]/, 1)[0]!
     .replace(/\.(?:[cm]?[jt]sx?)$/i, "");
-  return /\/ledger-(?:sources|source-capability)\.(?:[cm]?[jt]sx?)$/i.test(
+  return /\/ledger-(?:sources|source-capability|producer-provenance-write)\.(?:[cm]?[jt]sx?)$/i.test(
     resolvedPath,
   ) ||
-    /(?:^|\/)ledger-(?:sources|source-capability)$/.test(normalized);
+    /(?:^|\/)ledger-(?:sources|source-capability|producer-provenance-write)$/.test(normalized);
 }
 
 function staticStringArray(node: Node, seen: Set<Node>): string[] | null {
@@ -1440,7 +1585,7 @@ function hasAllowedImmutableOwner(
   target: ImmutableWriteTarget,
   rel: string,
 ): boolean {
-  if (target === "unresolved") return false;
+  if (target === "unresolved" || target === "guard") return false;
   const { kind, table } = immutableWriteTargetParts(target);
   return kind === "insert" && INSERT_ALLOWLIST[table] === rel;
 }
@@ -1496,7 +1641,8 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         continue;
       }
       for (const target of immutableWriteTargets(value)) {
-        const key = `${rel}:${target}`;
+        const key =
+          `${rel}:${expression.getStartLineNumber()}:immutable-mutation`;
         if (
           !hasAllowedImmutableOwner(target, rel) &&
           !seen.has(key)
@@ -1533,7 +1679,8 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         continue;
       }
       for (const target of immutableWriteTargets(value)) {
-        const key = `${rel}:${target}`;
+        const key =
+          `${rel}:${template.getStartLineNumber()}:immutable-mutation`;
         if (
           !hasAllowedImmutableOwner(target, rel) &&
           !seen.has(key)
@@ -2027,6 +2174,33 @@ describe("decision-ledger append-only fence", () => {
       ]);
     });
 
+    it("detects destructive immutable schema and guard-function DDL", () => {
+      const project = inMemoryProject({
+        "/scripts/drop-table.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("DROP TABLE IF EXISTS harmless, public.decision_ledger CASCADE");`,
+        "/scripts/replace-guard.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`CREATE OR REPLACE FUNCTION decision_source_append_only() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql`);",
+        "/scripts/drop-guard.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("DROP FUNCTION IF EXISTS harmless(), public.decision_source_append_only() CASCADE");`,
+        "/scripts/drop-owned.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec("DROP OWNED BY current_user CASCADE");`,
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual([
+        "drop-guard.ts",
+        "drop-owned.ts",
+        "drop-table.ts",
+        "replace-guard.ts",
+      ]);
+    });
+
     it("limits immutable migration mutations to exact reviewed entries", () => {
       expect(
         isReviewedImmutableMigration(
@@ -2144,6 +2318,14 @@ TRUNCATE decision_ledger;`,
         "/src/infrastructure/namespace.ts":
           `import * as sources from "./ledger/ledger-sources";\n` +
           `void sources;`,
+        "/src/infrastructure/provenance-writer.ts":
+          `import { persistLedgerProducerProvenance } from ` +
+          `"./ledger/ledger-producer-provenance-write";\n` +
+          `void persistLedgerProducerProvenance;`,
+        "/src/infrastructure/provenance-namespace.ts":
+          `import * as writer from ` +
+          `"./ledger/ledger-producer-provenance-write";\n` +
+          `void writer;`,
         "/src/infrastructure/dynamic.ts":
           `export const load = () => import("./ledger/ledger-source-capability");`,
         "/src/infrastructure/require.ts":
@@ -2156,7 +2338,7 @@ TRUNCATE decision_ledger;`,
       });
       expect(
         sourceWriteBoundaryViolations(project.getSourceFiles()),
-      ).toHaveLength(7);
+      ).toHaveLength(9);
     });
 
     it("rejects unresolved dynamic imports outside the exact source owner", () => {

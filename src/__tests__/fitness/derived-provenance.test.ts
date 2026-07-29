@@ -46,7 +46,8 @@ const prov = (source: SourceSystem): RecordProvenance => ({ source, asOf, confid
  */
 export function checkDerivationLaw(derive: Derive, canFeed: CanFeed): string[] {
   const out: string[] = [];
-  const real: SourceSystem[] = SOURCE_SYSTEMS.filter((s) => !SYNTHETIC_SOURCES.includes(s));
+  const real: SourceSystem[] = SOURCE_SYSTEMS.filter((s) =>
+    s !== "computed" && !SYNTHETIC_SOURCES.includes(s));
 
   for (const syn of SYNTHETIC_SOURCES) {
     // one synthetic input alongside a real one still poisons the derived artifact
@@ -88,6 +89,14 @@ describe("derived-provenance fence (charter #3 extension)", () => {
     expect(isDemonstration(chained)).toBe(true);
     expect(canFeedComplianceDecision(chained)).toBe(false);
     expect(chained.derivedFrom).toEqual(["user-input", "computed", "verin-crm", "fixture"]);
+  });
+
+  it("enforces: ambiguous plain computed provenance cannot feed compliance", () => {
+    const ambiguous = prov("computed");
+    expect(canFeedComplianceDecision(ambiguous)).toBe(false);
+    const derived = deriveArtifactProvenance([ambiguous], asOf);
+    expect(derived.demonstration).toBe(true);
+    expect(derived.derivedFrom).toEqual(["computed"]);
   });
 
   describe("detects (companion): a broken derivation law is caught", () => {

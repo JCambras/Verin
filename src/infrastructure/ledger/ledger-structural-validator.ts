@@ -435,8 +435,18 @@ export async function assertRecordedLedgerStructure(
     StructuralLedgerEntry | null
   >();
   const releasedReservations = new Set<string>();
+  const decisionCache = new Map<
+    string,
+    Promise<StructuralDecision | null>
+  >();
   const overlay: LedgerStructureLookup = {
-    decision: base.decision,
+    decision: (id) => {
+      const cached = decisionCache.get(id);
+      if (cached) return cached;
+      const loaded = base.decision(id);
+      decisionCache.set(id, loaded);
+      return loaded;
+    },
     entry: async (id) => seenEntries.get(id) ?? base.entry(id),
     decisionRecording: async (id, before) => {
       const seen = seenDecisions.get(id);

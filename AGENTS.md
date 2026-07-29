@@ -95,14 +95,17 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0033).
   `recordDecision` commits source rows and recording events together;
   `appendDecisionEvents` runs inside its CALLER'S transaction so CRM audit-outbox intent and a
-  decision event can commit atomically, and both require the producer's `RecordProvenance` -
+  decision event can commit atomically, and both require the producer's `LedgerProducerProvenance` -
   surfaces classify a row from the stored `prov_source`, never from an actor name. Ledger hashes
-  cover a versioned envelope of stored `payload_json` bytes plus producer provenance. Never rewrite
+  cover a versioned envelope of stored `payload_json` bytes plus producer provenance. Direct
+  producers cannot claim `computed`; computed producers retain a versioned, canonical, append-only
+  derivation trace whose ordered earlier ledger inputs are verified transitively. Never rewrite
   old bytes. Retained codecs live under `decision-core/ledger-v1/` and
   `decision-core/v1-7/`; registries import those paths directly, while public modules are current
   wrappers that switch to a new version family instead of changing retained behavior. Raw inserts
-  into an immutable source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
-  evidence/bundle/record rows, reusable when the bytes match). Derived state lives in
+  into an immutable source table belong ONLY in `ledger-store.ts` (chain), `ledger-sources.ts` (content-addressed
+  evidence/bundle/record rows, reusable when the bytes match), or
+  `ledger-producer-provenance-write.ts` (computed trace rows). Derived state lives in
   `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts`. Reservation reuse is
   generation-bound: a release cites its reservation ref, owning decision, and creation ledger entry,
   so an old release cannot affect a later reuse. L1-L4 plus immutable replay-source verification and

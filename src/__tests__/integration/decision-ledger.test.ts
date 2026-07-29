@@ -29,6 +29,7 @@ import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
 import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
+import { verifyRecordedLedgerProvenance } from "@infra/ledger/ledger-producer-provenance";
 import {
   assertLedgerEventPiiBoundary,
   assertReplaySourcePiiBoundary,
@@ -58,7 +59,12 @@ import { DecisionRecordSchema } from "@contracts/decision-core/decision";
 import { DecisionRecordV1_7_0Schema } from "@contracts/decision-core/v1-7/decision";
 import { DecisionInputBundleV1_7_0Schema } from "@contracts/decision-core/v1-7/evidence";
 import {
+  COMPUTED_LEDGER_PROVENANCE_VERSION,
+  LEDGER_PROVENANCE_SERIALIZER_VERSION,
+  canFeedComplianceDecision,
+  computedProvenanceTrace,
   deriveArtifactProvenance,
+  type ComputedLedgerProducerProvenance,
 } from "@contracts/provenance";
 import {
   bundleHashPreimageV1_7_0,
@@ -86,6 +92,39 @@ function hashPreimage(value: unknown): string {
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
 }
 
+function computedProvenance(
+  input: Awaited<ReturnType<typeof listDecisionLedger>>[number],
+  traceId: string,
+  asOf = LEDGER_LATER,
+): ComputedLedgerProducerProvenance {
+  const trace = {
+    schemaVersion: COMPUTED_LEDGER_PROVENANCE_VERSION,
+    serializerVersion: LEDGER_PROVENANCE_SERIALIZER_VERSION,
+    traceRef: { firmId: LEDGER_ORG, id: traceId },
+    producer: {
+      kind: "algorithm",
+      id: "verin.test.decision-score",
+      version: "1.0.0",
+    },
+    inputs: [{
+      kind: "ledger-entry",
+      entryRef: { firmId: LEDGER_ORG, id: input.id },
+      entryHash: input.entryHash,
+    }],
+    observedAt: asOf,
+    confidence: "high",
+  } as const;
+  return {
+    source: "computed",
+    asOf,
+    confidence: "high",
+    derivation: {
+      ...trace,
+      traceDigest: hashPreimage(trace),
+    },
+  };
+}
+
 function hashPreimageV1_7_0(value: unknown): string {
   const canonical = canonicalJsonV1_0_0(value as JsonValueV1_7_0);
   if (!canonical.ok) throw canonical.error;
@@ -104,6 +143,28 @@ async function seedOrg(db: SqlDb, id: string): Promise<void> {
 async function recordFixture(db: SqlDb): Promise<void> {
   const result = await recordDecision(db, decisionRecordingInput());
   expect(result.ok, result.ok ? "" : result.error.message).toBe(true);
+}
+
+async function appendComputedExpiry(
+  db: SqlDb,
+  inputRow: Awaited<ReturnType<typeof listDecisionLedger>>[number],
+  traceId: string,
+): Promise<void> {
+  const input = decisionRecordingInput();
+  const sample = allLedgerEventSamples().find(
+    (event) => event.type === "ApprovalStageExpired",
+  )!;
+  const event = LedgerEntrySchema.parse({
+    ...sample,
+    id: `ledger:computed:${traceId}`,
+    priorDecisionHash: input.decisionRecord.decisionHash,
+  });
+  await db.transaction((tx) => appendDecisionEvents(
+    tx,
+    LEDGER_ORG,
+    [event],
+    computedProvenance(inputRow, traceId),
+  ));
 }
 
 const append = (
@@ -2316,6 +2377,295 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.ok).toBe(false);
     expect(result.ok ? null : result.error.code).toBe("VALIDATION");
     expect(await listDecisionLedger(db, LEDGER_ORG)).toEqual([]);
+  });
+
+  it("rejects trace-stripped computed provenance when recording a decision", async () => {
+    const result = await recordDecision(db, {
+      ...decisionRecordingInput(),
+      provenance: {
+        source: "computed",
+        asOf: TS,
+        confidence: "high",
+      } as unknown as LedgerProducerProvenance,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("VALIDATION");
+    expect(await listDecisionLedger(db, LEDGER_ORG)).toEqual([]);
+  });
+
+  it("retains and verifies canonical computed provenance from real ledger inputs", async () => {
+    const input = decisionRecordingInput();
+    const recorded = await recordDecision(db, {
+      ...input,
+      provenance: {
+        source: "verin-crm",
+        asOf: TS,
+        confidence: "high",
+      },
+    });
+    expect(recorded.ok).toBe(true);
+    const inputRow = (await listDecisionLedger(db, LEDGER_ORG))[0]!;
+    await appendComputedExpiry(db, inputRow, "trace:real-input");
+
+    const rows = await listDecisionLedger(db, LEDGER_ORG);
+    const computed = rows.at(-1)!;
+    expect(computed.provenanceSchemaVersion).toBe(
+      COMPUTED_LEDGER_PROVENANCE_VERSION,
+    );
+    expect(computed.provenanceTraceId).toBe("trace:real-input");
+    expect(JSON.parse(computed.provenanceJson!)).toMatchObject({
+      source: "computed",
+      derivation: {
+        producer: {
+          kind: "algorithm",
+          id: "verin.test.decision-score",
+          version: "1.0.0",
+        },
+        inputs: [{
+          entryRef: { firmId: LEDGER_ORG, id: inputRow.id },
+          entryHash: inputRow.entryHash,
+        }],
+      },
+    });
+    const trace = await db.query<{
+      canonical_json: string;
+      trace_digest: string;
+    }>(
+      `SELECT canonical_json, trace_digest
+         FROM decision_provenance_traces
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "trace:real-input"],
+    );
+    expect(hashPreimage(JSON.parse(trace.rows[0]!.canonical_json))).toBe(
+      trace.rows[0]!.trace_digest,
+    );
+    expect((await verifyDecisionLedgerIntegrity(db, LEDGER_ORG)).ok).toBe(true);
+    expect(await rebuildDecisionProjections(db, LEDGER_ORG)).toHaveLength(1);
+    const bounded = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      1,
+      20,
+    );
+    expect(bounded.verification.ok).toBe(true);
+    expect(bounded.rowProvenance.has(computed.id)).toBe(false);
+    expect(bounded.decisions).toEqual([]);
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      20,
+      20,
+    );
+    expect(register.verification.ok).toBe(true);
+    expect(register.decisions).toHaveLength(1);
+    expect(canFeedComplianceDecision(
+      register.rowProvenance.get(computed.id)!,
+    )).toBe(true);
+    expect(canFeedComplianceDecision(
+      register.decisions[0]!.provenance,
+    )).toBe(true);
+
+    await expect(db.query(
+      `UPDATE decision_provenance_traces
+          SET trace_digest = $3
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "trace:real-input", "0".repeat(64)],
+    )).rejects.toThrow(/append-only/i);
+    await expect(db.query(
+      `DELETE FROM decision_provenance_traces
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "trace:real-input"],
+    )).rejects.toThrow(/append-only/i);
+    await expect(db.exec(
+      "TRUNCATE decision_provenance_traces CASCADE",
+    )).rejects.toThrow(/append-only/i);
+  });
+
+  it("rejects missing, extra, mismatched, and synthetic computed traces", async () => {
+    await recordFixture(db);
+    const inputRow = (await listDecisionLedger(db, LEDGER_ORG))[0]!;
+    const valid = computedProvenance(inputRow, "trace:invalid");
+    const event = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (sample) => sample.type === "ApprovalStageExpired",
+      )!,
+      id: "ledger:computed:invalid",
+      priorDecisionHash: decisionRecordingInput().decisionRecord.decisionHash,
+    });
+    const trace = computedProvenanceTrace(valid);
+    const wrongInput = {
+      ...trace,
+      inputs: [{
+        ...trace.inputs[0]!,
+        entryHash: "0".repeat(64),
+      }],
+    };
+    const wrongTenant = {
+      ...trace,
+      traceRef: {
+        firmId: LEDGER_OTHER_ORG,
+        id: trace.traceRef.id,
+      },
+      inputs: trace.inputs.map((item) => ({
+        ...item,
+        entryRef: {
+          firmId: LEDGER_OTHER_ORG,
+          id: item.entryRef.id,
+        },
+      })),
+    };
+    const attempts: unknown[] = [
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          traceDigest: "0".repeat(64),
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          unexpected: true,
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...wrongInput,
+          traceDigest: hashPreimage(wrongInput),
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...wrongTenant,
+          traceDigest: hashPreimage(wrongTenant),
+        },
+      },
+    ];
+    for (const provenance of attempts) {
+      await expect(db.transaction((tx) => appendDecisionEvents(
+        tx,
+        LEDGER_ORG,
+        [event],
+        provenance as LedgerProducerProvenance,
+      ))).rejects.toMatchObject({
+        code: expect.stringMatching(/VALIDATION|STORE_CONSTRAINT/),
+      });
+    }
+    const crossTenant = {
+      ...valid,
+      derivation: {
+        ...wrongTenant,
+        traceDigest: hashPreimage(wrongTenant),
+      },
+    };
+    const encoded = canonicalJson(crossTenant as unknown as JsonValue);
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) return;
+    await expect(verifyRecordedLedgerProvenance(db, {
+      ...inputRow,
+      id: "ledger:computed:cross-tenant-replay",
+      sequence: inputRow.sequence + 1,
+      provSource: "computed",
+      provAsOf: crossTenant.asOf,
+      provConfidence: crossTenant.confidence,
+      provenanceSchemaVersion: COMPUTED_LEDGER_PROVENANCE_VERSION,
+      provenanceJson: encoded.value,
+      provenanceTraceId: crossTenant.derivation.traceRef.id,
+    })).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "computed provenance references another tenant",
+    });
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      [event],
+      valid,
+    ))).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "computed provenance input is not compliance-eligible",
+    });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+    expect(Number((await db.query<{ n: number | string }>(
+      `SELECT count(*) AS n
+         FROM decision_provenance_traces
+        WHERE org_id = $1`,
+      [LEDGER_ORG],
+    )).rows[0]!.n)).toBe(0);
+  });
+
+  it("fails replay when retained computed trace bytes no longer match", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, {
+      ...input,
+      provenance: {
+        source: "verin-crm",
+        asOf: TS,
+        confidence: "high",
+      },
+    })).ok).toBe(true);
+    const inputRow = (await listDecisionLedger(db, LEDGER_ORG))[0]!;
+    await appendComputedExpiry(db, inputRow, "trace:tampered");
+    await db.exec(
+      "ALTER TABLE decision_provenance_traces DISABLE TRIGGER decision_provenance_traces_no_update",
+    );
+    await db.query(
+      `UPDATE decision_provenance_traces
+          SET canonical_json = $3
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "trace:tampered", "{}"],
+    );
+    await db.exec(
+      "ALTER TABLE decision_provenance_traces ENABLE TRIGGER decision_provenance_traces_no_update",
+    );
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+    expect((await verifyDecisionLedgerIntegrity(db, LEDGER_ORG)).ok).toBe(false);
+    await expect(
+      rebuildDecisionProjections(db, LEDGER_ORG),
+    ).rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+  });
+
+  it("recomputes computed trace digests during replay", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, {
+      ...input,
+      provenance: {
+        source: "verin-crm",
+        asOf: TS,
+        confidence: "high",
+      },
+    })).ok).toBe(true);
+    const inputRow = (await listDecisionLedger(db, LEDGER_ORG))[0]!;
+    await appendComputedExpiry(db, inputRow, "trace:bad-replay-digest");
+    const computed = (await listDecisionLedger(db, LEDGER_ORG)).at(-1)!;
+    const provenance = JSON.parse(computed.provenanceJson!) as {
+      derivation: { traceDigest: string };
+    };
+    provenance.derivation.traceDigest = "0".repeat(64);
+    const encoded = canonicalJson(provenance as unknown as JsonValue);
+    expect(encoded.ok).toBe(true);
+    if (!encoded.ok) return;
+    await db.exec(
+      "ALTER TABLE decision_provenance_traces DISABLE TRIGGER decision_provenance_traces_no_update",
+    );
+    await db.query(
+      `UPDATE decision_provenance_traces
+          SET trace_digest = $3
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "trace:bad-replay-digest", "0".repeat(64)],
+    );
+    await db.exec(
+      "ALTER TABLE decision_provenance_traces ENABLE TRIGGER decision_provenance_traces_no_update",
+    );
+    await expect(verifyRecordedLedgerProvenance(
+      db,
+      { ...computed, provenanceJson: encoded.value },
+    )).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "computed provenance trace is invalid",
+    });
   });
 
   it("rejects derived provenance when appending later events", async () => {

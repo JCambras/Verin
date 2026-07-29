@@ -10,12 +10,14 @@ import type {
   EvidenceSnapshotRecorded,
   LedgerEntry,
 } from "@contracts/decision-core/ledger";
-import { parseRecordedLedgerProvenance } from "./ledger-schema-registry";
+import { verifyRecordedLedgerProvenance } from "./ledger-producer-provenance";
 
 type SourceKind = "evidence" | "bundle" | "decision";
 
 interface BindingRow {
+  readonly org_id: string;
   readonly recording_entry_id: string;
+  readonly entry_hash: string;
   readonly event_type: string;
   readonly decision_id: string | null;
   readonly evidence_snapshot_id: string | null;
@@ -24,6 +26,10 @@ interface BindingRow {
   readonly prov_source: string;
   readonly prov_asof: string;
   readonly prov_confidence: string;
+  readonly prov_schema_version: string;
+  readonly prov_serializer_version: string;
+  readonly prov_json: string | null;
+  readonly prov_trace_id: string | null;
   readonly schema_version: string;
   readonly serializer_version: string;
 }
@@ -31,12 +37,14 @@ interface BindingRow {
 export const UNVERIFIED_REPLAY_SOURCE_PROVENANCE =
   "immutable replay source provenance binding is outside verified window";
 
-function bindingProvenance(
+async function bindingProvenance(
+  tx: SqlQueryable,
   row: BindingRow | undefined,
   kind: SourceKind,
   id: string,
   hasEarlierRecording: boolean,
-): RecordProvenance | null {
+  verifiedRecordingEntryIds?: ReadonlySet<string>,
+): Promise<RecordProvenance | null> {
   if (!row) return null;
   const matches = kind === "evidence"
     ? row.event_type === "EvidenceSnapshotRecorded" &&
@@ -45,22 +53,31 @@ function bindingProvenance(
       (kind === "decision"
         ? row.decision_id === id
         : row.input_bundle_id === id);
-  const provenance = parseRecordedLedgerProvenance(
-    row.schema_version,
-    row.serializer_version,
-    {
-      source: row.prov_source,
-      asOf: row.prov_asof,
-      confidence: row.prov_confidence,
-    },
-  );
-  if (!matches || hasEarlierRecording || !provenance) {
+  if (!matches || hasEarlierRecording) {
     throw appError(
       "STORE_CONSTRAINT",
       "immutable replay source provenance binding is invalid",
     );
   }
-  return provenance;
+  return verifyRecordedLedgerProvenance(
+    tx,
+    {
+      orgId: row.org_id,
+      id: row.recording_entry_id,
+      sequence: Number(row.sequence),
+      entryHash: row.entry_hash,
+      schemaVersion: row.schema_version,
+      serializerVersion: row.serializer_version,
+      provSource: row.prov_source,
+      provAsOf: row.prov_asof,
+      provConfidence: row.prov_confidence,
+      provenanceSchemaVersion: row.prov_schema_version,
+      provenanceSerializerVersion: row.prov_serializer_version,
+      provenanceJson: row.prov_json,
+      provenanceTraceId: row.prov_trace_id,
+    },
+    verifiedRecordingEntryIds,
+  );
 }
 
 async function hasEarlierSourceRecording(
@@ -117,10 +134,13 @@ async function loadBinding(
   verifiedRecordingEntryIds?: ReadonlySet<string>,
 ): Promise<RecordProvenance | null> {
   const result = await tx.query<BindingRow>(
-    `SELECT binding.recording_entry_id, ledger.event_type, ledger.decision_id,
+    `SELECT ledger.org_id, binding.recording_entry_id, ledger.entry_hash,
+            ledger.event_type, ledger.decision_id,
             ledger.evidence_snapshot_id, ledger.input_bundle_id,
             ledger.sequence,
             ledger.prov_source, ledger.prov_asof, ledger.prov_confidence,
+            ledger.prov_schema_version, ledger.prov_serializer_version,
+            ledger.prov_json, ledger.prov_trace_id,
             ledger.schema_version, ledger.serializer_version
        FROM decision_replay_source_provenance binding
        JOIN decision_ledger ledger
@@ -151,7 +171,14 @@ async function loadBinding(
         Number(row.sequence),
       )
     : false;
-  return bindingProvenance(row, kind, id, hasEarlierRecording);
+  return bindingProvenance(
+    tx,
+    row,
+    kind,
+    id,
+    hasEarlierRecording,
+    verifiedRecordingEntryIds,
+  );
 }
 
 async function decisionSourceProvenance(

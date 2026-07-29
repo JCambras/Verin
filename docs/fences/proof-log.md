@@ -6473,3 +6473,57 @@ the outer-join, inverted-predicate, destructive DML, trigger-control,
 global-suppression, insert-owner, and exact-migration cases.
 
 **Date:** 2026-07-29 (review corrections V1-V3, D-121).
+
+## Query-block ownership, immutable schema, and computed provenance (D-122)
+
+**Invariants:** a tenant predicate scopes only the query block whose rows it
+filters; immutable tables and their shared guard cannot be removed or replaced
+outside an exact reviewed migration; computed ledger provenance has non-erasable,
+versioned, canonical, retained, and recursively verified ancestry; bounded replay
+excludes honest pre-window dependencies without calling the whole window corrupt;
+one structural pass reads each immutable decision binding once.
+
+The permanent companions first ran against the pre-fix implementation:
+
+```text
+× does not use a nested query predicate to scope its outer query
+  expected false to be true
+
+× detects schema mutations against immutable tables and their guard
+  expected [] to have a length of 3
+
+× rejects trace-stripped computed provenance when recording a decision
+  expected true to be false
+
+× excludes a bounded derived decision whose lineage begins before the window
+  expected false to be true
+
+× memoizes immutable decision bindings during one structural pass
+  expected 501 to be 1
+```
+
+The tenant fence now analyzes each parenthesized query recursively, masks child
+predicates from the parent, propagates only already-bound correlated aliases, and
+removes inherited scope when a child shadows an alias. The immutable classifier
+recognizes schema DDL against every immutable table plus
+`decision_source_append_only`; migration 10 is pinned exactly and permanent
+companions retain table-drop and guard replacement or removal attacks.
+
+Computed producers use a distinct closed `computed-v1.0.0` arm. Its exact
+canonical bytes are part of the ledger chain preimage. The append-only retained
+trace records the versioned algorithm identity, ordered tenant-scoped entry
+references and hashes, observation time, confidence, and trace digest. Append and
+replay recompute and compare the digest, verify each earlier input and entry hash,
+follow computed inputs transitively, and reject fixture or demonstration ancestry.
+Permanent controls cover stripped, missing, extra, cross-tenant, digest-mismatched,
+input-mismatched, synthetic, tampered-retention, and honest real-input cases.
+
+Bounded structural replay performs indexed predecessor checks and marks only the
+affected decision incomplete when a real dependency precedes the window. A truly
+missing dependency still fails verification. The structural validator caches the
+promise for each decision binding during its ordered pass.
+
+**Revert:** all planted cases are permanent in-memory fence or PGlite integration
+companions. No probe files remain.
+
+**Date:** 2026-07-29 (review corrections W1-W5, D-122).

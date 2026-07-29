@@ -451,6 +451,84 @@ describe("deterministic decision-ledger projections", () => {
     );
   });
 
+  it("excludes a derived decision whose lineage begins before the verified window", async () => {
+    const parent = decisionRecordingInput();
+    expect((await recordDecision(db, parent)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const invalidated = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalInvalidated")!,
+      id: "projection:pre-window:invalidated",
+      priorDecisionHash: parent.decisionRecord.decisionHash,
+    });
+    await expect(append(db, [invalidated])).resolves.toHaveLength(1);
+    const exception = LedgerEntrySchema.parse({
+      ...samples.find(
+        (event) => event.type === "ExceptionDecisionRequested",
+      )!,
+      id: "projection:pre-window:exception",
+      triggeringEntryRef: {
+        firmId: LEDGER_ORG,
+        id: invalidated.id,
+      },
+    });
+    await expect(append(db, [exception])).resolves.toHaveLength(1);
+    const rerecorded = parent.events.slice(0, -1).map((event, index) =>
+      LedgerEntrySchema.parse({
+        ...event,
+        id: `projection:pre-window:evidence:${index}`,
+      }));
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      rerecorded,
+      LEDGER_PROVENANCE,
+      parent.evidenceSnapshots,
+    ))).resolves.toHaveLength(rerecorded.length);
+
+    const next = reusedBundleRecordingInput("dec:GC-01:derived");
+    const candidate = DecisionRecordSchema.parse({
+      ...next.decisionRecord,
+      derivedFromDecisionRef: {
+        firmId: LEDGER_ORG,
+        id: parent.decisionRecord.id,
+      },
+      decisionHash: "0".repeat(64),
+    });
+    const preimage = canonicalJson(
+      decisionHashPreimage(candidate) as unknown as JsonValue,
+    );
+    if (!preimage.ok) throw preimage.error;
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...candidate,
+      decisionHash: createHash("sha256")
+        .update(preimage.value, "utf8")
+        .digest("hex"),
+    });
+    const recording = LedgerEntrySchema.parse({
+      ...next.events[0]!,
+      decisionHash: decisionRecord.decisionHash,
+      causationRef: {
+        firmId: LEDGER_ORG,
+        id: exception.id,
+      },
+    });
+    expect((await recordDecision(db, {
+      ...next,
+      decisionRecord,
+      events: [recording],
+    })).ok).toBe(true);
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      rerecorded.length + 1,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.replaySourceReason).toBeNull();
+  });
+
   it("bounds a request-path read while reporting how many decisions exist", async () => {
     expect((await recordDecision(db, decisionRecordingInput())).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");

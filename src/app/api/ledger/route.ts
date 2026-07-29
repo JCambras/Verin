@@ -12,7 +12,7 @@ import {
   type RecordProvenance,
 } from "@contracts/provenance";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
-import { ledgerRowProvenanceLabel } from "@app/ledger/provenance";
+import { UNTRUSTED_PROVENANCE_LABEL } from "@app/ledger/provenance";
 
 export const runtime = "nodejs";
 const MAX_ENTRIES = 200;
@@ -56,6 +56,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     rows,
     decisions,
     decisionsTotal,
+    rowProvenance,
     replaySourceReason,
   } = await readVerifiedDecisionRegister(
     db,
@@ -99,11 +100,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       correlationId: row.correlationId,
       decisionId: row.decisionId,
       entryHash: row.entryHash.slice(0, 16),
-      provenanceLabel: ledgerRowProvenanceLabel({
-        source: row.provSource,
-        asOf: row.provAsOf,
-        confidence: row.provConfidence,
-      }),
+      provenanceLabel: rowProvenance.has(row.id)
+        ? badgeLabel(rowProvenance.get(row.id)!)
+        : UNTRUSTED_PROVENANCE_LABEL,
     })),
   } satisfies LedgerRegisterViewModel;
   return NextResponse.json(body);
