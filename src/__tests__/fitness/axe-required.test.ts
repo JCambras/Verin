@@ -47,6 +47,24 @@ const REQUIRED_ROUTE_GROUPS: Record<
   ],
 };
 
+function routeCollectionImmutabilityProblems(
+  collections: Record<
+    string,
+    readonly { readonly path: string; readonly readySelector: string }[]
+  >,
+): string[] {
+  const problems: string[] = [];
+  for (const [name, routes] of Object.entries(collections)) {
+    if (!Object.isFrozen(routes)) {
+      problems.push(`${name} route collection must be frozen`);
+    }
+    if (routes.some((route) => !Object.isFrozen(route))) {
+      problems.push(`${name} route entries must be frozen`);
+    }
+  }
+  return problems;
+}
+
 type Callback = ArrowFunction | FunctionExpression;
 type FunctionNode = Callback | FunctionDeclaration;
 
@@ -100,6 +118,23 @@ function latestPrecedingAssignment(node: Node): Node | undefined {
     )
     .sort((left, right) => right.getStart() - left.getStart())[0]
     ?.getRight();
+}
+
+function precedingAssignmentValues(node: Node): Node[] {
+  if (!Node.isIdentifier(node)) return [];
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return [];
+  return node
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < node.getStart() &&
+        Node.isIdentifier(candidate.getLeft()) &&
+        candidate.getLeft().getSymbol() === symbol,
+    )
+    .map((candidate) => candidate.getRight());
 }
 
 function isNamespaceImportIdentifier(
@@ -357,6 +392,89 @@ function isNamedImportMemberExpression(
   );
 }
 
+function couldBeNamespaceImportIdentifier(
+  node: Node,
+  moduleName: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (isNamespaceImportIdentifier(node, moduleName)) return true;
+  if (!Node.isIdentifier(node)) return false;
+  return precedingAssignmentValues(node).some((assigned) =>
+    couldBeNamespaceImportIdentifier(
+      assigned,
+      moduleName,
+      new Set(seen),
+    ),
+  );
+}
+
+function couldBeNamedImportIdentifier(
+  node: Node,
+  moduleName: string,
+  imported: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (isNamedImportIdentifier(node, moduleName, imported)) return true;
+  const access = memberAccess(node);
+  if (
+    access?.name === imported &&
+    couldBeNamespaceImportIdentifier(access.receiver, moduleName)
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(node)) return false;
+  return precedingAssignmentValues(node).some((assigned) =>
+    couldBeNamedImportIdentifier(
+      assigned,
+      moduleName,
+      imported,
+      new Set(seen),
+    ),
+  );
+}
+
+function couldBeNamedImportMemberExpression(
+  node: Node,
+  moduleName: string,
+  imported: string,
+  member: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (
+    isNamedImportMemberExpression(
+      node,
+      moduleName,
+      imported,
+      member,
+    )
+  ) {
+    return true;
+  }
+  const access = memberAccess(node);
+  if (
+    access?.name === member &&
+    couldBeNamedImportIdentifier(access.receiver, moduleName, imported)
+  ) {
+    return true;
+  }
+  if (!Node.isIdentifier(node)) return false;
+  return precedingAssignmentValues(node).some((assigned) =>
+    couldBeNamedImportMemberExpression(
+      assigned,
+      moduleName,
+      imported,
+      member,
+      new Set(seen),
+    ),
+  );
+}
+
 function isFunctionNode(node: Node): node is FunctionNode {
   return Node.isArrowFunction(node) || Node.isFunctionExpression(node) || Node.isFunctionDeclaration(node);
 }
@@ -398,7 +516,12 @@ function registrationScopeOf(call: CallExpression, sourceFile: SourceFile): Sour
 
 function isNeutralizingAnnotation(call: CallExpression): boolean {
   return ["skip", "fixme", "fail"].some((member) =>
-    isNamedImportMemberCall(call, "@playwright/test", "test", member),
+    couldBeNamedImportMemberExpression(
+      call.getExpression(),
+      "@playwright/test",
+      "test",
+      member,
+    ),
   );
 }
 
@@ -589,6 +712,108 @@ function specCoversRouteGroup(
   });
 }
 
+const ASSIGNMENT_OPERATORS = new Set([
+  SyntaxKind.EqualsToken,
+  SyntaxKind.PlusEqualsToken,
+  SyntaxKind.MinusEqualsToken,
+  SyntaxKind.AsteriskEqualsToken,
+  SyntaxKind.AsteriskAsteriskEqualsToken,
+  SyntaxKind.SlashEqualsToken,
+  SyntaxKind.PercentEqualsToken,
+  SyntaxKind.LessThanLessThanEqualsToken,
+  SyntaxKind.GreaterThanGreaterThanEqualsToken,
+  SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  SyntaxKind.AmpersandEqualsToken,
+  SyntaxKind.BarEqualsToken,
+  SyntaxKind.CaretEqualsToken,
+  SyntaxKind.BarBarEqualsToken,
+  SyntaxKind.AmpersandAmpersandEqualsToken,
+  SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+const ARRAY_MUTATORS = new Set([
+  "copyWithin",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
+]);
+
+function mutationRootIdentifier(node: Node): Node | undefined {
+  let current = node;
+  while (true) {
+    if (Node.isIdentifier(current)) return current;
+    if (
+      Node.isPropertyAccessExpression(current) ||
+      Node.isElementAccessExpression(current)
+    ) {
+      current = current.getExpression();
+      continue;
+    }
+    if (
+      Node.isParenthesizedExpression(current) ||
+      Node.isAsExpression(current) ||
+      Node.isTypeAssertion(current) ||
+      Node.isNonNullExpression(current) ||
+      Node.isSatisfiesExpression(current)
+    ) {
+      current = current.getExpression();
+      continue;
+    }
+    return undefined;
+  }
+}
+
+function identifierIsMutatedBefore(node: Node): boolean {
+  if (!Node.isIdentifier(node)) return true;
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return true;
+  const sourceFile = node.getSourceFile();
+  const before = (candidate: Node) => candidate.getStart() < node.getStart();
+  const assigned = sourceFile
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .some((candidate) => {
+      if (
+        !before(candidate) ||
+        !ASSIGNMENT_OPERATORS.has(candidate.getOperatorToken().getKind())
+      ) {
+        return false;
+      }
+      return mutationRootIdentifier(candidate.getLeft())?.getSymbol() === symbol;
+    });
+  if (assigned) return true;
+  const updated = [
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.PrefixUnaryExpression),
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.PostfixUnaryExpression),
+  ].some((candidate) => {
+    if (!before(candidate)) return false;
+    const operator = candidate.getOperatorToken();
+    if (
+      operator !== SyntaxKind.PlusPlusToken &&
+      operator !== SyntaxKind.MinusMinusToken
+    ) {
+      return false;
+    }
+    return mutationRootIdentifier(candidate.getOperand())?.getSymbol() === symbol;
+  });
+  if (updated) return true;
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some((call) => {
+      if (!before(call)) return false;
+      const access = memberAccess(call.getExpression());
+      return (
+        access !== undefined &&
+        ARRAY_MUTATORS.has(access.name) &&
+        mutationRootIdentifier(access.receiver)?.getSymbol() === symbol
+      );
+    });
+}
+
 function isStableNamedImportIdentifier(
   node: Node,
   moduleName: string,
@@ -599,17 +824,7 @@ function isStableNamedImportIdentifier(
   seen.add(node);
   const symbol = node.getSymbol();
   if (symbol === undefined) return false;
-  const reassigned = node
-    .getSourceFile()
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
-    .some(
-      (candidate) =>
-        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
-        candidate.getStart() < node.getStart() &&
-        Node.isIdentifier(candidate.getLeft()) &&
-        candidate.getLeft().getSymbol() === symbol,
-    );
-  if (reassigned) return false;
+  if (identifierIsMutatedBefore(node)) return false;
   if (isDirectNamedImportIdentifier(node, moduleName, imported)) return true;
   return (
     symbol.getDeclarations().some((declaration) => {
@@ -1015,6 +1230,16 @@ describe("axe-required fence", () => {
   });
 
   it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
+    const immutabilityProblems = routeCollectionImmutabilityProblems({
+      PUBLIC_AXE_ROUTES,
+      LOGIN_AXE_ROUTES,
+      AUTHENTICATED_AXE_ROUTES,
+      DEMO_AXE_ROUTES,
+    });
+    expect(
+      immutabilityProblems,
+      immutabilityProblems.join("\n"),
+    ).toEqual([]);
     expect(PUBLIC_AXE_ROUTES).toEqual([
       { path: "/", readySelector: "h1" },
     ]);
@@ -1258,6 +1483,43 @@ test("axe", async ({ page }) => {
       );
     });
 
+    it("rejects mutable route collections and mutation before a required loop", () => {
+      const mutableCollection = [
+        Object.freeze({ path: "/", readySelector: "h1" }),
+      ];
+      expect(
+        routeCollectionImmutabilityProblems({
+          MUTABLE: mutableCollection,
+        }),
+      ).toContain("MUTABLE route collection must be frozen");
+      expect(
+        routeCollectionImmutabilityProblems({
+          MUTABLE_ENTRY: Object.freeze([
+            { path: "/", readySelector: "h1" },
+          ]),
+        }),
+      ).toContain("MUTABLE_ENTRY route entries must be frozen");
+
+      const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  (PUBLIC_AXE_ROUTES as unknown as { length: number }).length = 0;
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": spec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
+      );
+    });
+
     it("rejects route loops after conditional callback exits", () => {
       const spec = `import { expect, test } from "@playwright/test";
 import { assertNoAxeViolations } from "./axe";
@@ -1322,6 +1584,10 @@ check = pw.test;
 let disable: typeof check.fail;
 disable = check.fail;
 disable(true, "expected failure");`,
+        `let disable: typeof test.${"skip"};
+disable = test.${"skip"};
+if (false) disable = (() => {}) as typeof test.${"skip"};
+disable(true, "file disabled");`,
       ];
       for (const neutralizer of neutralizers) {
         const spec = `import { expect, test } from "@playwright/test";

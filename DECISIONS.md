@@ -6343,6 +6343,17 @@ after proof is redirected to an unrelated fence; and **(5)** evidence jobs using
 are non-evidence until complete matrix reachability semantics exist. PF-024, PF-030, PF-031, and
 PF-032 record the red reproductions, focused companions, and restored green proofs.
 
+The captain-approved route-and-capture-integrity review (2026-07-29) amended ADR-0030 in place a
+fourteenth time: **(1)** the dynamic demo page binds its resolved station to both the loaded marker and
+the validated `renderStation` invocation, so a complete switch cannot hide a constant caller;
+**(2)** Playwright neutralizer analysis considers every preceding assignment source and fails closed
+when unreachable control flow overwrites an alias that previously named `test.skip`, `test.fixme`, or
+`test.fail`; **(3)** required Axe route collections and their entries are frozen at runtime, while the
+structural fence rejects direct reassignment, descendant mutation, and array-mutator calls before a
+required loop; and **(4)** the launcher capture proves its canonical URL and loaded marker before an
+awaited `page.screenshot` to `00-launcher.png`, with the same non-empty assertion as every station
+capture. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

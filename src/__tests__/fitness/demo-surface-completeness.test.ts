@@ -6,6 +6,7 @@ import {
   Project,
   SyntaxKind,
   VariableDeclarationKind,
+  type SourceFile,
 } from "ts-morph";
 import { parse as parseYaml } from "yaml";
 import {
@@ -31,6 +32,17 @@ const CI_PATH = ".github/workflows/ci.yml";
 const ARTIFACT_COMMAND =
   "pnpm exec tsx scripts/demo-screen-artifacts.ts";
 const JOURNEY_TEST = "the seven-minute journey is clickable end-to-end on labeled fakes";
+const parsedSourceFiles = new Map<string, SourceFile>();
+
+function parsedSourceFile(path: string, source: string): SourceFile {
+  const key = `${path}\0${source}`;
+  const existing = parsedSourceFiles.get(key);
+  if (existing !== undefined) return existing;
+  const project = new Project({ useInMemoryFileSystem: true });
+  const file = project.createSourceFile(path, source);
+  parsedSourceFiles.set(key, file);
+  return file;
+}
 
 function contractSurfaceNames(markdown: string): string[] {
   const section = markdown.match(
@@ -45,8 +57,7 @@ function contractSurfaceNames(markdown: string): string[] {
 function routeSurfaceBindings(
   source: string,
 ): Array<{ station: string; componentPath: string }> {
-  const project = new Project({ useInMemoryFileSystem: true });
-  const file = project.createSourceFile("/route.tsx", source);
+  const file = parsedSourceFile("/route.tsx", source);
   const renderer = file.getFunction("renderStation");
   const body = renderer?.getBody();
   const parameter = renderer?.getParameters()[0];
@@ -105,6 +116,109 @@ function importModuleOf(node: Node): string | undefined {
   return node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)?.getModuleSpecifierValue();
 }
 
+function unwrapParentheses(node: Node | undefined): Node | undefined {
+  let current = node;
+  while (current !== undefined && Node.isParenthesizedExpression(current)) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+function routePageUsesResolvedStation(source: string): boolean {
+  const file = parsedSourceFile("/route.tsx", source);
+  const renderer = file.getFunction("renderStation");
+  const page = file.getFunction("DemoStationPage");
+  const body = page?.getBody();
+  if (
+    renderer === undefined ||
+    page === undefined ||
+    !page.isDefaultExport() ||
+    !Node.isBlock(body)
+  ) {
+    return false;
+  }
+  const resolved = body
+    .getDescendantsOfKind(SyntaxKind.VariableDeclaration)
+    .find((declaration) => declaration.getName() === "resolvedStation");
+  const statement = resolved?.getVariableStatement();
+  const initializer = resolved?.getInitializer();
+  if (
+    resolved === undefined ||
+    statement?.getDeclarationKind() !== VariableDeclarationKind.Const ||
+    statement.getParent() !== body ||
+    !Node.isAsExpression(initializer) ||
+    initializer.getTypeNode()?.getText() !== "DemoStation"
+  ) {
+    return false;
+  }
+  const station = initializer.getExpression();
+  if (
+    !Node.isIdentifier(station) ||
+    station.getText() !== "station" ||
+    !station
+      .getSymbol()
+      ?.getDeclarations()
+      .some(
+        (declaration) =>
+          Node.isBindingElement(declaration) &&
+          declaration.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration) ===
+            page,
+      )
+  ) {
+    return false;
+  }
+  const returned = unwrapParentheses(
+    body.getStatements().find(Node.isReturnStatement)?.getExpression(),
+  );
+  if (!Node.isJsxElement(returned)) return false;
+  const opening = returned.getOpeningElement();
+  if (opening.getTagNameNode().getText() !== "div") return false;
+  const surfaceAttribute = opening
+    .getAttributes()
+    .find(
+      (attribute) =>
+        Node.isJsxAttribute(attribute) &&
+        attribute.getNameNode().getText() === "data-demo-surface",
+    );
+  const attributeInitializer = Node.isJsxAttribute(surfaceAttribute)
+    ? surfaceAttribute.getInitializer()
+    : undefined;
+  const attributeExpression = Node.isJsxExpression(attributeInitializer)
+    ? attributeInitializer.getExpression()
+    : undefined;
+  const childExpressions = returned
+    .getJsxChildren()
+    .filter(Node.isJsxExpression)
+    .flatMap((child) => {
+      const expression = child.getExpression();
+      return expression === undefined ? [] : [expression];
+    });
+  if (
+    !Node.isIdentifier(attributeExpression) ||
+    attributeExpression.getSymbol() !== resolved.getSymbol() ||
+    childExpressions.length !== 1 ||
+    !Node.isCallExpression(childExpressions[0])
+  ) {
+    return false;
+  }
+  const call = childExpressions[0];
+  const expression = call.getExpression();
+  const [stationArgument, journey, ids, approved] = call.getArguments();
+  return (
+    Node.isIdentifier(expression) &&
+    expression
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => declaration === renderer) === true &&
+    call.getArguments().length === 4 &&
+    Node.isIdentifier(stationArgument) &&
+    stationArgument.getSymbol() === resolved.getSymbol() &&
+    journey?.getText() === "journey" &&
+    ids?.getText() === "ids" &&
+    approved?.getText() === "approved"
+  );
+}
+
 function isNamedImportIdentifier(
   node: Node,
   moduleName: string,
@@ -127,8 +241,7 @@ function isNamedImportIdentifier(
 function screenshotSequence(
   source: string,
 ): Array<{ number: number; name: string; station: string }> {
-  const project = new Project({ useInMemoryFileSystem: true });
-  const file = project.createSourceFile("/demo.spec.ts", source);
+  const file = parsedSourceFile("/demo.spec.ts", source);
   const registration = file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .find((call) => {
@@ -199,48 +312,10 @@ function screenshotSequence(
   });
 }
 
-function hasRealScreenshotHelper(source: string): boolean {
-  const project = new Project({ useInMemoryFileSystem: true });
-  const file = project.createSourceFile("/demo.spec.ts", source);
-  const helper = file.getFunction("snap");
-  const body = helper?.getBody();
-  const shots = file.getVariableDeclaration("SHOTS")?.getInitializer();
-  if (
-    helper === undefined ||
-    !helper.isAsync() ||
-    !Node.isBlock(body) ||
-    !Node.isStringLiteral(shots) ||
-    shots.getLiteralText() !== "demo-screens" ||
-    file.getVariableDeclaration("SHOTS")?.getVariableStatement()?.getDeclarationKind() !==
-      VariableDeclarationKind.Const ||
-    helper.getParameters().map((parameter) => parameter.getName()).join(",") !==
-      "page,index,name,station" ||
-    body.getStatements().length !== 5
-  ) {
-    return false;
-  }
-  const routeAssertion = body.getStatements()[0];
-  if (
-    routeAssertion?.getText() !==
-    'await expect(page).toHaveURL(new RegExp(`/app/demo/${station}(?:\\\\?|$)`));'
-  ) {
-    return false;
-  }
-  const loadedAssertion = body.getStatements()[1];
-  if (
-    loadedAssertion?.getText() !==
-    'await expect(page.locator(`[data-demo-surface="${station}"]`)).toBeVisible();'
-  ) {
-    return false;
-  }
-  const settlement = body.getStatements()[2];
-  if (
-    settlement?.getText() !==
-    "await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));"
-  ) {
-    return false;
-  }
-  const declarationStatement = body.getStatements()[3];
+function isRealScreenshotDeclaration(
+  declarationStatement: Node | undefined,
+  expectedPath: string,
+): boolean {
   if (!Node.isVariableStatement(declarationStatement)) return false;
   const declarations = declarationStatement.getDeclarations();
   if (declarations.length !== 1) return false;
@@ -271,14 +346,18 @@ function hasRealScreenshotHelper(source: string): boolean {
   const fullPage = options.getProperty("fullPage");
   if (
     !Node.isPropertyAssignment(path) ||
-    path.getInitializer()?.getText() !==
-      '`${SHOTS}/${String(index).padStart(2, "0")}-${name}.png`' ||
+    path.getInitializer()?.getText() !== expectedPath ||
     !Node.isPropertyAssignment(fullPage) ||
     fullPage.getInitializer()?.getKind() !== SyntaxKind.TrueKeyword
   ) {
     return false;
   }
-  const assertionStatement = body.getStatements()[4];
+  return true;
+}
+
+function isNonEmptyScreenshotAssertion(
+  assertionStatement: Node | undefined,
+): boolean {
   if (!Node.isExpressionStatement(assertionStatement)) return false;
   const assertion = assertionStatement.getExpression();
   if (!Node.isCallExpression(assertion) || assertion.getArguments().length !== 1) {
@@ -306,6 +385,71 @@ function hasRealScreenshotHelper(source: string): boolean {
   }
   const threshold = assertion.getArguments()[0];
   return Node.isNumericLiteral(threshold) && threshold.getLiteralText() === "0";
+}
+
+function hasRealScreenshotHelper(source: string): boolean {
+  const file = parsedSourceFile("/demo.spec.ts", source);
+  const helper = file.getFunction("snap");
+  const body = helper?.getBody();
+  const shots = file.getVariableDeclaration("SHOTS")?.getInitializer();
+  if (
+    helper === undefined ||
+    !helper.isAsync() ||
+    !Node.isBlock(body) ||
+    !Node.isStringLiteral(shots) ||
+    shots.getLiteralText() !== "demo-screens" ||
+    file.getVariableDeclaration("SHOTS")?.getVariableStatement()?.getDeclarationKind() !==
+      VariableDeclarationKind.Const ||
+    helper.getParameters().map((parameter) => parameter.getName()).join(",") !==
+      "page,index,name,station" ||
+    body.getStatements().length !== 5
+  ) {
+    return false;
+  }
+  const statements = body.getStatements();
+  return (
+    statements[0]?.getText() ===
+      'await expect(page).toHaveURL(new RegExp(`/app/demo/${station}(?:\\\\?|$)`));' &&
+    statements[1]?.getText() ===
+      'await expect(page.locator(`[data-demo-surface="${station}"]`)).toBeVisible();' &&
+    statements[2]?.getText() ===
+      "await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));" &&
+    isRealScreenshotDeclaration(
+      statements[3],
+      '`${SHOTS}/${String(index).padStart(2, "0")}-${name}.png`',
+    ) &&
+    isNonEmptyScreenshotAssertion(statements[4])
+  );
+}
+
+function hasRealLauncherScreenshotHelper(source: string): boolean {
+  const file = parsedSourceFile("/demo.spec.ts", source);
+  const helper = file.getFunction("snapLauncher");
+  const body = helper?.getBody();
+  if (
+    helper === undefined ||
+    !helper.isAsync() ||
+    !Node.isBlock(body) ||
+    helper.getParameters().map((parameter) => parameter.getName()).join(",") !==
+      "page" ||
+    body.getStatements().length !== 5
+  ) {
+    return false;
+  }
+  const statements = body.getStatements();
+  return (
+    statements[0]?.getText() ===
+      "await expect(page).toHaveURL(/\\/app\\/demo(?:\\?|$)/);" &&
+    statements[1]?.getText() ===
+      'await expect(page.locator("[data-demo-launcher]")).toBeVisible();' &&
+    statements[2]?.getText() ===
+      "await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));" &&
+    isRealScreenshotDeclaration(
+      statements[3],
+      "`${SHOTS}/00-launcher.png`",
+    ) &&
+    isNonEmptyScreenshotAssertion(statements[4])
+  );
 }
 
 export function surfaceCompletenessProblems(
@@ -367,6 +511,11 @@ export function surfaceCompletenessProblems(
       `${ROUTE_PATH}:1 dynamic demo route must render every typed surface exactly once`,
     );
   }
+  if (!routePageUsesResolvedStation(route)) {
+    problems.push(
+      `${ROUTE_PATH}:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker`,
+    );
+  }
 
   const screenshots = surfaces.map((surface) => ({
     number: surface.number,
@@ -379,6 +528,11 @@ export function surfaceCompletenessProblems(
   ) {
     problems.push(
       `${E2E_PATH}:1 canonical clickable journey must capture every typed surface in contract order`,
+    );
+  }
+  if (!hasRealLauncherScreenshotHelper(e2e)) {
+    problems.push(
+      `${E2E_PATH}:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png`,
     );
   }
   return problems;
@@ -501,6 +655,28 @@ describe("demo-surface-completeness fence", () => {
         ),
       ).not.toEqual([]);
 
+      for (const disconnectedPage of [
+        route.replace(
+          "renderStation(resolvedStation, journey, ids, approved)",
+          'renderStation("workspace", journey, ids, approved)',
+        ),
+        route.replace(
+          "data-demo-surface={resolvedStation}",
+          'data-demo-surface="workspace"',
+        ),
+      ]) {
+        expect(
+          surfaceCompletenessProblems(
+            contract,
+            DEMO_SURFACES,
+            disconnectedPage,
+            e2e,
+            exists,
+          ),
+          disconnectedPage,
+        ).not.toEqual([]);
+      }
+
       expect(
         surfaceCompletenessProblems(
           contract,
@@ -556,6 +732,45 @@ describe("demo-surface-completeness fence", () => {
             exists,
           ),
           invalidCall,
+        ).not.toEqual([]);
+      }
+
+      const launcherScreenshotLine =
+        '  const screenshot = await page.screenshot({ path: `${SHOTS}/00-launcher.png`, fullPage: true });';
+      for (const invalidLauncher of [
+        e2e.replace(
+          launcherScreenshotLine,
+          '  const screenshot = Buffer.from("not a screenshot");',
+        ),
+        e2e.replace(
+          launcherScreenshotLine,
+          launcherScreenshotLine.replace(" = await ", " = "),
+        ),
+        e2e.replace(
+          launcherScreenshotLine,
+          launcherScreenshotLine.replace(
+            "`${SHOTS}/00-launcher.png`",
+            '"other.png"',
+          ),
+        ),
+        e2e.replace(
+          '  await expect(page).toHaveURL(/\\/app\\/demo(?:\\?|$)/);',
+          "  await expect(page).toHaveURL(/.*/);",
+        ),
+        e2e.replace(
+          '  await expect(page.locator("[data-demo-launcher]")).toBeVisible();',
+          '  await expect(page.locator("body")).toBeVisible();',
+        ),
+      ]) {
+        expect(
+          surfaceCompletenessProblems(
+            contract,
+            DEMO_SURFACES,
+            route,
+            invalidLauncher,
+            exists,
+          ),
+          invalidLauncher,
         ).not.toEqual([]);
       }
 

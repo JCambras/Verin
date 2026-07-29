@@ -25,6 +25,8 @@ async function snap(page: Page, index: number, name: string, station: string) {
 }
 
 async function snapLauncher(page: Page) {
+  await expect(page).toHaveURL(/\/app\/demo(?:\?|$)/);
+  await expect(page.locator("[data-demo-launcher]")).toBeVisible();
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   const screenshot = await page.screenshot({ path: `${SHOTS}/00-launcher.png`, fullPage: true });
   expect(screenshot.byteLength).toBeGreaterThan(0);

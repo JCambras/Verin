@@ -108,9 +108,10 @@ requirement set including each non-invariant proof prompt. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
 typed manifest is equal to the normative demo contract, every component and dynamic route exists, the
-canonical route binds each station to its manifest component, and the journey directly awaits all twelve
-screenshots in order. Each capture verifies its station URL and loaded marker, writes to `demo-screens`,
-and asserts the result is non-empty. CI separately verifies that every canonical artifact exists and is
+canonical route binds each station to its manifest component, the dynamic page passes its resolved station
+to that renderer and its loaded marker, and the journey directly awaits all twelve screenshots in order.
+The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
+assert the result is non-empty. CI separately verifies that every canonical artifact exists and is
 non-empty, then configures upload-artifact to fail when the directory is missing. The runner fails on
 every mapped fitness failure or missing result,
 including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
@@ -121,7 +122,10 @@ route groups to directly owned loaded-state scans, rejects multi-argument config
 side-effecting assertion messages, normalizes computed configuration keys while failing closed on
 unresolved keys, and resolves direct, computed, destructured, aliased, and
 namespace-imported neutralization calls through imported Playwright symbols. Reassigned route aliases
-and conditional callback exits before a required scan are rejected as non-evidence.
+and route mutations, including array-mutator calls, are rejected before a required scan; the exported
+route collections and entries are frozen. Neutralizer aliases fail closed across every preceding
+assignment source, including a later unreachable benign overwrite. Conditional callback exits before a
+required scan are rejected as non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

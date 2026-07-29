@@ -10652,3 +10652,73 @@ upload step must fail when the directory is absent.
 runtime validator then reported `demo screen artifacts: 18 verified`.
 
 **Date:** 2026-07-29.
+
+### PF-031 (continued) · reassignment-safe neutralizers and immutable route collections
+
+**Invariant (charter #9):** a required Axe specification cannot be neutralized by an alias whose
+runtime value is hidden by unreachable reassignment, and its required route collection cannot be
+emptied or rewritten before the scan.
+
+**Injection 12 - hide a neutralizer behind an unreachable benign overwrite.** Added a typed alias
+assigned to `test.skip`, reassigned it to a benign function inside `if (false)`, then called the alias
+before the public Axe test.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 13 - empty the imported route collection.** Assigned zero to
+`PUBLIC_AXE_ROUTES.length` through a type cast immediately before the required public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Companions added:** in-memory specifications reproduce the unreachable neutralizer overwrite and
+the descendant collection mutation. The route contract also rejects unfrozen collections and
+unfrozen entries, while assignment operators and array-mutator calls before a required loop are
+non-evidence.
+
+**Revert:** both real injections were removed immediately. The restored combined focused run passed
+both fence files and all 17 tests.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · resolved route invocation and authentic launcher capture
+
+**Invariant (Gate 0, ADR-0030):** every dynamic station reaches the component selected by its resolved
+route value, and the canonical launcher artifact is an awaited screenshot of the loaded launcher page,
+not arbitrary non-empty bytes.
+
+**Injection 8 - disconnect the dynamic page from the validated switch.** Replaced the page's
+`renderStation(resolvedStation, ...)` call with `renderStation("workspace", ...)` while leaving every
+switch case and loaded marker intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 9 - replace the launcher screenshot with arbitrary bytes.** Replaced the launcher helper's
+URL assertion, loaded-state assertion, animation settlement, and awaited `page.screenshot` with
+`Buffer.from("not a screenshot")`, preserving the non-empty byte assertion.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png
+```
+
+**Companions added:** in-memory route sources reject a constant renderer argument or disconnected
+loaded marker. In-memory launcher helpers reject arbitrary bytes, an unawaited screenshot, a
+noncanonical output path, a weak URL assertion, or a weak loaded-state assertion.
+
+**Revert:** both real injections were removed immediately. The restored combined focused run passed
+both fence files and all 17 tests.
+
+**Date:** 2026-07-29.

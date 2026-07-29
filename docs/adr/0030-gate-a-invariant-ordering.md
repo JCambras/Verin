@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, and the captain-approved control-flow, artifact, mechanism, and matrix review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, and the captain-approved route-and-capture-integrity review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -384,7 +384,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   annotation calls and aliases introduced by later simple assignments. Playwright configuration must be one effective configuration object, reject
   focused-test exclusion, and select the required specifications. Typed public, authenticated,
   and demo route groups bind each directly owned route loop to navigation plus its loaded-state marker.
-  Reassigned route aliases and conditional callback exits before the loop are non-evidence.
+  Route collections and their entries are frozen, and reassignment, descendant mutation, array-mutator
+  calls, and conditional callback exits before the loop are non-evidence. Neutralizer aliases are
+  rejected if any preceding assignment source resolves to `test.skip`, `test.fixme`, or `test.fail`,
+  including when a later unreachable assignment appears benign.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -393,9 +396,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   understate what a gate needs.
 - Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
-  manifest, each route case's imported component, and direct awaited ordered screenshots. The screenshot
-  helper verifies the corresponding URL and loaded marker, writes only to the pinned artifact directory,
-  and rejects an empty capture. A dedicated post-Playwright command validates every canonical artifact,
+  manifest, each route case's imported component, the dynamic page's resolved station argument and loaded
+  marker, and direct awaited ordered screenshots. Both the launcher and station screenshot helpers verify
+  their corresponding URL and loaded marker, write only to the pinned artifact directory, and reject an
+  empty capture. A dedicated post-Playwright command validates every canonical artifact,
   and upload-artifact fails when the directory is missing. Gates A through I remain non-green against
   their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
