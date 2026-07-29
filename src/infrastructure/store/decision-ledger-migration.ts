@@ -204,8 +204,9 @@ ALTER TABLE decision_ledger
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM decision_ledger
-     WHERE event_type = 'ReservationReleased'
+    SELECT 1 FROM decision_ledger ledger
+     WHERE ledger.org_id IN (SELECT id FROM orgs)
+       AND ledger.event_type = 'ReservationReleased'
   ) THEN
     RAISE EXCEPTION
       'legacy reservation releases lack an immutable creation identity';
@@ -249,7 +250,8 @@ UPDATE decision_reservation_index reservation
                 reservation.reservation_id
           ORDER BY created.sequence DESC
           LIMIT 1
-       );
+       )
+ WHERE reservation.org_id IN (SELECT id FROM orgs);
 ALTER TABLE decision_reservation_index
   ALTER COLUMN creation_entry_id SET NOT NULL;
 ALTER TABLE decision_reservation_index
@@ -300,7 +302,8 @@ SELECT source.org_id, 'evidence', source.id, recording.id
        AND ledger.event_type = 'EvidenceSnapshotRecorded'
      ORDER BY ledger.sequence ASC
      LIMIT 1
-  ) recording ON TRUE;
+  ) recording ON TRUE
+ WHERE source.org_id IN (SELECT id FROM orgs);
 
 INSERT INTO decision_replay_source_provenance
   (org_id, source_kind, source_id, recording_entry_id)
@@ -317,7 +320,8 @@ SELECT source.org_id, 'bundle', source.id, recording.id
        AND record.input_bundle_id = source.id
      ORDER BY ledger.sequence ASC
      LIMIT 1
-  ) recording ON TRUE;
+  ) recording ON TRUE
+ WHERE source.org_id IN (SELECT id FROM orgs);
 
 INSERT INTO decision_replay_source_provenance
   (org_id, source_kind, source_id, recording_entry_id)
@@ -331,13 +335,15 @@ SELECT source.org_id, 'decision', source.id, recording.id
        AND ledger.event_type = 'DecisionRecorded'
      ORDER BY ledger.sequence ASC
      LIMIT 1
-  ) recording ON TRUE;
+  ) recording ON TRUE
+ WHERE source.org_id IN (SELECT id FROM orgs);
 
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM evidence_snapshots source
-     WHERE NOT EXISTS (
+     WHERE source.org_id IN (SELECT id FROM orgs)
+       AND NOT EXISTS (
        SELECT 1 FROM decision_replay_source_provenance binding
         WHERE binding.org_id = source.org_id
           AND binding.source_kind = 'evidence'
@@ -345,7 +351,8 @@ BEGIN
      )
   ) OR EXISTS (
     SELECT 1 FROM decision_input_bundles source
-     WHERE NOT EXISTS (
+     WHERE source.org_id IN (SELECT id FROM orgs)
+       AND NOT EXISTS (
        SELECT 1 FROM decision_replay_source_provenance binding
         WHERE binding.org_id = source.org_id
           AND binding.source_kind = 'bundle'
@@ -353,7 +360,8 @@ BEGIN
      )
   ) OR EXISTS (
     SELECT 1 FROM decision_records source
-     WHERE NOT EXISTS (
+     WHERE source.org_id IN (SELECT id FROM orgs)
+       AND NOT EXISTS (
        SELECT 1 FROM decision_replay_source_provenance binding
         WHERE binding.org_id = source.org_id
           AND binding.source_kind = 'decision'

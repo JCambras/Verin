@@ -3525,3 +3525,28 @@ cannot depend on one SQL verb or one import spelling.
 **Revert path:** none while Prompt 7 promises PII-safe failure, exact replay
 bindings, preview-first repair, bounded register work, and one immutable write
 owner.
+
+### D-115 · 2026-07-28 · reversible · Ledger references and ownership fences share fail-closed authorities
+
+Every approval stage, execution step, verification rule, reservation generation,
+and eligible causal or exception trigger is checked against the exact immutable
+decision and preceding recorded event that authorizes it. Append, whole-ledger
+verification, bounded register replay, and rebuild use one recorded-version
+structural validator before any projection state is materialized.
+
+The tenant SQL fence normalizes quoted and schema-qualified table identifiers and
+requires an organization predicate for every tenant-table alias. The immutable-row
+fence evaluates deterministic PL/pgSQL assignments and `format` calls, reuses the
+shared module-reference analyzer for aliased runtime loaders, and scans every
+supported Node operator-script extension.
+
+The composed implementation measures infrastructure at 8134 lines. ADR-0033
+amends ADR-0018's infrastructure ceiling to 8300, preserving bounded headroom
+and the unchanged 500-line file cap.
+
+**Why:** projection cannot be trusted when a valid hash chain can name plan
+elements or triggers the immutable decision never authorized, and exact SQL and
+module ownership cannot depend on identifier spelling, one procedural expression,
+one loader name, or one script extension.
+**Revert path:** none while Prompt 7 promises exact decision binding,
+recorded-version replay, tenant isolation, and one immutable write owner.

@@ -765,13 +765,20 @@ describe("deterministic decision-ledger projections", () => {
   it("records expiry then escalation in ledger order, not timestamp order", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
+    if (
+      input.decisionRecord.result.kind !== "proceed" ||
+      input.decisionRecord.result.authority.mode === "automatic"
+    ) {
+      throw new Error("projection fixture requires approval stages");
+    }
     const samples = allLedgerEventSamples();
     const expiry = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
       id: "projection:expiry-first",
       occurredAt: "2026-07-29T13:30:00.000Z",
       recordedAt: "2026-07-29T13:30:00.000Z",
-      effectiveAt: "2026-07-29T13:30:00.000Z",
+      effectiveAt:
+        input.decisionRecord.result.authority.stages[0]!.expiresAt,
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     const escalation = LedgerEntrySchema.parse({

@@ -26,6 +26,9 @@ import {
   registeredSourceEncodings,
 } from "@infra/ledger/ledger-source-registry";
 import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
+import {
+  registeredLedgerStructuralEncodings,
+} from "@infra/ledger/ledger-structural-validator";
 
 /**
  * LEDGER-SCHEMA-REGISTRY FENCE (ADR-0033, charter #1/#13). `decision_ledger` and its
@@ -247,6 +250,9 @@ describe("decision-ledger schema registry fence", () => {
     expect(LEDGER_SCHEMA_VERSIONS).toContain(LEDGER_SCHEMA_VERSION);
     expect([...registeredLedgerEncodings()].sort()).toEqual(
       LEDGER_SCHEMA_VERSIONS.map(encoding).sort(),
+    );
+    expect([...registeredLedgerStructuralEncodings()].sort()).toEqual(
+      [...registeredLedgerEncodings()].sort(),
     );
     expect(registeredLedgerEncodings()).toContain(
       `${LEDGER_SCHEMA_VERSION}|${CANONICAL_SERIALIZER_VERSION}`,

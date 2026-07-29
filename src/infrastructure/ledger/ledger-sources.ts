@@ -322,11 +322,16 @@ export async function verifyReplayEvidence(
   return snapshot.id;
 }
 
-export async function loadVerifiedReplayDecision(
+export interface VerifiedReplayDecisionBinding {
+  readonly record: DecisionRecord;
+  readonly bundleHash: string;
+}
+
+export async function loadVerifiedReplayDecisionBinding(
   tx: SqlQueryable,
   event: DecisionRecorded,
   verifiedEvidence: ReadonlySet<string>,
-): Promise<DecisionRecord> {
+): Promise<VerifiedReplayDecisionBinding> {
   const decisions = await tx.query<{
     input_bundle_id: string;
     canonical_json: string;
@@ -425,7 +430,17 @@ export async function loadVerifiedReplayDecision(
   ) {
     return replaySourceError("decision replay source binding differs during replay");
   }
-  return record;
+  return { record, bundleHash: bundle.bundleHash };
+}
+
+export async function loadVerifiedReplayDecision(
+  tx: SqlQueryable,
+  event: DecisionRecorded,
+  verifiedEvidence: ReadonlySet<string>,
+): Promise<DecisionRecord> {
+  return (
+    await loadVerifiedReplayDecisionBinding(tx, event, verifiedEvidence)
+  ).record;
 }
 
 export interface VerifiedReplaySources {

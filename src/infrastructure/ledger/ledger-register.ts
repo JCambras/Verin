@@ -20,7 +20,7 @@ import {
   parseRecordedLedgerProvenance,
 } from "./ledger-schema-registry";
 import {
-  loadVerifiedReplayDecision,
+  loadVerifiedReplayDecisionBinding,
   verifyReplayEvidence,
 } from "./ledger-sources";
 import {
@@ -28,6 +28,12 @@ import {
   UNVERIFIED_REPLAY_SOURCE_PROVENANCE,
 } from "./ledger-source-provenance";
 import { listReplayDecisionEvidenceCoverage } from "./ledger-source-coverage";
+import {
+  assertRecordedLedgerStructure,
+  type LedgerStructureLookup,
+  type StructuralDecision,
+  type StructuralLedgerEntry,
+} from "./ledger-structural-validator";
 
 export interface VerifiedRegisterDecision {
   readonly projection: DecisionProjection;
@@ -72,10 +78,34 @@ async function replayRegisterWindow(
   const decisions = new Map<string, VerifiedRegisterDecision>();
   const windowStart = rows[0]?.sequence ?? 0;
   const verifiedRecordingEntryIds = new Set(rows.map((row) => row.id));
-  for (const row of rows) {
-    const event = parseEvent(row);
+  const entries = rows.map((row): StructuralLedgerEntry => ({
+    event: parseEvent(row),
+    sequence: row.sequence,
+  }));
+  const entryById = new Map<string, StructuralLedgerEntry>(
+    entries.map((item) => [item.event.id, item]),
+  );
+  const structuralDecisions = new Map<string, StructuralDecision>();
+  const structure: LedgerStructureLookup = {
+    decision: async (id) => structuralDecisions.get(id) ?? null,
+    entry: async (id) => entryById.get(id) ?? null,
+    decisionRecording: async (id, before) =>
+      entries.find((item) =>
+        item.sequence < before &&
+        item.event.type === "DecisionRecorded" &&
+        item.event.decisionRef.id === id) ?? null,
+    evidenceRecording: async (id, before) =>
+      entries.find((item) =>
+        item.sequence < before &&
+        item.event.type === "EvidenceSnapshotRecorded" &&
+        item.event.evidenceSnapshotRef.id === id) ?? null,
+  };
+  for (const [index, row] of rows.entries()) {
+    const item = entries[index]!;
+    const event = item.event;
     if (event.type === "EvidenceSnapshotRecorded") {
       verifiedEvidence.add(await verifyReplayEvidence(tx, event));
+      await assertRecordedLedgerStructure([item], structure);
       continue;
     }
     const id = promotedDecisionId(event);
@@ -117,14 +147,19 @@ async function replayRegisterWindow(
           "decision evidence is missing from the verified window",
         );
       }
-      decisionRecord = await loadVerifiedReplayDecision(
+      const binding = await loadVerifiedReplayDecisionBinding(
         tx,
         event,
         verifiedEvidence,
       );
+      decisionRecord = binding.record;
+      structuralDecisions.set(event.decisionRef.id, binding);
     }
     if (!id) continue;
     if (incompleteDecisions.has(id)) continue;
+    if (structuralDecisions.has(id)) {
+      await assertRecordedLedgerStructure([item], structure);
+    }
     const current = decisions.get(id);
     const projection = foldDecisionProjection({
       ...(current ? { current: current.projection } : {}),

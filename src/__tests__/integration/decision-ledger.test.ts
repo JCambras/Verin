@@ -23,6 +23,7 @@ import {
   verifyDecisionLedger,
   listDecisionLedger,
 } from "@infra/ledger/ledger-verification";
+import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { listOrgChain } from "@infra/audit/audit-store";
@@ -34,6 +35,12 @@ import {
   retainedTextReference,
 } from "@infra/ledger/ledger-pii";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
+import {
+  promotedDecisionId,
+  promotedEvidenceSnapshotId,
+  promotedReservationCreationId,
+  promotedTriggeringEntryId,
+} from "@contracts/decision-core/ledger-references";
 import {
   bundleHashPreimage,
   CANONICAL_SERIALIZER_VERSION,
@@ -64,6 +71,7 @@ import {
   decisionRecordingInput,
   laterEvidenceRecording,
   retainedDecisionSourceFixtures,
+  reusedBundleRecordingInput,
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
@@ -98,6 +106,100 @@ const append = (
   db: SqlDb,
   events: Parameters<typeof appendDecisionEvents>[2],
 ) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_ORG, events, LEDGER_PROVENANCE));
+
+async function insertRawEvidenceSnapshot(
+  db: SqlDb,
+  snapshot: ReturnType<typeof laterEvidenceRecording>["snapshot"],
+): Promise<void> {
+  const bytes = canonicalJson(snapshot as unknown as JsonValue);
+  expect(bytes.ok).toBe(true);
+  if (!bytes.ok) return;
+  await db.query(
+    `INSERT INTO evidence_snapshots
+      (org_id,id,canonical_json,schema_version,contract_schema_version,
+       serializer_version,content_hash,snapshot_hash,recorded_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      snapshot.firmId,
+      snapshot.id,
+      bytes.value,
+      snapshot.schemaVersion,
+      DECISION_CORE_SCHEMA_VERSION,
+      CANONICAL_SERIALIZER_VERSION,
+      snapshot.contentHash,
+      createHash("sha256").update(bytes.value, "utf8").digest("hex"),
+      LEDGER_LATER,
+    ],
+  );
+}
+
+async function insertRawDecisionEvent(
+  db: SqlDb,
+  event: ReturnType<typeof LedgerEntrySchema.parse>,
+): Promise<void> {
+  const head = await db.query<{
+    sequence: number | string;
+    entry_hash: string;
+  }>(
+    "SELECT sequence, entry_hash FROM decision_ledger WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
+    [LEDGER_ORG],
+  );
+  const payload = canonicalJson(event as unknown as JsonValue);
+  const actor = canonicalJson(event.actor as unknown as JsonValue);
+  expect(payload.ok && actor.ok).toBe(true);
+  if (!payload.ok || !actor.ok) return;
+  const sequence = Number(head.rows[0]!.sequence) + 1;
+  const previousHash = head.rows[0]!.entry_hash;
+  const preimage = decisionLedgerChainPreimage(
+    event.schemaVersion,
+    event.serializerVersion,
+    payload.value,
+    LEDGER_PROVENANCE,
+  );
+  expect(preimage).not.toBeNull();
+  if (!preimage) return;
+  const entryHash = computeChainHash(preimage, previousHash);
+  await db.query(
+    `INSERT INTO decision_ledger
+      (org_id,id,sequence,event_type,schema_version,serializer_version,
+       occurred_at,recorded_at,actor_json,correlation_id,causation_id,
+       decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
+       reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,
+       prov_confidence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+             $18,$19,$20,$21)`,
+    [
+      LEDGER_ORG,
+      event.id,
+      sequence,
+      event.type,
+      event.schemaVersion,
+      event.serializerVersion,
+      event.occurredAt,
+      event.recordedAt,
+      actor.value,
+      event.correlationId,
+      event.causationRef?.id ?? null,
+      promotedDecisionId(event),
+      promotedEvidenceSnapshotId(event),
+      promotedTriggeringEntryId(event),
+      payload.value,
+      promotedReservationCreationId(event),
+      previousHash,
+      entryHash,
+      LEDGER_PROVENANCE.source,
+      LEDGER_PROVENANCE.asOf,
+      LEDGER_PROVENANCE.confidence,
+    ],
+  );
+  await db.query(
+    `UPDATE decision_ledger_anchor
+        SET max_sequence = $2, entry_count = entry_count + 1,
+            head_hash = $3, updated_at = $4
+      WHERE org_id = $1`,
+    [LEDGER_ORG, sequence, entryHash, event.recordedAt],
+  );
+}
 
 /** Every statement a path issues, in order, so lock mode is observed not assumed. */
 async function measureStatements(
@@ -560,6 +662,184 @@ describe("decision ledger storage and L1-L4 verification", () => {
       code: "STORE_CONSTRAINT",
     });
     expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
+  });
+
+  it("rejects event references that the immutable decision does not authorize", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalRecorded",
+    )!;
+    const invalid = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:approval:missing-stage",
+      stageId: "missing-stage",
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await expect(append(db, [invalid])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("rejects unauthorized execution, verification, reservation, and trigger references", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const invalidEvents = [
+      LedgerEntrySchema.parse({
+        ...samples.find((event) => event.type === "ExecutionStarted")!,
+        id: "ledger:execution:missing-step",
+        stepId: "step:missing",
+      }),
+      LedgerEntrySchema.parse({
+        ...samples.find((event) => event.type === "VerificationClosed")!,
+        id: "ledger:verification:missing-rule",
+        verificationRuleRef: {
+          firmId: LEDGER_ORG,
+          id: "verification:missing",
+        },
+      }),
+      LedgerEntrySchema.parse({
+        ...samples.find((event) => event.type === "ReservationCreated")!,
+        id: "ledger:reservation:missing-plan",
+        reservationRef: {
+          firmId: LEDGER_ORG,
+          id: "reservation:missing",
+        },
+      }),
+    ];
+    for (const event of invalidEvents) {
+      await expect(append(db, [event])).rejects.toMatchObject({
+        code: "STORE_CONSTRAINT",
+      });
+    }
+    const ineligible = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalStageExpired")!,
+      id: "ledger:trigger:ineligible",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(append(db, [ineligible])).resolves.toHaveLength(1);
+    const exception = LedgerEntrySchema.parse({
+      ...samples.find(
+        (event) => event.type === "ExceptionDecisionRequested",
+      )!,
+      id: "ledger:exception:ineligible-trigger",
+      triggeringEntryRef: {
+        firmId: LEDGER_ORG,
+        id: ineligible.id,
+      },
+    });
+    await expect(append(db, [exception])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const crossDecision = LedgerEntrySchema.parse({
+      ...ineligible,
+      id: "ledger:causal:cross-decision",
+      decisionRef: {
+        firmId: LEDGER_ORG,
+        id: second.decisionRecord.id,
+      },
+      priorDecisionHash: second.decisionRecord.decisionHash,
+      causationRef: {
+        firmId: LEDGER_ORG,
+        id: ineligible.id,
+      },
+    });
+    await expect(append(db, [crossDecision])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
+  it("examiner verification and rebuild reject a valid chain with invalid decision subreferences", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalRecorded",
+    )!;
+    const invalid = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:approval:forged-stage",
+      stageId: "forged-stage",
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await insertRawDecisionEvent(db, invalid);
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      200,
+      50,
+    );
+    expect(register.verification.ok).toBe(false);
+    expect(register.decisions).toEqual([]);
+    expect(register.replaySourceReason).toBe(
+      "ledger event references an unauthorized approval stage",
+    );
+    const verified = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(verified.ok).toBe(false);
+    expect(verified.replaySourceReason).toBe(
+      "ledger event references an unauthorized approval stage",
+    );
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG))
+      .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+  });
+
+  it.each([
+    [
+      "mismatched approval hash",
+      (input: ReturnType<typeof decisionRecordingInput>) =>
+        LedgerEntrySchema.parse({
+          ...allLedgerEventSamples().find(
+            (event) => event.type === "ApprovalRecorded",
+          )!,
+          id: "ledger:forged:approval-hash",
+          decisionHash: "f".repeat(64),
+          inputBundleHash: input.inputBundle.bundleHash,
+        }),
+      "ledger event decision hash does not match immutable record",
+    ],
+    [
+      "status evidence cited before recording",
+      () => LedgerEntrySchema.parse({
+        ...allLedgerEventSamples().find(
+          (event) => event.type === "StatusObserved",
+        )!,
+        id: "ledger:forged:status-order",
+      }),
+      "status evidence must be recorded before it is cited",
+    ],
+    [
+      "duplicate decision recording",
+      (input: ReturnType<typeof decisionRecordingInput>) =>
+        LedgerEntrySchema.parse({
+          ...input.events.at(-1)!,
+          id: "ledger:forged:duplicate-decision",
+        }),
+      "decision may be recorded only once",
+    ],
+  ])("examiner verification rejects a valid chain with %s", async (
+    _case,
+    buildEvent,
+    reason,
+  ) => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const event = buildEvent(input);
+    if (event.type === "StatusObserved" && event.evidenceSnapshotRef) {
+      await insertRawEvidenceSnapshot(
+        db,
+        laterEvidenceRecording(event.evidenceSnapshotRef.id).snapshot,
+      );
+    }
+    await insertRawDecisionEvent(db, event);
+    const verified = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(verified.ok).toBe(false);
+    expect(verified.replaySourceReason).toBe(reason);
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG))
+      .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
   });
 
   it("rejects PII in ledger text without rewriting the submitted bytes", async () => {

@@ -6103,3 +6103,66 @@ focused route, rebuild, ledger, projection, anti-fork, typecheck, and lint suite
 pass.
 
 **Date:** 2026-07-28 (review corrections O1-O6, ADR-0033, D-114).
+
+## Tenant aliases, procedural ownership, and recorded decision structure (D-115)
+
+**Invariants:** every governed tenant-table alias has its own organization
+predicate; every supported operator script and deterministic procedural row write
+is scanned; indirect runtime loaders cannot import immutable-source capabilities;
+every material ledger reference is authorized by the exact recorded decision and
+an eligible earlier event before projection.
+
+The pre-fix tenant companion accepted quoted and schema-qualified tables and a
+join scoped only through an unrelated alias:
+
+```text
+× flags quoted and schema-qualified tenant tables
+  expected false to be true
+
+× requires an organization predicate for every tenant-table alias
+  expected false to be true
+```
+
+The anti-fork companions then planted `EXECUTE format(...)`, a literal statement
+variable, an aliased `require`, a `createRequire` loader, and a `.mjs` operator
+insert. The detector returned no violations, and the shipped extension probe
+passed the authoritative fence:
+
+```text
+× detects formatted and assigned procedural row creation
+  expected [] to deeply equal [execute-format.ts, execute-variable.ts]
+
+× rejects restricted modules loaded through aliased and createRequire loaders
+  expected [] to have a length of 2
+
+✓ anti-fork: each immutable table has one exact raw-insert owner
+  scripts/ledger-extension-reproduction.mjs was not scanned
+```
+
+Finally, the public append accepted an approval for a stage absent from the
+immutable decision. A privileged test appended the same forged event with a valid
+chain hash and anchor, after which whole-ledger verification still returned
+trusted:
+
+```text
+× rejects event references that the immutable decision does not authorize
+  promise resolved instead of rejecting
+
+× examiner verification and rebuild reject a valid chain with invalid decision subreferences
+  expected true to be false
+```
+
+The tenant detector now normalizes SQL identifiers and binds every governed table
+alias. The anti-fork fence evaluates deterministic PL/pgSQL literals,
+concatenation, assignments, and `format` calls, uses the shared module-reference
+analyzer for indirect loaders, and includes `.ts`, `.tsx`, `.mts`, `.cts`, `.js`,
+`.mjs`, and `.cjs` operator files. The recorded-version structural validator runs
+before projection in append and bounded replay and before trust in verification
+and rebuild. Permanent companions cover missing stages, steps, verification
+rules, reservations, ineligible triggers, and a valid-chain forged event.
+
+**Revert:** the temporary `.mjs` probe and every planted regression were removed.
+The focused tenant, anti-fork, decision-ledger, projection, typecheck, and lint
+suites pass.
+
+**Date:** 2026-07-28 (review corrections P1-P6, ADR-0033, D-115).

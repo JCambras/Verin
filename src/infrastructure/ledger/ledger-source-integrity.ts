@@ -16,14 +16,14 @@ export async function verifyReplaySourceCoverage(
 ): Promise<number> {
   const coverage = await tx.query<ReplaySourceCoverageRow>(
     `WITH bindable_sources AS (
-       SELECT 'evidence' AS source_kind, id AS source_id
-         FROM evidence_snapshots WHERE org_id = $1
+       SELECT 'evidence' AS source_kind, evidence.id AS source_id
+         FROM evidence_snapshots evidence WHERE evidence.org_id = $1
        UNION ALL
-       SELECT 'bundle', id
-         FROM decision_input_bundles WHERE org_id = $1
+       SELECT 'bundle', bundle.id
+         FROM decision_input_bundles bundle WHERE bundle.org_id = $1
        UNION ALL
-       SELECT 'decision', id
-         FROM decision_records WHERE org_id = $1
+       SELECT 'decision', decision.id
+         FROM decision_records decision WHERE decision.org_id = $1
      )
      SELECT
        (SELECT count(*) FROM evidence_snapshots s
@@ -58,10 +58,14 @@ export async function verifyReplaySourceCoverage(
               AND binding.source_kind = source.source_kind
               AND binding.source_id = source.source_id
          )) AS missing_bindings,
-       (SELECT count(*) FROM evidence_snapshots WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundles WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_input_bundle_evidence WHERE org_id = $1) +
-       (SELECT count(*) FROM decision_records WHERE org_id = $1) AS source_count`,
+       (SELECT count(*) FROM evidence_snapshots evidence
+         WHERE evidence.org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundles bundle
+         WHERE bundle.org_id = $1) +
+       (SELECT count(*) FROM decision_input_bundle_evidence membership
+         WHERE membership.org_id = $1) +
+       (SELECT count(*) FROM decision_records decision
+         WHERE decision.org_id = $1) AS source_count`,
     [orgId],
   );
   const row = coverage.rows[0];

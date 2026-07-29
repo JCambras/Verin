@@ -71,11 +71,46 @@ export function decisionRecordingInput(): RecordDecisionInput {
   const inputBundle = DecisionInputBundleSchema.parse(
     fixture("decision-input-bundle"),
   );
-  const candidate = DecisionRecordSchema.parse({
+  const recorded = DecisionRecordSchema.parse({
     ...(retainedTextProjection(
       fixture("decision-record-proceed"),
     ) as Record<string, unknown>),
     decisionHash: "0".repeat(64),
+  });
+  if (
+    recorded.result.kind !== "proceed" ||
+    recorded.result.authority.mode === "automatic"
+  ) {
+    throw new Error("ledger fixture decision must carry an executable approval plan");
+  }
+  const candidate = DecisionRecordSchema.parse({
+    ...recorded,
+    result: {
+      ...recorded.result,
+      authority: {
+        ...recorded.result.authority,
+        stages: recorded.result.authority.stages.map((stage) => ({
+          ...stage,
+          expiresAt: LEDGER_LATER,
+        })),
+      },
+      executionPlan: {
+        ...recorded.result.executionPlan,
+        steps: recorded.result.executionPlan.steps.map((step) => ({
+          ...step,
+          idempotencyKey: "idem:ledger:1",
+          conflictKeys: ["conflict:household-liquidity"],
+          reservationRefs: [{
+            firmId: LEDGER_ORG,
+            id: "reservation:1",
+          }],
+          verificationRuleRef: {
+            firmId: LEDGER_ORG,
+            id: "verify:1",
+          },
+        })),
+      },
+    },
   });
   const decisionRecord = DecisionRecordSchema.parse({
     ...candidate,

@@ -23,6 +23,8 @@ import {
 } from "./ledger-schema-registry";
 import { lockDecisionLedgerTenant } from "./ledger-lock";
 import { verifyReplaySources } from "./ledger-sources";
+import { storedLedgerStructureLookup } from "./ledger-structural-store";
+import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
 
 export interface DecisionLedgerRow {
   readonly orgId: string;
@@ -436,6 +438,13 @@ export async function verifyDecisionLedgerIntegrity(
         }
         events.push(parsed.event);
       }
+      await assertRecordedLedgerStructure(
+        events.map((event, index) => ({
+          event,
+          sequence: checked.rows[index]!.sequence,
+        })),
+        storedLedgerStructureLookup(tx, orgId),
+      );
       const sources = await verifyReplaySources(tx, orgId, events);
       return {
         ok: true,

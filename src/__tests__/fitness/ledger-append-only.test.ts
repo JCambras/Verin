@@ -4,6 +4,7 @@ import { Node, SyntaxKind, type SourceFile } from "ts-morph";
 import {
   REPO_ROOT,
   inMemoryProject,
+  moduleReferences,
   realProject,
   walk,
 } from "./_fence-utils";
@@ -18,6 +19,7 @@ const IMMUTABLE_TABLES = [
   "decision_ledger",
 ] as const;
 type ImmutableTable = (typeof IMMUTABLE_TABLES)[number];
+type ImmutableWriteTarget = ImmutableTable | "unresolved";
 const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   evidence_snapshots: "src/infrastructure/ledger/ledger-sources.ts",
   decision_input_bundles: "src/infrastructure/ledger/ledger-sources.ts",
@@ -166,18 +168,168 @@ function immutableTargetAt(
     : null;
 }
 
+function splitTopLevel(value: string, separator: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]!;
+    if (char === "'" && quote && value[index + 1] === "'") {
+      index += 1;
+      continue;
+    }
+    if (char === "'") {
+      quote = !quote;
+      continue;
+    }
+    if (quote) continue;
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (
+      depth === 0 &&
+      value.slice(index, index + separator.length) === separator
+    ) {
+      parts.push(value.slice(start, index).trim());
+      start = index + separator.length;
+      index += separator.length - 1;
+    }
+  }
+  parts.push(value.slice(start).trim());
+  return parts;
+}
+
+function plpgsqlLiteral(value: string): string | null {
+  const trimmed = value.trim();
+  if (!/^'(?:''|[^'])*'$/.test(trimmed)) return null;
+  return trimmed.slice(1, -1).replace(/''/g, "'");
+}
+
+function formatPlpgsql(
+  format: string,
+  values: readonly string[],
+): string | null {
+  let index = 0;
+  let output = "";
+  for (let cursor = 0; cursor < format.length; cursor += 1) {
+    const char = format[cursor]!;
+    if (char !== "%") {
+      output += char;
+      continue;
+    }
+    const kind = format[++cursor];
+    if (kind === "%") {
+      output += "%";
+      continue;
+    }
+    const value = values[index++];
+    if (value === undefined || !kind || !["I", "L", "s"].includes(kind)) {
+      return null;
+    }
+    output += kind === "I"
+      ? `"${value.replace(/"/g, "\"\"")}"`
+      : kind === "L"
+        ? `'${value.replace(/'/g, "''")}'`
+        : value;
+  }
+  return index === values.length ? output : null;
+}
+
+function evaluatePlpgsqlExpression(
+  expression: string,
+  variables: ReadonlyMap<string, string>,
+): string | null {
+  const trimmed = expression.trim().replace(/;\s*$/, "");
+  const concatenated = splitTopLevel(trimmed, "||");
+  if (concatenated.length > 1) {
+    const values = concatenated.map((part) =>
+      evaluatePlpgsqlExpression(part, variables));
+    return values.some((value) => value === null)
+      ? null
+      : values.join("");
+  }
+  const literal = plpgsqlLiteral(trimmed);
+  if (literal !== null) return literal;
+  if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
+    return variables.get(trimmed.toLowerCase()) ?? null;
+  }
+  const call = trimmed.match(/^([a-z_][a-z0-9_$]*)\s*\(([\s\S]*)\)$/i);
+  if (!call) return null;
+  const name = call[1]!.toLowerCase();
+  const argumentsList = splitTopLevel(call[2]!, ",");
+  const values = argumentsList.map((part) =>
+    evaluatePlpgsqlExpression(part, variables));
+  if (values.some((value) => value === null)) return null;
+  const resolved = values as string[];
+  if (name === "format" && resolved.length > 0) {
+    return formatPlpgsql(resolved[0]!, resolved.slice(1));
+  }
+  if (name === "quote_ident" && resolved.length === 1) {
+    return `"${resolved[0]!.replace(/"/g, "\"\"")}"`;
+  }
+  if (name === "quote_literal" && resolved.length === 1) {
+    return `'${resolved[0]!.replace(/'/g, "''")}'`;
+  }
+  return null;
+}
+
+function proceduralWriteTargets(
+  body: string,
+  seen: Set<string>,
+): ImmutableWriteTarget[] {
+  const targets = new Set<ImmutableWriteTarget>();
+  const variables = new Map<string, string>();
+  const unresolvedWrites = new Set<string>();
+  for (const part of splitTopLevel(body, ";")) {
+    const statement = part.replace(/^\s*(?:declare|begin)\b/i, "").trim();
+    const assignment = statement.match(
+      /^([a-z_][a-z0-9_$]*)(?:\s+[a-z_][a-z0-9_$]*(?:\s*\([^)]*\))?)?\s*:=\s*([\s\S]+)$/i,
+    );
+    if (assignment) {
+      const value = evaluatePlpgsqlExpression(assignment[2]!, variables);
+      const name = assignment[1]!.toLowerCase();
+      if (value !== null) {
+        variables.set(name, value);
+        unresolvedWrites.delete(name);
+      } else if (
+        /\b(?:insert\s+into|merge\s+into|copy)\b/i.test(assignment[2]!)
+      ) {
+        unresolvedWrites.add(name);
+      }
+      continue;
+    }
+    const execute = statement.match(/^execute\s+([\s\S]+)$/i);
+    if (!execute) continue;
+    const expression = execute[1]!.replace(/\s+using\b[\s\S]*$/i, "");
+    const value = evaluatePlpgsqlExpression(expression, variables);
+    if (value !== null) {
+      immutableWriteTargets(value, seen).forEach((target) =>
+        targets.add(target));
+    } else if (
+      /\b(?:insert\s+into|merge\s+into|copy)\b/i.test(expression) ||
+      [...unresolvedWrites].some((name) =>
+        new RegExp(`\\b${name}\\b`, "i").test(expression))
+    ) {
+      targets.add("unresolved");
+    }
+  }
+  return [...targets];
+}
+
 function immutableWriteTargets(
   sql: string,
   seen = new Set<string>(),
-): ImmutableTable[] {
+): ImmutableWriteTarget[] {
   if (seen.has(sql)) return [];
   seen.add(sql);
   const tokens = sqlTokens(sql);
-  const targets = new Set<ImmutableTable>();
+  const targets = new Set<ImmutableWriteTarget>();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token?.kind === "body" && token.value !== undefined) {
       immutableWriteTargets(token.value, seen).forEach((target) =>
+        targets.add(target));
+      proceduralWriteTargets(token.value, seen).forEach((target) =>
         targets.add(target));
     }
     let targetIndex: number | null = null;
@@ -993,7 +1145,10 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       }
       for (const table of immutableWriteTargets(value)) {
         const key = `${rel}:${table}`;
-        if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
+        if (
+          (table === "unresolved" || INSERT_ALLOWLIST[table] !== rel) &&
+          !seen.has(key)
+        ) {
           seen.add(key);
           violations.push({
             file: rel,
@@ -1029,7 +1184,10 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       }
       for (const table of immutableWriteTargets(value)) {
         const key = `${rel}:${table}`;
-        if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
+        if (
+          (table === "unresolved" || INSERT_ALLOWLIST[table] !== rel) &&
+          !seen.has(key)
+        ) {
           seen.add(key);
           violations.push({
             file: rel,
@@ -1042,11 +1200,15 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
   return violations;
 }
 
+function isOperatorScript(path: string): boolean {
+  return /\.(?:[cm]?[jt]s|tsx)$/i.test(path);
+}
+
 function ledgerFenceFiles(): SourceFile[] {
   const project = realProject();
   for (const file of walk(
     join(REPO_ROOT, "scripts"),
-    (path) => path.endsWith(".ts") || path.endsWith(".tsx"),
+    isOperatorScript,
   )) {
     project.addSourceFileAtPath(file);
   }
@@ -1057,6 +1219,7 @@ function sourceWriteBoundaryViolations(
   files: readonly SourceFile[],
 ): Violation[] {
   const violations: Violation[] = [];
+  const seen = new Set<string>();
   for (const file of files) {
     const absolute = file.getFilePath().replace(/\\/g, "/");
     const sourceIndex = absolute.lastIndexOf("/src/");
@@ -1073,19 +1236,27 @@ function sourceWriteBoundaryViolations(
         restrictedModule &&
         declaration.getNamespaceImport()
       ) {
-        violations.push({
-          file: rel,
-          line: declaration.getStartLineNumber(),
-        });
+        const key = `${rel}:${declaration.getStartLineNumber()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: declaration.getStartLineNumber(),
+          });
+        }
       }
       for (const imported of declaration.getNamedImports()) {
         const name = imported.getName();
         const owner = RESTRICTED_SOURCE_IMPORTS[name];
         if (owner && owner !== rel) {
-          violations.push({
-            file: rel,
-            line: imported.getStartLineNumber(),
-          });
+          const key = `${rel}:${imported.getStartLineNumber()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({
+              file: rel,
+              line: imported.getStartLineNumber(),
+            });
+          }
         }
       }
     }
@@ -1098,10 +1269,14 @@ function sourceWriteBoundaryViolations(
           declaration.getModuleSpecifierSourceFile(),
         )
       ) {
-        violations.push({
-          file: rel,
-          line: declaration.getStartLineNumber(),
-        });
+        const key = `${rel}:${declaration.getStartLineNumber()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: declaration.getStartLineNumber(),
+          });
+        }
       }
     }
     for (const declaration of file.getDescendantsOfKind(
@@ -1119,27 +1294,39 @@ function sourceWriteBoundaryViolations(
         value &&
         restrictedSourceModule(value)
       ) {
-        violations.push({
-          file: rel,
-          line: declaration.getStartLineNumber(),
-        });
+        const key = `${rel}:${declaration.getStartLineNumber()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: declaration.getStartLineNumber(),
+          });
+        }
       }
     }
-    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const expression = call.getExpression();
-      const moduleLoader =
-        expression.getKind() === SyntaxKind.ImportKeyword ||
-        (Node.isIdentifier(expression) && expression.getText() === "require");
-      if (!moduleLoader) continue;
-      const specifier = call.getArguments()[0];
-      const value = specifier ? staticString(specifier) : null;
+    for (const reference of moduleReferences(file)) {
+      const indirectLoader =
+        reference.kind === "create-require" ||
+        reference.kind === "require-reference";
+      const indirectRestricted =
+        reference.kind === "dynamic-import" ||
+        reference.kind === "require" ||
+        reference.kind === "import-equals";
       if (
-        value &&
-        restrictedSourceModule(value)
+        rel !== "src/infrastructure/ledger/ledger-store.ts" &&
+        (
+          indirectLoader ||
+          (indirectRestricted &&
+            reference.specifier !== null &&
+            restrictedSourceModule(reference.specifier))
+        )
       ) {
+        const key = `${rel}:${reference.line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         violations.push({
           file: rel,
-          line: call.getStartLineNumber(),
+          line: reference.line,
         });
       }
     }
@@ -1385,6 +1572,28 @@ describe("decision-ledger append-only fence", () => {
       expect(ledgerInsertViolations(readOnly.getSourceFiles())).toEqual([]);
     });
 
+    it("detects formatted and assigned procedural row creation", () => {
+      const project = inMemoryProject({
+        "/scripts/execute-format.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`DO $body$ DECLARE target text := 'decision_ledger'; BEGIN EXECUTE format('INSERT INTO %I (id) VALUES (''x'')', target); END $body$`);",
+        "/scripts/execute-variable.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`DO $body$ DECLARE statement text := 'INSERT INTO ' || 'decision_records'; BEGIN EXECUTE statement; END $body$`);",
+        "/scripts/execute-unresolved.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          "db.exec(`DO $body$ DECLARE statement text := transform('INSERT INTO decision_records'); BEGIN EXECUTE statement; END $body$`);",
+      });
+      const planted = ledgerInsertViolations(project.getSourceFiles());
+      expect(
+        planted.map(({ file }) => file.split("/").at(-1)).sort(),
+      ).toEqual([
+        "execute-format.ts",
+        "execute-unresolved.ts",
+        "execute-variable.ts",
+      ]);
+    });
+
     it("fails closed on an unresolved SQL-bearing alias", () => {
       const project = inMemoryProject({
         "/scripts/unresolved-alias.ts":
@@ -1462,6 +1671,39 @@ describe("decision-ledger append-only fence", () => {
       expect(
         sourceWriteBoundaryViolations(project.getSourceFiles()),
       ).toHaveLength(7);
+    });
+
+    it("rejects restricted modules loaded through aliased and createRequire loaders", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil-require.ts":
+          `const load = require;\n` +
+          `export const source = load("./ledger/ledger-sources.js");`,
+        "/src/infrastructure/evil-create-require.ts":
+          `import { createRequire } from "node:module";\n` +
+          `const load = createRequire(import.meta.url);\n` +
+          `export const capability = load("./ledger/ledger-source-capability.js");`,
+      });
+      expect(sourceWriteBoundaryViolations(project.getSourceFiles()))
+        .toHaveLength(2);
+    });
+
+    it("scans every supported Node operator-script extension", () => {
+      expect([
+        "operator.ts",
+        "operator.tsx",
+        "operator.mts",
+        "operator.cts",
+        "operator.js",
+        "operator.mjs",
+        "operator.cjs",
+      ].every(isOperatorScript)).toBe(true);
+      expect(isOperatorScript("operator.json")).toBe(false);
+      const project = inMemoryProject({
+        "/scripts/extension-bypass.mjs":
+          `export const run = (db) => ` +
+          `db.query("INSERT INTO decision_ledger (id) VALUES ('x')");`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(1);
     });
 
     it("resolves restricted module imports with emitted JavaScript extensions", () => {

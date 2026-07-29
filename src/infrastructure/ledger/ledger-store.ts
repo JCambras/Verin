@@ -63,6 +63,8 @@ import {
   assertLedgerEventPiiBoundary,
   assertReplaySourcePiiBoundary,
 } from "./ledger-pii";
+import { storedLedgerStructureLookup } from "./ledger-structural-store";
+import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
 
 export { rebuildDecisionProjections } from "./ledger-rebuild";
 
@@ -134,30 +136,14 @@ async function appendPrepared(
   let sequence = head.rows[0] ? Number(head.rows[0].sequence) + 1 : 0;
   let prevHash = head.rows[0]?.entry_hash ?? GENESIS_HASH;
   const appended: AppendedLedgerEntry[] = [];
+  const structure = storedLedgerStructureLookup(tx, orgId);
   for (const prepared of events) {
     const { event, payloadJson, actorJson } = prepared;
-    for (const reference of [
-      event.causationRef,
-      event.type === "ExceptionDecisionRequested"
-        ? event.triggeringEntryRef
-        : undefined,
-    ]) {
-      if (!reference) continue;
-      const preceding = await tx.query<{ sequence: number | string }>(
-        "SELECT sequence FROM decision_ledger WHERE org_id = $1 AND id = $2",
-        [orgId, reference.id],
-      );
-      if (
-        !preceding.rows[0] ||
-        Number(preceding.rows[0].sequence) >= sequence
-      ) {
-        throw appError(
-          "STORE_CONSTRAINT",
-          "ledger causal reference must name a preceding entry",
-        );
-      }
-    }
     await assertLedgerSourceBindings(tx, event);
+    await assertRecordedLedgerStructure(
+      [{ sequence, event }],
+      structure,
+    );
     const projectionProvenance = await deriveLedgerEventProvenance(
       tx,
       event,

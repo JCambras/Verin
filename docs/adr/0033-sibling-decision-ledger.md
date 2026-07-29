@@ -53,6 +53,12 @@ settle now.
   Repository boundaries validate the canonical source hashes named by recording and
   approval events. The tenant fence classifies ledger anchors and projection
   checkpoints as tenant data and permits only exact reviewed capability escapes.
+- A recorded-version structural validator binds approval stages, execution steps,
+  verification rules, reservations, decision uniqueness, evidence ordering, and
+  eligible causal and exception triggers to the exact immutable decision that
+  authorizes them. Append, whole-ledger verification, bounded register replay, and
+  rebuild call that same authority before projection. Invalid references never
+  reach the projection fold.
 - Every immutable string leaf is classified by its complete structural path at one
   storage boundary. Attribution is an opaque retained-text reference; hashes and
   timestamps keep their canonical forms; decision explanations, summaries, reasons,
@@ -124,12 +130,14 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend ADR-0018 ceilings from contracts 3500 to 4700 and infrastructure 2500 to
-  6250. Measured final state is contracts 4525 and infrastructure 6106. Domain
+  7000. Measured final state is contracts 4525 and infrastructure 6859. Domain
   remains below its 1200 ceiling and the per-file 500-line limit is unchanged: the
   repository is split into the chain writer (`ledger-store.ts`), the immutable
   content-addressed source rows (`ledger-sources.ts`), and derived projection and
   reservation state (`ledger-projection-store.ts`), with rebuild orchestration in
-  `ledger-rebuild.ts` and verified request replay in `ledger-register.ts`. Contracts
+  `ledger-rebuild.ts`, recorded-version reference validation in
+  `ledger-structural-validator.ts`, and verified request replay in
+  `ledger-register.ts`. Contracts
   carry the retained per-version encoders plus the promoted-reference authority
   (`ledger-references.ts`) that storage, verification, and projection share.
 

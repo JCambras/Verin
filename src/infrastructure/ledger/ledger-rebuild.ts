@@ -17,6 +17,8 @@ import {
   parseRecordedLedgerProvenance,
 } from "./ledger-schema-registry";
 import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
+import { storedLedgerStructureLookup } from "./ledger-structural-store";
+import { assertRecordedLedgerStructure } from "./ledger-structural-validator";
 
 export async function rebuildDecisionProjections(
   db: SqlDb,
@@ -74,6 +76,13 @@ export async function rebuildDecisionProjections(
         provenance,
       });
     }
+    await assertRecordedLedgerStructure(
+      replay.map((item) => ({
+        event: item.event,
+        sequence: item.row.sequence,
+      })),
+      storedLedgerStructureLookup(tx, orgId),
+    );
     const sources = await verifyReplaySources(
       tx,
       orgId,

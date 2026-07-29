@@ -77,22 +77,113 @@ const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
     why: "the unguessable e-sign token is the application capability",
   },
 ];
-
 function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim();
 }
 
+const SQL_ALIAS_STOP_WORDS = new Set([
+  "cross",
+  "full",
+  "for",
+  "from",
+  "group",
+  "having",
+  "inner",
+  "join",
+  "left",
+  "limit",
+  "on",
+  "offset",
+  "order",
+  "outer",
+  "returning",
+  "right",
+  "set",
+  "union",
+  "using",
+  "where",
+]);
+
+function normalizeSqlIdentifiers(sql: string): string {
+  return sql.replace(/"((?:""|[^"])*)"/g, (_, value: string) =>
+    value.replace(/""/g, "\"").toLowerCase());
+}
+
+function tenantTableAliases(sql: string): string[] {
+  const normalized = normalizeSqlIdentifiers(sql);
+  const references =
+    /\b(?:from|join|update|delete\s+from)\s+(?:only\s+)?((?:[a-z_][a-z0-9_$]*\s*\.\s*)?([a-z_][a-z0-9_$]*))(?:\s+(?:as\s+)?([a-z_][a-z0-9_$]*))?/gi;
+  const aliases: string[] = [];
+  for (const match of normalized.matchAll(references)) {
+    const table = match[2]?.toLowerCase();
+    if (!table || !DATA_TABLES.includes(table)) continue;
+    const candidate = match[3]?.toLowerCase();
+    aliases.push(
+      candidate && !SQL_ALIAS_STOP_WORDS.has(candidate) ? candidate : table,
+    );
+  }
+  return aliases;
+}
+
+function scopedTenantAliases(sql: string, aliases: readonly string[]): Set<string> {
+  const governed = new Set(aliases);
+  const scoped = new Set<string>();
+  const edges = new Map<string, Set<string>>();
+  for (const alias of governed) edges.set(alias, new Set());
+  for (const match of sql.matchAll(
+    /\b([a-z_][a-z0-9_$]*)\s*\.\s*org_id\s*=\s*([a-z_][a-z0-9_$]*)\s*\.\s*org_id\b/gi,
+  )) {
+    const left = match[1]!.toLowerCase();
+    const right = match[2]!.toLowerCase();
+    if (governed.has(left) && governed.has(right)) {
+      edges.get(left)!.add(right);
+      edges.get(right)!.add(left);
+    }
+  }
+  for (const alias of governed) {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (
+      new RegExp(
+        `\\b${escaped}\\s*\\.\\s*org_id\\s*(?:=\\s*(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*|'[^']*'|\\d+)|\\bin\\b)`,
+        "i",
+      ).test(sql) ||
+      new RegExp(
+        `(?:\\$\\d+|\\?|:[a-z_][a-z0-9_$]*|'[^']*')\\s*=\\s*${escaped}\\s*\\.\\s*org_id\\b`,
+        "i",
+      ).test(sql)
+    ) {
+      scoped.add(alias);
+    }
+  }
+  if (
+    governed.size === 1 &&
+    /\b(?:where|on)\b[\s\S]*?\borg_id\s*(?:=\s*(?:\$\d+|\?|:[a-z_][a-z0-9_$]*|'[^']*'|\d+)|\bin\b)/i.test(
+      sql,
+    )
+  ) {
+    scoped.add(aliases[0]!);
+  }
+  const pending = [...scoped];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    for (const neighbor of edges.get(current) ?? []) {
+      if (scoped.has(neighbor)) continue;
+      scoped.add(neighbor);
+      pending.push(neighbor);
+    }
+  }
+  return scoped;
+}
+
 export function detectMissingOrgId(sql: string): boolean {
   if (!/\b(SELECT|UPDATE|DELETE)\b/i.test(sql)) return false; // INSERTs include org_id as a column, checked structurally elsewhere
-  // Statement-shaped table references only (FROM/JOIN/UPDATE <table>), so trigger
-  // DDL like "BEFORE UPDATE ON audit_log" does not false-positive.
-  const touchesData = DATA_TABLES.some((t) => new RegExp(`\\b(FROM|JOIN|UPDATE)\\s+${t}\\b`, "i").test(sql));
-  if (!touchesData) return false;
   const normalized = normalizeSql(sql);
   if (REVIEWED_ESCAPES.some((e) => normalized === e.sql)) return false;
-  // Vale V4: org_id must appear as a FILTER predicate (org_id = / org_id IN),
-  // not merely anywhere in the string (e.g. in the SELECT projection).
-  return !/\borg_id\s*(=|\bin\b)/i.test(sql);
+  const identifierNormalized = normalizeSqlIdentifiers(normalized);
+  const aliases = [...new Set(tenantTableAliases(identifierNormalized))];
+  if (aliases.length === 0) return false;
+  const scoped = scopedTenantAliases(identifierNormalized, aliases);
+  return aliases.some((alias) => !scoped.has(alias));
 }
 
 /**
@@ -189,6 +280,36 @@ describe("org-id-required fence", () => {
       expect(
         detectMissingOrgId("SELECT * FROM decision_projection_checkpoint"),
       ).toBe(true);
+    });
+    it("flags quoted and schema-qualified tenant tables", () => {
+      expect(
+        detectMissingOrgId("SELECT * FROM public.decision_ledger"),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId('SELECT * FROM "decision_ledger"'),
+      ).toBe(true);
+    });
+    it("requires an organization predicate for every tenant-table alias", () => {
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl JOIN households h ON h.id = dl.decision_id WHERE h.org_id = $1",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl JOIN households h ON h.id = dl.decision_id WHERE dl.org_id = $1 AND h.org_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl JOIN households h ON h.org_id = dl.org_id",
+        ),
+      ).toBe(true);
+      expect(
+        detectMissingOrgId(
+          "SELECT * FROM decision_ledger dl JOIN households h ON h.org_id = dl.org_id WHERE h.org_id = $1",
+        ),
+      ).toBe(false);
     });
     it("allows a query that filters by org_id", () => {
       expect(detectMissingOrgId("SELECT * FROM households WHERE org_id = $1 AND id = $2")).toBe(false);
