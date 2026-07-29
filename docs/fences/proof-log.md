@@ -9255,7 +9255,7 @@ reverted tree.
 
 **Date:** 2026-08-10 (post-merge follow-up to PR #34, firm ruling `p9-temporal-fact-bytes`).
 
-## PF-018 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
+## PF-030 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
 
 **Invariant (ADR-0030, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
 phase gate may require an invariant whose activation prerequisite lands in a later wave. Gate A requires
@@ -9316,7 +9316,7 @@ cannot be green by always failing).
 
 **Date:** 2026-07-28 (ADR-0030, D-061).
 
-### PF-018 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
+### PF-030 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
 
 **What changed (ADR-0030, amended in place).** All nine gates of the ratified sequence are registered;
 `gates.<G>.requires` became a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
@@ -9416,7 +9416,7 @@ all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-opus-review-1`).
 
-### PF-018 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
+### PF-030 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
 
 **SUPERSESSION CROSS-REFERENCE (read this before re-running injections 1-8).** The entries above are
 preserved as the historical record of what actually ran at the time, against the implementations of the
@@ -9597,7 +9597,7 @@ every injection and verified byte-identical with `diff -q`; `git status` clean o
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-2`).
 
-### PF-018 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
+### PF-030 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
 
 **SUPERSESSION CROSS-REFERENCE (read before re-running injections 10, 11 and 19).** Injections 10 and 11
 above are preserved verbatim as what actually ran against the hand-rolled line scanner of that round.
@@ -9728,7 +9728,7 @@ and `scripts/v3-invariants.ts` restored the same way after injection 20.
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-review-3`).
 
-### PF-018 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
+### PF-030 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
 
 **SUPERSESSION CROSS-REFERENCE (read before re-running injections 14, 15, 17-19).** Every injection above
 is preserved verbatim as what actually ran against the implementation of its own round; none is rewritten.
@@ -9880,3 +9880,101 @@ verified byte-identical with `diff -q` (`git status` reports the file unmodified
 `v3-invariants.json` restored the same way after injection 21.
 
 **Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-3`).
+
+### PF-030 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
+
+**Invariant:** every declared gate outcome remains a typed requirement at its full proof point; every
+gate's structural predecessor controls readiness; every non-invariant proof prompt is ratcheted; and a
+CI command proves a gate only from a dedicated simple command whose exit status controls a
+non-neutralized blocking step.
+
+**Injection 25 - delete Gate B's prompt-11 stable-corpus evidence.** Removed only
+`the deterministic replay corpus and signed golden fixtures are stable` from `gates.B.requires`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+-     "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+**Injection 26 - understate a non-invariant proof point.** Changed only the account-opening domain
+artifact's requirement prompt from 10 to 9.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+-     "artifact:config/domains/account-opening.yaml @ prompt 10",
++     "artifact:config/domains/account-opening.yaml @ prompt 9",
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+**Injection 27 - sever Gate B from Gate A.** Changed `gates.B.entryGates` to `[]` and its
+`entryCondition` to `None.` while leaving every local Gate B requirement intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's structural entry predecessors are the ruled ones
+-   "B": [
+-     "A",
+-   ],
++   "B": [],
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+The continuous readiness companion independently supplies active-pass for every Gate B local
+requirement and not-yet-active for Gate A invariant 1, then asserts Gate B remains
+`not-yet-green` with `Gate A entry condition` in `entryBlocking`.
+
+**Injection 28 - replace the audit verifier with an echo.** Changed the dedicated workflow step from
+`run: pnpm audit:chain` to `run: echo 'pnpm audit:chain'`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+invariant 5 (Ledger records are append-only): ci job 'audit-chain-verify' mentions 'pnpm audit:chain' only in a compound or multi-command run step
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > proves a ci-gate only by a declared job that RUNS the command, not by a mention
+Test Files  2 failed (2)
+Tests  2 failed | 53 passed (55)
+```
+
+**Companions added:** the gate-ordering fence rejects the four reported false proofs directly:
+`echo 'pnpm audit:chain'`, `false && pnpm audit:chain`, a heredoc containing the command, and
+`pnpm audit:chain || true`. It separately proves neutralized and missing commands produce distinct
+diagnostics, proves a non-green predecessor holds an otherwise-green successor below green, and proves
+changing a non-invariant prompt changes the complete requirement ratchet.
+
+**Post-state:** all four injections were reverted with `apply_patch`. The focused governance run passes
+64 tests across `v3-gate-ordering`, `v3-invariants`, `charter-drift`, and `axe-required`. The v3 runner
+reports 5 active-pass, 0 active-fail, and 25 not-yet-active; every gate remains non-green and its
+`awaiting:` line includes structural predecessor blockers plus the new outcome evidence.
+
+**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved outcome-completeness review).
+
+### PF-031 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
+
+**Invariant (charter #9):** the blocking E2E gate runs `pnpm test:e2e`, and the public,
+authenticated, and demo E2E specifications each execute Axe. A surviving Playwright job name cannot
+stand in for an accessibility scan.
+
+**Injection:** removed the `@axe-core/playwright` import from `e2e/smoke.spec.ts` while retaining its
+ordinary browser tests and the blocking `e2e` workflow job.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute Axe
+AssertionError: e2e/smoke.spec.ts:1 must import the Axe Playwright builder
+Test Files  1 failed (1)
+Tests  1 failed | 2 passed (3)
+```
+
+**Companion:** in-memory required-spec sources prove an ordinary Playwright test with no Axe import or
+analysis fails, while an aliased Axe builder that executes `.analyze()` passes. The charter map also
+names `pnpm test:e2e`, so charter-drift proves the scanning specifications run in the blocking workflow.
+
+**Revert:** the Axe import was restored with `apply_patch`; the focused fence passes.
+
+**Date:** 2026-07-28.

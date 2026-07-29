@@ -217,7 +217,12 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "e2e"
+          "ref": "e2e",
+          "command": "pnpm test:e2e"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/axe-required.test.ts"
         }
       ]
     },

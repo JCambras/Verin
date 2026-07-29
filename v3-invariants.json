@@ -71,6 +71,7 @@
           "note": "NO MECHANISM YET, so this gate can never read green. The skeleton-honesty fence proves contract PARITY (scenario/firm/disposition) and the surface import boundary, and e2e/demo-journey.spec.ts walks and screenshots a hard-coded path - neither decides COMPLETENESS against the contract's §4 required-surface list, so a dropped surface would fail nothing. Supplying that mechanism is what flips gate 0 to decidable."
         }
       ],
+      "entryGates": [],
       "entryCondition": "None - Wave 0 opens the build sequence.",
       "outcome": "The seven-minute journey is clickable on static/fake data, every required screen exists, and the UI does not invent decisions (Wave 0, prompts 1-3; ADR-0027 labeled fakes)."
     },
@@ -99,7 +100,10 @@
           "id": 5
         }
       ],
-      "entryCondition": "Wave 0 (prompts 1-3) has landed: the seven-minute journey is clickable on labeled fake data (ADR-0027).",
+      "entryGates": [
+        "0"
+      ],
+      "entryCondition": "Gate 0 is green: Wave 0 (prompts 1-3) has landed and the seven-minute journey is clickable on labeled fake data (ADR-0027).",
       "outcome": "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7). Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030)."
     },
     "B": {
@@ -128,7 +132,16 @@
           "kind": "artifact",
           "ref": "config/domains/money-movement.yaml",
           "prompt": 10
+        },
+        {
+          "kind": "evidence",
+          "ref": "the deterministic replay corpus and signed golden fixtures are stable",
+          "prompt": 11,
+          "note": "NO MECHANISM YET: prompt 11's deterministic synthetic corpus generator, immutable signed fixtures, expected hashes, and provenance-labeled real-derived cases do not exist, so nothing yet proves byte-identical regeneration or corpus reference integrity."
         }
+      ],
+      "entryGates": [
+        "A"
       ],
       "entryCondition": "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A's corrected requirements (invariants 1, 2, 4, 5) are active and green (ADR-0030).",
       "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030)."
@@ -157,6 +170,9 @@
           "prompt": 15,
           "note": "NO MECHANISM YET: intake, entity binding, evidence snapshots, and bundle assembly do not exist, so nothing can decide this clause. It becomes an invariant/fitness requirement in the PR that lands prompt 15."
         }
+      ],
+      "entryGates": [
+        "B"
       ],
       "entryCondition": "Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).",
       "outcome": "The canonical request reaches a validated immutable input bundle with no PII in LLM artifacts (Wave C, prompts 12-15)."
@@ -212,6 +228,9 @@
           "note": "REFERENCED, NOT OWNED (ruling gatea-fix-review-3): invariant 19's whole subject - approval invalidates on a material input-bundle hash change - is complete at prompt 18, where approval binds to decisionHash + inputBundleHash INSIDE Wave D. Gate D is therefore the earliest gate that can honestly prove it. Its activation ownership stays with Gate F, which re-asserts it over pre-execution revalidation."
         }
       ],
+      "entryGates": [
+        "C"
+      ],
       "entryCondition": "Gate C is green: the canonical request reaches a validated immutable input bundle (Wave C, prompts 12-15).",
       "outcome": "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green, and the prompt-18 authority/approval guarantees (invariants 18 and 19) are proven where they land (Wave D, prompts 16-19)."
     },
@@ -239,6 +258,9 @@
           "kind": "invariant",
           "id": 17
         }
+      ],
+      "entryGates": [
+        "D"
       ],
       "entryCondition": "Gate D is green.",
       "outcome": "A natural-language draft becomes simulated and approved structured policy; policy invariants 14-17 green (Wave E, prompts 20-22)."
@@ -282,7 +304,16 @@
         {
           "kind": "invariant",
           "id": 25
+        },
+        {
+          "kind": "evidence",
+          "ref": "verification reconciliation records delayed status and closes only when configured proof requirements are satisfied",
+          "prompt": 26,
+          "note": "NO MECHANISM YET: prompt 26's status polling, delayed human-channel NIGO ingestion, VerificationStuck path, proof-requirement closure, and idempotent repeated observations do not exist."
         }
+      ],
+      "entryGates": [
+        "E"
       ],
       "entryCondition": "Gate E is green.",
       "outcome": "Concurrent, repeated, failed, and delayed execution paths are safe and recorded; approval/execution invariants 18-25 green against fakes (Wave F, prompts 23-26)."
@@ -308,6 +339,9 @@
           "id": 30
         }
       ],
+      "entryGates": [
+        "F"
+      ],
       "entryCondition": "Gate F is green. Prompt 27 is DEFERRED pending sandbox access (ADR-0024); until the trigger fires no external status claim may be presented as real, and Phase 1 is never declared complete on fakes.",
       "outcome": "The full journey uses a real Salesforce invocation and an honestly labeled returned status; the assembled vertical proves Firm B differs only through configuration and the printable record reconstructs from ledger + replay (invariants 26, 28, 30; Wave G, prompts 27-28)."
     },
@@ -326,10 +360,31 @@
         {
           "kind": "invariant",
           "id": 29
+        },
+        {
+          "kind": "evidence",
+          "ref": "the canonical journey completes within seven minutes without developer intervention",
+          "prompt": 29,
+          "note": "NO MECHANISM YET: prompt 29 has not produced a timed presenter run or executable timing assertion for the complete real-path journey."
+        },
+        {
+          "kind": "evidence",
+          "ref": "the measured results report exposes methodology, corpus version, and separate real-derived and synthetic provenance results",
+          "prompt": 29,
+          "note": "NO MECHANISM YET: prompt 29's measured results report and instrumentation for detection rate, Firm B configuration time, policy clarification cycles, and internal TFIC do not exist."
+        },
+        {
+          "kind": "evidence",
+          "ref": "a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work",
+          "prompt": 29,
+          "note": "NO MECHANISM YET: prompt 29's cold-review session and recorded comprehension findings do not exist, so category understanding is not yet evidenced."
         }
       ],
+      "entryGates": [
+        "G"
+      ],
       "entryCondition": "Gate G is green: the full journey uses a real Salesforce invocation with an honestly labeled returned status (Wave G, prompts 27-28).",
-      "outcome": "The demo runs in seven minutes and emits measured proof: the UI distinguishes every decision and execution state and the natural-language policy path is choreographed end to end (invariants 27 and 29; Wave H, prompt 29; Phase 1 completion)."
+      "outcome": "The demo runs in seven minutes and emits measured proof: the UI distinguishes every decision and execution state, the natural-language policy path is choreographed end to end, and a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work (invariants 27 and 29; Wave H, prompt 29; Phase 1 completion)."
     },
     "I": {
       "wave": "I",
@@ -351,6 +406,9 @@
           "prompt": 30,
           "note": "NO MECHANISM YET: severity adjudication is the adversarial reviewer's judgment, so the report's existence is checkable here but its verdict is not. This gate is never green on registration alone."
         }
+      ],
+      "entryGates": [
+        "H"
       ],
       "entryCondition": "Gate H is green: the demo runs in seven minutes on a real Salesforce invocation with an honestly labeled returned status.",
       "outcome": "No unresolved critical finding; all accepted limitations are visible in the demo and documentation (Wave I, prompt 30)."
@@ -721,10 +779,11 @@
       "gate": "F",
       "name": "Every execution and status occurrence is recorded as a ledger event",
       "status": "not-yet-active",
-      "activatesWhen": "the typed LedgerEntry union (Wave A prompt 7) and execution events (Wave F prompt 25) land",
+      "activatesWhen": "the typed LedgerEntry union (Wave A prompt 7), execution events (Wave F prompt 25), and status polling and ingestion events (Wave F prompt 26) land",
       "activationPrompts": [
         7,
-        25
+        25,
+        26
       ],
       "mechanisms": [
         {

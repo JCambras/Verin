@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ciJobRuns, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
+import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
  * V3-INVARIANT REGISTRY FENCE (ADR-0023; v3 §17 preamble: CI reports active,
@@ -93,8 +93,9 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
       if (m.type === "ci-gate") {
         if (typeof m.command !== "string" || m.command.trim() === "") {
           problems.push(`${tag}: ci-gate '${m.ref}' must name the command its blocking job runs - a job NAME alone is satisfied by a comment or a path`);
-        } else if (!ciJobRuns(deps.ciJobs, m.ref, m.command)) {
-          problems.push(`${tag}: ci-gate '${m.ref}' does not run '${m.command}' as a job in the BLOCKING .github/workflows/ci.yml`);
+        } else {
+          const problem = ciJobRunProblem(deps.ciJobs, m.ref, m.command);
+          if (problem !== undefined) problems.push(`${tag}: ${problem}`);
         }
       } else if (!deps.exists(m.ref)) {
         problems.push(`${tag}: mechanism ${m.type}:${m.ref} does not exist on disk`);
@@ -135,7 +136,7 @@ describe("v3-invariant registry fence", () => {
     });
     const deps = {
       exists: () => true,
-      ciJobs: parseCiJobs(["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm db:seed && pnpm audit:chain", ""].join("\n")),
+      ciJobs: parseCiJobs(["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain", ""].join("\n")),
     };
     // Ratcheted ids must be active in fixtures that test OTHER failure classes.
     const ratchetActive: Array<[number, Partial<Invariant>]> = ACTIVE_RATCHET.map((id) => [
@@ -173,7 +174,7 @@ describe("v3-invariant registry fence", () => {
       );
       const problems = validateRegistry(reg, { exists: (p) => !p.includes("ghost"), ciJobs: deps.ciJobs });
       expect(problems.some((p) => p.includes("does not exist on disk"))).toBe(true);
-      expect(problems.some((p) => p.includes("does not run 'pnpm ghost' as a job in the BLOCKING"))).toBe(true);
+      expect(problems.some((p) => p.includes("ci job 'ghost-gate' is missing"))).toBe(true);
     });
     it("flags a ci-gate satisfied only by a NAME - the job must exist and run the declared command", () => {
       const named = full(

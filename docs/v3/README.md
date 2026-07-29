@@ -1,7 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0028** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0030** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
@@ -59,7 +59,7 @@ is rendered visibly distinct from a passing one; CI never fakes green (v3 §17 p
 
 **Gate requirements are read from the registry, not from the prompt-sequence prose.** All ten gates of
 the ratified sequence (0, A, B, C, D, E, F, G, H, I - G closes after prompts 27-28 and H after 29, as the
-wave map declares) are registered with their wave, prompt range, entry
+wave map declares) are registered with their wave, prompt range, structural predecessor-gate list, entry
 condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
 (machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
 green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
@@ -75,15 +75,21 @@ set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
 declares no machine-checkable requirement (an empty set would read green merely by being registered), or
 if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
-parse of `.github/workflows/ci.yml` plus a shell-comment strip of each `run` script, so a command named
-only in a comment, a step `name:`, an `env:` value, or a commented-out line proves nothing - and neither
-does one in a job or step neutralized by `continue-on-error` or an `if:`, which runs without blocking.
+parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of each `run` script. The
+required command must be a dedicated simple command whose exit status controls its step, so a command
+named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
+`env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
+neutralized by `continue-on-error` or an `if:`.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too. A gate's
-`awaiting:` line names every requirement holding it back, undecidable ones included. Two ratchets in the
-fence pin the complete 30-invariant gate-assignment map and every gate's COMPLETE TYPED requirement set,
-so neither moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered
-gate 0 green. Per
+`awaiting:` line names every requirement holding it back, undecidable ones included. Three ratchets in
+the fence pin the complete 30-invariant gate-assignment map, every gate's structural predecessor chain,
+and every gate's COMPLETE TYPED requirement set including each non-invariant proof prompt. Readiness
+computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
+moves by a registry edit alone - deleting an `evidence` clause would otherwise have rendered gate 0
+green. Gate B includes prompt 11's stable-corpus evidence, Gate F includes prompt 26's verification
+reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
+Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A requires invariants 1, 2,
 4, and 5**; invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account

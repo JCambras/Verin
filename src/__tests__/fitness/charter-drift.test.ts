@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ciJobBlocks, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
+import { ciJobBlocks, ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
@@ -32,6 +32,7 @@ const p = (rel: string) => root + rel;
 interface Mechanism {
   type: string;
   ref: string;
+  command?: string;
   status?: "enforced" | "planned";
 }
 interface Entry {
@@ -80,8 +81,8 @@ function blockingCiJobs(): Map<string, CiJob> {
   // authority the gate rules use (scripts/v3-gates.lib.ts) - a substring search
   // matched a deleted job's own leftover comment, and could not see a job left
   // unable to fail the build (ADR-0030, ruling `gatea-fix-review-3`). charter-map
-  // entries name a job but no command, so this proves the weaker of the two claims:
-  // the job EXISTS and BLOCKS. Nothing is invented for them.
+  // Command-bearing mappings prove a dedicated blocking step; name-only mappings
+  // prove the weaker claim that the job exists and blocks.
   const f = p(".github/workflows/ci.yml");
   return parseCiJobs(existsSync(f) ? readFileSync(f, "utf8") : "");
 }
@@ -100,16 +101,22 @@ describe("charter-drift fence", () => {
     expect(missing, `enforced mappings point at missing mechanisms:\n${missing.join("\n")}`).toEqual([]);
   });
 
-  it("(a') every enforced ci-gate is a real, blocking job of the BLOCKING ci.yml", () => {
+  it("(a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command", () => {
     const jobs = blockingCiJobs();
     const missing: string[] = [];
     for (const entry of allEntries) {
       for (const m of entry.mechanisms) {
         if (effectiveStatus(entry, m) !== "enforced") continue;
-        if (m.type === "ci-gate" && !ciJobBlocks(jobs, m.ref)) missing.push(`${entry.id} -> ci-gate:${m.ref}`);
+        if (m.type !== "ci-gate") continue;
+        if (m.command !== undefined) {
+          const problem = ciJobRunProblem(jobs, m.ref, m.command);
+          if (problem !== undefined) missing.push(`${entry.id} -> ${problem}`);
+        } else if (!ciJobBlocks(jobs, m.ref)) {
+          missing.push(`${entry.id} -> ci-gate:${m.ref}`);
+        }
       }
     }
-    expect(missing, `enforced CI gates are not blocking jobs of .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);
+    expect(missing, `enforced CI gates are not proven by .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);
   });
 
   it("(b) no fitness fence is disabled or focused (this file included)", () => {

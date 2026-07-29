@@ -194,8 +194,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: seed + verify operational audit and decision-ledger chains
-        run: pnpm db:seed && pnpm audit:chain
+      - name: seed audit evidence
+        run: pnpm db:seed
+      - name: verify org audit chains
+        run: pnpm audit:chain
 
   v3-invariants:
     name: v3-invariants (phase-gated three-state report, ADR-0023)

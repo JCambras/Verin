@@ -6241,10 +6241,26 @@ split into the two gates the ratified wave map declares, Gate G (prompts 27-28; 
 and Gate H (prompt 29; invariants 27, 29), which moves the registry toward the ratified sequence and so
 needs no reading key. ADR-0024's prompt-27 deferral still governs Gate G. All ten gates read non-green.
 
+The captain-approved outcome-completeness review (2026-07-28) amended ADR-0030 in place a fifth time:
+**(1)** Gate B gains prompt 11 stable-corpus evidence, Gate F gains prompt 26
+verification-reconciler evidence, and Gate H gains seven-minute timing, measured-results, and cold-review
+evidence, preserving each declared outcome without narrowing it to the current invariant list; invariant
+23's proof point now includes prompt 26 because its subject includes status occurrences; **(2)** every
+gate declares structural `entryGates`, the fence ratchets the predecessor chain, and readiness computes
+predecessor state, so Gate B cannot report green while Gate A is non-green; **(3)** the complete
+requirement ratchet includes every non-invariant requirement's `prompt`; **(4)** CI command evidence now
+requires a dedicated simple command whose exit status controls a non-neutralized blocking step, rejecting
+echo arguments, short-circuited expressions, heredocs, compound scripts, and `|| true`, with missing and
+neutralized commands diagnosed separately; the audit seed and verifier are separate workflow steps;
+**(5)** charter rule 9 maps both the blocking `pnpm test:e2e` command and an Axe-specific fence proving
+the public, authenticated, and demo E2E specifications execute Axe; **(6)** the gate-ordering proof is
+uniquely PF-030, and the Axe proof is PF-031; **(7)** the v3 reading guide now names ADRs 0023-0030.
+All ten gates remain non-green.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
 **Revert path:** none while invariant 3's prerequisite remains prompt 10. Changing any gate's `requires`
-list - of any requirement kind, including deleting an `evidence` clause - or any invariant's `gate`, is
-an amendment to ADR-0030, ADR-0023, and both ratchets in
+list - of any requirement kind, including deleting an `evidence` clause - its `entryGates`, or any
+invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all three ratchets in
 `src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.

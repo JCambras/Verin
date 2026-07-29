@@ -14,13 +14,13 @@
  * fenced by src/__tests__/fitness/v3-invariants.test.ts; the ratified-document
  * SHA-256 pins are re-verified here AND by the arch-version fence.
  *
- * Gates (ADR-0030) declare their wave, prompt range, entry condition, outcome,
- * and a list of TYPED requirements. This report is itself a document subject to
+ * Gates (ADR-0030) declare their wave, prompt range, structural predecessors,
+ * entry condition, outcome, and a list of TYPED requirements. This report is itself a document subject to
  * the honesty ruling, so it does not merely PRINT the registry: it re-runs the
  * whole gate rule set from the shared core (scripts/v3-gates.lib.ts) that the
  * v3-gate-ordering fence proves rejects real violations, and refuses to print at
  * all if the constitution is unsound. A gate reads green only when every typed
- * requirement is met AND every requirement is decidable here.
+ * requirement is met, every requirement is decidable here, and every predecessor is green.
  */
 import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -28,6 +28,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  ciJobRunProblem,
   ciJobRuns,
   gateOrderingProblems,
   gateReadiness,
@@ -175,10 +176,11 @@ function stateOf(inv: Invariant): { state: State; details: string[] } {
     } else if (m.type === "ci-gate") {
       // A job NAME can appear in a comment or a path; the blocking job must exist
       // and actually run the mechanism's command (ruling `gatea-fix-review-2`).
-      if (ciJobRuns(ciJobs, m.ref, m.command ?? "")) details.push(`ci-gate ${m.ref} runs '${m.command}' in blocking ci.yml`);
+      const problem = ciJobRunProblem(ciJobs, m.ref, m.command ?? "");
+      if (problem === undefined) details.push(`ci-gate ${m.ref} runs '${m.command}' in a dedicated blocking ci.yml step`);
       else {
         ok = false;
-        details.push(`ci-gate ${m.ref} does not run '${m.command ?? "<no command declared>"}' as a blocking ci.yml job`);
+        details.push(problem);
       }
     } else if (existsSync(join(ROOT, m.ref))) {
       details.push(`${m.type} ${m.ref} present`);

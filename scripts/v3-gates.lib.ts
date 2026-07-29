@@ -65,6 +65,7 @@ export interface Gate {
   title: string;
   prompts: [number, number];
   requires: GateRequirement[];
+  entryGates: string[];
   entryCondition: string;
   outcome: string;
 }
@@ -168,8 +169,16 @@ export interface CiJob {
    * job proves nothing, however correct its steps look.
    */
   neutralizedBy?: string;
-  /** The commands its steps actually run; a neutralized STEP contributes none. */
+  /** Dedicated simple commands whose exit status controls a non-neutralized step. */
   commands: string[];
+  steps: CiStep[];
+}
+
+export interface CiStep {
+  neutralizedBy?: string;
+  commands: string[];
+  blockingCommand?: string;
+  blockingTokens?: string[];
 }
 
 /**
@@ -186,6 +195,71 @@ function neutralizerOf(node: unknown): string | undefined {
   if (cont !== undefined && cont !== false) return `continue-on-error: ${String(cont)}`;
   if (n.if !== undefined) return `if: ${String(n.if)}`;
   return undefined;
+}
+
+function simpleShellCommand(script: string): { text: string; tokens: string[] } | undefined {
+  const commands = shellCommandLines(script);
+  if (commands.length !== 1) return undefined;
+  const text = commands[0]!;
+  const tokens: string[] = [];
+  let token = "";
+  let touched = false;
+  let quote: "'" | '"' | undefined;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (quote === "'") {
+      if (ch === "'") quote = undefined;
+      else token += ch;
+      touched = true;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') {
+        quote = undefined;
+      } else if (ch === "\\") {
+        const next = text[i + 1];
+        if (next === undefined) return undefined;
+        token += next;
+        i += 1;
+      } else {
+        if (ch === "$" || ch === "`") return undefined;
+        token += ch;
+      }
+      touched = true;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (touched) {
+        tokens.push(token);
+        token = "";
+        touched = false;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      touched = true;
+      continue;
+    }
+    if (ch === "\\") {
+      const next = text[i + 1];
+      if (next === undefined) return undefined;
+      token += next;
+      touched = true;
+      i += 1;
+      continue;
+    }
+    if ("$`;&|<>()[]{}!*?~".includes(ch)) return undefined;
+    token += ch;
+    touched = true;
+  }
+  if (quote !== undefined) return undefined;
+  if (touched) tokens.push(token);
+  return tokens.length === 0 ? undefined : { text, tokens };
+}
+
+function commandMatches(actual: readonly string[] | undefined, required: readonly string[]): boolean {
+  return actual !== undefined && actual.length === required.length && required.every((token, index) => actual[index] === token);
 }
 
 /**
@@ -225,13 +299,23 @@ export function parseCiJobs(yamlText: string): Map<string, CiJob> {
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
   for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
     const steps = (job as { steps?: unknown } | null)?.steps;
-    const commands = (Array.isArray(steps) ? steps : [])
-      .filter((step) => neutralizerOf(step) === undefined)
-      .map((step) => (step as { run?: unknown } | null)?.run)
-      .filter((run): run is string => typeof run === "string")
-      .flatMap(shellCommandLines);
+    const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
+      const run = (step as { run?: unknown } | null)?.run;
+      if (typeof run !== "string") return [];
+      const simple = simpleShellCommand(run);
+      return [
+        {
+          ...(neutralizerOf(step) === undefined ? {} : { neutralizedBy: neutralizerOf(step) }),
+          commands: shellCommandLines(run),
+          ...(simple === undefined ? {} : { blockingCommand: simple.text, blockingTokens: simple.tokens }),
+        },
+      ];
+    });
+    const commands = parsedSteps
+      .filter((step) => step.neutralizedBy === undefined && step.blockingCommand !== undefined)
+      .map((step) => step.blockingCommand!);
     const neutralizedBy = neutralizerOf(job);
-    jobs.set(key, neutralizedBy === undefined ? { commands } : { neutralizedBy, commands });
+    jobs.set(key, neutralizedBy === undefined ? { commands, steps: parsedSteps } : { neutralizedBy, commands, steps: parsedSteps });
   }
   return jobs;
 }
@@ -246,11 +330,60 @@ export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
   return job !== undefined && job.neutralizedBy === undefined;
 }
 
-/** True only when `ref` is a declared, blocking job that runs `command` in one of its steps. */
+export type CiCommandStatus =
+  | { state: "proven" }
+  | { state: "missing-job" }
+  | { state: "invalid-command" }
+  | { state: "neutralized"; reason: string }
+  | { state: "unsafe-shell" }
+  | { state: "missing-command" };
+
+export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, command: string): CiCommandStatus {
+  const required = simpleShellCommand(command);
+  if (required === undefined) return { state: "invalid-command" };
+  const job = jobs.get(ref);
+  if (job === undefined) return { state: "missing-job" };
+  const relevant = job.steps.filter(
+    (step) =>
+      commandMatches(step.blockingTokens, required.tokens) ||
+      step.commands.some((line) => line.includes(required.text)),
+  );
+  if (job.neutralizedBy !== undefined && relevant.length > 0) {
+    return { state: "neutralized", reason: `job ${job.neutralizedBy}` };
+  }
+  const blocking = relevant.find(
+    (step) => step.neutralizedBy === undefined && commandMatches(step.blockingTokens, required.tokens),
+  );
+  if (blocking !== undefined) return { state: "proven" };
+  const neutralized = relevant.find((step) => step.neutralizedBy !== undefined);
+  if (neutralized?.neutralizedBy !== undefined) {
+    return { state: "neutralized", reason: `step ${neutralized.neutralizedBy}` };
+  }
+  if (relevant.length > 0) return { state: "unsafe-shell" };
+  return { state: "missing-command" };
+}
+
+export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: string): string | undefined {
+  const status = ciJobCommandStatus(jobs, ref, command);
+  switch (status.state) {
+    case "proven":
+      return undefined;
+    case "missing-job":
+      return `ci job '${ref}' is missing from the blocking workflow`;
+    case "invalid-command":
+      return `required command '${command}' is not a dedicated simple command`;
+    case "neutralized":
+      return `ci job '${ref}' command '${command}' is neutralized by ${status.reason}`;
+    case "unsafe-shell":
+      return `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`;
+    default:
+      return `ci job '${ref}' does not run '${command}' in a dedicated blocking step`;
+  }
+}
+
+/** True only when `ref` is a declared, blocking job with a dedicated step whose command controls that step's exit status. */
 export function ciJobRuns(jobs: Map<string, CiJob>, ref: string, command: string): boolean {
-  const needle = collapse(command);
-  if (needle === "" || !ciJobBlocks(jobs, ref)) return false;
-  return (jobs.get(ref)?.commands ?? []).some((r) => r.includes(needle));
+  return ciJobCommandStatus(jobs, ref, command).state === "proven";
 }
 
 /** The invariant ids a gate requires green, in registry order (the captain's ruled sets). */
@@ -311,6 +444,11 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     if (first < 1 || last > LAST_PROMPT || first > last) {
       problems.push(`gate ${key}: prompt range [${first}, ${last}] is outside the 1-${LAST_PROMPT} build sequence or inverted`);
     }
+    if (!Array.isArray(gate.entryGates) || gate.entryGates.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+      problems.push(`gate ${key}: entryGates must be an array of registered predecessor gate keys`);
+    } else if (new Set(gate.entryGates).size !== gate.entryGates.length) {
+      problems.push(`gate ${key}: entryGates contains duplicate predecessor keys`);
+    }
     const requires = gate.requires;
     if (!Array.isArray(requires)) {
       problems.push(`gate ${key}: requires must be an array of typed requirements`);
@@ -338,6 +476,10 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
         problems.push(
           `gate ${key}: the 'ci-gate' requirement '${requirementLabel(req)}' must name the command that blocking job runs - ` +
             `a job name matching a comment, a path, or an unrelated step is not evidence (ADR-0030)`,
+        );
+      } else if (req.kind === "ci-gate" && simpleShellCommand(req.command!) === undefined) {
+        problems.push(
+          `gate ${key}: the 'ci-gate' requirement '${requirementLabel(req)}' command '${req.command}' must be a dedicated simple command`,
         );
       }
       // An `evidence` requirement holds a gate below green forever, so it may not be
@@ -433,16 +575,26 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     }
   }
 
-  // (h) an entry condition naming another gate must name a REGISTERED, EARLIER one -
-  // "Gate C is green" is only a requirement if Gate C is something this repo can compute.
+  // (h) prose entry conditions and structural predecessor gates must describe the
+  // same registered, earlier gates.
   for (const [key, gate] of Object.entries(gates)) {
     if (!Array.isArray(gate.prompts) || gate.prompts.length !== 2) continue;
-    for (const named of gatesNamedInProse(gate.entryCondition ?? "")) {
+    const namedGates = gatesNamedInProse(gate.entryCondition ?? "");
+    const entryGates = Array.isArray(gate.entryGates) ? gate.entryGates : [];
+    for (const named of namedGates) {
+      if (!entryGates.includes(named)) {
+        problems.push(`gate ${key}: entryCondition names Gate ${named}, but entryGates does not structurally require it`);
+      }
+    }
+    for (const named of entryGates) {
       const prior = gates[named];
       if (!prior) {
-        problems.push(`gate ${key}: entryCondition depends on "Gate ${named}", which is not registered - nothing can compute or report it (ADR-0030)`);
+        problems.push(`gate ${key}: entryGates depends on "Gate ${named}", which is not registered - nothing can compute or report it (ADR-0030)`);
       } else if (Array.isArray(prior.prompts) && prior.prompts[1] >= gate.prompts[0]) {
-        problems.push(`gate ${key}: entryCondition depends on "Gate ${named}" [${prior.prompts.join("-")}], which does not close before gate ${key} opens`);
+        problems.push(`gate ${key}: entryGates depends on "Gate ${named}" [${prior.prompts.join("-")}], which does not close before gate ${key} opens`);
+      }
+      if (!namedGates.includes(named)) {
+        problems.push(`gate ${key}: entryGates requires Gate ${named}, but entryCondition does not disclose it`);
       }
     }
   }
@@ -472,6 +624,7 @@ export interface GateView {
   blocking: string[];
   /** The `blocking` subset nothing here can decide, so the report can name them as such. */
   undecidable: string[];
+  entryBlocking: string[];
 }
 
 export interface ReadinessDeps {
@@ -505,7 +658,9 @@ function requirementState(req: GateRequirement, deps: ReadinessDeps): Requiremen
  * outcome clause no mechanism proves, is `not-yet-verifiable` - never green.
  */
 export function gateReadiness(reg: Registry, deps: ReadinessDeps): GateView[] {
-  return Object.entries(reg.gates ?? {}).map(([key, gate]) => {
+  const views = new Map<string, GateView>();
+  const ordered = Object.entries(reg.gates ?? {}).sort((left, right) => left[1].prompts[0] - right[1].prompts[0]);
+  for (const [key, gate] of ordered) {
     const requirements = (gate.requires ?? []).map((requirement) => ({
       requirement,
       label: requirementLabel(requirement),
@@ -514,11 +669,15 @@ export function gateReadiness(reg: Registry, deps: ReadinessDeps): GateView[] {
     const unmet = requirements.filter((r) => r.state === "unmet");
     const unverifiable = requirements.filter((r) => r.state === "unverifiable");
     const decidable = requirements.some((r) => isMechanized(r.requirement));
+    const entryBlocking = (gate.entryGates ?? [])
+      .filter((entry) => views.get(entry)?.state !== "green")
+      .map((entry) => `Gate ${entry} entry condition`);
     let state: GateState = "green";
-    if (unmet.length > 0 && decidable) state = "not-yet-green";
+    if ((unmet.length > 0 || entryBlocking.length > 0) && decidable) state = "not-yet-green";
     else if (!decidable || unverifiable.length > 0) state = "not-yet-verifiable";
-    const blocking = [...unmet, ...unverifiable].map((r) => r.label);
+    const blocking = [...unmet, ...unverifiable].map((r) => r.label).concat(entryBlocking);
     const undecidable = unverifiable.map((r) => r.label);
-    return { key, gate, requirements, state, blocking, undecidable };
-  });
+    views.set(key, { key, gate, requirements, state, blocking, undecidable, entryBlocking });
+  }
+  return [...views.values()];
 }

@@ -3,6 +3,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   ciJobBlocks,
+  ciJobCommandStatus,
+  ciJobRunProblem,
   ciJobRuns,
   gateOrderingProblems,
   gateReadiness,
@@ -117,6 +119,19 @@ const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
   26: "G", 27: "H", 28: "G", 29: "H", 30: "G",
 };
 
+const GATE_ENTRY_RATCHET: Record<string, string[]> = {
+  "0": [],
+  A: ["0"],
+  B: ["A"],
+  C: ["B"],
+  D: ["C"],
+  E: ["D"],
+  F: ["E"],
+  G: ["F"],
+  H: ["G"],
+  I: ["H"],
+};
+
 /**
  * RATCHET 2 - the COMPLETE typed requirement set of every gate, not merely its
  * invariant ids. Pinning ids alone left a gate's `artifact` / `fitness` /
@@ -137,20 +152,26 @@ const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
  */
 const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
   "0": [
-    "artifact:docs/demo-contract.md",
-    "artifact:config/demo/scenarios.yaml",
-    "artifact:docs/golden-cases.md",
-    "ci-gate:golden-cases runs 'pnpm golden:validate'",
-    "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts",
-    "ci-gate:e2e runs 'pnpm test:e2e'",
-    "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton",
+    "artifact:docs/demo-contract.md @ prompt 1",
+    "artifact:config/demo/scenarios.yaml @ prompt 1",
+    "artifact:docs/golden-cases.md @ prompt 2",
+    "ci-gate:golden-cases runs 'pnpm golden:validate' @ prompt 2",
+    "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts @ prompt 3",
+    "ci-gate:e2e runs 'pnpm test:e2e' @ prompt 3",
+    "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton @ prompt 3",
   ],
   A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5"],
-  B: ["invariant:3", "invariant:16", "artifact:config/domains/account-opening.yaml", "artifact:config/domains/money-movement.yaml"],
+  B: [
+    "invariant:3",
+    "invariant:16",
+    "artifact:config/domains/account-opening.yaml @ prompt 10",
+    "artifact:config/domains/money-movement.yaml @ prompt 10",
+    "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
+  ],
   C: [
     "invariant:1",
     "invariant:11",
-    "evidence:the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)",
+    "evidence:the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests) @ prompt 15",
   ],
   D: [
     "invariant:6",
@@ -174,20 +195,31 @@ const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
     "invariant:23",
     "invariant:24",
     "invariant:25",
+    "evidence:verification reconciliation records delayed status and closes only when configured proof requirements are satisfied @ prompt 26",
   ],
   G: ["invariant:26", "invariant:28", "invariant:30"],
-  H: ["invariant:27", "invariant:29"],
+  H: [
+    "invariant:27",
+    "invariant:29",
+    "evidence:the canonical journey completes within seven minutes without developer intervention @ prompt 29",
+    "evidence:the measured results report exposes methodology, corpus version, and separate real-derived and synthetic provenance results @ prompt 29",
+    "evidence:a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work @ prompt 29",
+  ],
   I: [
-    "artifact:docs/reviews/phase-1-adversarial-audit.md",
-    "evidence:no unresolved critical finding; every accepted limitation is visible in the demo and the documentation",
+    "artifact:docs/reviews/phase-1-adversarial-audit.md @ prompt 30",
+    "evidence:no unresolved critical finding; every accepted limitation is visible in the demo and the documentation @ prompt 30",
   ],
 };
 
-/** Every requirement identified by kind + id/ref, plus the command a ci-gate must prove. */
+/** Every requirement identified by kind, id/ref, proof prompt, and the command a ci-gate must prove. */
 const requirementKey = (r: GateRequirement): string =>
-  r.kind === "invariant" ? `invariant:${r.id}` : r.kind === "ci-gate" ? `ci-gate:${r.ref} runs '${r.command}'` : `${r.kind}:${r.ref}`;
+  r.kind === "invariant"
+    ? `invariant:${r.id}`
+    : `${r.kind}:${r.ref}${r.kind === "ci-gate" ? ` runs '${r.command}'` : ""} @ prompt ${r.prompt}`;
 
 const ownershipOf = (reg: Registry): Record<string, string> => Object.fromEntries(reg.invariants.map((i) => [String(i.id), i.gate]));
+const entryGatesOf = (reg: Registry): Record<string, string[]> =>
+  Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, gate.entryGates]));
 const requirementsOf = (reg: Registry): Record<string, string[]> =>
   Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, (gate.requires ?? []).map(requirementKey)]));
 const clone = (reg: Registry): Registry => JSON.parse(JSON.stringify(reg)) as Registry;
@@ -220,6 +252,10 @@ describe("v3 gate-ordering fence", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
   });
 
+  it("enforces (ratchet): every gate's structural entry predecessors are the ruled ones", () => {
+    expect(entryGatesOf(registry)).toEqual(GATE_ENTRY_RATCHET);
+  });
+
   it("enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one", () => {
     expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
   });
@@ -228,8 +264,10 @@ describe("v3 gate-ordering fence", () => {
     const unproven = Object.entries(registry.gates).flatMap(([key, gate]) =>
       (gate.requires ?? [])
         .filter((r) => r.kind === "ci-gate")
-        .filter((r) => !ciJobRuns(ciJobs, r.ref ?? "", r.command ?? ""))
-        .map((r) => `gate ${key}: ci job '${r.ref}' does not run '${r.command}'`),
+        .flatMap((r) => {
+          const problem = ciJobRunProblem(ciJobs, r.ref ?? "", r.command ?? "");
+          return problem === undefined ? [] : [`gate ${key}: ${problem}`];
+        }),
     );
     expect(unproven, unproven.join("\n")).toEqual([]);
   });
@@ -243,19 +281,20 @@ describe("v3 gate-ordering fence", () => {
     });
     expect(views.map((v) => v.key)).toEqual(Object.keys(RATIFIED_GATES));
     for (const view of views) {
-      const clean = view.requirements.every((r) => r.state === "met");
+      const clean = view.requirements.every((r) => r.state === "met") && view.entryBlocking.length === 0;
       expect(view.state === "green", `gate ${view.key} reads ${view.state} with requirements ${JSON.stringify(view.requirements.map((r) => [r.label, r.state]))}`).toBe(clean);
     }
   });
 
   describe("detects (companion): a circular, incomplete, or undecidable gate cannot pass", () => {
     const inv = (id: number): GateRequirement => ({ kind: "invariant", id });
-    const gate = (wave: string, prompts: [number, number], requires: GateRequirement[]): Gate => ({
+    const gate = (wave: string, prompts: [number, number], requires: GateRequirement[], entryGates: string[] = []): Gate => ({
       wave,
       title: `wave ${wave}`,
       prompts,
       requires,
-      entryCondition: "the prior wave has landed",
+      entryGates,
+      entryCondition: entryGates.length === 0 ? "None." : `Gate ${entryGates.join(" and Gate ")} is green.`,
       outcome: "green",
     });
     // Mirrors the ruled shape: gate B REFERENCES invariant 16, which gate D owns
@@ -264,8 +303,8 @@ describe("v3 gate-ordering fence", () => {
     const base = (): Registry => ({
       gates: {
         A: gate("A", [4, 7], [inv(1)]),
-        B: gate("B", [8, 11], [inv(3), inv(16)]),
-        D: gate("D", [16, 19], [inv(7), inv(16)]),
+        B: gate("B", [8, 11], [inv(3), inv(16)], ["A"]),
+        D: gate("D", [16, 19], [inv(7), inv(16)], ["B"]),
       },
       invariants: [
         { id: 1, gate: "A", name: "one", status: "not-yet-active", activatesWhen: "the surface lands (Wave A prompt 6)", activationPrompts: [6] },
@@ -382,14 +421,25 @@ describe("v3 gate-ordering fence", () => {
     });
     it("flags an entry condition that depends on a gate nothing can compute, or on a later one", () => {
       const ghost = base();
+      ghost.gates.B!.entryGates = ["C"];
       ghost.gates.B!.entryCondition = "Gate C is green.";
       expect(gateOrderingProblems(ghost, () => true).some((p) => p.includes("is not registered - nothing can compute"))).toBe(true);
       const backwards = base();
+      backwards.gates.A!.entryGates = ["B"];
       backwards.gates.A!.entryCondition = "Gate B is green.";
       expect(gateOrderingProblems(backwards, () => true).some((p) => p.includes("does not close before gate A opens"))).toBe(true);
     });
+    it("flags entry-condition prose that is not encoded as a structural predecessor", () => {
+      const reg = base();
+      reg.gates.B!.entryGates = [];
+      expect(gateOrderingProblems(reg, () => true).some((p) => p.includes("entryCondition names Gate A") && p.includes("does not structurally require it"))).toBe(true);
+      const missing = base();
+      delete (missing.gates.B as Partial<Gate>).entryGates;
+      expect(gateOrderingProblems(missing, () => true).some((p) => p.includes("entryGates must be an array"))).toBe(true);
+    });
     it("flags the same entry condition written in lower case (the scanner is case-insensitive)", () => {
       const ghost = base();
+      ghost.gates.B!.entryGates = ["C"];
       ghost.gates.B!.entryCondition = "gate c is green.";
       expect(gateOrderingProblems(ghost, () => true).some((p) => p.includes('"Gate C", which is not registered'))).toBe(true);
     });
@@ -465,11 +515,12 @@ describe("v3 gate-ordering fence", () => {
       );
       expect(jobs.get("audit-chain-verify")?.commands).toEqual(["echo skip"]);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
-      // but a `#` that is not a comment - quoted, or mid-word - stays part of the command
+      // but a `#` inside a quoted argument stays part of a dedicated command
       const quoted = parseCiJobs(
-        ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: |", "          echo '# start' && pnpm audit:chain", ""].join("\n"),
+        ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: pnpm audit:chain '# strict'", ""].join("\n"),
       );
-      expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+      expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain '# strict'")).toBe(true);
+      expect(ciJobRuns(quoted, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
     });
 
     it("keeps every job declared after a column-0 comment inside the jobs block", () => {
@@ -511,6 +562,24 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
     });
 
+    it("refuses substring mentions, short-circuited commands, heredocs, and neutralized exit status", () => {
+      const scripts = [
+        "echo 'pnpm audit:chain'",
+        "false && pnpm audit:chain",
+        "cat <<EOF\npnpm audit:chain\nEOF",
+        "pnpm audit:chain || true",
+      ];
+      for (const script of scripts) {
+        const jobs = parseCiJobs(
+          ["name: ci", "jobs:", "  audit-chain-verify:", "    steps:", "      - run: |", ...script.split("\n").map((line) => `          ${line}`), ""].join(
+            "\n",
+          ),
+        );
+        expect(ciJobCommandStatus(jobs, "audit-chain-verify", "pnpm audit:chain").state, script).toBe("unsafe-shell");
+        expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain"), script).toBe(false);
+      }
+    });
+
     it("refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)", () => {
       const workflow = (jobLevel: string, stepLevel: string) =>
         parseCiJobs(
@@ -523,7 +592,7 @@ describe("v3 gate-ordering fence", () => {
             "    steps:",
             "      - name: seed + verify org audit chains",
             ...(stepLevel === "" ? [] : [`        ${stepLevel}`]),
-            "        run: pnpm db:seed && pnpm audit:chain",
+            "        run: pnpm audit:chain",
             "",
           ].join("\n"),
         );
@@ -534,6 +603,10 @@ describe("v3 gate-ordering fence", () => {
       expect(proves("", "continue-on-error: true")).toBe(false);
       expect(proves("if: ${{ github.event_name == 'schedule' }}", "")).toBe(false);
       expect(proves("", "if: ${{ false }}")).toBe(false);
+      expect(ciJobCommandStatus(workflow("", "continue-on-error: true"), "audit-chain-verify", "pnpm audit:chain")).toEqual({
+        state: "neutralized",
+        reason: "step continue-on-error: true",
+      });
       // a neutralized job is not even a BLOCKING job, which is all charter-drift asks
       expect(ciJobBlocks(workflow("continue-on-error: true", ""), "audit-chain-verify")).toBe(false);
       expect(ciJobBlocks(workflow("if: ${{ github.ref == 'refs/heads/nope' }}", ""), "audit-chain-verify")).toBe(false);
@@ -548,7 +621,7 @@ describe("v3 gate-ordering fence", () => {
       for (const ref of ["e2e", "golden-cases", "audit-chain-verify", "v3-invariants", "test"]) expect(ciJobBlocks(ciJobs, ref), ref).toBe(true);
     });
 
-    it("reads a multi-line and a folded run script as the commands it actually executes", () => {
+    it("requires a dedicated command step and still reads a folded simple command", () => {
       const jobs = parseCiJobs(
         [
           "name: ci",
@@ -566,9 +639,9 @@ describe("v3 gate-ordering fence", () => {
           "",
         ].join("\n"),
       );
-      expect(jobs.get("audit-chain-verify")?.commands).toEqual(["pnpm db:seed", "pnpm audit:chain --strict"]);
-      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(true);
-      // folding must not let a match span two unrelated commands of the same script
+      expect(jobs.get("audit-chain-verify")?.commands).toEqual([]);
+      expect(jobs.get("audit-chain-verify")?.steps[0]?.commands).toEqual(["pnpm db:seed", "pnpm audit:chain --strict"]);
+      expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")).toBe(false);
       expect(ciJobRuns(jobs, "audit-chain-verify", "pnpm db:seed pnpm audit:chain")).toBe(false);
       expect(ciJobRuns(jobs, "sast", "semgrep scan --error")).toBe(true);
     });
@@ -577,6 +650,16 @@ describe("v3 gate-ordering fence", () => {
       const jobs = parseCiJobs(["jobs:", "  quality:", "    steps: [unbalanced", ""].join("\n"));
       expect(jobs.size).toBe(0);
       expect(ciJobRuns(jobs, "quality", "pnpm lint")).toBe(false);
+      expect(ciJobRunProblem(jobs, "quality", "pnpm lint")).toContain("is missing");
+    });
+
+    it("diagnoses a neutralized command separately from a missing command", () => {
+      const neutralized = parseCiJobs(
+        ["jobs:", "  quality:", "    steps:", "      - continue-on-error: true", "        run: pnpm lint", ""].join("\n"),
+      );
+      const missing = parseCiJobs(["jobs:", "  quality:", "    steps:", "      - run: pnpm typecheck", ""].join("\n"));
+      expect(ciJobRunProblem(neutralized, "quality", "pnpm lint")).toContain("neutralized by step continue-on-error: true");
+      expect(ciJobRunProblem(missing, "quality", "pnpm lint")).toContain("does not run");
     });
 
     it("flags an invariant pushed to another gate, or a gate quietly dropping a ruled requirement", () => {
@@ -586,8 +669,16 @@ describe("v3 gate-ordering fence", () => {
       const dropped = clone(registry);
       dropped.gates.A!.requires = dropped.gates.A!.requires.filter((r) => r.id !== 4);
       expect(requirementsOf(dropped)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
+      const movedPrompt = clone(registry);
+      movedPrompt.gates.B!.requires.find((r) => r.kind === "artifact")!.prompt = 9;
+      expect(requirementsOf(movedPrompt)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
+      const relinked = clone(registry);
+      relinked.gates.B!.entryGates = [];
+      relinked.gates.B!.entryCondition = "None.";
+      expect(entryGatesOf(relinked)).not.toEqual(GATE_ENTRY_RATCHET);
       // the pinned maps must match the registry they are pinning (no always-failing ratchet)
       expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
+      expect(entryGatesOf(registry)).toEqual(GATE_ENTRY_RATCHET);
       expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
@@ -644,6 +735,19 @@ describe("v3 gate-ordering fence", () => {
         expect(view.state).toBe("not-yet-green");
         expect(view.blocking).toEqual(["#1", "a reviewer agrees"]);
         expect(view.undecidable).toEqual(["a reviewer agrees"]);
+      });
+      it("holds a gate below green while any structural predecessor is non-green", () => {
+        const reg = base();
+        const views = gateReadiness(reg, {
+          ...deps,
+          invariantState: (id) => (id === 1 ? "not-yet-active" : "active-pass"),
+        });
+        const gateA = views.find((view) => view.key === "A")!;
+        const gateB = views.find((view) => view.key === "B")!;
+        expect(gateA.state).toBe("not-yet-green");
+        expect(gateB.requirements.every((requirement) => requirement.state === "met")).toBe(true);
+        expect(gateB.state).toBe("not-yet-green");
+        expect(gateB.entryBlocking).toEqual(["Gate A entry condition"]);
       });
       it("renders a gate green only when every typed requirement is met and decidable", () => {
         const reg = base();
