@@ -97,6 +97,11 @@ That parse is the repo's one structured CI authority; the charter-drift fence re
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 Effective workflow, job, job-container, and step environments are resolved together; non-literal environment maps and
 overrides of execution-affecting shell, loader, package-manager, or runtime variables are non-evidence.
+Every predecessor of a governed command must match the exact ratcheted checkout, toolchain, install, or
+already-governed step shape. Unreviewed setup and command steps are non-evidence because they can alter
+command resolution, workflow environment files, repository files, or the governed entry point.
+Container-backed evidence uses an exact ratcheted image and rejects unapproved images or
+execution-shaping container fields.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
 The blocking test job invokes a direct runner once for the complete unit, integration, and fitness suite.
@@ -127,8 +132,10 @@ canonical route binds each station to its manifest component, the dynamic page p
 to that renderer and its loaded marker through a provably reachable return, and the resolved scenario and
 firm identifiers feed the journey service unchanged. Every supported scenario-by-firm outcome is checked
 exhaustively, and the renderer's approval input is bound to the exact
-`first(sp.approved) === "1"` query-derived declaration. The journey clicks the exact ordered product
-controls, rejects registered Playwright hooks, and restricts its complete top-level statement graph
+`first(sp.approved) === "1"` query-derived declaration. The `first` helper is itself pinned to the exact
+identity-preserving first-value semantics. The journey clicks the exact ordered product
+controls, rejects registered Playwright hooks through the same shared provenance authority as the Axe
+graph, and restricts its complete top-level statement graph
 against DOM mutation, injected controls, screenshot replacement, and alternate navigation before
 directly awaiting all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
@@ -164,7 +171,8 @@ authenticated scans pass the stable principal explicitly. Required specification
 Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. Their
 complete runtime local import graph, including the named roots, is inspected through side-effect imports,
 re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
-module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
+module may not register Playwright hooks, invoke Playwright `skip`, `fixme`, or `fail` neutralizers, or
+import the Axe runtime outside the sanctioned helper, and
 unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
 Ambient `process.getBuiltinModule("module")` construction is likewise non-evidence. Static computed
 Playwright members are resolved, and unresolved computed members rooted at the imported API fail closed.
@@ -186,7 +194,9 @@ preserving locally shadowed application callables. Parameterized `.each` and `.f
 carry immediate literal or direct frozen, statically non-empty case collections, and registration
 options follow the same immutable-input rule. Fitness registrations must also be direct reachable
 module-scope statements or direct statements inside an enabled reachable module-scope `describe` /
-`suite` callback; dead control flow and uncalled registration helpers are non-evidence.
+`suite` callback; dead control flow and uncalled registration helpers are non-evidence. The complete
+local runtime import graph of every fitness entry is inspected, and imported helpers may not import
+Vitest or register tests or suites.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

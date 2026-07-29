@@ -11949,3 +11949,106 @@ language runtimes, and package managers, while safe application variables remain
 **Revert:** removed the injected container. The restored focused CI-environment companion passed.
 
 **Date:** 2026-07-29.
+
+### PF-030 (continued) - governed CI predecessor and container provenance
+
+**Invariant (ADR-0030):** an exact governed command is evidence only when every earlier step has an
+approved immutable purpose and any job container uses the ratcheted image and execution shape.
+
+**Injection 1:** added `echo ./injected-bin >> $GITHUB_PATH` immediately before the real
+`v3-invariants` evidence step.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' has predecessor step 5 is not an approved CI evidence prerequisite
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' has predecessor step 5 is not an approved CI evidence prerequisite
+```
+
+**Injection 2:** changed the real SAST job container from `semgrep/semgrep` to
+`attacker/semgrep`.
+
+**Observed failure (verbatim):**
+```text
+15 -> ci job 'sast' command 'semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error' uses unapproved container image 'attacker/semgrep'
+```
+
+The pre-fix companions reported both commands as `proven`. Continuous companions cover predecessor
+path mutation, unapproved actions and commands, action inputs, extra step fields, unapproved container
+images, and execution-shaping container fields.
+
+**Revert:** restored both real workflow injections. The restored gate-ordering and charter-drift
+focused suites passed.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) - imported neutralizers and shared hook provenance
+
+**Invariant (charter #9 / ADR-0030):** every module in the reachable Axe graph rejects Playwright
+neutralizers, and Gate 0 uses the same complete hook-provenance authority as the Axe fence.
+
+**Injection 1:** side-effect imported a real local module from `e2e/helpers.ts`; the imported module
+called `test.skip(true, "skip required Axe evidence")`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-neutralizer.ts:1 reachable local Axe evidence module must not invoke Playwright neutralizers
+```
+
+**Injection 2:** wrote `test.beforeEach` into an object with `Object.defineProperty` in the real
+`e2e/demo-journey.spec.ts` and invoked the installed property.
+
+**Observed failure (verbatim):**
+```text
+e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+The pre-fix companions accepted both forms. Continuous companions cover direct and transitive
+neutralizers plus object literals, member writes, `Object.assign`, `Object.defineProperty`,
+`Reflect.set`, aliases, and invocation wrappers for hooks.
+
+**Revert:** removed both real injections. The restored Axe and Gate 0 focused suites passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) - imported fitness registration ownership
+
+**Invariant (charter operating model / ADR-0030):** every fitness entry owns its reachable Vitest
+registrations; a disabled registration cannot move into an imported helper while an unrelated
+companion keeps the inventoried entry green.
+
+**Injection:** side-effect imported `nested-disabled-fence.ts` from the real charter-drift entry. The
+helper imported Vitest and registered `describe.skip`.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/nested-disabled-fence.ts:3 imported fitness helper must not register Vitest describe.skip
+src/__tests__/fitness/nested-disabled-fence.ts:1 imported fitness helper must not import the Vitest runtime
+```
+
+The pre-fix companion returned no problem for the imported registration. Continuous companions traverse
+the local runtime graph and reject imported enabled or neutralized registrations and imported Vitest
+runtime ownership.
+
+**Revert:** removed the import and helper. The restored charter-drift focused suite passed.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) - identity-preserving query extraction
+
+**Invariant (Gate 0 / ADR-0030):** the dynamic route must preserve scalar query values and select only
+the first member of an array before the scenario, firm, and approval resolvers consume them.
+
+**Injection:** changed the real route's `first` helper to return a fixed supported scenario value.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+The pre-fix companion accepted the remapping helper. The continuous companion requires one plain
+parameter, one exact identity-preserving conditional return, the unshadowed built-in `Array`, the same
+parameter symbol on both branches, and index zero.
+
+**Revert:** restored the exact helper. The restored Gate 0 focused suite passed.
+
+**Date:** 2026-07-29.

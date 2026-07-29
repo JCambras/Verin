@@ -35,7 +35,9 @@ command must be a dedicated simple command whose exit status controls its step, 
 a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
 Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
-jobs using `strategy.matrix` also prove nothing. Declared `activationPrompts` are validated for every
+jobs using `strategy.matrix` also prove nothing. Every governed command's complete predecessor chain and
+container image are exact ratcheted evidence; unreviewed setup steps, inputs, fields, environment, or
+container execution shape prove nothing. Declared `activationPrompts` are validated for every
 status, every cross-gate invariant proof point is pinned exactly, and every shipped active
 invariant's complete mechanism tuple set is ratcheted. The active invariant ID set must exactly match
 the mechanism-ratchet keys through one shared validator invoked by both the registry fence and blocking
@@ -272,7 +274,8 @@ or exclude configuration drifts.
   authenticated, and demo route to its loaded-state
   scan. Required callbacks admit only their typed loops and canonical uninstrumented login call with
   explicit `PRINCIPAL`; the login helper has exactly two plain required parameters.
-  Required specifications may register no Playwright hooks. The same hook and Axe-runtime prohibitions
+  Required specifications may register no Playwright hooks or invoke Playwright neutralizers. The same
+  hook, neutralizer, and Axe-runtime prohibitions
   cover every named root and their complete runtime local import graph, including side-effect imports and
   TypeScript path aliases; unresolved, unclassified, non-literal, and indirect CommonJS runtime imports
   are non-evidence, as is ambient `process.getBuiltinModule("module")` loader construction. Required route collections cannot be supplied
@@ -285,7 +288,8 @@ or exclude configuration drifts.
   `globalThis` and Node `global` paths are included, and `.each`/`.for` case collections must be
   immediate literal or direct frozen and statically non-empty; registration option inputs follow the
   same immutable rule. Fitness registrations must be reachable at module scope or directly inside an
-  enabled reachable module-scope suite callback. Axe route collections are non-empty declarative frozen literals;
+  enabled reachable module-scope suite callback. Every fitness entry's complete local runtime import
+  graph is inspected, and imported helpers may not import Vitest or register tests. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
   callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
   mutations, and unresolved reflective or computed

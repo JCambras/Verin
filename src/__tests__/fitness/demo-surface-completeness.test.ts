@@ -33,8 +33,8 @@ import {
 import { getJourney } from "../../app/demo/journey";
 import { DEMO_SEQUENCE } from "../../app/demo/model";
 import { isProvablyReachable } from "./_ast-control-flow";
-import { reflectApplyTarget } from "./_callable-indirection";
 import { REPO_ROOT } from "./_fence-utils";
+import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
 
 const CONTRACT_PATH = "docs/demo-contract.md";
 const RATIFIED_CONTRACT_PATH = "docs/v3/verin-demo-contract-v1.md";
@@ -76,6 +76,72 @@ const RATIFIED_SURFACE_RATCHET = [
   "Printable examiner-grade decision artifact",
 ] as const;
 const parsedSourceFiles = new Map<string, SourceFile>();
+
+function firstValueHelperIsIdentityPreserving(
+  helper: ReturnType<SourceFile["getFunction"]>,
+): boolean {
+  if (helper === undefined) return false;
+  const parameters = helper.getParameters();
+  const parameter = parameters[0];
+  const name = parameter?.getNameNode();
+  const body = helper.getBody();
+  if (
+    parameters.length !== 1 ||
+    parameter?.getInitializer() !== undefined ||
+    parameter?.getQuestionTokenNode() !== undefined ||
+    parameter?.getDotDotDotToken() !== undefined ||
+    !Node.isIdentifier(name) ||
+    !Node.isBlock(body)
+  ) {
+    return false;
+  }
+  const statements = body.getStatements();
+  const returned =
+    statements.length === 1 && Node.isReturnStatement(statements[0])
+      ? statements[0].getExpression()
+      : undefined;
+  if (!Node.isConditionalExpression(returned)) return false;
+  const condition = returned.getCondition();
+  const whenArray = returned.getWhenTrue();
+  const otherwise = returned.getWhenFalse();
+  const conditionCallee = Node.isCallExpression(condition)
+    ? condition.getExpression()
+    : undefined;
+  if (
+    !Node.isCallExpression(condition) ||
+    condition.getArguments().length !== 1 ||
+    !Node.isPropertyAccessExpression(conditionCallee) ||
+    conditionCallee.getName() !== "isArray"
+  ) {
+    return false;
+  }
+  const arrayGlobal = conditionCallee.getExpression();
+  const checked = condition.getArguments()[0];
+  const element = Node.isElementAccessExpression(whenArray)
+    ? whenArray
+    : undefined;
+  const indexed = element?.getExpression();
+  const index = element?.getArgumentExpression();
+  return (
+    Node.isIdentifier(arrayGlobal) &&
+    arrayGlobal.getText() === "Array" &&
+    !arrayGlobal
+      .getSymbol()
+      ?.getDeclarations()
+      .some(
+        (declaration) =>
+          declaration.getSourceFile() === helper.getSourceFile(),
+      ) &&
+    Node.isIdentifier(checked) &&
+    checked.getSymbol() === name.getSymbol() &&
+    Node.isIdentifier(indexed) &&
+    indexed.getSymbol() === name.getSymbol() &&
+    Node.isNumericLiteral(index) &&
+    index.getLiteralText() === "0" &&
+    Node.isIdentifier(otherwise) &&
+    otherwise.getSymbol() === name.getSymbol()
+  );
+}
 
 export function resolverIdentityProblems(
   scenarioIds: readonly string[],
@@ -302,7 +368,7 @@ function routePageUsesResolvedStation(source: string): boolean {
   const approvalCall = approvedInitializer.getLeft();
   const approvalValue = approvedInitializer.getRight();
   if (
-    firstFunction === undefined ||
+    !firstValueHelperIsIdentityPreserving(firstFunction) ||
     !Node.isCallExpression(approvalCall) ||
     approvalCall.getArguments().length !== 1
   ) {
@@ -480,261 +546,6 @@ function isNamedImportIdentifier(
           importModuleOf(declaration) === moduleName,
       ) ?? false
   );
-}
-
-function unwrapCallableExpression(node: Node): Node {
-  let current = node;
-  while (
-    Node.isParenthesizedExpression(current) ||
-    Node.isAsExpression(current) ||
-    Node.isTypeAssertion(current) ||
-    Node.isNonNullExpression(current) ||
-    Node.isSatisfiesExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
-}
-
-function staticMemberAccess(
-  node: Node,
-): { receiver: Node; name: string | undefined } | undefined {
-  const normalized = unwrapCallableExpression(node);
-  if (Node.isPropertyAccessExpression(normalized)) {
-    return {
-      receiver: normalized.getExpression(),
-      name: normalized.getName(),
-    };
-  }
-  if (Node.isElementAccessExpression(normalized)) {
-    const argument = normalized.getArgumentExpression();
-    return {
-      receiver: normalized.getExpression(),
-      name: Node.isStringLiteral(argument)
-        ? argument.getLiteralText()
-        : undefined,
-    };
-  }
-  return undefined;
-}
-
-function precedingAssignmentValues(node: Node): Node[] {
-  if (!Node.isIdentifier(node)) return [];
-  const symbol = node.getSymbol();
-  if (symbol === undefined) return [];
-  return node
-    .getSourceFile()
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
-    .filter(
-      (candidate) =>
-        candidate.getOperatorToken().getKind() ===
-          SyntaxKind.EqualsToken &&
-        candidate.getStart() < node.getStart() &&
-        Node.isIdentifier(candidate.getLeft()) &&
-        candidate.getLeft().getSymbol() === symbol,
-    )
-    .map((candidate) => candidate.getRight());
-}
-
-function isPlaywrightNamespace(
-  node: Node,
-  seen = new Set<Node>(),
-): boolean {
-  const normalized = unwrapCallableExpression(node);
-  if (seen.has(normalized)) return false;
-  seen.add(normalized);
-  if (!Node.isIdentifier(normalized)) return false;
-  if (
-    normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .some(
-        (declaration) =>
-          Node.isNamespaceImport(declaration) &&
-          importModuleOf(declaration) === "@playwright/test",
-      )
-  ) {
-    return true;
-  }
-  return [
-    ...precedingAssignmentValues(normalized),
-    ...(normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .flatMap((declaration) => {
-        if (!Node.isVariableDeclaration(declaration)) return [];
-        const initializer = declaration.getInitializer();
-        return initializer === undefined ? [] : [initializer];
-      }) ?? []),
-  ].some((source) =>
-    isPlaywrightNamespace(source, new Set(seen)),
-  );
-}
-
-function isPlaywrightTestValue(
-  node: Node,
-  seen = new Set<Node>(),
-): boolean {
-  const normalized = unwrapCallableExpression(node);
-  if (seen.has(normalized)) return false;
-  seen.add(normalized);
-  if (
-    isNamedImportIdentifier(
-      normalized,
-      "@playwright/test",
-      "test",
-    )
-  ) {
-    return true;
-  }
-  const access = staticMemberAccess(normalized);
-  if (
-    access?.name === "test" &&
-    isPlaywrightNamespace(access.receiver, new Set(seen))
-  ) {
-    return true;
-  }
-  if (!Node.isIdentifier(normalized)) return false;
-  if (
-    precedingAssignmentValues(normalized).some((source) =>
-      isPlaywrightTestValue(source, new Set(seen)),
-    )
-  ) {
-    return true;
-  }
-  return (
-    normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .some((declaration) => {
-        if (Node.isVariableDeclaration(declaration)) {
-          const initializer = declaration.getInitializer();
-          return (
-            initializer !== undefined &&
-            isPlaywrightTestValue(initializer, new Set(seen))
-          );
-        }
-        if (!Node.isBindingElement(declaration)) return false;
-        const property =
-          declaration.getPropertyNameNode() ??
-          declaration.getNameNode();
-        if (
-          (!Node.isIdentifier(property) &&
-            !Node.isStringLiteral(property)) ||
-          (Node.isIdentifier(property)
-            ? property.getText()
-            : property.getLiteralText()) !== "test"
-        ) {
-          return false;
-        }
-        const variable = declaration.getFirstAncestorByKind(
-          SyntaxKind.VariableDeclaration,
-        );
-        const initializer = variable?.getInitializer();
-        return (
-          initializer !== undefined &&
-          isPlaywrightNamespace(initializer, new Set(seen))
-        );
-      }) ?? false
-  );
-}
-
-function indirectCallableTarget(node: Node): Node | undefined {
-  const normalized = unwrapCallableExpression(node);
-  if (Node.isCallExpression(normalized)) {
-    const access = staticMemberAccess(normalized.getExpression());
-    return access?.name === "bind" ? access.receiver : undefined;
-  }
-  const access = staticMemberAccess(normalized);
-  return access !== undefined &&
-    ["call", "apply"].includes(access.name ?? "")
-    ? access.receiver
-    : undefined;
-}
-
-const PLAYWRIGHT_HOOKS = new Set([
-  "beforeAll",
-  "beforeEach",
-  "afterAll",
-  "afterEach",
-]);
-
-function isPlaywrightHookValue(
-  node: Node,
-  seen = new Set<Node>(),
-): boolean {
-  const normalized = unwrapCallableExpression(node);
-  if (seen.has(normalized)) return false;
-  seen.add(normalized);
-  const access = staticMemberAccess(normalized);
-  if (
-    access !== undefined &&
-    isPlaywrightTestValue(access.receiver, new Set(seen))
-  ) {
-    return (
-      access.name === undefined ||
-      PLAYWRIGHT_HOOKS.has(access.name)
-    );
-  }
-  const indirect = indirectCallableTarget(normalized);
-  if (
-    indirect !== undefined &&
-    isPlaywrightHookValue(indirect, new Set(seen))
-  ) {
-    return true;
-  }
-  if (!Node.isIdentifier(normalized)) return false;
-  if (
-    precedingAssignmentValues(normalized).some((source) =>
-      isPlaywrightHookValue(source, new Set(seen)),
-    )
-  ) {
-    return true;
-  }
-  return (
-    normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .some((declaration) => {
-        if (Node.isVariableDeclaration(declaration)) {
-          const initializer = declaration.getInitializer();
-          return (
-            initializer !== undefined &&
-            isPlaywrightHookValue(initializer, new Set(seen))
-          );
-        }
-        if (!Node.isBindingElement(declaration)) return false;
-        const property =
-          declaration.getPropertyNameNode() ??
-          declaration.getNameNode();
-        const name = Node.isIdentifier(property)
-          ? property.getText()
-          : Node.isStringLiteral(property)
-            ? property.getLiteralText()
-            : undefined;
-        if (name === undefined || !PLAYWRIGHT_HOOKS.has(name)) {
-          return false;
-        }
-        const variable = declaration.getFirstAncestorByKind(
-          SyntaxKind.VariableDeclaration,
-        );
-        const initializer = variable?.getInitializer();
-        return (
-          initializer !== undefined &&
-          isPlaywrightTestValue(initializer, new Set(seen))
-        );
-      }) ?? false
-  );
-}
-
-function hasRegisteredPlaywrightHook(file: SourceFile): boolean {
-  return file
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some((call) =>
-      isPlaywrightHookValue(
-        reflectApplyTarget(call) ?? call.getExpression(),
-      ),
-    );
 }
 
 function screenshotSequence(
@@ -1580,6 +1391,14 @@ describe("demo-surface-completeness fence", () => {
           'const approved = first(sp.approved) === "1";',
           "const approved = true;",
         ),
+        route.replace(
+          "  return Array.isArray(v) ? v[0] : v;",
+          '  return "safe-proceed";',
+        ),
+        route.replace(
+          "function first(",
+          "const Array = { isArray: (_value: unknown) => false };\n\nfunction first(",
+        ),
       ]) {
         expect(
           surfaceCompletenessProblems(
@@ -1891,6 +1710,25 @@ installBound(test.beforeEach, test, [async ({ page }) => {
     page.screenshot = async () => Buffer.from("not a screenshot") as never;
   }]],
 );`,
+        `const hooks: { install?: typeof test.beforeEach } = {};
+hooks.install = test.beforeEach;
+hooks.install(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
+        `const hooks = Object.assign({}, { install: test.beforeEach });
+hooks.install(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
+        `const hooks: { install?: typeof test.beforeEach } = {};
+Object.defineProperty(hooks, "install", { value: test.beforeEach });
+hooks.install!(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
+        `const hooks: { install?: typeof test.beforeEach } = {};
+Reflect.set(hooks, "install", test.beforeEach);
+hooks.install!(async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+});`,
       ]) {
         const hookedJourney = e2e.replace(
           `test("${JOURNEY_TEST}"`,

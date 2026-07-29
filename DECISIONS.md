@@ -6513,6 +6513,19 @@ runtime graph, including stable aliases; and **(5)** CI execution-environment va
 `job.container.env` between job and step scope. PF-001, PF-030, and PF-031 record the real red
 injections, focused companions, and restored green proofs.
 
+The captain-approved CI provenance, imported-registration, query-helper, and shared-hook review
+(2026-07-29) amended ADR-0030 in place a thirtieth time: **(1)** governed CI commands accept only an
+exact ratcheted predecessor chain, so unreviewed actions, commands, inputs, fields, or environment
+settings cannot mutate command resolution, workflow environment files, repository files, or governed
+entry points before evidence runs; **(2)** governed container images are exact ratcheted literals and
+additional execution-shaping container fields are non-evidence; **(3)** Playwright `skip`, `fixme`, and
+`fail` neutralizers are rejected across the complete reachable Axe runtime graph; **(4)** every fitness
+entry's complete local runtime import graph is inspected, and imported helpers may neither import Vitest
+nor register tests or suites; **(5)** Gate 0 pins its `first` query helper to the identity-preserving
+single-value semantics used by every resolver; and **(6)** Gate 0 and Axe evidence share one hardened
+Playwright hook-provenance authority. PF-001, PF-030, PF-031, and PF-032 record the real red injections,
+focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

@@ -803,7 +803,7 @@ describe("v3 gate-ordering fence", () => {
               ? []
               : [
                   "    container:",
-                  "      image: node:22",
+                  "      image: semgrep/semgrep",
                   "      env:",
                   `        ${containerEnv}: injected`,
                 ]),
@@ -888,6 +888,115 @@ describe("v3 gate-ordering fence", () => {
       ).toEqual({
         state: "unsafe-environment",
         reason: "environment configuration is not a literal mapping",
+      });
+    });
+
+    it("rejects unreviewed predecessor steps before governed commands", () => {
+      for (const { predecessor, step } of [
+        {
+          predecessor: [
+            "      - uses: actions/checkout@v7",
+            "      - run: echo ./injected-bin >> $GITHUB_PATH",
+          ],
+          step: 2,
+        },
+        {
+          predecessor: [
+            "      - uses: actions/checkout@v7",
+            "        with:",
+            "          repository: attacker/replacement",
+          ],
+          step: 1,
+        },
+        {
+          predecessor: [
+            "      - run: pnpm install --frozen-lockfile",
+            "        working-directory: /tmp",
+          ],
+          step: 1,
+        },
+      ]) {
+        const workflow = parseCiJobs(
+          [
+            "on:",
+            "  push:",
+            "  pull_request:",
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            ...predecessor,
+            "      - run: pnpm audit:chain",
+            "",
+          ].join("\n"),
+        );
+        expect(
+          ciJobCommandStatus(
+            workflow,
+            "audit-chain-verify",
+            "pnpm audit:chain",
+          ),
+        ).toEqual({
+          state: "unsafe-predecessor",
+          reason:
+            `predecessor step ${step} is not an approved CI evidence prerequisite`,
+        });
+      }
+    });
+
+    it("rejects unratcheted job container images", () => {
+      const workflow = parseCiJobs(
+        [
+          "on:",
+          "  push:",
+          "  pull_request:",
+          "jobs:",
+          "  sast:",
+          "    runs-on: ubuntu-latest",
+          "    container:",
+          "      image: attacker/semgrep",
+          "    steps:",
+          "      - uses: actions/checkout@v7",
+          "      - run: semgrep scan --error",
+          "",
+        ].join("\n"),
+      );
+      expect(
+        ciJobCommandStatus(
+          workflow,
+          "sast",
+          "semgrep scan --error",
+        ),
+      ).toEqual({
+        state: "unsafe-container",
+        reason: "unapproved container image 'attacker/semgrep'",
+      });
+      const augmentedContainer = parseCiJobs(
+        [
+          "on:",
+          "  push:",
+          "  pull_request:",
+          "jobs:",
+          "  sast:",
+          "    runs-on: ubuntu-latest",
+          "    container:",
+          "      image: semgrep/semgrep",
+          "      options: --entrypoint attacker",
+          "    steps:",
+          "      - uses: actions/checkout@v7",
+          "      - run: semgrep scan --error",
+          "",
+        ].join("\n"),
+      );
+      expect(
+        ciJobCommandStatus(
+          augmentedContainer,
+          "sast",
+          "semgrep scan --error",
+        ),
+      ).toEqual({
+        state: "unsafe-container",
+        reason: "container configuration contains unapproved fields",
       });
     });
 

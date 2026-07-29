@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, and the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review, and the captain-approved CI provenance, imported-registration, query-helper, and shared-hook review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -257,7 +257,9 @@ imports, and direct CommonJS imports. Indirect CommonJS loader provenance, inclu
 destructured loader members, is non-evidence until the
 graph can resolve the invoked target completely. Every reachable local module, including every named
 graph root, is subject to the same prohibition on Playwright hook registration and may not import the
-Axe runtime outside the exact sanctioned helper. Unresolved local imports and non-literal runtime
+Axe runtime outside the exact sanctioned helper. The complete graph also rejects Playwright
+`skip`, `fixme`, and `fail` neutralizers, including side-effect modules whose only purpose is to
+neutralize a required scan during import. Unresolved local imports and non-literal runtime
 imports are non-evidence. Bare runtime imports must
 either resolve through the directly parseable TypeScript path configuration or belong to the exact
 Playwright/Axe dependency allowlist.
@@ -288,6 +290,18 @@ rejected anywhere in the required runtime graph because it can manufacture an un
 loader. Governed CI commands resolve environment configuration across workflow, job, job-container, and
 step scope; an execution-affecting container environment override is non-evidence under the same rule as
 the other inherited scopes.
+Every predecessor of a governed command must be one exact ratcheted checkout, toolchain setup,
+dependency install, or already-governed command step. Unreviewed actions, commands, step fields, action
+inputs, and environment values are non-evidence because they can alter `GITHUB_PATH`, `GITHUB_ENV`,
+repository files, or the governed entry point before the exact command runs. Container evidence is
+restricted to the ratcheted `semgrep/semgrep` image and rejects additional execution-shaping fields;
+an unapproved, non-literal, or augmented container is non-evidence.
+
+**Fitness registration ownership includes the local runtime import graph.** Charter-drift resolves every
+local runtime import reachable from each fitness entry. Imported fitness helpers may not import the
+Vitest runtime or register suites or tests. Enforcement registration stays owned by the inventoried
+entry file, so moving a disabled registration behind a side-effect import cannot preserve a passing
+companion in the entry file.
 
 **Gate 0 surface completeness is executable.** The prompt-3 evidence gap is replaced by
 `demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
@@ -297,10 +311,14 @@ component imported from the manifest's exact component path, every component exi
 page's validated return must be provably reachable. The page passes the exact resolved scenario and firm
 identifiers to `getJourney`, and an exhaustive scenario-by-firm proof checks that the service preserves
 the recorded branch, firm, outcome class, and disposition. The renderer's approval input is bound by
-symbol to the exact `first(sp.approved) === "1"` query-derived declaration. The canonical journey must
+symbol to the exact `first(sp.approved) === "1"` query-derived declaration. The `first` helper itself
+is pinned to one plain parameter and the exact identity-preserving
+`Array.isArray(v) ? v[0] : v` return, with the unshadowed built-in `Array`. The canonical journey must
 click the complete ordered set of accessible product controls, including the source-verification button.
 Its complete top-level statement graph is restricted to those clicks, read-only loaded-state assertions,
-and sanctioned helpers, and the specification may register no Playwright hooks. DOM mutation, injected
+and sanctioned helpers, and the specification may register no Playwright hooks. Gate 0 and the Axe
+import-graph fence use the same shared hook-provenance authority, including object-property storage,
+member writes, `Object.assign`, `Object.defineProperty`, `Reflect.set`, and invocation wrappers. DOM mutation, injected
 controls, screenshot stubbing, or alternate navigation therefore cannot manufacture the route graph or
 its evidence.
 It directly awaits each surface
@@ -626,6 +644,13 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A governed CI job legitimately needs an execution-affecting `job.container.env` override: isolate the
   mapped command in a clean blocking job or add a typed, adversarially proven allowance for that exact
   variable. Do not exempt container scope from inherited environment validation.
+- A governed command needs a new predecessor action, setup input, install command, step field, or
+  container image: ratchet the exact prerequisite or image with adversarial proof in the same ADR
+  amendment. Do not accept an open-ended setup chain before evidence.
+- A fitness entry needs imported Vitest registration: move the registration back to the inventoried
+  entry or extend the import-ownership model with complete reachability and per-file result semantics.
+- The demo query extraction semantics change: amend the exact helper proof and its identity-preservation
+  companion before changing the route.
 - A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
   PR and keep the required command in a dedicated simple step. The structural check reads the workflow,
   so a stale or compound form fails rather than silently matching.

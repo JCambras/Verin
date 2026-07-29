@@ -25,6 +25,7 @@ import {
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
 import { reflectApplyTarget } from "./_callable-indirection";
+import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
 import {
   moduleReferences,
   REPO_ROOT,
@@ -1692,35 +1693,6 @@ function couldBeNamedImportMemberExpression(
   );
 }
 
-const PLAYWRIGHT_HOOK_MEMBERS = [
-  "beforeAll",
-  "beforeEach",
-  "afterAll",
-  "afterEach",
-] as const;
-
-function hasRegisteredPlaywrightHook(
-  sourceFile: SourceFile,
-): boolean {
-  if (
-    objectPropertyMutationIndex(sourceFile).unresolvedReflectiveWrite
-  ) {
-    return true;
-  }
-  return sourceFile
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some((call) =>
-      PLAYWRIGHT_HOOK_MEMBERS.some((member) =>
-        couldBeNamedImportMemberExpression(
-          reflectApplyTarget(call) ?? call.getExpression(),
-          "@playwright/test",
-          "test",
-          member,
-        ),
-      ),
-    );
-}
-
 function hasUnresolvedComputedPlaywrightMember(
   sourceFile: SourceFile,
 ): boolean {
@@ -2938,6 +2910,11 @@ function importedAxeGraphProblems(
         `${path}:1 reachable local Axe evidence module must not register Playwright hooks`,
       );
     }
+    if (scopeHasNeutralizingAnnotation(sourceFile)) {
+      problems.push(
+        `${path}:1 reachable local Axe evidence module must not invoke Playwright neutralizers`,
+      );
+    }
   }
   return problems;
 }
@@ -3221,6 +3198,17 @@ describe("axe-required fence", () => {
       );
       expect(problems).toContain(
         "src/app/demo/axe-hook.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+      );
+    });
+
+    it("rejects Playwright neutralizers in transitive side-effect imports", () => {
+      const sources = completeSources();
+      sources[AXE_ROUTES_PATH] =
+        `import "./axe-neutralizer";\n${VALID_AXE_ROUTES}`;
+      sources["e2e/axe-neutralizer.ts"] =
+        `import { test } from "@playwright/test";\ntest.skip(true, "skip required Axe evidence");`;
+      expect(axeCoverageProblems(sources)).toContain(
+        "e2e/axe-neutralizer.ts:1 reachable local Axe evidence module must not invoke Playwright neutralizers",
       );
     });
 
@@ -3753,6 +3741,9 @@ test("axe", async ({ page }) => {
               ) &&
               !problem.includes(
                 "must not register Playwright hooks",
+              ) &&
+              !problem.includes(
+                "must not invoke Playwright neutralizers",
               ),
           ),
           spec,

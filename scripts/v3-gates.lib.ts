@@ -551,6 +551,8 @@ export interface CiStep {
   unsupportedShell?: string;
   unsupportedWorkingDirectory?: string;
   unsafeEnvironment?: string;
+  unsafeContainer?: string;
+  unsafePredecessor?: string;
   commands: string[];
   blockingCommand?: string;
   blockingTokens?: string[];
@@ -687,6 +689,161 @@ function environmentProblem(
     }
   }
   return undefined;
+}
+
+const APPROVED_CI_CONTAINER_IMAGES = new Set([
+  "semgrep/semgrep",
+]);
+
+function containerProblem(container: unknown): string | undefined {
+  if (container === undefined) return undefined;
+  const mapping =
+    typeof container === "string" ? undefined : literalMapping(container);
+  if (
+    mapping !== undefined &&
+    Object.keys(mapping).some((key) => key !== "image" && key !== "env")
+  ) {
+    return "container configuration contains unapproved fields";
+  }
+  const image =
+    typeof container === "string"
+      ? container
+      : mapping?.image;
+  if (typeof image !== "string" || image.trim() === "") {
+    return "container image is not a literal non-empty string";
+  }
+  return APPROVED_CI_CONTAINER_IMAGES.has(image)
+    ? undefined
+    : `unapproved container image '${image}'`;
+}
+
+const APPROVED_CI_PREREQUISITE_ACTIONS = new Map<
+  string,
+  readonly Readonly<Record<string, string | number>>[]
+>([
+  ["actions/checkout@v7", [{}, { "fetch-depth": 0 }]],
+  ["pnpm/action-setup@v6", [{}]],
+  [
+    "actions/setup-node@v7",
+    [{ "node-version": 22, cache: "pnpm" }],
+  ],
+]);
+
+const APPROVED_CI_PREREQUISITE_COMMANDS = new Set([
+  "pnpm audit --audit-level=high",
+  "pnpm exec playwright install --with-deps chromium",
+  "pnpm exec playwright test",
+  "pnpm exec tsx scripts/db-seed.ts",
+  "pnpm exec vitest run",
+  "pnpm install --frozen-lockfile",
+  "pnpm lint",
+  "pnpm typecheck",
+]);
+
+const APPROVED_CI_PREREQUISITE_SCRIPTS = new Set([
+  [
+    'curl -fsSL --retry 5 --retry-all-errors -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"',
+    'echo "${GITLEAKS_SHA256} /tmp/gitleaks.tar.gz" | sha256sum -c -',
+    "tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks",
+    "sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks",
+  ].join("\n"),
+]);
+
+function literalMapping(
+  value: unknown,
+): Readonly<Record<string, unknown>> | undefined {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+function sameLiteralMapping(
+  actual: Readonly<Record<string, unknown>>,
+  expected: Readonly<Record<string, string | number>>,
+): boolean {
+  const actualEntries = Object.entries(actual).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const expectedEntries = Object.entries(expected).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  return JSON.stringify(actualEntries) === JSON.stringify(expectedEntries);
+}
+
+function hasOnlyKeys(
+  mapping: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+): boolean {
+  const allowedKeys = new Set(allowed);
+  return Object.keys(mapping).every((key) => allowedKeys.has(key));
+}
+
+function approvedPrerequisiteProblem(
+  step: unknown,
+  index: number,
+): string | undefined {
+  const record = literalMapping(step);
+  const prefix = `predecessor step ${index + 1}`;
+  if (record === undefined) {
+    return `${prefix} is not a literal step mapping`;
+  }
+  if (
+    neutralizerOf(record) !== undefined ||
+    environmentProblem(record) !== undefined
+  ) {
+    return `${prefix} is not an approved CI evidence prerequisite`;
+  }
+  const uses = record.uses;
+  if (uses !== undefined) {
+    if (typeof uses !== "string") {
+      return `${prefix} action is not a literal string`;
+    }
+    const approvedInputs = APPROVED_CI_PREREQUISITE_ACTIONS.get(uses);
+    const withInputs = record.with === undefined
+      ? {}
+      : literalMapping(record.with);
+    if (
+      approvedInputs === undefined ||
+      withInputs === undefined ||
+      !hasOnlyKeys(record, ["name", "uses", "with"]) ||
+      !approvedInputs.some((expected) =>
+        sameLiteralMapping(withInputs, expected),
+      )
+    ) {
+      return `${prefix} is not an approved CI evidence prerequisite`;
+    }
+    return undefined;
+  }
+  const run = record.run;
+  if (typeof run !== "string") {
+    return `${prefix} is not an approved CI evidence prerequisite`;
+  }
+  const simple = simpleShellCommand(run);
+  if (
+    simple !== undefined &&
+    APPROVED_CI_PREREQUISITE_COMMANDS.has(simple.text) &&
+    hasOnlyKeys(record, ["name", "run"])
+  ) {
+    return undefined;
+  }
+  const normalizedScript = shellCommandLines(run).join("\n");
+  if (
+    APPROVED_CI_PREREQUISITE_SCRIPTS.has(normalizedScript) &&
+    hasOnlyKeys(record, ["env", "name", "run"]) &&
+    sameLiteralMapping(
+      literalMapping(record.env) ?? {},
+      {
+        GITLEAKS_VERSION: "8.24.3",
+        GITLEAKS_SHA256:
+          "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c",
+      },
+    )
+  ) {
+    return undefined;
+  }
+  return `${prefix} is not an approved CI evidence prerequisite`;
 }
 
 function workflowTriggerProblem(doc: unknown): string | undefined {
@@ -865,9 +1022,11 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
     const defaultDirectory = jobDirectory === undefined ? workflowDirectory : jobDirectory;
     const jobContainer = (job as { container?: unknown } | null)
       ?.container;
+    const unsafeContainer = containerProblem(jobContainer);
     const runsOn = (job as { "runs-on"?: unknown } | null)?.["runs-on"];
     const unsupportedRunner = runnerProblem(runsOn);
-    const parsedSteps = (Array.isArray(steps) ? steps : []).flatMap((step): CiStep[] => {
+    const stepList = Array.isArray(steps) ? steps : [];
+    const parsedSteps = stepList.flatMap((step, index): CiStep[] => {
       const run = (step as { run?: unknown } | null)?.run;
       if (typeof run !== "string") return [];
       const stepShell = (step as { shell?: unknown } | null)?.shell;
@@ -882,6 +1041,10 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
         jobContainer,
         step,
       );
+      const unsafePredecessor = stepList
+        .slice(0, index)
+        .map(approvedPrerequisiteProblem)
+        .find((problem) => problem !== undefined);
       const simple =
         unsupportedRunner === undefined &&
         unsupportedShell === undefined &&
@@ -896,6 +1059,8 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
           ...(unsupportedShell === undefined ? {} : { unsupportedShell }),
           ...(unsupportedWorkingDirectory === undefined ? {} : { unsupportedWorkingDirectory }),
           ...(unsafeEnvironment === undefined ? {} : { unsafeEnvironment }),
+          ...(unsafeContainer === undefined ? {} : { unsafeContainer }),
+          ...(unsafePredecessor === undefined ? {} : { unsafePredecessor }),
           commands: shellCommandLines(run),
           ...(simple === undefined ? {} : { blockingCommand: simple.text, blockingTokens: simple.tokens }),
         },
@@ -930,6 +1095,8 @@ export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
         step.unsupportedShell === undefined &&
         step.unsupportedWorkingDirectory === undefined &&
         step.unsafeEnvironment === undefined &&
+        step.unsafeContainer === undefined &&
+        step.unsafePredecessor === undefined &&
         step.blockingCommand !== undefined,
     )
   );
@@ -945,6 +1112,8 @@ export type CiCommandStatus =
   | { state: "unsafe-shell"; reason?: string }
   | { state: "unsafe-working-directory"; reason: string }
   | { state: "unsafe-environment"; reason: string }
+  | { state: "unsafe-container"; reason: string }
+  | { state: "unsafe-predecessor"; reason: string }
   | { state: "missing-command" };
 
 export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, command: string): CiCommandStatus {
@@ -963,7 +1132,15 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
     return { state: "neutralized", reason: `job ${job.neutralizedBy}` };
   }
   const blocking = relevant.find(
-    (step) => step.neutralizedBy === undefined && commandMatches(step.blockingTokens, required.tokens),
+    (step) =>
+      step.neutralizedBy === undefined &&
+      step.unsupportedRunner === undefined &&
+      step.unsupportedShell === undefined &&
+      step.unsupportedWorkingDirectory === undefined &&
+      step.unsafeEnvironment === undefined &&
+      step.unsafeContainer === undefined &&
+      step.unsafePredecessor === undefined &&
+      commandMatches(step.blockingTokens, required.tokens),
   );
   if (blocking !== undefined) return { state: "proven" };
   const neutralized = relevant.find((step) => step.neutralizedBy !== undefined);
@@ -985,6 +1162,24 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   const unsafeEnvironment = relevant.find((step) => step.unsafeEnvironment !== undefined);
   if (unsafeEnvironment?.unsafeEnvironment !== undefined) {
     return { state: "unsafe-environment", reason: unsafeEnvironment.unsafeEnvironment };
+  }
+  const unsafeContainer = relevant.find(
+    (step) => step.unsafeContainer !== undefined,
+  );
+  if (unsafeContainer?.unsafeContainer !== undefined) {
+    return {
+      state: "unsafe-container",
+      reason: unsafeContainer.unsafeContainer,
+    };
+  }
+  const unsafePredecessor = relevant.find(
+    (step) => step.unsafePredecessor !== undefined,
+  );
+  if (unsafePredecessor?.unsafePredecessor !== undefined) {
+    return {
+      state: "unsafe-predecessor",
+      reason: unsafePredecessor.unsafePredecessor,
+    };
   }
   if (relevant.length > 0) return { state: "unsafe-shell" };
   return { state: "missing-command" };
@@ -1013,6 +1208,10 @@ export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: 
       return `ci job '${ref}' command '${command}' uses ${status.reason}`;
     case "unsafe-environment":
       return `ci job '${ref}' command '${command}' uses ${status.reason}`;
+    case "unsafe-container":
+      return `ci job '${ref}' command '${command}' uses ${status.reason}`;
+    case "unsafe-predecessor":
+      return `ci job '${ref}' command '${command}' has ${status.reason}`;
     default:
       return `ci job '${ref}' does not run '${command}' in a dedicated blocking step`;
   }
