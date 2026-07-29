@@ -7380,8 +7380,6 @@ driven adversarially.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
 
----
-
 ## PF-102 · set-order and nondeterminism-flow closure · `src/__tests__/fitness/corpus-determinism.test.ts`
 
 **Invariant (D-086, ADR-0034):** set-like spec order cannot change emitted bytes, and banned
@@ -7414,3 +7412,95 @@ parameters, returns, literal dynamic imports, and nonliteral dynamic-import reje
 **Revert:** both injections were reverted with patch edits, and the focused companions passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
+
+---
+
+## PF-103 · partition-wide outcome and replay selector closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-087, ADR-0034):** both partitions require context-bound typed treatment mismatches;
+pending actions bind to the request, selected funding, and exact evidence; pending liquidity treatment is
+shared; retirement treatment includes review state; reserve and threshold treatments follow signed
+selectors; and synthetic source accounts belong to their request household.
+
+**Injection 1 - synthetic mismatch optional.** Allowed a synthetic defect label to carry no treatment
+mismatch.
+
+**Observed failure:**
+```
+a synthetic defect without its typed treatment mismatch fails closed
+src/__tests__/fitness/corpus-provenance-split.test.ts:1110
+expected '' to contain 'defect label lacks one matching expected-versus-observed treatment mismatch'
+```
+
+**Injection 2 - pending topology disabled.** Reversed the present-action guard around the household and
+selected-account relationship check.
+
+**Observed failure:**
+```
+pending actions bind to the request household, selected account, and exact evidence
+src/__tests__/fitness/corpus-provenance-split.test.ts:1944
+expected '' to match /pending action|pending-action evidence/
+```
+
+**Injection 3 - pending authority narrowed.** Excluded settling incoming transfers from the shared
+nonreducing treatment rule.
+
+**Observed failure:**
+```
+a settling incoming transfer uses the shared nonreducing pending authority
+src/__tests__/fitness/corpus-provenance-split.test.ts:1968
+label.defectClassId does not match replay expected-versus-observed semantics
+```
+
+**Injection 4 - tax review ignored.** Treated every selected retirement source as defect context even
+when review was completed.
+
+**Observed failure:**
+```
+retirement treatment requires a completed review or an explicit mismatch
+src/__tests__/fitness/corpus-provenance-split.test.ts:1990
+expected '' to contain 'claims a defect treatment without its required context'
+```
+
+**Injection 5 - reserve selector fixed.** Forced every reserve outcome through the segmented treatment
+pair.
+
+**Observed failure:**
+```
+reserve treatments distinguish scalar, segmented, and missing schedules
+src/__tests__/fitness/corpus-provenance-split.test.ts:2052
+RD-missing-reserve.json outcome is outside its closed treatment vocabulary
+```
+
+**Injection 6 - threshold comparator ignored.** Forced inclusive policy through the strict treatment
+pair.
+
+**Observed failure:**
+```
+threshold treatment follows the signed strict or inclusive comparator
+src/__tests__/fitness/corpus-provenance-split.test.ts:2097
+RD-inclusive-threshold.json outcome is outside its closed treatment vocabulary
+```
+
+**Injection 7 - source ownership disabled.** Removed the request-household check from synthetic source
+account resolution.
+
+**Observed failure:**
+```
+a request source account must belong to the request household
+src/__tests__/fitness/corpus-provenance-split.test.ts:1143
+expected '' to contain 'belongs to household "smith-mira", not request household "smiths"'
+```
+
+**Standing companions:** every synthetic taxonomy class fails when its defect is relabeled as a control;
+correctly treated authority and owner-beneficiary context remains clean; pending account, household,
+selection, subject, and source mismatches fail; completed and not-required retirement review
+contradictions fail; scalar, segmented, and missing reserves use distinct treatments; strict and
+inclusive threshold policies swap the expected and defective treatment; and every changed schema and
+semantic authority changes the signed digest.
+
+**Revert:** all seven injections were reverted with patch edits. Canonical validation restored
+`corpusDigest` `bde8bcd2df731c7cfc95089d099ea884a8d9abd90e58d73ca8d498c9a1f3da5d`,
+and all 151 focused corpus companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 9).

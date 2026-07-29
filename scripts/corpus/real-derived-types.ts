@@ -6,6 +6,8 @@ import type { RealDerivedEvidenceKind } from "./real-derived-policy";
 
 export type PendingReplay = {
   actionRef: string | null;
+  accountRef: string | null;
+  householdRef: string | null;
   actionKind: PendingActionKind | null;
   actionState: PendingActionState | null;
   amountMinor: number | null;
@@ -97,6 +99,7 @@ export type ReplayPayload = {
     evidenceSourceRef: string;
     thresholdMinor: number;
     thresholdComparison: "below" | "equal" | "above";
+    thresholdComparator: "strict" | "inclusive";
     restrictionRef: string | null;
     restrictionEvidenceSourceRef: string | null;
     restrictionState: "absent" | "in-force" | "expired" | "future";

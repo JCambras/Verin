@@ -125,7 +125,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.2.0 closed payload
+replayPayload   verin-real-derived-replay/1.3.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{family, conflictKey}]
 ```

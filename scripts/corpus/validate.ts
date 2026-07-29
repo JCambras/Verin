@@ -39,6 +39,10 @@ import {
 } from "./real-derived";
 import { CORPUS_SEED } from "./seed";
 import { loadSignoff, signoffProblems, type CorpusSignoff } from "./signoff";
+import {
+  syntheticSemanticProblems,
+  type EmittedCase,
+} from "./synthetic-semantics";
 import { readTree } from "./tree";
 import { CORPUS_DIR, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
 
@@ -89,91 +93,6 @@ export function committedBytesProblems(
     }
   }
   return problems;
-}
-
-interface EmittedEvidence {
-  id: string;
-  kind: string;
-  subjectRef: string;
-  /** The business instant the observed fact last changed or was recorded. */
-  recordChangedAt: string;
-  recordChangedAtLocal: string;
-  observedAt: string;
-  retrievedAt: string;
-  observedAtLocal: string;
-  retrievedAtLocal: string;
-  retrievalLagSeconds: number;
-  freshness: string;
-  withinRecentChangeWindow: boolean;
-}
-
-/** Only the subgraph rows the clean-control rules interrogate. */
-interface EmittedRecords {
-  household: { id: string; advisorRef: string; memberRefs: string[] };
-  referencedHouseholds: Array<{
-    id: string;
-    relationshipReasons: string[];
-  }>;
-  parties: Array<{ id: string }>;
-  accounts: Array<{ id: string; householdRef: string; ownerRefs: string[] }>;
-  referencedAccounts: Array<{ id: string; householdRef: string }>;
-  beneficiaries: Array<{ accountRef: string; partyRef: string }>;
-  authorizedSigners: Array<{
-    id: string;
-    accountRef: string;
-    partyRef: string;
-    effectiveFrom: string;
-    effectiveTo: string | null;
-  }>;
-  bankInstructions: Array<{
-    id: string;
-    householdRef: string;
-    titledTo: string;
-    accountRefs: string[];
-    bank: string;
-    lastFour: string;
-    verifiedAt: string | null;
-  }>;
-  referencedBankInstructions: Array<{
-    id: string;
-    householdRef: string;
-    accountRefs: string[];
-  }>;
-  plannedWithdrawals: Array<{ id: string; householdRef: string }>;
-  restrictions: Array<{ id: string; subjectRef: string; inForceAtAsOf: boolean }>;
-  modelAssignments: Array<{ id: string; accountRef: string }>;
-  pendingActions: Array<{
-    id: string;
-    householdRef: string;
-    accountRef: string;
-    direction: "outgoing" | "incoming" | "unknown";
-    liquidityClass: "distribution" | "debit" | "credit" | "unclassified";
-    reducesEffectiveLiquidity: boolean;
-    increasesAvailableLiquidity: boolean;
-  }>;
-  legalHolds: Array<{ id: string; subjectRef: string; scope: "account" | "position" }>;
-  recentChanges: Array<{ id: string; subjectRef: string }>;
-}
-
-export interface EmittedCase {
-  caseId: string;
-  provenance: string;
-  partition: string;
-  label: { kind: string; defectClassId?: string };
-  assumptions: Array<{ id: string }>;
-  trigger: { asOf: string; timeZone: string; timeZoneDataVersion: string; asOfLocal: string };
-  request: {
-    householdRef: string;
-    sourceAccountRef: string;
-    destinationRef: string;
-    settlementEarliest: string;
-    deadline: string;
-    deadlineFeasible: boolean;
-    idempotencyKey: string;
-  };
-  reservations: Array<{ family: string; conflictKey: string; firmId: string; reservationId: string }>;
-  records: EmittedRecords;
-  evidence: EmittedEvidence[];
 }
 
 /** (2) Labeling and disjointness: charter #3 plus the design's rule that the
@@ -318,73 +237,9 @@ export function timestampProblems(cases: readonly EmittedCase[], spec: LoadedSpe
  * intent.
  */
 export function cleanControlProblems(cases: readonly EmittedCase[]): string[] {
-  const problems: string[] = [];
-  for (const item of cases) {
-    if (item.label.kind !== CLEAN_CONTROL_ID) continue;
-    const where = item.caseId;
-    if (item.evidence.length === 0) {
-      problems.push(`${where}: a clean control with no evidence measures nothing`);
-    }
-    if (item.assumptions.length > 0) {
-      problems.push(
-        `${where}: a clean control asserts awkward structure(s) ${item.assumptions.map((a) => a.id).join(", ")} - a control carries none by definition`,
-      );
-    }
-    if (!item.request.deadlineFeasible) {
-      problems.push(`${where}: the request's deadline is infeasible - that is deadline-feasibility-error, not a control`);
-    }
-    const signers = new Map(item.records.authorizedSigners.map((row) => [row.id, row]));
-    const restrictions = new Map(item.records.restrictions.map((row) => [row.id, row]));
-    const instructions = new Map(item.records.bankInstructions.map((row) => [row.id, row]));
-    const absent = (at: string, evidence: EmittedEvidence): string =>
-      `${at}: ${evidence.kind} evidence points at "${evidence.subjectRef}", which is absent from the case's own subgraph`;
-    for (const evidence of item.evidence) {
-      const at = `${where}/${evidence.id}`;
-      if (evidence.freshness !== "fresh") {
-        problems.push(`${at}: evidence is "${evidence.freshness}" - a control cannot carry evidence-staleness-unnoticed`);
-      }
-      if (evidence.kind === "authority") {
-        const signer = signers.get(evidence.subjectRef);
-        if (signer === undefined) problems.push(absent(at, evidence));
-        else if (signer.effectiveTo !== null && epochMs(signer.effectiveTo) <= epochMs(evidence.retrievedAt)) {
-          problems.push(
-            `${at}: the cited authority lapses at ${signer.effectiveTo}, inside the evidence interval - that is evidence-interval-collapse`,
-          );
-        } else if (epochMs(signer.effectiveFrom) > epochMs(item.trigger.asOf)) {
-          problems.push(`${at}: the cited authority is not yet effective at the trigger - that is authority-scope-error`);
-        }
-      }
-      if (evidence.kind === "restriction" || evidence.kind === "household-instruction") {
-        const restriction = restrictions.get(evidence.subjectRef);
-        if (restriction === undefined) problems.push(absent(at, evidence));
-        else if (!restriction.inForceAtAsOf) {
-          problems.push(
-            `${at}: the cited restriction is recorded but NOT in force at the trigger - that is restriction-lifecycle-error`,
-          );
-        }
-      }
-      if (evidence.kind === "bank-instruction") {
-        const instruction = instructions.get(evidence.subjectRef);
-        if (instruction === undefined) {
-          problems.push(absent(at, evidence));
-          continue;
-        }
-        if (instruction.verifiedAt === null) {
-          problems.push(`${at}: the cited destination is unverified - that is destination-integrity-defect`);
-        }
-        const twin = item.records.bankInstructions.find(
-          (row) =>
-            row.id !== instruction.id && row.bank === instruction.bank && row.lastFour === instruction.lastFour,
-        );
-        if (twin !== undefined) {
-          problems.push(
-            `${at}: the cited destination shares bank+lastFour with "${twin.id}" - that is destination-integrity-defect`,
-          );
-        }
-      }
-    }
-  }
-  return problems;
+  return syntheticSemanticProblems(
+    cases.filter((item) => item.label.kind === CLEAN_CONTROL_ID),
+  );
 }
 
 /** (4) Canonical identity: every emitted string equals its NFC form. */
@@ -448,7 +303,7 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     ...taxonomyExerciseProblems(taxonomy, spec.cases),
     ...timestampProblems(cases, spec),
     ...evidenceResolutionProblems(cases),
-    ...cleanControlProblems(cases),
+    ...syntheticSemanticProblems(cases),
     ...nfcProblems([...committed, ...realDerived.delivery.files]),
     ...realDerived.problems,
     ...generatedSignatureProblems([...generated, manifest]),

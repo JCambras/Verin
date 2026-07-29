@@ -4740,3 +4740,28 @@ signoff stays pending.
 **Why:** awkward data is legitimate evidence context, not a product failure, and disconnected conflict
 references or laundered nondeterminism cannot define signed replay truth.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-087 · 2026-07-29 · captain-decision · Outcome semantics govern both corpus partitions
+
+The `verin-corpus/1.7.0` preimage binds `verin-real-derived-replay/1.3.0` and
+`verin-real-derived-semantics/1.2.0`. Synthetic and real-derived cases use the same closed
+expected-versus-observed treatment authority. A synthetic defect requires exactly one context-bound
+mismatch for its label, while correctly treated awkward context remains a clean control. Every taxonomy
+signature is checked over emitted control bytes.
+
+Pending actions carry entity-kind-scoped account and household references. They bind to the governed
+request, one selected funding account, and exact action evidence, while liquidity treatment comes from
+the shared closed pending-action authority. Selected retirement funding is cross-checked against tax
+review state. Missing reserve schedules use an unavailable treatment distinct from correctly segmented
+reserves. Signed threshold policy carries a strict or inclusive comparator that selects the applicable
+treatment pair. Synthetic request source accounts must belong to the request household.
+
+The semantic data, executable synthetic authority, replay schema, and emitted treatment bytes are bound
+into `corpusDigest`. The tooling ceiling rises from 6200 to 6500 against 6426 measured lines, leaving 74
+lines of explicit headroom for the separated semantic, generation, topology, and validation owners. The
+post-prompt-19 ratchet-down point remains unchanged. The real-derived partition stays deferred and empty,
+and captain signoff stays pending.
+
+**Why:** context alone cannot define signed defect truth, and disconnected pending actions or unsigned
+policy comparison cannot alter replay funding or threshold treatment.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

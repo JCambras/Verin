@@ -137,10 +137,12 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.2.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.3.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
-supported defect classes. Absent, extra, ambiguous, incompatible, or unversioned inputs fail. Raw names,
+supported defect classes. Pending actions carry account and household references bound to the request,
+selected funding, and exact evidence. Threshold policy identity carries its strict or inclusive
+comparator. Absent, extra, ambiguous, incompatible, or unversioned inputs fail. Raw names,
 account numbers, unrelated balances, and unrelated household data have no field in the contract.
 
 Every hand-owned corpus JSON document passes one unique-key parser before semantic parsing or hashing.
@@ -153,22 +155,26 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.1.0` registry separates awkward context from outcome. A defect
-case is accepted only when the relevant context is present and its typed expected treatment differs from
-the observed closed defective treatment. A clean control records the expected treatment for every class,
-so verified cross-household destinations, segmented reserves, valid holds, exact thresholds, and
-time-zone boundaries remain clean when treated correctly. Missing, duplicate, unknown, contradictory,
-or context-free outcome assertions fail. The registry is checked for exact equality with the signed
-taxonomy, so an unsupported class cannot enter either denominator by relabeling a structurally valid
-case. Its declarative bytes and exact executable-authority source digests are part of `corpusDigest`, so
-changing a predicate or cross-field rule invalidates signoff.
+The closed `verin-real-derived-semantics/1.2.0` registry separates awkward context from outcome in both
+corpus partitions. A defect case is accepted only when the relevant context is present and its typed
+expected treatment differs from the observed closed defective treatment. A clean control records the
+expected treatment for every active class, so effective cross-household authority, correctly treated
+owner-beneficiary context, segmented or missing reserves, valid holds, exact thresholds, and time-zone
+boundaries remain clean when treated correctly. Missing, duplicate, unknown, contradictory, or
+context-free outcome assertions fail. Reserve state, authority state, and the signed threshold
+comparator select the applicable treatment pair. The registry is checked for exact equality with the
+signed taxonomy, so an unsupported class cannot enter either denominator by relabeling a structurally
+valid case. Its declarative bytes and exact executable-authority source digests are part of
+`corpusDigest`, so changing a predicate or cross-field rule invalidates signoff.
 
 Replay references are entity-kind-scoped. Request, household, account, instruction, owner, actor, grant,
 policy, restriction, hold, pending-action, and time-zone identities cannot be satisfied by one generic
 token. Every material plane has exactly one evidence tuple matching kind, subject, and source. The
 request source account resolves in the liquidity collection, and the explicit selected funding set is
 unique, same-household, source-owner-aligned, supported, and sufficient in aggregate. Tax risk is
-evaluated against exactly that set, including every selected source's tax character.
+evaluated against exactly that set, including every selected source's tax character and review state.
+Each pending action names the request household and one selected account, and its action evidence matches
+the exact action identity and source.
 An instruction-conflict witness names the exact governed request and household. Every referenced
 instruction belongs to that household, and impacted subjects intersect the request source account or
 destination instruction.
@@ -191,7 +197,7 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.6.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.7.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
 and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
 declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
@@ -235,6 +241,10 @@ preserves readable ownership boundaries instead of forcing these rules back into
 D-086 raises the ceiling to 6200 against 5996 measured lines for outcome-based defect semantics,
 request-bound instruction-conflict topology, schema-driven nested uniqueness, and complete
 nondeterminism-flow enforcement. The 204-line buffer keeps these authorities separated and readable.
+D-087 raises the ceiling to 6500 against 6426 measured lines for shared synthetic and real-derived
+treatment semantics, selector-driven authority, reserve, and threshold policy identity, exact
+pending-action topology, and request source ownership. The 74-line buffer keeps the new semantic owner
+separate from generation and validation.
 
 ## What this PR explicitly does NOT claim
 

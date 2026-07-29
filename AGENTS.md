@@ -45,8 +45,11 @@ partition ships EMPTY behind a fail-closed intake contract ([`docs/corpus-scrub-
 `detectionRate` is `null` with a reason code and is NEVER substituted by the synthetic figure, whose name
 is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest`, including exact case
 bytes and labels, schemas, taxonomy, freshness, and declarative plus executable replay semantics.
-Real-derived replay uses entity-kind-scoped references, exact kind/subject/source evidence, and explicit
-aggregate selected funding. Regeneration invalidates signoff, and agents never sign.
+Both partitions require typed expected-versus-observed treatment, and a defect without a context-bound
+mismatch fails closed. Real-derived replay uses entity-kind-scoped references, exact kind/subject/source
+evidence, explicit aggregate selected funding, pending actions bound to the request and selected account,
+and threshold treatment selected by signed comparator policy. Regeneration invalidates signoff, and
+agents never sign.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

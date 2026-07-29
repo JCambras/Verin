@@ -3,7 +3,12 @@ import {
   realDerivedTopologyProblems as topologyProblems,
   selectedSources,
 } from "./real-derived-topology";
-import { loadRealDerivedSemanticContract } from "./semantic-contract";
+import {
+  loadRealDerivedSemanticContract,
+  semanticTreatment,
+  TREATMENT_SELECTOR_VALUES,
+  type SemanticDefectRule,
+} from "./semantic-contract";
 import type { RealDerivedCase } from "./real-derived-types";
 
 const contract = loadRealDerivedSemanticContract();
@@ -34,8 +39,12 @@ const intervalCollapse = (item: RealDerivedCase): boolean => {
 const pendingMiscount = (item: RealDerivedCase): boolean => {
   const action = item.replayPayload.liquidity.pendingAction;
   return action.actionRef !== null &&
-    (["blocked", "cancelled", "rejected"].includes(action.actionState ?? "") ||
-      ["unknown", "unclassified"].includes(action.actionKind ?? ""));
+    action.actionKind !== null &&
+    action.actionState !== null &&
+    !pendingActionLiquidityTreatment(
+      action.actionKind,
+      action.actionState,
+    ).reducesEffectiveLiquidity;
 };
 
 const deadlineInfeasible = (item: RealDerivedCase): boolean => {
@@ -54,8 +63,7 @@ const retirementFundingSelected = (item: RealDerivedCase): boolean =>
 const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>> = {
   "identity-ambiguous": (item) =>
     item.replayPayload.identity.resolution === "ambiguous",
-  "authority-not-effective": (item) =>
-    item.replayPayload.authority.authorityState !== "effective",
+  "authority-boundary": () => true,
   "destination-not-integral": (item) =>
     item.replayPayload.destination.ownership === "cross-household" ||
     item.replayPayload.destination.verificationState !== "verified" ||
@@ -84,7 +92,35 @@ const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>
   "resolved-conflict-multi-subject": (item) =>
     item.replayPayload.instructionConflict.conflictState === "resolved" &&
     item.replayPayload.instructionConflict.impactedSubjectRefs.length > 1,
-  "selected-retirement-source": retirementFundingSelected,
+  "selected-retirement-source-without-completed-review": (item) =>
+    retirementFundingSelected(item) &&
+    item.replayPayload.taxReviewState !== "completed",
+};
+
+const TREATMENT_SELECTORS: Readonly<
+  Record<string, (item: RealDerivedCase) => string>
+> = {
+  fixed: () => "fixed",
+  "authority-state": (item) =>
+    item.replayPayload.authority.authorityState === "effective"
+      ? "effective"
+      : "ineffective",
+  "reserve-state": (item) => item.replayPayload.liquidity.reserveState,
+  "threshold-comparator": (item) =>
+    item.replayPayload.policy.thresholdComparator,
+};
+
+const treatmentFor = (
+  item: RealDerivedCase,
+  rule: SemanticDefectRule,
+) => {
+  const selector = TREATMENT_SELECTORS[rule.treatmentSelector];
+  if (selector === undefined) {
+    throw new Error(
+      `semantic treatment selector "${rule.treatmentSelector}" has no executable authority`,
+    );
+  }
+  return semanticTreatment(rule, selector(item));
 };
 
 function outcomeProblems(item: RealDerivedCase): string[] {
@@ -104,18 +140,20 @@ function outcomeProblems(item: RealDerivedCase): string[] {
       problems.push(`outcomes missing defect class "${entry.id}"`);
       continue;
     }
+    const treatment = treatmentFor(item, entry);
     if (
-      outcome.expectedTreatment !== entry.expectedTreatment ||
-      ![entry.expectedTreatment, entry.defectTreatment].includes(
-        outcome.observedTreatment,
-      )
+      outcome.expectedTreatment !== treatment.expectedTreatment ||
+      ![
+        treatment.expectedTreatment,
+        treatment.defectTreatment,
+      ].includes(outcome.observedTreatment)
     ) {
       problems.push(
         `outcome "${entry.id}" is outside its closed treatment vocabulary`,
       );
     }
     if (
-      outcome.observedTreatment === entry.defectTreatment &&
+      outcome.observedTreatment === treatment.defectTreatment &&
       CONTEXT_RULES[entry.contextRule]?.(item) !== true
     ) {
       problems.push(
@@ -144,10 +182,11 @@ export function realDerivedSemanticDefects(
     const outcome = item.replayPayload.outcomes.find(
       (candidate) => candidate.defectClassId === entry.id,
     );
+    const treatment = treatmentFor(item, entry);
     return rule(item) &&
-        outcome?.expectedTreatment === entry.expectedTreatment &&
+        outcome?.expectedTreatment === treatment.expectedTreatment &&
         outcome.observedTreatment !== outcome.expectedTreatment &&
-        outcome.observedTreatment === entry.defectTreatment
+        outcome.observedTreatment === treatment.defectTreatment
       ? [entry.id]
       : [];
   });
@@ -165,6 +204,9 @@ export function realDerivedSemanticContractProblems(
   const configuredIds = new Set(contract.defectRules.map((entry) => entry.id));
   const configuredRules = new Set(
     contract.defectRules.map((entry) => entry.contextRule),
+  );
+  const configuredSelectors = new Set(
+    contract.defectRules.map((entry) => entry.treatmentSelector),
   );
   const planes = new Set(
     contract.evidencePlanes.map((entry) => entry.plane),
@@ -197,14 +239,38 @@ export function realDerivedSemanticContractProblems(
         (rule) =>
           `real-derived semantic context rule "${rule}" has no executable authority`,
       ),
-    ...contract.defectRules
-      .filter(
-        (entry) => entry.expectedTreatment === entry.defectTreatment,
-      )
+    ...[...configuredSelectors]
+      .filter((selector) => TREATMENT_SELECTORS[selector] === undefined)
       .map(
-        (entry) =>
-          `real-derived semantic rule "${entry.id}" has no treatment mismatch`,
+        (selector) =>
+          `real-derived semantic treatment selector "${selector}" has no executable authority`,
       ),
+    ...contract.defectRules.flatMap((entry) => {
+      const values = entry.treatments.map((treatment) =>
+        treatment.selectorValue
+      );
+      const expectedValues = TREATMENT_SELECTOR_VALUES[
+        entry.treatmentSelector
+      ];
+      return [
+        ...(new Set(values).size === values.length
+          ? []
+          : [`real-derived semantic rule "${entry.id}" has duplicate treatment selectors`]),
+        ...(values.length === expectedValues.length &&
+            expectedValues.every((value) => values.includes(value))
+          ? []
+          : [`real-derived semantic rule "${entry.id}" does not cover its treatment selector`]),
+        ...entry.treatments
+          .filter(
+            (treatment) =>
+              treatment.expectedTreatment === treatment.defectTreatment,
+          )
+          .map(
+            () =>
+              `real-derived semantic rule "${entry.id}" has no treatment mismatch`,
+          ),
+      ];
+    }),
   ];
 }
 
@@ -212,6 +278,8 @@ export function pendingActionProblems(item: RealDerivedCase): string[] {
   const action = item.replayPayload.liquidity.pendingAction;
   const values = [
     action.actionRef,
+    action.accountRef,
+    action.householdRef,
     action.actionKind,
     action.actionState,
     action.direction,

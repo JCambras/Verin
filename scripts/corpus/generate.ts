@@ -219,6 +219,9 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
   const clock = world.clock;
   const caseId = corpusCaseId(corpusCase.key);
   const household = byKey(world.households).get(corpusCase.householdRef)!;
+  const sourceAccount = byKey(world.accounts).get(
+    corpusCase.request.sourceAccountRef,
+  )!;
   const casePath = `case/${caseId}`;
   const settlementEarliest = addBusinessDays(clock.asOf, SETTLEMENT_BUSINESS_DAYS, clock.transitions);
 
@@ -318,6 +321,16 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
         corpusCase.request.discriminator,
       ),
     },
+    thresholdPolicy: corpusCase.thresholdPolicy ?? null,
+    taxReviewState:
+      corpusCase.taxReviewState ??
+      (sourceAccount.taxClass === "retirement"
+        ? "completed"
+        : "not-required"),
+    outcomes: sortedBy(
+      corpusCase.outcomes,
+      (outcome) => outcome.defectClassId,
+    ),
     reservations,
     records: caseSubgraph(world, corpusCase),
     evidence,

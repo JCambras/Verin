@@ -15,20 +15,40 @@ export const REAL_DERIVED_SEMANTIC_CONTRACT_FILE =
 export const REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION =
   "verin-real-derived-semantics-digest/1.0.0";
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
+  "scripts/corpus/semantic-contract.ts",
   "scripts/corpus/real-derived-semantics.ts",
+  "scripts/corpus/synthetic-semantics.ts",
   "scripts/corpus/real-derived-topology.ts",
   "scripts/corpus/scrub-contract.ts",
   "scripts/corpus/pending-actions.ts",
   "scripts/corpus/real-derived-policy.ts",
 ] as const;
 
+export const TREATMENT_SELECTOR_VALUES = {
+  fixed: ["fixed"],
+  "authority-state": ["effective", "ineffective"],
+  "reserve-state": ["modeled-scalar", "modeled-segmented", "missing"],
+  "threshold-comparator": ["strict", "inclusive"],
+} as const;
+
+const TreatmentSelectorSchema = z.enum([
+  "fixed",
+  "authority-state",
+  "reserve-state",
+  "threshold-comparator",
+]);
+
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.1.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.2.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    expectedTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-    defectTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    treatmentSelector: TreatmentSelectorSchema,
+    treatments: z.array(z.strictObject({
+      selectorValue: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+      expectedTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+      defectTreatment: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    })).min(1),
   })).min(1),
   evidencePlanes: z.array(z.strictObject({
     plane: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -53,6 +73,9 @@ const SemanticContractSchema = z.strictObject({
     instructionConflict: z.literal(
       "binds-request-household-instructions-and-impacted-subjects",
     ),
+    pendingAction: z.literal(
+      "must-resolve-to-request-household-and-selected-funding",
+    ),
   }),
   outcomes: z.strictObject({
     completeness: z.literal(
@@ -60,12 +83,32 @@ const SemanticContractSchema = z.strictObject({
     ),
     defect: z.literal("context-and-mismatched-treatment"),
     control: z.literal("all-observed-treatments-match-expected"),
+    synthetic: z.literal("context-requires-typed-treatment"),
   }),
 });
 
 export type RealDerivedSemanticContract = z.infer<
   typeof SemanticContractSchema
 >;
+export type SemanticDefectRule =
+  RealDerivedSemanticContract["defectRules"][number];
+export type SemanticTreatment =
+  SemanticDefectRule["treatments"][number];
+
+export function semanticTreatment(
+  rule: SemanticDefectRule,
+  selectorValue: string,
+): SemanticTreatment {
+  const treatment = rule.treatments.find(
+    (candidate) => candidate.selectorValue === selectorValue,
+  );
+  if (treatment === undefined) {
+    throw new Error(
+      `semantic rule "${rule.id}" has no treatment for selector "${selectorValue}"`,
+    );
+  }
+  return treatment;
+}
 
 export interface RealDerivedSemanticContractBinding {
   readonly version: string;

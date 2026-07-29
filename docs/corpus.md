@@ -102,8 +102,9 @@ Real-derived funding is never inferred from every available account. The payload
 duplicate-free `selectedFundingRefs` set. Each selected account resolves exactly once, belongs to the
 request household, shares an owner with the request source account, carries a supported tax class, and
 contributes to one aggregate sufficiency check over the request amount, required reserve, and any reducing
-pending action. Tax risk is evaluated over exactly that selected set, and any selected retirement source
-requires a completed tax review.
+pending action. A pending action carries entity-kind-scoped household and account references, names a
+selected account in the request household, and has exact action evidence. Tax risk is evaluated over
+exactly the selected funding set, and any selected retirement source requires a completed tax review.
 
 ---
 
@@ -151,13 +152,14 @@ corpus with no clean controls fails validation, and coverage computed without co
 meaningless - a correct detector flagging it would read as a false positive. Synthetic controls are
 checked against the mechanical signature of every taxonomy class over their emitted subgraph.
 
-For real-derived intake, an awkward fact or boundary is context, not a defect. Each supported class
+In both corpus partitions, an awkward fact or boundary is context, not a defect. Each supported class
 records a typed expected treatment and observed treatment. A defect exists only when the relevant
 context is present, the expected treatment matches the signed class rule, and the observed treatment is
-that class's closed defective treatment. A clean control must record the expected treatment for every
-class, including verified cross-household destinations, segmented reserves, valid holds, exact
-thresholds, and time-zone boundaries. Missing, duplicate, unknown, or context-free treatment assertions
-fail closed.
+that class's closed defective treatment. A synthetic defect lacking exactly one matching treatment
+mismatch fails closed. A clean control records expected treatment for every active class, including
+effective cross-household authority, correctly treated owner-beneficiary context, segmented or missing
+reserves, valid holds, exact thresholds, and time-zone boundaries. Missing, duplicate, unknown, or
+context-free treatment assertions fail closed.
 
 Instruction-conflict context is also request-bound. Its witness names the exact request and household,
 each referenced instruction belongs to that household, and impacted subjects must intersect the
@@ -266,11 +268,12 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.6.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.7.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.1.0`: the strict declarative context,
-expected-treatment, defective-treatment, topology, and outcome registry,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.2.0`: the strict declarative context,
+selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
+partitions,
 its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers
 its identifier, exact bytes, and canonical semantic projection. Relabeling an inventory entry, changing
 what a defect class means, changing a freshness window, changing either schema, or changing a replay

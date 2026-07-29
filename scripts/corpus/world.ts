@@ -10,8 +10,13 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import {
+  CasesSpecSchema,
+  type CasesSpec,
+} from "./case-spec";
 import { PENDING_ACTION_KINDS, PENDING_ACTION_STATES } from "./pending-actions";
 import { parseStrictJson } from "./strict-json";
+export type { CaseLabel, CaseSpec, CasesSpec } from "./case-spec";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 export const CORPUS_DIR = join(REPO_ROOT, "fixtures/corpus");
@@ -237,47 +242,6 @@ export function requireLegalHoldSubject(hold: LegalHoldSpec): LegalHoldSubject {
   return subject;
 }
 
-const LabelSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("defect"), defectClassId: Slug }),
-  z.strictObject({ kind: z.literal("clean-control"), controlRationale: z.string().min(1) }),
-]);
-export type CaseLabel = z.infer<typeof LabelSchema>;
-
-const CaseSchema = z.strictObject({
-  key: Slug,
-  title: z.string().min(1),
-  firmId: Slug,
-  householdRef: Slug,
-  assumptionIds: z.array(z.string().regex(/^AS-\d{2}$/)),
-  label: LabelSchema,
-  request: z.strictObject({
-    sourceAccountRef: Slug,
-    destinationRef: Slug,
-    amountMinor: z.int().positive(),
-    discriminator: Slug,
-    deadline: Instant,
-  }),
-  evidence: z.array(z.string().regex(/^[a-z-]+\/[a-z0-9-]+$/)).min(1),
-  conflictFamilies: z.array(Slug).min(1),
-});
-export type CaseSpec = z.infer<typeof CaseSchema>;
-
-export const CasesSpecSchema = z.strictObject({
-  specVersion: z.string().min(1),
-  note: z.string().min(1),
-  assumptions: z
-    .array(
-      z.strictObject({
-        id: z.string().regex(/^AS-\d{2}$/),
-        structure: z.string().min(1),
-        falsifies: z.string().min(1),
-      }),
-    )
-    .min(1),
-  cases: z.array(CaseSchema).min(1),
-});
-export type CasesSpec = z.infer<typeof CasesSpecSchema>;
-
 export interface LoadedSpec {
   readonly world: WorldSpec;
   readonly cases: CasesSpec;
@@ -445,6 +409,17 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   for (const corpusCase of cases.cases) {
     need(households, corpusCase.householdRef, `cases[${corpusCase.key}].householdRef`);
     need(accounts, corpusCase.request.sourceAccountRef, `cases[${corpusCase.key}].request.sourceAccountRef`);
+    const sourceAccount = world.accounts.find(
+      (account) => account.key === corpusCase.request.sourceAccountRef,
+    );
+    if (
+      sourceAccount !== undefined &&
+      sourceAccount.householdRef !== corpusCase.householdRef
+    ) {
+      problems.push(
+        `cases[${corpusCase.key}].request.sourceAccountRef belongs to household "${sourceAccount.householdRef}", not request household "${corpusCase.householdRef}"`,
+      );
+    }
     need(instructions, corpusCase.request.destinationRef, `cases[${corpusCase.key}].request.destinationRef`);
     for (const id of corpusCase.assumptionIds) {
       need(assumptions, id, `cases[${corpusCase.key}].assumptionIds`);
@@ -457,6 +432,13 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
     }
     for (const dup of duplicates(corpusCase.conflictFamilies)) {
       problems.push(`cases[${corpusCase.key}].conflictFamilies: duplicate family "${dup}"`);
+    }
+    for (const dup of duplicates(
+      corpusCase.outcomes.map((outcome) => outcome.defectClassId),
+    )) {
+      problems.push(
+        `cases[${corpusCase.key}].outcomes: duplicate defect class "${dup}"`,
+      );
     }
     for (const ref of corpusCase.evidence) {
       const [kind = "", recordKey = ""] = ref.split("/");

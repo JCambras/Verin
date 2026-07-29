@@ -38,6 +38,8 @@ import {
   REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
   loadRealDerivedSemanticContract,
   realDerivedSemanticContractBinding,
+  semanticTreatment,
+  type SemanticDefectRule,
 } from "../../../scripts/corpus/semantic-contract";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";
 import {
@@ -70,6 +72,7 @@ import {
   realDerivedProblems,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
+import { syntheticSemanticProblems } from "../../../scripts/corpus/synthetic-semantics";
 import { specReferenceProblems } from "../../../scripts/corpus/world";
 
 /**
@@ -138,17 +141,41 @@ const TIME_ZONE_RULE_REF = `time-zone-rule:${TOKEN}`;
 const EVIDENCE_SOURCE_REF = `evidence-source:${TOKEN}`;
 const EVIDENCE_SOURCE_REF_ALT = `evidence-source:${TOKEN_ALT}`;
 const semanticContract = loadRealDerivedSemanticContract();
+const treatmentSelectorValue = (
+  rule: SemanticDefectRule,
+  payload: Record<string, any>,
+): string => {
+  switch (rule.treatmentSelector) {
+    case "fixed":
+      return "fixed";
+    case "authority-state":
+      return payload.authority.authorityState === "effective"
+        ? "effective"
+        : "ineffective";
+    case "reserve-state":
+      return payload.liquidity.reserveState;
+    case "threshold-comparator":
+      return payload.policy.thresholdComparator;
+  }
+};
 const treatmentOutcomes = (
+  payload: Record<string, any>,
   defectClassId?: string,
 ): Array<Record<string, string>> =>
-  semanticContract.defectRules.map((entry) => ({
-    defectClassId: entry.id,
-    expectedTreatment: entry.expectedTreatment,
-    observedTreatment:
-      entry.id === defectClassId
-        ? entry.defectTreatment
-        : entry.expectedTreatment,
-  }));
+  semanticContract.defectRules.map((entry) => {
+    const treatment = semanticTreatment(
+      entry,
+      treatmentSelectorValue(entry, payload),
+    );
+    return {
+      defectClassId: entry.id,
+      expectedTreatment: treatment.expectedTreatment,
+      observedTreatment:
+        entry.id === defectClassId
+          ? treatment.defectTreatment
+          : treatment.expectedTreatment,
+    };
+  });
 const canonicalFixtureBytes = (value: unknown): string => {
   const result = canonicalJson(value as any);
   if (!result.ok) throw result.error;
@@ -199,7 +226,7 @@ const realDerivedCase = (
       : label?.kind === "clean-control"
         ? undefined
         : "destination-integrity-defect";
-  return {
+  const item = {
   caseId: "RD-00112233445566aa",
   corpusVersion: "2026.07.0",
   partition: "real-derived",
@@ -235,7 +262,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.2.0",
+    schemaVersion: "verin-real-derived-replay/1.3.0",
     request: {
       requestRef: REQUEST_REF,
       householdRef: HOUSEHOLD_REF,
@@ -281,6 +308,8 @@ const realDerivedCase = (
       withdrawalSegmentsMinor: [1_000],
       pendingAction: {
         actionRef: null,
+        accountRef: null,
+        householdRef: null,
         actionKind: null,
         actionState: null,
         direction: null,
@@ -305,6 +334,7 @@ const realDerivedCase = (
       policyVersionRef: POLICY_VERSION_REF,
       evidenceSourceRef: EVIDENCE_SOURCE_REF,
       thresholdMinor: 5_000,
+      thresholdComparator: "strict",
       thresholdComparison: "above",
       restrictionRef: null,
       restrictionEvidenceSourceRef: null,
@@ -313,7 +343,7 @@ const realDerivedCase = (
       legalHoldEvidenceSourceRef: null,
       legalHoldScope: "none",
     },
-    taxReviewState: "completed",
+    taxReviewState: "not-required",
     taxReviewEvidenceSourceRef: EVIDENCE_SOURCE_REF,
     instructionConflict: {
       conflictState: "none",
@@ -329,7 +359,7 @@ const realDerivedCase = (
       transitionState: "daylight",
       evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
-    outcomes: treatmentOutcomes(defectClassId),
+    outcomes: [],
     evidenceRefs: evidence.map((entry) => String(entry.id)),
     execution: {
       reservationKeys: [
@@ -343,6 +373,9 @@ const realDerivedCase = (
   reservations: [{ family: "liquidity", conflictKey: "conflict:tok:0123456789abcdef:liquidity" }],
   ...overrides,
   };
+  const payload = item.replayPayload as Record<string, any>;
+  payload.outcomes = treatmentOutcomes(payload, defectClassId);
+  return item;
 };
 
 const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> => {
@@ -427,6 +460,8 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "pending-activity-miscount":
       payload.liquidity.pendingAction = {
         actionRef: PENDING_ACTION_REF,
+        accountRef: ACCOUNT_REF,
+        householdRef: HOUSEHOLD_REF,
         actionKind: "outgoing-distribution",
         actionState: "blocked",
         direction: "outgoing",
@@ -512,6 +547,7 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
       payload.taxReviewState = "required-pending";
       break;
   }
+  payload.outcomes = treatmentOutcomes(payload, defectClassId);
   return item;
 };
 
@@ -950,7 +986,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.1.0",
-      "verin-real-derived-replay/1.2.0",
+      "verin-real-derived-replay/1.3.0",
     ]);
     expect(
       corpusDigest(
@@ -1053,28 +1089,60 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ];
   };
 
-  it.each([
-    ["CS-stale-model-assignment-evidence", "cannot carry evidence-staleness-unnoticed"],
-    ["CS-authority-lapse-inside-retrieval", "that is evidence-interval-collapse"],
-    ["CS-expired-and-future-restrictions", "that is restriction-lifecycle-error"],
-    ["CS-duplicate-last-four-destinations", "that is destination-integrity-defect"],
-    ["CS-deadline-precedes-decision", "that is deadline-feasibility-error"],
-  ])("a defect case relabeled as a clean control is caught: %s", (caseId, expected) => {
+  it.each(
+    real.cases
+      .filter((item) => item.label.kind === "defect")
+      .map((item) => [item.caseId, item.label.defectClassId] as const),
+  )("a defect case relabeled as a clean control is caught: %s", (caseId, expected) => {
     const problems = cleanControlProblems(relabeledAsControl(caseId));
     expect(problems.join("\n"), `${caseId} passed as a control`).toContain(expected);
   });
 
-  it("a control that still asserts an awkward structure, or cites a record absent from its own subgraph, is flagged", () => {
-    const asserting = cleanControlProblems(relabeledAsControl("CS-position-scoped-legal-hold"));
-    expect(asserting.some((p) => p.includes("a control carries none by definition"))).toBe(true);
+  it("a synthetic defect without its typed treatment mismatch fails closed", () => {
+    const defect = structuredClone(
+      real.cases.find((item) => item.label.kind === "defect")!,
+    );
+    const outcome = defect.outcomes.find(
+      (candidate) =>
+        candidate.defectClassId === defect.label.defectClassId,
+    )!;
+    outcome.observedTreatment = outcome.expectedTreatment;
+    expect(syntheticSemanticProblems([defect]).join("\n")).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+  });
+
+  it("correctly treated awkward controls stay clean while dangling graph evidence is rejected", () => {
+    const awkwardControls = real.cases.filter((item) =>
+      [
+        "CS-cross-household-signer",
+        "CS-trust-owner-and-beneficiary",
+      ].includes(item.caseId)
+    );
+    expect(awkwardControls).toHaveLength(2);
+    expect(cleanControlProblems(awkwardControls)).toEqual([]);
 
     const control = JSON.parse(JSON.stringify(real.cases.find((c) => c.caseId === "CS-clean-fresh-authority"))) as
       (typeof real.cases)[number];
-    expect(cleanControlProblems([control])).toEqual([]);
     control.records.authorizedSigners = [];
     expect(
-      cleanControlProblems([control]).some((p) => p.includes("absent from the case's own subgraph")),
+      evidenceResolutionProblems([control]).some((problem) =>
+        problem.includes("/evidence.") && problem.includes("resolves to 0")
+      ),
     ).toBe(true);
+  });
+
+  it("a request source account must belong to the request household", () => {
+    const world = structuredClone(real.spec.world);
+    const cases = structuredClone(real.spec.cases);
+    const corpusCase = cases.cases[0]!;
+    const foreignAccount = world.accounts.find(
+      (account) => account.householdRef !== corpusCase.householdRef,
+    )!;
+    corpusCase.request.sourceAccountRef = foreignAccount.key;
+    expect(specReferenceProblems(world, cases).join("\n")).toContain(
+      `belongs to household "${foreignAccount.householdRef}", not request household "${corpusCase.householdRef}"`,
+    );
   });
 
   it("a missing evidence collection, dangling subject, multi-resolving subject, and duplicate spec key are rejected", () => {
@@ -1479,7 +1547,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.1.0",
+      "verin-real-derived-semantics/1.2.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1499,6 +1567,9 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/real-derived-topology.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/synthetic-semantics.ts",
     );
   });
 
@@ -1520,8 +1591,8 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     const changedData = realDerivedSemanticContractBinding(
       dataBytes.replace(
-        '"authority-not-effective"',
-        '"authority-not-effective-v2"',
+        '"authority-boundary"',
+        '"authority-boundary-v2"',
       ),
       authorityBytes,
     );
@@ -1830,6 +1901,211 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-wrong-authority-subject.json",
       ).join("\n"),
     ).toContain("authority evidence");
+  });
+
+  it("pending actions bind to the request household, selected account, and exact evidence", () => {
+    const mutations: Array<(item: Record<string, any>) => void> = [
+      (item) => {
+        item.replayPayload.liquidity.pendingAction.householdRef =
+          HOUSEHOLD_REF_ALT;
+        item.subjects.push(HOUSEHOLD_REF_ALT);
+      },
+      (item) => {
+        item.replayPayload.liquidity.pendingAction.accountRef =
+          ACCOUNT_REF_ALT;
+        item.subjects.push(ACCOUNT_REF_ALT);
+      },
+      (item) => {
+        const evidence = item.evidence.find(
+          (entry: Record<string, unknown>) =>
+            entry.evidenceKind === "pending-actions",
+        );
+        evidence.subjectRef = ACCOUNT_REF;
+      },
+      (item) => {
+        const evidence = item.evidence.find(
+          (entry: Record<string, unknown>) =>
+            entry.evidenceKind === "pending-actions",
+        );
+        evidence.sourceRef = EVIDENCE_SOURCE_REF_ALT;
+      },
+    ];
+    for (const mutate of mutations) {
+      const item = realDerivedDefectCase(
+        "pending-activity-miscount",
+      ) as Record<string, any>;
+      mutate(item);
+      expect(
+        realDerivedCaseProblems(
+          item,
+          classes,
+          "real-derived/RD-invalid-pending-topology.json",
+        ).join("\n"),
+      ).toMatch(/pending action|pending-action evidence/);
+    }
+  });
+
+  it("a settling incoming transfer uses the shared nonreducing pending authority", () => {
+    const item = realDerivedDefectCase(
+      "pending-activity-miscount",
+    );
+    const action = (item.replayPayload as Record<string, any>).liquidity
+      .pendingAction;
+    Object.assign(action, {
+      actionKind: "incoming-transfer",
+      actionState: "settling",
+      direction: "incoming",
+      liquidityClass: "credit",
+      reducesEffectiveLiquidity: false,
+      increasesAvailableLiquidity: false,
+    });
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-settling-incoming.json",
+      ),
+    ).toEqual([]);
+  });
+
+  it("retirement treatment requires a completed review or an explicit mismatch", () => {
+    const defect = realDerivedDefectCase("tax-consequence-blindness");
+    expect(
+      realDerivedCaseProblems(
+        defect,
+        classes,
+        "real-derived/RD-tax-pending.json",
+      ),
+    ).toEqual([]);
+
+    const contradicted = structuredClone(defect);
+    (contradicted.replayPayload as Record<string, any>).taxReviewState =
+      "completed";
+    expect(
+      realDerivedCaseProblems(
+        contradicted,
+        classes,
+        "real-derived/RD-tax-completed-mismatch.json",
+      ).join("\n"),
+    ).toContain("claims a defect treatment without its required context");
+
+    const impossible = structuredClone(defect);
+    (impossible.replayPayload as Record<string, any>).taxReviewState =
+      "not-required";
+    expect(
+      realDerivedCaseProblems(
+        impossible,
+        classes,
+        "real-derived/RD-tax-not-required.json",
+      ).join("\n"),
+    ).toContain("selected retirement funding cannot declare tax review not required");
+  });
+
+  it("reserve treatments distinguish scalar, segmented, and missing schedules", () => {
+    const segmented = realDerivedDefectCase(
+      "liquidity-reserve-miscalculation",
+    );
+    const segmentedOutcome = (
+      (segmented.replayPayload as Record<string, any>).outcomes as Array<
+        Record<string, string>
+      >
+    ).find(
+      (outcome) =>
+        outcome.defectClassId === "liquidity-reserve-miscalculation",
+    )!;
+    expect(segmentedOutcome).toMatchObject({
+      expectedTreatment: "calculate-segmented-reserve",
+      observedTreatment: "calculate-scalar-reserve",
+    });
+    expect(
+      realDerivedCaseProblems(
+        segmented,
+        classes,
+        "real-derived/RD-segmented-reserve.json",
+      ),
+    ).toEqual([]);
+
+    const missing = structuredClone(segmented);
+    const missingPayload = missing.replayPayload as Record<string, any>;
+    missingPayload.liquidity.reserveState = "missing";
+    missingPayload.liquidity.reserveRequiredMinor = null;
+    missingPayload.liquidity.withdrawalSegmentsMinor = [];
+    missingPayload.outcomes = treatmentOutcomes(
+      missingPayload,
+      "liquidity-reserve-miscalculation",
+    );
+    expect(
+      missingPayload.outcomes.find(
+        (outcome: Record<string, string>) =>
+          outcome.defectClassId === "liquidity-reserve-miscalculation",
+      ),
+    ).toMatchObject({
+      expectedTreatment: "mark-reserve-unavailable",
+      observedTreatment: "invent-reserve-from-missing-schedule",
+    });
+    expect(
+      realDerivedCaseProblems(
+        missing,
+        classes,
+        "real-derived/RD-missing-reserve.json",
+      ),
+    ).toEqual([]);
+  });
+
+  it("threshold treatment follows the signed strict or inclusive comparator", () => {
+    const strict = realDerivedDefectCase("threshold-boundary-error");
+    const strictPayload = strict.replayPayload as Record<string, any>;
+    expect(
+      strictPayload.outcomes.find(
+        (outcome: Record<string, string>) =>
+          outcome.defectClassId === "threshold-boundary-error",
+      ),
+    ).toMatchObject({
+      expectedTreatment: "apply-strict-threshold-boundary",
+      observedTreatment: "apply-inclusive-threshold-boundary",
+    });
+    expect(
+      realDerivedCaseProblems(
+        strict,
+        classes,
+        "real-derived/RD-strict-threshold.json",
+      ),
+    ).toEqual([]);
+
+    const inclusive = structuredClone(strict);
+    const inclusivePayload = inclusive.replayPayload as Record<string, any>;
+    inclusivePayload.policy.thresholdComparator = "inclusive";
+    inclusivePayload.outcomes = treatmentOutcomes(
+      inclusivePayload,
+      "threshold-boundary-error",
+    );
+    expect(
+      inclusivePayload.outcomes.find(
+        (outcome: Record<string, string>) =>
+          outcome.defectClassId === "threshold-boundary-error",
+      ),
+    ).toMatchObject({
+      expectedTreatment: "apply-inclusive-threshold-boundary",
+      observedTreatment: "apply-strict-threshold-boundary",
+    });
+    expect(
+      realDerivedCaseProblems(
+        inclusive,
+        classes,
+        "real-derived/RD-inclusive-threshold.json",
+      ),
+    ).toEqual([]);
+
+    const unsignedComparator = structuredClone(strict);
+    delete (unsignedComparator.replayPayload as Record<string, any>).policy
+      .thresholdComparator;
+    expect(
+      realDerivedCaseProblems(
+        unsignedComparator,
+        classes,
+        "real-derived/RD-missing-threshold-comparator.json",
+      ).join("\n"),
+    ).toContain("schema validation failed");
   });
 
   it("the real-derived semantic registry exactly covers the signed taxonomy", () => {

@@ -504,6 +504,11 @@ function specWithInsertedHousehold(spec: LoadedSpec): LoadedSpec {
           discriminator: "1000-2026-09-10",
           deadline: "2026-09-10T13:00:00.000Z",
         },
+        outcomes: [{
+          defectClassId: "destination-integrity-defect",
+          expectedTreatment: "accept-verified-unique-destination",
+          observedTreatment: "accept-verified-unique-destination",
+        }],
         evidence: ["balance/smiths-west-taxable", "bank-instruction/smiths-west-primary"],
         conflictFamilies: ["liquidity"],
       }),

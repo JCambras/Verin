@@ -237,6 +237,25 @@ function fundingProblems(item: RealDerivedCase): string[] {
       "selected funding aggregate does not cover request, reserve, and pending reductions",
     );
   }
+  const retirementSelected = selected.some(
+    (source) => source.sourceTaxClass === "retirement",
+  );
+  if (
+    retirementSelected &&
+    payload.taxReviewState === "not-required"
+  ) {
+    problems.push(
+      "selected retirement funding cannot declare tax review not required",
+    );
+  }
+  if (
+    !retirementSelected &&
+    payload.taxReviewState !== "not-required"
+  ) {
+    problems.push(
+      "tax review state must be not-required when selected funding has no retirement source",
+    );
+  }
   return problems;
 }
 
@@ -339,6 +358,21 @@ function relationshipProblems(item: RealDerivedCase): string[] {
   ) {
     problems.push(
       "pending action reference and evidence source must be present together",
+    );
+  }
+  if (
+    action.actionRef !== null &&
+    (
+      action.householdRef !== payload.request.householdRef ||
+      action.accountRef === null ||
+      !payload.liquidity.selectedFundingRefs.includes(action.accountRef) ||
+      payload.liquidity.sources.filter(
+        (source) => source.accountRef === action.accountRef,
+      ).length !== 1
+    )
+  ) {
+    problems.push(
+      "pending action must belong to the request household and exactly one selected funding account",
     );
   }
   return problems;
