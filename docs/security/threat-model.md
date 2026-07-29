@@ -9,9 +9,11 @@ it is listed as an explicit gap with an owner and date (never omitted).
 
 ## Assets & trust boundaries
 
-- **Identity/session** — session cookie ↔ server-side session record (`resolveSession` is the only reader).
-- **Authorization** — RBAC checked server-side at the port; `org_id` scoping on every query; a sealed
-  `TenantContext` and per-action `ActionGrant` gate every repository/port call and governed action (v3 §15).
+- **Identity/session** - session cookie ↔ server-side session record. Read-only callers use
+  `resolveSession`; request handlers share one memoized `requirePrincipal` resolution, which may renew and rotate.
+- **Authorization** - RBAC checked server-side at the port. Sealed tenant authority and `org_id` predicates
+  scope ordinary repository/port calls; exact capability-keyed, pre-auth, and readiness escapes are reviewed.
+  A per-action `ActionGrant` gates every governed action (v3 §15).
 - **Audit chain** — append-only, hash-chained `audit_log`; the "prove it wasn't edited" asset.
 - **e-sign webhook** — an unauthenticated-by-network external callback that resumes a suspended flow.
 - **House-CRM store** — the system of record (identity PII lives here).
@@ -54,29 +56,34 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   `audited-write-required` (actor asserted).
 
 ### I — Information disclosure
-- **T-I1 (High): PII leaks into logs/audit/API bodies, or into an LLM prompt.** *Control:* PII boundary — scrub
-  at audit + response boundaries; logs/traces carry only the sealed observability vocabulary (an un-listed
-  value degrades to `[REDACTED]`), and record-id fields accept only the canonical machine-id shape; raw
+- **T-I1 (High): PII leaks into logs/audit/API bodies, or into an LLM prompt.** *Control:* PII boundary - scrub
+  at the audit boundary and require `pii.view` for governed API reads; logs/traces carry only the closed
+  observability vocabulary (an unlisted value degrades to `[REDACTED]`). Record-id fields do not trust
+  UUID shape alone: direct cryptographic mints retain sealed generated provenance, while request-derived
+  UUIDs become tenant- and field-scoped HMAC digests under a domain-separated secret-derived key; raw
   `console.*` is banned. PII-bearing types carry a `PIIBearing` marker and no such type is import-reachable
   from `src/infrastructure/llm/`; anything projected to a model is `Tokenized<T>`, constructible only through
   the scrubber factory. Request text comes from a reviewed static-template factory whose exact sensitive
   spans are masked, and one separator-aware account classifier drives extraction, masking, and residual
-  refusal (ADR-0006, ADR-0031). *Fence:* PII-not-in-audit-store,
+  refusal (ADR-0006, ADR-0031). *Fence:* `no-pii-in-audit-store`,
   no-console, `observability-vocabulary`, `llm-pii-boundary`, `tokenized-factory-only`.
-- **T-I2 (High): cross-tenant read.** *Exploit:* org A reads org B's rows. *Control:* `org_id` filter on
-  every query + access scope; a sealed `TenantContext` (unforgeable brand) is required on every repository/port
-  signature, so a call with no tenant context cannot compile or parse. *Fence:* `org-id-required`,
-  `tenant-context-required` (Phase B; v3 §15.2).
-- **T-I3 (Medium): internal error detail leaks to clients.** *Control:* `toResponse` returns code+message
-  only, no stack/context (ADR-0002).
+- **T-I2 (High): cross-tenant read.** *Exploit:* org A reads org B's rows. *Control:* ordinary tenant-row
+  queries carry an `org_id` predicate and sealed tenant authority, so an unscoped call cannot compile or
+  parse. Exact capability-keyed loads are registered; related rows must agree on organization before work,
+  and resume validates its caller context before loading execution state. Pre-auth identity and
+  deployment-readiness reads are separately reviewed. *Fence:*
+  `org-id-required`, `tenant-context-required` (Phase B; v3 §15.2).
+- **T-I3 (Medium): internal error detail leaks to clients.** *Control:* `toResponse` normalizes `unknown`;
+  only a factory-authenticated message survives, while a recognized foreign code receives a static
+  fallback. Message/context accessors, stacks, and internal context are never returned (ADR-0002).
 - **T-I4 (High): a secret is committed or a live org domain ships in a doc.** *Control:* gitleaks + the
   no-secret-fallback/no-live-org-domain fence + placeholder-only `.env.example`. *Fence:* `secret-scan`,
   `no-secret-fallback`.
 - **T-I5 (High): a config secret leaks into a config dump, log line, trace, or exception message at runtime.**
-  *Control:* config secrets leave the config module only as `SecretValue` — the raw string is held off-object (a
-  `WeakMap`), so serialization, spread, and `util.inspect` see only `[REDACTED]`; the raw value is read solely
-  through the free function `revealSecret`, restricted to the fence-allowlisted HMAC consumers. *Fence:*
-  `no-secret-fallback` (SecretValue containment; v3 §15.4).
+  *Control:* config secrets leave the config module only as `SecretValue` - the raw string is held off-object
+  in a `WeakMap`. Serialization and `util.inspect` yield `[REDACTED]`, while spread and enumeration expose
+  no raw property. The raw value is read solely through the free function `revealSecret`, restricted to
+  the fence-allowlisted HMAC consumers. *Fence:* `no-secret-fallback` (SecretValue containment; v3 §15.4).
 
 ### D — Denial of service
 - **T-D1 (Medium): unbounded request body / query.** *Control:* request size limits; bounded queries;

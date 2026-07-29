@@ -12,7 +12,7 @@ import {
   type ObservabilityId,
   type RecordObservabilityIdField,
 } from "@domain/observability/safe-values";
-
+/** Convert a client UUID to stable, tenant/field-scoped, non-reversible correlation. */
 export function keyedObservabilityId(
   field: RecordObservabilityIdField,
   tenant: TenantContext,

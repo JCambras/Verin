@@ -2,9 +2,9 @@
  * Generic workflow engine with suspend / await-external-input / resume (ADR-0011,
  * charter #6) — Iris's admitted largest gap, in the core contract before any flow
  * is authored. A step may `suspend` (returning a resume token) instead of running
- * to completion; the engine persists the continuation and returns. An external
- * event (a webhook) calls resumeFlow(token, payload) to run the remaining steps.
- * Resume is idempotent at the write layer, so replay has exactly-once effect.
+ * to completion; the engine persists the continuation and returns. Resume takes
+ * a sealed TenantContext, validates it before the capability load, then checks
+ * row ownership. Write-layer idempotency gives replay exactly-once effect.
  */
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import type { ActionGrant } from "@contracts/authz";
@@ -27,10 +27,10 @@ export interface ExecutionState extends PIIBearing {
 
 /**
  * Port: persist/load flow continuations (implemented in infrastructure).
- * Every call carries the sealed TenantContext (v3 §15.2) except loadByToken —
- * the webhook resume path is capability-keyed by the unguessable token and the
- * tenant comes FROM the row (the same reviewed escape as the org-id fence);
- * resumeFlow re-checks the loaded row against the caller's tenant.
+ * Every call carries sealed tenant authority (TenantContext or a pii.view grant)
+ * except loadByToken. That webhook path is capability-keyed by the unguessable
+ * token; resumeFlow validates its context before loading, then checks the row's
+ * organization before any step or write.
  */
 export interface ExecutionStore extends PIIBearing {
   create(state: ExecutionState, tenant: TenantContext): Promise<void>;

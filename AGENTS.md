@@ -82,7 +82,11 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `db.ts` serializes all ops with a mutex.
 - **Schema = versioned migrations (D-016/D-029), not in-place DDL.** `migrations.ts` is an ordered
   `MIGRATIONS` list applied by `runMigrations` (records each version in `schema_migrations`). A schema
-  change APPENDS `{version, name, sql}`; never edit a shipped migration's DDL. Temporal columns are
+  change APPENDS `{version, name, sql}`; never edit a shipped migration's DDL. Before mutation, the
+  runner proves the ledger is an exact contiguous `(version, name)` prefix of that list and proves a
+  missing/empty ledger belongs to a virgin managed schema. All pending versions share one transaction;
+  each read-only preflight runs immediately before its DDL, and tenant-edge orphans are reported for
+  operator repair, never silently rewritten. Temporal columns are
   `timestamptz`, but the app boundary stays ISO strings BOTH ways: writers emit `toISOString()`; a read
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
@@ -124,7 +128,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
 - **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
-  (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction`/`actorRefOf` in
+  (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;
+  `authorizeGovernedAction`/`actorRefOf` in
   `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
   `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`;
   `authorityObservabilityId`/`generatedObservabilityId`/`keyedDigestObservabilityId`/
@@ -184,7 +189,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   accept. A `string` there is a build failure - an unlisted value degrades to `[REDACTED]` in the very
   log line an operator needs, and the vocabulary fence flags a dynamic attribute value the same way it
   flags a dynamic span name. Client-supplied record IDs parse through `parseMachineRecordId` before
-  repository work; observability record-id fields accept only the same canonical UUID shape.
+  repository work. Log/trace record ids do NOT trust UUID shape alone: direct cryptographic mints use
+  `generatedObservabilityId`, while request-derived UUIDs pass through `keyedObservabilityId`, which
+  emits a tenant- and field-scoped HMAC digest under a domain-separated purpose key. A failed mint
+  redacts rather than aborting failure reporting; the governed audit chain retains the raw record id.
 - **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
   `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
   (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an

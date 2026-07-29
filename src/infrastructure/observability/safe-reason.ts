@@ -43,7 +43,7 @@ function readErrorProperty(
     return { ok: false, value: undefined };
   }
 }
-
+/** Snapshot trusted application or fixed-shape driver metadata without reading error prose. */
 export function classifyErrorMetadata(error: unknown): ErrorMetadataClassification {
   if (typeof error !== "object" || error === null) return UNEXPECTED_ERROR_METADATA;
   const trusted = normalizeAppError(error, "trusted-only");
@@ -75,7 +75,7 @@ export function classifyErrorMetadata(error: unknown): ErrorMetadataClassificati
       : "unexpected-error",
   });
 }
-
+/** Closed operational reason safe for the observability vocabulary. */
 export function safeReason(error: unknown): string {
   return classifyErrorMetadata(error).reason;
 }

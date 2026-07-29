@@ -1,12 +1,12 @@
 /**
  * ExecutionStore adapter (ADR-0011). Persists flow continuations in
  * flow_executions so a suspended flow survives across requests/process restarts —
- * the app tier stays stateless (charter #16). Every call requires the sealed
- * TenantContext (v3 §15.2, asserted at runtime — an impostor context cannot
- * parse) and every id-keyed statement filters on org_id, so cross-tenant reads
- * are impossible through this interface. loadByToken is the one capability-keyed
- * escape: the unguessable resume token scopes the row and the tenant comes FROM
- * it (resumeFlow re-checks it against the caller's tenant).
+ * the app tier stays stateless (charter #16). Calls carry sealed TenantContext
+ * or `pii.view` grant authority, and every id-keyed statement filters on org_id,
+ * so cross-tenant reads are impossible through this interface. loadByToken is
+ * the one capability-keyed escape: the unguessable resume token scopes the row,
+ * and resumeFlow validates the caller context before loading, then re-checks
+ * organization ownership before execution.
  */
 import type { SqlDb } from "./db";
 import type { ExecutionState, ExecutionStore } from "@domain/workflow/engine";

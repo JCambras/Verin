@@ -1,11 +1,11 @@
 /**
  * SecretValue - secret containment (charter #7/#15, v3 §15.4). The raw string is
- * held outside the object, never an own property, so JSON serialization, object spread,
- * Object.entries, structured logging, template interpolation, and util.inspect
- * can only ever see the redaction sentinel - a secret cannot enter config dumps,
+ * held outside the object, never an own property. Serialization, interpolation,
+ * logging, and inspection see the redaction sentinel; spread and enumeration see
+ * no raw property. A secret therefore cannot enter config dumps,
  * the ledger, traces, or exception messages by accident. Reading the raw value
  * is an explicit, greppable act through revealSecret, restricted by the
- * secret-containment fence to the modules that genuinely sign or verify.
+ * secret-containment fence to exact HMAC consumers for signing, verification, or correlation.
  */
 import { REDACTED } from "./pii";
 import { appError } from "./errors";

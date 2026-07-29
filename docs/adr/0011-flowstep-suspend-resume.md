@@ -20,8 +20,9 @@ The `FlowStep` / execution model has a first-class **suspended** state and a per
 - A step may return `suspend({ token, awaiting })` instead of completing. The engine persists the flow's
   execution state (a durable `flow_executions` record with `status = 'suspended'`, the resume `token`, and
   the accumulated context) and returns to the caller (HTTP 202 / `FLOW_SUSPENDED`).
-- An external event (a webhook, an approval, a signature) calls **`resumeFlow(token, payload)`**; the engine
-  loads the persisted continuation, validates the token, and runs the remaining steps.
+- An external event (a webhook, an approval, a signature) calls **`resumeFlow`** with a sealed
+  `TenantContext`, token, and payload. The engine validates the runtime seal before the capability-keyed
+  load, then compares organization ownership before it runs a step or writes.
 - Resume is **idempotent** (ADR-0009): resuming with the same token/payload twice yields exactly-once effect.
 
 The walking skeleton proves this end-to-end: account opening suspends at the e-sign step (fire-and-return),
@@ -53,8 +54,9 @@ committed writes instead of duplicating them.
 
 **Cross-submit dedup: UN-DEFERRED (D-027).** The flow-start route now requires a client-minted
 per-form-session UUID (`clientRequestId`), used as the executionId: a double-submit (network retry,
-second tab) resolves to the SAME execution — the route reports its current state (org-checked) instead
-of starting a duplicate. A replayed id whose execution FAILED is re-driven from its saved cursor
+second tab) resolves to the SAME execution - the route reports its current state through a tenant-scoped,
+`pii.view`-authorized read rather than starting a duplicate. A replayed id whose execution FAILED is
+re-driven from its saved cursor
 (`retryFlow` — the start-path mirror of resume's Vale V7 retry; the per-write keys make it replay-safe),
 so a transient mid-start failure is recoverable by resubmitting instead of dead-ending. Only the
 concurrent race loser's own PK conflict (SQLSTATE 23505) resolves as a replay; any other start failure

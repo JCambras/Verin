@@ -1,8 +1,8 @@
 /**
  * App-layer server helpers. The app layer may import anything (ADR-0001). Every
- * mutating route resolves the principal from the signed session cookie here — the
- * single identity read (charter #12; auth-enforcement fence). org_id and role come
- * from the session, never from the request body or a header.
+ * authenticated request resolves its principal from the signed session cookie
+ * here, once per NextRequest even when several grants are bound (charter #12;
+ * auth-enforcement fence). org_id and role come from the session, never a body or header.
  */
 import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";

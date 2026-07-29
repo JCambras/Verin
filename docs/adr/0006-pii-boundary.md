@@ -9,21 +9,23 @@
 ## Context
 
 Meridian never encrypted PII at rest and shipped a PII-access audit that was "infrastructure-complete but
-unwired." Iris placed a PII boundary at the use-case layer with `assertNoPII()` as a machine-readable spec
-and scrubbing at three crossings. The domain keeps precise PII for the UI; it is scrubbed at the edges.
+unwired." Iris placed a PII boundary at the use-case layer with a machine-readable assertion and
+edge scrubbing. The domain and system of record retain precise PII for authorized UI/API use; audit,
+operational telemetry, and model boundaries do not.
 
 ## Decision
 
-`contracts/pii.ts` defines field-name and value patterns (field names: SSN, DOB, names, account/routing
-numbers; values: separated or labeled SSN, email, NANP/E.164 phone) and `assertNoPIIValues(payload, boundary)`
-which throws `PII_VIOLATION` on any PII-shaped value that survives scrubbing. PII is scrubbed
-at three enforcement points: (1) the **audit write** boundary (before every audit entry is persisted —
-so before/after snapshots never store raw SSN/DOB); (2) any **LLM prompt** boundary (the evidence-to-LLM
-projection layer and the `Tokenized<T>` scrubber landed with prompt 6, ahead of the first model caller, as a
-reviewed charter #5 exception — ADR-0031; fences prove no `PIIBearing`-marked type is reachable from
-`src/infrastructure/llm/`); (3) the **API response** boundary (today responses
-are RBAC-gated and limited to the identity fields the advisor UI displays by design; a masking helper for
-this edge was pruned as speculative until a surface needs it, D-028).
+`contracts/pii.ts` defines the shared field-name, credential, person-word, phone/email/SSN, and
+separator-aware account-reference shapes. `assertNoPIIValues(payload, boundary)` throws
+`PII_VIOLATION` when PII survives scrubbing. The **audit write** boundary scrubs before/after snapshots
+and detail before persistence. The **observability** boundary accepts only typed, derived vocabularies
+and sealed identifiers; request-derived record UUIDs become keyed tenant/field digests rather than raw
+telemetry. The **LLM prompt** boundary accepts only scrubber-minted `Tokenized<T>` values, while the
+evidence-to-LLM projection binds complete sensitive spans to opaque slots and refuses residual names or
+unbroken, spaced, or hyphenated account references (ADR-0031). Fences prove no `PIIBearing`-marked type is
+reachable from `src/infrastructure/llm/`. Authorized API/UI surfaces may return the PII they exist to
+display, but governed reads require a sealed `ActionGrant<"pii.view">`; there is no generic response
+masking helper until a real surface requires one (D-028).
 The house-CRM store holds identity PII (it is the SoR); the audit/analytics
 stores never do (a fence rejects PII-named columns there). Masked PII is allowed in the advisor UI by
 design.
@@ -42,13 +44,15 @@ console, nav) resolve userId → email at render time.
 
 ## Trade-offs and Costs
 
-- **Gained:** PII never leaks into audit, logs, or client bodies; `assertNoPIIValues` is a testable spec.
+- **Gained:** PII never leaks into audit, operational telemetry, model requests, or unauthorized client
+  bodies; the shared predicates and runtime seals are testable specifications.
 - **Sacrificed:** boundary crossings must call scrub/assert; value-pattern tuning to avoid over-redaction.
 
 ## Consequences
 
-Fences (Phase B/E): PII-not-in-audit-store, audit-entry-scrubbed. Escape-at-render, not at storage
-(ADR-0007 records the raw-domain value and scrubs the *audit copy*, avoiding Iris's double-escape bug).
+Fences: `no-pii-in-audit-store`, `observability-vocabulary`, `llm-pii-boundary`,
+`tokenized-factory-only`, and `governed-actions`. Escape-at-render, not at storage (ADR-0007 keeps the
+raw domain value in the SoR and scrubs the *audit copy*, avoiding Iris's double-escape bug).
 
 ## Revisit When
 

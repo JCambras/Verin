@@ -1,6 +1,6 @@
 import type { SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
-
+/** Read-only current-schema ledger probe with normalized failure diagnostics. */
 export async function migrationLedgerExists(db: SqlQueryable): Promise<boolean> {
   try {
     const { rows } = await db.query<{ exists: boolean }>(`

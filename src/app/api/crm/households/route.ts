@@ -36,6 +36,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({ household: r.value });
 }
 
+/**
+ * Rename a household by canonical UUID. Mixed-case UUIDs remain compatible and
+ * normalize to lowercase; slugs and other client-selected identifiers are refused.
+ */
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   const p = await requirePrincipalWithRole(req, ["ops", "principal", "admin"]);
   if (!p.ok) return errorResponse(p.error);

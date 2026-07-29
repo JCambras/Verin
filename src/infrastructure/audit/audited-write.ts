@@ -1,6 +1,6 @@
 /**
  * The audited-write helper (ADR-0007/0009, charter #13/#16). EVERY house-CRM
- * mutation routes through here. It:
+ * mutation routes through here with a sealed WriteActor for tenant/actor attribution. It:
  *  - enforces idempotency: a repeated idempotencyKey returns the cached result
  *    (exactly-once effect under timeout-replay);
  *  - performs the business write and enqueues the audit entry in ONE transaction

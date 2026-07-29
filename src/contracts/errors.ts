@@ -3,9 +3,9 @@
  * Result instead of throwing (Iris ADR-0003). Adapter boundaries may THROW a
  * typed AppError (never a bare Error — enforced by the no-bare-throw fence).
  *
- * Each code maps to an HTTP status, a log level, a category, and whether it is
- * safe to retry. toResponse() produces a client-safe body with no stack traces
- * or internal detail (defense against error-message info leaks — retro #14).
+ * appError() freezes and authenticates trusted messages in a private WeakSet.
+ * normalizeAppError() snapshots untrusted code-shaped failures with a static
+ * message. toResponse() therefore emits no accessor text, stack, or context.
  */
 export type ErrorCode =
   | "VALIDATION"

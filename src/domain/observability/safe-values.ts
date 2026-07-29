@@ -167,21 +167,21 @@ function recordObservabilityId(
   }
   return sealId(field, value);
 }
-
+/** Record ID minted directly from a cryptographically generated canonical UUID. */
 export function generatedObservabilityId(
   field: RecordObservabilityIdField,
   value: string,
 ): ObservabilityId {
   return recordObservabilityId(field, value, "generated");
 }
-
+/** Record ID already transformed by the reviewed secret-keyed digest boundary. */
 export function keyedDigestObservabilityId(
   field: RecordObservabilityIdField,
   value: string,
 ): ObservabilityId {
   return recordObservabilityId(field, value, "keyed-digest");
 }
-
+/** Tenant or actor ID derived only from a runtime-sealed tenant authority. */
 export function authorityObservabilityId(
   field: Exclude<ObservabilityIdField, RecordObservabilityIdField>,
   tenant: TenantContext,

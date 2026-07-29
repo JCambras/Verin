@@ -12,7 +12,7 @@ interface MigrationIdentity {
   readonly version: number;
   readonly name: string;
 }
-
+/** Normalize one migration-stage failure without preserving driver prose or row values. */
 export function migrationFailure(
   stage: MigrationStage,
   cause: unknown,

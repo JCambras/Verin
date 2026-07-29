@@ -7,8 +7,8 @@
  * impostor fails assertTenantContext inside the repository, so it does not PARSE
  * either — an attacker cannot forge WeakSet membership by copying keys off a real
  * value the way a self-describing marker property invites). Minted only from an
- * authenticated Principal (tenantOf) or for a named system actor (systemTenant).
- * The Phase 1 identity provider sits BELOW this seam (ADR-0008).
+ * authenticated Principal (`tenantOf`), authenticated identity (`tenantFromIdentity`),
+ * or named system actor (`systemTenant`). The Phase 1 identity provider sits BELOW this seam (ADR-0008).
  */
 import { assertPrincipal, type Principal } from "./principal";
 import { appError } from "./errors";
@@ -74,7 +74,7 @@ export function tenantOf(principal: Principal): TenantContext {
   assertPrincipal(principal);
   return mint(principal.orgId, { kind: "human", actorId: principal.userId });
 }
-
+/** Tenant scope minted only after the identity adapter authenticates its stored row. */
 export function tenantFromIdentity(actorId: string, orgId: string): TenantContext {
   if (typeof actorId !== "string" || actorId.length === 0) {
     throw appError("INTERNAL", "An identity tenant mint must name its actor.");

@@ -23,7 +23,13 @@ banned outside a small allowlist (only the logger scrubs PII). Span export is WI
 `NodeTracerProvider` with a batching OTLP/HTTP exporter pointed at that collector; without an endpoint no
 provider is registered and the OTel API is a no-op — dev/test rely on the in-process span ring
 (`tracer.ts`), which records in BOTH modes so tests stay exporter-independent. Correlation
-ids thread from the HTTP boundary through the engine to the store/webhook. **Health + readiness endpoints**
+ids thread from the HTTP boundary through the engine to the store/webhook. Telemetry primitives pass
+through a closed, fence-derived vocabulary. Authority identifiers are sealed from a `TenantContext`;
+direct cryptographic record-id mints retain generated provenance; and request-derived canonical UUIDs
+are emitted only as tenant- and field-scoped HMAC digests under a domain-separated purpose key derived
+from the sealed session secret. Error reasons preserve only a closed application-error code or
+fixed-shape SQLSTATE, never driver prose. If provenance or hashing fails, the operational value becomes
+`[REDACTED]` while the governed audit chain retains the record id. **Health + readiness endpoints**
 (`/health`, `/ready`) report liveness and store/outbox readiness (charter #11). A fitness fence
 asserts the engine step path and external calls are instrumented (not silently un-traced).
 
@@ -45,7 +51,8 @@ asserts the engine step path and external calls are instrumented (not silently u
 Feeds the SLO/error-budget policy (ADR-0014) and health checks (charter #11). Alerting rules as code land
 with the deploy target. Fences: observability-coverage (engine + external calls instrumented); no-console
 (all server-side layers — domain, infrastructure, AND app; `"use client"` files excepted because the
-browser console is a different, lower-stakes surface).
+browser console is a different, lower-stakes surface); observability-vocabulary (closed messages,
+attributes, identifiers, and record-id mint provenance).
 
 ## Revisit When
 

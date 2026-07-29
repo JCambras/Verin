@@ -1,10 +1,10 @@
 /**
- * Sessions & RBAC (ADR-0008, charter #12). resolveSession is the ONLY place
- * identity is read — from a signed, httpOnly cookie mapped to a server-side
- * session record, never from a client-supplied role/identity header. Server-side
- * expiry + revocation are enforced. Sliding renewal (resolveAndRenewSession)
- * rotates the id + extends expiry once past the half-life, so an active session
- * never hits the hard expiry mid-workday. requireRole is the port-layer RBAC gate.
+ * Sessions & authorization (ADR-0008, charter #12). resolveSessionRow is the
+ * one store-read chokepoint behind read-only resolveSession and rotating
+ * resolveAndRenewSession. Identity comes from a signed, httpOnly cookie and
+ * server record, never a client role/header. Expiry and revocation are enforced;
+ * renewal rotates at half-life. requireRole gates ordinary CRUD, while governed
+ * sinks require an action-specific grant.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";

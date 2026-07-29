@@ -53,7 +53,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 
 | TSC | Requirement | Code | Test | Doc | Op / Evidence |
 |-----|-------------|------|------|-----|---------------|
-| C1.x | Confidential data protected | PII boundary, sealed tenant scoping | PII + `org-id-required` + `tenant-context-required` fences | ADR-0006 | CI |
+| C1.x | Confidential data protected | PII boundary, sealed tenant scoping, tenant-qualified foreign keys | PII + `org-id-required` + `tenant-context-required`; tenant-isolation and migration-preflight integration tests | ADR-0004, ADR-0006 | CI |
 | P1-P8 | Privacy (notice, retention, disposal) | retention hold, DSAR contract | retention design | ADR-0019 | retention schedule (design contract) |
 
 ## Explicit gaps (owner + date)

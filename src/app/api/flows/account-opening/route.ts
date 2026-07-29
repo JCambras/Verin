@@ -32,7 +32,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return errorResponse(appError("VALIDATION", `Account type must be one of: ${ACCOUNT_TYPES.join(", ")}.`));
   }
   // Double-submit protection (D-027): the client mints one UUID per form session;
-  // it becomes the executionId, so a retry/second tab replays the same execution.
+  // it becomes the lowercase canonical executionId, so case variants and a
+  // retry/second tab replay the same execution.
   if (typeof b.clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(b.clientRequestId)) {
     return errorResponse(appError("VALIDATION", "clientRequestId is required (a UUID minted once per form session)."));
   }
