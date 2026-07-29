@@ -22,11 +22,10 @@ import {
   loadGoldenCases,
   loadScenarioRefs,
   loadStatusVocabularyDocs,
-  validateGoldenCases,
   validateLedgerVocabulary,
 } from "./golden-cases.lib";
-import { loadDemoSemanticSnapshot } from "./golden-demo-snapshot";
-import { validateGoldenDemoSemantics, validateStatusVocabularyDocs } from "./golden-demo-semantics.lib";
+import { validateGoldenCaseArtifacts } from "./golden-cases-runner.lib";
+import { validateStatusVocabularyDocs } from "./golden-demo-semantics.lib";
 
 const useColor = process.env.NO_COLOR === undefined;
 const paint = (code: string, s: string) => (useColor ? `\u001b[${code}m${s}\u001b[0m` : s);
@@ -44,8 +43,17 @@ if (docText === "") {
 }
 
 const problems = [
-  ...validateGoldenCases(cases, refs, docText),
-  ...validateGoldenDemoSemantics(cases, refs, loadDemoSemanticSnapshot()),
+  ...await validateGoldenCaseArtifacts(
+    cases,
+    refs,
+    docText,
+    async () => {
+      const { loadDemoSemanticSnapshot } = await import(
+        "./golden-demo-snapshot"
+      );
+      return loadDemoSemanticSnapshot();
+    },
+  ),
   ...validateLedgerVocabulary(existsSync(V3_CORE_CONTRACTS) ? readFileSync(V3_CORE_CONTRACTS, "utf8") : ""),
   ...validateStatusVocabularyDocs(loadStatusVocabularyDocs()),
 ];

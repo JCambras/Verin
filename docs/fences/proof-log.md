@@ -5944,3 +5944,38 @@ All 578 Vitest cases, all 25 Playwright cases with Axe, the golden validator, ty
 the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
 
 **Date:** 2026-07-29 (review corrections, D-077).
+
+## F116 · exact authority sources and fail-closed validation ownership
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts`,
+`src/__tests__/fitness/demo-scenarios-contract.test.ts`, and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** authority restatements use the exact signed account reference or an explicit
+unavailable state; raw fixtures are validated before production parsing; parser failures remain
+bounded and attributable; policy simulations retain exact-case liquidity; shipped status ids remain
+append-only; and an approval quorum is always a positive safe integer before evaluation.
+
+The production browser path first reproduced an Authority gate that named "Smith Family Taxable"
+while Workspace correctly stated that account name, type, and custodian were unavailable. A direct
+semantic snapshot showed GC-10 and GC-11 both carrying $64,000 of drafted-policy headroom even though
+GC-11's exact pending reservation makes its result negative. A direct authority-evaluation
+counterexample returned satisfied for a zero quorum with no approvers.
+
+Companions now replace the exact account reference with the invented name, make a production
+projection loader run despite an invalid raw fixture, throw a multiline parser error after raw
+validation, substitute GC-10's headroom into GC-11, move `rejected` after an appended status under a
+coordinated pin update, and feed zero, negative, fractional, and unsafe approval quorums through both
+validation boundaries. Each mutation produces its named account, ordering, parser, simulation,
+prefix, or quorum diagnostic. The defensive authority evaluator also refuses zero.
+
+Browser coverage proves both staged and automatic authority gates name
+`subject:smiths-joint-taxable`, label the account name unavailable, and never render the invented
+name. The exact GC-11 Policy Authoring route renders `-$11,000.00` and not `$64,000.00`.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+All 589 Vitest cases and all 26 Playwright cases with Axe pass. The signed-truth validator,
+typecheck, lint, knip, v3 invariant report, production build, and diff checks pass on the corrected
+state.
+
+**Date:** 2026-07-29 (review corrections, D-079).

@@ -22,7 +22,6 @@ import {
   SCENARIOS,
   bindExactSourceCase,
   dispositionFor,
-  firmById,
   hasSignedInvalidationAuthority,
   launcherVariantsFor,
   liquidityAuthorityFor,
@@ -57,13 +56,10 @@ function renderMoney(money: DisplayMetric): RenderedMoney {
 }
 
 /** Surface 11's simulated policy draft, as it is actually emitted for a branch. */
-function draftSimulation(scenarioId: string, firmId: string) {
-  const scenario = SCENARIOS.find((s) => s.id === scenarioId)!;
-  const rows = buildPolicyAuthoring(
-    scenario,
-    firmById(firmId),
-    "initial",
-  ).simulationDelta;
+function draftSimulation(
+  policyAuthoring: ReturnType<typeof buildPolicyAuthoring>,
+) {
+  const rows = policyAuthoring.simulationDelta;
   const numberAt = (label: string): number | null => {
     const value = rows.find((row) => row.label === label)?.after.metric?.value;
     return typeof value === "number" ? value : null;
@@ -126,7 +122,6 @@ function displayedDecisions(): DisplayedDecision[] {
       const scenario = caseId
         ? bindExactSourceCase(baseScenario, firm.id, caseId)
         : baseScenario;
-      const simulated = draftSimulation(scenario.id, firm.id);
       const authority = liquidityAuthorityFor(scenario, firm.id);
       const sourceCase = sourceCaseFor(scenario, firm.id);
       const journey = getJourney(
@@ -135,6 +130,7 @@ function displayedDecisions(): DisplayedDecision[] {
         "initial",
         caseId,
       );
+      const simulated = draftSimulation(journey.policyAuthoring);
       const visibleEvidence = journey.evidence.rows.flatMap((row) =>
         row.kind === "fact" || row.kind === "metric"
           ? [
@@ -211,6 +207,8 @@ function displayedDecisions(): DisplayedDecision[] {
           journey.comparison.rows.find(
             (row) => row.dimension === "Disposition for this request",
           )?.why?.reason ?? null,
+        approvalGateRestatement:
+          journey.approvals?.gate.restatement ?? null,
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
@@ -275,6 +273,7 @@ function displayedDecisions(): DisplayedDecision[] {
                   },
                   comparisonDescription: null,
                   comparisonDispositionReason: null,
+                  approvalGateRestatement: null,
                   liquidityAuthorityMissing: null,
                   availableCashMinor:
                     decision.initialDecision.availableCashMinor,
@@ -710,7 +709,9 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     sourceTimelines: sourceTimelines(),
     recordIdentities: recordIdentities(),
     draftedReserveMonths: DRAFT_RESERVE_MONTHS,
-    draftedReserveFloorMinor: draftSimulation(SCENARIOS[0]!.id, "firm-a").floorMinor,
+    draftedReserveFloorMinor: draftSimulation(
+      getJourney(SCENARIOS[0]!.id, "firm-a").policyAuthoring,
+    ).floorMinor,
     executionTimelineStatuses: SCENARIOS.flatMap((scenario) =>
       firms.flatMap((firm) =>
         buildExecution(scenario, firm)?.rows.map((row) => row.status) ?? [],

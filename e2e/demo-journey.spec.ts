@@ -113,6 +113,18 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Awaiting approval")).toHaveCount(0);
   await expect(page.getByText(/Reviewed ·/)).toBeVisible();
   await expect(page.getByText(/Approved ·/)).toHaveCount(2);
+  const stagedAuthorityGate = page.getByRole("region", {
+    name: "Approve",
+  });
+  await expect(stagedAuthorityGate).toContainText(
+    "signed account reference subject:smiths-joint-taxable",
+  );
+  await expect(stagedAuthorityGate).toContainText(
+    "account name unavailable",
+  );
+  await expect(stagedAuthorityGate).not.toContainText(
+    "Smith Family Taxable",
+  );
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
@@ -565,6 +577,18 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(
     page.getByRole("link", { name: "Continue under automatic authority" }),
   ).toBeVisible();
+  const automaticAuthorityGate = page.getByRole("region", {
+    name: "Continue",
+  });
+  await expect(automaticAuthorityGate).toContainText(
+    "signed account reference subject:smiths-joint-taxable",
+  );
+  await expect(automaticAuthorityGate).toContainText(
+    "account name unavailable",
+  );
+  await expect(automaticAuthorityGate).not.toContainText(
+    "Smith Family Taxable",
+  );
 
   const invalidationContext =
     "scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation";
@@ -814,6 +838,14 @@ test("the launcher exposes every exact signed firm and case variant", async ({ p
     "/app/demo/authority?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
   );
   await expect(page.getByText("Authority not reached")).toBeVisible();
+  await page.goto(
+    "/app/demo/policy-authoring?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
+  );
+  const gc11Headroom = page
+    .getByRole("row")
+    .filter({ hasText: "Available after reserve" });
+  await expect(gc11Headroom).toContainText("-$11,000.00");
+  await expect(gc11Headroom).not.toContainText("$64,000.00");
 });
 
 test("missing bank-instruction evidence fails closed on Safety and Record", async ({ page }) => {

@@ -36,6 +36,20 @@ export const asNumber = (value: unknown, path: string): number => {
   return value;
 };
 
+export const asPositiveSafeInteger = (
+  value: unknown,
+  path: string,
+): number => {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0
+  ) {
+    throw new TypeError(`${path} must be a positive safe integer`);
+  }
+  return value;
+};
+
 export const asBoolean = (value: unknown, path: string): boolean => {
   if (typeof value !== "boolean") {
     throw new TypeError(`${path} must be a boolean`);

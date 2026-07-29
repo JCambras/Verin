@@ -232,7 +232,14 @@ export function approvalPlanSatisfied(stages: readonly ApprovalStageVM[]): boole
   if (stages.length === 0) return false;
   let previousOrder = 0;
   for (const stage of stages) {
-    if (stage.order <= previousOrder || !stage.satisfied) return false;
+    if (
+      stage.order <= previousOrder ||
+      !stage.satisfied ||
+      !Number.isSafeInteger(stage.approvalsRequired) ||
+      stage.approvalsRequired <= 0
+    ) {
+      return false;
+    }
     previousOrder = stage.order;
     const eligible = stage.actors.filter(
       (actor) =>
@@ -405,6 +412,12 @@ export function buildApprovals(
         ? "automatic"
         : "staged";
   const satisfied = mode === "automatic" || approvalPlanSatisfied(stages);
+  const sourceAccount = evidenceForPass(sourceCase, pass).find(
+    (entry) => entry.evidenceKind === "account-balance",
+  );
+  const sourceAccountRestatement = sourceAccount
+    ? `signed account reference ${sourceAccount.subjectRef} (account name unavailable)`
+    : "source account unavailable in this signed case";
   return {
     spine: buildSpine("Authority"),
     mode,
@@ -430,8 +443,8 @@ export function buildApprovals(
     gate: {
       restatement:
         mode === "automatic"
-          ? `Continue moving the amount below from Smith Family Taxable to ${destinationFor(scenario, firm)} under automatic authority.`
-          : `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario, firm)}.`,
+          ? `Continue moving the amount below from ${sourceAccountRestatement} to ${destinationFor(scenario, firm)} under automatic authority.`
+          : `Approve moving the amount below from ${sourceAccountRestatement} to ${destinationFor(scenario, firm)}.`,
       figures: [{ label: "Amount", metric: amountMetric(scenario, firm) }],
       primaryLabel:
         mode === "automatic"

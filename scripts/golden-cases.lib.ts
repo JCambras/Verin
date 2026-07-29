@@ -228,6 +228,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const isNonEmptyString = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+const isPositiveSafeInt = (v: unknown): v is number =>
+  typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 const isNonEmptyArray = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0;
 
 function validateExecutableLedgerOrder(
@@ -691,7 +693,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       if (fc.firmId !== c.firm) P(`firmConfiguration.firmId "${String(fc.firmId)}" does not match case firm "${String(c.firm)}"`);
       if (!isInt(fc.cashReserveMonths)) P("firmConfiguration.cashReserveMonths must be an integer");
       if (!isInt(fc.dualApprovalThresholdUsd)) P("firmConfiguration.dualApprovalThresholdUsd must be an integer");
-      if (!isInt(fc.approvalsRequired)) P("firmConfiguration.approvalsRequired must be an integer");
+      if (!isPositiveSafeInt(fc.approvalsRequired)) P("firmConfiguration.approvalsRequired must be a positive safe integer");
       if (!isBool(fc.distinctActorsRequired)) P("firmConfiguration.distinctActorsRequired must be a boolean");
       if (!("eligibleRole" in fc)) P("firmConfiguration.eligibleRole must be present (string or null - matrix records silence as null)");
       if (!("requesterConstraint" in fc)) P("firmConfiguration.requesterConstraint must be present (string or null)");
@@ -891,7 +893,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
           if (!isInt(st.order)) P(`${at}.order must be an integer`);
           if (st.executionMode !== "sequential" && st.executionMode !== "parallel") P(`${at}.executionMode must be sequential|parallel`);
           if (!isNonEmptyArray(st.eligibleRoleIds)) P(`${at}.eligibleRoleIds must be a non-empty array`);
-          if (!isInt(st.approvalsRequired)) P(`${at}.approvalsRequired must be an integer`);
+          if (!isPositiveSafeInt(st.approvalsRequired)) P(`${at}.approvalsRequired must be a positive safe integer`);
           if (!isBool(st.distinctActorsRequired)) P(`${at}.distinctActorsRequired must be a boolean`);
           if (!isBool(st.requesterMayApprove)) P(`${at}.requesterMayApprove must be a boolean`);
           if (!isNonEmptyString(st.expiresAfter)) P(`${at}.expiresAfter (ISO-8601 duration) missing or empty`);

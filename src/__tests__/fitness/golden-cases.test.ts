@@ -15,6 +15,7 @@ import {
   type LoadedCase,
   type ScenarioRefs,
 } from "../../../scripts/golden-cases.lib";
+import { validateGoldenCaseArtifacts } from "../../../scripts/golden-cases-runner.lib";
 import { loadDemoSemanticSnapshot } from "../../../scripts/golden-demo-snapshot";
 import {
   readRenderedMajor,
@@ -23,6 +24,10 @@ import {
   validateStatusVocabularyDocs,
   type DemoSemanticSnapshot,
 } from "../../../scripts/golden-demo-semantics.lib";
+import { approvalPlanSatisfied } from "../../app/demo/build-decision";
+import {
+  parseSignedCaseVariants,
+} from "../../app/demo/signed-cases";
 
 /**
  * GOLDEN-CASES FENCE (v3 build-sequence prompt 2; charter #1/#4). The golden
@@ -1694,6 +1699,102 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("validates raw fixtures before loading the production projection", async () => {
+    const cases = clone();
+    delete caseById(
+      cases,
+      "GC-01-firm-a-happy-path",
+    ).expectedDisposition;
+    let projectionLoaded = false;
+    const problems = await validateGoldenCaseArtifacts(
+      cases,
+      realRefs,
+      realDoc,
+      () => {
+        projectionLoaded = true;
+        return realDemo;
+      },
+    );
+    expect(projectionLoaded).toBe(false);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.includes("GC-01") &&
+          problem.includes("expectedDisposition"),
+      ),
+    ).toBe(true);
+  });
+
+  it("converts production parser failures into bounded fixture diagnostics", async () => {
+    const problems = await validateGoldenCaseArtifacts(
+      clone(),
+      realRefs,
+      realDoc,
+      () => {
+        throw new TypeError(
+          `GC-03-recent-bank-change-firm-a.expectedAuthority.stages[0].approvalsRequired must be a positive safe integer\n${"x".repeat(500)}`,
+        );
+      },
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(
+      /^fixtures\/golden\/GC-03-recent-bank-change-firm-a\.json :: production signed-case parser rejected the validated fixture:/,
+    );
+    expect(problems[0]).toContain(
+      "approvalsRequired must be a positive safe integer",
+    );
+    expect(problems[0]).not.toContain("\n");
+    expect(problems[0]!.length).toBeLessThan(450);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["unsafe", Number.MAX_SAFE_INTEGER + 1],
+  ])(
+    "rejects %s approval quorums before authority evaluation",
+    (_label, approvalsRequired) => {
+      const cases = clone();
+      const fixture = caseById(cases, "GC-01-firm-a-happy-path");
+      const authority = fixture.expectedAuthority as Record<
+        string,
+        unknown
+      >;
+      const stages = authority.stages as Array<
+        Record<string, unknown>
+      >;
+      stages[0]!.approvalsRequired = approvalsRequired;
+      const problems = run(cases);
+      expect(
+        problems.some((problem) =>
+          problem.includes(
+            "expectedAuthority.stages[0].approvalsRequired must be a positive safe integer",
+          ),
+        ),
+      ).toBe(true);
+      expect(() =>
+        parseSignedCaseVariants([fixture]),
+      ).toThrow(/approvalsRequired must be a positive safe integer/);
+    },
+  );
+
+  it("fails closed if an invalid quorum reaches authority evaluation", () => {
+    expect(
+      approvalPlanSatisfied([
+        {
+          order: 1,
+          satisfied: true,
+          eligibleRoleIds: ["operations"],
+          requesterMayApprove: false,
+          distinctActorsRequired: true,
+          approvalsRequired: 0,
+          actors: [],
+        } as never,
+      ]),
+    ).toBe(false);
+  });
+
   it("flags a policy-draft simulation whose displayed reserve floor drifts off the signed horizon", () => {
     const draftDrift = demoClone();
     draftDrift.draftedReserveFloorMinor = 9_500_000;
@@ -1705,6 +1806,51 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     undisplayed.draftedReserveFloorMinor = null;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, undisplayed).some((p) => p.includes("displays no reserve floor to fence")),
+    ).toBe(true);
+  });
+
+  it("flags a policy simulation borrowed from another exact case", () => {
+    const drifted = demoClone();
+    const gc11 = drifted.decisions.find(
+      (decision) =>
+        decision.sourceCaseId ===
+          "GC-11-simultaneous-distributions-second" &&
+        decision.decisionRole === "primary",
+    )!;
+    gc11.simulatedHeadroomMinor = 6_400_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        drifted,
+      ).some((problem) =>
+        problem.includes(
+          "policy-draft simulation must use the exact selected case liquidity",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags invented account metadata in authority restatements", () => {
+    const drifted = demoClone();
+    const gc03 = drifted.decisions.find(
+      (decision) =>
+        decision.sourceCaseId ===
+          "GC-03-recent-bank-change-firm-a" &&
+        decision.decisionRole === "primary",
+    )!;
+    gc03.approvalGateRestatement =
+      "Approve moving the amount below from Smith Family Taxable.";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        drifted,
+      ).some((problem) =>
+        problem.includes(
+          "authority restatement must use the exact signed account reference",
+        ),
+      ),
     ).toBe(true);
   });
 

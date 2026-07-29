@@ -3677,3 +3677,25 @@ state that the check was not evaluated and the evidence is unavailable.
 replace exact product truth with an unsupported default.
 **Revert path:** none while D-073 through D-077 require exact case identity and fail-closed evidence
 claims across every journey surface.
+
+### D-079 · 2026-07-29 · reversible · Authority, validation, simulation, and status boundaries fail closed
+
+Authority restatements now project the selected case's exact signed account reference and explicitly
+state that account-name metadata is unavailable. Both staged and automatic paths use the same
+projection, so neither can invent a friendly source-account name.
+
+The golden-case runner validates raw fixtures before dynamically loading the production demo
+projection. A production parser rejection after raw validation becomes one bounded, single-line
+diagnostic attributed to the owning fixture. Approval quorums are positive safe integers at both the
+raw and production parser boundaries, and authority evaluation independently refuses an invalid
+quorum.
+
+Policy simulation snapshots consume the already-built exact-case Policy Authoring view model. GC-11
+therefore retains its sibling reservation and renders negative drafted-policy headroom instead of
+borrowing GC-10's unreserved liquidity. The immutable shipped status prefix now includes `rejected`,
+so a coordinated pin update cannot reorder it behind a later status.
+
+**Why:** a signed reference, validation result, simulation, or stable vocabulary is truthful only
+when its ownership and refusal rules survive every path that consumes it.
+**Revert path:** none while D-073 through D-078 require exact-case projection and fail-closed signed
+truth across the demo and its gates.

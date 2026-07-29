@@ -116,6 +116,7 @@ const SHIPPED_ID_PREFIXES: Record<string, readonly string[]> = {
     "completed",
     "nigo",
     "unknown",
+    "rejected",
   ],
 };
 
@@ -375,6 +376,34 @@ describe("detects (companion): violating scenario data CANNOT pass", () => {
     expect(
       baselineViolations(reordered, coordinatedPin).some((i) =>
         i.includes("breaks the shipped append-only prefix"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps rejected inside the immutable shipped status prefix", () => {
+    const reordered = parseData(realText);
+    const states = [
+      ...(reordered.state_vocabulary ?? []),
+      { id: "queued" },
+    ];
+    const rejected = states.find(
+      ({ id }) => id === "rejected",
+    )!;
+    reordered.state_vocabulary = [
+      ...states.filter(
+        ({ id }) => id !== "rejected",
+      ),
+      rejected,
+    ];
+    const coordinatedPin = {
+      ...PINNED_IDS,
+      state_vocabulary: idsOf(reordered.state_vocabulary),
+    };
+    expect(
+      baselineViolations(reordered, coordinatedPin).some((issue) =>
+        issue.includes(
+          'id "queued" at position 10 breaks the shipped append-only prefix; expected "rejected"',
+        ),
       ),
     ).toBe(true);
   });

@@ -14,6 +14,7 @@ import {
   asNullableMinor,
   asNullableString,
   asNumber,
+  asPositiveSafeInteger,
   asRecord,
   asString,
   asStringArray,
@@ -129,7 +130,7 @@ function parseStage(value: unknown, path: string): SignedAuthorityStageData {
       stage.eligibleRoleIds,
       `${path}.eligibleRoleIds`,
     ),
-    approvalsRequired: asNumber(
+    approvalsRequired: asPositiveSafeInteger(
       stage.approvalsRequired,
       `${path}.approvalsRequired`,
     ),
@@ -446,7 +447,14 @@ function parseVariant(value: unknown): SignedCaseVariant {
   };
 }
 
-export const SIGNED_CASE_VARIANTS = RAW_SIGNED_CASES.map(parseVariant);
+export function parseSignedCaseVariants(
+  values: readonly unknown[],
+): SignedCaseVariant[] {
+  return values.map(parseVariant);
+}
+
+export const SIGNED_CASE_VARIANTS =
+  parseSignedCaseVariants(RAW_SIGNED_CASES);
 
 export const SIGNED_CASE_BY_ID = Object.fromEntries(
   SIGNED_CASE_VARIANTS.map((variant) => [variant.caseId, variant]),

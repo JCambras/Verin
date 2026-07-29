@@ -92,6 +92,7 @@ export interface DisplayedDecision {
   };
   comparisonDescription: string | null;
   comparisonDispositionReason: string | null;
+  approvalGateRestatement: string | null;
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -972,6 +973,31 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
           `${at}: visible evidence projection drifts from exact signed case ${d.sourceCaseId}`,
         );
       }
+      const sourceAccountRef = expectedEvidence.find(
+        (entry) => entry.evidenceKind === "account-balance",
+      )?.subjectRef;
+      if (d.disposition === "proceed") {
+        if (
+          !isNonEmptyString(d.approvalGateRestatement) ||
+          (isNonEmptyString(sourceAccountRef)
+            ? !d.approvalGateRestatement.includes(sourceAccountRef) ||
+              !d.approvalGateRestatement.includes(
+                "account name unavailable",
+              )
+            : !d.approvalGateRestatement.includes(
+                "source account unavailable",
+              )) ||
+          d.approvalGateRestatement.includes("Smith Family Taxable")
+        ) {
+          problems.push(
+            `${at}: authority restatement must use the exact signed account reference and keep unavailable account metadata explicit`,
+          );
+        }
+      } else if (d.approvalGateRestatement !== null) {
+        problems.push(
+          `${at}: authority restatement is visible although the exact case never reached authority`,
+        );
+      }
       const recentChangeRow = d.policyTraceRows.find(
         (row) => row.rule === "Recent bank-instruction change handling",
       );
@@ -1196,6 +1222,37 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       const simulatedHeadroom = d.simulatedHeadroomMinor ?? (unchangedFloor ? d.headroomMinor : null);
       if (simulatedHeadroom === null || simulatedHeadroom < d.requestAmountMinor) {
         problems.push(`${at}: the policy-draft simulation renders proceed beside ${simulatedHeadroom ?? "no"} available after the drafted reserve, which does not cover the ${d.requestAmountMinor} request`);
+      }
+    }
+    if (d.decisionRole === "primary" && d.firmId === "firm-a") {
+      const expectedSimulatedFloor = tryReserveFloorMinor(
+        demo.plannedWithdrawalMonthlyMinor,
+        demo.draftedReserveMonths,
+      );
+      const expectedSimulatedHeadroom =
+        expectedSimulatedFloor === null
+          ? null
+          : tryHeadroomMinor(
+              d.availableCashMinor,
+              d.pendingActivityMinor,
+              expectedSimulatedFloor,
+            );
+      const expectedSimulatedDisposition =
+        expectedSimulatedHeadroom !== null &&
+        d.disposition === "proceed" &&
+        expectedSimulatedHeadroom < d.requestAmountMinor
+          ? "blocked"
+          : d.disposition;
+      if (
+        expectedSimulatedFloor === null ||
+        expectedSimulatedHeadroom === null ||
+        d.simulatedFloorMinor !== expectedSimulatedFloor ||
+        d.simulatedHeadroomMinor !== expectedSimulatedHeadroom ||
+        d.simulatedDisposition !== expectedSimulatedDisposition
+      ) {
+        problems.push(
+          `${at}: policy-draft simulation must use the exact selected case liquidity and drafted reserve horizon`,
+        );
       }
     }
   }
