@@ -6,13 +6,25 @@ import {
   ciJobCommandStatus,
   ciJobRunProblem,
   ciJobRuns,
+  EARLIEST_PROOF_PROMPTS_RATCHET,
+  earliestProofPromptsOf,
+  GATE_ASSIGNMENT_RATCHET,
+  gateConstitutionProblems,
+  gateRatchetProblems,
+  GATE_METADATA_RATCHET,
+  GATE_REQUIREMENTS_RATCHET,
   gateOrderingProblems,
   gateReadiness,
   gatesNamedInProse,
   INVARIANT_THREE_ACTIVATION_REQUIREMENTS,
+  invariantThreeActivationOf,
+  metadataOf,
+  ownershipOf,
   parseCiJobs,
   promptsNamedInProse,
+  RATIFIED_GATE_RANGES,
   requiredInvariantIds,
+  requirementsOf,
   type Gate,
   type GateRequirement,
   type Registry,
@@ -86,127 +98,6 @@ const parseCiFixture = (yamlText: string) =>
   parseCiJobs(["on:", "  push:", "  pull_request:", yamlText].join("\n"));
 
 /**
- * The TEN gates of the ratified prompt sequence, over their ratified prompt ranges
- * (docs/v3/verin-prompt-sequence-v3.md wave map, lines 42-56). G (27-28, "the full
- * journey uses a real Salesforce invocation and an honestly labeled returned status")
- * and H (29, investor demo hardening) are two gates there, and are two gates here:
- * the registry's inherited `G/H` [27, 29] label let invariants provable at prompt 28
- * be required only by a gate closing at 29 (ruling `gatea-fix-review-3`).
- */
-const RATIFIED_GATES: Record<string, [number, number]> = {
-  "0": [1, 3],
-  A: [4, 7],
-  B: [8, 11],
-  C: [12, 15],
-  D: [16, 19],
-  E: [20, 22],
-  F: [23, 26],
-  G: [27, 28],
-  H: [29, 29],
-  I: [30, 30],
-};
-
-/**
- * RATCHET 1 - ACTIVATION OWNERSHIP for all 30 invariants (which gate must PROVE
- * each one). Gate assignment is load-bearing: it decides the ordering rule's
- * fallback proof point and which gate can never go green without the invariant.
- * Pushing an invariant to a later gate is the generic form of the escape hatch
- * that needed a captain ruling to use once, so it is pinned HERE, where review
- * sees the edit, and moving one is an amendment to ADR-0030 and ADR-0023.
- */
-const GATE_ASSIGNMENT_RATCHET: Record<string, string> = {
-  1: "A", 2: "A", 3: "B", 4: "A", 5: "A",
-  6: "D", 7: "D", 8: "D", 9: "D", 10: "D", 11: "D", 12: "D", 13: "D",
-  14: "E", 15: "E", 16: "E", 17: "E",
-  18: "F", 19: "F", 20: "F", 21: "F", 22: "F", 23: "F", 24: "F", 25: "F",
-  26: "G", 27: "H", 28: "G", 29: "H", 30: "G",
-};
-
-const EARLIEST_PROOF_PROMPTS_RATCHET: Record<string, number[]> = {
-  7: [5],
-  8: [5],
-  9: [5],
-};
-
-const INVARIANT_THREE_ACTIVATION_RATCHET = {
-  artifacts: [
-    "config/domains/account-opening.yaml",
-    "config/domains/money-movement.yaml",
-  ],
-  mechanisms: [
-    {
-      type: "fitness",
-      ref: "src/__tests__/fitness/domain-configuration.test.ts",
-    },
-  ],
-} as const;
-
-type RatchetedGateMetadata = Pick<Gate, "wave" | "entryGates" | "entryCondition" | "outcome">;
-
-const GATE_METADATA_RATCHET: Record<string, RatchetedGateMetadata> = {
-  "0": {
-    wave: "0",
-    entryGates: [],
-    entryCondition: "None - Wave 0 opens the build sequence.",
-    outcome: "The seven-minute journey is clickable on static/fake data, every required screen exists, and the UI does not invent decisions (Wave 0, prompts 1-3; ADR-0027 labeled fakes).",
-  },
-  A: {
-    wave: "A",
-    entryGates: ["0"],
-    entryCondition: "Gate 0 is green: Wave 0 (prompts 1-3) has landed and the seven-minute journey is clickable on labeled fake data (ADR-0027).",
-    outcome: "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7), and the prompt-5 structural guarantees of invariants 7, 8, and 9 are required at their earliest complete proof point without moving their Gate D activation ownership. Gate D later re-asserts invariants 7, 8, and 9 over evaluator behavior. Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030).",
-  },
-  B: {
-    wave: "B",
-    entryGates: ["A"],
-    entryCondition: "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A is green: its owned foundation invariants 1, 2, 4, and 5 and its earliest-proof references to invariants 7, 8, and 9 are active and green (ADR-0030).",
-    outcome: "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030).",
-  },
-  C: {
-    wave: "C",
-    entryGates: ["B"],
-    entryCondition: "Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).",
-    outcome: "The canonical request reaches a validated immutable input bundle with no PII in LLM artifacts (Wave C, prompts 12-15).",
-  },
-  D: {
-    wave: "D",
-    entryGates: ["C"],
-    entryCondition: "Gate C is green: the canonical request reaches a validated immutable input bundle (Wave C, prompts 12-15).",
-    outcome: "Proceed, blocked, and prohibited decisions replay byte-identically; decision-core invariants 6-13 green, and the prompt-18 authority/approval guarantees (invariants 18 and 19) are proven where they land (Wave D, prompts 16-19).",
-  },
-  E: {
-    wave: "E",
-    entryGates: ["D"],
-    entryCondition: "Gate D is green.",
-    outcome: "A natural-language draft becomes simulated and approved structured policy; policy invariants 14-17 green (Wave E, prompts 20-22).",
-  },
-  F: {
-    wave: "F",
-    entryGates: ["E"],
-    entryCondition: "Gate E is green.",
-    outcome: "Concurrent, repeated, failed, and delayed execution paths are safe and recorded; approval/execution invariants 18-25 green against fakes (Wave F, prompts 23-26).",
-  },
-  G: {
-    wave: "G",
-    entryGates: ["F"],
-    entryCondition: "Gate F is green. Prompt 27 is DEFERRED pending sandbox access (ADR-0024); until the trigger fires no external status claim may be presented as real, and Phase 1 is never declared complete on fakes.",
-    outcome: "The full journey uses a real Salesforce invocation and an honestly labeled returned status; the assembled vertical proves Firm B differs only through configuration and the printable record reconstructs from ledger + replay (invariants 26, 28, 30; Wave G, prompts 27-28).",
-  },
-  H: {
-    wave: "H",
-    entryGates: ["G"],
-    entryCondition: "Gate G is green: the full journey uses a real Salesforce invocation with an honestly labeled returned status (Wave G, prompts 27-28).",
-    outcome: "The demo runs in seven minutes and emits measured proof: the UI distinguishes every decision and execution state, the natural-language policy path is choreographed end to end, and a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work (invariants 27 and 29; Wave H, prompt 29; Phase 1 completion).",
-  },
-  I: {
-    wave: "I",
-    entryGates: ["H"],
-    entryCondition: "Gate H is green: the demo runs in seven minutes on a real Salesforce invocation with an honestly labeled returned status.",
-    outcome: "No unresolved critical finding; all accepted limitations are visible in the demo and documentation (Wave I, prompt 30).",
-  },
-};
-
-/**
  * RATCHET 4 - the COMPLETE typed requirement set of every gate, not merely its
  * invariant ids. Pinning ids alone left a gate's `artifact` / `fitness` /
  * `ci-gate` / `evidence` requirements editable by a registry change nothing
@@ -225,108 +116,20 @@ const GATE_METADATA_RATCHET: Record<string, RatchetedGateMetadata> = {
  * requirement only, since it needs prompt 15's bundle AND prompt 16's evaluator.
  * Gates 0 and I are artifact/evidence-based and require no invariant.
  */
-const GATE_REQUIREMENTS_RATCHET: Record<string, string[]> = {
-  "0": [
-    "artifact:docs/demo-contract.md @ prompt 1",
-    "artifact:config/demo/scenarios.yaml @ prompt 1",
-    "artifact:docs/golden-cases.md @ prompt 2",
-    "ci-gate:golden-cases runs 'pnpm exec tsx scripts/golden-cases-validate.ts' @ prompt 2",
-    "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts @ prompt 3",
-    "ci-gate:e2e runs 'pnpm exec playwright test' @ prompt 3",
-    "fitness:src/__tests__/fitness/demo-surface-completeness.test.ts @ prompt 3",
-  ],
-  A: ["invariant:1", "invariant:2", "invariant:4", "invariant:5", "invariant:7", "invariant:8", "invariant:9"],
-  B: [
-    "invariant:3",
-    "invariant:16",
-    "artifact:config/domains/account-opening.yaml @ prompt 10",
-    "artifact:config/domains/money-movement.yaml @ prompt 10",
-    "evidence:both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches @ prompt 10",
-    "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
-  ],
-  C: [
-    "invariant:1",
-    "invariant:11",
-    "evidence:the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests) @ prompt 15",
-  ],
-  D: [
-    "invariant:6",
-    "invariant:7",
-    "invariant:8",
-    "invariant:9",
-    "invariant:10",
-    "invariant:11",
-    "invariant:12",
-    "invariant:13",
-    "invariant:18",
-    "invariant:19",
-  ],
-  E: ["invariant:14", "invariant:15", "invariant:16", "invariant:17"],
-  F: [
-    "invariant:18",
-    "invariant:19",
-    "invariant:20",
-    "invariant:21",
-    "invariant:22",
-    "invariant:23",
-    "invariant:24",
-    "invariant:25",
-    "evidence:verification reconciliation records delayed status and closes only when configured proof requirements are satisfied @ prompt 26",
-  ],
-  G: ["invariant:26", "invariant:28", "invariant:30"],
-  H: [
-    "invariant:27",
-    "invariant:29",
-    "evidence:the canonical journey completes within seven minutes without developer intervention @ prompt 29",
-    "evidence:the measured results report exposes methodology, corpus version, and separate real-derived and synthetic provenance results @ prompt 29",
-    "evidence:a cold reviewer understands that Salesforce performs defined work while Verin determines, governs, and records the right work @ prompt 29",
-  ],
-  I: [
-    "artifact:docs/reviews/phase-1-adversarial-audit.md @ prompt 30",
-    "evidence:no unresolved critical finding; every accepted limitation is visible in the demo and the documentation @ prompt 30",
-  ],
-};
-
-/** Every requirement identified by kind, id/ref, proof prompt, and the command a ci-gate must prove. */
-const requirementKey = (r: GateRequirement): string =>
-  r.kind === "invariant"
-    ? `invariant:${r.id}`
-    : `${r.kind}:${r.ref}${r.kind === "ci-gate" ? ` runs '${r.command}'` : ""} @ prompt ${r.prompt}`;
-
-const ownershipOf = (reg: Registry): Record<string, string> => Object.fromEntries(reg.invariants.map((i) => [String(i.id), i.gate]));
-const earliestProofPromptsOf = (reg: Registry): Record<string, number[]> =>
-  Object.fromEntries(
-    reg.invariants
-      .filter((invariant) => Object.hasOwn(EARLIEST_PROOF_PROMPTS_RATCHET, String(invariant.id)))
-      .map((invariant) => [String(invariant.id), invariant.activationPrompts ?? []]),
-  );
-const invariantThreeActivationOf = (reg: Registry) => {
-  const invariant = reg.invariants.find((candidate) => candidate.id === 3);
-  return {
-    artifacts: invariant?.activationArtifacts ?? [],
-    mechanisms: invariant?.activationMechanisms ?? [],
-  };
-};
-const metadataOf = (reg: Registry): Record<string, RatchetedGateMetadata> =>
-  Object.fromEntries(
-    Object.entries(reg.gates).map(([key, gate]) => [
-      key,
-      { wave: gate.wave, entryGates: gate.entryGates, entryCondition: gate.entryCondition, outcome: gate.outcome },
-    ]),
-  );
-const requirementsOf = (reg: Registry): Record<string, string[]> =>
-  Object.fromEntries(Object.entries(reg.gates).map(([key, gate]) => [key, (gate.requires ?? []).map(requirementKey)]));
 const clone = (reg: Registry): Registry => JSON.parse(JSON.stringify(reg)) as Registry;
 
 describe("v3 gate-ordering fence", () => {
   it("enforces: nothing a phase gate requires lands after that gate closes", () => {
-    const problems = gateOrderingProblems(registry, (p) => existsSync(root + p));
+    const problems = gateConstitutionProblems(
+      registry,
+      (path) => existsSync(root + path),
+    );
     expect(problems, `v3-invariants.json gate-ordering problems:\n${problems.join("\n")}`).toEqual([]);
   });
 
   it("enforces: every gate of the ratified prompt sequence is registered, over its ratified prompt range", () => {
     const registered = Object.fromEntries(Object.entries(registry.gates).map(([k, g]) => [k, g.prompts]));
-    expect(registered).toEqual(RATIFIED_GATES);
+    expect(registered).toEqual(RATIFIED_GATE_RANGES);
   });
 
   it("enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry", () => {
@@ -336,8 +139,9 @@ describe("v3 gate-ordering fence", () => {
     // Invariant 3 may only be claimed implemented once prompt 10's artifacts exist,
     // whatever its status is at the time - the durable form of ruling clause 5.
     const three = registry.invariants.find((i) => i.id === 3)!;
-    expect(INVARIANT_THREE_ACTIVATION_REQUIREMENTS).toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
-    expect(invariantThreeActivationOf(registry)).toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
+    expect(invariantThreeActivationOf(registry)).toEqual(
+      INVARIANT_THREE_ACTIVATION_REQUIREMENTS,
+    );
     if (three.status === "active") {
       for (const artifact of three.activationArtifacts ?? []) expect(existsSync(root + artifact), `${artifact} must exist`).toBe(true);
     }
@@ -397,7 +201,9 @@ describe("v3 gate-ordering fence", () => {
       ciRuns: (ref, command) => ciJobRuns(ciJobs, ref, command),
       fitnessPassed: () => true,
     });
-    expect(views.map((v) => v.key)).toEqual(Object.keys(RATIFIED_GATES));
+    expect(views.map((v) => v.key)).toEqual(
+      Object.keys(RATIFIED_GATE_RANGES),
+    );
     for (const view of views) {
       const clean = view.requirements.every((r) => r.state === "met") && view.entryBlocking.length === 0;
       expect(view.state === "green", `gate ${view.key} reads ${view.state} with requirements ${JSON.stringify(view.requirements.map((r) => [r.label, r.state]))}`).toBe(clean);
@@ -432,8 +238,8 @@ describe("v3 gate-ordering fence", () => {
           status: "not-yet-active",
           activatesWhen: "account opening becomes config (Wave B prompt 10)",
           activationPrompts: [10],
-          activationArtifacts: [...INVARIANT_THREE_ACTIVATION_RATCHET.artifacts],
-          activationMechanisms: INVARIANT_THREE_ACTIVATION_RATCHET.mechanisms.map((mechanism) => ({
+          activationArtifacts: [...INVARIANT_THREE_ACTIVATION_REQUIREMENTS.artifacts],
+          activationMechanisms: INVARIANT_THREE_ACTIVATION_REQUIREMENTS.mechanisms.map((mechanism) => ({
             ...mechanism,
           })),
         },
@@ -1031,13 +837,15 @@ describe("v3 gate-ordering fence", () => {
       weakenedActivation.invariants.find((i) => i.id === 3)!.activationMechanisms = [
         { type: "fitness", ref: "src/__tests__/fitness/no-bare-throw.test.ts" },
       ];
-      expect(invariantThreeActivationOf(weakenedActivation)).not.toEqual(INVARIANT_THREE_ACTIVATION_RATCHET);
+      expect(invariantThreeActivationOf(weakenedActivation)).not.toEqual(
+        INVARIANT_THREE_ACTIVATION_REQUIREMENTS,
+      );
       const droppedActivationArtifact = clone(registry);
       droppedActivationArtifact.invariants.find((i) => i.id === 3)!.activationArtifacts = [
         "config/domains/account-opening.yaml",
       ];
       expect(invariantThreeActivationOf(droppedActivationArtifact)).not.toEqual(
-        INVARIANT_THREE_ACTIVATION_RATCHET,
+        INVARIANT_THREE_ACTIVATION_REQUIREMENTS,
       );
       const relinked = clone(registry);
       relinked.gates.B!.entryGates = [];
@@ -1052,10 +860,28 @@ describe("v3 gate-ordering fence", () => {
       const softenedEntry = clone(registry);
       softenedEntry.gates.B!.entryCondition = "Gate A is advisory.";
       expect(metadataOf(softenedEntry)).not.toEqual(GATE_METADATA_RATCHET);
+      const shiftedRange = clone(registry);
+      shiftedRange.gates.H!.prompts = [28, 29];
+      for (const changed of [
+        moved,
+        dropped,
+        movedPrompt,
+        falsifiedEarlyProof,
+        weakenedActivation,
+        droppedActivationArtifact,
+        relinked,
+        renamedWave,
+        narrowedOutcome,
+        softenedEntry,
+        shiftedRange,
+      ]) {
+        expect(gateRatchetProblems(changed)).not.toEqual([]);
+      }
       // the pinned maps must match the registry they are pinning (no always-failing ratchet)
       expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
       expect(metadataOf(registry)).toEqual(GATE_METADATA_RATCHET);
       expect(requirementsOf(registry)).toEqual(GATE_REQUIREMENTS_RATCHET);
+      expect(gateRatchetProblems(registry)).toEqual([]);
     });
 
     it("refuses to activate invariant 3 with an unrelated or missing domain-configuration proof", () => {
@@ -1119,6 +945,7 @@ describe("v3 gate-ordering fence", () => {
       );
       expect(gateOrderingProblems(gutted, () => true)).toEqual([]); // every structural rule still passes...
       expect(requirementsOf(gutted)).not.toEqual(GATE_REQUIREMENTS_RATCHET); // ...and the ratchet is what catches it
+      expect(gateConstitutionProblems(gutted, () => true)).not.toEqual([]);
       const view = gateReadiness(gutted, {
         invariantState: () => "active-pass",
         exists: () => true,

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -21,6 +21,7 @@ import {
 } from "../../../e2e/axe-routes";
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
+import { reflectApplyTarget } from "./_callable-indirection";
 import { REPO_ROOT } from "./_fence-utils";
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
@@ -65,6 +66,133 @@ function routeCollectionImmutabilityProblems(
     }
   }
   return problems;
+}
+
+type RouteCollectionName =
+  | "PUBLIC_AXE_ROUTES"
+  | "LOGIN_AXE_ROUTES"
+  | "AUTHENTICATED_AXE_ROUTES"
+  | "DEMO_AXE_ROUTES";
+
+type RouteCollection = readonly {
+  readonly path: string;
+  readonly readySelector: string;
+}[];
+
+function nextRoutePattern(pageFile: string): string | undefined {
+  const normalized = pageFile.replace(/\\/g, "/");
+  const prefix = "src/app/";
+  const suffix = "/page.tsx";
+  if (!normalized.startsWith(prefix)) return undefined;
+  const relative =
+    normalized === "src/app/page.tsx"
+      ? ""
+      : normalized.slice(prefix.length, -suffix.length);
+  if (
+    normalized !== "src/app/page.tsx" &&
+    (!normalized.endsWith(suffix) || relative.length === 0)
+  ) {
+    return undefined;
+  }
+  const segments = relative
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .filter(
+      (segment) =>
+        !(segment.startsWith("(") && segment.endsWith(")")),
+    );
+  if (segments.some((segment) => segment.startsWith("@"))) {
+    return undefined;
+  }
+  return segments.length === 0 ? "/" : `/${segments.join("/")}`;
+}
+
+function routeCollectionFor(
+  pattern: string,
+): RouteCollectionName {
+  if (pattern === "/login") return "LOGIN_AXE_ROUTES";
+  if (pattern === "/app/demo" || pattern.startsWith("/app/demo/")) {
+    return "DEMO_AXE_ROUTES";
+  }
+  if (pattern === "/app" || pattern.startsWith("/app/")) {
+    return "AUTHENTICATED_AXE_ROUTES";
+  }
+  return "PUBLIC_AXE_ROUTES";
+}
+
+function routeMatchesPattern(pattern: string, route: string): boolean {
+  const patternParts = pattern.split("/").filter(Boolean);
+  const routeParts = route.split("/").filter(Boolean);
+  let routeIndex = 0;
+  for (const part of patternParts) {
+    if (part.startsWith("[[...") && part.endsWith("]]")) return true;
+    if (part.startsWith("[...") && part.endsWith("]")) {
+      return routeIndex < routeParts.length;
+    }
+    const actual = routeParts[routeIndex];
+    if (actual === undefined) return false;
+    if (!(part.startsWith("[") && part.endsWith("]")) && part !== actual) {
+      return false;
+    }
+    routeIndex += 1;
+  }
+  return routeIndex === routeParts.length;
+}
+
+export function pageRouteInventoryProblems(
+  pageFiles: readonly string[],
+  collections: Readonly<Record<RouteCollectionName, RouteCollection>>,
+): string[] {
+  const problems: string[] = [];
+  const classified = new Map<
+    RouteCollectionName,
+    Array<{ file: string; pattern: string }>
+  >([
+    ["PUBLIC_AXE_ROUTES", []],
+    ["LOGIN_AXE_ROUTES", []],
+    ["AUTHENTICATED_AXE_ROUTES", []],
+    ["DEMO_AXE_ROUTES", []],
+  ]);
+  for (const file of pageFiles) {
+    const pattern = nextRoutePattern(file);
+    if (pattern === undefined) {
+      problems.push(`${file}: Next page route cannot be classified for Axe`);
+      continue;
+    }
+    classified.get(routeCollectionFor(pattern))!.push({ file, pattern });
+  }
+  for (const [name, pages] of classified) {
+    const paths = collections[name].map((route) =>
+      route.path.split("?")[0]!,
+    );
+    for (const page of pages) {
+      if (!paths.some((path) => routeMatchesPattern(page.pattern, path))) {
+        problems.push(
+          `${page.file}: route ${page.pattern} is absent from ${name}`,
+        );
+      }
+    }
+    for (const path of paths) {
+      if (!pages.some((page) => routeMatchesPattern(page.pattern, path))) {
+        problems.push(
+          `${name}: route ${path} has no classified Next page.tsx owner`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+function nextPageFiles(
+  directory = join(REPO_ROOT, "src/app"),
+  prefix = "src/app",
+): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    const relative = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) return nextPageFiles(path, relative);
+    return entry.isFile() && entry.name === "page.tsx" ? [relative] : [];
+  });
 }
 
 type Callback = ArrowFunction | FunctionExpression;
@@ -561,7 +689,7 @@ function hasRegisteredPlaywrightHook(
     .some((call) =>
       PLAYWRIGHT_HOOK_MEMBERS.some((member) =>
         couldBeNamedImportMemberExpression(
-          call.getExpression(),
+          reflectApplyTarget(call) ?? call.getExpression(),
           "@playwright/test",
           "test",
           member,
@@ -612,7 +740,7 @@ function registrationScopeOf(call: CallExpression, sourceFile: SourceFile): Sour
 function isNeutralizingAnnotation(call: CallExpression): boolean {
   return ["skip", "fixme", "fail"].some((member) =>
     couldBeNamedImportMemberExpression(
-      call.getExpression(),
+      reflectApplyTarget(call) ?? call.getExpression(),
       "@playwright/test",
       "test",
       member,
@@ -898,11 +1026,12 @@ function functionHasNeutralizer(
   seen.add(fn);
   const { origins, destructuredMembers } = testInfoOrigins(fn);
   return ownedCalls(fn).some((call) => {
+    const callable = reflectApplyTarget(call) ?? call.getExpression();
     const neutralizesDirectly = ["skip", "fixme", "fail"].some(
       (member) =>
         isNeutralizingAnnotation(call) ||
         couldBeTestInfoMember(
-          call.getExpression(),
+          callable,
           origins,
           member,
         ) ||
@@ -913,9 +1042,9 @@ function functionHasNeutralizer(
         ),
     );
     const neutralizesThroughCallee =
-      localCallableFunctions(call.getExpression()).some((target) =>
+      localCallableFunctions(callable).some((target) =>
         functionHasNeutralizer(target, new Set(seen)),
-      ) || localCallableIsUnresolved(call.getExpression());
+      ) || localCallableIsUnresolved(callable);
     const neutralizesThroughCallback = call
       .getArguments()
       .some((argument) =>
@@ -1807,6 +1936,19 @@ describe("axe-required fence", () => {
   });
 
   it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
+    const inventoryProblems = pageRouteInventoryProblems(
+      nextPageFiles(),
+      {
+        PUBLIC_AXE_ROUTES,
+        LOGIN_AXE_ROUTES,
+        AUTHENTICATED_AXE_ROUTES,
+        DEMO_AXE_ROUTES,
+      },
+    );
+    expect(
+      inventoryProblems,
+      inventoryProblems.join("\n"),
+    ).toEqual([]);
     const immutabilityProblems = routeCollectionImmutabilityProblems({
       PUBLIC_AXE_ROUTES,
       LOGIN_AXE_ROUTES,
@@ -1851,6 +1993,53 @@ describe("axe-required fence", () => {
   });
 
   describe("detects (companion): accessibility enforcement cannot become false-green", () => {
+    it("rejects an unclassified or unscanned Next page route", () => {
+      const collections = {
+        PUBLIC_AXE_ROUTES: [
+          { path: "/", readySelector: "h1" },
+        ],
+        LOGIN_AXE_ROUTES: [
+          { path: "/login", readySelector: "#email" },
+        ],
+        AUTHENTICATED_AXE_ROUTES: [
+          { path: "/app", readySelector: "main" },
+        ],
+        DEMO_AXE_ROUTES: [
+          { path: "/app/demo", readySelector: "main" },
+          {
+            path: "/app/demo/workspace",
+            readySelector: "main",
+          },
+        ],
+      } as const;
+      const covered = [
+        "src/app/page.tsx",
+        "src/app/login/page.tsx",
+        "src/app/app/page.tsx",
+        "src/app/app/demo/page.tsx",
+        "src/app/app/demo/[station]/page.tsx",
+      ];
+      expect(
+        pageRouteInventoryProblems(covered, collections),
+      ).toEqual([]);
+      expect(
+        pageRouteInventoryProblems(
+          [...covered, "src/app/privacy/page.tsx"],
+          collections,
+        ),
+      ).toContain(
+        "src/app/privacy/page.tsx: route /privacy is absent from PUBLIC_AXE_ROUTES",
+      );
+      expect(
+        pageRouteInventoryProblems(
+          [...covered, "src/app/@modal/page.tsx"],
+          collections,
+        ),
+      ).toContain(
+        "src/app/@modal/page.tsx: Next page route cannot be classified for Axe",
+      );
+    });
+
     it("rejects a required spec without an awaited sanctioned scan", () => {
       const sources = completeSources({
         "e2e/walkthrough.spec.ts":
@@ -2229,6 +2418,9 @@ test("axe", async ({ page }) => {
 disable(true, "file disabled");`,
         `test.${"skip"}.call(test, true, "file disabled");`,
         `test.${"fixme"}.apply(test, [true, "file disabled"]);`,
+        `Reflect.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `const invoke = Reflect.apply;
+invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
         `function disable() {
   test.info().${"fixme"}(true, "file disabled");
 }

@@ -6404,6 +6404,18 @@ replace screenshot evidence; and **(4)** the renderer's approval input is bound 
 `first(sp.approved) === "1"` query-derived declaration. PF-031 and PF-032 record the red reproductions,
 focused companions, and restored proofs.
 
+The captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review
+(2026-07-29) amended ADR-0030 in place a twentieth time: **(1)** all five exact gate ratchets and the
+ratified prompt ranges move into `scripts/v3-gates.lib.ts`, where the blocking runner and fitness fence
+invoke one constitution validator; each runner result has an immediate fail guard before reporting;
+**(2)** Playwright neutralizers and registered hooks invoked through direct or aliased `Reflect.apply`
+are resolved through shared callable-indirection analysis; **(3)** charter-drift replaces its disabled
+fence regex with symbol-aware Vitest registration analysis covering computed members, namespace imports,
+imported and assigned aliases, and x-prefixed registrations; and **(4)** the Axe fence derives the
+complete Next `page.tsx` inventory and requires every static and dynamic route to have an exact loaded-state
+scan owner. PF-001, PF-024, PF-030, PF-031, and PF-032 record the adversarial companions and restored
+green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
@@ -6411,4 +6423,4 @@ without weakening the invariant or re-ordering the build against its own depende
 list - of any requirement kind, including deleting an `evidence` clause - its `wave`, `entryGates`,
 `entryCondition`, `outcome`, or any
 invariant's `gate`, is an amendment to ADR-0030, ADR-0023, and all five ratchets in
-`src/__tests__/fitness/v3-gate-ordering.test.ts`, never a registry edit alone.
+`scripts/v3-gates.lib.ts`, never a registry edit alone.

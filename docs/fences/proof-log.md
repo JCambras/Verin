@@ -10397,6 +10397,127 @@ type, reference, exact command, and effective status.
 
 **Date:** 2026-07-29.
 
+### PF-030 (continued) · shared exact gate ratchets block the runner
+
+**Invariant (ADR-0030):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
+activation-prerequisite, metadata, requirement, and prompt-range ratchets as the fitness fence.
+
+**Injection 25 - narrow Gate B's outcome.** Replaced Gate B's complete outcome with
+`Both domain files exist.` while leaving every structural ordering rule valid, then ran
+`NO_COLOR=1 corepack pnpm exec tsx scripts/v3-invariants.ts`.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: gate constitution problems:
+  - gate metadata drifted from the ADR-0030 ratchet
+```
+
+**Companions added:** the shared validator rejects ratchet-only changes to ownership, prompt-5 proof
+points, invariant 3 activation prerequisites, gate metadata, complete typed requirements, and ratified
+prompt ranges. The registry fence verifies that each shared result reaches an immediate runner failure
+guard.
+
+**Revert:** the complete Gate B outcome was restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · runner ratchet results cannot be cleared
+
+**Invariant (v3 §17):** a collected shared-constitution failure must reach an unconditional nonzero runner
+path before any invariant or gate report is emitted.
+
+**Injection 7 - clear the shared result before its guard.** Inserted `gateProblems.length = 0` between
+the shared validator call and its failure guard, then ran the v3 registry fitness fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: expected false to be true
+```
+
+**Companions added:** symbol-aware runner analysis requires the validator result declaration to be
+immediately followed by a `length > 0` guard that invokes the runner's fatal path. An injected Gate B
+metadata drift proves the shared validator produces the blocking result.
+
+**Revert:** the result-clearing statement was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · reflective neutralizers and complete page inventory
+
+**Invariant (charter #9):** required Axe scans cannot be disabled through direct or aliased
+`Reflect.apply`, and every Next `page.tsx` route must belong to an executed loaded-state scan group.
+
+**Injection 25 - invoke `test.skip` through `Reflect.apply`.** Added
+`Reflect.apply(test.skip, test, [true, "disabled"])` before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 26 - add an unscanned public page.** Added `src/app/privacy/page.tsx` without extending the
+public Axe route collection.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: required route groups cover every loaded public, authenticated, and demo surface
+AssertionError: src/app/privacy/page.tsx: route /privacy is absent from PUBLIC_AXE_ROUTES
+```
+
+**Companions added:** in-memory required specifications reject direct and aliased reflective
+neutralizers. Route-inventory fixtures accept complete static and dynamic ownership, reject a new
+unscanned public page, and fail closed on an unclassified route shape.
+
+**Revert:** the reflective neutralizer and temporary page were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · reflective hooks cannot alter Gate 0 evidence
+
+**Invariant (Gate 0, ADR-0030):** a canonical journey hook cannot hide behind reflective registration
+and inject controls or replace screenshot evidence.
+
+**Injection 19 - register a hook through `Reflect.apply`.** Added
+`Reflect.apply(test.beforeEach, test, [async () => {}])` before the canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** direct and aliased reflective hook registration is resolved through the shared
+callable-indirection helper and rejected before the canonical callback can count as evidence.
+
+**Revert:** the reflective hook was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · symbol-aware disabled-fence registration
+
+**Invariant (charter operating model):** every mapped Vitest fitness fence must remain enabled and
+unfocused across direct, computed, namespace, and aliased registration syntax.
+
+**Injection 2 - disable a fence with a computed member.** Replaced the real no-bare-throw suite's
+registration with `describe["skip"](...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (b) no fitness fence is disabled or focused (this file included)
+AssertionError: disabled/focused fences found:
+no-bare-throw.test.ts:32 disabled/focused Vitest registration describe.skip
+```
+
+**Companions added:** in-memory sources reject computed members, namespace members with a static alias,
+imported x-prefixed registrations, and later assignment aliases, while ordinary aliased enabled
+registrations remain accepted.
+
+**Revert:** the no-bare-throw suite's enabled registration was restored immediately.
+
+**Date:** 2026-07-29.
+
 ### PF-031 (continued) · executed callbacks and stable assertion provenance
 
 **Invariant (charter #9):** Playwright neutralizers inside callbacks executed by a required test cannot

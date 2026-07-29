@@ -1,15 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { Node, Project } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import {
   ACTIVE_MECHANISM_RATCHET,
   ACTIVE_RATCHET,
   activeInvariantRatchetProblems,
   ciJobRunProblem,
+  gateConstitutionProblems,
   mappedFitnessProblems,
   parseCiJobs,
   type CiJob,
+  type Registry as GateRegistry,
 } from "../../../scripts/v3-gates.lib";
 
 /**
@@ -59,8 +61,10 @@ interface Registry {
 
 const VALID_STATUSES = ["active", "not-yet-active"];
 const MECHANISM_TYPES = ["fitness", "ci-gate", "file", "config", "adr", "procedure"];
-export function runnerEnforcesActiveInvariantRatchet(
+export function runnerFailsClosedOnValidator(
   source: string,
+  validatorName: string,
+  resultName: string,
 ): boolean {
   const project = new Project({ useInMemoryFileSystem: true });
   const file = project.createSourceFile("/scripts/v3-invariants.ts", source);
@@ -69,51 +73,77 @@ export function runnerEnforcesActiveInvariantRatchet(
     ?.getNamedImports()
     .find(
       (specifier) =>
-        specifier.getName() === "activeInvariantRatchetProblems",
+        specifier.getName() === validatorName,
     )
     ?.getNameNode()
     .getSymbol();
   const registry = file.getVariableDeclaration("registry")?.getSymbol();
-  const structural = file.getVariableDeclaration("structural")?.getSymbol();
+  const result = file.getVariableDeclaration(resultName);
+  const resultSymbol = result?.getSymbol();
+  const fail = file.getFunction("fail")?.getSymbol();
   if (
     imported === undefined ||
     registry === undefined ||
-    structural === undefined
+    result === undefined ||
+    resultSymbol === undefined ||
+    fail === undefined
   ) {
     return false;
   }
-  return file.getStatements().some((statement) => {
-    if (!Node.isExpressionStatement(statement)) return false;
-    const outer = statement.getExpression();
-    if (!Node.isCallExpression(outer) || outer.getArguments().length !== 1) {
-      return false;
-    }
-    const push = outer.getExpression();
-    if (
-      !Node.isPropertyAccessExpression(push) ||
-      push.getName() !== "push" ||
-      !Node.isIdentifier(push.getExpression()) ||
-      push.getExpression().getSymbol() !== structural
-    ) {
-      return false;
-    }
-    const spread = outer.getArguments()[0];
-    if (!Node.isSpreadElement(spread)) return false;
-    const validation = spread.getExpression();
-    if (
-      !Node.isCallExpression(validation) ||
-      validation.getArguments().length !== 1 ||
-      !Node.isIdentifier(validation.getExpression()) ||
-      validation.getExpression().getSymbol() !== imported
-    ) {
-      return false;
-    }
-    const argument = validation.getArguments()[0];
-    return (
-      Node.isIdentifier(argument) &&
-      argument.getSymbol() === registry
+  const validation = result.getInitializer();
+  if (
+    !Node.isCallExpression(validation) ||
+    !Node.isIdentifier(validation.getExpression()) ||
+    validation.getExpression().getSymbol() !== imported
+  ) {
+    return false;
+  }
+  const argument = validation.getArguments()[0];
+  if (
+    !Node.isIdentifier(argument) ||
+    argument.getSymbol() !== registry
+  ) {
+    return false;
+  }
+  const declarationStatement =
+    result.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  const statements = file.getStatements();
+  const declarationIndex =
+    declarationStatement === undefined
+      ? -1
+      : statements.indexOf(declarationStatement);
+  const guard = statements[declarationIndex + 1];
+  if (!Node.isIfStatement(guard)) return false;
+  const condition = guard.getExpression();
+  const right = Node.isBinaryExpression(condition)
+    ? condition.getRight()
+    : undefined;
+  if (
+    !Node.isBinaryExpression(condition) ||
+    condition.getOperatorToken().getKind() !==
+      SyntaxKind.GreaterThanToken ||
+    !Node.isNumericLiteral(right) ||
+    Number(right.getLiteralText()) !== 0
+  ) {
+    return false;
+  }
+  const length = condition.getLeft();
+  if (
+    !Node.isPropertyAccessExpression(length) ||
+    length.getName() !== "length" ||
+    !Node.isIdentifier(length.getExpression()) ||
+    length.getExpression().getSymbol() !== resultSymbol
+  ) {
+    return false;
+  }
+  return guard
+    .getThenStatement()
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some(
+      (call) =>
+        Node.isIdentifier(call.getExpression()) &&
+        call.getExpression().getSymbol() === fail,
     );
-  });
 }
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
@@ -176,7 +206,20 @@ describe("v3-invariant registry fence", () => {
   it("enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted", () => {
     const problems = validateRegistry(registry, { exists: (p) => existsSync(root + p), ciJobs });
     expect(problems, `v3-invariants.json problems:\n${problems.join("\n")}`).toEqual([]);
-    expect(runnerEnforcesActiveInvariantRatchet(runnerSource)).toBe(true);
+    expect(
+      runnerFailsClosedOnValidator(
+        runnerSource,
+        "gateConstitutionProblems",
+        "gateProblems",
+      ),
+    ).toBe(true);
+    expect(
+      runnerFailsClosedOnValidator(
+        runnerSource,
+        "activeInvariantRatchetProblems",
+        "activeRatchetProblems",
+      ),
+    ).toBe(true);
   });
 
   describe("detects (companion): a dishonest or hollow registry cannot pass", () => {
@@ -316,21 +359,34 @@ describe("v3-invariant registry fence", () => {
         ),
       ).toBe(true);
     });
-    it("flags a blocking runner that discards the shared active ratchet result", () => {
+    it("proves injected ratchet drift reaches an immediate blocking-runner failure guard", () => {
+      const drifted = structuredClone(
+        registry as unknown as GateRegistry,
+      );
+      drifted.gates.B!.outcome = "Both domain files exist.";
       expect(
-        runnerEnforcesActiveInvariantRatchet(
+        gateConstitutionProblems(drifted, () => true).some(
+          (problem) => problem.includes("gate metadata drifted"),
+        ),
+      ).toBe(true);
+      expect(
+        runnerFailsClosedOnValidator(
           runnerSource.replace(
-            "structural.push(...activeInvariantRatchetProblems(registry));",
-            "activeInvariantRatchetProblems(registry);",
+            "if (gateProblems.length > 0)",
+            "if (false && gateProblems.length > 0)",
           ),
+          "gateConstitutionProblems",
+          "gateProblems",
         ),
       ).toBe(false);
       expect(
-        runnerEnforcesActiveInvariantRatchet(
+        runnerFailsClosedOnValidator(
           runnerSource.replace(
-            "structural.push(...activeInvariantRatchetProblems(registry));",
-            "",
+            "if (activeRatchetProblems.length > 0)",
+            "activeRatchetProblems.length = 0;\nif (activeRatchetProblems.length > 0)",
           ),
+          "activeInvariantRatchetProblems",
+          "activeRatchetProblems",
         ),
       ).toBe(false);
     });

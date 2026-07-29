@@ -103,10 +103,11 @@ an unrelated naming fence, and the pinned fitness must adversarially prove both 
 domain schema and bind through the shared engine.
 A gate's
 `awaiting:` line names every requirement holding it back, undecidable ones included. Five ratchets in
-the fence pin the complete 30-invariant gate-assignment map, the prompt-5 proof points for invariants
+the shared gate library pin the complete 30-invariant gate-assignment map, the prompt-5 proof points for invariants
 7, 8, and 9, invariant 3's exact activation artifacts and fitness mechanism, complete gate metadata
 (wave, structural predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED
-requirement set including each non-invariant proof prompt. Readiness
+requirement set including each non-invariant proof prompt. The ratified prompt ranges are pinned beside
+them, and the blocking runner fails immediately on any shared constitution drift. Readiness
 computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
 moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
 typed manifest is equal to the normative demo contract, both are pinned to the exact twelve surface
@@ -127,8 +128,9 @@ every mapped fitness failure or missing result,
 including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
 stable-corpus evidence, Gate F includes prompt 26's verification
 reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
-The Axe-specific fence also parses Playwright selection settings, forbids focused-test exclusion, binds public, authenticated, and demo
-route groups to directly owned loaded-state scans, rejects multi-argument configuration overrides and
+The Axe-specific fence also parses Playwright selection settings, forbids focused-test exclusion, derives
+the complete Next `page.tsx` inventory, binds public, authenticated, and demo route groups to directly
+owned loaded-state scans, rejects multi-argument configuration overrides and
 side-effecting assertion messages, normalizes computed configuration keys while failing closed on
 unresolved keys, and resolves direct, computed, destructured, aliased, and
 namespace-imported neutralization calls through imported Playwright symbols. Reassigned route aliases
@@ -137,11 +139,14 @@ route collections and entries are frozen. Neutralizer aliases fail closed across
 assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
 wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
 and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
-must be stable and unreassigned; neutralizers invoked through `bind`, `call`, or `apply` and transitively
-invoked local neutralizer helpers are followed, and unresolved local callable indirection fails closed.
+must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or `Reflect.apply`
+and transitively invoked local neutralizer helpers are followed, and unresolved local callable
+indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
 login helper is pinned to the uninstrumented browser flow. Required specifications may register no
-Playwright hooks. Conditional callback exits before a required scan are rejected as non-evidence.
+Playwright hooks, including reflectively registered hooks. Conditional callback exits before a required
+scan are rejected as non-evidence. Charter-drift detects disabled or focused Vitest fences through
+symbol-aware AST registration analysis, including computed members and aliases.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

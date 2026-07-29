@@ -44,7 +44,7 @@ empty, unsupported-shell, and fully skipped jobs prove nothing. The charter ratc
 effective enforced mechanism tuple, including mechanism-level status. Both v3 mappings pin
 `pnpm exec tsx scripts/v3-invariants.ts`, and the runner exits nonzero for every mapped fitness failure
 or missing result. Readiness computes every gate's structural `entryGates`, so a later
-gate cannot report green while a predecessor is non-green. Five ratchets in the fence pin the
+gate cannot report green while a predecessor is non-green. Five ratchets in the shared gate library pin the
 30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
 activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
 condition, outcome), and every gate's COMPLETE TYPED requirement set including each non-invariant proof
@@ -259,12 +259,15 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
   Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
   required tests and their registered hooks, requires stable positive helper provenance, follows
-  neutralizers invoked through `bind`, `call`, or `apply` and transitively invoked local helpers, and
+  neutralizers invoked through `bind`, `call`, `apply`, or `Reflect.apply` and transitively invoked local helpers, and
   fails closed on unresolved local callable indirection, proves Playwright forbids focused exclusion and
-  selects the required specs, and binds every public, authenticated, and demo route to its loaded-state
+  selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
+  authenticated, and demo route to its loaded-state
   scan. Required callbacks admit only their typed loops and canonical uninstrumented login call.
   Required specifications may register no Playwright hooks. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
+  Charter-drift uses symbol-aware Vitest registration analysis for computed, aliased, namespace, and
+  x-prefixed disabled or focused fences.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

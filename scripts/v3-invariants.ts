@@ -31,7 +31,7 @@ import {
   activeInvariantRatchetProblems,
   ciJobRunProblem,
   ciJobRuns,
-  gateOrderingProblems,
+  gateConstitutionProblems,
   gateReadiness,
   mappedFitnessProblems,
   parseCiJobs,
@@ -92,8 +92,22 @@ for (const inv of registry.invariants) {
 // integrity, prose/structured agreement, activation-artifact honesty, and the
 // no-empty-requirement-set rule. Same shared core the v3-gate-ordering fence proves
 // adversarially, so this report can never emit a claim that fence would reject.
-structural.push(...gateOrderingProblems(registry, (p) => existsSync(join(ROOT, p))));
-structural.push(...activeInvariantRatchetProblems(registry));
+const gateProblems = gateConstitutionProblems(
+  registry,
+  (path) => existsSync(join(ROOT, path)),
+);
+if (gateProblems.length > 0) {
+  fail(
+    `gate constitution problems:\n  - ${gateProblems.join("\n  - ")}`,
+  );
+}
+const activeRatchetProblems =
+  activeInvariantRatchetProblems(registry);
+if (activeRatchetProblems.length > 0) {
+  fail(
+    `active invariant ratchet problems:\n  - ${activeRatchetProblems.join("\n  - ")}`,
+  );
+}
 
 // ---------- verify the ratified-document pins (arch-version, defense in depth) ----------
 for (const doc of registry.documents) {

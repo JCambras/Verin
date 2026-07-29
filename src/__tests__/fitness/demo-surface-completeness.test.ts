@@ -31,6 +31,7 @@ import {
 import { getJourney } from "../../app/demo/journey";
 import { DEMO_SEQUENCE } from "../../app/demo/model";
 import { isProvablyReachable } from "./_ast-control-flow";
+import { reflectApplyTarget } from "./_callable-indirection";
 import { REPO_ROOT } from "./_fence-utils";
 
 const CONTRACT_PATH = "docs/demo-contract.md";
@@ -707,7 +708,11 @@ function isPlaywrightHookValue(
 function hasRegisteredPlaywrightHook(file: SourceFile): boolean {
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some((call) => isPlaywrightHookValue(call.getExpression()));
+    .some((call) =>
+      isPlaywrightHookValue(
+        reflectApplyTarget(call) ?? call.getExpression(),
+      ),
+    );
 }
 
 function screenshotSequence(
@@ -1749,6 +1754,15 @@ ${workspaceControl}`,
 install(async ({ page }) => {
   page.screenshot = async () => Buffer.from("not a screenshot") as never;
 });`,
+        `Reflect.apply(test.beforeEach, test, [async ({ page }) => {
+  await page.addInitScript(() => {
+    document.documentElement.dataset.injectedControls = "true";
+  });
+}]);`,
+        `const install = Reflect.apply;
+install(test.beforeEach, test, [async ({ page }) => {
+  page.screenshot = async () => Buffer.from("not a screenshot") as never;
+}]);`,
       ]) {
         const hookedJourney = e2e.replace(
           `test("${JOURNEY_TEST}"`,

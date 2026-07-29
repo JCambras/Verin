@@ -382,12 +382,13 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   (26, 28, 30) and Gate H (27, 29) plus timing, measured-results, and cold-review evidence. Beyond that split, no
   invariant changed ACTIVATION ownership: 16 is owned by E, 11 by D, and 18 and 19 by F, each additionally
   required at the earlier gate that can prove it.
-- Five RATCHETS live in the fence file, where review sees the edit: the complete 30-invariant
+- Five RATCHETS live in the shared gate library and are exercised by the fence: the complete 30-invariant
   activation-ownership map, the exact prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
   exact activation artifacts and fitness mechanism, complete gate metadata (`wave`, predecessor chain,
   `entryCondition`, `outcome`), and every gate's COMPLETE TYPED requirement set - `kind` plus id/ref and
-  proof prompt, and the `command` for a `ci-gate`, not invariant ids alone. Changing any of them fails CI
-  until the ratchet, this
+  proof prompt, and the `command` for a `ci-gate`, not invariant ids alone. The ratified ten-gate prompt
+  ranges are pinned beside them. Both the blocking runner and the fitness fence invoke this exact
+  constitution validator. Changing any of them fails CI until the ratchet, this
   ADR, ADR-0023 where applicable, and the proof evidence are amended together. Deleting an `evidence`
   clause is therefore a governance amendment, not a registry edit.
 - The active-invariant mechanism ratchet in `scripts/v3-gates.lib.ts` is exact in both dimensions:
@@ -429,6 +430,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   non-evidence. Required route callbacks admit only their typed loops and stable canonical login call;
   the login helper itself is pinned to the uninstrumented browser flow, and required specifications may
   register no Playwright hooks.
+  Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
+  provenance, so neither a neutralizer nor a registered hook can hide behind reflective dispatch.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -449,7 +452,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   Gates A through I remain non-green against
   their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
-  a rule cannot be enforced in one and missing in the other. The runner exits nonzero when the shared
+  a rule or exact ratchet cannot be enforced in one and missing in the other. The runner places each
+  shared ratchet result behind an immediate fail guard before reporting and exits nonzero when the shared
   Vitest invocation fails or any mapped fitness file, including a gate-only fence, fails or produces no
   result.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
@@ -460,6 +464,12 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   including owned invariants 1, 2, 4, and 5 plus earliest-proof references 7, 8, and 9. The structural
   `entryGates` chain makes that state control readiness. Prompt 5 landed with ADR-0029; prompts 6 and 7
   remain open.
+- The accessibility fence derives the complete `src/app/**/page.tsx` inventory, classifies every static
+  and dynamic route into its public, login, authenticated, or demo scan group, and requires exact
+  ownership in the frozen Axe collections. Adding a page without a loaded-state scan fails the fence.
+- Charter-drift disabled-fence detection parses Vitest registrations with symbol-aware AST provenance,
+  including computed members, namespace imports, imported aliases, assigned aliases, and x-prefixed
+  registrations. String mentions and unrelated local functions are not evidence.
 - The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
   Axe-specific charter proof is PF-031.
 - This does **not** change what invariant 3 requires, when prompt 10 runs, or the deferral of prompt 27
@@ -485,7 +495,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Any gate's `requires` list - of ANY requirement kind - its `wave`, `entryGates`, `entryCondition`,
   `outcome`, or any invariant's `gate`, is proposed for
   change: that is an amendment to this ADR, to ADR-0023's phase-gated commitment, and to all five ratchets in
-  `src/__tests__/fitness/v3-gate-ordering.test.ts`, with fresh proof-log evidence - never a registry edit
+  `scripts/v3-gates.lib.ts`, with fresh proof-log evidence - never a registry edit
   alone. A registry-only edit fails CI (proved: PF-030).
 - A blocking job legitimately needs a condition or `continue-on-error` (a matrix leg, a fork-PR guard):
   the `ci-gate` rules read either as neutralizing, so that job stops being evidence. Point the requirement

@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type SourceFile,
+} from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 
 /**
@@ -257,6 +263,176 @@ function mechanismRatchetProblems(entries: readonly Entry[]): string[] {
   ];
 }
 
+function unwrapRegistrationExpression(node: Node): Node {
+  let current = node;
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current) ||
+    Node.isSatisfiesExpression(current)
+  ) {
+    current = current.getExpression();
+  }
+  return current;
+}
+
+function staticRegistrationString(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): string | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (Node.isStringLiteral(normalized)) return normalized.getLiteralText();
+  if (!Node.isIdentifier(normalized)) return undefined;
+  return normalized
+    .getSymbol()
+    ?.getDeclarations()
+    .flatMap((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return [];
+      const initializer = declaration.getInitializer();
+      const value = staticRegistrationString(
+        initializer,
+        new Set(seen),
+      );
+      return value === undefined ? [] : [value];
+    })[0];
+}
+
+function staticRegistrationMember(
+  node: Node,
+): { receiver: Node; name?: string } | undefined {
+  const normalized = unwrapRegistrationExpression(node);
+  if (Node.isPropertyAccessExpression(normalized)) {
+    return {
+      receiver: normalized.getExpression(),
+      name: normalized.getName(),
+    };
+  }
+  if (!Node.isElementAccessExpression(normalized)) return undefined;
+  return {
+    receiver: normalized.getExpression(),
+    name: staticRegistrationString(normalized.getArgumentExpression()),
+  };
+}
+
+function precedingRegistrationAssignments(node: Node): Node[] {
+  if (!Node.isIdentifier(node)) return [];
+  const symbol = node.getSymbol();
+  if (symbol === undefined) return [];
+  return node
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    .filter(
+      (candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < node.getStart() &&
+        Node.isIdentifier(candidate.getLeft()) &&
+        candidate.getLeft().getSymbol() === symbol,
+    )
+    .map((candidate) => candidate.getRight());
+}
+
+function vitestCallablePaths(
+  node: Node,
+  seen = new Set<Node>(),
+): string[][] {
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return [];
+  seen.add(normalized);
+  const member = staticRegistrationMember(normalized);
+  if (member !== undefined) {
+    return vitestCallablePaths(member.receiver, new Set(seen)).map(
+      (path) => [...path, member.name ?? "*"],
+    );
+  }
+  if (!Node.isIdentifier(normalized)) return [];
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  const imported = declarations.flatMap((declaration): string[][] => {
+    if (Node.isImportSpecifier(declaration)) {
+      const moduleName = declaration
+        .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
+        ?.getModuleSpecifierValue();
+      return moduleName === "vitest" ? [[declaration.getName()]] : [];
+    }
+    if (Node.isNamespaceImport(declaration)) {
+      const moduleName = declaration
+        .getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
+        ?.getModuleSpecifierValue();
+      return moduleName === "vitest" ? [[]] : [];
+    }
+    if (Node.isVariableDeclaration(declaration)) {
+      const initializer = declaration.getInitializer();
+      return initializer === undefined
+        ? []
+        : vitestCallablePaths(initializer, new Set(seen));
+    }
+    if (!Node.isBindingElement(declaration)) return [];
+    const property =
+      declaration.getPropertyNameNode() ?? declaration.getNameNode();
+    const name = Node.isIdentifier(property)
+      ? property.getText()
+      : Node.isStringLiteral(property)
+        ? property.getLiteralText()
+        : undefined;
+    const variable = declaration.getFirstAncestorByKind(
+      SyntaxKind.VariableDeclaration,
+    );
+    const initializer = variable?.getInitializer();
+    return initializer === undefined
+      ? []
+      : vitestCallablePaths(initializer, new Set(seen)).map((path) => [
+          ...path,
+          name ?? "*",
+        ]);
+  });
+  return [
+    ...imported,
+    ...precedingRegistrationAssignments(normalized).flatMap((source) =>
+      vitestCallablePaths(source, new Set(seen)),
+    ),
+  ];
+}
+
+function disabledVitestRegistrationProblemsInFile(
+  file: SourceFile,
+  fileName: string,
+): string[] {
+  const base = new Set(["it", "test", "describe"]);
+  const disabled = new Set(["skip", "only"]);
+  const xPrefixed = new Set(["xit", "xtest", "xdescribe"]);
+  return file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .flatMap((call) =>
+      vitestCallablePaths(call.getExpression()).flatMap((path) => {
+        const isDisabled =
+          (path.length === 1 && xPrefixed.has(path[0]!)) ||
+          (base.has(path[0]!) &&
+            (path.slice(1).some((member) => disabled.has(member)) ||
+              path.slice(1).includes("*")));
+        return isDisabled
+          ? [
+              `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${path.join(".")}`,
+            ]
+          : [];
+      }),
+    );
+}
+
+export function disabledVitestRegistrationProblems(
+  source: string,
+  fileName = "fitness.test.ts",
+): string[] {
+  const project = new Project({
+    useInMemoryFileSystem: true,
+    skipAddingFilesFromTsConfig: true,
+  });
+  const file = project.createSourceFile(`/${fileName}`, source);
+  return disabledVitestRegistrationProblemsInFile(file, fileName);
+}
+
 describe("charter-drift fence", () => {
   it("(a) every enforced file/config/fitness mechanism exists on disk", () => {
     const missing: string[] = [];
@@ -291,17 +467,51 @@ describe("charter-drift fence", () => {
 
   it("(b) no fitness fence is disabled or focused (this file included)", () => {
     const dir = p("src/__tests__/fitness");
-    const offenders: string[] = [];
-    // Matchers are ASSEMBLED so this file can scan ITSELF without the pattern
-    // literals self-triggering (a describe-dot-skip on the meta-fence must be caught).
-    const dot = "\\.";
-    const banned = ["it", "describe", "test"].flatMap((fn) => [new RegExp(`\\b${fn}${dot}skip\\b`), new RegExp(`\\b${fn}${dot}only\\b`)]);
-    banned.push(new RegExp(`\\bx${"it"}\\b`), new RegExp(`\\bx${"describe"}\\b`));
-    for (const f of readdirSync(dir).filter((f) => f.endsWith(".test.ts"))) {
-      const src = readFileSync(`${dir}/${f}`, "utf8");
-      for (const re of banned) if (re.test(src)) offenders.push(`${f} :: ${re}`);
-    }
+    const project = new Project({
+      useInMemoryFileSystem: true,
+      skipAddingFilesFromTsConfig: true,
+    });
+    const offenders = readdirSync(dir)
+      .filter((file) => file.endsWith(".test.ts"))
+      .flatMap((file) =>
+        disabledVitestRegistrationProblemsInFile(
+          project.createSourceFile(
+            `/${file}`,
+            readFileSync(`${dir}/${file}`, "utf8"),
+          ),
+          file,
+        ),
+      );
     expect(offenders, `disabled/focused fences found:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("(b companion) detects computed, namespace, imported, and assigned disabling aliases", () => {
+    const disabled = [
+      `import { describe as suite } from "vitest";
+const off = suite["skip"];
+off("disabled", () => {});`,
+      `import * as vitest from "vitest";
+const mode = "only";
+vitest.test[mode]("focused", () => {});`,
+      `import { xit as check } from "vitest";
+check("disabled", () => {});`,
+      `import { describe } from "vitest";
+let off: typeof describe.skip;
+off = describe.skip;
+off("disabled", () => {});`,
+    ];
+    for (const source of disabled) {
+      expect(
+        disabledVitestRegistrationProblems(source),
+        source,
+      ).not.toEqual([]);
+    }
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { describe as suite, it as check } from "vitest";
+suite("enabled", () => { check("runs", () => {}); });`,
+      ),
+    ).toEqual([]);
   });
 
   it("(e) ratchet: every id that shipped as 'enforced' is still enforced", () => {
