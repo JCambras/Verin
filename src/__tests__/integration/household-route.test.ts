@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
+import { log } from "@infra/observability/logger";
+import { readObservabilityId } from "@domain/observability/safe-values";
 
 const cookieStore = { set: vi.fn() };
 vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }));
@@ -11,6 +13,7 @@ vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }))
 const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 const ORG = "org-household-route";
 const HOUSEHOLD_ID = "123e4567-e89b-12d3-a456-123456789012";
+const ACCOUNT_SHAPED_ID = "00000000-0000-0000-0000-941000517334";
 const globalStore = globalThis as unknown as { __verinDb?: Promise<SqlDb> };
 
 let db: SqlDb;
@@ -27,6 +30,8 @@ async function request(id: string, name: string): Promise<Response> {
 }
 
 describe("PATCH /api/crm/households record identity", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeEach(async () => {
     cookieStore.set.mockClear();
     db = await createMemoryDb();
@@ -72,5 +77,26 @@ describe("PATCH /api/crm/households record identity", () => {
       [HOUSEHOLD_ID],
     );
     expect(row.rows[0]!.name).toBe("After");
+  });
+
+  it("hashes a client household id in failure logs without suppressing its audit", async () => {
+    const info = vi.spyOn(log, "info");
+    const response = await request(ACCOUNT_SHAPED_ID, "After");
+    expect(response.status).toBe(404);
+    const call = info.mock.calls.find((entry) => entry[1] === "audited write failed");
+    expect(call).toBeTruthy();
+    const logged = readObservabilityId(
+      (call![0] as { entityId?: unknown }).entityId,
+      "entityId",
+    );
+    expect(logged).toMatch(/^h1:[0-9a-f]{64}$/);
+    expect(logged).not.toContain("941000517334");
+    const audit = await db.query<{ entity_id: string; action: string }>(
+      "SELECT entity_id, action FROM audit_log ORDER BY sequence",
+    );
+    expect(audit.rows).toContainEqual({
+      entity_id: ACCOUNT_SHAPED_ID,
+      action: "household.update.failed",
+    });
   });
 });

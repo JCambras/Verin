@@ -139,7 +139,8 @@ const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
     "tokenizeRecord", "tokenizeText",
   ])],
   ["src/domain/observability/safe-values.ts", new Set([
-    "observabilityId", "observabilityIdOrRedacted",
+    "authorityObservabilityId", "generatedObservabilityId",
+    "keyedDigestObservabilityId", "observabilityIdOrRedacted",
   ])],
 ]);
 

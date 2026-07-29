@@ -5141,3 +5141,98 @@ pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
 APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
 pnpm test:e2e                                                # 17 tests passed
 ```
+
+### PF-179 app-error reasons use the exact reviewed error vocabulary
+
+The reason predicate accepted any uppercase `app-error:` suffix. An
+attacker-controlled value such as `app-error:ALICE` could therefore reach logs
+while the structural vocabulary check remained green.
+
+**Adversarial proof:** a test-first regression submitted `app-error:ALICE`
+beside the real `app-error:INTERNAL`. The former initially passed the predicate.
+The predicate now delegates its suffix to the exact `ErrorCode` classifier, so
+the planted name is refused and the reviewed code remains accepted.
+
+### PF-180 observable record IDs require mint provenance
+
+Canonical UUID shape was treated as trust authority. A request-derived UUID
+containing account digits could therefore be emitted verbatim by the
+observability identifier boundary.
+
+**Adversarial proof:** test-first regressions passed raw canonical UUIDs,
+including `00000000-0000-0000-0000-941000517334`, and initially received the
+same value. Generated IDs now require a runtime-sealed direct `randomUUID` mint.
+Request IDs use a tenant- and field-scoped keyed digest, and unclassifiable
+values redact. A live shipped-source challenge temporarily called the generated
+mint with caller text. The authoritative fence failed at
+`src/infrastructure/observability/record-id.ts:41`, naming the missing
+`node:crypto randomUUID` provenance. The violation was reverted and the same
+36-test fence passed. Additional companions invoke both generated and keyed
+factories through `Function.call`; each is refused because wrapped invocation
+would hide the argument positions whose provenance the fence verifies.
+
+### PF-181 failure auditing survives identifier refusal
+
+Redacting or hashing a request identifier must not suppress the audit event that
+records the failed governed action.
+
+**Adversarial proof:** the household route receives a crafted account-bearing
+canonical UUID and reaches its not-found failure. Its operational failure log
+contains only the stable keyed identifier with no account digits. The
+tamper-evident audit row is still written with
+`household.update.failed` and the governed record ID.
+
+### PF-182 evidence cycle detection follows the ancestor path
+
+Candidate collection used one global visited set. Two sibling paths sharing the
+same evidence object were therefore rejected as cyclic even though no recursive
+path existed.
+
+**Adversarial proof:** a test-first evidence graph places one object in two
+household array positions. It initially returned a cycle failure. The walker now
+removes each object when its branch unwinds, so the shared DAG yields one
+deduplicated slot while an actual ancestor cycle remains refused.
+
+### PF-183 observability provenance growth is measured and bounded
+
+The provenance wrapper and keyed digest boundary raised domain and
+infrastructure above their prior ceilings. Removing boundary checks or
+compressing documentation would manufacture room without simplifying
+ownership.
+
+**Adversarial proof:** the first complete correction failed at domain
+1,334/1,300 and infrastructure 3,494/3,450. The sealed-factory gate then exposed
+an unnecessary parallel seal; removing it reduced the final measurements to
+domain 1,298 and infrastructure 3,484. Leaving 2 and 16 lines under the nearest
+unchanged or rounded ceilings would not provide honest correction headroom.
+ADR-0038 raises only those layers. Final measurements are contracts
+4,021/4,050, domain 1,298/1,350, infrastructure 3,484/3,550, and presentation
+918/6,000.
+
+### PF-184 the full gate bounds semantic-project concurrency
+
+Running every file concurrently made several independent ts-morph semantic
+projects compete for CPU. Five fitness checks exceeded the unchanged 20-second
+per-test timeout even though 1,201 tests passed and none produced an assertion
+failure.
+
+**Adversarial proof:** the unconstrained full run failed only the five timed-out
+AST checks across three files. The CI-facing `pnpm test` command now uses one
+worker with file parallelism disabled. With the same per-test timeout and
+assertions, it passed all 56 files and 1,208 tests.
+
+### PF-179 - PF-184 verification
+
+```
+corepack pnpm test                                           # 56 files, 1,208 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 4,021/4,050; domain 1,298/1,350; infrastructure 3,484/3,550
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+corepack pnpm test:e2e                                       # 17 tests passed
+```

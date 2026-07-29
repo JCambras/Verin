@@ -127,7 +127,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   (`tenantOf`/`systemTenant` in `contracts/tenant.ts`; `authorizeGovernedAction`/`actorRefOf` in
   `contracts/authz.ts`; `writeActorOf`/reviewed system-actor factories in `contracts/principal.ts`;
   `tokenizeText`/`tokenizeRecord` in `infrastructure/pii/tokenize.ts`;
-  `observabilityId`/`observabilityIdOrRedacted` in `domain/observability/safe-values.ts`). A cast,
+  `authorityObservabilityId`/`generatedObservabilityId`/`keyedDigestObservabilityId`/
+  `observabilityIdOrRedacted` in `domain/observability/safe-values.ts`). A cast,
   literal, sub-interface that merely EXTENDS one, type predicate, a type argument the call YIELDS
   (explicit OR inferred, whenever the signature INVENTS that parameter - names it in the return and in
   no parameter), or a sealed annotation/return/class property/assignment/parameter default filled from

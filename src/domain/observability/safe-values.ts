@@ -5,10 +5,11 @@ import {
   PERSON_WORD_SOURCE,
   REDACTED,
 } from "@contracts/pii";
-import { appError } from "@contracts/errors";
+import { appError, isErrorCode } from "@contracts/errors";
 import { isMachineRecordId } from "@contracts/record-id";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
-/** Derived-and-checked against the real `observabilityId(...)` call sites by the observability-vocabulary fence. */
+/** Derived-and-checked against real identifier-mint call sites by the observability-vocabulary fence. */
 export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
@@ -26,6 +27,10 @@ export interface ObservabilityId {
   readonly [ObservabilityIdBrand]: "ObservabilityId";
 }
 const OBSERVABILITY_IDS = new WeakSet<object>();
+export type RecordObservabilityIdField = Extract<
+  ObservabilityIdField,
+  "applicationId" | "entityId" | "executionId" | "outboxRowId"
+>;
 /**
  * Exported as TYPES, not just runtime sets: an `action: string` audit field lets a
  * caller hand the log formatter a value outside the closed set, which degrades to
@@ -130,7 +135,7 @@ const ALL_CAPS_NAME_RE = new RegExp(PERSON_WORD_SOURCE, "u");
  */
 export const SQLSTATE_SOURCE = String.raw`(?:\d[0-9A-Z]|F0|HV|P0|XX)[0-9A-Z]{3}`;
 const REASON_RE = new RegExp(
-  `^(?:unexpected-error|unknown-email|app-error:[A-Z_]+|driver-error:${SQLSTATE_SOURCE})$`,
+  `^(?:unexpected-error|unknown-email|driver-error:${SQLSTATE_SOURCE})$`,
 );
 
 function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
@@ -149,24 +154,54 @@ function sealId(field: ObservabilityIdField, value: string): ObservabilityId {
   return Object.freeze(id) as ObservabilityId;
 }
 
-export function observabilityId(field: ObservabilityIdField, value: string): ObservabilityId {
-  if (!isOpaqueId(field, value)) {
-    throw appError("PII_VIOLATION", `Observability ${field} identifiers must be opaque.`);
+function recordObservabilityId(
+  field: RecordObservabilityIdField,
+  value: string,
+  provenance: "generated" | "keyed-digest",
+): ObservabilityId {
+  if (
+    (provenance === "generated" && !isMachineRecordId(value)) ||
+    (provenance === "keyed-digest" && !/^h1:[0-9a-f]{64}$/.test(value))
+  ) {
+    throw appError("PII_VIOLATION", "Observability record identifiers require trusted provenance.");
   }
   return sealId(field, value);
 }
 
-/**
- * The same mint where the value is NOT the caller's to control — a client-supplied
- * entity id on an ERROR path. Throwing is right where an id is machine-generated,
- * but inside a catch block it makes a logging helper decide whether the operation
- * reports its own failure: the throw escapes before the failure-audit entry is
- * enqueued, turning a typed 404 into an unenveloped 500 and losing the
- * "[attempt failed]" chain entry (charter #13). Degrade to REDACTED instead — the
- * same answer the log formatter would give, reached without abandoning the write.
- */
-export function observabilityIdOrRedacted(field: ObservabilityIdField, value: string): ObservabilityId {
+export function generatedObservabilityId(
+  field: RecordObservabilityIdField,
+  value: string,
+): ObservabilityId {
+  return recordObservabilityId(field, value, "generated");
+}
+
+export function keyedDigestObservabilityId(
+  field: RecordObservabilityIdField,
+  value: string,
+): ObservabilityId {
+  return recordObservabilityId(field, value, "keyed-digest");
+}
+
+export function authorityObservabilityId(
+  field: Exclude<ObservabilityIdField, RecordObservabilityIdField>,
+  tenant: TenantContext,
+): ObservabilityId {
+  assertTenantContext(tenant);
+  const value = field === "orgId" ? tenant.orgId : tenant.actor.actorId;
   return sealId(field, isOpaqueId(field, value) ? value : REDACTED);
+}
+
+/**
+ * Failure-path fallback for an untrusted raw identifier. Throwing inside a catch
+ * block would let a logging helper decide whether the operation reports its own
+ * failure, losing the "[attempt failed]" chain entry (charter #13).
+ */
+export function observabilityIdOrRedacted(
+  field: ObservabilityIdField,
+  value: unknown,
+): ObservabilityId {
+  void value;
+  return sealId(field, REDACTED);
 }
 
 export function readObservabilityId(value: unknown, field: string | undefined): string | null {
@@ -184,7 +219,10 @@ export function isSafeObservabilityPrimitive(
   if (typeof value === "number" || typeof value === "bigint") return NUMERIC_FIELDS.has(field);
   if (value === REDACTED) return true;
   if (field === "action") return ACTIONS.has(value);
-  if (field === "reason") return REASON_RE.test(value);
+  if (field === "reason") {
+    return REASON_RE.test(value) ||
+      (value.startsWith("app-error:") && isErrorCode(value.slice("app-error:".length)));
+  }
   return ENUMS.get(field)?.has(value) ?? false;
 }
 

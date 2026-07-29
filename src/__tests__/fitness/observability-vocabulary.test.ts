@@ -36,6 +36,7 @@ import {
 const TRACER = "src/infrastructure/observability/tracer.ts";
 const LOGGER = "src/infrastructure/observability/logger.ts";
 const SAFE_VALUES = "src/domain/observability/safe-values.ts";
+const RECORD_ID = "src/infrastructure/observability/record-id.ts";
 /**
  * READ OFF the imported symbol, never spelled. detectShippedTestVocabularyUse
  * resolves (name, declaring file) and reports nothing when either half goes stale,
@@ -188,17 +189,146 @@ const AUDIT_INTENT_SITES = [
   { file: "src/infrastructure/wire.ts", name: "auditEvent" },
 ] as const;
 /**
- * Both sealed-id mints. `observabilityIdOrRedacted` is the same factory with the
- * throw traded for a REDACTED degrade (used on error paths, where a caller-shaped
- * id must not abort the write) — so it stamps the same `field` and owes the same
- * id-field derivation. Missing it here would report every error-path field stale.
+ * Every sealed-id mint stamps the same `field` and owes the same id-field
+ * derivation. Missing one here would report its fields stale.
  */
-const OBSERVABILITY_ID_FACTORIES = ["observabilityId", "observabilityIdOrRedacted"] as const;
+const OBSERVABILITY_ID_FACTORIES = [
+  { file: SAFE_VALUES, name: "authorityObservabilityId" },
+  { file: SAFE_VALUES, name: "generatedObservabilityId" },
+  { file: SAFE_VALUES, name: "keyedDigestObservabilityId" },
+  { file: SAFE_VALUES, name: "observabilityIdOrRedacted" },
+  { file: RECORD_ID, name: "keyedObservabilityId" },
+] as const;
 
 function isObservabilityIdMint(call: CallExpression): boolean {
-  return OBSERVABILITY_ID_FACTORIES.some((name) =>
-    resolvesTo(call.getExpression(), SAFE_VALUES, name)
+  return OBSERVABILITY_ID_FACTORIES.some(({ file, name }) =>
+    resolvesTo(call.getExpression(), file, name)
   );
+}
+
+function importedRandomUuid(call: CallExpression): boolean {
+  const symbol = call.getExpression().getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return Boolean(target?.getDeclarations().some((declaration) => {
+    if (!Node.isFunctionDeclaration(declaration) || declaration.getName() !== "randomUUID") {
+      return false;
+    }
+    return normalizedPath(declaration.getSourceFile().getFilePath())
+      .endsWith("node/crypto.d.ts");
+  }));
+}
+
+function hmacDigestInitializer(node: Node): boolean {
+  if (!Node.isIdentifier(node)) return false;
+  return node.getDefinitionNodes().some((definition) => {
+    if (!Node.isVariableDeclaration(definition)) return false;
+    const initializer = definition.getInitializer();
+    if (!initializer || !Node.isCallExpression(initializer)) return false;
+    const expression = initializer.getExpression();
+    if (
+      !Node.isPropertyAccessExpression(expression) ||
+      expression.getName() !== "digest" ||
+      literalText(initializer.getArguments()[0]) !== "hex"
+    ) {
+      return false;
+    }
+    return initializer.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+      const callee = call.getExpression();
+      const symbol = callee.getSymbol();
+      return Boolean(symbol?.getDeclarations().some((declaration) =>
+        Node.isImportSpecifier(declaration) &&
+        declaration.getName() === "createHmac" &&
+        declaration.getImportDeclaration().getModuleSpecifierValue() === "node:crypto"
+      ));
+    });
+  });
+}
+
+function isHmacDigestValue(node: Node | undefined): boolean {
+  if (!node || !Node.isTemplateExpression(node) || node.getHead().getLiteralText() !== "h1:") {
+    return false;
+  }
+  const spans = node.getTemplateSpans();
+  return spans.length === 1 &&
+    spans[0]!.getLiteral().getLiteralText() === "" &&
+    hmacDigestInitializer(spans[0]!.getExpression());
+}
+
+function directFactoryInvocation(
+  reference: Node,
+  file: string,
+  name: string,
+): CallExpression | null {
+  let expression = reference;
+  const parent = reference.getParent();
+  if (
+    Node.isIdentifier(reference) &&
+    Node.isPropertyAccessExpression(parent) &&
+    parent.getNameNode() === reference &&
+    resolvesTo(parent, file, name)
+  ) {
+    expression = parent;
+  }
+  const call = expression.getParent();
+  return Node.isCallExpression(call) && call.getExpression() === expression
+    ? call
+    : null;
+}
+
+export function detectUntrustedObservabilityRecordMints(project: Project): string[] {
+  const out: string[] = [];
+  for (const sf of project.getSourceFiles()) {
+    const file = normalizedPath(sf.getFilePath());
+    if (!isShipped(file)) continue;
+    const references: Node[] = [
+      ...sf.getDescendantsOfKind(SyntaxKind.Identifier),
+      ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+    ];
+    for (const reference of references) {
+      const parent = reference.getParent();
+      if (
+        reference.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) ||
+        reference.getFirstAncestorByKind(SyntaxKind.ExportDeclaration) ||
+        (
+          Node.isIdentifier(reference) &&
+          Node.isFunctionDeclaration(parent) &&
+          parent.getNameNode() === reference
+        )
+      ) {
+        continue;
+      }
+      for (const name of ["generatedObservabilityId", "keyedDigestObservabilityId"]) {
+        if (
+          resolvesTo(reference, SAFE_VALUES, name) &&
+          !directFactoryInvocation(reference, SAFE_VALUES, name)
+        ) {
+          out.push(
+            `${file}:${reference.getStartLineNumber()}: ${name} must be invoked directly so its provenance can be verified`,
+          );
+        }
+      }
+    }
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const where = `${file}:${call.getStartLineNumber()}`;
+      if (resolvesTo(call.getExpression(), SAFE_VALUES, "generatedObservabilityId")) {
+        const generated = call.getArguments()[1];
+        if (!generated || !Node.isCallExpression(generated) || !importedRandomUuid(generated)) {
+          out.push(`${where}: generated observability record ids must come directly from node:crypto randomUUID`);
+        }
+      }
+      if (resolvesTo(call.getExpression(), SAFE_VALUES, "keyedDigestObservabilityId")) {
+        const owner = call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
+        if (
+          file !== RECORD_ID ||
+          owner?.getName() !== "keyedObservabilityId" ||
+          !isHmacDigestValue(call.getArguments()[1])
+        ) {
+          out.push(`${where}: keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary`);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Every statically-known string value of a type: a literal, or each member of a literal union. */
@@ -312,7 +442,7 @@ function attributeType(node: Node): Type {
   return type;
 }
 
-/** The `field` an `observabilityId("<field>", …)` mint stamps into the value, if statically known. */
+/** The `field` an observability-id mint stamps into the value, if statically known. */
 function mintedIdField(node: Node): string | null {
   const call = Node.isAwaitExpression(node) ? node.getExpression() : node;
   if (!Node.isCallExpression(call) || !isObservabilityIdMint(call)) return null;
@@ -410,13 +540,12 @@ export function detectAttributeVocabularyDrift(
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const where = `${file}:${call.getStartLineNumber()}`;
       // The id-field vocabulary is exactly the first argument of every
-      // observabilityId(...) mint. The factory MODULE is not a call site: its two
-      // mints delegate to each other through the `field` parameter, which is typed
-      // against the vocabulary rather than written as a literal.
-      if (file !== SAFE_VALUES && isObservabilityIdMint(call)) {
+      // observability-id mint. The factory modules are not call sites because
+      // their field parameters are typed against the vocabulary.
+      if (![SAFE_VALUES, RECORD_ID].includes(file) && isObservabilityIdMint(call)) {
         const field = literalText(call.getArguments()[0]);
         if (field === null) {
-          out.push(`${where}: observabilityId needs a literal field name`);
+          out.push(`${where}: observability-id mint needs a literal field name`);
         } else {
           liveIdFields.add(field);
           if (!vocabulary.idFields.includes(field)) {
@@ -472,7 +601,8 @@ export function detectAttributeVocabularyDrift(
 /**
  * EVERY non-nullish member must be a sealed ObservabilityId, not merely one of them.
  * `some` let one opaque member wave the whole attribute through: `{ orgId: ok ?
- * observabilityId("orgId", raw) : raw }` types as `ObservabilityId | string`, and at
+ * generatedObservabilityId("orgId", raw) : raw }` types as
+ * `ObservabilityId | string`, and at
  * runtime the string branch fails readObservabilityId and then the closed-set check,
  * so the operator sees "[REDACTED]" — with the fence green. `null`/`undefined` are
  * excluded because the optional form (`x ? mint(x) : null`) logs nothing at all.
@@ -589,14 +719,14 @@ function vocabularyFixture(consumer: string): Project {
   });
 }
 
-/** vocabularyFixture plus the observabilityId factory and the audit-intent chokepoint. */
+/** vocabularyFixture plus the observability-id factories and audit-intent chokepoint. */
 function attributeFixture(consumer: string): Project {
   const project = vocabularyFixture(consumer);
   project.createSourceFile(
     "/src/domain/observability/safe-values.ts",
     `
       export interface ObservabilityId { readonly field: string; readonly value: string }
-      export function observabilityId(field: string, value: string): ObservabilityId {
+      export function generatedObservabilityId(field: string, value: string): ObservabilityId {
         return { field, value };
       }
       export function observabilityIdOrRedacted(field: string, value: string): ObservabilityId {
@@ -645,6 +775,14 @@ describe("observability-vocabulary fence (charter #14)", () => {
     expect(drift, `observability attribute drift:\n${drift.join("\n")}`).toEqual([]);
   });
 
+  it("enforces: observable record ids retain generated or keyed provenance", () => {
+    const violations = detectUntrustedObservabilityRecordMints(project);
+    expect(
+      violations,
+      `untrusted observability record-id mints:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
+
   it("enforces: the production vocabulary carries no test-namespace entries", () => {
     const testish = [...OBSERVABILITY_VOCABULARY.spanNames, ...OBSERVABILITY_VOCABULARY.logMessages]
       .filter((value) => value.startsWith("test."));
@@ -662,6 +800,101 @@ describe("observability-vocabulary fence (charter #14)", () => {
   });
 
   describe("detects (companion): planted vocabulary drift is caught", () => {
+    it("rejects a generated record id that does not come directly from randomUUID", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function generatedObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/consumer.ts": `
+          import { generatedObservabilityId } from "@domain/observability/safe-values";
+          export function emit(clientId: string): unknown {
+            return generatedObservabilityId("executionId", clientId);
+          }
+        `,
+      });
+      expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
+        "src/infrastructure/consumer.ts:4: generated observability record ids must come directly from node:crypto randomUUID",
+      ]);
+    });
+
+    it("rejects keyed record ids outside the reviewed HMAC boundary", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/consumer.ts": `
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          export function emit(clientId: string): unknown {
+            return keyedDigestObservabilityId("entityId", \`h1:\${clientId}\`);
+          }
+        `,
+      });
+      expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
+        "src/infrastructure/consumer.ts:4: keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      ]);
+    });
+
+    it("rejects a keyed record id that copies caller text inside the reviewed function", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          export function keyedObservabilityId(field: string, clientId: string): unknown {
+            return keyedDigestObservabilityId(field, \`h1:\${clientId}\`);
+          }
+        `,
+      });
+      expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
+        "src/infrastructure/observability/record-id.ts:4: keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      ]);
+    });
+
+    it("rejects generated record factories invoked through call wrappers", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function generatedObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/consumer.ts": `
+          import { generatedObservabilityId } from "@domain/observability/safe-values";
+          export function emit(clientId: string): unknown {
+            return generatedObservabilityId.call(undefined, "executionId", clientId);
+          }
+        `,
+      });
+      expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
+        "src/infrastructure/consumer.ts:4: generatedObservabilityId must be invoked directly so its provenance can be verified",
+      ]);
+    });
+
+    it("rejects keyed record factories invoked through call wrappers", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          export function keyedObservabilityId(field: string, clientId: string): unknown {
+            return keyedDigestObservabilityId.call(undefined, field, \`h1:\${clientId}\`);
+          }
+        `,
+      });
+      expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
+        "src/infrastructure/observability/record-id.ts:4: keyedDigestObservabilityId must be invoked directly so its provenance can be verified",
+      ]);
+    });
+
     it("flags a new span name that is not registered", () => {
       const found = collectObservabilityVocabulary(vocabularyFixture(`
         import { withSpan } from "@infra/observability/tracer";
@@ -809,11 +1042,11 @@ describe("observability-vocabulary fence (charter #14)", () => {
       const project = attributeFixture(`
         import { withSpan } from "@infra/observability/tracer";
         import { log } from "@infra/observability/logger";
-        import { observabilityId } from "@domain/observability/safe-values";
+        import { generatedObservabilityId } from "@domain/observability/safe-values";
         import { auditedWrite } from "@infra/audit/audited-write";
         export const archive = async () => {
           await auditedWrite({ action: "household.archive", entityType: "Ledger" });
-          log.warn({ durationMs: 12, orgId: observabilityId("sessionId", "x") }, "archived");
+          log.warn({ durationMs: 12, orgId: generatedObservabilityId("sessionId", "x") }, "archived");
           return withSpan("crm.household.archive", {}, async () => 1);
         };
       `);
@@ -852,9 +1085,9 @@ describe("observability-vocabulary fence (charter #14)", () => {
     it("does not charge an opaque ObservabilityId attribute to the enum vocabulary", () => {
       const project = attributeFixture(`
         import { log } from "@infra/observability/logger";
-        import { observabilityId } from "@domain/observability/safe-values";
+        import { generatedObservabilityId } from "@domain/observability/safe-values";
         export const emit = () =>
-          log.info({ orgId: observabilityId("orgId", "org") }, "emitted");
+          log.info({ orgId: generatedObservabilityId("orgId", "org") }, "emitted");
       `);
       expect(detectAttributeVocabularyDrift(
         project,
@@ -925,9 +1158,9 @@ describe("observability-vocabulary fence (charter #14)", () => {
     it("flags an observability id whose minted field does not match the attribute key", () => {
       const project = attributeFixture(`
         import { log } from "@infra/observability/logger";
-        import { observabilityId } from "@domain/observability/safe-values";
+        import { generatedObservabilityId } from "@domain/observability/safe-values";
         export const emit = () =>
-          log.info({ actor: observabilityId("orgId", "org") }, "emitted");
+          log.info({ actor: generatedObservabilityId("orgId", "org") }, "emitted");
       `);
       const drift = detectAttributeVocabularyDrift(
         project,
@@ -958,9 +1191,9 @@ describe("observability-vocabulary fence (charter #14)", () => {
     it("refuses an attribute that is only SOMETIMES an opaque id, and allows the optional form", () => {
       const sometimes = attributeFixture(`
         import { log } from "@infra/observability/logger";
-        import { observabilityId } from "@domain/observability/safe-values";
+        import { generatedObservabilityId } from "@domain/observability/safe-values";
         export const emit = (raw: string, ok: boolean) =>
-          log.info({ orgId: ok ? observabilityId("orgId", raw) : raw }, "emitted");
+          log.info({ orgId: ok ? generatedObservabilityId("orgId", raw) : raw }, "emitted");
       `);
       expect(detectAttributeVocabularyDrift(
         sometimes,
@@ -972,9 +1205,9 @@ describe("observability-vocabulary fence (charter #14)", () => {
       // (the narrowing above must not turn every nullable id into a violation).
       const optional = attributeFixture(`
         import { log } from "@infra/observability/logger";
-        import { observabilityId } from "@domain/observability/safe-values";
+        import { generatedObservabilityId } from "@domain/observability/safe-values";
         export const emit = (id: string | null) =>
-          log.info({ entityId: id ? observabilityId("entityId", id) : null }, "emitted");
+          log.info({ entityId: id ? generatedObservabilityId("entityId", id) : null }, "emitted");
       `);
       expect(detectAttributeVocabularyDrift(
         optional,

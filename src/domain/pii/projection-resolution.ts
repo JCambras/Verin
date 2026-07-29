@@ -141,7 +141,7 @@ function collectCandidates(
   value: unknown,
   candidates: Candidate[],
   key?: string,
-  seen = new WeakSet<object>(),
+  path: readonly object[] = [],
 ): boolean {
   if (typeof value === "string") {
     const kind = key ? EVIDENCE_FIELDS[key as EvidenceField] : undefined;
@@ -161,17 +161,17 @@ function collectCandidates(
     return kind === "number" && typeof value === "number" && Number.isFinite(value);
   }
   if (value == null || typeof value === "boolean") return true;
-  if (typeof value !== "object" || seen.has(value)) return false;
-  seen.add(value);
+  if (typeof value !== "object" || path.includes(value)) return false;
+  const nested = [...path, value];
   if (Array.isArray(value)) {
-    return value.every((item) => collectCandidates(item, candidates, key, seen));
+    return value.every((item) => collectCandidates(item, candidates, key, nested));
   }
   for (const [nestedKey, item] of Object.entries(value)) {
     const kind = EVIDENCE_FIELDS[nestedKey as EvidenceField];
     if (!kind || (kind === "container" && (item === null || typeof item !== "object"))) {
       return false;
     }
-    if (!collectCandidates(item, candidates, nestedKey, seen)) return false;
+    if (!collectCandidates(item, candidates, nestedKey, nested)) return false;
   }
   return true;
 }

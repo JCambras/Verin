@@ -14,8 +14,9 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { classifyErrorMetadata, log, safeReason } from "@infra/observability/logger";
+import { keyedObservabilityId } from "@infra/observability/record-id";
 import {
-  observabilityIdOrRedacted,
+  authorityObservabilityId,
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
@@ -110,17 +111,16 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
     const metadata = classifyErrorMetadata(e);
     const known: AppError | null = metadata.appError;
-    // EVERY id minted on this path degrades rather than throws: a throw would escape
-    // before the failure-audit entry below is enqueued, costing the write both its log
-    // line and its "[attempt failed]" chain entry. entityId is the obvious case
-    // (updateHouseholdName takes it from the request body); orgId is no safer.
+    // Request-controlled entity IDs use the non-throwing keyed boundary. A failure
+    // there redacts instead of escaping before the failure-audit entry is enqueued,
+    // which preserves both the log line and the "[attempt failed]" chain entry.
     log[known ? logLevelFor(known.code) : "error"](
       {
-        orgId: observabilityIdOrRedacted("orgId", orgId),
+        orgId: authorityObservabilityId("orgId", tenant),
         action: opts.action,
         entityType: opts.entityType,
         entityId: opts.entityId
-          ? observabilityIdOrRedacted("entityId", opts.entityId)
+          ? keyedObservabilityId("entityId", tenant, opts.entityId)
           : null,
         code: known?.code ?? null,
         reason: metadata.reason,
@@ -144,11 +144,11 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
         // must never be silent (same policy as auditEvent in wire.ts).
         log.error(
           {
-            orgId: observabilityIdOrRedacted("orgId", orgId),
+            orgId: authorityObservabilityId("orgId", tenant),
             action: opts.action,
             entityType: opts.entityType,
             entityId: opts.entityId
-              ? observabilityIdOrRedacted("entityId", opts.entityId)
+              ? keyedObservabilityId("entityId", tenant, opts.entityId)
               : null,
             reason: safeReason(auditErr),
           },

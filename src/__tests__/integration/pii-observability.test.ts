@@ -1,15 +1,24 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, beforeEach, vi } from "vitest";
 import pino from "pino";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
-import { loggerOptions, safeReason } from "@infra/observability/logger";
+import { log, loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
 import { appError } from "@contracts/errors";
 import { parseMachineRecordId, type MachineRecordIdFamily } from "@contracts/record-id";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
-import { isSafeObservabilityPrimitive, observabilityId, observabilityIdOrRedacted, registerTestSpanName } from "@domain/observability/safe-values";
+import { tenantOf } from "@contracts/tenant";
+import {
+  authorityObservabilityId,
+  generatedObservabilityId,
+  isSafeObservabilityPrimitive,
+  observabilityIdOrRedacted,
+  readObservabilityId,
+  registerTestSpanName,
+} from "@domain/observability/safe-values";
+import { keyedObservabilityId } from "@infra/observability/record-id";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -22,6 +31,7 @@ import { isSafeObservabilityPrimitive, observabilityId, observabilityIdOrRedacte
 for (const name of ["test.backstop", "test.keyrule", "test.ambiguous", "test.single-name"]) {
   registerTestSpanName(name);
 }
+afterEach(() => vi.restoreAllMocks());
 
 const ORG = "org-pii";
 const ENTITY_ID = "123e4567-e89b-12d3-a456-123456789012";
@@ -40,7 +50,6 @@ const FIXTURES = {
   accountNumber: "941000517334",
   phone: "(212) 555-0142",
 };
-
 function makeSink(): { lines: string[]; logger: pino.Logger } {
   const lines: string[] = [];
   // The production redact OPTIONS under test; only the level is forced to
@@ -69,6 +78,8 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason(appError("INTERNAL", "Trusted safe message."))).toBe("app-error:INTERNAL");
+    expect(isSafeObservabilityPrimitive("reason", "app-error:INTERNAL")).toBe(true);
+    expect(isSafeObservabilityPrimitive("reason", "app-error:ALICE")).toBe(false);
     expect(safeReason(Object.freeze({ code: "23505" }))).toBe("driver-error:23505");
     const hostileProxy = new Proxy({}, {
       isExtensible() {
@@ -160,19 +171,26 @@ describe("logs never carry raw names or account numbers", () => {
     expect(out).toContain(REDACTED);
   });
   it("sealed opaque identifiers preserve reviewed machine ids only", () => {
-    expect(() =>
-      observabilityId("entityId", FIXTURES.accountNumber)
-    ).toThrow(/opaque/);
-    for (const field of ["orgId", "actor"] as const) {
-      expect(() => observabilityId(field, "1234-5678-9012")).toThrow(/opaque/);
-    }
+    expect(observabilityIdOrRedacted("entityId", FIXTURES.accountNumber).value).toBe(REDACTED);
+    expect(
+      observabilityIdOrRedacted(
+        "entityId",
+        "00000000-0000-0000-0000-941000517334",
+      ).value,
+    ).toBe(REDACTED);
+    const accountTenant = tenantOf(principalFromIdentity({
+      userId: "1234-5678-9012",
+      orgId: "1234-5678-9012",
+      role: "advisor",
+      actor: "account@firm.test",
+      sessionId: "s-account",
+    }));
+    expect(authorityObservabilityId("orgId", accountTenant).value).toBe(REDACTED);
+    expect(authorityObservabilityId("actor", accountTenant).value).toBe(REDACTED);
     const { lines, logger } = makeSink();
     logger.info(
       {
-        entityId: observabilityId(
-          "entityId",
-          ENTITY_ID,
-        ),
+        entityId: generatedObservabilityId("entityId", ENTITY_ID),
       },
       "test line",
     );
@@ -189,8 +207,34 @@ describe("logs never carry raw names or account numbers", () => {
       expect(parseMachineRecordId(family, ENTITY_ID.toUpperCase())).toBe(ENTITY_ID);
       expect(parseMachineRecordId(family, "alice")).toBeNull();
     }
-    expect(observabilityId("entityId", parseMachineRecordId("household", ENTITY_ID)!).value).toBe(ENTITY_ID);
+    expect(
+      observabilityIdOrRedacted(
+        "entityId",
+        parseMachineRecordId("household", ENTITY_ID)!,
+      ).value,
+    ).toBe(REDACTED);
+    expect(generatedObservabilityId("entityId", ENTITY_ID).value).toBe(ENTITY_ID);
     expect(observabilityIdOrRedacted("entityId", "alice").value).toBe(REDACTED);
+  });
+  it("keyed record identifiers are stable within a tenant and unlinkable across tenants", () => {
+    const crafted = "00000000-0000-0000-0000-941000517334";
+    const first = keyedObservabilityId("entityId", advisor.tenant, crafted);
+    const repeated = keyedObservabilityId("entityId", advisor.tenant, crafted);
+    const otherTenant = tenantOf(principalFromIdentity({
+      userId: "u-other",
+      orgId: "org-other",
+      role: "advisor",
+      actor: "other@firm.test",
+      sessionId: "s-other",
+    }));
+    const other = keyedObservabilityId("entityId", otherTenant, crafted);
+    const execution = keyedObservabilityId("executionId", advisor.tenant, crafted);
+    expect(first.value).toMatch(/^h1:[0-9a-f]{64}$/);
+    expect(repeated.value).toBe(first.value);
+    expect(other.value).not.toBe(first.value);
+    expect(execution.value).not.toBe(first.value);
+    expect(first.value).not.toContain("941000517334");
+    expect(keyedObservabilityId("entityId", advisor.tenant, "alice").value).toBe(REDACTED);
   });
   it("accepts every real machine id shape and still refuses name- and account-shaped values", () => {
     for (const value of [
@@ -203,7 +247,14 @@ describe("logs never carry raw names or account numbers", () => {
       "seed",
       "household:3f1f9c2e-8f7a-4b6e-9e2d-1a2b3c4d5e6f",
     ]) {
-      expect(observabilityId("orgId", value).value, value).toBe(value);
+      const tenant = tenantOf(principalFromIdentity({
+        userId: "u-machine",
+        orgId: value,
+        role: "advisor",
+        actor: "machine@firm.test",
+        sessionId: "s-machine",
+      }));
+      expect(authorityObservabilityId("orgId", tenant).value, value).toBe(value);
     }
     for (const value of [
       "Alice", // a person-name shape
@@ -222,7 +273,7 @@ describe("logs never carry raw names or account numbers", () => {
       FIXTURES.email,
       "078-05-1120",
     ]) {
-      expect(() => observabilityId("entityId", value), value).toThrow(/opaque/);
+      expect(observabilityIdOrRedacted("entityId", value).value, value).toBe(REDACTED);
     }
   });
 });
@@ -259,14 +310,39 @@ describe("traces never carry raw names or account numbers", () => {
     }
   });
 
+  it("hashes a client execution id before the flow log boundary", async () => {
+    const crafted = "00000000-0000-0000-0000-941000517334";
+    const info = vi.spyOn(log, "info");
+    const started = await startAccountOpening(db, advisor, advisorPii, {
+      clientRequestId: crafted,
+      householdName: FIXTURES.householdName,
+      firstName: FIXTURES.firstName,
+      lastName: FIXTURES.lastName,
+      email: FIXTURES.email,
+      accountType: "individual",
+    });
+    expect(started.status).toBe("suspended");
+    const call = info.mock.calls.find((entry) => entry[1] === "flow started");
+    expect(call).toBeTruthy();
+    const logged = readObservabilityId(
+      (call![0] as { executionId?: unknown }).executionId,
+      "executionId",
+    );
+    expect(logged).toMatch(/^h1:[0-9a-f]{64}$/);
+    expect(logged).not.toContain("941000517334");
+  });
+
   it("a PII-shaped attribute VALUE is scrubbed at the span boundary (backstop)", async () => {
     await withSpan(
       "test.backstop",
       {
         contact: FIXTURES.email,
         phone: FIXTURES.phone,
-        orgId: observabilityId("orgId", ORG),
-        entityId: [FIXTURES.email, observabilityId("entityId", ENTITY_ID)],
+        orgId: authorityObservabilityId("orgId", advisor.tenant),
+        entityId: [
+          FIXTURES.email,
+          generatedObservabilityId("entityId", ENTITY_ID),
+        ],
       },
       async () => undefined,
     );
@@ -284,8 +360,8 @@ describe("traces never carry raw names or account numbers", () => {
       {
         phone: 2125550142,
         accountNumber: 941000517334,
-        orgId: observabilityId("orgId", ORG),
-        actor: observabilityId("actor", advisor.actorId),
+        orgId: authorityObservabilityId("orgId", advisor.tenant),
+        actor: authorityObservabilityId("actor", advisor.tenant),
       },
       async () => undefined,
     );

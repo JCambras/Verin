@@ -2862,3 +2862,54 @@ makes generated machine identity nondeterministically unobservable.
 **Revert path:** revert this changeset to restore frozen-state trust,
 bound-callable authorization gaps, inferred nested seal construction,
 fixed-container authority rereads, and transitive pre-body SQL execution.
+
+## D-093 - Observability record identifiers require explicit provenance
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-089, D-092, ADR-0013,
+ADR-0038, v3 §15.1/§15.2/§15.4, charter #1/#3/#4/#7/#14
+
+All three review findings were legitimate. The reason vocabulary accepted
+arbitrary uppercase suffixes as if they were reviewed error codes. Record
+identifier safety treated UUID shape as trust provenance. The evidence candidate
+walker used a global visited set and rejected shared acyclic evidence as a cycle.
+
+Observability reasons now accept an `app-error:` value only when its suffix is
+an exact `ErrorCode`. Record identifiers carry a runtime-sealed generated or
+keyed-digest provenance value. Only direct cryptographic UUID generation may
+create the generated form. Client-supplied canonical UUIDs pass through a
+domain-separated HMAC keyed from the validated application secret and scoped by
+organization, field, and value. Values that cannot be classified or hashed are
+redacted. Failure logging still runs, while the tamper-evident audit chain keeps
+the governed record identifier needed by examiners.
+
+Evidence traversal now tracks the current ancestor chain rather than every
+previously visited object. Shared DAG nodes are valid, while a node reached
+through its own ancestor path remains a cycle.
+
+The default full-suite command now runs one test file at a time. Concurrent
+ts-morph semantic projects exhausted local CPU and pushed five otherwise-green
+fitness checks past their per-test timeout. The bounded runner completed all
+1,208 tests without weakening that timeout or changing individual assertions.
+
+The authoritative line-budget metric requires a measured ADR amendment:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,021 | 4,050 | 29 |
+| domain | 1,298 | 1,350 | 52 |
+| infrastructure | 3,484 | 3,550 | 66 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0038 raises only the affected domain and infrastructure envelopes. No useful
+code or documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** trust complete UUID shape as provenance; redact all
+client identifiers and lose stable operational correlation; use an unkeyed
+digest that becomes a recovery oracle; suppress failure auditing when digest
+generation fails; keep a global traversal set that conflates shared evidence
+with recursion; or retain nearly exhausted ceilings that pressure future
+corrections into documentation deletion.
+
+**Revert path:** revert this changeset to restore open-ended app-error reasons,
+shape-authorized request identifiers, and false cycle rejection for shared
+evidence DAGs.

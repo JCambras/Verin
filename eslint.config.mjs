@@ -57,7 +57,7 @@ const SEALED_FACTORY_FILES = [
 ];
 const SEALED_TYPE_NAME = `/^(${SEALED_TYPES.join("|")})$/`;
 const sealedTypeMessage =
-  "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction, writeActorOf, observabilityId) — a cast or literal bypasses the scrub/seal (v3 invariant 1).";
+  "Sealed type: construct via its factory (tokenizeText/tokenizeRecord, tenantOf/systemTenant, authorizeGovernedAction, writeActorOf, observability ID factories) - a cast or literal bypasses the scrub/seal (v3 invariant 1).";
 const noSealedTypeConstruction = [
   { selector: `TSAsExpression TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },
   { selector: `TSTypeAssertion TSTypeReference Identifier[name=${SEALED_TYPE_NAME}]`, message: sealedTypeMessage },

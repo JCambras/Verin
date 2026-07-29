@@ -235,6 +235,7 @@ const PLACEHOLDER_VALUE =
 const REVEAL_ALLOWLIST: Array<{ file: string; functionName: string; why: string }> = [
   { file: "src/infrastructure/identity/session.ts", functionName: "sign", why: "HMAC-signs the session cookie" },
   { file: "src/infrastructure/esign/esign.ts", functionName: "signCallback", why: "HMAC-signs/verifies the e-sign webhook callback" },
+  { file: "src/infrastructure/observability/record-id.ts", functionName: "keyedObservabilityId", why: "derives tenant-scoped record-id digests" },
 ];
 const SECRET_MODULE_EXPORTS = new Set(["SecretValue", "revealSecret"]);
 

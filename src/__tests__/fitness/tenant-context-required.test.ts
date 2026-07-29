@@ -53,7 +53,8 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
 
 const PORT_ESCAPES = new Set([
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
-  "src/domain/observability/safe-values.ts :: observabilityId.<call>",
+  "src/domain/observability/safe-values.ts :: generatedObservabilityId.<call>",
+  "src/domain/observability/safe-values.ts :: keyedDigestObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: observabilityIdOrRedacted.<call>",
   "src/domain/observability/safe-values.ts :: readObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: registerTestSpanName.<call>",

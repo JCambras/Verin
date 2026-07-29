@@ -478,6 +478,16 @@ describe("projection evidence is plain, reviewed, and complete", () => {
       household: { name: "alice must approve" },
     })).toBe(true);
   });
+
+  it("accepts shared evidence objects that are not cyclic", () => {
+    const shared = { name: "Alice" };
+    const result = project(
+      request("review-transaction-request"),
+      { household: [shared, shared] },
+      [{ slotId: SLOT_1, slotType: "subject" }],
+    );
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("post-mask residual checks remain fail closed", () => {

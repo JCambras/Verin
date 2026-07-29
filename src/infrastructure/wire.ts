@@ -29,10 +29,12 @@ import { createHousehold, createContact, createFinancialAccount, createTask } fr
 import { createApplication, setEsignRequested, completeApplication, getApplicationByToken } from "@infra/crm/application-store";
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
+import { keyedObservabilityId } from "@infra/observability/record-id";
 import { classifyErrorMetadata, log } from "@infra/observability/logger";
 import {
-  observabilityId,
-  observabilityIdOrRedacted,
+  authorityObservabilityId,
+  generatedObservabilityId,
+  type ObservabilityId,
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
@@ -59,20 +61,20 @@ function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountO
   };
   return {
     createHousehold: (name, tenant) =>
-      withSpan("crm.household.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
+      withSpan("crm.household.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
     createContact: (input, tenant) =>
-      withSpan("crm.contact.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
+      withSpan("crm.contact.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
     createApplication: (input, tenant) =>
-      withSpan("crm.application.create", { orgId: observabilityId("orgId", tenant.orgId) }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
+      withSpan("crm.application.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
     requestEsign: (applicationId, tenant) =>
-      withSpan("esign.request", { orgId: observabilityId("orgId", tenant.orgId) }, async () => {
+      withSpan("esign.request", { orgId: authorityObservabilityId("orgId", tenant) }, async () => {
         const token = newEsignToken();
         return must(await setEsignRequested(db, actorFor(tenant), applicationId, token, `esign:${executionId}`));
       }),
     finalize: (input, tenant) =>
       withSpan("account-opening.finalize", {
-        orgId: observabilityId("orgId", tenant.orgId),
-        applicationId: observabilityId("applicationId", input.applicationId),
+        orgId: authorityObservabilityId("orgId", tenant),
+        applicationId: keyedObservabilityId("applicationId", tenant, input.applicationId),
       }, async () => {
         const starterActor = actorFor(tenant);
         const actor = starterActor.actorUserId === input.actor
@@ -150,24 +152,30 @@ function editedReplayConflict(executionId: string): FlowRunResult {
 export const CLIENT_REQUEST_ID_RE = MACHINE_RECORD_ID_RE;
 
 /**
- * The request id BECOMES the executionId, which is emitted in the flow's span
- * and log line — so it must already be an opaque observability identifier, and
- * that is proven HERE, before any household/contact/application write commits. A
- * uuid is canonicalized to lowercase (the observability predicate reads a
- * `Lu`-then-`Ll` pair as a person name, which mixed-case hex carries); anything
- * else is left as sent and refused as a typed VALIDATION failure rather than
- * throwing out of a log line whose effects are already durable.
+ * The request id becomes the persisted executionId. Server-generated IDs carry
+ * direct mint provenance; client IDs are canonicalized for persistence and use
+ * a tenant-scoped keyed observability value. Invalid input is refused before any
+ * household, contact, or application write commits.
  */
-function canonicalExecutionId(clientRequestId: string | undefined): Result<string, AppError> {
-  const id = clientRequestId === undefined
-    ? randomUUID()
-    : parseMachineRecordId("execution", clientRequestId) ?? clientRequestId;
-  try {
-    observabilityId("executionId", id);
-  } catch {
+function canonicalExecutionId(
+  clientRequestId: string | undefined,
+  tenant: TenantContext,
+): Result<{ readonly id: string; readonly observable: ObservabilityId }, AppError> {
+  if (clientRequestId === undefined) {
+    const generated = generatedObservabilityId("executionId", randomUUID());
+    return ok({
+      id: generated.value,
+      observable: generated,
+    });
+  }
+  const id = parseMachineRecordId("execution", clientRequestId);
+  if (!id) {
     return err(appError("VALIDATION", "A client request id must be an opaque machine identifier (a UUID minted once per form session)."));
   }
-  return ok(id);
+  return ok({
+    id,
+    observable: keyedObservabilityId("executionId", tenant, id),
+  });
 }
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
@@ -190,13 +198,14 @@ export async function startAccountOpening(
   assertActionGrant(grant, "execution.initiate");
   assertActionGrant(piiGrant, "pii.view");
   assertSameTenant(grant.tenant, piiGrant.tenant);
-  const canonical = canonicalExecutionId(input.clientRequestId);
+  const tenant = grant.tenant;
+  const canonical = canonicalExecutionId(input.clientRequestId, tenant);
   if (!canonical.ok) {
-    return { executionId: input.clientRequestId ?? "", status: "failed", error: canonical.error, data: {} };
+    return { executionId: "", status: "failed", error: canonical.error, data: {} };
   }
   const store = makeExecutionStore(db);
-  const executionId = canonical.value;
-  const tenant = grant.tenant;
+  const executionId = canonical.value.id;
+  const observableExecutionId = canonical.value.observable;
   const deps = makeDeps(db, grant.writeActor, executionId);
   // A client-minted id that already started is a double-submit: report the
   // existing execution's state instead of starting a duplicate. The tenant-scoped
@@ -216,15 +225,15 @@ export async function startAccountOpening(
       // idempotency keys replay the committed writes, so the user's resubmit
       // recovers instead of dead-ending on the persisted failure.
       return withSpan("flow.account-opening.retry", {
-        orgId: observabilityId("orgId", tenant.orgId),
-        actor: observabilityId("actor", grant.actorId),
+        orgId: authorityObservabilityId("orgId", tenant),
+        actor: authorityObservabilityId("actor", tenant),
       }, async () => {
         const result = await retryFailedStart(store, deps, existing, tenant);
         log.info({
-          orgId: observabilityId("orgId", tenant.orgId),
+          orgId: authorityObservabilityId("orgId", tenant),
           flow: "account-opening",
           status: result.status,
-          executionId: observabilityId("executionId", result.executionId),
+          executionId: observableExecutionId,
         }, "flow retried");
         return result;
       });
@@ -233,8 +242,8 @@ export async function startAccountOpening(
   // Span attribution is the opaque userId, never the email — OTel attributes are
   // exported to the OTLP endpoint and must not carry PII (ADR-0006/0013).
   return withSpan("flow.account-opening.start", {
-    orgId: observabilityId("orgId", tenant.orgId),
-    actor: observabilityId("actor", grant.actorId),
+    orgId: authorityObservabilityId("orgId", tenant),
+    actor: authorityObservabilityId("actor", tenant),
   }, async () => {
     let result: FlowRunResult;
     try {
@@ -264,10 +273,10 @@ export async function startAccountOpening(
     }
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.
     log.info({
-      orgId: observabilityId("orgId", tenant.orgId),
+      orgId: authorityObservabilityId("orgId", tenant),
       flow: "account-opening",
       status: result.status,
-      executionId: observabilityId("executionId", result.executionId),
+      executionId: observableExecutionId,
     }, "flow started");
     return result;
   });
@@ -289,7 +298,7 @@ export async function resumeAccountOpeningByToken(
   const starter = systemWriteActor("esign-webhook", app.org_id);
   const deps = makeDeps(db, starter, `resume:${token}`);
   return withSpan("flow.account-opening.resume", {
-    orgId: observabilityId("orgId", app.org_id),
+    orgId: authorityObservabilityId("orgId", starter.tenant),
   }, () =>
     resumeFlow(accountOpeningFlow, store, deps, token, payload, starter.tenant),
   );
@@ -336,16 +345,12 @@ export async function auditEvent(
     // ADR-0007 deferral with a fail-closed trigger), but the loss is never silent.
     log.error(
       {
-        // Same rule as audited-write's catch: the report of a lost audit entry must
-        // never itself throw. entityId is the obvious case, but orgId is no safer -
-        // a throw here escapes auditEvent, so the loss becomes silent AND the caller
-        // fails (a logout would return an unenveloped 500 with the session already
-        // revoked). Both identifiers degrade to the same value the log formatter
-        // would have written anyway.
-        orgId: observabilityIdOrRedacted("orgId", actor.tenant.orgId),
+        // A request-controlled entity ID hashes or redacts without throwing, so a
+        // digest failure cannot silence the lost-audit report or fail its caller.
+        orgId: authorityObservabilityId("orgId", actor.tenant),
         action: opts.action,
         entityType: opts.entityType,
-        entityId: observabilityIdOrRedacted("entityId", opts.entityId),
+        entityId: keyedObservabilityId("entityId", actor.tenant, opts.entityId),
         code: recorded.error.code,
       },
       "security-event audit could not be recorded",
