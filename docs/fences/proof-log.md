@@ -6105,3 +6105,45 @@ error, absence of raw echo, no overflow, and axe.
 **Adversarial proof:** the invalid-token cases include wrong length, uppercase hex,
 non-hex, and suffix forms. Reversing the profile tuple is the positional-pairing
 injection: a positional renderer swaps the two firm labels and fails the component test.
+
+## PF-setup-31 · activation authority and complete identity fail closed
+
+**Date:** 2026-07-28.
+
+**Invariant:** only an authenticated Principal may acknowledge and activate the exact
+committed setup draft. The acknowledgment is one-time and scoped to actor, role, session,
+generation, and selections. Snapshot, bundle, and decision hashes bind every material
+input and claim. Activated export requires an explicit token, scenario, and firm and is
+readable only in the creating session.
+
+**Fence:** `setup-attestation-store.test.ts` covers forged, stale, replayed, mismatched,
+and cross-session attestations. The semantic-truth fence mutates evaluator version,
+request and evidence references, retrieval time, fixed controls, authority actor,
+serializer and engine versions, time zone, blockers, precedence, and authority and
+requires every corresponding hash to change. Playwright covers unauthorized role,
+incomplete parameters, empty activation, and cross-session record access. RULE B permits
+the surface to import the action contract only through a type-only import.
+
+**Adversarial proof:** before the correction, the advisor activation and explicit empty
+activation Playwright cases both failed because an advisor could create a snapshot and
+`activation=` rendered a static default record. The post-correction injections use a
+second session, a replayed token, a changed generation, a changed selections hash, and
+material preimage mutations; each is rejected or changes identity. A planted runtime
+import from the action contract fails RULE B while the type-only form passes.
+
+## PF-setup-32 · chronology, GC-15 facts, and request provenance share one owner
+
+**Date:** 2026-07-28.
+
+**Invariant:** activation precedes evidence, recommendation, decision, and ordered
+authority. GC-15 derives checks, before and after evidence, and impact copy from one typed
+pending-distribution delta. The request amount is user-entered demo input everywhere it
+is displayed or exported.
+
+**Fence:** the semantic-truth fence checks the canonical causal sequence, the typed
+GC-15 projection, and request category, metric provenance, fake class, intent, and record
+provenance.
+
+**Adversarial proof:** an evidence time before activation, a contradictory "liquidity
+unchanged" GC-15 check, and a synthetic-fixture request label each fail their companion
+detector.

@@ -10,10 +10,10 @@
  * Nothing here is computed at render time: the per-scenario `disposition` is contract
  * data (the same value scenarios.yaml carries), never derived in a component.
  */
-import { createHash } from "node:crypto";
+import type { Role } from "@contracts/roles";
 import type { DispositionKind } from "./model";
 
-const DEMO_TIME_ZONE = "America/New_York";
+export const DEMO_TIME_ZONE = "America/New_York";
 
 function timestampParts(iso: string): Record<string, string> {
   return Object.fromEntries(
@@ -44,9 +44,9 @@ function activationTimestampLabel(iso: string): string {
 export const DEMO_TIMELINE = {
   decisionDate: "2026-07-28",
   activationAt: "2026-07-28T14:00:00.000Z",
+  evidenceRetrievedAt: "2026-07-28T14:01:00.000Z",
+  recommendationRetrievedAt: "2026-07-28T14:03:00.000Z",
   decisionCreatedAt: "2026-07-28T14:05:00.000Z",
-  evidenceRetrievedAt: "2026-07-28T13:14:00.000Z",
-  recommendationRetrievedAt: "2026-07-28T13:20:00.000Z",
   specialistReviewedAt: "2026-07-28T14:15:00.000Z",
   operationsApproval1At: "2026-07-28T14:32:00.000Z",
   operationsApproval2At: "2026-07-28T14:41:00.000Z",
@@ -59,6 +59,38 @@ export const DEMO_TIMELINE = {
   delayedNigoAt: "2026-07-30T11:12:00.000Z",
   stuckAt: "2026-07-30T18:02:00.000Z",
 } as const;
+
+export const DEMO_CAUSAL_SEQUENCE = [
+  "activationAt",
+  "evidenceRetrievedAt",
+  "recommendationRetrievedAt",
+  "decisionCreatedAt",
+  "specialistReviewedAt",
+  "operationsApproval1At",
+  "operationsApproval2At",
+] as const;
+
+export function demoTimelineViolations(
+  timeline: Readonly<
+    Record<(typeof DEMO_CAUSAL_SEQUENCE)[number], string>
+  >,
+): string[] {
+  const violations: string[] = [];
+  for (let index = 1; index < DEMO_CAUSAL_SEQUENCE.length; index += 1) {
+    const beforeKey = DEMO_CAUSAL_SEQUENCE[index - 1]!;
+    const afterKey = DEMO_CAUSAL_SEQUENCE[index]!;
+    const before = Date.parse(timeline[beforeKey]);
+    const after = Date.parse(timeline[afterKey]);
+    if (
+      !Number.isFinite(before) ||
+      !Number.isFinite(after) ||
+      before >= after
+    ) {
+      violations.push(`${beforeKey} must precede ${afterKey}`);
+    }
+  }
+  return violations;
+}
 
 export const DEMO_NOW = DEMO_TIMELINE.decisionDate;
 export const RETRIEVED_AT = demoTimestampLabel(
@@ -251,6 +283,13 @@ export interface DecisionConfiguration {
   readonly requesterConstraint: string | null;
   readonly approvalClockId: string;
   readonly activatedSnapshotHash: string | null;
+  readonly activationAuthority: {
+    readonly actorId: string;
+    readonly role: Role;
+    readonly attestationStatementVersion: string;
+    readonly draftGeneration: number;
+    readonly selectionsHash: string;
+  } | null;
 }
 
 // The demo cast (synthetic personas, labeled like all fixture data).
@@ -269,6 +308,32 @@ export const IDS = {
   conflictKeys: ["liquidity:smiths:2026-08", "bank-instruction:smiths:chase-4417"],
   auditPosition: "org demo-org · sequence 214",
 } as const;
+
+export interface PendingDistributionDelta {
+  readonly beforeMinor: number;
+  readonly deltaMinor: number;
+  readonly afterMinor: number;
+  readonly observedAt: string;
+  readonly retrievedAt: string;
+}
+
+export const GC15_PENDING_DISTRIBUTION: PendingDistributionDelta = {
+  beforeMinor: 0,
+  deltaMinor: 1_500_000,
+  afterMinor: 1_500_000,
+  observedAt: DEMO_TIMELINE.revalidatedAt,
+  retrievedAt: DEMO_TIMELINE.revalidatedAt,
+};
+
+export function usdMinor(minor: number): string {
+  return `$${(minor / 100).toLocaleString("en-US")}`;
+}
+
+export function pendingDistributionDeltaSentence(
+  delta: PendingDistributionDelta,
+): string {
+  return `A ${usdMinor(delta.deltaMinor)} pending distribution posted after this approval was given.`;
+}
 
 // ── The twelve scenario branches (contract §5; scenarios.yaml scenarios) ─────────────
 // `disposition`/`perFirm` mirror scenarios.yaml exactly (fenced). `spec` states which
@@ -345,110 +410,6 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
     requesterConstraint: firm.requesterConstraint,
     approvalClockId: DEFAULT_APPROVAL_CLOCK.id,
     activatedSnapshotHash: null,
-  };
-}
-
-function digest(value: readonly unknown[]): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function canonicalDecisionInputFor(scenario: ScenarioData) {
-  const stalePlannedWithdrawals =
-    scenario.spec.stalePlannedWithdrawals === true;
-  const bankChanged = scenario.spec.bankChanged === true;
-  const destination = scenario.spec.thirdPartyDestination
-    ? THIRD_PARTY_DESTINATION
-    : bankChanged
-      ? BANK_INSTRUCTION.changed
-      : BANK_INSTRUCTION.stable;
-  return {
-    scenarioId: scenario.id,
-    request: {
-      text: CANONICAL_REQUEST.text,
-      amountMinor: CANONICAL_REQUEST.amountMinor,
-      purpose: CANONICAL_REQUEST.purpose,
-      deadline: CANONICAL_REQUEST.deadline,
-      destination,
-    },
-    evidence: {
-      availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
-      availableCashObservedAt: stalePlannedWithdrawals
-        ? OBSERVED_GC09_BALANCE
-        : OBSERVED_RECENT,
-      pendingApprovedMinor: SMITHS_LIQUIDITY.pendingMinor,
-      plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-      plannedWithdrawalObservedAt: stalePlannedWithdrawals
-        ? OBSERVED_STALE
-        : OBSERVED_RECENT,
-      bankInstruction: bankChanged
-        ? BANK_INSTRUCTION.changed
-        : BANK_INSTRUCTION.stable,
-      bankInstructionObservedAt: bankChanged
-        ? BANK_INSTRUCTION.changedOn
-        : "2026-05-20",
-      destinationRestrictionRef: DESTINATION_RESTRICTION.ref,
-      destinationRestriction: DESTINATION_RESTRICTION.text,
-      conflictingFundingInstructions:
-        scenario.spec.conflictingInstruction === true
-          ? [
-              "Renovation costs are paid from the Joint Taxable account",
-              "Large one-time needs are funded from the Smith Family Taxable account",
-            ]
-          : [],
-    },
-    branchFacts: {
-      invalidation: scenario.spec.invalidation === true,
-      competing: scenario.spec.competing === true,
-      duplicateRetry: scenario.spec.duplicateRetry === true,
-      partial: scenario.spec.partial === true,
-      delayedNigo: scenario.spec.delayedNigo === true,
-      specialistExpired: scenario.spec.specialistExpired === true,
-    },
-  };
-}
-
-export function decisionIdentityFor(
-  scenario: ScenarioData,
-  firm: FirmData,
-  options: {
-    readonly configuration?: DecisionConfiguration;
-    readonly disposition?: DispositionKind;
-    readonly explanation?: string;
-  } = {},
-): DecisionIdentity {
-  const configuration = options.configuration ?? decisionConfigurationFor(firm);
-  const inputHash = digest([
-    "verin-demo-input-v2",
-    canonicalDecisionInputFor(scenario),
-  ]);
-  const bundleHash = digest([
-    "verin-demo-bundle-v1",
-    inputHash,
-    firm.id,
-    configuration.policyVersion,
-    configuration.reserveMonths,
-    configuration.freshnessDays,
-    configuration.bankChangeHandling,
-    configuration.dualApprovalThresholdMinor,
-    configuration.approvalsRequired,
-    configuration.eligibleRole,
-    configuration.requesterConstraint,
-    configuration.approvalClockId,
-    configuration.activatedSnapshotHash,
-  ]);
-  const disposition = options.disposition ?? dispositionFor(scenario, firm.id);
-  const decisionHash = digest([
-    "verin-demo-decision-v1",
-    scenario.id,
-    firm.id,
-    bundleHash,
-    disposition,
-    options.explanation ?? `${scenario.id}:${disposition}`,
-  ]);
-  return {
-    decisionId: `dec-${firm.id}-${decisionHash.slice(0, 24)}`,
-    inputHash,
-    decisionHash,
-    bundleHash,
+    activationAuthority: null,
   };
 }

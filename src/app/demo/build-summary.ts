@@ -27,11 +27,12 @@ import {
   DEMO_RECORD_CREATED_AT,
   IDS,
   OBSERVED_RECENT,
-  decisionIdentityFor,
+  decisionConfigurationFor,
   type DecisionIdentity,
   type FirmData,
   type ScenarioData,
 } from "./data";
+import { decisionIdentityFor } from "./decision-identity";
 
 export interface RecordBuildOptions {
   readonly identity?: DecisionIdentity;
@@ -86,12 +87,42 @@ export function buildRecord(
   const reserveHorizon = options.reserveHorizon ?? FIXTURE_RESERVE_HORIZON;
   const disposition =
     options.disposition ?? buildDisposition(scenario, firm, undefined, reserveHorizon);
+  const precedence = buildPolicyTrace(
+    scenario,
+    firm,
+    disposition.kind,
+  ).rows;
+  const approvalStages =
+    options.approvalStages !== undefined
+      ? options.approvalStages
+      : reached.authority
+        ? buildStages(scenario, firm, "final")
+        : null;
   const identity =
     options.identity ??
-    decisionIdentityFor(scenario, firm, {
-      disposition: disposition.kind,
-      explanation: disposition.why.reason,
-    });
+    decisionIdentityFor(
+      scenario,
+      firm,
+      decisionConfigurationFor(firm),
+      {
+        disposition,
+        precedence,
+        authority: {
+          reached: approvalStages !== null,
+          summary:
+            approvalStages !== null
+              ? disposition.authoritySummary ?? "Authority is required"
+              : "No approval authority exists for this decision",
+          detail:
+            approvalStages !== null
+              ? "The record carries the complete ordered approval-stage plan."
+              : stopNote ?? "The decision stopped before authority.",
+          stages: approvalStages ?? [],
+        },
+        reachability: reached,
+        stopNote,
+      },
+    );
   return {
     identity: {
       scenario: { id: scenario.id, label: scenario.title },
@@ -114,19 +145,14 @@ export function buildRecord(
     intent: buildIntent(scenario),
     evidence: buildEvidence(scenario).rows,
     disposition,
-    precedence: buildPolicyTrace(scenario, firm, disposition.kind).rows,
+    precedence,
     reserve: buildRecordReserve(
       scenario,
       firm,
       disposition,
       reserveHorizon,
     ),
-    approvalStages:
-      options.approvalStages !== undefined
-        ? options.approvalStages
-        : reached.authority
-          ? buildStages(scenario, firm, "final")
-          : null,
+    approvalStages,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario).rows : null,
     verification: reached.execution ? buildVerification(scenario) : null,

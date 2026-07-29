@@ -3336,3 +3336,36 @@ that supposedly govern it.
 demo export is replaced by a real ledger projection that owns all timestamps and
 evaluation states. The validation and identity-keyed boundaries remain independently
 reversible.
+
+### D-068 · 2026-07-28 · reversible · Demo activation is session-bound and identity-complete
+
+Setup activation now requires the authenticated Principal role and a one-time
+server-issued attestation bound to the exact committed draft generation, canonical
+selection hash, opaque actor id, role, and session. Activation consumes that attestation
+before creating an immutable snapshot. Missing, expired, replayed, cross-session, forged,
+or mismatched attestations fail closed. The fixed proposer and approver names remain only
+inside a labeled synthetic lifecycle preview. Proof and export identify the one
+authenticated demo Principal who acknowledged that preview and state that no second
+human approval or production policy lifecycle exists.
+
+The snapshot hash binds the versioned evaluator and serializer, canonical request and
+evidence inputs, evaluation time and time zone, complete fixed setup configuration,
+exact selections, and server-resolved authority. Decision identity uses separate
+versioned input, policy-bearing bundle, and record preimages. Evidence references and
+retrieval times, evaluation metadata, engine versions, blockers, precedence, authority,
+reachability, and stop state are identity-bearing. Activated record lookup requires an
+explicit valid token, scenario, and firm and remains scoped to the creating session.
+
+The canonical timeline is causal from activation through evidence retrieval,
+recommendation, decision creation, specialist review, and operations approvals. GC-15
+screen and export facts derive from one typed pending-distribution delta. Request amount
+provenance is user-entered demo input on the setup card, metric, proof trail, intent, and
+record.
+
+**Why:** activation attribution, attestation, hash identity, route selection, chronology,
+and provenance are one exported claim. Client-only acknowledgment or partial preimages
+could let a record name authority and inputs that the server never verified.
+
+**Revert path:** remove the attestation and session-bound snapshot path together only if a
+real persisted policy lifecycle replaces it with equivalent authenticated attribution,
+versioned canonical identity, and fail-closed lookup.

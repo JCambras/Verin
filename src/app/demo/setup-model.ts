@@ -7,6 +7,7 @@
  */
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
+import type { Role } from "@contracts/roles";
 import type { ApprovalStageVM, DispositionVM, FakeClass } from "./model";
 
 export const SETUP_FIRM_IDS = ["firm-a", "firm-b"] as const;
@@ -24,6 +25,20 @@ export type SetupSelections = Record<
   SetupFirmId,
   Record<SetupPolicyGroupId, string>
 >;
+
+export const SETUP_ATTESTATION_STATEMENT_VERSION =
+  "money-movement-demo-attestation/1.0.0";
+
+export interface SetupAttestationChallengeVM {
+  readonly token: string;
+  readonly draftGeneration: number;
+  readonly selectionsHash: string;
+  readonly statementVersion: typeof SETUP_ATTESTATION_STATEMENT_VERSION;
+  readonly actor: {
+    readonly opaqueId: string;
+    readonly role: Role;
+  };
+}
 
 export const SETUP_STEP_IDS = [
   "profiles",
@@ -198,20 +213,25 @@ export interface SetupFactVM {
     | "Regulatory or product constraint"
     | "Adapter fact"
     | "Derived value"
+    | "User-entered demo input"
     | "Synthetic fixture";
   readonly provenance: RecordProvenance;
   readonly fakeClass: FakeClass;
 }
 
 export interface SetupActivationVM {
-  readonly proposer: string;
-  readonly proposerRole: string;
-  readonly approver: string;
-  readonly approverRole: string;
+  readonly lifecyclePreview: {
+    readonly proposer: string;
+    readonly proposerRole: string;
+    readonly approver: string;
+    readonly approverRole: string;
+    readonly fakeClass: FakeClass;
+  };
   readonly effectiveAt: string;
   readonly simulationRef: string;
   readonly requesterDecisionNotice: string;
   readonly demonstrationNotice: string;
+  readonly attestationStatement: string;
 }
 
 export interface SetupRequestVM {
@@ -291,6 +311,16 @@ export interface SetupActivatedSnapshotVM {
   readonly snapshotHash: string;
   readonly canonicalConfiguration: string;
   readonly activatedAt: string;
+  readonly activationAcknowledgment: {
+    readonly actor: {
+      readonly opaqueId: string;
+      readonly role: Role;
+    };
+    readonly statementVersion: typeof SETUP_ATTESTATION_STATEMENT_VERSION;
+    readonly draftGeneration: number;
+    readonly selectionsHash: string;
+    readonly statement: string;
+  };
   readonly selections: SetupSelections;
   readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
 }

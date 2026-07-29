@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { login, PRINCIPAL } from "./helpers";
+import { ADVISOR, login, PRINCIPAL } from "./helpers";
 
 /**
  * Setup-first and walking-skeleton E2E: governance setup is clickable end to end
@@ -152,14 +152,15 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await checkAxe(page, "setup-impact");
   await snap(page, 5, "setup-impact");
 
-  // 6 - Local activation requires a distinct-human acknowledgment.
+  // 6 - Local activation requires an authenticated Principal acknowledgment.
   await page.getByRole("button", { name: "Send for approval" }).click();
-  await expect(page.getByRole("heading", { name: "A different human acknowledges immutable versions" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A Principal acknowledges the simulated lifecycle" })).toBeVisible();
   await expect(page.getByText("FA-MM-DEMO-1.0").first()).toBeVisible();
   await expect(page.getByText("FB-MM-DEMO-1.0").first()).toBeVisible();
   await page.getByRole("button", { name: "Acknowledge and activate demonstration" }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Confirm the distinct-human" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Confirm the demonstration" })).toBeVisible();
   await page.getByRole("checkbox").check();
+  await expect(page.getByTestId("setup-attestation")).toContainText("principal");
   await checkAxe(page, "setup-activation");
   await snap(page, 6, "setup-activation");
 
@@ -242,6 +243,12 @@ test("each firm's export lands on the record whose identifiers the proof step sh
     // Byte-for-byte: the frozen version, configuration, outcome, and all identity
     // hashes survive the export boundary.
     await expectRecordIdentity(page, shown);
+    await expect(
+      page
+        .locator('section[aria-label="Intent"]')
+        .getByTestId("dev-provenance-badge")
+        .first(),
+    ).toHaveText("demo input");
     // The export never makes a stronger provenance claim than the screen that produced
     // it: an untouched Firm B is recommended-pending-signoff, not captain-signed.
     await expect(page.getByTestId("record-identity-configuration-provenance")).toHaveText(
@@ -307,7 +314,7 @@ test("a changed selection freezes, exports, and requires reactivation after anot
   for (const heading of [
     "Identical facts, different correct outcomes",
     "Run the Smiths request under both profiles",
-    "A different human acknowledges immutable versions",
+    "A Principal acknowledges the simulated lifecycle",
     "See the impact on signed examples",
     "Tune only the decisions that can legitimately differ",
   ]) {
@@ -326,7 +333,7 @@ test("a changed selection freezes, exports, and requires reactivation after anot
     .getByRole("button", { name: "Acknowledge and activate demonstration" })
     .click();
   await expect(
-    page.getByRole("alert").filter({ hasText: "Confirm the distinct-human" }),
+    page.getByRole("alert").filter({ hasText: "Confirm the demonstration" }),
   ).toBeVisible();
 
   const priorRecord = await context.newPage();
@@ -580,9 +587,109 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
     page.getByRole("heading", { name: "Decision record unavailable" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({ hasText: "Activated setup snapshot" }),
-  ).toContainText(missingSnapshot);
+    page.getByRole("alert").filter({ hasText: "activated setup snapshot" }),
+  ).toBeVisible();
   await expect(page.getByTestId("record-identity-decision-id")).toHaveCount(0);
+});
+
+test("setup activation rejects a signed-in advisor", async ({ page }) => {
+  await login(page, ADVISOR);
+  await page.goto("/app/demo/setup");
+  for (const label of [
+    "Continue with both firms",
+    "Confirm required controls",
+    "Use this starting posture",
+    "Review signed impact",
+    "Send for approval",
+  ]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+  await page.getByRole("checkbox").check();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Principal role" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "A Principal acknowledges the simulated lifecycle",
+    }),
+  ).toBeVisible();
+});
+
+test("an explicit empty activation parameter cannot render a static record", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.goto(
+    "/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&activation=",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Decision record unavailable" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("record-identity-decision-id")).toHaveCount(0);
+});
+
+test("activated records require explicit scenario and firm parameters", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  const activation = "a".repeat(64);
+  for (const query of [
+    `activation=${activation}`,
+    `scenario=recent-bank-change-block&activation=${activation}`,
+    `firm=firm-a&activation=${activation}`,
+  ]) {
+    await page.goto(`/app/demo/record?${query}`);
+    await expect(
+      page.getByRole("heading", { name: "Decision record unavailable" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("record-identity-decision-id")).toHaveCount(0);
+  }
+});
+
+test("an activated record is unavailable to another authenticated session", async ({
+  page,
+  browser,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/setup");
+  for (const label of [
+    "Continue with both firms",
+    "Confirm required controls",
+    "Use this starting posture",
+    "Review signed impact",
+    "Send for approval",
+  ]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Acknowledge and activate demonstration" })
+    .click();
+  const activation = (
+    await page.getByTestId("request-snapshot-hash").textContent()
+  )?.trim();
+  expect(activation).toMatch(/^[a-f0-9]{64}$/);
+
+  const otherContext = await browser.newContext();
+  try {
+    const otherPage = await otherContext.newPage();
+    await login(otherPage, PRINCIPAL);
+    await otherPage.goto(
+      `/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&activation=${activation}`,
+    );
+    await expect(
+      otherPage.getByRole("heading", {
+        name: "Decision record unavailable",
+      }),
+    ).toBeVisible();
+    await expect(
+      otherPage.getByRole("alert").filter({
+        hasText: "not available to this authenticated session",
+      }),
+    ).toBeVisible();
+  } finally {
+    await otherContext.close();
+  }
 });
 
 test("legacy comparison and query activation aliases redirect to setup without activating", async ({ page }) => {

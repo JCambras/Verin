@@ -34,7 +34,6 @@ import {
   SMITHS_LIQUIDITY,
   demoTimestampLabel,
   decisionConfigurationFor,
-  decisionIdentityFor,
   dispositionFor,
   type DecisionIdentity,
   type FirmData,
@@ -437,7 +436,7 @@ export function buildStages(
 export function buildApprovals(
   scenario: ScenarioData,
   firm: FirmData,
-  identity: DecisionIdentity = decisionIdentityFor(scenario, firm),
+  identity: DecisionIdentity,
 ): ApprovalVM {
   return {
     spine: buildSpine("Authority"),

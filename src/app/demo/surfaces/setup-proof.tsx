@@ -6,7 +6,8 @@
  * snapshot verbatim and derives nothing (design §10, RULE B).
  */
 import { StatusBadge } from "@app/presentation/ui";
-import { DISPOSITION_LABELS } from "../model";
+import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { DEV_BADGE_TEXT, DISPOSITION_LABELS } from "../model";
 import {
   POSTURE_OPTION_LABEL,
   POSTURE_STATUS,
@@ -40,13 +41,23 @@ function Trail({
       </div>
       <ol className="mt-4 flex flex-col gap-3">
         <li className="rounded-md border border-slate-200 bg-surface p-3">
+          <CategoryLabel>User-entered demo input</CategoryLabel>
+          <p className="mt-2 text-sm font-medium text-slate-900">1. Request pinned</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-600">{vm.request.requestRef}</p>
+          <p className="mt-2">
+            <DevProvenanceBadge
+              label={DEV_BADGE_TEXT["user-entered-demo-input"]}
+            />
+          </p>
+        </li>
+        <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>Synthetic fixture</CategoryLabel>
-          <p className="mt-2 text-sm font-medium text-slate-900">1. Evidence pinned</p>
+          <p className="mt-2 text-sm font-medium text-slate-900">2. Evidence pinned</p>
           <p className="mt-1 break-all font-mono text-xs text-slate-600">{vm.request.evidenceRef}</p>
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>Firm policy</CategoryLabel>
-          <p className="mt-2 text-sm font-medium text-slate-900">2. Policy evaluated</p>
+          <p className="mt-2 text-sm font-medium text-slate-900">3. Policy evaluated</p>
           {/* Every frozen choice with the authority it actually carries: an examiner
               sees WHICH of the five the captain signed, not a single summary claim. */}
           <dl className="mt-2 grid gap-2" data-testid={`proof-${firmId}-selections`}>
@@ -66,13 +77,13 @@ function Trail({
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>Derived value</CategoryLabel>
-          <p className="mt-2 text-sm font-medium text-slate-900">3. Disposition recorded</p>
+          <p className="mt-2 text-sm font-medium text-slate-900">4. Disposition recorded</p>
           <p className="mt-1 text-xs text-slate-600">{identity.disposition.headline}</p>
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>{identity.authorityPlan.reached ? "Adapter fact" : "Universal safety"}</CategoryLabel>
           <p className="mt-2 text-sm font-medium text-slate-900">
-            4. {identity.authorityPlan.reached ? "Authority, revalidation, and one submission" : "Path stops safely"}
+            5. {identity.authorityPlan.reached ? "Authority, revalidation, and one submission" : "Path stops safely"}
           </p>
           <p className="mt-1 text-xs text-slate-600">
             {identity.strongestProofDetail}
@@ -214,6 +225,42 @@ export function ProofBody({
           <div>
             <dt className="text-xs text-slate-600">Activated snapshot</dt>
             <dd className="break-all font-mono text-xs text-slate-800">{snapshot.snapshotVersion}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Authenticated activation actor</dt>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.activationAcknowledgment.actor.opaqueId}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Authenticated role</dt>
+            <dd className="text-sm text-slate-800">
+              {snapshot.activationAcknowledgment.actor.role}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Attestation statement version</dt>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.activationAcknowledgment.statementVersion}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Acknowledged draft generation</dt>
+            <dd className="font-mono text-xs text-slate-800">
+              {snapshot.activationAcknowledgment.draftGeneration}
+            </dd>
+          </div>
+          <div className="md:col-span-2">
+            <dt className="text-xs text-slate-600">Acknowledged selections hash</dt>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.activationAcknowledgment.selectionsHash}
+            </dd>
+          </div>
+          <div className="md:col-span-2">
+            <dt className="text-xs text-slate-600">Demonstration acknowledgment</dt>
+            <dd className="text-sm text-slate-800">
+              {snapshot.activationAcknowledgment.statement}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-slate-600">Canonical configuration</dt>

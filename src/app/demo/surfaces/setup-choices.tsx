@@ -6,6 +6,7 @@ import { DEV_BADGE_TEXT } from "../model";
 import type {
   ChoiceEffectVM,
   MoneyMovementSetupVM,
+  SetupAttestationChallengeVM,
   SetupFirmId,
   SetupPolicyGroupVM,
   SetupSelections,
@@ -181,6 +182,7 @@ export function ActivationBody({
   onAttested,
   error,
   disabled,
+  attestation,
 }: {
   vm: MoneyMovementSetupVM;
   selections: SetupSelections;
@@ -188,6 +190,7 @@ export function ActivationBody({
   onAttested: (checked: boolean) => void;
   error: string | null;
   disabled: boolean;
+  attestation: SetupAttestationChallengeVM | null;
 }) {
   return (
     <>
@@ -223,19 +226,26 @@ export function ActivationBody({
 
       <section aria-labelledby="review-binding-title" className="rounded-lg border border-slate-200 bg-surface p-4">
         <h2 id="review-binding-title" className="text-base font-semibold text-slate-900">
-          Distinct-human review
+          Synthetic lifecycle preview
         </h2>
+        <p className="mt-2">
+          <DevProvenanceBadge
+            label={DEV_BADGE_TEXT[vm.activation.lifecyclePreview.fakeClass]}
+          />
+        </p>
         <dl className="mt-3 grid gap-3 text-sm md:grid-cols-2">
           <div>
-            <dt className="text-xs text-slate-600">Proposed by</dt>
+            <dt className="text-xs text-slate-600">Synthetic proposer</dt>
             <dd className="text-slate-900">
-              {vm.activation.proposer} · {vm.activation.proposerRole}
+              {vm.activation.lifecyclePreview.proposer} ·{" "}
+              {vm.activation.lifecyclePreview.proposerRole}
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-600">Reviewed by</dt>
+            <dt className="text-xs text-slate-600">Synthetic approver</dt>
             <dd className="text-slate-900">
-              {vm.activation.approver} · {vm.activation.approverRole}
+              {vm.activation.lifecyclePreview.approver} ·{" "}
+              {vm.activation.lifecyclePreview.approverRole}
             </dd>
           </div>
           <div>
@@ -255,6 +265,23 @@ export function ActivationBody({
           Demonstration activation
         </p>
         <p className="mt-2 text-sm text-slate-700">{vm.activation.demonstrationNotice}</p>
+        {attestation ? (
+          <dl
+            className="mt-3 grid min-w-0 gap-2 rounded-md border border-slate-200 bg-surface p-3 text-xs sm:grid-cols-2"
+            data-testid="setup-attestation"
+          >
+            <div className="min-w-0">
+              <dt className="text-slate-600">Authenticated actor</dt>
+              <dd className="break-all font-mono text-slate-800">
+                {attestation.actor.opaqueId}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">Authenticated role</dt>
+              <dd className="text-slate-800">{attestation.actor.role}</dd>
+            </div>
+          </dl>
+        ) : null}
         <label className="mt-4 flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-slate-300 p-3">
           <input
             type="checkbox"
@@ -264,8 +291,7 @@ export function ActivationBody({
             className="mt-1 size-4 shrink-0 accent-slate-900"
           />
           <span className="text-sm text-slate-800">
-            I am the named demonstration approver, I reviewed both visible profiles, and I understand that
-            this acknowledgment cannot activate production policy.
+            {vm.activation.attestationStatement}
           </span>
         </label>
         {error ? (

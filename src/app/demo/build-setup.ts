@@ -23,6 +23,7 @@ import {
   DEMO_EVIDENCE_REF,
   DEMO_NOW,
   DEMO_REQUEST_REF,
+  GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
   OBSERVED_RECENT,
   OBSERVED_GC09_BALANCE,
@@ -30,6 +31,7 @@ import {
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
+  pendingDistributionDeltaSentence,
   type SignedLiquidityCase,
 } from "./data";
 
@@ -283,7 +285,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "posture", shortLabel: "Posture", kicker: "Step 3 · Safe starting point", title: "Begin conservatively, then make differences explicit", description: "The starting posture is expanded into exact values before it enters either draft.", primaryLabel: "Use this starting posture" },
       { id: "choices", shortLabel: "Choices", kicker: "Step 4 · Firm-specific choices", title: "Tune only the decisions that can legitimately differ", description: "Five closed groups express institutional posture without exposing a general rule builder.", primaryLabel: "Review signed impact" },
       { id: "impact", shortLabel: "Impact", kicker: "Step 5 · Before activation", title: "See the impact on signed examples", description: "Five high-signal cases show how the selected profiles change authority, evidence handling, or liquidity while universal safety stays fixed.", primaryLabel: "Send for approval" },
-      { id: "activation", shortLabel: "Activate", kicker: "Step 6 · Human review", title: "A different human acknowledges immutable versions", description: "The demonstration records proposal, review, visible differences, version identity, and effective time without pretending the real lifecycle exists.", primaryLabel: "Acknowledge and activate demonstration" },
+      { id: "activation", shortLabel: "Activate", kicker: "Step 6 · Principal acknowledgment", title: "A Principal acknowledges the simulated lifecycle", description: "The demonstration records one authenticated Principal acknowledgment, visible differences, version identity, and effective time without pretending the real lifecycle exists.", primaryLabel: "Acknowledge and activate demonstration" },
       { id: "request", shortLabel: "Request", kicker: "Step 7 · Same request, two profiles", title: "Run the Smiths request under both profiles", description: "The request and evidence stay identical. Only the pinned demonstration profile changes.", primaryLabel: "Run under both profiles" },
       { id: "outcomes", shortLabel: "Outcomes", kicker: "Step 8 · Policy explains the difference", title: "Identical facts, different correct outcomes", description: "Each branch preserves its firm label and stops at the strongest proof the branch honestly has.", primaryLabel: "View complete proof trail" },
       { id: "proof", shortLabel: "Proof", kicker: "Step 9 · Complete trace", title: "Every outcome has a proof trail", description: "Evidence, policy, disposition, authority, execution reachability, and proof limits remain visible through export.", primaryLabel: "Export decision record" },
@@ -301,7 +303,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "proof-strength", title: "Status never outruns proof", description: "Stable idempotency suppresses duplicates and submitted never means completed or verified.", proof: "Idempotency key and sourced status receipt" },
     ],
     roles: [
-      { responsibility: "Policy proposal and approval", firms: { "firm-a": "Taylor Morgan · CCO proposes", "firm-b": "Taylor Morgan · CCO proposes" }, rule: "Jordan Lee · Principal approves. The proposer and approver must be different humans." },
+      { responsibility: "Policy proposal and approval", firms: { "firm-a": "Synthetic preview · Taylor Morgan · CCO", "firm-b": "Synthetic preview · Taylor Morgan · CCO" }, rule: "Synthetic preview · Jordan Lee · Principal. The real distinct-human lifecycle remains deferred." },
       { responsibility: "Expiry, escalation, and stuck work", firms: { "firm-a": "Operations manager", "firm-b": "Operations manager" }, rule: "Time creates owned work and never autoapproval." },
     ],
     baseline: [
@@ -324,17 +326,21 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "stale-withdrawals", title: "Stale planned-withdrawal evidence", caseRef: "GC-09", facts: `Planned-withdrawal evidence observed ${OBSERVED_STALE} · ${PLANNED_WITHDRAWAL_STALE_AGE_DAYS} days old`, groupId: null, universalEffect: `Available cash remains fresh as of ${OBSERVED_GC09_BALANCE}. Refresh the planned-withdrawal snapshot before reevaluation.` },
       { id: "verified-bank", title: "Verified bank instruction", caseRef: SMITHS_LIQUIDITY.caseRef, facts: `Same ${usd(SMITHS_LIQUIDITY.requestMinor)} request · bank instruction independently verified`, groupId: "threshold" },
       { id: "low-headroom", title: "Low headroom", caseRef: LOW_HEADROOM_LIQUIDITY.caseRef, facts: factsLine(LOW_HEADROOM_LIQUIDITY), groupId: "reserve" },
-      { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: "A new evidence snapshot changes the input hash", groupId: null, universalEffect: "Prior authority is voided for both firms. Evidence, validation, policy, disposition, and authority rerun against the new bundle." },
+      { id: "material-change", title: "Material change after approval", caseRef: "GC-15", facts: pendingDistributionDeltaSentence(GC15_PENDING_DISTRIBUTION), groupId: null, universalEffect: `The pending approved amount changes from ${usd(GC15_PENDING_DISTRIBUTION.beforeMinor)} to ${usd(GC15_PENDING_DISTRIBUTION.afterMinor)}. Prior authority is voided for both firms, and evaluation reruns against the changed bundle.` },
     ],
     activation: {
-      proposer: "Taylor Morgan",
-      proposerRole: "CCO",
-      approver: "Jordan Lee",
-      approverRole: "Principal",
+      lifecyclePreview: {
+        proposer: "Taylor Morgan",
+        proposerRole: "CCO",
+        approver: "Jordan Lee",
+        approverRole: "Principal",
+        fakeClass: "synthetic-fixture",
+      },
       effectiveAt: DEMO_ACTIVATION_EFFECTIVE_AT,
       simulationRef: "demo-simulation:signed-cases@2026-07-26",
       requesterDecisionNotice: "Signed fixtures exclude the requester while ratified prose permits one approval. The recommendation is exclusion, but this demonstration leaves the policy value unbound until the existing captain decision is resolved.",
-      demonstrationNotice: "This local acknowledgment demonstrates the review contract only. It is not persisted, cannot govern a production request, and must be deleted when the real policy lifecycle lands.",
+      demonstrationNotice: "One authenticated demonstration Principal acknowledges the simulated lifecycle shown here. This does not establish a second human approval, persist production policy, or replace the deferred real lifecycle.",
+      attestationStatement: "I acknowledge that the distinct-human proposal and approval sequence shown above is a synthetic lifecycle preview. I am the single authenticated demonstration Principal recording this acknowledgment, and no production policy lifecycle or second human approval is established.",
     },
     request: {
       title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
@@ -342,7 +348,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       requestRef: DEMO_REQUEST_REF,
       evidenceRef: DEMO_EVIDENCE_REF,
       facts: [
-        { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "Synthetic fixture", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
+        { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "User-entered demo input", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
         { label: "Available balance", metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Pending approved activity", metric: fixtureMetric(SMITHS_LIQUIDITY.pendingMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
         { label: "Planned monthly withdrawals", metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Household instruction", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },

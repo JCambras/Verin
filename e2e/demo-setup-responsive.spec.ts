@@ -19,7 +19,7 @@ const STEPS = [
   { id: "posture", heading: "Begin conservatively, then make differences explicit", action: "Use this starting posture", choiceInputs: false },
   { id: "choices", heading: "Tune only the decisions that can legitimately differ", action: "Review signed impact", choiceInputs: true },
   { id: "impact", heading: "See the impact on signed examples", action: "Send for approval", choiceInputs: false },
-  { id: "activation", heading: "A different human acknowledges immutable versions", action: "Acknowledge and activate demonstration", choiceInputs: true },
+  { id: "activation", heading: "A Principal acknowledges the simulated lifecycle", action: "Acknowledge and activate demonstration", choiceInputs: true },
   { id: "request", heading: "Run the Smiths request under both profiles", action: "Run under both profiles", choiceInputs: false },
   { id: "outcomes", heading: "Identical facts, different correct outcomes", action: "View complete proof trail", choiceInputs: false },
   { id: "proof", heading: "Every outcome has a proof trail", action: "Export decision record", choiceInputs: true },
@@ -242,7 +242,7 @@ test("the full setup journey is keyboard operable and announces activation error
   const activate = page.getByRole("button", { name: STEPS[5].action });
   await activate.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert").filter({ hasText: "Confirm the distinct-human" })).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Confirm the demonstration" })).toBeVisible();
 
   const attestation = page.getByRole("checkbox");
   await attestation.focus();
@@ -323,9 +323,9 @@ test("invalid activation references fail closed without echo or overflow", async
   );
   await expect(page.getByRole("heading", { name: "Decision record unavailable" })).toBeVisible();
   await expect(
-    page.getByRole("alert").filter({ hasText: "activation reference" }),
+    page.getByRole("alert").filter({ hasText: "activated record reference" }),
   ).toContainText(
-    "The activation reference is invalid.",
+    "The activated record reference must include one valid activation token, scenario, and firm.",
   );
   await expect(page.locator("body")).not.toContainText(invalid);
   await assertNoPageOverflow(page);

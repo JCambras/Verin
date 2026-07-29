@@ -3,11 +3,7 @@ import {
   SETUP_POLICY_GROUP_IDS,
   type SetupSelections,
 } from "../setup-model";
-
-export interface SetupActivationDraft {
-  readonly generation: number;
-  readonly selections: SetupSelections;
-}
+import type { SetupActivationDraft } from "../setup-activation-contract";
 
 function cloneSelections(selections: SetupSelections): SetupSelections {
   return {

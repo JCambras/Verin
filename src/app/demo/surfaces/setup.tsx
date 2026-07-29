@@ -6,11 +6,17 @@ import type {
   MoneyMovementSetupVM,
   SetupActivatedSnapshotVM,
   SetupActivationResult,
+  SetupAttestationChallengeVM,
   SetupFirmId,
   SetupPolicyGroupVM,
   SetupSelections,
   SetupStepVM,
 } from "../setup-model";
+import type {
+  SetupActivationCommand,
+  SetupActivationDraft,
+  SetupAttestationResult,
+} from "../setup-activation-contract";
 import { ActivationBody, ChoicesBody, ImpactBody } from "./setup-choices";
 import { ControlsBody, PostureBody, ProfilesBody } from "./setup-governance";
 import { ProofBody } from "./setup-proof";
@@ -23,7 +29,6 @@ import {
 import {
   activationResponseMatchesDraft,
   captureSetupActivationDraft,
-  type SetupActivationDraft,
 } from "./setup-activation-state";
 
 function initialSelections(vm: MoneyMovementSetupVM): SetupSelections {
@@ -47,6 +52,7 @@ function StepBody({
   onAttested,
   activationError,
   activating,
+  attestation,
   exportFirmId,
   onExportFirm,
   exportError,
@@ -60,6 +66,7 @@ function StepBody({
   onAttested: (value: boolean) => void;
   activationError: string | null;
   activating: boolean;
+  attestation: SetupAttestationChallengeVM | null;
   exportFirmId: SetupFirmId | null;
   onExportFirm: (firmId: SetupFirmId) => void;
   exportError: string | null;
@@ -84,6 +91,7 @@ function StepBody({
           onAttested={onAttested}
           error={activationError}
           disabled={activating}
+          attestation={attestation}
         />
       );
     case "request":
@@ -121,10 +129,12 @@ function StepBody({
 
 export function MoneyMovementSetupSurface({
   vm,
+  attest,
   activate,
 }: {
   vm: MoneyMovementSetupVM;
-  activate: (selections: SetupSelections) => Promise<SetupActivationResult>;
+  attest: (draft: SetupActivationDraft) => Promise<SetupAttestationResult>;
+  activate: (command: SetupActivationCommand) => Promise<SetupActivationResult>;
 }) {
   const router = useRouter();
   const initial = useMemo(() => initialSelections(vm), [vm]);
@@ -143,6 +153,8 @@ export function MoneyMovementSetupSurface({
   }, [draft]);
   const selections = draft.selections;
   const [attested, setAttested] = useState(false);
+  const [attestation, setAttestation] =
+    useState<SetupAttestationChallengeVM | null>(null);
   const [activeSnapshot, setActiveSnapshot] = useState<SetupActivatedSnapshotVM | null>(null);
   const [activating, setActivating] = useState(false);
   const [activationError, setActivationError] = useState<string | null>(null);
@@ -165,6 +177,7 @@ export function MoneyMovementSetupSurface({
       }),
     );
     setAttested(false);
+    setAttestation(null);
     setActiveSnapshot(null);
     setActivationError(null);
     setExportFirmId(null);
@@ -174,7 +187,13 @@ export function MoneyMovementSetupSurface({
   async function primary() {
     if (step.id === "activation") {
       if (!attested) {
-        setActivationError("Confirm the distinct-human demonstration attestation before activation.");
+        setActivationError("Confirm the demonstration attestation before activation.");
+        return;
+      }
+      if (!attestation) {
+        setActivationError(
+          "The server-verified demonstration attestation is unavailable. Acknowledge the current draft again.",
+        );
         return;
       }
       setActivationError(null);
@@ -184,7 +203,12 @@ export function MoneyMovementSetupSurface({
         committedDraft.current.selections,
       );
       try {
-        const result: SetupActivationResult = await activate(captured.selections);
+        const result: SetupActivationResult = await activate({
+          draftGeneration: captured.generation,
+          selections: captured.selections,
+          attestationToken: attestation.token,
+          statementVersion: attestation.statementVersion,
+        });
         if (
           !activationResponseMatchesDraft(
             captured,
@@ -193,6 +217,8 @@ export function MoneyMovementSetupSurface({
           )
         ) {
           setActiveSnapshot(null);
+          setAttested(false);
+          setAttestation(null);
           setActivationError(
             "The draft changed during activation. Review and acknowledge the current selections before trying again.",
           );
@@ -200,13 +226,19 @@ export function MoneyMovementSetupSurface({
         }
         if (!result.ok) {
           setActiveSnapshot(null);
+          setAttested(false);
+          setAttestation(null);
           setActivationError(result.error);
           return;
         }
         setActiveSnapshot(result.snapshot);
+        setAttested(false);
+        setAttestation(null);
         move(stepIndex + 1);
       } catch {
         setActiveSnapshot(null);
+        setAttested(false);
+        setAttestation(null);
         setActivationError(
           activationResponseMatchesDraft(
             captured,
@@ -258,11 +290,56 @@ export function MoneyMovementSetupSurface({
         attested={attested}
         onAttested={(value) => {
           if (activating) return;
-          setAttested(value);
+          if (!value) {
+            setAttested(false);
+            setAttestation(null);
+            setActivationError(null);
+            return;
+          }
+          const captured = captureSetupActivationDraft(
+            committedDraft.current.generation,
+            committedDraft.current.selections,
+          );
+          setAttested(true);
+          setActivating(true);
           setActivationError(null);
+          void attest(captured)
+            .then((result) => {
+              if (
+                !activationResponseMatchesDraft(
+                  captured,
+                  committedDraft.current.generation,
+                  committedDraft.current.selections,
+                )
+              ) {
+                setAttested(false);
+                setAttestation(null);
+                setActivationError(
+                  "The draft changed while the attestation was verified. Review and acknowledge the current selections again.",
+                );
+                return;
+              }
+              if (!result.ok) {
+                setAttested(false);
+                setAttestation(null);
+                setActivationError(result.error);
+                return;
+              }
+              setAttestation(result.challenge);
+              setAttested(true);
+            })
+            .catch(() => {
+              setAttested(false);
+              setAttestation(null);
+              setActivationError(
+                "The server could not verify the demonstration attestation. Review the current draft and try again.",
+              );
+            })
+            .finally(() => setActivating(false));
         }}
         activationError={activationError}
         activating={activating}
+        attestation={attestation}
         exportFirmId={exportFirmId}
         onExportFirm={(firmId) => {
           setExportFirmId(firmId);
@@ -271,7 +348,13 @@ export function MoneyMovementSetupSurface({
         exportError={exportError}
       />
       <SetupActionRow
-        primaryLabel={activating ? "Activating…" : step.primaryLabel}
+        primaryLabel={
+          activating
+            ? attestation
+              ? "Activating…"
+              : "Verifying acknowledgment…"
+            : step.primaryLabel
+        }
         primaryDisabled={activating}
         onPrimary={() => void primary()}
         {...(stepIndex > 0
@@ -279,7 +362,7 @@ export function MoneyMovementSetupSurface({
           : {})}
       >
         {step.id === "activation"
-          ? "The proposer and approver are different synthetic humans. Real activation remains blocked on the real lifecycle."
+          ? "One authenticated demo Principal acknowledges a synthetic lifecycle preview. The real lifecycle remains deferred."
           : stepIndex > activationIndex
             ? activeSnapshot
               ? "Demonstration versions activated locally for this setup-to-run proof."

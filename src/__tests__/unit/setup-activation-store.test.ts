@@ -13,6 +13,7 @@ import type {
   SetupActivatedSnapshotVM,
   SetupSelections,
 } from "@app/demo/setup-model";
+import { setupActivationAuthority } from "../helpers/setup-activation";
 
 /**
  * The activation registry holds F1's frozen snapshots. It is memory a signed-in user
@@ -46,7 +47,10 @@ function snapshotAt(index: number): SetupActivatedSnapshotVM {
   selections["firm-a"].reserve = RESERVE_OPTIONS[index % 3]!;
   selections["firm-a"].freshness = FRESHNESS_OPTIONS[Math.floor(index / 3) % 3]!;
   selections["firm-a"].threshold = THRESHOLD_OPTIONS[Math.floor(index / 9) % 3]!;
-  const result = activateMoneyMovementSetup(selections);
+  const result = activateMoneyMovementSetup(
+    selections,
+    setupActivationAuthority(selections, index),
+  );
   if (!result.ok) throw new Error(result.error);
   return result.snapshot;
 }
@@ -55,7 +59,12 @@ let scopeCounter = 0;
 /** A fresh principal per assertion: the registry lives on globalThis by design. */
 function scope(orgId = "org-demo"): SetupActivationScope {
   scopeCounter += 1;
-  return { orgId, userId: `user-${scopeCounter}` };
+  return {
+    orgId,
+    userId: `user-${scopeCounter}`,
+    sessionId: `session-${scopeCounter}`,
+    role: "principal",
+  };
 }
 
 afterEach(() => {
@@ -77,10 +86,22 @@ describe("activated setup snapshot registry", () => {
     const snapshot = snapshotAt(1);
     registerActivatedSetupSnapshot(owner, snapshot);
 
-    const otherUser = { orgId: owner.orgId, userId: `${owner.userId}-intruder` };
-    const otherOrg = { orgId: "org-other", userId: owner.userId };
+    const otherUser = {
+      ...owner,
+      userId: `${owner.userId}-intruder`,
+    };
+    const otherOrg = { ...owner, orgId: "org-other" };
+    const otherSession = {
+      ...owner,
+      sessionId: `${owner.sessionId}-other`,
+    };
+    const otherRole = { ...owner, role: "admin" as const };
     expect(activatedSetupSnapshot(otherUser, snapshot.snapshotHash)).toBeNull();
     expect(activatedSetupSnapshot(otherOrg, snapshot.snapshotHash)).toBeNull();
+    expect(
+      activatedSetupSnapshot(otherSession, snapshot.snapshotHash),
+    ).toBeNull();
+    expect(activatedSetupSnapshot(otherRole, snapshot.snapshotHash)).toBeNull();
     expect(activatedSetupSnapshot(owner, snapshot.snapshotHash)).toBe(snapshot);
   });
 

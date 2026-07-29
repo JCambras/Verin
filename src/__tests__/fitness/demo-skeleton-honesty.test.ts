@@ -143,16 +143,31 @@ const ALLOWED = [
   /^\.\//,
 ];
 
-export function importBoundaryViolations(files: { path: string; specifiers: { spec: string; line: number }[] }[]): string[] {
+interface SurfaceModuleSpecifier {
+  readonly spec: string;
+  readonly line: number;
+  readonly typeOnly: boolean;
+}
+
+export function importBoundaryViolations(files: {
+  path: string;
+  specifiers: SurfaceModuleSpecifier[];
+}[]): string[] {
   const out: string[] = [];
   for (const f of files) {
-    for (const { spec, line } of f.specifiers) {
+    for (const { spec, line, typeOnly } of f.specifiers) {
+      const actionContract =
+        spec === "../setup-activation-contract" && typeOnly;
       // A ".." segment anywhere (beyond the one allowed "../model") escapes the
       // sibling allowlist by traversal - "./../data" must not read as a sibling.
       const traversal =
+        !actionContract &&
         !["../model", "../setup-model"].includes(spec) &&
         spec.split("/").includes("..");
-      if (traversal || !ALLOWED.some((re) => re.test(spec))) {
+      if (
+        traversal ||
+        (!actionContract && !ALLOWED.some((re) => re.test(spec)))
+      ) {
         out.push(`${f.path}:${line} :: import "${spec}" - surfaces render view models only (no data, service, or builder imports)`);
       }
     }
@@ -163,22 +178,41 @@ export function importBoundaryViolations(files: { path: string; specifiers: { sp
 /** Every module-reaching specifier with its line: static imports, re-exports,
  * dynamic import(), and require(). A non-literal dynamic specifier is recorded as
  * unverifiable so it fails the allowlist instead of slipping past it. */
-function specifiersOf(project: Project): { path: string; specifiers: { spec: string; line: number }[] }[] {
+function specifiersOf(project: Project): {
+  path: string;
+  specifiers: SurfaceModuleSpecifier[];
+}[] {
   return project.getSourceFiles().map((sf) => {
-    const specifiers: { spec: string; line: number }[] = [];
+    const specifiers: SurfaceModuleSpecifier[] = [];
     for (const d of sf.getImportDeclarations()) {
-      specifiers.push({ spec: d.getModuleSpecifierValue(), line: d.getStartLineNumber() });
+      specifiers.push({
+        spec: d.getModuleSpecifierValue(),
+        line: d.getStartLineNumber(),
+        typeOnly: d.isTypeOnly(),
+      });
     }
     for (const d of sf.getExportDeclarations()) {
       const spec = d.getModuleSpecifierValue();
-      if (spec !== undefined) specifiers.push({ spec, line: d.getStartLineNumber() });
+      if (spec !== undefined) {
+        specifiers.push({
+          spec,
+          line: d.getStartLineNumber(),
+          typeOnly: d.isTypeOnly(),
+        });
+      }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const expr = call.getExpression();
       if (expr.getKind() !== SyntaxKind.ImportKeyword && expr.getText() !== "require") continue;
       const arg = call.getArguments()[0];
       const lit = arg?.asKind(SyntaxKind.StringLiteral) ?? arg?.asKind(SyntaxKind.NoSubstitutionTemplateLiteral);
-      specifiers.push({ spec: lit ? lit.getLiteralText() : "(non-literal dynamic specifier)", line: call.getStartLineNumber() });
+      specifiers.push({
+        spec: lit
+          ? lit.getLiteralText()
+          : "(non-literal dynamic specifier)",
+        line: call.getStartLineNumber(),
+        typeOnly: false,
+      });
     }
     return { path: relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"), specifiers };
   });
@@ -749,6 +783,18 @@ describe("demo-skeleton-honesty fence", () => {
         "/src/app/demo/surfaces/evil2.tsx": `import { getJourney } from "../journey";\nimport { buildDisposition } from "../build-decision";\nexport const x = [getJourney, buildDisposition];`,
       });
       expect(importBoundaryViolations(specifiersOf(project)).length).toBe(2);
+    });
+
+    it("RULE B allows only type imports from the setup action contract", () => {
+      const typeOnly = inMemoryProject({
+        "/src/app/demo/surfaces/good-contract.tsx": `import type { SetupActivationCommand } from "../setup-activation-contract";\nexport type Props = { command: SetupActivationCommand };`,
+      });
+      expect(importBoundaryViolations(specifiersOf(typeOnly))).toEqual([]);
+
+      const runtime = inMemoryProject({
+        "/src/app/demo/surfaces/bad-contract.tsx": `import { SetupActivationCommand } from "../setup-activation-contract";\nexport const leaked = SetupActivationCommand;`,
+      });
+      expect(importBoundaryViolations(specifiersOf(runtime))).toHaveLength(1);
     });
 
     it("RULE B's walk sees plain-.ts files too - a .ts helper importing the data is caught on disk", () => {

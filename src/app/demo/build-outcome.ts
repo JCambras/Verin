@@ -8,16 +8,24 @@
  * minute 4:05 deferral annotation). Honest-status doctrine (§8): submitted is never
  * settled, green is earned, NIGO and stuck are first-class.
  */
-import type { ExecutionRowVM, ExecutionVM, SafetyVM, VerificationVM } from "./model";
+import type {
+  ExecutionRowVM,
+  ExecutionVM,
+  SafetyCheckVM,
+  SafetyVM,
+  VerificationVM,
+} from "./model";
 import { fact } from "./provenance";
 import { buildSpine } from "./spine";
 import {
   CAST,
   DEMO_NOW,
   DEMO_TIMELINE,
+  GC15_PENDING_DISTRIBUTION,
   IDS,
-  RETRIEVED_AT,
   demoTimestampLabel,
+  pendingDistributionDeltaSentence,
+  usdMinor,
   type ScenarioData,
 } from "./data";
 
@@ -29,26 +37,48 @@ const IDENTIFIERS = [
 
 export function buildSafety(scenario: ScenarioData): SafetyVM {
   const spec = scenario.spec;
-  const checks = [
-    { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
-    { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
-  ];
-  if (spec.invalidation) {
-    checks.push({
-      label: "Bank instruction changed after approval",
-      status: "voided",
-      statusLabel: "Evidence changed",
-    } as (typeof checks)[number]);
-  } else {
-    checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
-  }
+  const checks: SafetyCheckVM[] = spec.invalidation
+    ? [
+        {
+          label: `Pending approved activity changed from ${usdMinor(GC15_PENDING_DISTRIBUTION.beforeMinor)} to ${usdMinor(GC15_PENDING_DISTRIBUTION.afterMinor)}`,
+          status: "voided",
+          statusLabel: "Evidence changed",
+        },
+        {
+          label: "Liquidity must be re-evaluated against the new pending amount",
+          status: "voided",
+          statusLabel: "Decision input changed",
+        },
+        {
+          label: "Bank instruction unchanged since the decision",
+          status: "done",
+          statusLabel: "Verified",
+        },
+      ]
+    : [
+        {
+          label: "Liquidity unchanged since the decision",
+          status: "done",
+          statusLabel: "Verified",
+        },
+        {
+          label: "No new pending actions against this household",
+          status: "done",
+          statusLabel: "Verified",
+        },
+        {
+          label: "Bank instruction unchanged since the decision",
+          status: "done",
+          statusLabel: "Verified",
+        },
+      ];
   if (spec.competing) {
     checks.push({
       label: "Concurrent request detected against the same liquidity",
       status: "done",
       statusLabel: "Reservation held",
       detail: "This request reserved first and proceeds. The competing request is blocked by the reservation and cannot jointly violate the reserve floor.",
-    } as (typeof checks)[number]);
+    });
   }
   return {
     spine: buildSpine("Safety", spec.invalidation ? { status: "voided", label: "Approval voided" } : undefined),
@@ -69,23 +99,24 @@ export function buildSafety(scenario: ScenarioData): SafetyVM {
             role: "Operations",
             when: demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At),
           },
-          deltaSentence:
-            "A $15,000 pending distribution posted after this approval was given.",
+          deltaSentence: pendingDistributionDeltaSentence(
+            GC15_PENDING_DISTRIBUTION,
+          ),
           before: fact(
-            "No pending approved activity recorded",
+            `${usdMinor(GC15_PENDING_DISTRIBUTION.beforeMinor)} pending approved activity`,
             "synthetic-fixture",
-            DEMO_NOW,
-            RETRIEVED_AT,
+            DEMO_TIMELINE.decisionCreatedAt,
+            demoTimestampLabel(DEMO_TIMELINE.evidenceRetrievedAt),
           ),
           after: fact(
-            "$15,000 pending approved distribution",
+            `${usdMinor(GC15_PENDING_DISTRIBUTION.afterMinor)} pending approved distribution`,
             "synthetic-fixture",
-            DEMO_NOW,
-            demoTimestampLabel(DEMO_TIMELINE.revalidatedAt),
+            GC15_PENDING_DISTRIBUTION.observedAt,
+            demoTimestampLabel(GC15_PENDING_DISTRIBUTION.retrievedAt),
           ),
           why: {
             reason:
-              "Approval binds to the decision hash and the input-bundle hash. The bundle changed when the pending distribution posted, so the approval cannot stand.",
+              "Approval binds to the decision hash and input-bundle hash. The pending-distribution delta changed the evidence preimage, so the approval cannot stand.",
           },
           primaryLabel: "Re-evaluate with current evidence",
         }

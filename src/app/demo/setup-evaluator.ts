@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
-import { buildDisposition } from "./build-decision";
+import { buildDisposition, buildPolicyTrace } from "./build-decision";
 import { buildMoneyMovementSetup } from "./build-setup";
 import { buildRecord } from "./build-summary";
 import {
@@ -11,17 +10,21 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
-  decisionIdentityFor,
   scenarioById,
   type DecisionConfiguration,
   type FirmData,
 } from "./data";
+import {
+  decisionIdentityFor,
+  hashCanonicalPreimage,
+  toJsonValue,
+} from "./decision-identity";
 import { ACTIVATED_RESERVE_HORIZON, RESERVE_FLOOR_INPUTS, derivedMetric } from "./provenance";
 import {
   POSTURE_CONFIGURATION_LABEL,
   POSTURE_OPTION_LABEL,
   POSTURE_STATUS,
-  SETUP_FIRM_IDS,
+  SETUP_ATTESTATION_STATEMENT_VERSION,
   SETUP_POLICY_GROUP_IDS,
   configurationPosture,
   optionPosture,
@@ -29,141 +32,23 @@ import {
   type SetupActivatedSnapshotVM,
   type SetupActivationResult,
   type SetupFirmId,
-  type SetupPolicyGroupId,
   type SetupProofFirmVM,
   type SetupSelections,
   type SetupTruthLabel,
 } from "./setup-model";
 import type { RecordVM } from "./model";
 import { evaluateAuthorityPlan } from "./setup-authority";
-
-const SETUP_SCENARIO_ID = "recent-bank-change-block";
-const RESERVE_MONTHS: Readonly<Record<string, number>> = {
-  "6-months": 6,
-  "9-months": 9,
-  "12-months": 12,
-};
-const FRESHNESS_DAYS: Readonly<Record<string, number>> = {
-  "7-days": 7,
-  "14-days": 14,
-  "30-days": 30,
-};
-const BANK_HANDLING: Readonly<Record<string, FirmData["bankChangeHandling"]>> = {
-  specialist: "specialist-review",
-  block: "block-until-independently-verified",
-};
-const THRESHOLD_MINOR: Readonly<Record<string, number>> = {
-  "25000": 2_500_000,
-  "50000": 5_000_000,
-  "100000": 10_000_000,
-};
-function digest(value: readonly unknown[]): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
-}
-
-function displayValue(value: unknown): string {
-  if (typeof value === "string") return value.slice(0, 80);
-  if (value === undefined) return "(missing)";
-  if (value === null) return "(null)";
-  return `(${typeof value})`;
-}
-
-function combinationName(value: unknown): string {
-  if (!isPlainRecord(value)) return `input=${displayValue(value)}`;
-  return SETUP_FIRM_IDS.map((firmId) => {
-    const firm = isPlainRecord(value[firmId]) ? value[firmId] : {};
-    const choices = SETUP_POLICY_GROUP_IDS.map(
-      (groupId) => `${groupId}=${displayValue(firm[groupId])}`,
-    ).join(", ");
-    return `${firmId}[${choices}]`;
-  }).join(" | ");
-}
-
-function normalizedSelections(value: unknown): SetupSelections | null {
-  if (!isPlainRecord(value)) return null;
-  if (
-    Object.keys(value).sort().join("|") !== [...SETUP_FIRM_IDS].sort().join("|")
-  ) {
-    return null;
-  }
-  const normalized = {
-    "firm-a": {} as Record<SetupPolicyGroupId, string>,
-    "firm-b": {} as Record<SetupPolicyGroupId, string>,
-  };
-  for (const firmId of SETUP_FIRM_IDS) {
-    const firm = value[firmId];
-    if (!isPlainRecord(firm)) return null;
-    if (
-      Object.keys(firm).sort().join("|") !==
-      [...SETUP_POLICY_GROUP_IDS].sort().join("|")
-    ) {
-      return null;
-    }
-    for (const groupId of SETUP_POLICY_GROUP_IDS) {
-      const optionId = firm[groupId];
-      if (typeof optionId !== "string") return null;
-      normalized[firmId][groupId] = optionId;
-    }
-  }
-  return normalized;
-}
-
-function canonicalConfiguration(selections: SetupSelections): string {
-  return SETUP_FIRM_IDS.map(
-    (firmId) =>
-      `${firmId}[${SETUP_POLICY_GROUP_IDS.map(
-        (groupId) => `${groupId}=${selections[firmId][groupId]}`,
-      ).join(";")}]`,
-  ).join("|");
-}
-
-function optionFor(
-  vm: MoneyMovementSetupVM,
-  firmId: SetupFirmId,
-  groupId: SetupPolicyGroupId,
-  optionId: string,
-) {
-  const group = vm.policyGroups.find((candidate) => candidate.id === groupId);
-  const firm = group?.firms.find((candidate) => candidate.firmId === firmId);
-  return firm?.options.find((candidate) => candidate.id === optionId) ?? null;
-}
-
-function validateSelections(
-  vm: MoneyMovementSetupVM,
-  selections: SetupSelections,
-): string | null {
-  for (const firmId of SETUP_FIRM_IDS) {
-    for (const groupId of SETUP_POLICY_GROUP_IDS) {
-      const optionId = selections[firmId][groupId];
-      if (!optionFor(vm, firmId, groupId, optionId)) {
-        return `Unsupported setup combination: ${canonicalConfiguration(selections)}. ${firmId}:${groupId}=${optionId} is not a supported closed choice.`;
-      }
-      const evaluatorSupports =
-        groupId === "reserve"
-          ? Object.hasOwn(RESERVE_MONTHS, optionId)
-          : groupId === "freshness"
-            ? Object.hasOwn(FRESHNESS_DAYS, optionId)
-            : groupId === "bank-change"
-              ? Object.hasOwn(BANK_HANDLING, optionId)
-              : groupId === "threshold"
-                ? Object.hasOwn(THRESHOLD_MINOR, optionId)
-                : Object.hasOwn(APPROVAL_CLOCKS, optionId);
-      if (!evaluatorSupports) {
-        return `Unsupported setup combination: ${canonicalConfiguration(selections)}. The deterministic evaluator does not support ${firmId}:${groupId}=${optionId}.`;
-      }
-    }
-  }
-  return null;
-}
+import {
+  BANK_HANDLING,
+  FRESHNESS_DAYS,
+  RESERVE_MONTHS,
+  SETUP_SCENARIO_ID,
+  THRESHOLD_MINOR,
+  optionFor,
+  setupActivationPreimageFor,
+  validateSetupActivationDraft,
+  type SetupActivationAuthorityBinding,
+} from "./setup-activation-input";
 
 /** Whether every selected option is still the firm's ACTIVE-profile value. This decides
  * policy VERSION identity (an untouched profile keeps FA-4.2 / FB-2.1); it deliberately
@@ -211,6 +96,7 @@ function decisionConfiguration(
   firm: FirmData,
   selections: SetupSelections,
   snapshotHash: string,
+  authority: SetupActivationAuthorityBinding,
 ): DecisionConfiguration {
   return {
     policyVersion: firm.policyVersion,
@@ -223,6 +109,13 @@ function decisionConfiguration(
     requesterConstraint: firm.requesterConstraint,
     approvalClockId: selections[firm.id as SetupFirmId].expiry,
     activatedSnapshotHash: snapshotHash,
+    activationAuthority: {
+      actorId: authority.actor.opaqueId,
+      role: authority.actor.role,
+      attestationStatementVersion: authority.statementVersion,
+      draftGeneration: authority.draftGeneration,
+      selectionsHash: authority.selectionsHash,
+    },
   };
 }
 
@@ -231,25 +124,36 @@ function evaluateFirm(
   firmId: SetupFirmId,
   selections: SetupSelections,
   snapshotHash: string,
+  authority: SetupActivationAuthorityBinding,
 ): Omit<SetupProofFirmVM, "exportHref"> {
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
   const activeProfile = matchesActiveProfile(vm, firmId, selections);
   const posture = configurationPosture(selectedTruthLabels(vm, firmId, selections));
-  const configurationHash = digest([
-    "verin-demo-profile-configuration-v1",
-    firmId,
-    ...SETUP_POLICY_GROUP_IDS.flatMap((groupId) => [
-      groupId,
-      selections[firmId][groupId],
-    ]),
-  ]);
+  const configurationHash = hashCanonicalPreimage(toJsonValue({
+    hashKind: "money-movement-demo-profile-configuration",
+    preimageVersion:
+      "money-movement-demo-profile-configuration/2.0.0",
+    payload: {
+      firmId,
+      selections: SETUP_POLICY_GROUP_IDS.map((groupId) => ({
+        groupId,
+        optionId: selections[firmId][groupId],
+      })),
+      authority,
+    },
+  }));
   const policyVersion = activeProfile
     ? profile.activeVersion
     : `${firmId === "firm-a" ? "FA" : "FB"}-MM-DEMO-${configurationHash
         .slice(0, 12)
         .toUpperCase()}`;
   const firm = runtimeFirm(firmId, selections, policyVersion);
-  const configuration = decisionConfiguration(firm, selections, snapshotHash);
+  const configuration = decisionConfiguration(
+    firm,
+    selections,
+    snapshotHash,
+    authority,
+  );
   const projection = projectReserve({
     availableMinor: SMITHS_LIQUIDITY.availableMinor,
     pendingMinor: SMITHS_LIQUIDITY.pendingMinor,
@@ -268,11 +172,6 @@ function evaluateFirm(
       : "blocked";
   const scenario = scenarioById(SETUP_SCENARIO_ID);
   const disposition = buildDisposition(scenario, firm, kind, ACTIVATED_RESERVE_HORIZON);
-  const identity = decisionIdentityFor(scenario, firm, {
-    configuration,
-    disposition: disposition.kind,
-    explanation: disposition.why.reason,
-  });
   const dualApproval =
     CANONICAL_REQUEST.amountMinor > configuration.dualApprovalThresholdMinor;
   const approvalClock = APPROVAL_CLOCKS[configuration.approvalClockId]!;
@@ -281,6 +180,29 @@ function evaluateFirm(
     disposition,
     dualApproval,
     approvalClock,
+  );
+  const stopNote = evaluatedAuthority.reached
+    ? null
+    : "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
+  const identity = decisionIdentityFor(
+    scenario,
+    firm,
+    configuration,
+    {
+      disposition,
+      precedence: buildPolicyTrace(
+        scenario,
+        firm,
+        disposition.kind,
+      ).rows,
+      authority: evaluatedAuthority,
+      reachability: {
+        authority: evaluatedAuthority.reached,
+        safety: evaluatedAuthority.reached,
+        execution: evaluatedAuthority.reached,
+      },
+      stopNote,
+    },
   );
   const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
     const option = optionFor(vm, firmId, groupId, selections[firmId][groupId])!;
@@ -340,31 +262,55 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-export function activateMoneyMovementSetup(value: unknown): SetupActivationResult {
-  const selections = normalizedSelections(value);
-  if (!selections) {
+export function activateMoneyMovementSetup(
+  value: unknown,
+  authority: SetupActivationAuthorityBinding | undefined,
+): SetupActivationResult {
+  if (!authority) {
     return {
       ok: false,
-      error: `Unsupported setup combination: ${combinationName(value)}. Both firms and all five closed choice groups are required.`,
+      error:
+        "Activation requires a server-verified demonstration attestation.",
+    };
+  }
+  const draft = validateSetupActivationDraft(
+    authority.draftGeneration,
+    value,
+  );
+  if (!draft.ok) return draft;
+  if (
+    authority.actor.role !== "principal" ||
+    authority.statementVersion !==
+      SETUP_ATTESTATION_STATEMENT_VERSION ||
+    authority.selectionsHash !== draft.selectionsHash
+  ) {
+    return {
+      ok: false,
+      error:
+        "The demonstration attestation does not match the authenticated Principal and exact setup draft.",
     };
   }
   const vm = buildMoneyMovementSetup();
-  const validationError = validateSelections(vm, selections);
-  if (validationError) return { ok: false, error: validationError };
-  const canonical = canonicalConfiguration(selections);
-  const snapshotHash = digest([
-    "verin-demo-activated-snapshot-v1",
-    canonical,
-    vm.activation.proposer,
-    vm.activation.approver,
-    vm.activation.simulationRef,
-    vm.activation.effectiveAt,
-  ]);
+  const snapshotHash = hashCanonicalPreimage(
+    setupActivationPreimageFor(vm, draft, authority),
+  );
   const snapshotVersion = `MM-DEMO-SNAPSHOT-${snapshotHash
     .slice(0, 12)
     .toUpperCase()}`;
-  const evaluatedA = evaluateFirm(vm, "firm-a", selections, snapshotHash);
-  const evaluatedB = evaluateFirm(vm, "firm-b", selections, snapshotHash);
+  const evaluatedA = evaluateFirm(
+    vm,
+    "firm-a",
+    draft.selections,
+    snapshotHash,
+    authority,
+  );
+  const evaluatedB = evaluateFirm(
+    vm,
+    "firm-b",
+    draft.selections,
+    snapshotHash,
+    authority,
+  );
   const firms: [SetupProofFirmVM, SetupProofFirmVM] = [
     {
       ...evaluatedA,
@@ -380,9 +326,16 @@ export function activateMoneyMovementSetup(value: unknown): SetupActivationResul
     snapshot: deepFreeze({
       snapshotVersion,
       snapshotHash,
-      canonicalConfiguration: canonical,
+      canonicalConfiguration: draft.canonicalConfiguration,
       activatedAt: vm.activation.effectiveAt,
-      selections,
+      activationAcknowledgment: {
+        actor: authority.actor,
+        statementVersion: authority.statementVersion,
+        draftGeneration: authority.draftGeneration,
+        selectionsHash: authority.selectionsHash,
+        statement: vm.activation.attestationStatement,
+      },
+      selections: draft.selections,
       firms,
     }),
   };
@@ -430,6 +383,18 @@ export function buildActivatedRecord(
         configurationPostureStatus: POSTURE_STATUS[evaluated.configurationPosture],
         configurationPostureLabel: POSTURE_OPTION_LABEL[evaluated.configurationPosture],
         configurationProvenance: evaluated.configurationProvenance,
+        activationActorId:
+          snapshot.activationAcknowledgment.actor.opaqueId,
+        activationActorRole:
+          snapshot.activationAcknowledgment.actor.role,
+        attestationStatementVersion:
+          snapshot.activationAcknowledgment.statementVersion,
+        attestedDraftGeneration:
+          snapshot.activationAcknowledgment.draftGeneration,
+        attestedSelectionsHash:
+          snapshot.activationAcknowledgment.selectionsHash,
+        attestationStatement:
+          snapshot.activationAcknowledgment.statement,
       },
       reserveHorizon: ACTIVATED_RESERVE_HORIZON,
     },

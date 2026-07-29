@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
@@ -8,31 +7,43 @@ import {
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
   DEMO_ACTIVATION_EFFECTIVE_AT,
+  DEMO_CAUSAL_SEQUENCE,
   DEMO_NOW,
   DEMO_RECORD_CREATED_AT,
   DEMO_REQUEST_REF,
   DEMO_TIMELINE,
-  DESTINATION_RESTRICTION,
   FIRMS,
+  GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
-  OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
   decisionConfigurationFor,
-  decisionIdentityFor,
+  demoTimelineViolations,
   firmById,
   resolveFirmId,
   resolveScenarioId,
   scenarioById,
   demoTimestampLabel,
+  pendingDistributionDeltaSentence,
 } from "@app/demo/data";
+import {
+  decisionRecordPreimageFor,
+  decisionInputHashFor,
+  decisionInputPreimageFor,
+  hashCanonicalPreimage,
+} from "@app/demo/decision-identity";
 import { headroomMinor } from "@app/demo/build-decision";
+import { buildSafety } from "@app/demo/build-outcome";
 import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric } from "@app/demo/provenance";
 import { getJourney } from "@app/demo/journey";
 import {
   activateMoneyMovementSetup,
   buildActivatedRecord,
 } from "@app/demo/setup-evaluator";
+import {
+  setupActivationPreimageFor,
+  validateSetupActivationDraft,
+} from "@app/demo/setup-activation-input";
 import {
   POSTURE_CONFIGURATION_LABEL,
   configurationPosture,
@@ -44,9 +55,11 @@ import {
 } from "@app/demo/setup-model";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type { DisplayMetric } from "@contracts/metric";
+import type { JsonValue } from "@contracts/decision-core/serialization";
 import { isDemonstration } from "@contracts/provenance";
 import type { RecordReserveVM, RecordVM } from "@app/demo/model";
 import { REPO_ROOT } from "./_fence-utils";
+import { setupActivationAuthority } from "../helpers/setup-activation";
 
 /**
  * DEMO SEMANTIC-TRUTH FENCE
@@ -645,39 +658,11 @@ interface BankInstructionDateAssignment {
 
 function recentBankInputHash(bankInstructionObservedAt: string): string {
   const scenario = scenarioById("recent-bank-change-block");
-  const canonicalInput = {
-    scenarioId: scenario.id,
-    request: {
-      text: CANONICAL_REQUEST.text,
-      amountMinor: CANONICAL_REQUEST.amountMinor,
-      purpose: CANONICAL_REQUEST.purpose,
-      deadline: CANONICAL_REQUEST.deadline,
-      destination: BANK_INSTRUCTION.changed,
-    },
-    evidence: {
-      availableCashMinor: SMITHS_LIQUIDITY.availableMinor,
-      availableCashObservedAt: OBSERVED_RECENT,
-      pendingApprovedMinor: SMITHS_LIQUIDITY.pendingMinor,
-      plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
-      plannedWithdrawalObservedAt: OBSERVED_RECENT,
-      bankInstruction: BANK_INSTRUCTION.changed,
+  return hashCanonicalPreimage(
+    decisionInputPreimageFor(scenario, {
       bankInstructionObservedAt,
-      destinationRestrictionRef: DESTINATION_RESTRICTION.ref,
-      destinationRestriction: DESTINATION_RESTRICTION.text,
-      conflictingFundingInstructions: [],
-    },
-    branchFacts: {
-      invalidation: false,
-      competing: false,
-      duplicateRetry: false,
-      partial: false,
-      delayedNigo: false,
-      specialistExpired: false,
-    },
-  };
-  return createHash("sha256")
-    .update(JSON.stringify(["verin-demo-input-v2", canonicalInput]))
-    .digest("hex");
+    }),
+  );
 }
 
 export function bankInstructionDateViolations(
@@ -834,9 +819,105 @@ function activatedSnapshot(
 ): SetupActivatedSnapshotVM {
   const selections = setupSelections();
   mutate?.(selections);
-  const result = activateMoneyMovementSetup(selections);
+  const result = activateMoneyMovementSetup(
+    selections,
+    setupActivationAuthority(selections),
+  );
   if (!result.ok) throw new Error(result.error);
   return result.snapshot;
+}
+
+type MutableJsonObject = { [key: string]: JsonValue };
+
+function jsonObject(value: JsonValue): MutableJsonObject {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    throw new Error("Expected a canonical JSON object");
+  }
+  return value;
+}
+
+function jsonField(
+  object: MutableJsonObject,
+  key: string,
+): JsonValue {
+  const value = object[key];
+  if (value === undefined) throw new Error(`Missing JSON field ${key}`);
+  return value;
+}
+
+function changedPreimageHash(
+  preimage: JsonValue,
+  mutate: (copy: MutableJsonObject) => void,
+): string {
+  const copy = structuredClone(preimage);
+  const object = jsonObject(copy);
+  mutate(object);
+  return hashCanonicalPreimage(copy);
+}
+
+function requestProvenanceViolations(
+  setup: ReturnType<typeof buildMoneyMovementSetup>,
+  record: RecordVM,
+): string[] {
+  const requestAmount = setup.request.facts.find(
+    (fact) => fact.label === "Request amount",
+  );
+  const violations: string[] = [];
+  if (requestAmount?.category !== "User-entered demo input") {
+    violations.push("setup request category drifted");
+  }
+  if (
+    requestAmount?.fakeClass !== "user-entered-demo-input" ||
+    requestAmount.provenance.source !== "user-input" ||
+    requestAmount.metric?.provenance.source !== "user-input"
+  ) {
+    violations.push("setup request provenance drifted");
+  }
+  if (
+    record.intent.requestFakeClass !== "user-entered-demo-input" ||
+    record.intent.requestProvenance.source !== "user-input"
+  ) {
+    violations.push("record request provenance drifted");
+  }
+  return violations;
+}
+
+function gc15ConsistencyViolations(
+  safety: ReturnType<typeof buildSafety>,
+  impact: ReturnType<typeof buildMoneyMovementSetup>["impacts"][number],
+): string[] {
+  const expected = pendingDistributionDeltaSentence(
+    GC15_PENDING_DISTRIBUTION,
+  );
+  const checks = safety.checks.map((check) => check.label).join(" ");
+  const violations: string[] = [];
+  if (
+    safety.invalidation?.deltaSentence !== expected ||
+    impact.facts !== expected
+  ) {
+    violations.push("pending-distribution sentence drifted");
+  }
+  if (
+    !checks.includes("$0") ||
+    !checks.includes("$15,000") ||
+    checks.includes("Liquidity unchanged") ||
+    checks.includes("No new pending actions")
+  ) {
+    violations.push("pending-distribution safety facts conflict");
+  }
+  if (
+    !safety.invalidation?.before.display.includes("$0") ||
+    !safety.invalidation.after.display.includes("$15,000") ||
+    !impact.universalEffect?.includes("$0") ||
+    !impact.universalEffect.includes("$15,000")
+  ) {
+    violations.push("pending-distribution before and after facts drifted");
+  }
+  return violations;
 }
 
 export function demoSemanticFacts(): DemoSemanticFacts {
@@ -1163,6 +1244,237 @@ function claimedIdentities(
 }
 
 describe("demo semantic-truth fence", () => {
+  it("enforces: activation, evidence, recommendation, decision, and authority are causal", () => {
+    expect(demoTimelineViolations(DEMO_TIMELINE)).toEqual([]);
+    expect(DEMO_CAUSAL_SEQUENCE).toEqual([
+      "activationAt",
+      "evidenceRetrievedAt",
+      "recommendationRetrievedAt",
+      "decisionCreatedAt",
+      "specialistReviewedAt",
+      "operationsApproval1At",
+      "operationsApproval2At",
+    ]);
+  });
+
+  it("detects: a chronology inversion cannot pass", () => {
+    expect(
+      demoTimelineViolations({
+        ...DEMO_TIMELINE,
+        evidenceRetrievedAt: "2026-07-28T13:59:00.000Z",
+      }),
+    ).toContain("activationAt must precede evidenceRetrievedAt");
+  });
+
+  it("enforces: every material activation field changes the snapshot hash", () => {
+    const selections = setupSelections();
+    const draft = validateSetupActivationDraft(7, selections);
+    expect(draft.ok).toBe(true);
+    if (!draft.ok) return;
+    const authority = setupActivationAuthority(
+      selections,
+      draft.generation,
+      "principal-a",
+    );
+    const preimage = setupActivationPreimageFor(
+      buildMoneyMovementSetup(),
+      draft,
+      authority,
+    );
+    const unchanged = hashCanonicalPreimage(preimage);
+    const changed = [
+      changedPreimageHash(preimage, (copy) => {
+        jsonObject(jsonField(copy, "payload")).evaluatorVersion =
+          "changed-engine";
+      }),
+      changedPreimageHash(preimage, (copy) => {
+        jsonObject(jsonField(copy, "payload")).requestRef =
+          "changed-request";
+      }),
+      changedPreimageHash(preimage, (copy) => {
+        const payload = jsonObject(jsonField(copy, "payload"));
+        const requestAndEvidence = jsonObject(
+          jsonField(payload, "requestAndEvidence"),
+        );
+        const inputPayload = jsonObject(
+          jsonField(requestAndEvidence, "payload"),
+        );
+        jsonObject(jsonField(inputPayload, "evidence")).retrievedAt =
+          "2026-07-28T14:02:00.000Z";
+      }),
+      changedPreimageHash(preimage, (copy) => {
+        const payload = jsonObject(jsonField(copy, "payload"));
+        const fixed = jsonObject(
+          jsonField(payload, "fixedConfiguration"),
+        );
+        const controls = fixed.controls;
+        if (!Array.isArray(controls)) throw new Error("controls missing");
+        jsonObject(controls[0]!).proof = "changed proof rule";
+      }),
+      changedPreimageHash(preimage, (copy) => {
+        const payload = jsonObject(jsonField(copy, "payload"));
+        const fixed = jsonObject(
+          jsonField(payload, "fixedConfiguration"),
+        );
+        jsonObject(
+          jsonField(fixed, "activation"),
+        ).attestationStatement = "changed attestation statement";
+      }),
+      changedPreimageHash(preimage, (copy) => {
+        const authorityValue = jsonObject(
+          jsonField(
+            jsonObject(jsonField(copy, "payload")),
+            "authority",
+          ),
+        );
+        jsonObject(jsonField(authorityValue, "actor")).opaqueId =
+          "principal-b";
+      }),
+    ];
+    expect(changed).not.toContain(unchanged);
+    expect(new Set(changed).size).toBe(changed.length);
+  });
+
+  it("enforces: versioned input and decision claims are identity-bearing", () => {
+    const scenario = scenarioById("safe-proceed");
+    const baseInput = decisionInputHashFor(scenario);
+    const materialInputs = [
+      { evidenceRef: "changed-evidence" },
+      { evidenceRetrievedAt: "2026-07-28T14:02:00.000Z" },
+      { evaluationAsOf: "2026-07-28T14:06:00.000Z" },
+      { timeZone: "UTC" },
+      { engineVersion: "changed-engine" },
+      { canonicalSerializerVersion: "changed-serializer" },
+    ].map((overrides) =>
+      hashCanonicalPreimage(decisionInputPreimageFor(scenario, overrides)),
+    );
+    expect(materialInputs).not.toContain(baseInput);
+    expect(new Set(materialInputs).size).toBe(materialInputs.length);
+
+    const journey = getJourney("safe-proceed", "firm-a");
+    const claims = {
+      disposition: journey.recommendation.disposition,
+      precedence: journey.policyTrace.rows,
+      authority: {
+        reached: true,
+        summary: "Authority reached",
+        detail: "Exact approved inputs",
+        stages: journey.approvals?.stages ?? [],
+      },
+      reachability: {
+        authority: true,
+        safety: true,
+        execution: true,
+      },
+      stopNote: journey.stopNote,
+    };
+    const firm = firmById("firm-a");
+    const configuration = decisionConfigurationFor(firm);
+    const baseRecord = hashCanonicalPreimage(
+      decisionRecordPreimageFor(
+        scenario,
+        firm,
+        configuration,
+        claims,
+      ),
+    );
+    const changedClaims = [
+      {
+        ...claims,
+        authority: { ...claims.authority, detail: "Changed authority" },
+      },
+      {
+        ...claims,
+        precedence: claims.precedence.map((row, index) =>
+          index === 0 ? { ...row, result: "Changed precedence" } : row,
+        ),
+      },
+      {
+        ...claims,
+        disposition: {
+          ...claims.disposition,
+          blockers: [
+            {
+              condition: "Changed blocker",
+              affordanceLabel: "Resolve changed blocker",
+            },
+          ],
+        },
+      },
+    ].map((changedClaimsValue) =>
+      hashCanonicalPreimage(
+        decisionRecordPreimageFor(
+          scenario,
+          firm,
+          configuration,
+          changedClaimsValue,
+        ),
+      ),
+    );
+    expect(changedClaims).not.toContain(baseRecord);
+  });
+
+  it("enforces: GC-15 derives every visible fact from one pending delta", () => {
+    const safety = buildSafety(scenarioById("approval-invalidation"));
+    const impact = buildMoneyMovementSetup().impacts.find(
+      (candidate) => candidate.id === "material-change",
+    )!;
+    expect(gc15ConsistencyViolations(safety, impact)).toEqual([]);
+  });
+
+  it("detects: contradictory GC-15 safety copy cannot pass", () => {
+    const safety = buildSafety(scenarioById("approval-invalidation"));
+    const impact = buildMoneyMovementSetup().impacts.find(
+      (candidate) => candidate.id === "material-change",
+    )!;
+    expect(
+      gc15ConsistencyViolations(
+        {
+          ...safety,
+          checks: [
+            ...safety.checks,
+            {
+              label: "Liquidity unchanged since the decision",
+              status: "done",
+              statusLabel: "Verified",
+            },
+          ],
+        },
+        impact,
+      ),
+    ).toContain("pending-distribution safety facts conflict");
+  });
+
+  it("enforces: request provenance agrees across setup and export", () => {
+    const setup = buildMoneyMovementSetup();
+    const record = buildActivatedRecord(activatedSnapshot(), "firm-a");
+    expect(requestProvenanceViolations(setup, record)).toEqual([]);
+  });
+
+  it("detects: a request provenance label drift cannot pass", () => {
+    const setup = buildMoneyMovementSetup();
+    const requestAmountIndex = setup.request.facts.findIndex(
+      (fact) => fact.label === "Request amount",
+    );
+    const drifted = {
+      ...setup,
+      request: {
+        ...setup.request,
+        facts: setup.request.facts.map((fact, index) =>
+          index === requestAmountIndex
+            ? { ...fact, category: "Synthetic fixture" as const }
+            : fact,
+        ),
+      },
+    };
+    expect(
+      requestProvenanceViolations(
+        drifted,
+        buildActivatedRecord(activatedSnapshot(), "firm-a"),
+      ),
+    ).toContain("setup request category drifted");
+  });
+
   it("enforces: each firm's export identity equals the record its export target renders", () => {
     const snapshot = activatedSnapshot();
     const violations = exportIdentityViolations(
@@ -1208,17 +1520,9 @@ describe("demo semantic-truth fence", () => {
       ...safeScenario,
       spec: { ...safeScenario.spec, thirdPartyDestination: true },
     };
-    const safeInput = decisionIdentityFor(
-      safeScenario,
-      firmById("firm-a"),
+    expect(decisionInputHashFor(materialInputChange)).not.toBe(
+      decisionInputHashFor(safeScenario),
     );
-    const changedInput = decisionIdentityFor(
-      materialInputChange,
-      firmById("firm-a"),
-    );
-    expect(changedInput.inputHash).not.toBe(safeInput.inputHash);
-    expect(changedInput.bundleHash).not.toBe(safeInput.bundleHash);
-    expect(changedInput.decisionId).not.toBe(safeInput.decisionId);
 
     const initial = activatedSnapshot();
     const changed = activatedSnapshot((selections) => {
@@ -1232,7 +1536,10 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: activation freezes one immutable configuration and forward-fixes mutations", () => {
     const selections = setupSelections();
-    const first = activateMoneyMovementSetup(selections);
+    const first = activateMoneyMovementSetup(
+      selections,
+      setupActivationAuthority(selections),
+    );
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     const frozenBytes = JSON.stringify(first.snapshot);
@@ -1250,7 +1557,10 @@ describe("demo semantic-truth fence", () => {
     expect(Object.isFrozen(first.snapshot)).toBe(true);
     expect(Object.isFrozen(first.snapshot.selections["firm-a"])).toBe(true);
 
-    const second = activateMoneyMovementSetup(selections);
+    const second = activateMoneyMovementSetup(
+      selections,
+      setupActivationAuthority(selections),
+    );
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.snapshot.snapshotVersion).not.toBe(
@@ -1405,8 +1715,12 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: unsupported setup combinations fail closed and name the combination", () => {
     const selections = setupSelections();
+    const authority = setupActivationAuthority(selections);
     selections["firm-a"].reserve = "18-months";
-    const result = activateMoneyMovementSetup(selections);
+    const result = activateMoneyMovementSetup(
+      selections,
+      authority,
+    );
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("Unsupported setup combination");
@@ -1922,10 +2236,9 @@ describe("demo semantic-truth fence", () => {
           impactFacts: impact.facts,
           blocker: blocker?.condition ?? "",
           requestSummary: vm.request.summary,
-          inputHash: decisionIdentityFor(
+          inputHash: decisionInputHashFor(
             scenarioById("recent-bank-change-block"),
-            firmById("firm-a"),
-          ).inputHash,
+          ),
         },
         signedDate,
       ),

@@ -194,6 +194,42 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                           {vm.activatedConfiguration.configurationHash}
                         </dd>
                       </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">Authenticated activation actor</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-activation-actor">
+                          {vm.activatedConfiguration.activationActorId}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">Authenticated role</dt>
+                        <dd className="text-xs text-slate-800">
+                          {vm.activatedConfiguration.activationActorRole}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col sm:col-span-2">
+                        <dt className="text-xs text-slate-600">Demonstration acknowledgment</dt>
+                        <dd className="text-xs text-slate-800">
+                          {vm.activatedConfiguration.attestationStatement}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col sm:col-span-2">
+                        <dt className="text-xs text-slate-600">Attestation statement version</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800">
+                          {vm.activatedConfiguration.attestationStatementVersion}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col">
+                        <dt className="text-xs text-slate-600">Acknowledged draft generation</dt>
+                        <dd className="font-mono text-xs text-slate-800">
+                          {vm.activatedConfiguration.attestedDraftGeneration}
+                        </dd>
+                      </div>
+                      <div className="flex flex-col sm:col-span-2">
+                        <dt className="text-xs text-slate-600">Acknowledged selections hash</dt>
+                        <dd className="break-all font-mono text-xs text-slate-800">
+                          {vm.activatedConfiguration.attestedSelectionsHash}
+                        </dd>
+                      </div>
                     </>
                   ) : null}
                 </dl>
@@ -203,6 +239,11 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
               <DocSection n={1} title="Intent">
                 <p className="text-sm text-slate-800">
                   <FreshValue provenance={vm.intent.requestProvenance}>“{vm.intent.requestText}”</FreshValue>
+                  <span className="ml-2 inline-flex">
+                    <DevProvenanceBadge
+                      label={DEV_BADGE_TEXT[vm.intent.requestFakeClass]}
+                    />
+                  </span>
                 </p>
                 <dl className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
                   {vm.intent.interpreted.slots.map((s) => (

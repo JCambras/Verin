@@ -14,6 +14,7 @@
  */
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance, SourceSystem } from "@contracts/provenance";
+import type { Role } from "@contracts/roles";
 
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
@@ -301,6 +302,12 @@ export interface ActivatedConfigurationRecordVM {
   readonly configurationPostureStatus: string;
   readonly configurationPostureLabel: string;
   readonly configurationProvenance: string;
+  readonly activationActorId: string;
+  readonly activationActorRole: Role;
+  readonly attestationStatementVersion: string;
+  readonly attestedDraftGeneration: number;
+  readonly attestedSelectionsHash: string;
+  readonly attestationStatement: string;
 }
 
 /** Reserve reaches exactly one terminal state. Arithmetic exists only when the

@@ -69,34 +69,44 @@ export default async function DemoStationPage({
     notFound();
   }
   const sp = await searchParams;
-  const scenarioId = resolveScenarioId(first(sp.scenario));
-  const firmId = resolveFirmId(first(sp.firm));
-  if (!scenarioId || !firmId) notFound();
-  const activation = first(sp.activation);
-  if (station === "record" && activation) {
-    if (!isSetupActivationToken(activation)) {
+  const activationParamPresent = Object.hasOwn(sp, "activation");
+  if (station === "record" && activationParamPresent) {
+    const rawActivation = sp.activation;
+    const rawScenario = sp.scenario;
+    const rawFirm = sp.firm;
+    const activation =
+      typeof rawActivation === "string" ? rawActivation : null;
+    const scenarioId =
+      typeof rawScenario === "string"
+        ? resolveScenarioId(rawScenario)
+        : null;
+    const firmId =
+      typeof rawFirm === "string" ? resolveFirmId(rawFirm) : null;
+    if (
+      !activation ||
+      !isSetupActivationToken(activation) ||
+      !scenarioId ||
+      !firmId
+    ) {
       return (
-        <RecordUnavailable message="The activation reference is invalid. Re-run setup and activate the draft again to produce a fresh record." />
+        <RecordUnavailable message="The activated record reference must include one valid activation token, scenario, and firm. Re-run setup and activate the draft again to produce a fresh record." />
       );
     }
-    // Read-only identity: a Server Component cannot set the rotated cookie
-    // requirePrincipal writes, so the activation scope is resolved through the
-    // request-memoized resolveSession the /app layout already ran (ADR-0008, D-030) -
-    // one lookup, not a second serialized round-trip that could disagree with it.
-    // A snapshot is readable only by the principal that activated it.
     const session = await currentSession();
     const snapshot = session.ok
       ? activatedSetupSnapshot(
-          { orgId: session.value.orgId, userId: session.value.userId },
+          {
+            orgId: session.value.orgId,
+            userId: session.value.userId,
+            sessionId: session.value.sessionId,
+            role: session.value.role,
+          },
           activation,
         )
       : null;
     const snapshotFirm = snapshot?.firms.find(
       (candidate) => candidate.firmId === firmId,
     );
-    // Every miss fails CLOSED and names what is unavailable. An activated
-    // configuration is never recomputed here and no unrelated signed record is
-    // ever substituted for one that is gone.
     if (snapshot && snapshotFirm && snapshotFirm.scenarioId === scenarioId) {
       return (
         <RecordSurface
@@ -109,11 +119,14 @@ export default async function DemoStationPage({
         message={
           snapshot
             ? `The activated setup snapshot does not contain scenario ${scenarioId} for firm ${firmId}.`
-            : `Activated setup snapshot ${activation} is not available to this session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record.`
+            : "The activated setup snapshot is not available to this authenticated session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record."
         }
       />
     );
   }
+  const scenarioId = resolveScenarioId(first(sp.scenario));
+  const firmId = resolveFirmId(first(sp.firm));
+  if (!scenarioId || !firmId) notFound();
   const journey = getJourney(scenarioId, firmId);
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
 

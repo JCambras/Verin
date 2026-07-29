@@ -9,12 +9,17 @@ import type {
   SetupActivationResult,
   SetupSelections,
 } from "@app/demo/setup-model";
+import type {
+  SetupActivationDraft,
+  SetupAttestationResult,
+} from "@app/demo/setup-activation-contract";
 import {
   activationResponseMatchesDraft,
   captureSetupActivationDraft,
 } from "@app/demo/surfaces/setup-activation-state";
 import { ControlsBody } from "@app/demo/surfaces/setup-governance";
 import { MoneyMovementSetupSurface } from "@app/demo/surfaces/setup";
+import { setupActivationAuthority } from "../helpers/setup-activation";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -53,9 +58,28 @@ describe("setup activation", () => {
           resolveActivation = resolve;
         }),
     );
+    const attest = vi.fn(
+      async (draft: SetupActivationDraft): Promise<SetupAttestationResult> => {
+        const authority = setupActivationAuthority(
+          draft.selections,
+          draft.generation,
+        );
+        return {
+          ok: true,
+          challenge: {
+            token: "a".repeat(64),
+            draftGeneration: authority.draftGeneration,
+            selectionsHash: authority.selectionsHash,
+            statementVersion: authority.statementVersion,
+            actor: authority.actor,
+          },
+        };
+      },
+    );
     render(
       <MoneyMovementSetupSurface
         vm={buildMoneyMovementSetup()}
+        attest={attest}
         activate={activate}
       />,
     );
@@ -70,6 +94,7 @@ describe("setup activation", () => {
       await user.click(screen.getByRole("button", { name: label }));
     }
     await user.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toBeChecked());
     await user.click(
       screen.getByRole("button", {
         name: "Acknowledge and activate demonstration",
@@ -80,7 +105,11 @@ describe("setup activation", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
     expect(screen.getByRole("checkbox")).toBeDisabled();
 
-    const result = activateMoneyMovementSetup(setupSelections());
+    const selections = setupSelections();
+    const result = activateMoneyMovementSetup(
+      selections,
+      setupActivationAuthority(selections),
+    );
     expect(result.ok).toBe(true);
     resolveActivation?.(result);
     await screen.findByRole("heading", {

@@ -14,6 +14,7 @@
  * is a FAILURE, never a fallback: the caller must fail closed and name what is
  * unavailable rather than recompute an outcome or borrow a signed record.
  */
+import type { Role } from "@contracts/roles";
 import type { SetupActivatedSnapshotVM } from "./setup-model";
 
 /** Long enough to walk the journey from activation to export, short enough that an
@@ -34,6 +35,8 @@ export function isSetupActivationToken(value: string): boolean {
 export interface SetupActivationScope {
   readonly orgId: string;
   readonly userId: string;
+  readonly sessionId: string;
+  readonly role: Role;
 }
 
 interface StoredSnapshot {
@@ -54,7 +57,12 @@ function byPrincipal(): Map<string, Map<string, StoredSnapshot>> {
 }
 
 function scopeKey(scope: SetupActivationScope): string {
-  return `${scope.orgId} ${scope.userId}`;
+  return JSON.stringify([
+    scope.orgId,
+    scope.userId,
+    scope.sessionId,
+    scope.role,
+  ]);
 }
 
 /** Map iteration order is insertion order, so re-inserting a key makes it the most
