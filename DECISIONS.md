@@ -3550,3 +3550,26 @@ module ownership cannot depend on identifier spelling, one procedural expression
 one loader name, or one script extension.
 **Revert path:** none while Prompt 7 promises exact decision binding,
 recorded-version replay, tenant isolation, and one immutable write owner.
+
+### D-116 · 2026-07-29 · reversible · Ledger authorization, reservation authority, failures, and retention fail closed
+
+Unresolved SQL passed to a query or exec sink now fails the immutable-row ownership
+fence even when no static string root is visible. Only the exact versioned migration
+loop that executes reviewed `MIGRATIONS` entries and the exact low-level driver
+forwarding methods are excepted. Approval recording requires the actor to hold at
+least one role eligible for the recorded stage while preserving additional
+attributed roles.
+
+Active reservation exclusivity is derived from preceding immutable creation and
+release events. The mutable reservation index remains rebuildable cache state and
+cannot authorize a competing append when missing. Later-append driver failures are
+PII-safely logged and mapped to typed repository errors after savepoint rollback.
+ADR-0019 retains replay-source provenance bindings under the same six-year hold as
+the source bytes and forbids separating them through retention, archival, or pruning.
+
+**Why:** immutable history cannot trust unresolved source code, vacuous role checks,
+or mutable caches, and replay bytes cannot remain verifiable without their producer
+binding.
+**Revert path:** none while Prompt 7 promises exact insert ownership, authorized
+approval facts, rebuildable projections, typed repository failures, and retained
+replay verification.

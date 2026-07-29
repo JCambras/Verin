@@ -99,6 +99,23 @@ async function replayRegisterWindow(
         item.sequence < before &&
         item.event.type === "EvidenceSnapshotRecorded" &&
         item.event.evidenceSnapshotRef.id === id) ?? null,
+    activeReservation: async (id, before) => {
+      const prior = entries.filter((item) => item.sequence < before);
+      const released = new Set(
+        prior.flatMap((item) =>
+          item.event.type === "ReservationReleased"
+            ? [item.event.reservationCreationRef.id]
+            : []),
+      );
+      return prior
+        .filter(
+          (item) =>
+            item.event.type === "ReservationCreated" &&
+            item.event.reservationRef.id === id &&
+            !released.has(item.event.id),
+        )
+        .sort((left, right) => right.sequence - left.sequence)[0] ?? null;
+    },
   };
   for (const [index, row] of rows.entries()) {
     const item = entries[index]!;

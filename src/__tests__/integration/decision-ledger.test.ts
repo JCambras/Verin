@@ -682,6 +682,43 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
+  it("requires an eligible approver role while preserving additional role attribution", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalRecorded",
+    )!;
+    if (sample.type !== "ApprovalRecorded") {
+      throw new Error("expected approval fixture");
+    }
+    const base = {
+      ...sample,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    };
+    const roleless = LedgerEntrySchema.parse({
+      ...base,
+      id: "ledger:approval:roleless",
+      approver: { ...sample.approver, roleIds: [] },
+    });
+    await expect(append(db, [roleless])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+
+    const attributed = LedgerEntrySchema.parse({
+      ...base,
+      id: "ledger:approval:additional-role",
+      approver: {
+        ...sample.approver,
+        roleIds: [
+          ...sample.approver.roleIds,
+          { firmId: LEDGER_ORG, id: "client-service" },
+        ],
+      },
+    });
+    await expect(append(db, [attributed])).resolves.toHaveLength(1);
+  });
+
   it("rejects unauthorized execution, verification, reservation, and trigger references", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, input)).ok).toBe(true);
@@ -782,6 +819,32 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(verified.ok).toBe(false);
     expect(verified.replaySourceReason).toBe(
       "ledger event references an unauthorized approval stage",
+    );
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG))
+      .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
+  });
+
+  it("examiner verification rejects competing active reservation generations", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, first)).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const created = allLedgerEventSamples().find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    await expect(append(db, [created])).resolves.toHaveLength(1);
+    const competing = LedgerEntrySchema.parse({
+      ...created,
+      id: "ledger:reservation:forged-conflict",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+    });
+    await insertRawDecisionEvent(db, competing);
+
+    expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
+    const integrity = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(integrity.ok).toBe(false);
+    expect(integrity.replaySourceReason).toMatch(
+      /reservation already has an active generation/,
     );
     await expect(rebuildDecisionProjections(db, LEDGER_ORG))
       .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
@@ -2069,6 +2132,37 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(failed.ok).toBe(false);
     // A bug or an outage must never be reported as a client-resolvable conflict.
     expect(failed.ok ? null : failed.error.code).toBe("INTERNAL");
+  });
+
+  it("maps later-append driver failures after rolling back the savepoint", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      id: "ledger:append:driver-failure",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(db.transaction(async (tx) => {
+      const failingTx: SqlTx = {
+        ...tx,
+        async query<T>(sql: string, params?: unknown[]) {
+          if (sql.includes("INSERT INTO decision_ledger")) {
+            throw new TypeError("driver is gone");
+          }
+          return tx.query<T>(sql, params);
+        },
+      };
+      return appendDecisionEvents(
+        failingTx,
+        LEDGER_ORG,
+        [event],
+        LEDGER_PROVENANCE,
+      );
+    })).rejects.toMatchObject({ code: "INTERNAL" });
+    expect((await listDecisionLedger(db, LEDGER_ORG))).toHaveLength(5);
   });
 
   it("persists evidence gathered after the decision and refuses an uncited snapshot", async () => {

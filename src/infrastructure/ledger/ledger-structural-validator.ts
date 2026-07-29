@@ -24,6 +24,10 @@ export interface LedgerStructureLookup {
     evidenceId: string,
     beforeSequence: number,
   ) => Promise<StructuralLedgerEntry | null>;
+  readonly activeReservation: (
+    reservationId: string,
+    beforeSequence: number,
+  ) => Promise<StructuralLedgerEntry | null>;
 }
 
 const EXCEPTION_TRIGGER_TYPES_V1 = new Set<LedgerEntry["type"]>([
@@ -157,7 +161,7 @@ function assertPlanReferencesV1(
           requirement.eligibleRoleIds.map((role) => role.id)),
       );
       if (
-        event.approver.roleIds.some((role) => !eligibleRoles.has(role.id))
+        !event.approver.roleIds.some((role) => eligibleRoles.has(role.id))
       ) {
         throw appError(
           "STORE_CONSTRAINT",
@@ -352,6 +356,18 @@ async function assertEventStructure(
       );
     }
   }
+  if (event.type === "ReservationCreated") {
+    const active = await lookup.activeReservation(
+      event.reservationRef.id,
+      sequence,
+    );
+    if (active) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "reservation already has an active generation",
+      );
+    }
+  }
   if (event.type === "ReservationReleased") {
     const creation = await requireEarlierEntry(
       lookup,
@@ -419,6 +435,28 @@ export async function assertRecordedLedgerStructure(
       return seen && seen.sequence < before
         ? seen
         : base.evidenceRecording(id, before);
+    },
+    activeReservation: async (id, before) => {
+      const prior = [...seenEntries.values()].filter(
+        (item) => item.sequence < before,
+      );
+      const released = new Set(
+        prior.flatMap((item) =>
+          item.event.type === "ReservationReleased"
+            ? [item.event.reservationCreationRef.id]
+            : []),
+      );
+      const seen = prior
+        .filter(
+          (item) =>
+            item.event.type === "ReservationCreated" &&
+            item.event.reservationRef.id === id &&
+            !released.has(item.event.id),
+        )
+        .sort((left, right) => right.sequence - left.sequence)[0];
+      if (seen) return seen;
+      const stored = await base.activeReservation(id, before);
+      return stored && !released.has(stored.event.id) ? stored : null;
     },
   };
   for (const item of [...entries].sort(

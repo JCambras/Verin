@@ -31,6 +31,20 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
 };
 const IMMUTABLE_TABLE_SET = new Set<string>(IMMUTABLE_TABLES);
+const REVIEWED_UNRESOLVED_SQL_ESCAPE = Object.freeze({
+  file: "src/infrastructure/store/migrations.ts",
+  functionName: "runMigrations",
+  loopVariable: "m",
+  collection: "MIGRATIONS",
+  sink: "tx.exec",
+  argument: "m.sql",
+});
+const REVIEWED_SQL_FORWARDING_ESCAPE = Object.freeze({
+  file: "src/infrastructure/store/db.ts",
+  methods: new Set(["query", "exec"]),
+  sinks: new Set(["pg.query", "pg.exec", "tx.query", "tx.exec"]),
+  argument: "sql",
+});
 
 interface SqlToken {
   readonly kind: "identifier" | "dot" | "string" | "body" | "other";
@@ -1097,6 +1111,36 @@ function hasSqlCallableRoot(
   return false;
 }
 
+function isReviewedUnresolvedSql(
+  call: Node,
+  expression: Node,
+  rel: string,
+): boolean {
+  if (!Node.isCallExpression(call)) return false;
+  const method = call.getFirstAncestorByKind(SyntaxKind.MethodDeclaration);
+  if (
+    rel === REVIEWED_SQL_FORWARDING_ESCAPE.file &&
+    method &&
+    REVIEWED_SQL_FORWARDING_ESCAPE.methods.has(method.getName()) &&
+    REVIEWED_SQL_FORWARDING_ESCAPE.sinks.has(call.getExpression().getText()) &&
+    expression.getText() === REVIEWED_SQL_FORWARDING_ESCAPE.argument
+  ) {
+    return true;
+  }
+  const declaration = call.getFirstAncestorByKind(
+    SyntaxKind.FunctionDeclaration,
+  );
+  const loop = call.getFirstAncestorByKind(SyntaxKind.ForOfStatement);
+  return rel === REVIEWED_UNRESOLVED_SQL_ESCAPE.file &&
+    declaration?.getName() === REVIEWED_UNRESOLVED_SQL_ESCAPE.functionName &&
+    loop?.getInitializer().getText() ===
+      `const ${REVIEWED_UNRESOLVED_SQL_ESCAPE.loopVariable}` &&
+    loop.getExpression().getText() ===
+      REVIEWED_UNRESOLVED_SQL_ESCAPE.collection &&
+    call.getExpression().getText() === REVIEWED_UNRESOLVED_SQL_ESCAPE.sink &&
+    expression.getText() === REVIEWED_UNRESOLVED_SQL_ESCAPE.argument;
+}
+
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
   const violations: Violation[] = [];
   const seen = new Set<string>();
@@ -1131,7 +1175,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       }
       const value = staticString(expression);
       if (value === null) {
-        if (hasStaticStringRoot(expression)) {
+        if (!isReviewedUnresolvedSql(call, expression, rel)) {
           const key = `${rel}:${expression.getStartLineNumber()}:unresolved`;
           if (!seen.has(key)) {
             seen.add(key);
@@ -1169,16 +1213,14 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       const template = tagged.getTemplate();
       const value = staticString(template);
       if (value === null) {
-        if (hasStaticStringRoot(template)) {
-          const key =
-            `${rel}:${template.getStartLineNumber()}:unresolved-tagged`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            violations.push({
-              file: rel,
-              line: template.getStartLineNumber(),
-            });
-          }
+        const key =
+          `${rel}:${template.getStartLineNumber()}:unresolved-tagged`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: template.getStartLineNumber(),
+          });
         }
         continue;
       }
@@ -1452,6 +1494,30 @@ describe("decision-ledger append-only fence", () => {
       expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(2);
     });
 
+    it("fails closed for unresolved SQL parameters and loop values except the migration runner", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil-parameter.ts":
+          `export const run = (db: { query(s: string): unknown }, sql: string) => ` +
+          `db.query(sql);`,
+        "/src/infrastructure/evil-loop.ts":
+          `export async function run(db: { exec(s: string): unknown }, migrations: readonly { sql: string }[]) {\n` +
+          `  for (const migration of migrations) await db.exec(migration.sql);\n` +
+          `}`,
+        "/src/infrastructure/store/migrations.ts":
+          `const MIGRATIONS: readonly { sql: string }[] = [];\n` +
+          `export async function runMigrations(db: { transaction<T>(fn: (tx: { exec(s: string): Promise<void> }) => Promise<T>): Promise<T> }) {\n` +
+          `  for (const m of MIGRATIONS) {\n` +
+          `    await db.transaction(async (tx) => tx.exec(m.sql));\n` +
+          `  }\n` +
+          `}`,
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual(["evil-loop.ts", "evil-parameter.ts"]);
+    });
+
     it("detects bound query aliases, wrappers, and the latest reassignment", () => {
       const project = inMemoryProject({
         "/scripts/bound.ts":
@@ -1471,7 +1537,12 @@ describe("decision-ledger append-only fence", () => {
           `  return execute("INSERT INTO evidence_snapshots (id) VALUES ('x')");\n` +
           `};`,
       });
-      expect(ledgerInsertViolations(project.getSourceFiles())).toHaveLength(3);
+      expect(
+        [...new Set(
+          ledgerInsertViolations(project.getSourceFiles())
+            .map(({ file }) => file),
+        )],
+      ).toHaveLength(3);
     });
 
     it("detects destructured sinks and object-method wrappers", () => {
@@ -1496,9 +1567,10 @@ describe("decision-ledger append-only fence", () => {
           `};`,
       });
       expect(
-        ledgerInsertViolations(project.getSourceFiles())
-          .map(({ file }) => file.split("/").at(-1))
-          .sort(),
+        [...new Set(
+          ledgerInsertViolations(project.getSourceFiles())
+            .map(({ file }) => file.split("/").at(-1)),
+        )].sort(),
       ).toEqual([
         "destructured.ts",
         "object-method.ts",
@@ -1527,9 +1599,10 @@ describe("decision-ledger append-only fence", () => {
           `};`,
       });
       expect(
-        ledgerInsertViolations(project.getSourceFiles())
-          .map(({ file }) => file.split("/").at(-1))
-          .sort(),
+        [...new Set(
+          ledgerInsertViolations(project.getSourceFiles())
+            .map(({ file }) => file.split("/").at(-1)),
+        )].sort(),
       ).toEqual([
         "qualified.ts",
         "quoted.ts",

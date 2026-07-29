@@ -133,5 +133,28 @@ export function storedLedgerStructureLookup(
       );
       return result.rows[0] ? parseEntry(result.rows[0]) : null;
     },
+    async activeReservation(reservationId, beforeSequence) {
+      const result = await tx.query<StoredEntryRow>(
+        `SELECT created.sequence, created.event_type, created.schema_version,
+                created.serializer_version, created.payload_json
+           FROM decision_ledger created
+          WHERE created.org_id = $1
+            AND created.event_type = 'ReservationCreated'
+            AND created.payload_json::jsonb #>> '{reservationRef,id}' = $2
+            AND created.sequence < $3
+            AND NOT EXISTS (
+                  SELECT 1
+                    FROM decision_ledger released
+                   WHERE released.org_id = created.org_id
+                     AND released.event_type = 'ReservationReleased'
+                     AND released.reservation_creation_id = created.id
+                     AND released.sequence < $3
+                )
+          ORDER BY created.sequence DESC
+          LIMIT 1`,
+        [orgId, reservationId, beforeSequence],
+      );
+      return result.rows[0] ? parseEntry(result.rows[0]) : null;
+    },
   };
 }

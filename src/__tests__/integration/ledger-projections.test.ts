@@ -268,6 +268,38 @@ describe("deterministic decision-ledger projections", () => {
     expect((await verifyDecisionLedger(db, LEDGER_ORG)).ok).toBe(true);
   });
 
+  it("derives active reservation exclusivity from immutable ledger facts", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, first)).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, second)).ok).toBe(true);
+    const created = allLedgerEventSamples().find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    await expect(append(db, [created])).resolves.toHaveLength(1);
+    await db.query(
+      `DELETE FROM decision_reservation_index
+        WHERE org_id = $1 AND reservation_id = $2`,
+      [LEDGER_ORG, created.reservationRef.id],
+    );
+
+    const competing = LedgerEntrySchema.parse({
+      ...created,
+      id: "projection:missing-cache-conflict",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+    });
+    await expect(append(db, [competing])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const rows = await db.query<{ n: number | string }>(
+      `SELECT count(*) AS n FROM decision_ledger
+        WHERE org_id = $1 AND event_type = 'ReservationCreated'`,
+      [LEDGER_ORG],
+    );
+    expect(Number(rows.rows[0]!.n)).toBe(1);
+    await expect(rebuildDecisionProjections(db, LEDGER_ORG)).resolves.toHaveLength(2);
+  });
+
   it("does not let a delayed release affect a reused reservation identifier", async () => {
     const first = decisionRecordingInput();
     expect((await recordDecision(db, first)).ok).toBe(true);

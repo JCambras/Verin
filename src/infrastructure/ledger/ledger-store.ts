@@ -453,6 +453,6 @@ export async function appendDecisionEvents(
   } catch (error) {
     await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
-    throw error;
+    throw storeFailure(orgId, error);
   }
 }

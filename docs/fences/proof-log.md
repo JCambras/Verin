@@ -6166,3 +6166,59 @@ The focused tenant, anti-fork, decision-ledger, projection, typecheck, and lint
 suites pass.
 
 **Date:** 2026-07-28 (review corrections P1-P6, ADR-0033, D-115).
+
+## Unresolved SQL, approval roles, reservation authority, and typed failures (D-116)
+
+**Invariants:** unresolved SQL reaching a query or exec sink fails closed except
+at an exact reviewed infrastructure authority; an approval records at least one
+stage-eligible role; active reservation exclusivity comes from immutable ledger
+facts; later append failures remain typed after savepoint rollback.
+
+The four permanent companions were first run against the pre-fix implementation:
+
+```text
+× fails closed for unresolved SQL parameters and loop values except the migration runner
+  expected [] to deeply equal [ 'evil-loop.ts', 'evil-parameter.ts' ]
+
+× requires an eligible approver role while preserving additional role attribution
+  promise resolved ledger:approval:roleless instead of rejecting
+
+× derives active reservation exclusivity from immutable ledger facts
+  promise resolved projection:missing-cache-conflict instead of rejecting
+
+× maps later-append driver failures after rolling back the savepoint
+  expected TypeError: driver is gone to match object { code: 'INTERNAL' }
+```
+
+A valid chain containing two unreleased generations of one reservation then
+passed examiner integrity verification:
+
+```text
+× examiner verification rejects competing active reservation generations
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:845
+```
+
+The immutable-row fence now refuses every unresolved SQL argument. The exact
+`runMigrations` loop and the low-level SQL driver's forwarding methods are the
+only reviewed unresolved authorities. A closed tenant-lock lookup was rewritten
+as literal SQL. With the fix present, a temporary operator probe was planted:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+scripts/ledger-unresolved-sql-violation-probe.ts:5
+```
+
+The shared recorded-version structural validator now requires an eligible
+approver-role intersection and derives active reservation generations from prior
+immutable creation and release events. Append, examiner verification, bounded
+register replay, and rebuild use that same authority. The mutable reservation
+index is only rebuilt cache state. `appendDecisionEvents` maps and logs the
+original failure only after rolling its savepoint back.
+
+**Revert:** the temporary operator probe was removed. The permanent companions
+retain the role-less, mixed-role, missing-cache, forged-generation, and raw-driver
+cases. The focused append-only, decision-ledger, and projection suites pass.
+
+**Date:** 2026-07-29 (review corrections Q1-Q4, ADR-0019/0033, D-116).

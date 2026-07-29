@@ -93,7 +93,9 @@ settle now.
 - Projection state is a cache. Online append and rebuild call the same pure,
   sequence-driven fold. The fold records stated facts only. It does not infer
   quorum, eligibility, execution readiness, or any later-prompt decision. Derived
-  state is never located by physical row order. A reservation generation is keyed by
+  state is never located by physical row order. Active reservation exclusivity is
+  derived from preceding immutable creation and release events, never from the
+  mutable reservation index. A reservation generation is keyed by
   reservation reference, owning decision reference, and its creation ledger-entry
   identity. A release cites that exact generation. Reuse is allowed after release
   only through a new creation identity, and a delayed old-generation release cannot
