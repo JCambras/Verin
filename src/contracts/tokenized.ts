@@ -9,6 +9,7 @@
  * elsewhere is an invariant violation, not a style issue.
  */
 declare const TokenizedBrand: unique symbol;
+export const SLOT_ID_RE = /^slot_(?!0000)\d{4}$/;
 
 export type DeepReadonly<T> =
   T extends (...args: never[]) => unknown

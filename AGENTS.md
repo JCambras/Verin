@@ -140,6 +140,9 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   loads are exact-match escapes IN the fence). Nothing under `src/infrastructure/llm/` may (transitively)
   import a PIIBearing-marked type or a PII-shaped exported VALUE (`llm-pii-boundary` fence - a new
   interface with a raw PII-named field must extend `PIIBearing` or be reviewed into that fence's escapes).
+  LLM request text comes only from `trustedStaticProjectionText`: the factory owns the reviewed literal
+  template and exact sensitive spans. Account references use `sensitiveAccountReferences` for extraction,
+  masking, and residual refusal, including space-separated and hyphenated forms.
   Config secrets are `SecretValue`s: the raw string leaves only through the free function `revealSecret()`
   (there is no `.reveal()` member), and only in the fence-allowlisted HMAC consumers.
 - **Governed sinks are reachable only from a REQUEST-HANDLING surface**, which calls
@@ -160,7 +163,9 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   free; anything else (a db call, a branch, a side effect) ENDS the prologue. Every `ActionGrant` owes
   its exact action assertion. Every grant pair owes `assertSameTenant(left.tenant, right.tenant)`, and
   each explicit `TenantContext` must be compared with every grant. `assertSameTenant` checks both org
-  and actor identity, so authorities that disagree on either cannot reach work. Demanding a literal
+  and actor identity, so authorities that disagree on either cannot reach work. Closed unions and fixed
+  tuples are accepted only when every arm exposes one identical complete authority inventory; optional
+  authorities, arrays, open records, and index signatures are refused as runtime-dynamic. Demanding a literal
   statement #1 in each fence separately is what made dual-authority signatures unbuildable.
 - **The app layer holds NO raw SQL.** A resolved `db.query(...)`/`tx.exec(...)` anywhere under `src/app/`
   fails the build (`detectAppLayerSqlAccess`, asserted by BOTH the governed-actions and
@@ -175,7 +180,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   `ObservabilityEntityType` (`domain/observability/safe-values.ts`) are what `auditedWrite`/`auditEvent`
   accept. A `string` there is a build failure - an unlisted value degrades to `[REDACTED]` in the very
   log line an operator needs, and the vocabulary fence flags a dynamic attribute value the same way it
-  flags a dynamic span name.
+  flags a dynamic span name. Client-supplied record IDs parse through `parseMachineRecordId` before
+  repository work; observability record-id fields accept only the same canonical UUID shape.
 - **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
   `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
   (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an

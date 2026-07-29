@@ -46,14 +46,44 @@ export function looksLikePIIValue(value: string): boolean {
   return PII_VALUE_PATTERNS.some((re) => re.test(value));
 }
 
-/**
- * The account/tax-identifier shape: an unbroken 9-18 digit run. A source fragment
- * for the same reason as PERSON_WORD_SOURCE - the evidence→LLM projection
- * binds exactly the spans this predicate refuses, so the masker and the residual
- * check cannot drift apart.
- */
-export const SENSITIVE_DIGIT_RUN_SOURCE = String.raw`\b\d{9,18}\b`;
-const LONG_UNMASKED_NUMBER_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE);
+export interface SensitiveAccountReference {
+  readonly start: number;
+  readonly end: number;
+  readonly valid: boolean;
+}
+
+const ACCOUNT_CLUSTER_RE = /\d[\d -]*/g;
+const ACCOUNT_BOUNDARY_RE = /[\p{L}\p{N}_]/u;
+const FORMATTED_ACCOUNT_RE = /^\d+(?:[ -]\d+)*$/;
+
+export function sensitiveAccountReferences(value: string): readonly SensitiveAccountReference[] {
+  return [...value.matchAll(ACCOUNT_CLUSTER_RE)].flatMap((match) => {
+    const start = match.index ?? 0;
+    const rawText = match[0].replace(/ +$/u, "");
+    const end = start + rawText.length;
+    const digits = rawText.replace(/[ -]/g, "");
+    if (digits.length < 9) return [];
+    const separators = rawText.match(/[ -]+/g) ?? [];
+    const valid = digits.length <= 18 &&
+      FORMATTED_ACCOUNT_RE.test(rawText) &&
+      new Set(separators).size <= 1 &&
+      !ACCOUNT_BOUNDARY_RE.test(value[start - 1] ?? "") &&
+      !ACCOUNT_BOUNDARY_RE.test(value[end] ?? "");
+    return [{ start, end, valid }];
+  });
+}
+
+export function accountReferenceDigits(value: string): string | null {
+  const references = sensitiveAccountReferences(value);
+  const reference = references.length === 1 ? references[0] : undefined;
+  return reference?.valid && reference.start === 0 && reference.end === value.length
+    ? value.slice(reference.start, reference.end).replace(/[ -]/g, "")
+    : null;
+}
+
+export function hasSensitiveAccountReference(value: string | number | bigint): boolean {
+  return sensitiveAccountReferences(String(value).replace(/^-/, "")).length > 0;
+}
 
 /**
  * What redaction removes from free text — THE authority, so the audit scrubber
@@ -90,11 +120,6 @@ const ALL_CAPS_WORD = String.raw`\p{Lu}{2,}(?:[-']\p{Lu}+)?`;
 const PERSON_WORD = `(?:${TITLE_CASE_WORD}|${ALL_CAPS_WORD})`;
 export const PERSON_WORD_SOURCE = String.raw`\b${PERSON_WORD}`;
 
-/** The predicate half of SENSITIVE_DIGIT_RUN_SOURCE (one shape, two consumers). */
-export function hasSensitiveDigitRun(value: string | number | bigint): boolean {
-  return LONG_UNMASKED_NUMBER_RE.test(String(value).replace(/^-/, ""));
-}
-
 // Composed from PERSON_WORD, never re-typed: a shape written twice is a shape that
 // drifts, and the all-caps half was missing here precisely because this pair had its
 // own inline copy of the title-case source.
@@ -129,7 +154,7 @@ export function looksLikeAmbiguousSensitiveText(value: string): boolean {
     residual.slice(0, match.index).trim().length > 0
   );
   return looksLikePIIValue(residual) ||
-    LONG_UNMASKED_NUMBER_RE.test(residual) ||
+    hasSensitiveAccountReference(residual) ||
     PERSON_PAIR_RE.test(residual) ||
     embeddedPersonWord ||
     CREDENTIAL_VALUE_RE.test(residual);

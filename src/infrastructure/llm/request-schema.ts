@@ -17,7 +17,7 @@ import {
   assertNoPIIValues,
   looksLikeAmbiguousSensitiveText,
 } from "@contracts/pii";
-import type { Tokenized } from "@contracts/tokenized";
+import { SLOT_ID_RE, type Tokenized } from "@contracts/tokenized";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
 import { isSealedTokenized } from "@infra/pii/tokenize";
@@ -41,8 +41,6 @@ export interface MaskedLlmRequest {
   readonly slots: readonly SlotPlaceholder[];
   readonly context: Tokenized<Readonly<Record<string, unknown>>>;
 }
-
-export const SLOT_ID_RE = /^slot_(?!0000)\d{4}$/;
 
 const sealedTokenizedText = z.custom<Tokenized<string>>(
   (v) =>

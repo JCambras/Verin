@@ -56,9 +56,12 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 ### I — Information disclosure
 - **T-I1 (High): PII leaks into logs/audit/API bodies, or into an LLM prompt.** *Control:* PII boundary — scrub
   at audit + response boundaries; logs/traces carry only the sealed observability vocabulary (an un-listed
-  value degrades to `[REDACTED]`); raw `console.*` banned. PII-bearing types carry a `PIIBearing` marker and no
-  such type is import-reachable from `src/infrastructure/llm/`; anything projected to a model is `Tokenized<T>`,
-  constructible only through the scrubber factory (ADR-0006, ADR-0031). *Fence:* PII-not-in-audit-store,
+  value degrades to `[REDACTED]`), and record-id fields accept only the canonical machine-id shape; raw
+  `console.*` is banned. PII-bearing types carry a `PIIBearing` marker and no such type is import-reachable
+  from `src/infrastructure/llm/`; anything projected to a model is `Tokenized<T>`, constructible only through
+  the scrubber factory. Request text comes from a reviewed static-template factory whose exact sensitive
+  spans are masked, and one separator-aware account classifier drives extraction, masking, and residual
+  refusal (ADR-0006, ADR-0031). *Fence:* PII-not-in-audit-store,
   no-console, `observability-vocabulary`, `llm-pii-boundary`, `tokenized-factory-only`.
 - **T-I2 (High): cross-tenant read.** *Exploit:* org A reads org B's rows. *Control:* `org_id` filter on
   every query + access scope; a sealed `TenantContext` (unforgeable brand) is required on every repository/port

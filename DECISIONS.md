@@ -2191,3 +2191,50 @@ safety); and commit each migration separately after a global preflight phase
 
 **Revert path:** revert this changeset to restore name-limited authority discovery,
 lowercase identity pass-through, and phase-separated migration execution.
+
+## D-082 - Closed authority inventories, reviewed projection text, and canonical record identities
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-081,
+ADR-0031, ADR-0034, v3 §15.1/§15.3/§15.4, charter #1/#4/#7/#13
+
+Five review findings were legitimate symptoms of shared boundary gaps.
+
+Authority discovery now enumerates closed union and fixed-tuple arms only when
+every arm yields one identical, complete authority-path inventory. Conditional
+absence, arrays, open records, and index signatures are refused because their
+runtime authority set cannot be proven statically. Direct and nested authorities
+remain in one inventory and owe every exact action assertion and pairwise tenant
+and actor comparison before work.
+
+Unrestricted request text can no longer receive a zero-PII seal. A narrow reviewed
+static-template factory owns the complete literal structure and exact sensitive
+placeholder spans. Copies, stale or caller-constructed provenance, unused or
+overlapping spans, and unbound lowercase names are refused. One separator-aware
+account classifier drives candidate extraction, complete masking, and residual
+validation for unbroken, space-separated, and hyphenated forms.
+
+Workflow dependencies now compare the complete sealed tenant and actor identity
+supplied by the engine with the starter before deriving write attribution.
+Same-organization different-human, human-versus-system, and delegated-actor
+mismatches fail with `AUTH_FAILED` before repository work.
+
+Machine record IDs have family-typed canonical parsers backed by one
+case-insensitive UUID shape. The household PATCH boundary parses and lowercases
+its client ID before lookup, preserving legacy mixed-case UUID compatibility while
+rejecting lowercase slugs. Observability application, entity, execution, and
+outbox-row ID fields accept only that same machine shape; invalid failure-path IDs
+degrade to `[REDACTED]` without losing the failure audit.
+
+The line-budget fence measures contracts 3,998/4,000, domain 1,250/1,250,
+infrastructure 3,379/3,400, and presentation 918/6,000. No ceiling changed, so no
+line-budget ADR amendment was required.
+
+**Alternatives rejected:** infer unrestricted lowercase prose from suffixes (no
+heuristic proves PII absence); enumerate another wrapper name (dynamic carriers
+remain unprovable); compare only organization IDs at dependency calls (write
+attribution can name another actor); and keep generic slug identifiers in
+observability (client names remain loggable).
+
+**Revert path:** revert this changeset to restore conditional authority carriers,
+heuristic free-text provenance, unformatted-only account detection, organization-only
+dependency checks, and generic slug record identities.

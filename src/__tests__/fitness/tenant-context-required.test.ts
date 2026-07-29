@@ -374,7 +374,8 @@ export function detectUnscopedPortMethods(
       for (const member of members) {
         if (escapes.has(member.ref)) continue;
         const unscoped = member.signatures.some((signature) =>
-          sealedAuthorityParameters(signature).length === 0
+          sealedAuthorityParameters(signature).length === 0 ||
+          requiredAuthorityPrologue(signature).unfenceable.length > 0
         );
         if (unscoped) out.push(member.ref);
       }
@@ -527,12 +528,17 @@ describe("tenant-context-required fence", () => {
           tenant: TenantContext,
           grant: ActionGrant<"pii.view">,`;
 
-    const dualAuthorityFixture = (body: string, params = DUAL_AUTHORITY_PARAMS): Project =>
+    const dualAuthorityFixture = (
+      body: string,
+      params = DUAL_AUTHORITY_PARAMS,
+      prelude = "",
+    ): Project =>
       repositoryFixture(
         `
         import type { SqlDb } from "../store/db";
         import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
         import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+        ${prelude}
         export function listPeople<A extends string = never>(${params}
         ): unknown {
 ${body}
@@ -549,8 +555,12 @@ ${body}
         },
       );
 
-    const dualAuthorityViolations = (body: string, params?: string): unknown[] =>
-      detectMissingTenantParams(dualAuthorityFixture(body, params), new Set());
+    const dualAuthorityViolations = (
+      body: string,
+      params?: string,
+      prelude?: string,
+    ): unknown[] =>
+      detectMissingTenantParams(dualAuthorityFixture(body, params, prelude), new Set());
 
     it("PASSES a dual-authority signature whose prologue is contiguous (previously unbuildable)", () => {
       expect(dualAuthorityViolations(`
@@ -768,6 +778,100 @@ ${body}
           );
           return db.query("SELECT 1");
       `, params)).toEqual([]);
+    });
+
+    it("accepts a closed union only when every arm has the same authority inventory", () => {
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          wrapped:
+            | { piiGrant: ActionGrant<"pii.view">; mode: "one" }
+            | { piiGrant: ActionGrant<"pii.view">; mode: "two" },`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(wrapped.piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, wrapped.piiGrant.tenant);
+          return db.query("SELECT 1");
+      `, params)).toEqual([]);
+    });
+
+    it.each([
+      `wrapped: { piiGrant: ActionGrant<"pii.view"> } | { token: string }`,
+      `wrapped: { piiGrant?: ActionGrant<"pii.view"> }`,
+      `wrapped: Array<ActionGrant<"pii.view">>`,
+      `wrapped: readonly ActionGrant<"pii.view">[]`,
+      `wrapped: [ActionGrant<"pii.view">, ...ActionGrant<"pii.view">[]]`,
+      `wrapped: Record<string, ActionGrant<"pii.view">>`,
+      `wrapped: { [key: string]: ActionGrant<"pii.view"> }`,
+    ])("rejects a runtime-dynamic authority carrier: %s", (carrier) => {
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          ${carrier},`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+    });
+
+    it("rejects conditional absence even when the present arm is fully asserted", () => {
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          wrapped: { piiGrant?: ActionGrant<"pii.view"> },`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(wrapped.piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, wrapped.piiGrant.tenant);
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+    });
+
+    it("enumerates every fixed tuple authority path", () => {
+      const params = `db: SqlDb,
+          grants: readonly [
+            ActionGrant<"execution.initiate">,
+            ActionGrant<"pii.view">
+          ],`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grants[0], "execution.initiate");
+          assertActionGrant(grants[1], "pii.view");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grants[0], "execution.initiate");
+          assertActionGrant(grants[1], "pii.view");
+          assertSameTenant(grants[0].tenant, grants[1].tenant);
+          return db.query("SELECT 1");
+      `, params)).toEqual([]);
+    });
+
+    it("rejects recursive authority cardinality without rejecting recursive business data", () => {
+      const authorityPrelude = `
+        interface RecursiveAuthority {
+          piiGrant: ActionGrant<"pii.view">;
+          next?: RecursiveAuthority;
+        }`;
+      const authorityParams = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          wrapped: RecursiveAuthority,`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(wrapped.piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, wrapped.piiGrant.tenant);
+          return db.query("SELECT 1");
+      `, authorityParams, authorityPrelude)).toHaveLength(1);
+
+      const businessPrelude = `
+        interface RecursiveBusiness {
+          value: string;
+          next?: RecursiveBusiness;
+        }`;
+      const businessParams = `db: SqlDb,
+          tenant: TenantContext,
+          input: RecursiveBusiness,`;
+      expect(dualAuthorityViolations(`
+          assertTenantContext(tenant);
+          void input;
+          return db.query("SELECT 1");
+      `, businessParams, businessPrelude)).toEqual([]);
     });
 
     it("rejects a grant-pair proof delayed until after repository work", () => {

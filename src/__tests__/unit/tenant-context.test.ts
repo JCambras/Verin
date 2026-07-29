@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { tenantOf, systemTenant, isTenantContext, assertTenantContext, type TenantContext } from "@contracts/tenant";
+import {
+  assertSameTenant,
+  tenantOf,
+  systemTenant,
+  isTenantContext,
+  assertTenantContext,
+  type TenantContext,
+} from "@contracts/tenant";
 import {
   assertWriteActor,
   delegatedWriteActor,
@@ -80,6 +87,23 @@ describe("TenantContext cannot parse unless factory-minted", () => {
     })).toThrow();
     expect(tenantOf(principal).actor).toEqual({ kind: "human", actorId: "u1" });
     expect(systemTenant("seed", "org-1").actor).toEqual({ kind: "system", actorId: "seed" });
+  });
+  it("requires both tenant and actor identity to match", () => {
+    const otherHuman = principalFromIdentity({
+      userId: "u2",
+      orgId: "org-1",
+      role: "advisor",
+      actor: "b@firm.test",
+      sessionId: "s2",
+    });
+    const delegated = delegatedWriteActor(
+      systemWriteActor("esign-webhook", "org-1"),
+      "u1",
+    );
+    expect(() => assertSameTenant(tenantOf(principal), tenantOf(otherHuman))).toThrow();
+    expect(() => assertSameTenant(tenantOf(principal), systemTenant("seed", "org-1"))).toThrow();
+    expect(() => assertSameTenant(tenantOf(principal), delegated.tenant)).toThrow();
+    expect(() => assertSameTenant(tenantOf(principal), tenantOf(principal))).not.toThrow();
   });
 });
 

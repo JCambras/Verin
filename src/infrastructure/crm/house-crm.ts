@@ -19,6 +19,7 @@ import {
   type ActionGrant,
 } from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
+import type { MachineRecordId } from "@contracts/record-id";
 import type { Household, Contact, FinancialAccount, Task, AccountType, HouseholdStatus } from "@domain/schema/entities";
 import type { RecordProvenance } from "@contracts/provenance";
 
@@ -67,7 +68,12 @@ export async function createHousehold(
   });
 }
 
-export async function updateHouseholdName(db: SqlDb, a: WriteActor, id: string, name: string): Promise<Result<Household>> {
+export async function updateHouseholdName(
+  db: SqlDb,
+  a: WriteActor,
+  id: MachineRecordId<"household">,
+  name: string,
+): Promise<Result<Household>> {
   assertWriteActor(a);
   // The before-snapshot is read INSIDE the write transaction (FOR UPDATE row
   // lock), so the audited pre-image can never race a concurrent rename.

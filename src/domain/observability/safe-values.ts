@@ -5,6 +5,7 @@ import {
   REDACTED,
 } from "@contracts/pii";
 import { appError } from "@contracts/errors";
+import { isMachineRecordId } from "@contracts/record-id";
 
 /** Derived-and-checked against the real `observabilityId(...)` call sites by the observability-vocabulary fence. */
 export const OBSERVABILITY_ID_FIELDS = [
@@ -95,6 +96,12 @@ export function registerTestSpanName(name: string): void {
 // Opaque machine identifiers: hex/uuid/slug segments, CASE-INSENSITIVE (a
 // case-sensitive predicate would refuse a mixed-case id AFTER its writes commit).
 const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
+const RECORD_ID_FIELDS = new Set<ObservabilityIdField>([
+  "applicationId",
+  "entityId",
+  "executionId",
+  "outboxRowId",
+]);
 // The person-name SHAPE: a capital immediately followed by a lowercase letter
 // ("Alice", "Okonkwo-Blackwood"). Machine tokens never carry it — hex runs are
 // digits/uppercase and slugs are lowercase — so "seed" and "org" stay allowed.
@@ -127,6 +134,7 @@ const REASON_RE = new RegExp(
 );
 
 function isOpaqueId(field: ObservabilityIdField, value: string): boolean {
+  if (RECORD_ID_FIELDS.has(field)) return isMachineRecordId(value);
   return ID_FIELDS.has(field) && typeof value === "string" &&
     value.length > 0 && value.length <= 128 && OPAQUE_ID_RE.test(value) &&
     !NAME_SHAPED_RE.test(value) &&

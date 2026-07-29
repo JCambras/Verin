@@ -3172,6 +3172,16 @@ ${body}
       }
     });
 
+    it("rejects a conditional wrapped grant beside a direct governed grant", () => {
+      const params = `executionGrant: ActionGrant<"execution.initiate">,
+            wrapped: { piiGrant: ActionGrant<"pii.view"> } | { token: string }`;
+      const violations = detectUnguardedGovernedSinks(multiGrantSink(params, `
+            assertActionGrant(executionGrant, "execution.initiate");
+            return [];
+      `));
+      expect(violations).toHaveLength(1);
+    });
+
     it("attributes a sink called from a route-LOCAL helper to its exported handler", () => {
       const project = governedDiscoveryProject(`
         import { requireActionGrant, errorResponse } from "@app/_server/context";

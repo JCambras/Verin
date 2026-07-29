@@ -4126,3 +4126,106 @@ pnpm golden:validate                                        # all 16 signed case
 pnpm build                                                   # compiled and generated all routes
 pnpm test:e2e                                                # 17 tests passed
 ```
+
+### PF-115 closed authority carriers have one deterministic inventory
+
+Authority discovery previously relied on `type.getProperties()`. Unions expose
+only common properties and arrays expose no concrete element path, so a direct
+grant beside a conditional, optional, array, or open-record grant could escape
+complete discovery.
+
+The shared walker now compares the complete authority-path inventory of every
+closed union arm, enumerates fixed tuple positions, and rejects conditional
+absence, arrays, open records, and index signatures. It preserves every direct
+and nested authority for exact action assertions and pairwise tenant and actor
+proofs. Recursive business data remains valid, while a recursive carrier whose
+authority cardinality can grow at runtime is refused.
+
+**Adversarial proof:** the equality check between union-arm inventories was
+removed while leaving the rest of the walker intact. A synthetic optional
+`piiGrant` with a complete-looking assertion and pairwise comparison then passed
+with zero violations. The companion failed at
+`tenant-context-required.test.ts:813`, expecting one violation and receiving
+none. Restoring the inventory comparison made the same test and the full
+dual-fence corpus pass.
+
+### PF-116 only factory-owned request structures receive a zero-PII seal
+
+Lowercase identity safety cannot be inferred from the next word or any other
+suffix heuristic. `alice must approve the transfer` passed the old heuristic,
+while an exact span for `alice` could still be rejected as unused.
+
+`trustedStaticProjectionText` now owns each reviewed literal template and creates
+the exact sensitive spans used for masking. The projection accepts only objects
+minted by that factory and requires the final masked text to equal the factory's
+complete masked structure. Copies, stale text, caller-created provenance,
+overlapping spans, and unused spans are refused.
+
+**Adversarial proof:** both factory membership checks were removed while all
+other masking and residual checks remained. The arbitrary lowercase request and
+ordinary safe prose cases both changed from refusal to successful projection.
+Their companion failed at `llm-boundary.test.ts:184`. Restoring both membership
+checks made all request-provenance cases pass.
+
+### PF-117 account-reference classification is separator-aware and shared
+
+Account references may be uninterrupted, space-separated, or hyphenated. One
+classifier in `contracts/pii.ts` now produces validated spans and derives the
+canonical digits used by candidate extraction, request and evidence masking, and
+residual refusal. Mixed separators, repeated separators, attached word characters,
+and 19-digit runs fail closed as ambiguous.
+
+**Adversarial proof:** the classifier's cluster expression was narrowed back to
+uninterrupted digits. The space-separated and hyphenated masking cases then
+reported zero candidates, and the residual check accepted
+`wire to 1234 5678 9012`. Three companion assertions failed at
+`llm-boundary.test.ts:297` and `:453`. Restoring the shared separator-aware
+cluster made all account forms and near-misses pass.
+
+### PF-118 dependency write attribution requires complete actor identity
+
+The account-opening dependency adapter compared only organization IDs before
+returning the starter's `WriteActor`. A same-organization context for another
+human or system actor could therefore be relabeled as the starter.
+
+`actorFor` now calls `assertSameTenant`, which checks organization, actor kind,
+and actor ID before any dependency reaches a repository.
+
+**Adversarial proof:** removing only that comparison caused all three real
+dependency-call regressions to reach the household repository. Same-org
+different-human, human-versus-system, and delegated-actor cases returned
+`STORE_CONSTRAINT` instead of the expected pre-work `AUTH_FAILED`; all three
+failed at `wire-authority.test.ts:79`. Restoring the comparison made the three
+cases pass with zero household writes.
+
+### PF-119 client and observability record IDs share one canonical shape
+
+Generic lowercase slugs are not proof of machine identity. Record families now
+parse through one case-insensitive UUID classifier and canonicalize to lowercase.
+The household PATCH boundary parses before repository work. Observability's
+application, entity, execution, and outbox-row fields accept only the same
+machine shape, while invalid failure-path IDs degrade to `[REDACTED]`.
+
+**Adversarial proof:** replacing the household route parser with the former
+nonempty-string check changed the lowercase `alice` request from a pre-work 400
+to a repository 404; the end-to-end companion failed at
+`household-route.test.ts:57`. Separately, allowing invalid record fields to fall
+through to the generic slug predicate emitted `alice` instead of `[REDACTED]`;
+the observability companion failed at `pii-observability.test.ts:150`. Both
+weakening changes were reverted. The mixed-case UUID route still resolves the
+lowercase stored row.
+
+### PF-115 - PF-119 verification
+
+```
+pnpm test                                                    # 56 files, 996 tests passed
+pnpm lint                                                    # clean
+pnpm typecheck                                               # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+APP_ENV=development <CI placeholder env> pnpm build          # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```
+
+**Date:** 2026-07-28 (twenty-first review-fix round on v3 build-sequence prompt 6).

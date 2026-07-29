@@ -1,236 +1,227 @@
 import {
-  hasSensitiveDigitRun, looksLikeAmbiguousSensitiveText, looksLikePIIValue,
-  redactPIIValues, REDACTED, SENSITIVE_DIGIT_RUN_SOURCE, PERSON_WORD_SOURCE,
+  accountReferenceDigits,
+  hasSensitiveAccountReference,
+  looksLikeAmbiguousSensitiveText,
+  looksLikePIIValue,
+  sensitiveAccountReferences,
+  REDACTED,
+  PERSON_WORD_SOURCE,
   type PIIBearing,
 } from "@contracts/pii";
-export interface IdentitySpan extends PIIBearing { readonly slotId: string; readonly start: number; readonly end: number }
-export interface TrustedSafeTextSpan {
-  readonly source: "static-template"; readonly sourceId: StaticProjectionTemplateId;
-  readonly text: string; readonly start: number; readonly end: number;
+import { SLOT_ID_RE } from "@contracts/tokenized";
+import { appError } from "@contracts/errors";
+
+type SensitiveSlotType = "subject" | "account-ref";
+export interface TrustedProjectionValue extends PIIBearing {
+  readonly slotId: string; readonly slotType: SensitiveSlotType; readonly value: string;
 }
-export interface TrustedProjectionText extends PIIBearing { readonly requestText: string; readonly trustedSafeText: readonly TrustedSafeTextSpan[] }
+interface TrustedProjectionSpan extends PIIBearing {
+  readonly slotId: string; readonly slotType: SensitiveSlotType; readonly start: number; readonly end: number;
+}
+export interface TrustedProjectionText extends PIIBearing {
+  readonly sourceId: StaticProjectionTemplateId; readonly requestText: string; readonly maskedText: string;
+  readonly sensitiveSpans: readonly TrustedProjectionSpan[];
+}
 export interface SensitiveResolutionInput extends PIIBearing {
-  readonly requestText: string; readonly evidence: Readonly<Record<string, unknown>>;
+  readonly request: TrustedProjectionText; readonly evidence: Readonly<Record<string, unknown>>;
   readonly slots: readonly { readonly slotId: string; readonly slotType: string }[];
-  readonly identitySpans?: readonly IdentitySpan[];
-  readonly trustedSafeText?: readonly TrustedSafeTextSpan[];
 }
 export interface ResolvedSensitiveEntity extends PIIBearing {
-  readonly slotId: string; readonly slotType: "subject" | "account-ref"; readonly rawValues: readonly string[];
+  readonly slotId: string; readonly slotType: SensitiveSlotType; readonly rawValues: readonly string[];
 }
-const SUBJECT_KEYS = new Set(["firstName", "fullName", "householdName", "lastName", "name"]);
-const ACCOUNT_KEYS = new Set(["accountNumber", "accountRef", "account_number", "account_ref"]);
+const EVIDENCE_FIELDS = {
+  accountNumber: "account-ref",
+  accountRef: "account-ref",
+  account_number: "account-ref",
+  account_ref: "account-ref",
+  email: "redacted",
+  firstName: "subject",
+  fullName: "subject",
+  household: "container",
+  householdName: "subject",
+  lastName: "subject",
+  name: "subject",
+  phone: "redacted",
+  plannedWithdrawals: "number",
+  ssn: "redacted",
+} as const;
+type EvidenceField = keyof typeof EVIDENCE_FIELDS;
 const SLOT_PLACEHOLDER_G = /\{\{slot_\d{4}\}\}/g;
 const SLOT_PLACEHOLDER_EXACT_RE = /^\{\{slot_\d{4}\}\}$/;
-// One shape, three consumers: the candidate walk that BINDS a span to a slot, the
-// masker that rewrites it, and the residual check that runs AFTER projection. They
-// compose the same source so a name shape cannot be a candidate here and invisible
-// there, or vice versa.
 const PERSON_WORD_RE = new RegExp(PERSON_WORD_SOURCE, "u");
-const PERSON_RUN_RE = new RegExp(`${PERSON_WORD_SOURCE}(?:\\s+${PERSON_WORD_SOURCE})*`, "gu");
-const LOWERCASE_LEADING_PERSON_RE = /^(\p{Ll}{2,}(?:[-']\p{Ll}+)?)(?=\s+\p{Ll}{2,}(?:ed|s)\b)/u;
-const ACCOUNT_RUN_RE = new RegExp(SENSITIVE_DIGIT_RUN_SOURCE, "g");
-const SIMULATED_SLOT = "{{slot_0000}}";
 const STATIC_PROJECTION_TEMPLATES = {
-  "review-transaction-request": { requestText: "Review the transaction request", safeSpans: [{ start: 0, end: 6 }] },
+  "account-transfer-request": { parts: ["wire to ", " today"], slotTypes: ["account-ref"] },
+  "review-subject-request": { parts: ["review ", ""], slotTypes: ["subject"] },
+  "review-transaction-request": { parts: ["review the transaction request"], slotTypes: [] },
+  "subject-account-transfer-request": { parts: ["", " requested a transfer from ", ""], slotTypes: ["subject", "account-ref"] },
+  "subject-approval-request": { parts: ["", " must approve the transfer"], slotTypes: ["subject"] },
+  "subject-annual-review-request": { parts: ["", " requested an annual review"], slotTypes: ["subject"] },
+  "subject-transfer-request": { parts: ["", " requested a transfer"], slotTypes: ["subject"] },
 } as const;
 export type StaticProjectionTemplateId = keyof typeof STATIC_PROJECTION_TEMPLATES;
-const TRUSTED_SAFE_TEXT_SPANS = new WeakSet<object>();
-export function trustedStaticProjectionText(sourceId: StaticProjectionTemplateId): TrustedProjectionText {
+const TRUSTED_PROJECTION_TEXTS = new WeakSet<object>();
+export function trustedStaticProjectionText(
+  sourceId: StaticProjectionTemplateId,
+  values: readonly TrustedProjectionValue[] = [],
+): TrustedProjectionText {
   const template = STATIC_PROJECTION_TEMPLATES[sourceId];
-  const trustedSafeText = template.safeSpans.map(({ start, end }) => {
-    const span: TrustedSafeTextSpan = Object.freeze({
-      source: "static-template", sourceId,
-      text: template.requestText.slice(start, end), start, end,
-    });
-    TRUSTED_SAFE_TEXT_SPANS.add(span);
-    return span;
+  if (
+    !template ||
+    !Array.isArray(values) ||
+    values.length !== template.slotTypes.length ||
+    values.some((value, index) =>
+      typeof value !== "object" ||
+      value === null ||
+      typeof value.slotId !== "string" || !SLOT_ID_RE.test(value.slotId) ||
+      value.slotType !== template.slotTypes[index] ||
+      typeof value.value !== "string" ||
+      value.value.length === 0 ||
+      (value.slotType === "account-ref" && accountReferenceDigits(value.value) === null)
+    ) ||
+    new Set(values.map((value) => value.slotId)).size !== values.length
+  ) {
+    throw appError("PII_VIOLATION", "Projection template values do not match the reviewed structure.");
+  }
+  let requestText = template.parts[0] as string;
+  let maskedText = requestText;
+  const sensitiveSpans: TrustedProjectionSpan[] = [];
+  values.forEach((value, index) => {
+    const start = requestText.length;
+    requestText += value.value;
+    sensitiveSpans.push(Object.freeze({
+      slotId: value.slotId,
+      slotType: value.slotType,
+      start,
+      end: requestText.length,
+    }));
+    const suffix = template.parts[index + 1] as string;
+    requestText += suffix;
+    maskedText += `{{${value.slotId}}}${suffix}`;
   });
-  return Object.freeze({ requestText: template.requestText, trustedSafeText: Object.freeze(trustedSafeText) });
+  const trusted = {
+    sourceId,
+    requestText,
+    maskedText,
+    sensitiveSpans: Object.freeze(sensitiveSpans),
+  };
+  TRUSTED_PROJECTION_TEXTS.add(trusted);
+  return Object.freeze(trusted);
 }
 interface Candidate extends PIIBearing {
-  readonly slotType: ResolvedSensitiveEntity["slotType"]; readonly rawText: string; readonly identitySpan?: Readonly<{ start: number; end: number }> | null;
+  readonly slotType: SensitiveSlotType;
+  readonly rawText: string;
+  readonly trustedSpan?: TrustedProjectionSpan;
 }
-function addCandidate(candidates: Candidate[], slotType: Candidate["slotType"], rawText: string,
-  identitySpan?: Readonly<{ start: number; end: number }> | null,
+function addCandidate(
+  candidates: Candidate[],
+  slotType: SensitiveSlotType,
+  rawText: string,
+  trustedSpan?: TrustedProjectionSpan,
 ): void {
   const normalized = rawText.trim();
   if (normalized.length < 2) return;
+  const accountDigits = slotType === "account-ref" ? accountReferenceDigits(normalized) : null;
   const found = candidates.findIndex((candidate) =>
     candidate.slotType === slotType &&
-    candidate.rawText.toLocaleLowerCase() === normalized.toLocaleLowerCase()
+    (
+      accountDigits !== null
+        ? accountReferenceDigits(candidate.rawText) === accountDigits
+        : candidate.rawText.toLocaleLowerCase() === normalized.toLocaleLowerCase()
+    )
   );
   if (found < 0) {
-    candidates.push(identitySpan === undefined
+    candidates.push(trustedSpan === undefined
       ? { slotType, rawText: normalized }
-      : { slotType, rawText: normalized, identitySpan });
-  } else if (identitySpan && !candidates[found]!.identitySpan) {
-    candidates[found] = { ...candidates[found]!, identitySpan };
+      : { slotType, rawText: normalized, trustedSpan });
+  } else if (trustedSpan && !candidates[found]!.trustedSpan) {
+    candidates[found] = { ...candidates[found]!, trustedSpan };
   }
-}
-function lowercaseLeadingSubject(text: string) {
-  const rawText = text.match(LOWERCASE_LEADING_PERSON_RE)?.[1];
-  return rawText ? { rawText, start: 0, end: rawText.length } : null;
-}
-function validatedSafeText(
-  requestText: string,
-  spans: readonly TrustedSafeTextSpan[] | undefined,
-): readonly TrustedSafeTextSpan[] | null {
-  if (spans === undefined) return [];
-  if (!Array.isArray(spans)) return null;
-  const trustedSpans: readonly TrustedSafeTextSpan[] = spans;
-  const unique = new Set<string>();
-  for (const span of trustedSpans) {
-    const template = STATIC_PROJECTION_TEMPLATES[span.sourceId];
-    const key = `${span.start}:${span.end}`;
-    if (
-      !TRUSTED_SAFE_TEXT_SPANS.has(span) ||
-      !template ||
-      requestText !== template.requestText ||
-      requestText.slice(span.start, span.end) !== span.text ||
-      !template.safeSpans.some(({ start, end }) => start === span.start && end === span.end) ||
-      unique.has(key)
-    ) return null;
-    unique.add(key);
-  }
-  return trustedSpans;
-}
-function subjectCandidates(text: string, safeText: readonly TrustedSafeTextSpan[]): Candidate[] {
-  const candidates: Candidate[] = [...text.matchAll(PERSON_RUN_RE)].flatMap((match) => {
-    const rawText = match[0];
-    const start = match.index ?? 0;
-    const end = start + rawText.length;
-    if (safeText.some((span) =>
-      span.start === start && span.end === end && span.text === rawText
-    )) return [];
-    return [{
-      slotType: "subject" as const,
-      rawText,
-      ...(text.slice(0, start).trim().length === 0
-        ? { identitySpan: { start, end } }
-        : {}),
-    }];
-  });
-  const lowercase = lowercaseLeadingSubject(text);
-  if (lowercase) {
-    candidates.push({
-      slotType: "subject",
-      rawText: lowercase.rawText,
-      identitySpan: { start: lowercase.start, end: lowercase.end },
-    });
-  }
-  return candidates;
-}
-function strictSubjects(text: string): string[] {
-  return [...text.matchAll(PERSON_RUN_RE)].map((match) => match[0]);
-}
-function withSubjectsMasked(text: string, subjects: readonly string[]): string {
-  return [...subjects].sort((a, b) => b.length - a.length).reduce(
-    (masked, subject) =>
-      masked.replace(new RegExp(subject.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), SIMULATED_SLOT),
-    text,
-  );
-}
-function accountCandidates(text: string, subjects: readonly string[] = []): string[] {
-  return [...redactPIIValues(withSubjectsMasked(text, subjects)).matchAll(ACCOUNT_RUN_RE)]
-    .map((match) => match[0]);
 }
 function collectCandidates(
   value: unknown,
   candidates: Candidate[],
   key?: string,
   seen = new WeakSet<object>(),
-): void {
+): boolean {
   if (typeof value === "string") {
-    if (key && SUBJECT_KEYS.has(key)) addCandidate(candidates, "subject", value);
-    else if (key && ACCOUNT_KEYS.has(key)) addCandidate(candidates, "account-ref", value);
-    else {
-      const subjects = strictSubjects(value);
-      for (const subject of subjects) addCandidate(candidates, "subject", subject);
-      const lowercase = lowercaseLeadingSubject(value);
-      if (lowercase) addCandidate(candidates, "subject", lowercase.rawText, null);
-      for (const account of accountCandidates(value, subjects)) {
-        addCandidate(candidates, "account-ref", account);
-      }
+    const kind = key ? EVIDENCE_FIELDS[key as EvidenceField] : undefined;
+    if (kind === "subject" || kind === "account-ref") {
+      if (kind === "account-ref" && accountReferenceDigits(value) === null) return false;
+      addCandidate(candidates, kind, value);
+      return true;
     }
-    return;
+    return kind === "redacted";
   }
   if (typeof value === "number" || typeof value === "bigint") {
-    if ((key && ACCOUNT_KEYS.has(key)) || hasSensitiveDigitRun(value)) {
+    const kind = key ? EVIDENCE_FIELDS[key as EvidenceField] : undefined;
+    if (kind === "account-ref" || hasSensitiveAccountReference(value)) {
       addCandidate(candidates, "account-ref", String(value));
+      return kind === "account-ref";
     }
-    return;
+    return kind === "number" && typeof value === "number" && Number.isFinite(value);
   }
-  if (value == null || typeof value !== "object" || seen.has(value)) return;
+  if (value == null || typeof value === "boolean") return true;
+  if (typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
   if (Array.isArray(value)) {
-    for (const item of value) collectCandidates(item, candidates, key, seen);
-    return;
+    return value.every((item) => collectCandidates(item, candidates, key, seen));
   }
   for (const [nestedKey, item] of Object.entries(value)) {
-    for (const subject of strictSubjects(nestedKey)) addCandidate(candidates, "subject", subject);
-    collectCandidates(item, candidates, nestedKey, seen);
+    const kind = EVIDENCE_FIELDS[nestedKey as EvidenceField];
+    if (!kind || (kind === "container" && (item === null || typeof item !== "object"))) {
+      return false;
+    }
+    if (!collectCandidates(item, candidates, nestedKey, seen)) return false;
   }
-}
-function validatedIdentitySpans(input: SensitiveResolutionInput): ReadonlyMap<string, IdentitySpan> | null {
-  const spans = input.identitySpans ?? [];
-  if (!Array.isArray(spans)) return null;
-  const byBounds = new Map<string, IdentitySpan>();
-  for (const span of spans) {
-    const key = `${span.start}:${span.end}`;
-    if (
-      typeof span !== "object" ||
-      span === null ||
-      Object.keys(span).some((field) => !["end", "slotId", "start"].includes(field)) ||
-      typeof span.slotId !== "string" ||
-      !Number.isInteger(span.start) ||
-      !Number.isInteger(span.end) ||
-      span.start < 0 ||
-      span.end <= span.start ||
-      span.end > input.requestText.length ||
-      byBounds.has(key)
-    ) return null;
-    byBounds.set(key, span);
-  }
-  return byBounds;
+  return true;
 }
 export function resolveCompleteSensitiveEntities(input: SensitiveResolutionInput): readonly ResolvedSensitiveEntity[] | null {
-  const safeText = validatedSafeText(input.requestText, input.trustedSafeText);
-  const identityByBounds = validatedIdentitySpans(input);
-  if (!safeText || !identityByBounds) return null;
+  if (
+    typeof input.request !== "object" ||
+    input.request === null ||
+    !TRUSTED_PROJECTION_TEXTS.has(input.request)
+  ) return null;
   const slots = input.slots.filter((slot) =>
     slot.slotType === "subject" || slot.slotType === "account-ref"
   );
   const candidates: Candidate[] = [];
-  const subjects = subjectCandidates(input.requestText, safeText);
-  for (const subject of subjects) {
-    addCandidate(candidates, subject.slotType, subject.rawText, subject.identitySpan);
+  for (const span of input.request.sensitiveSpans) {
+    const rawText = input.request.requestText.slice(span.start, span.end);
+    if (
+      rawText.length === 0 ||
+      (span.slotType === "account-ref" && accountReferenceDigits(rawText) === null)
+    ) return null;
+    addCandidate(candidates, span.slotType, rawText, span);
   }
-  for (const account of accountCandidates(
-    input.requestText,
-    subjects.map((subject) => subject.rawText),
-  )) addCandidate(candidates, "account-ref", account);
-  collectCandidates(input.evidence, candidates);
-  if (candidates.some((candidate) => candidate.identitySpan === null)) return null;
+  const accountReferences = sensitiveAccountReferences(input.request.requestText);
+  if (
+    accountReferences.some((reference) =>
+      !reference.valid ||
+      !input.request.sensitiveSpans.some((span) =>
+        span.slotType === "account-ref" &&
+        span.start === reference.start &&
+        span.end === reference.end
+      )
+    ) ||
+    !collectCandidates(input.evidence, candidates)
+  ) return null;
   const bindings: ResolvedSensitiveEntity[] = [];
-  const usedIdentity = new Set<IdentitySpan>();
+  const usedSpans = new Set<TrustedProjectionSpan>();
   for (const slotType of ["subject", "account-ref"] as const) {
     const typedSlots = slots.filter((slot) => slot.slotType === slotType);
     const typedCandidates = candidates.filter((candidate) => candidate.slotType === slotType);
     if (typedSlots.length !== typedCandidates.length) return null;
     const assigned = new Set<string>();
-    for (const candidate of typedCandidates.filter((item) => item.identitySpan)) {
-      const bounds = candidate.identitySpan!;
-      const span = identityByBounds.get(`${bounds.start}:${bounds.end}`);
+    for (const candidate of typedCandidates.filter((item) => item.trustedSpan)) {
+      const span = candidate.trustedSpan!;
       if (
-        !span ||
-        usedIdentity.has(span) ||
+        usedSpans.has(span) ||
         assigned.has(span.slotId) ||
         !typedSlots.some((slot) => slot.slotId === span.slotId) ||
-        input.requestText.slice(span.start, span.end) !== candidate.rawText
+        input.request.requestText.slice(span.start, span.end) !== candidate.rawText
       ) return null;
       assigned.add(span.slotId);
-      usedIdentity.add(span);
+      usedSpans.add(span);
       bindings.push(Object.freeze({
         slotId: span.slotId,
         slotType,
@@ -238,7 +229,7 @@ export function resolveCompleteSensitiveEntities(input: SensitiveResolutionInput
       }));
     }
     const remainingSlots = typedSlots.filter((slot) => !assigned.has(slot.slotId));
-    const remaining = typedCandidates.filter((candidate) => !candidate.identitySpan);
+    const remaining = typedCandidates.filter((candidate) => !candidate.trustedSpan);
     if (remainingSlots.length !== remaining.length) return null;
     remaining.forEach((candidate, index) => bindings.push(Object.freeze({
       slotId: remainingSlots[index]!.slotId,
@@ -246,36 +237,37 @@ export function resolveCompleteSensitiveEntities(input: SensitiveResolutionInput
       rawValues: Object.freeze([candidate.rawText]),
     })));
   }
-  return usedIdentity.size === identityByBounds.size ? Object.freeze(bindings) : null;
+  return usedSpans.size === input.request.sensitiveSpans.length
+    ? Object.freeze(bindings)
+    : null;
 }
 function residualOf(value: string): string {
   return value.replace(SLOT_PLACEHOLDER_G, " ").split(REDACTED).join(" ");
 }
-function withoutSafeText(value: string, spans: readonly TrustedSafeTextSpan[] | undefined): string | null {
-  const trusted = validatedSafeText(value, spans);
-  if (!trusted) return null;
-  return [...trusted].sort((a, b) => b.start - a.start).reduce(
-    (text, span) =>
-      `${text.slice(0, span.start)}${" ".repeat(span.end - span.start)}${text.slice(span.end)}`,
-    value,
-  );
-}
-export function hasUnresolvedProjectionText(value: string, safeText?: readonly TrustedSafeTextSpan[]): boolean {
-  const trustedResidual = withoutSafeText(value, safeText);
-  if (trustedResidual === null) return true;
-  const residual = residualOf(trustedResidual);
+export function hasUnresolvedProjectionText(
+  value: string,
+  trusted?: TrustedProjectionText,
+): boolean {
+  if (trusted) {
+    return !TRUSTED_PROJECTION_TEXTS.has(trusted) || value !== trusted.maskedText;
+  }
+  const residual = residualOf(value);
   return looksLikePIIValue(residual) ||
-    hasSensitiveDigitRun(residual) ||
+    hasSensitiveAccountReference(residual) ||
     looksLikeAmbiguousSensitiveText(residual) ||
-    LOWERCASE_LEADING_PERSON_RE.test(residual) ||
     PERSON_WORD_RE.test(residual);
 }
 export function hasUnresolvedProjectionEvidence(
   value: unknown,
   path: readonly object[] = [],
 ): boolean {
-  if (typeof value === "string") return hasUnresolvedProjectionText(value);
-  if (typeof value === "number") return !Number.isFinite(value) || hasSensitiveDigitRun(value);
+  if (typeof value === "string") {
+    const residual = residualOf(value);
+    return /\p{L}/u.test(residual) || hasUnresolvedProjectionText(value);
+  }
+  if (typeof value === "number") {
+    return !Number.isFinite(value) || hasSensitiveAccountReference(value);
+  }
   if (typeof value === "bigint") return true;
   if (typeof value === "boolean" || value == null) return false;
   if (typeof value !== "object" || path.includes(value)) return true;
@@ -285,7 +277,7 @@ export function hasUnresolvedProjectionEvidence(
   }
   return Object.entries(value).some(([nestedKey, item]) =>
     (!SLOT_PLACEHOLDER_EXACT_RE.test(nestedKey) &&
-      hasUnresolvedProjectionText(nestedKey)) ||
+      !(nestedKey in EVIDENCE_FIELDS)) ||
     hasUnresolvedProjectionEvidence(item, nested)
   );
 }

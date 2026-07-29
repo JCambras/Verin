@@ -1289,49 +1289,172 @@ export interface SealedAuthorityParameter {
   readonly type: Type;
 }
 
-/**
- * EVERY sealed authority a signature carries, in declaration order.
- *
- * A parameter whose own type is a sealed authority is not descended into because
- * the cross-authority proof relates its internals. Every other object member is
- * followed recursively, preserving distinct paths, bound names, and declaration
- * order.
- */
-export function sealedAuthorityParameters(signature: Signature): SealedAuthorityParameter[] {
+interface AuthorityInventory {
+  readonly authorities: SealedAuthorityParameter[];
+  readonly unfenceable: string[];
+}
+
+function authorityInventory(signature: Signature): AuthorityInventory {
   const memberExpression = (owner: string, name: string): string =>
     /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)
       ? `${owner}.${name}`
       : `${owner}[${JSON.stringify(name)}]`;
-  const collect = (
+  const authorityKey = (authority: SealedAuthorityParameter): string =>
+    `${authority.kind}:${authority.argument}:${
+      authority.kind === "grant" ? grantAction(authority) ?? "<dynamic>" : ""
+    }`;
+  const containsAuthority = (
     type: Type,
-    argument: string,
-    ancestors: ReadonlySet<object>,
-  ): SealedAuthorityParameter[] => {
-    const own = SEALED_AUTHORITY_KINDS.find((candidate) =>
-      declaredAsType(type, candidate.declaration, candidate.typeName)
-    );
-    if (own) {
-      return [{ kind: own.kind, argument, assertion: own.assertion, file: own.file, type }];
-    }
+    seen = new Set<object>(),
+  ): boolean => {
     const key = type.compilerType as unknown as object;
-    if (ancestors.has(key)) return [];
-    const nested = new Set(ancestors).add(key);
-    return type.getProperties().flatMap((member) => {
+    if (seen.has(key)) return false;
+    const nested = new Set(seen).add(key);
+    const unions = type.getUnionTypes();
+    if (unions.length > 0) {
+      return unions.some((arm) => containsAuthority(arm, nested));
+    }
+    if (SEALED_AUTHORITY_KINDS.some((candidate) =>
+      declaredAsType(type, candidate.declaration, candidate.typeName)
+    )) return true;
+    if (type.isTuple()) {
+      return type.getTupleElements().some((element) =>
+        containsAuthority(element, nested)
+      );
+    }
+    if (type.isArray()) {
+      const element = type.getArrayElementType();
+      return element ? containsAuthority(element, nested) : false;
+    }
+    if (
+      [type.getStringIndexType(), type.getNumberIndexType()].some((indexed) =>
+        indexed ? containsAuthority(indexed, nested) : false
+      )
+    ) return true;
+    return type.getProperties().some((member) => {
       const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
       if (
         !declaration ||
         Node.isMethodDeclaration(declaration) ||
         Node.isMethodSignature(declaration)
-      ) return [];
+      ) return false;
+      const memberType = member.getTypeAtLocation(declaration);
+      return memberType.getCallSignatures().length === 0 &&
+        memberType.getConstructSignatures().length === 0 &&
+        containsAuthority(memberType, nested);
+    });
+  };
+  const collect = (
+    type: Type,
+    argument: string,
+    ancestors: ReadonlySet<object>,
+  ): AuthorityInventory => {
+    const key = type.compilerType as unknown as object;
+    if (ancestors.has(key)) {
+      return containsAuthority(type)
+        ? {
+          authorities: [],
+          unfenceable: [
+            `sealed authority carrier '${argument}' is recursive with runtime-dependent cardinality`,
+          ],
+        }
+        : { authorities: [], unfenceable: [] };
+    }
+    const nested = new Set(ancestors).add(key);
+    const unions = type.getUnionTypes();
+    if (unions.length > 0) {
+      const arms = unions.map((arm) => collect(arm, argument, nested));
+      const keys = arms.map((arm) =>
+        arm.authorities.map(authorityKey).sort().join("|")
+      );
+      if (
+        arms.some((arm) => arm.unfenceable.length > 0) ||
+        new Set(keys).size !== 1
+      ) {
+        return {
+          authorities: [],
+          unfenceable: [
+            `sealed authority carrier '${argument}' is conditional; every closed union arm must expose one identical complete authority-path inventory`,
+          ],
+        };
+      }
+      return arms[0] ?? { authorities: [], unfenceable: [] };
+    }
+    const own = SEALED_AUTHORITY_KINDS.find((candidate) =>
+      declaredAsType(type, candidate.declaration, candidate.typeName)
+    );
+    if (own) {
+      return {
+        authorities: [{ kind: own.kind, argument, assertion: own.assertion, file: own.file, type }],
+        unfenceable: [],
+      };
+    }
+    if (type.isTuple()) {
+      return type.getTupleElements().reduce<AuthorityInventory>(
+        (inventory, element, index) => {
+          const found = collect(element, `${argument}[${index}]`, nested);
+          return {
+            authorities: [...inventory.authorities, ...found.authorities],
+            unfenceable: [...inventory.unfenceable, ...found.unfenceable],
+          };
+        },
+        { authorities: [], unfenceable: [] },
+      );
+    }
+    if (type.isArray()) {
+      const element = type.getArrayElementType();
+      const found = element
+        ? collect(element, `${argument}[*]`, nested)
+        : { authorities: [], unfenceable: [] };
+      return found.authorities.length > 0 || found.unfenceable.length > 0
+        ? {
+          authorities: [],
+          unfenceable: [
+            `sealed authority carrier '${argument}' is an array with runtime-dependent cardinality`,
+          ],
+        }
+        : { authorities: [], unfenceable: [] };
+    }
+    for (const [indexKind, indexed] of [
+      ["string", type.getStringIndexType()],
+      ["number", type.getNumberIndexType()],
+    ] as const) {
+      if (!indexed) continue;
+      const found = collect(indexed, `${argument}[${indexKind}]`, nested);
+      if (found.authorities.length > 0 || found.unfenceable.length > 0) {
+        return {
+          authorities: [],
+          unfenceable: [
+            `sealed authority carrier '${argument}' has an open ${indexKind} index signature`,
+          ],
+        };
+      }
+    }
+    return type.getProperties().reduce<AuthorityInventory>((inventory, member) => {
+      const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
+      if (
+        !declaration ||
+        Node.isMethodDeclaration(declaration) ||
+        Node.isMethodSignature(declaration)
+      ) return inventory;
       const memberType = member.getTypeAtLocation(declaration);
       if (
         memberType.getCallSignatures().length > 0 ||
         memberType.getConstructSignatures().length > 0
-      ) return [];
-      return collect(memberType, memberExpression(argument, member.getName()), nested);
-    });
+      ) return inventory;
+      const found = collect(
+        memberType,
+        memberExpression(argument, member.getName()),
+        nested,
+      );
+      return {
+        authorities: [...inventory.authorities, ...found.authorities],
+        unfenceable: [...inventory.unfenceable, ...found.unfenceable],
+      };
+    }, { authorities: [], unfenceable: [] });
   };
   const authorities: SealedAuthorityParameter[] = [];
+  const unfenceable: string[] = [];
   for (const parameter of signature.getParameters()) {
     const declaration = parameter.getValueDeclaration() ?? parameter.getDeclarations()[0];
     if (!declaration) continue;
@@ -1341,20 +1464,28 @@ export function sealedAuthorityParameters(signature: Signature): SealedAuthority
         for (const element of name.getDescendantsOfKind(SyntaxKind.BindingElement)) {
           const bound = element.getNameNode();
           if (!Node.isIdentifier(bound)) continue;
-          authorities.push(...collect(bound.getType(), bound.getText(), new Set()));
+          const found = collect(bound.getType(), bound.getText(), new Set());
+          authorities.push(...found.authorities);
+          unfenceable.push(...found.unfenceable);
         }
         continue;
       }
     }
-    authorities.push(...collect(
+    const found = collect(
       parameter.getTypeAtLocation(declaration),
       Node.isParameterDeclaration(declaration)
         ? declaration.getNameNode().getText()
         : parameter.getName(),
       new Set(),
-    ));
+    );
+    authorities.push(...found.authorities);
+    unfenceable.push(...found.unfenceable);
   }
-  return authorities;
+  return { authorities, unfenceable };
+}
+
+export function sealedAuthorityParameters(signature: Signature): SealedAuthorityParameter[] {
+  return authorityInventory(signature).authorities;
 }
 
 /**
@@ -1380,16 +1511,17 @@ export function grantAction(authority: SealedAuthorityParameter): string | null 
 export function requiredAuthorityPrologue(
   signature: Signature,
 ): { required: RequiredAuthorityAssertion[]; unfenceable: string[] } {
-  const authorities = sealedAuthorityParameters(signature);
+  const inventory = authorityInventory(signature);
+  const authorities = inventory.authorities;
   const grants = authorities.filter((authority) => authority.kind === "grant");
   const actions = new Map(grants.map((grant) => [grant, grantAction(grant)]));
-  const unfenceable = grants.flatMap((grant) =>
+  const unfenceable = [...inventory.unfenceable, ...grants.flatMap((grant) =>
     actions.get(grant) === null
       ? [
         `ActionGrant parameter '${grant.argument}' must be typed to ONE literal action; a union or generic action cannot be asserted or cross-checked against the tenant scope`,
       ]
       : []
-  );
+  )];
   const required: RequiredAuthorityAssertion[] = authorities.map((authority) => ({
     functionName: authority.assertion,
     file: authority.file,

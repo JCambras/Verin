@@ -14,36 +14,43 @@
  */
 import { type Result, err } from "@contracts/result";
 import { appError, type AppError } from "@contracts/errors";
-import type { PIIBearing } from "@contracts/pii";
-import { parseMaskedLlmRequest, SLOT_ID_RE, type LlmPurpose, type MaskedLlmRequest, type SlotPlaceholder } from "@infra/llm/request-schema";
+import {
+  accountReferenceDigits,
+  sensitiveAccountReferences,
+  type PIIBearing,
+} from "@contracts/pii";
+import { SLOT_ID_RE } from "@contracts/tokenized";
+import { parseMaskedLlmRequest, type LlmPurpose, type MaskedLlmRequest, type SlotPlaceholder } from "@infra/llm/request-schema";
 import {
   hasUnresolvedProjectionEvidence,
   hasUnresolvedProjectionText,
   isPlainProjectionData,
   resolveCompleteSensitiveEntities,
-  type IdentitySpan,
   type ResolvedSensitiveEntity,
-  type TrustedSafeTextSpan,
+  type TrustedProjectionText,
 } from "@domain/pii/projection-resolution";
 import { tokenizeText, tokenizeRecord } from "./tokenize";
 
 export interface EvidenceProjectionInput extends PIIBearing {
   readonly purpose: LlmPurpose;
-  readonly requestText: string;
+  readonly request: TrustedProjectionText;
   readonly slots: readonly SlotPlaceholder[];
   readonly evidence: Readonly<Record<string, unknown>>;
-  readonly identitySpans?: readonly IdentitySpan[];
-  readonly trustedSafeText?: readonly TrustedSafeTextSpan[];
 }
 
 interface SensitiveMask extends PIIBearing {
   readonly slotId: string;
+  readonly slotType: ResolvedSensitiveEntity["slotType"];
   readonly rawText: string;
 }
 
 function masksFromBindings(bindings: readonly ResolvedSensitiveEntity[]): readonly SensitiveMask[] {
   return bindings.flatMap((binding) =>
-    binding.rawValues.map((rawText) => ({ slotId: binding.slotId, rawText }))
+    binding.rawValues.map((rawText) => ({
+      slotId: binding.slotId,
+      slotType: binding.slotType,
+      rawText,
+    }))
   );
 }
 
@@ -65,10 +72,21 @@ function sensitiveOccurrence(rawText: string, global: boolean): RegExp {
 function maskText(text: string, masks: readonly SensitiveMask[]): string {
   let masked = text;
   for (const mask of masks) {
-    masked = masked.replace(
-      sensitiveOccurrence(mask.rawText, true),
-      () => `{{${mask.slotId}}}`,
-    );
+    const replacement = `{{${mask.slotId}}}`;
+    if (mask.slotType === "subject") {
+      masked = masked.replace(sensitiveOccurrence(mask.rawText, true), () => replacement);
+      continue;
+    }
+    const digits = accountReferenceDigits(mask.rawText);
+    if (!digits) continue;
+    for (const reference of [...sensitiveAccountReferences(masked)].reverse()) {
+      if (
+        reference.valid &&
+        accountReferenceDigits(masked.slice(reference.start, reference.end)) === digits
+      ) {
+        masked = `${masked.slice(0, reference.start)}${replacement}${masked.slice(reference.end)}`;
+      }
+    }
   }
   return masked;
 }
@@ -106,19 +124,31 @@ function maskRecord(
   return Object.fromEntries(entries);
 }
 
-function containsSensitiveOccurrence(value: unknown, needle: string, seen = new WeakSet<object>()): boolean {
+function containsSensitiveOccurrence(
+  value: unknown,
+  mask: SensitiveMask,
+  seen = new WeakSet<object>(),
+): boolean {
   if (
     typeof value === "string" ||
     typeof value === "number" ||
     typeof value === "bigint"
   ) {
-    return sensitiveOccurrence(needle, false).test(String(value));
+    const text = String(value);
+    if (mask.slotType === "subject") {
+      return sensitiveOccurrence(mask.rawText, false).test(text);
+    }
+    const digits = accountReferenceDigits(mask.rawText);
+    return Boolean(digits && sensitiveAccountReferences(text).some((reference) =>
+      reference.valid &&
+      accountReferenceDigits(text.slice(reference.start, reference.end)) === digits
+    ));
   }
   if (value == null || typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
   return Object.entries(value).some(([key, item]) =>
-    sensitiveOccurrence(needle, false).test(key) ||
-    containsSensitiveOccurrence(item, needle, seen)
+    containsSensitiveOccurrence(key, mask, seen) ||
+    containsSensitiveOccurrence(item, mask, seen)
   );
 }
 
@@ -129,14 +159,13 @@ function resolveCompleteBindings(input: EvidenceProjectionInput): readonly Resol
     Object.keys(input).some((key) =>
       ![
         "evidence",
-        "identitySpans",
         "purpose",
-        "requestText",
+        "request",
         "slots",
-        "trustedSafeText",
       ].includes(key)
     ) ||
-    typeof input.requestText !== "string" ||
+    typeof input.request !== "object" ||
+    input.request === null ||
     typeof input.evidence !== "object" ||
     input.evidence === null ||
     Array.isArray(input.evidence) ||
@@ -157,6 +186,13 @@ function resolveCompleteBindings(input: EvidenceProjectionInput): readonly Resol
 
 export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmRequest, AppError> {
   try {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      !isPlainProjectionData(input.evidence)
+    ) {
+      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
+    }
     const bindings = resolveCompleteBindings(input);
     if (!bindings) {
       return err(appError(
@@ -164,25 +200,22 @@ export function projectForLlm(input: EvidenceProjectionInput): Result<MaskedLlmR
         "LLM projection refused at the scrub boundary: invalid sensitive-value mask.",
       ));
     }
-    if (!isPlainProjectionData(input.evidence)) {
-      throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
-    }
     const masks = orderedMasks(masksFromBindings(bindings));
-    const maskedText = maskText(input.requestText, masks);
+    const maskedText = maskText(input.request.requestText, masks);
     const maskedEvidence = maskRecord(input.evidence, masks) as Readonly<Record<string, unknown>>;
     if (!isPlainProjectionData(maskedEvidence)) {
       throw appError("PII_VIOLATION", "LLM projection refused evidence outside its trusted shape.");
     }
     if (masks.some((mask) =>
-      containsSensitiveOccurrence(maskedText, mask.rawText) ||
-      containsSensitiveOccurrence(maskedEvidence, mask.rawText)
+      containsSensitiveOccurrence(maskedText, mask) ||
+      containsSensitiveOccurrence(maskedEvidence, mask)
     )) {
       throw appError("PII_VIOLATION", "Sensitive entity remained after masking.");
     }
     const tokenizedText = tokenizeText(maskedText);
     const tokenizedEvidence = tokenizeRecord(maskedEvidence);
     if (
-      hasUnresolvedProjectionText(tokenizedText.value, input.trustedSafeText) ||
+      hasUnresolvedProjectionText(tokenizedText.value, input.request) ||
       hasUnresolvedProjectionEvidence(tokenizedEvidence.value)
     ) {
       throw appError("PII_VIOLATION", "Unresolved sensitive entity remained after masking.");

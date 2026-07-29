@@ -20,6 +20,7 @@ import { assertSameTenant, assertTenantContext, type TenantContext } from "@cont
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, isAppError, type AppError } from "@contracts/errors";
+import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
 import { makeExecutionStore } from "@infra/store/execution-store";
@@ -58,9 +59,7 @@ function isUniqueViolation(e: unknown): boolean {
 function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
   const actorFor = (tenant: TenantContext): WriteActor => {
     assertTenantContext(tenant);
-    if (tenant.orgId !== starter.tenant.orgId) {
-      throw appError("INTERNAL", "Flow dependency tenant does not match its bound adapter scope.");
-    }
+    assertSameTenant(tenant, starter.tenant);
     return starter;
   };
   return {
@@ -153,7 +152,7 @@ function editedReplayConflict(executionId: string): FlowRunResult {
  * validates against this same constant, so the surface and the flow can never
  * disagree about what it accepts. UUIDs are minted in either case.
  */
-export const CLIENT_REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const CLIENT_REQUEST_ID_RE = MACHINE_RECORD_ID_RE;
 
 /**
  * The request id BECOMES the executionId, which is emitted in the flow's span
@@ -167,7 +166,7 @@ export const CLIENT_REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 function canonicalExecutionId(clientRequestId: string | undefined): Result<string, AppError> {
   const id = clientRequestId === undefined
     ? randomUUID()
-    : CLIENT_REQUEST_ID_RE.test(clientRequestId) ? clientRequestId.toLowerCase() : clientRequestId;
+    : parseMachineRecordId("execution", clientRequestId) ?? clientRequestId;
   try {
     observabilityId("executionId", id);
   } catch {

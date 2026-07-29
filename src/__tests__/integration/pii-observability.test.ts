@@ -5,9 +5,10 @@ import { startAccountOpening, resumeAccountOpeningByToken } from "@infra/wire";
 import { loggerOptions, safeReason } from "@infra/observability/logger";
 import { recentSpans, withSpan } from "@infra/observability/tracer";
 import { REDACTED } from "@contracts/pii";
+import { parseMachineRecordId, type MachineRecordIdFamily } from "@contracts/record-id";
 import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
-import { isSafeObservabilityPrimitive, observabilityId, registerTestSpanName } from "@domain/observability/safe-values";
+import { isSafeObservabilityPrimitive, observabilityId, observabilityIdOrRedacted, registerTestSpanName } from "@domain/observability/safe-values";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -22,6 +23,7 @@ for (const name of ["test.backstop", "test.keyrule", "test.ambiguous", "test.sin
 }
 
 const ORG = "org-pii";
+const ENTITY_ID = "123e4567-e89b-12d3-a456-123456789012";
 const advisorPrincipal = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
@@ -126,12 +128,26 @@ describe("logs never carry raw names or account numbers", () => {
       {
         entityId: observabilityId(
           "entityId",
-          "123e4567-e89b-12d3-a456-123456789012",
+          ENTITY_ID,
         ),
       },
       "test line",
     );
-    expect(lines.join("")).toContain("123e4567-e89b-12d3-a456-123456789012");
+    expect(lines.join("")).toContain(ENTITY_ID);
+  });
+  it("record identifiers share one canonical parser with observability", () => {
+    const families = [
+      "account-opening-application",
+      "audit-outbox",
+      "execution",
+      "household",
+    ] as const satisfies readonly MachineRecordIdFamily[];
+    for (const family of families) {
+      expect(parseMachineRecordId(family, ENTITY_ID.toUpperCase())).toBe(ENTITY_ID);
+      expect(parseMachineRecordId(family, "alice")).toBeNull();
+    }
+    expect(observabilityId("entityId", parseMachineRecordId("household", ENTITY_ID)!).value).toBe(ENTITY_ID);
+    expect(observabilityIdOrRedacted("entityId", "alice").value).toBe(REDACTED);
   });
   it("accepts every real machine id shape and still refuses name- and account-shaped values", () => {
     for (const value of [
@@ -155,6 +171,9 @@ describe("logs never carry raw names or account numbers", () => {
       "ALICE",
       "OBRIEN",
       "SMITH-JOHN",
+      "alice",
+      "smith",
+      "seed",
       FIXTURES.accountNumber,
       FIXTURES.email,
       "078-05-1120",
@@ -203,7 +222,7 @@ describe("traces never carry raw names or account numbers", () => {
         contact: FIXTURES.email,
         phone: FIXTURES.phone,
         orgId: observabilityId("orgId", ORG),
-        entityId: [FIXTURES.email, observabilityId("entityId", ORG)],
+        entityId: [FIXTURES.email, observabilityId("entityId", ENTITY_ID)],
       },
       async () => undefined,
     );
@@ -212,7 +231,7 @@ describe("traces never carry raw names or account numbers", () => {
     expect(span!.attributes.contact).toBe(REDACTED);
     expect(span!.attributes.phone).toBe(REDACTED);
     expect(span!.attributes.orgId).toBe(ORG); // identifiers survive
-    expect(span!.attributes.entityId).toEqual([REDACTED, ORG]); // array values are scrubbed element-wise
+    expect(span!.attributes.entityId).toEqual([REDACTED, ENTITY_ID]); // array values are scrubbed element-wise
   });
 
   it("a PII-NAMED attribute KEY is redacted regardless of value type (numbers included)", async () => {

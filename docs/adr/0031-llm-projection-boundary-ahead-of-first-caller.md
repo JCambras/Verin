@@ -44,6 +44,14 @@ A capability is exempt from "nothing built-but-not-shipped" only when a ratified
 specification names it as a required BOUNDARY and a fence proves the boundary
 holds in the same PR. Convenience code never qualifies.
 
+Request text at this boundary is not arbitrary prose. It is minted by
+`trustedStaticProjectionText` from a closed set of reviewed literal templates and
+exact sensitive placeholder values. The factory owns the complete literal
+structure and produces the exact spans used for masking. Copies, stale text,
+overlapping or unused spans, and caller-assembled provenance are refused. Account
+references use one separator-aware classifier for extraction, masking, and
+post-mask refusal.
+
 ## Enforcement in the same PR (charter #1)
 
 - `src/__tests__/fitness/llm-pii-boundary.test.ts` proves no PIIBearing-marked
@@ -51,8 +59,9 @@ holds in the same PR. Convenience code never qualifies.
 - `src/__tests__/fitness/tokenized-factory-only.test.ts` proves `Tokenized<T>`
   is constructible only inside `src/infrastructure/pii/tokenize.ts`.
 - `src/__tests__/unit/llm-boundary.test.ts` exercises `projectForLlm`
-  end-to-end in both directions (realistic prose accepted once its sensitive
-  spans are tokenized; raw names, account numbers, and 9-18 digit runs refused).
+  end-to-end in both directions (only factory-minted request structures pass;
+  raw names and unbroken, space-separated, or hyphenated account references are
+  masked from exact spans or refused).
 
 ## Scope: the projection is deliberately ONE-WAY in prompt 6
 
@@ -79,14 +88,16 @@ exactly that: outside the model, and outside this layer.
 | Keep it but mark invariant 1 not-yet-active | The registry stores activation only; faking it not-active to match missing code is exactly the fake-green the charter forbids. |
 | Add a throwaway caller so knip sees a consumer | Mock theater; a fake consumer proves less than an honest ADR. |
 | Return the slot bindings now so prompt 13 finds them ready | Designs an un-masking API with no consumer to constrain it, and widens the surface this boundary exists to narrow. |
+| Accept arbitrary prose and infer lowercase identities heuristically | A suffix or word-shape heuristic cannot prove that unrestricted text is PII-free. |
 
 ## Trade-offs
 
 **Gained:** the zero-PII reachability and factory-only contracts exist and are
 adversarially proven before any model integration begins.
 
-**Sacrificed:** ~370 lines carried ahead of their first production caller, and
-the corresponding share of the ADR-0032/0030 line-budget headroom.
+**Sacrificed:** the projection boundary is carried ahead of its first production
+caller, and callers may use only reviewed request templates until prompt 13
+designs a wider provenance source against a real consumer.
 
 ## Revisit When
 
