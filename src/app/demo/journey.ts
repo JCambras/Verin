@@ -16,6 +16,7 @@ import { buildExecution, buildSafety, buildVerification } from "./build-outcome"
 import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
 import {
   dispositionFor,
+  executionEligibilityFor,
   firmById,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -36,6 +37,7 @@ function reachOf(scenarioId: string, firmId: string, pass: JourneyPass) {
   const execution =
     safety &&
     liquidityAuthorityFor(scenario, firmId).kind === "signed" &&
+    executionEligibilityFor(scenario, firmId)?.eligible === true &&
     (!scenario.spec.invalidation ||
       (pass === "revalidated" &&
         hasSignedInvalidationAuthority(scenario, firmId)));

@@ -27,6 +27,8 @@ import {
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
   liquidityAuthorityFor,
+  requestFor,
+  sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
@@ -55,7 +57,9 @@ export function headroomMinor(scenario: ScenarioData, firm: FirmData, pass: Jour
  * firm's reserve floor - the one comparison every proceed claim on screen rests on. */
 export function reserveHolds(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): boolean | null {
   const headroom = headroomMinor(scenario, firm, pass);
-  return headroom === null ? null : headroom >= CANONICAL_REQUEST.amountMinor;
+  return headroom === null
+    ? null
+    : headroom >= requestFor(scenario, firm.id).amountMinor;
 }
 export function reserveFloorMetric(firm: FirmData) {
   return derivedMetric(reserveFloorMinor(firm), "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
@@ -64,8 +68,8 @@ export function headroomMetric(scenario: ScenarioData, firm: FirmData, pass: Jou
   const headroom = headroomMinor(scenario, firm, pass);
   return headroom === null ? null : derivedMetric(headroom, "currency-minor", LIQUIDITY_INPUTS, DEMO_NOW);
 }
-export function amountMetric() {
-  return metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
+export function amountMetric(scenario: ScenarioData, firm: FirmData) {
+  return metric(requestFor(scenario, firm.id).amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW));
 }
 
 /** Reserve horizons read as words in demo copy, matching the policy-trace voice. */
@@ -96,8 +100,8 @@ function blockersFor(scenario: ScenarioData, firm: FirmData): BlockerVM[] {
   }
   if (spec.conflictingInstruction) {
     out.push({
-      condition: "Two household instructions give conflicting funding guidance for this request",
-      affordanceLabel: "Choose the governing value",
+      condition: "The advisor's book contains two equally plausible Smith households",
+      affordanceLabel: "Select the intended household",
     });
   }
   if (spec.competing && firm.id === "firm-b") {
@@ -158,7 +162,10 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: J
       fakeClass: "deterministic-engine-output",
     };
   }
-  const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
+  const dualApproval =
+    sourceCaseFor(scenario, firm.id)?.authority.stages.some(
+      (stage) => stage.stageId === "ops-dual-approval",
+    ) ?? CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
   const headroom = headroomMetric(scenario, firm, pass);
   const authoritySummary = dualApproval
     ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
@@ -168,7 +175,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: J
     kind,
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
     figures: [
-      { label: "Amount", metric: amountMetric() },
+      { label: "Amount", metric: amountMetric(scenario, firm) },
       ...(headroom ? [{ label: "Available after reserve", metric: headroom }] : []),
     ],
     authoritySummary,
@@ -187,7 +194,7 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData, pass
     ...(proceed
       ? {
           recommendation: {
-            amount: amountMetric(),
+            amount: amountMetric(scenario, firm),
             source: fact("Smith Family Taxable · Fidelity", "deterministic-engine-output", DEMO_NOW, "Jul 26, 09:20"),
           },
         }
@@ -251,7 +258,7 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: J
       order: 4,
       rule: "Dual-approval threshold",
       result:
-        CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor
+        requestFor(scenario, firm.id).amountMinor > firm.dualApprovalThresholdMinor
           ? "Triggered - two distinct operations approvers required"
           : "Not triggered at this amount",
       version: `${firm.policyVersion} §4`,
@@ -294,84 +301,29 @@ export function buildStages(
 ): ApprovalStageVM[] {
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
-  const stages: ApprovalStageVM[] = [];
-  const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
-  const specialistReview = spec.bankChanged && firm.bankChangeHandling === "specialist-review";
-  if (specialistReview) {
-    if (spec.specialistExpired) {
-      stages.push({
-        stageId: "bank-change-specialist-review",
-        order: 1,
-        title: "Stage 1 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        eligibleRoleIds: ["bank-change-specialist"],
-        approvalsRequired: 1,
-        distinctActorsRequired: false,
-        requesterMayApprove: false,
-        satisfied: false,
-        stepState: "active",
-        actors: [
-          {
-            actorId: "actor-alex-kim",
-            name: CAST.specialist,
-            roleId: "bank-change-specialist",
-            role: "Banking specialist",
-            status: "expired",
-            statusLabel: "Escalated, then expired",
-          },
-          {
-            actorId: "actor-jordan-bell",
-            name: CAST.principal,
-            roleId: "operations-manager",
-            role: "Operations manager (escalation)",
-            status: "expired",
-            statusLabel: "Expired unresolved",
-          },
-        ],
-        authorityEvents: [
-          {
-            type: "ApprovalStageEscalated",
-            timestamp: timeline.escalatedAt,
-            display: `Escalated to operations manager · ${formatDemoInstant(timeline.escalatedAt)}`,
-          },
-          {
-            type: "ApprovalStageExpired",
-            timestamp: timeline.expiredAt,
-            display: `Expired unresolved · ${formatDemoInstant(timeline.expiredAt)}`,
-          },
-        ],
-        expired: true,
-      });
-    } else {
-      stages.push({
-        stageId: "bank-change-specialist-review",
-        order: 1,
-        title: "Stage 1 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        eligibleRoleIds: ["bank-change-specialist"],
-        approvalsRequired: 1,
-        distinctActorsRequired: false,
-        requesterMayApprove: false,
-        satisfied: true,
-        stepState: "done",
-        actors: [
-          {
-            actorId: "actor-alex-kim",
-            name: CAST.specialist,
-            roleId: "bank-change-specialist",
-            role: "Banking specialist",
-            status: "done",
-            statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
-            timestampIso: timeline.specialistReviewedAt,
-          },
-        ],
-        expiry: "expires Aug 12",
-        escalation: "Escalates to: operations manager",
-      });
-    }
-  }
-  if (dualApproval) {
-    const stageNumber = specialistReview ? 2 : 1;
+  const sourceCase = sourceCaseFor(scenario, firm.id);
+  const sourceStages =
+    sourceCase?.authority.stages ??
+    (CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor
+      ? [{
+          stageId: "ops-dual-approval",
+          order: 1,
+          executionMode: "parallel" as const,
+          eligibleRoleIds: ["operations"],
+          approvalsRequired: 2,
+          distinctActorsRequired: true,
+          requesterMayApprove: false,
+          expiresAfter: "P3D",
+          escalationPath: [{
+            after: "P1D",
+            roleIds: ["operations-manager"],
+            reasonCode: "approval-stage-idle",
+          }],
+        }]
+      : []);
+  return sourceStages.map((stage): ApprovalStageVM => {
+    const specialistReview =
+      stage.stageId === "bank-change-specialist-review";
     const stageReached = !spec.specialistExpired;
     const approvalOneAt =
       pass === "revalidated" ? timeline.freshApprovalOneAt : timeline.approvalOneAt;
@@ -381,54 +333,101 @@ export function buildStages(
       pass === "revalidated" && spec.invalidation
         ? "Fresh approval on derived decision"
         : "Approved";
-    stages.push({
-      stageId: "ops-dual-approval",
-      order: stageNumber,
-      title: `Stage ${stageNumber} - Dual operations approval`,
-      requirement: "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
-      eligibleRoleIds: ["operations"],
-      approvalsRequired: 2,
-      distinctActorsRequired: true,
-      requesterMayApprove: false,
+    const actors = specialistReview
+      ? spec.specialistExpired
+        ? [
+            {
+              actorId: "actor-alex-kim",
+              name: CAST.specialist,
+              roleId: "bank-change-specialist",
+              role: "Banking specialist",
+              status: "expired",
+              statusLabel: "Escalated, then expired",
+            },
+            {
+              actorId: "actor-jordan-bell",
+              name: CAST.principal,
+              roleId: "operations-manager",
+              role: "Operations manager (escalation)",
+              status: "expired",
+              statusLabel: "Expired unresolved",
+            },
+          ]
+        : [
+            {
+              actorId: "actor-alex-kim",
+              name: CAST.specialist,
+              roleId: "bank-change-specialist",
+              role: "Banking specialist",
+              status: "done",
+              statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
+              timestampIso: timeline.specialistReviewedAt,
+            },
+          ]
+      : [
+          {
+            actorId: "actor-miguel-torres",
+            name: CAST.opsApprover1,
+            roleId: "operations",
+            role: "Operations",
+            status: stageReached ? "done" : "pending",
+            statusLabel: stageReached
+              ? `${statusPrefix} · ${formatDemoInstant(approvalOneAt)}`
+              : "Awaiting prior stage",
+            ...(stageReached ? { timestampIso: approvalOneAt } : {}),
+          },
+          {
+            actorId: "actor-priya-nair",
+            name: CAST.opsApprover2,
+            roleId: "operations",
+            role: "Operations",
+            status: stageReached ? "done" : "pending",
+            statusLabel: stageReached
+              ? `${statusPrefix} · ${formatDemoInstant(approvalTwoAt)}`
+              : "Awaiting prior stage",
+            ...(stageReached ? { timestampIso: approvalTwoAt } : {}),
+          },
+          {
+            actorId: "actor-dana-ellison",
+            name: CAST.requester,
+            roleId: "advisor",
+            role: "Advisor (requester)",
+            status: "pending",
+            statusLabel: "Cannot approve",
+            note: "Requested this movement - the requester cannot approve.",
+            requesterExcluded: true,
+          },
+        ];
+    return {
+      ...stage,
+      title: specialistReview
+        ? `Stage ${stage.order} - Bank-instruction specialist review`
+        : `Stage ${stage.order} - Dual operations approval`,
+      requirement: specialistReview
+        ? "The changed bank instruction requires review by a banking specialist before execution."
+        : "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
       satisfied: stageReached,
       stepState: stageReached ? "done" : "pending",
-      actors: [
-        {
-          actorId: "actor-miguel-torres",
-          name: CAST.opsApprover1,
-          roleId: "operations",
-          role: "Operations",
-          status: stageReached ? "done" : "pending",
-          statusLabel: stageReached
-            ? `${statusPrefix} · ${formatDemoInstant(approvalOneAt)}`
-            : "Awaiting prior stage",
-          ...(stageReached ? { timestampIso: approvalOneAt } : {}),
-        },
-        {
-          actorId: "actor-priya-nair",
-          name: CAST.opsApprover2,
-          roleId: "operations",
-          role: "Operations",
-          status: stageReached ? "done" : "pending",
-          statusLabel: stageReached
-            ? `${statusPrefix} · ${formatDemoInstant(approvalTwoAt)}`
-            : "Awaiting prior stage",
-          ...(stageReached ? { timestampIso: approvalTwoAt } : {}),
-        },
-        {
-          actorId: "actor-dana-ellison",
-          name: CAST.requester,
-          roleId: "advisor",
-          role: "Advisor (requester)",
-          status: "pending",
-          statusLabel: "Cannot approve",
-          note: "Requested this movement - the requester cannot approve.",
-          requesterExcluded: true,
-        },
-      ],
-    });
-  }
-  return stages;
+      actors,
+      ...(spec.specialistExpired && specialistReview
+        ? {
+            authorityEvents: [
+              {
+                type: "ApprovalStageEscalated" as const,
+                timestamp: timeline.escalatedAt,
+                display: `Escalated to operations manager · ${formatDemoInstant(timeline.escalatedAt)}`,
+              },
+              {
+                type: "ApprovalStageExpired" as const,
+                timestamp: timeline.expiredAt,
+                display: `Expired unresolved · ${formatDemoInstant(timeline.expiredAt)}`,
+              },
+            ],
+            expired: true,
+          }
+        : {}),
+    };
+  });
 }
 
 export function buildApprovals(
@@ -437,7 +436,13 @@ export function buildApprovals(
   pass: JourneyPass = "initial",
 ): ApprovalVM {
   const stages = buildStages(scenario, firm, "gate", pass);
-  const mode = stages.length === 0 ? "automatic" : "staged";
+  const sourceCase = sourceCaseFor(scenario, firm.id);
+  const mode =
+    sourceCase?.authority.mode === "automatic"
+      ? "automatic"
+      : stages.length === 0
+        ? "automatic"
+        : "staged";
   const satisfied = mode === "automatic" || approvalPlanSatisfied(stages);
   const revalidated = scenario.spec.invalidation === true && pass === "revalidated";
   return {
@@ -450,7 +455,9 @@ export function buildApprovals(
       mode === "automatic"
         ? {
             title: "Automatic authority",
-            summary: "No approval stage is required because this request is below the firm's dual-approval threshold.",
+            summary:
+              sourceCase?.authority.note ??
+              "No approval stage is required because this request is below the firm's dual-approval threshold.",
             policyRef: `${firm.policyVersion} §4`,
           }
         : null,
@@ -466,7 +473,7 @@ export function buildApprovals(
         mode === "automatic"
           ? `Continue moving the amount below from Smith Family Taxable to ${destinationFor(scenario)} under automatic authority.`
           : `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
-      figures: [{ label: "Amount", metric: amountMetric() }],
+      figures: [{ label: "Amount", metric: amountMetric(scenario, firm) }],
       primaryLabel:
         mode === "automatic"
           ? "Continue under automatic authority"

@@ -2,6 +2,7 @@ import {
   DEMO_TIME_ZONE,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
+  sourceCaseFor,
   type FirmData,
   type ScenarioData,
 } from "./data";
@@ -31,7 +32,7 @@ export interface DemoTimeline {
   readonly statusObservedAt: string;
   readonly retryAt: string;
   readonly completionVerifiedAt: string;
-  readonly nextPollAt: string;
+  readonly nextPollAt: string | null;
   readonly exceptionDecisionRequestedAt: string;
   readonly delayedExceptionAt: string;
   readonly escalatedAt: string;
@@ -40,7 +41,9 @@ export interface DemoTimeline {
 
 export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimeline {
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  const requestAt = authority.kind === "signed" ? authority.requestAt : DEFAULT_REQUEST_AT;
+  const requestAt =
+    sourceCaseFor(scenario, firm.id)?.trigger.requestAt ??
+    (authority.kind === "signed" ? authority.requestAt : DEFAULT_REQUEST_AT);
   const decisionAt = add(requestAt, 10 * SECOND);
   const specialist =
     scenario.spec.bankChanged && firm.bankChangeHandling === "specialist-review";
@@ -84,6 +87,11 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   const reservationAt = new Date(
     reservationBasis + (competing ? 5 * SECOND : MINUTE),
   ).toISOString();
+  const delayedExceptionAt = add(executionAt, 2 * DAY);
+  const latestObservationAt =
+    scenario.spec.partial || scenario.spec.delayedNigo
+      ? delayedExceptionAt
+      : add(executionAt, 20 * SECOND);
   return {
     requestAt,
     decisionAt,
@@ -101,9 +109,16 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     statusObservedAt: add(executionAt, 20 * SECOND),
     retryAt: add(executionAt, MINUTE),
     completionVerifiedAt: add(executionAt, 98 * MINUTE),
-    nextPollAt: add(executionAt, 12 * 60 * MINUTE),
-    exceptionDecisionRequestedAt: add(executionAt, 21 * SECOND),
-    delayedExceptionAt: add(executionAt, 2 * DAY),
+    nextPollAt: scenario.spec.delayedNigo
+      ? null
+      : add(latestObservationAt, 12 * 60 * MINUTE),
+    exceptionDecisionRequestedAt: add(
+      scenario.spec.partial || scenario.spec.delayedNigo
+        ? delayedExceptionAt
+        : executionAt,
+      SECOND,
+    ),
+    delayedExceptionAt,
     escalatedAt: add(requestAt, DAY),
     expiredAt: add(requestAt, 2 * DAY),
   };

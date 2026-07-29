@@ -101,7 +101,8 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
   await expect(page.getByText("Material evidence re-checked")).toBeVisible();
   await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("mm-smiths-renovation-aug15-4c7f").first()).toBeVisible();
+  await expect(page.getByText("idem:GC-03:smiths-75000-2026-08-15").first()).toBeVisible();
+  await expect(page.getByText("res:GC-03:liquidity").first()).toBeVisible();
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 
@@ -230,6 +231,12 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
+  await page.goto("/app/demo/intent?scenario=permanent-prohibition&firm=firm-a");
+  await expect(page.getByText("$30,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$75,000.00", { exact: true })).toHaveCount(0);
+  await page.goto("/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a");
+  await expect(page.getByText(/Robert & Ana Smith.*subject:smiths-robert-ana/)).toBeVisible();
+  await expect(page.getByText(/Smith Family Trust.*subject:smith-family-trust/)).toBeVisible();
 
   await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a");
   const invalidationRequestAt = await page
@@ -301,9 +308,21 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // Delayed NIGO: first-class appended row with its resolving affordance.
+  await page.goto("/app/demo/safety?scenario=delayed-nigo&firm=firm-b");
+  await page.getByRole("button", { name: "Verify source" }).click();
+  await expect(page.getByText("idem:GC-14:smiths-75000-2026-08-15")).toBeVisible();
+  await expect(page.getByText("res:GC-14:liquidity")).toBeVisible();
+  await expect(page.getByText("PT30M")).toBeVisible();
+  await expect(page.getByText("conflict:smiths-liquidity")).toBeVisible();
   await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-b");
   await expect(page.getByText("Returned NIGO", { exact: true })).toBeVisible();
+  await expect(page.getByText(/signature date predates form version/).first()).toBeVisible();
+  await expect(page.getByText(/Status polling stopped after terminal NIGO/)).toBeVisible();
+  await expect(page.getByText(/Next status poll/)).toHaveCount(0);
+  await expect(page.getByTestId("exception-decision-requested")).toContainText("delayed-nigo");
+  await expect(page.getByTestId("exception-decision-requested")).toContainText("StatusObserved");
   await expect(page.getByRole("button", { name: "Fix and resubmit the authorization" })).toBeVisible();
+  await checkAxe(page, "verification-delayed-nigo");
   await snap(page, 17, "verification-delayed-nigo");
 
   // Specialist-review expiration under Firm B: no specialist stage exists there -
@@ -317,6 +336,9 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
   await expect(page.getByText("Escalated, then expired")).toBeVisible();
   await expect(page.getByText("escalated to the operations manager, then expired unresolved")).toBeVisible();
+  await expect(page.getByText(/Execution mode: sequential · expires after P2D/)).toBeVisible();
+  await expect(page.getByText(/Escalates after P1D to operations-manager · specialist-review-idle/)).toBeVisible();
+  await expect(page.getByText(/Execution mode: parallel · expires after P3D/)).toBeVisible();
   const authorityEvents = page.getByTestId("authority-event-order").locator("li");
   await expect(authorityEvents).toHaveCount(2);
   await expect(authorityEvents.nth(0)).toHaveAttribute("data-event-type", "ApprovalStageEscalated");
@@ -374,7 +396,7 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
   await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
   await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("rsv-8f21-smiths-liquidity")).toBeVisible();
+  await expect(page.getByText("res:GC-15:liquidity")).toBeVisible();
   await checkAxe(page, "approval-invalidation-revalidated");
   await snap(page, 22, "approval-invalidation-revalidated");
   await page.getByRole("link", { name: "Execute the movement" }).click();

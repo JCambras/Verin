@@ -89,9 +89,19 @@ export function SafetySurface({
           ) : null}
           <TapToVerify
             details={[
-              { label: "Reservation", value: vm.reservationId, mono: true },
-              { label: "Conflict keys", value: vm.conflictKeys.join("  ·  "), mono: true },
-              { label: "Idempotency key", value: vm.idempotencyKey, mono: true },
+              ...(vm.executionEligibility?.idempotencyKey
+                ? [{ label: "Idempotency key", value: vm.executionEligibility.idempotencyKey, mono: true }]
+                : []),
+              ...(vm.executionEligibility?.reservations.flatMap((reservation) => [
+                { label: "Reservation", value: reservation.reservationId, mono: true },
+                { label: "Conflict keys", value: reservation.conflictKeys.join("  ·  "), mono: true },
+                { label: "Reservation expiry", value: reservation.expiresAfter, mono: true },
+              ]) ?? []),
+              ...(vm.executionEligibility?.preconditions.map((precondition) => ({
+                label: `Precondition · ${precondition.code}`,
+                value: `${precondition.requiredEvidence.join("  ·  ")} · must hold at execution ${String(precondition.mustStillHoldAtExecution)}`,
+                mono: true,
+              })) ?? []),
             ]}
           />
         </>

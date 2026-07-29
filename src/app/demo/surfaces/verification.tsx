@@ -58,7 +58,7 @@ export function VerificationSurface({
               <li key={n}>{n}</li>
             ))}
           </ul>
-          <p className="text-xs text-slate-600">{vm.nextPoll}</p>
+          <p className="text-xs text-slate-600">{vm.polling.display}</p>
         </section>
       </div>
 

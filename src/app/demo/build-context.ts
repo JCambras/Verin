@@ -16,7 +16,6 @@ import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   ACCOUNTS,
   BANK_INSTRUCTION,
-  CANONICAL_REQUEST,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
   HOUSEHOLD,
@@ -26,6 +25,8 @@ import {
   RETRIEVED_AT,
   THIRD_PARTY_DESTINATION,
   liquidityAuthorityFor,
+  requestFor,
+  sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
@@ -89,10 +90,11 @@ export function buildWorkspace(
 
 export function buildIntent(scenario: ScenarioData, firm: FirmData): IntentVM {
   const requestAt = timelineFor(scenario, firm).requestAt;
+  const request = requestFor(scenario, firm.id);
   return {
     spine: buildSpine("Intent"),
     household: HOUSEHOLD.name,
-    requestText: CANONICAL_REQUEST.text,
+    requestText: request.text,
     requestAt: fact(
       `Request received ${formatDemoInstant(requestAt)}`,
       "user-entered-demo-input",
@@ -105,9 +107,9 @@ export function buildIntent(scenario: ScenarioData, firm: FirmData): IntentVM {
       slots: [
         { label: "Household", value: HOUSEHOLD.name },
         { label: "Action", value: "Move money" },
-        { label: "Amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)) },
-        { label: "Purpose", value: CANONICAL_REQUEST.purpose },
-        { label: "Needed by", value: CANONICAL_REQUEST.deadline },
+        { label: "Amount", metric: metric(request.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)) },
+        { label: "Purpose", value: request.purpose },
+        { label: "Needed by", value: request.deadline },
         { label: "Destination", value: destinationFor(scenario) },
       ],
       draftLabel: "Drafted - not yet reviewed",
@@ -124,6 +126,7 @@ export function buildEvidence(
   const spec = scenario.spec;
   const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const sourceCase = sourceCaseFor(scenario, firm.id);
   const timeline = timelineFor(scenario, firm);
   const refreshed =
     pass === "revalidated" && authority.kind === "signed"
@@ -205,14 +208,33 @@ export function buildEvidence(
     });
   }
   if (spec.conflictingInstruction) {
+    const directoryEvidence = sourceCase?.evidence.find(
+      (entry) => entry.evidenceKind === "household-directory",
+    );
+    const observedAt =
+      directoryEvidence?.observedAt ?? timeline.requestAt;
+    const retrievedAt =
+      directoryEvidence?.retrievedAt ?? timeline.requestAt;
     rows.push({
       kind: "conflict",
-      label: "Distribution funding instruction",
-      rule: "A human must resolve this conflict (survivorship rule: manual)",
-      a: fact("Renovation costs are paid from the Joint Taxable account", "synthetic-fixture", "2026-03-02", RETRIEVED_AT, "medium"),
-      b: fact("Large one-time needs are funded from the Smith Family Taxable account", "synthetic-fixture", "2026-07-10", RETRIEVED_AT, "medium"),
+      label: "Household directory match",
+      rule: "A human must select the intended household; Verin cannot guess between two equal candidates",
+      a: fact(
+        "Robert & Ana Smith · subject:smiths-robert-ana",
+        "synthetic-fixture",
+        observedAt,
+        formatDemoInstant(retrievedAt, undefined, true),
+        "medium",
+      ),
+      b: fact(
+        "Smith Family Trust · subject:smith-family-trust",
+        "synthetic-fixture",
+        observedAt,
+        formatDemoInstant(retrievedAt, undefined, true),
+        "medium",
+      ),
       fakeClass: "synthetic-fixture",
-      blockerAffordance: "Choose the governing value",
+      blockerAffordance: "Select the intended household",
     });
   }
   rows.push({

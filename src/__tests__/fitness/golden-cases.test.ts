@@ -881,6 +881,172 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("rejects missing nonnumeric variants and drifted decisive evidence", () => {
+    const missingVariant = demoClone();
+    missingVariant.signedCaseVariants =
+      missingVariant.signedCaseVariants.filter(
+        (variant) =>
+          (variant as { caseId?: string }).caseId !==
+          "GC-08-ambiguous-household",
+      );
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        missingVariant,
+      ).some((problem) =>
+        problem.includes(
+          "exact signed-case registry must project all 16 captain-signed cases",
+        ),
+      ),
+    ).toBe(true);
+
+    const wrongCandidates = demoClone();
+    const ambiguous = wrongCandidates.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-08-ambiguous-household",
+    )!;
+    ambiguous.decisiveEvidence[0]!.display =
+      "Renovation funding instruction";
+    ambiguous.decisiveEvidence[0]!.observedAt =
+      "2026-07-26T17:19:59.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongCandidates,
+      ).some((problem) =>
+        problem.includes(
+          "GC-08 must render both signed household candidates",
+        ),
+      ),
+    ).toBe(true);
+
+    const wrongProhibitionAmount = demoClone();
+    wrongProhibitionAmount.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-06-household-restriction",
+    )!.requestAmountMinor = 7_500_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongProhibitionAmount,
+      ).some(
+        (problem) =>
+          problem.includes("GC-06-household-restriction") &&
+          problem.includes("request amount drift"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects generic execution identifiers and incomplete authority timing", () => {
+    const executionDrift = demoClone();
+    const gc14 = executionDrift.executionGuards.find(
+      (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
+    )!;
+    gc14.executionEligibility!.idempotencyKey =
+      "generic-idempotency-key";
+    gc14.executionEligibility!.reservations[0]!.reservationId =
+      "generic-reservation";
+    gc14.executionEligibility!.reservations[0]!.conflictKeys.push(
+      "generic-bank-instruction",
+    );
+    gc14.executionEligibility!.reservations[0]!.expiresAfter = "P1D";
+    gc14.executionEligibility!.preconditions = [];
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        executionDrift,
+      ).some((problem) =>
+        problem.includes(
+          "rendered execution eligibility drifts from its signed eligibility",
+        ),
+      ),
+    ).toBe(true);
+
+    const authorityDrift = demoClone();
+    const specialist = authorityDrift.authorityPlans
+      .find(
+        (plan) =>
+          plan.scenarioId === "recent-bank-change-block" &&
+          plan.firmId === "firm-a",
+      )!
+      .stages[0]!;
+    specialist.executionMode = "parallel";
+    specialist.expiresAfter = "P3D";
+    specialist.escalationPath[0]!.after = "PT1H";
+    specialist.escalationPath[0]!.roleIds = ["advisor"];
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        authorityDrift,
+      ).some(
+        (problem) =>
+          problem.includes("execution mode") ||
+          problem.includes("authority escalation path"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects stale delayed-NIGO polling and malformed timeline instants", () => {
+    const stalePoll = demoClone();
+    const gc14 = stalePoll.executionGuards.find(
+      (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
+    )!;
+    gc14.polling = {
+      state: "scheduled",
+      latestObservationAtIso: "2026-07-28T21:44:00.000Z",
+      nextPollAtIso: "2026-07-27T09:44:00.000Z",
+    };
+    gc14.exceptionDecision = null;
+    gc14.verificationProves = [
+      "Custodian returned the instruction NIGO: signature missing",
+    ];
+    gc14.verificationNotProvenYet = [
+      "That the instruction will not be returned not-in-good-order",
+    ];
+    const staleProblems = validateGoldenDemoSemantics(
+      clone(),
+      realRefs,
+      stalePoll,
+    );
+    expect(
+      staleProblems.some((problem) =>
+        problem.includes(
+          "scheduled next poll must follow the latest observed state",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      staleProblems.some((problem) =>
+        problem.includes(
+          "GC-14 must render observed NIGO with the exact custodian reason",
+        ),
+      ),
+    ).toBe(true);
+
+    const malformed = demoClone();
+    malformed.sourceTimelines.find(
+      (timeline) =>
+        timeline.sourceCaseId === "GC-14-delayed-nigo",
+    )!.events[1]!.instant = "not-an-instant";
+    expect(() =>
+      validateGoldenDemoSemantics(clone(), realRefs, malformed),
+    ).not.toThrow();
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        malformed,
+      ).some((problem) =>
+        problem.includes("has a non-canonical instant not-an-instant"),
+      ),
+    ).toBe(true);
+  });
+
   it("reports derived arithmetic overflow as diagnostics rather than throwing", () => {
     const floorOverflow = clone();
     const floorCase = caseById(floorOverflow, "GC-01-firm-a-happy-path");

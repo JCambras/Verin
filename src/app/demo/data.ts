@@ -11,6 +11,12 @@
  * data (the same value scenarios.yaml carries), never derived in a component.
  */
 import type { DispositionKind } from "./model";
+import {
+  SIGNED_CASE_BY_ID,
+  type SignedCaseId,
+  type SignedCaseVariant,
+  type SignedExecutionEligibilityData,
+} from "./signed-cases";
 
 export type JourneyPass = "initial" | "revalidated";
 
@@ -67,96 +73,18 @@ export interface SignedLiquidityAuthority {
 export interface SignedRelatedDecisionAuthority {
   readonly sourceCaseId: string;
   readonly requestAt: string;
+  readonly requestAmountMinor: number;
   readonly disposition: DispositionKind;
   readonly initialDecision: LiquiditySnapshotData;
 }
 export interface MissingLiquidityAuthority {
   readonly kind: "missing";
+  readonly sourceCaseId: string | null;
+  readonly requestAt: string | null;
   readonly reason: string;
 }
 export type LiquidityAuthority = SignedLiquidityAuthority | MissingLiquidityAuthority;
 const NO_PENDING_ACTIVITY = "No pending or reserved liquidity activity was observed at evaluation time";
-const SIGNED_CASE_TIMES = {
-  "GC-01-firm-a-happy-path": {
-    requestAt: "2026-07-26T13:30:00.000Z",
-  },
-  "GC-02-firm-b-happy-path": {
-    requestAt: "2026-07-26T13:30:00.000Z",
-  },
-  "GC-03-recent-bank-change-firm-a": {
-    requestAt: "2026-07-26T13:30:00.000Z",
-  },
-  "GC-10-simultaneous-distributions-first": {
-    requestAt: "2026-07-26T19:00:00.000Z",
-  },
-  "GC-11-simultaneous-distributions-second": {
-    requestAt: "2026-07-26T19:00:30.000Z",
-  },
-  "GC-12-duplicate-retry": {
-    requestAt: "2026-07-26T20:10:00.000Z",
-  },
-  "GC-13-partial-salesforce-success": {
-    requestAt: "2026-07-26T20:45:00.000Z",
-  },
-  "GC-14-delayed-nigo": {
-    requestAt: "2026-07-26T21:15:00.000Z",
-  },
-  "GC-15-approval-invalidation": {
-    requestAt: "2026-07-26T21:45:00.000Z",
-    preExecutionRevalidationAt: "2026-07-26T21:58:02.000Z",
-  },
-  "GC-16-specialist-review-expiration": {
-    requestAt: "2026-07-26T22:20:00.000Z",
-  },
-} as const;
-type SignedCaseId = keyof typeof SIGNED_CASE_TIMES;
-const signedLiquidity = (
-  sourceCaseId: SignedCaseId,
-  availableCashMinor: number,
-  pendingActivityMinor = 0,
-  pendingNote = NO_PENDING_ACTIVITY,
-  preExecutionRevalidation?: LiquiditySnapshotData,
-  relatedDecisions?: readonly SignedRelatedDecisionAuthority[],
-): SignedLiquidityAuthority => {
-  const caseTimes = SIGNED_CASE_TIMES[sourceCaseId] as {
-    readonly requestAt: string;
-    readonly preExecutionRevalidationAt?: string;
-  };
-  return {
-    kind: "signed",
-    sourceCaseId,
-    requestAt: caseTimes.requestAt,
-    initialDecision: { availableCashMinor, pendingActivityMinor, pendingNote },
-    ...(preExecutionRevalidation ? { preExecutionRevalidation } : {}),
-    ...(preExecutionRevalidation && caseTimes.preExecutionRevalidationAt
-      ? { preExecutionRevalidationAt: caseTimes.preExecutionRevalidationAt }
-      : {}),
-    ...(relatedDecisions ? { relatedDecisions } : {}),
-  };
-};
-const relatedDecision = (
-  sourceCaseId: SignedCaseId,
-  disposition: DispositionKind,
-  availableCashMinor: number,
-  pendingActivityMinor: number,
-  pendingNote: string,
-): SignedRelatedDecisionAuthority => ({
-  sourceCaseId,
-  requestAt: SIGNED_CASE_TIMES[sourceCaseId].requestAt,
-  disposition,
-  initialDecision: { availableCashMinor, pendingActivityMinor, pendingNote },
-});
-const INVALIDATION_LIQUIDITY = signedLiquidity(
-  "GC-15-approval-invalidation",
-  30_000_000,
-  0,
-  NO_PENDING_ACTIVITY,
-  {
-    availableCashMinor: 30_000_000,
-    pendingActivityMinor: 1_500_000,
-    pendingNote: "A new approved distribution of $15,000 has not settled and now reduces effective liquidity to $285,000",
-  },
-);
 
 // Bank instructions (required shape: a recently changed bank instruction).
 export const BANK_INSTRUCTION = {
@@ -233,9 +161,6 @@ export const IDS = {
   bundleHash: "5e21c9a6b3d84f07a5c1e92b64d38a7f0a3f9c2e41b7d5f08c6a92e13b48d70f",
   derivedDecisionHash: "d9124aef6b8c37e029f154c8a6d3b25e78fc41a6d90b2e573c8f14a625db9e70",
   refreshedBundleHash: "9b47c18d5e620af3d7861c4b892ef530a14d768ce305bf42a79e16dc4f823b51",
-  idempotencyKey: "mm-smiths-renovation-aug15-4c7f",
-  reservationId: "rsv-8f21-smiths-liquidity",
-  conflictKeys: ["liquidity:smiths:2026-08", "bank-instruction:smiths:chase-4417"],
   auditPosition: "org demo-org · sequence 214",
 } as const;
 
@@ -264,21 +189,22 @@ export interface ScenarioData {
   readonly perFirm?: Record<string, DispositionKind>;
   readonly outcomeClassByFirm?: Record<string, string>;
   readonly spec: ScenarioSpec;
-  readonly signedLiquidity?: Readonly<Record<string, SignedLiquidityAuthority>>;
+  readonly sourceCaseByFirm?: Readonly<Record<string, SignedCaseId>>;
+  readonly relatedSourceCasesByFirm?: Readonly<Record<string, readonly SignedCaseId[]>>;
 }
 export const SCENARIOS: readonly ScenarioData[] = [
-  { id: "safe-proceed", title: "Safe proceed", description: "No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.", outcomeClass: "governed submission", disposition: "proceed", spec: {}, signedLiquidity: { "firm-a": signedLiquidity("GC-01-firm-a-happy-path", 42_000_000), "firm-b": signedLiquidity("GC-02-firm-b-happy-path", 42_000_000) } },
-  { id: "recent-bank-change-block", title: "Recent bank change", description: "The recently changed bank instruction triggers each firm's configured handling for the same facts.", outcomeClass: "firm-aware bank-change handling", outcomeClassByFirm: { "firm-a": "specialist review before execution", "firm-b": "blocked until independent verification" }, disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-03-recent-bank-change-firm-a", 42_000_000) } },
-  { id: "permanent-prohibition", title: "Permanent prohibition", description: "The requested movement violates the household-specific destination restriction; no approval can waive it.", outcomeClass: "permanent prohibition", disposition: "prohibited", spec: { thirdPartyDestination: true } },
-  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { staleLiquidity: true } },
-  { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true } },
+  { id: "safe-proceed", title: "Safe proceed", description: "No policy, liquidity, or instruction issue; the request proceeds through approval to a governed submission.", outcomeClass: "governed submission", disposition: "proceed", spec: {}, sourceCaseByFirm: { "firm-a": "GC-01-firm-a-happy-path", "firm-b": "GC-02-firm-b-happy-path" } },
+  { id: "recent-bank-change-block", title: "Recent bank change", description: "The recently changed bank instruction triggers each firm's configured handling for the same facts.", outcomeClass: "firm-aware bank-change handling", outcomeClassByFirm: { "firm-a": "specialist review before execution", "firm-b": "blocked until independent verification" }, disposition: "blocked", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true }, sourceCaseByFirm: { "firm-a": "GC-03-recent-bank-change-firm-a", "firm-b": "GC-04-recent-bank-change-firm-b" } },
+  { id: "permanent-prohibition", title: "Permanent prohibition", description: "The requested movement violates the household-specific destination restriction; no approval can waive it.", outcomeClass: "permanent prohibition", disposition: "prohibited", spec: { thirdPartyDestination: true }, sourceCaseByFirm: { "firm-a": "GC-06-household-restriction" } },
+  { id: "stale-evidence", title: "Stale evidence", description: "Material evidence is older than policy allows; the decision blocks until a fresh snapshot resolves it.", outcomeClass: "resolvable block", disposition: "blocked", spec: { staleLiquidity: true }, sourceCaseByFirm: { "firm-a": "GC-09-stale-evidence" } },
+  { id: "ambiguous-instruction", title: "Ambiguous instruction", description: "A household or bank instruction is ambiguous; the decision blocks pending human disambiguation outside the model.", outcomeClass: "resolvable block", disposition: "blocked", spec: { conflictingInstruction: true }, sourceCaseByFirm: { "firm-a": "GC-08-ambiguous-household" } },
   { id: "dual-approval", title: "Dual approval", description: "The amount exceeds Firm A's threshold, requiring two distinct operations approvers with Firm A's requester constraint applied.", outcomeClass: "quorum approval", disposition: "proceed", spec: {} },
-  { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true }, signedLiquidity: { "firm-a": INVALIDATION_LIQUIDITY } },
-  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous requests test the shared-liquidity controls under each firm's policy.", outcomeClass: "firm-aware liquidity control", outcomeClassByFirm: { "firm-a": "first request proceeds; sibling blocked by reservation", "firm-b": "first request blocked by twelve-month reserve before reservation" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { competing: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-10-simultaneous-distributions-first", 16_000_000, 0, NO_PENDING_ACTIVITY, undefined, [relatedDecision("GC-11-simultaneous-distributions-second", "blocked", 16_000_000, 7_500_000, "The first request's active $75,000 reservation reduces the sibling request's effective liquidity to $85,000")]) } },
-  { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-12-duplicate-retry", 42_000_000) } },
-  { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-13-partial-salesforce-success", 42_000_000) } },
-  { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true }, signedLiquidity: { "firm-b": signedLiquidity("GC-14-delayed-nigo", 42_000_000) } },
-  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "The configured escalation fires before unresolved specialist authority reaches its projected expiry.", outcomeClass: "firm-aware authority outcome", outcomeClassByFirm: { "firm-a": "specialist review escalated, then expired", "firm-b": "blocked until independent verification" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true, specialistExpired: true }, signedLiquidity: { "firm-a": signedLiquidity("GC-16-specialist-review-expiration", 42_000_000) } },
+  { id: "approval-invalidation", title: "Approval invalidation", description: "Material evidence changes after approval; pre-execution revalidation invalidates the approval before any execution.", outcomeClass: "approval invalidated", disposition: "proceed", spec: { invalidation: true }, sourceCaseByFirm: { "firm-a": "GC-15-approval-invalidation" } },
+  { id: "competing-liquidity", title: "Competing liquidity", description: "Two simultaneous requests test the shared-liquidity controls under each firm's policy.", outcomeClass: "firm-aware liquidity control", outcomeClassByFirm: { "firm-a": "first request proceeds; sibling blocked by reservation", "firm-b": "first request blocked by twelve-month reserve before reservation" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { competing: true }, sourceCaseByFirm: { "firm-a": "GC-10-simultaneous-distributions-first" }, relatedSourceCasesByFirm: { "firm-a": ["GC-11-simultaneous-distributions-second"] } },
+  { id: "duplicate-retry", title: "Duplicate retry", description: "A retry or double-click after submission is suppressed by the stable idempotency key; exactly one external instruction exists.", outcomeClass: "duplicate suppressed", disposition: "proceed", spec: { duplicateRetry: true }, sourceCaseByFirm: { "firm-a": "GC-12-duplicate-retry" } },
+  { id: "partial-salesforce-success", title: "Partial success", description: "The external capability reports partial success; completed and incomplete parts are recorded honestly and an exception decision is requested.", outcomeClass: "partial success, exception requested", disposition: "proceed", spec: { partial: true }, sourceCaseByFirm: { "firm-a": "GC-13-partial-salesforce-success" } },
+  { id: "delayed-nigo", title: "Delayed NIGO", description: "A NIGO arrives after a submitted status; it is ingested late and derives an exception decision.", outcomeClass: "delayed NIGO, exception requested", disposition: "proceed", spec: { delayedNigo: true }, sourceCaseByFirm: { "firm-b": "GC-14-delayed-nigo" } },
+  { id: "specialist-review-expiration", title: "Specialist-review expiration", description: "The configured escalation fires before unresolved specialist authority reaches its projected expiry.", outcomeClass: "firm-aware authority outcome", outcomeClassByFirm: { "firm-a": "specialist review escalated, then expired", "firm-b": "blocked until independent verification" }, disposition: "proceed", perFirm: { "firm-a": "proceed", "firm-b": "blocked" }, spec: { bankChanged: true, specialistExpired: true }, sourceCaseByFirm: { "firm-a": "GC-16-specialist-review-expiration" } },
 ];
 const DEFAULT_SCENARIO = "safe-proceed";
 
@@ -306,10 +232,120 @@ export function dispositionFor(scenario: ScenarioData, firmId: string): Disposit
 export function outcomeClassFor(scenario: ScenarioData, firmId: string): string {
   return scenario.outcomeClassByFirm?.[firmId] ?? scenario.outcomeClass;
 }
+export function sourceCaseFor(
+  scenario: ScenarioData,
+  firmId: string,
+): SignedCaseVariant | null {
+  const caseId = scenario.sourceCaseByFirm?.[firmId];
+  return caseId ? SIGNED_CASE_BY_ID[caseId] : null;
+}
+export function executionEligibilityFor(
+  scenario: ScenarioData,
+  firmId: string,
+): SignedExecutionEligibilityData | null {
+  return sourceCaseFor(scenario, firmId)?.executionEligibility ?? null;
+}
+export function requestFor(
+  scenario: ScenarioData,
+  firmId: string,
+): {
+  readonly text: string;
+  readonly amountMinor: number;
+  readonly purpose: string;
+  readonly deadline: string;
+  readonly requestedAt: string | null;
+} {
+  const sourceCase = sourceCaseFor(scenario, firmId);
+  if (!sourceCase) return { ...CANONICAL_REQUEST, requestedAt: null };
+  const quotedRequest = sourceCase.trigger.description.match(
+    /Advisor enters: '([^']+)'/,
+  )?.[1];
+  return {
+    ...CANONICAL_REQUEST,
+    text: quotedRequest ?? CANONICAL_REQUEST.text,
+    amountMinor: sourceCase.money.requestAmountMinor,
+    requestedAt: sourceCase.trigger.requestAt,
+  };
+}
+function pendingNoteFor(
+  sourceCase: SignedCaseVariant,
+  liquidityPhase: string | null,
+): string {
+  const evidence = sourceCase.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "pending-actions" &&
+      (entry.liquidityPhase === liquidityPhase ||
+        (liquidityPhase === null &&
+          entry.liquidityPhase === "initial-decision")),
+  );
+  return evidence?.summary ?? NO_PENDING_ACTIVITY;
+}
 export function liquidityAuthorityFor(scenario: ScenarioData, firmId: string): LiquidityAuthority {
-  return scenario.signedLiquidity?.[firmId] ?? {
-    kind: "missing",
-    reason: `No captain-signed numeric liquidity case covers ${scenario.id} for ${firmId}`,
+  const sourceCase = sourceCaseFor(scenario, firmId);
+  if (
+    !sourceCase ||
+    sourceCase.money.availableLiquidityMinor === null ||
+    sourceCase.money.pendingLiquidityMinor === null
+  ) {
+    return {
+      kind: "missing",
+      sourceCaseId: sourceCase?.caseId ?? null,
+      requestAt: sourceCase?.trigger.requestAt ?? null,
+      reason: `No captain-signed numeric liquidity case covers ${scenario.id} for ${firmId}`,
+    };
+  }
+  const revalidationEvidence = sourceCase.evidence.find(
+    (entry) => entry.liquidityPhase === "pre-execution-revalidation",
+  );
+  const relatedDecisions = scenario.relatedSourceCasesByFirm?.[firmId]
+    ?.map((caseId): SignedRelatedDecisionAuthority | null => {
+      const related = SIGNED_CASE_BY_ID[caseId];
+      if (
+        related.money.availableLiquidityMinor === null ||
+        related.money.pendingLiquidityMinor === null
+      ) {
+        return null;
+      }
+      return {
+        sourceCaseId: related.caseId,
+        requestAt: related.trigger.requestAt,
+        requestAmountMinor: related.money.requestAmountMinor,
+        disposition: related.disposition,
+        initialDecision: {
+          availableCashMinor: related.money.availableLiquidityMinor,
+          pendingActivityMinor: related.money.pendingLiquidityMinor,
+          pendingNote: pendingNoteFor(related, null),
+        },
+      };
+    })
+    .filter((entry): entry is SignedRelatedDecisionAuthority => entry !== null);
+  return {
+    kind: "signed",
+    sourceCaseId: sourceCase.caseId,
+    requestAt: sourceCase.trigger.requestAt,
+    initialDecision: {
+      availableCashMinor: sourceCase.money.availableLiquidityMinor,
+      pendingActivityMinor: sourceCase.money.pendingLiquidityMinor,
+      pendingNote: pendingNoteFor(sourceCase, null),
+    },
+    ...(sourceCase.money.preExecutionRevalidation
+      ? {
+          preExecutionRevalidation: {
+            availableCashMinor:
+              sourceCase.money.preExecutionRevalidation.availableLiquidityMinor,
+            pendingActivityMinor:
+              sourceCase.money.preExecutionRevalidation.pendingLiquidityMinor,
+            pendingNote: pendingNoteFor(
+              sourceCase,
+              "pre-execution-revalidation",
+            ),
+          },
+          ...(revalidationEvidence
+            ? { preExecutionRevalidationAt: revalidationEvidence.retrievedAt }
+            : {}),
+        }
+      : {}),
+    ...(relatedDecisions?.length ? { relatedDecisions } : {}),
   };
 }
 export function hasSignedInvalidationAuthority(
@@ -326,5 +362,5 @@ export function hasSignedInvalidationAuthority(
   );
 }
 export function launcherFirmFor(scenario: ScenarioData): string {
-  return Object.keys(scenario.signedLiquidity ?? {})[0] ?? DEFAULT_FIRM;
+  return Object.keys(scenario.sourceCaseByFirm ?? {})[0] ?? DEFAULT_FIRM;
 }

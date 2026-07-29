@@ -5704,3 +5704,32 @@ typecheck, lint, knip, the v3 invariant report, and the production build pass on
 state.
 
 **Date:** 2026-07-28 (review corrections, D-069).
+
+## F109 · exact signed variants, execution metadata, authority timing, and polling
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts`,
+`src/__tests__/fitness/dependency-rule.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** all sixteen captain-signed cases have exact typed variants independent of numeric
+liquidity; selected decisions preserve their case amount and decisive evidence; execution
+eligibility preserves every identifier, reservation, conflict key, expiry, and precondition;
+authority preserves execution mode, expiry, and escalation; terminal NIGO opens an exception and
+stops polling; malformed timeline instants produce diagnostics without reaching timezone
+formatting.
+
+Companions remove GC-08 from the exact registry, replace its two signed household candidates and
+17:20Z instant, substitute $75,000 for GC-06's signed $30,000 request, replace GC-14's eligibility
+metadata with generic values, mutate GC-03's authority mode, expiry, and escalation, restore a stale
+post-NIGO poll and wrong custodian reason, and inject a non-date timeline instant. Each mutation
+produces its named diagnostic, and the malformed instant does not throw.
+
+The dependency companion proves only `src/app/demo/signed-case-fixtures.ts` may import
+`fixtures/golden/GC-*.json`; a renamed bridge and a non-golden target both fail closed. Browser
+coverage proves the GC-06 amount, both GC-08 candidates, exact GC-03 and GC-14 execution metadata,
+authority timing, delayed-NIGO reason, stopped polling, exception decision, responsive layout, and
+axe posture.
+
+**Revert:** every mutation remains inside companion tests. All 573 Vitest cases, all 18 Playwright
+cases with axe, the golden validator, typecheck, lint, knip, v3 invariant report, and production
+build pass on the corrected state.
+
+**Date:** 2026-07-28 (review corrections, D-070).

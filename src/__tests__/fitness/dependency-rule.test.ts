@@ -132,6 +132,36 @@ describe("dependency-rule fence", () => {
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain("domain->unresolved");
     });
 
+    it("permits only the demo's exact signed golden-fixture bridge", () => {
+      const allowed = detectLayerViolations(
+        inMemoryProject({
+          "src/app/demo/signed-case-fixtures.ts":
+            `import gc01 from "../../../fixtures/golden/GC-01-case.json";\nexport { gc01 };`,
+        }),
+      );
+      expect(allowed).toEqual([]);
+
+      const renamedBridge = detectLayerViolations(
+        inMemoryProject({
+          "src/app/demo/other-fixtures.ts":
+            `import gc01 from "../../../fixtures/golden/GC-01-case.json";\nexport { gc01 };`,
+        }),
+      );
+      expect(
+        renamedBridge.map((violation) => `${violation.fromLayer}->${violation.toLayer}`),
+      ).toContain("app->unresolved");
+
+      const wrongDirectory = detectLayerViolations(
+        inMemoryProject({
+          "src/app/demo/signed-case-fixtures.ts":
+            `import local from "../../../scripts/local.json";\nexport { local };`,
+        }),
+      );
+      expect(
+        wrongDirectory.map((violation) => `${violation.fromLayer}->${violation.toLayer}`),
+      ).toContain("app->unresolved");
+    });
+
     it("resolved source files outside the project fail closed", () => {
       const v = detectLayerViolations(
         inMemoryProject({

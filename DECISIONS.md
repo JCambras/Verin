@@ -3491,3 +3491,24 @@ silently select stale evidence, and an affordance label could not preserve a sig
 printable record.
 **Revert path:** the chronology projector, pass-aware comparison path, typed exception state, and
 their companion mutations are isolated to the demo fake-service and golden-case fences.
+
+### D-070 · 2026-07-28 · reversible · Signed cases project independently from numeric liquidity
+
+Every captain-signed golden case now enters one exact typed registry keyed by case identity.
+Scenario and firm selection bind to that identity before numeric liquidity is considered, so a
+blocked or prohibited case cannot disappear merely because its signed money record intentionally
+contains no liquidity figures. The selected variant carries its trigger, amount, decisive evidence,
+disposition, ordered ledger, authority, execution eligibility, and verification state.
+
+Executable records project the complete case-bound eligibility: eligibility or refusal reason,
+idempotency key, every reservation id, exact conflict keys, reservation expiry, and preconditions.
+Authority stages project their signed execution mode, expiry duration, escalation delay,
+destination roles, and reason code. GC-14 records the observed NIGO reason exactly, opens a typed
+exception decision, and stops polling with no future expectation. An open GC-13 status schedules
+its next poll from the latest observation plus the signed twelve-hour interval.
+
+**Why:** optional liquidity was serving as an accidental ownership key. That excluded nonnumeric
+truth cases and allowed generic authority, identifiers, and stale polling expectations to replace
+case-specific signed facts.
+**Revert path:** the fixture parser, scenario-to-case map, view-model fields, and semantic companions
+are confined to the demo fake-service and golden-case fence.

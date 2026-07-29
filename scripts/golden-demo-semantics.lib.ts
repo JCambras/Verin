@@ -29,6 +29,11 @@ export interface DisplayedDecision {
   disposition: string;
   sourceCaseId: string | null;
   requestAt: string | null;
+  requestAmountMinor: number;
+  decisiveEvidence: Array<{
+    display: string;
+    observedAt: string;
+  }>;
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -72,6 +77,7 @@ export interface DemoSemanticSnapshot {
     reserveMonths: number;
     reserveFloorMinor: number;
   }>;
+  signedCaseVariants: unknown[];
   decisions: DisplayedDecision[];
   sourceTimelines: SourceTimeline[];
   draftedReserveMonths: number;
@@ -91,10 +97,39 @@ export interface DemoSemanticSnapshot {
   executionGuards: Array<{
     scenarioId: string;
     firmId: string;
+    sourceCaseId: string | null;
     signedLiquidityAuthority: boolean;
     reservationVisible: boolean;
     executionReached: boolean;
     verificationReached: boolean;
+    executionEligibility: {
+      eligible: boolean;
+      reason: string;
+      idempotencyKey: string | null;
+      reservations: Array<{
+        reservationId: string;
+        conflictKeys: string[];
+        expiresAfter: string;
+      }>;
+      preconditions: Array<{
+        code: string;
+        requiredEvidence: string[];
+        mustStillHoldAtExecution: boolean;
+      }>;
+    } | null;
+    polling: {
+      state: "scheduled" | "stopped";
+      latestObservationAtIso: string;
+      nextPollAtIso: string | null;
+      reason?: "terminal-nigo-exception-opened";
+    } | null;
+    exceptionDecision: {
+      eventType: "ExceptionDecisionRequested";
+      reason: "partial-execution" | "delayed-nigo";
+      triggeringLedgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
+    } | null;
+    verificationProves: string[];
+    verificationNotProvenYet: string[];
   }>;
   authorityPlans: Array<{
     scenarioId: string;
@@ -107,10 +142,17 @@ export interface DemoSemanticSnapshot {
     stages: Array<{
       stageId: string;
       order: number;
+      executionMode: "sequential" | "parallel";
       eligibleRoleIds: string[];
       approvalsRequired: number;
       distinctActorsRequired: boolean;
       requesterMayApprove: boolean;
+      expiresAfter: string;
+      escalationPath: Array<{
+        after: string;
+        roleIds: string[];
+        reasonCode: string;
+      }>;
       satisfied: boolean;
       completedActorIds: string[];
       completedRoleIds: string[];
@@ -166,15 +208,15 @@ export interface DemoSemanticSnapshot {
     notProvenYet: string[];
     exceptionDecision: {
       eventType: "ExceptionDecisionRequested";
-      reason: "partial-execution";
+      reason: "partial-execution" | "delayed-nigo";
       priorDecisionId: string;
-      triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+      triggeringLedgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
     } | null;
     recordExceptionDecision: {
       eventType: "ExceptionDecisionRequested";
-      reason: "partial-execution";
+      reason: "partial-execution" | "delayed-nigo";
       priorDecisionId: string;
-      triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+      triggeringLedgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
     } | null;
   };
   invalidationPolicySimulation: {
@@ -200,6 +242,7 @@ const sourceKey = (scenarioId: string, firmId: string, disposition: string): str
 
 interface ExactSourceCandidate {
   id: string;
+  requestAmountMinor: number;
 }
 
 function exactSourceCandidates(
@@ -222,9 +265,6 @@ function exactSourceCandidates(
         ? demo.firms.find((firm) => firm.id === firmId)
         : undefined;
     const requestMinor = minorFromMajor(signed?.requestAmountUsd ?? null);
-    const monthlyMinor = minorFromMajor(
-      signed?.plannedWithdrawalMonthlyUsd ?? null,
-    );
     const floorMinor = minorFromMajor(signed?.reserveFloorUsd ?? null);
     if (
       !isNonEmptyString(scenarioId) ||
@@ -235,26 +275,156 @@ function exactSourceCandidates(
       !isNonEmptyString(signoff.signedBy) ||
       !isNonEmptyString(signoff.signedAt) ||
       !signed ||
+      requestMinor === null ||
       !demoFirm ||
-      requestMinor !== demo.requestAmountMinor ||
       signed.currency !== demo.currency ||
       signed.cadence !== demo.cadence ||
-      floorMinor !== demoFirm.reserveFloorMinor ||
       firmConfiguration?.cashReserveMonths !== demoFirm.reserveMonths ||
-      (monthlyMinor !== null &&
-        monthlyMinor !== demo.plannedWithdrawalMonthlyMinor) ||
-      minorFromMajor(signed.availableLiquidityUsd) === null ||
-      minorFromMajor(signed.pendingLiquidityUsd) === null
+      (floorMinor !== null && floorMinor !== demoFirm.reserveFloorMinor)
     ) {
       continue;
     }
     const key = sourceKey(scenarioId, firmId, disposition);
     candidates.set(key, [
       ...(candidates.get(key) ?? []),
-      { id: data.caseId },
+      { id: data.caseId, requestAmountMinor: requestMinor },
     ]);
   }
   return candidates;
+}
+
+function expectedSignedCaseVariant(
+  data: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const signed = readSignedMoney(data);
+  const trigger = isObj(data.trigger) ? data.trigger : null;
+  const authority = isObj(data.expectedAuthority)
+    ? data.expectedAuthority
+    : null;
+  const eligibility = isObj(data.expectedExecutionEligibility)
+    ? data.expectedExecutionEligibility
+    : null;
+  const verification = isObj(data.expectedVerificationState)
+    ? data.expectedVerificationState
+    : null;
+  if (
+    !signed ||
+    !trigger ||
+    !authority ||
+    !eligibility ||
+    !verification ||
+    !Array.isArray(data.householdEvidence) ||
+    !Array.isArray(data.expectedLedgerEvents) ||
+    !Array.isArray(data.expectedExplanationNodes)
+  ) {
+    return null;
+  }
+  const revalidation = signed.preExecutionRevalidation;
+  return {
+    caseId: data.caseId,
+    scenarioId: data.scenarioRef,
+    firmId: data.firm,
+    disposition: data.expectedDisposition,
+    trigger: {
+      description: trigger.description,
+      requestAt: trigger.asOf,
+    },
+    money: {
+      currency: signed.currency,
+      cadence: signed.cadence,
+      requestAmountMinor: minorFromMajor(signed.requestAmountUsd),
+      plannedWithdrawalMonthlyMinor: minorFromMajor(
+        signed.plannedWithdrawalMonthlyUsd,
+      ),
+      reserveFloorMinor: minorFromMajor(signed.reserveFloorUsd),
+      availableLiquidityMinor: minorFromMajor(
+        signed.availableLiquidityUsd,
+      ),
+      pendingLiquidityMinor: minorFromMajor(signed.pendingLiquidityUsd),
+      preExecutionRevalidation: revalidation
+        ? {
+            availableLiquidityMinor: minorFromMajor(
+              revalidation.availableLiquidityUsd,
+            ),
+            pendingLiquidityMinor: minorFromMajor(
+              revalidation.pendingLiquidityUsd,
+            ),
+          }
+        : null,
+    },
+    evidence: data.householdEvidence.filter(isObj).map((evidence) => ({
+      evidenceKind: evidence.evidenceKind,
+      subjectRef: evidence.subjectRef,
+      observedAt: evidence.observedAt,
+      retrievedAt: evidence.retrievedAt,
+      freshness: evidence.freshness,
+      source: evidence.source,
+      provenance: evidence.provenance,
+      summary: evidence.summary,
+      liquidityPhase: evidence.liquidityPhase ?? null,
+      observedAbsent: evidence.observedAbsent ?? false,
+    })),
+    authority: {
+      mode: authority.mode,
+      stages: authority.stages,
+      note: authority.note,
+    },
+    executionEligibility: {
+      eligible: eligibility.eligible,
+      reason: eligibility.reason,
+      idempotencyKey: eligibility.idempotencyKey,
+      reservations: eligibility.reservations,
+      preconditions: eligibility.preconditions,
+    },
+    verification: {
+      reached: verification.reached,
+      observedStatus: verification.observedStatus,
+      settledClaim: verification.settledClaim,
+      note: verification.note,
+    },
+    ledgerEvents: data.expectedLedgerEvents.filter(isObj).map((event) => ({
+      type: event.type,
+      note: event.note,
+    })),
+    explanations: data.expectedExplanationNodes
+      .filter(isObj)
+      .map((explanation) => ({
+        code: explanation.code,
+        summary: explanation.summary,
+      })),
+  };
+}
+
+function validateSignedCaseVariants(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+): string[] {
+  const problems: string[] = [];
+  const variants = demo.signedCaseVariants.filter(isObj);
+  const signedCases = cases.filter(({ data }) => {
+    const signoff = isObj(data) && isObj(data.signoff) ? data.signoff : null;
+    return signoff?.status === "signed" && signoff.authority === "captain";
+  });
+  if (variants.length !== signedCases.length) {
+    problems.push(
+      `exact signed-case registry must project all ${signedCases.length} captain-signed cases; got ${variants.length}`,
+    );
+  }
+  for (const { data } of signedCases) {
+    if (!isObj(data) || !isNonEmptyString(data.caseId)) continue;
+    const actual = variants.find((variant) => variant.caseId === data.caseId);
+    const expected = expectedSignedCaseVariant(data);
+    if (
+      !actual ||
+      !expected ||
+      JSON.stringify(actual) !== JSON.stringify(expected)
+    ) {
+      problems.push(
+        `${data.caseId}: exact typed variant drifts from its signed trigger, money, evidence, disposition, authority, execution eligibility, verification, or ledger`,
+      );
+    }
+  }
+  return problems;
 }
 
 /**
@@ -388,9 +558,6 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       continue;
     }
     boundSourceIds.add(d.sourceCaseId);
-    if (d.liquidityAuthorityMissing !== null) {
-      problems.push(`${at}: names a signed case and simultaneously claims liquidity authority is missing`);
-    }
     const source = caseData(cases, d.sourceCaseId);
     const signed = source ? readSignedMoney(source) : null;
     if (!signed) {
@@ -409,6 +576,15 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       );
     }
     const trigger = isObj(source?.trigger) ? source.trigger : null;
+    const sourceRequestMinor = minorFromMajor(signed.requestAmountUsd);
+    if (
+      sourceRequestMinor === null ||
+      d.requestAmountMinor !== sourceRequestMinor
+    ) {
+      problems.push(
+        `${at}: request amount drift, ${d.sourceCaseId}=${sourceRequestMinor}, demo=${d.requestAmountMinor}`,
+      );
+    }
     if (
       !isNonEmptyString(d.requestAt) ||
       !isNonEmptyString(trigger?.asOf) ||
@@ -418,7 +594,13 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
         `${at}: request instant drift, ${d.sourceCaseId}=${String(trigger?.asOf)}, demo=${String(d.requestAt)}`,
       );
     }
-    if (!candidates.some(({ id }) => id === d.sourceCaseId)) {
+    if (
+      !candidates.some(
+        ({ id, requestAmountMinor }) =>
+          id === d.sourceCaseId &&
+          requestAmountMinor === d.requestAmountMinor,
+      )
+    ) {
       problems.push(
         `${at}: source case "${d.sourceCaseId}" is not a signed exact match for branch, firm, disposition, request, currency, cadence, and reserve policy`,
       );
@@ -426,8 +608,24 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
     const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
     if (availableMinor === null || pendingMinor === null) {
-      problems.push(`${at}: signed case "${d.sourceCaseId}" states no liquidity for the branch to render`);
+      if (!isNonEmptyString(d.liquidityAuthorityMissing)) {
+        problems.push(
+          `${at}: ${d.sourceCaseId} has no numeric liquidity but the demo does not surface that gap`,
+        );
+      }
+      if (
+        d.availableCashMinor !== null ||
+        d.pendingActivityMinor !== null ||
+        d.headroomMinor !== null
+      ) {
+        problems.push(
+          `${at}: signed case "${d.sourceCaseId}" states no liquidity for the branch to render`,
+        );
+      }
       continue;
+    }
+    if (d.liquidityAuthorityMissing !== null) {
+      problems.push(`${at}: names numeric signed liquidity and simultaneously claims liquidity authority is missing`);
     }
     if (d.availableCashMinor !== availableMinor) {
       problems.push(`${at}: available-liquidity drift, ${d.sourceCaseId}=${availableMinor}, demo=${d.availableCashMinor}`);
@@ -468,8 +666,8 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     if (d.headroomMinor !== expectedHeadroom) {
       problems.push(`${at}: displayed headroom ${d.headroomMinor} is not available - pending - reserve (${expectedHeadroom})`);
     }
-    if (d.disposition === "proceed" && (d.headroomMinor === null || d.headroomMinor < demo.requestAmountMinor)) {
-      problems.push(`${at}: renders proceed beside ${d.headroomMinor} available after reserve, which does not cover the ${demo.requestAmountMinor} request`);
+    if (d.disposition === "proceed" && (d.headroomMinor === null || d.headroomMinor < d.requestAmountMinor)) {
+      problems.push(`${at}: renders proceed beside ${d.headroomMinor} available after reserve, which does not cover the ${d.requestAmountMinor} request`);
     }
     if (d.simulatedDisposition === "proceed") {
       // A draft that leaves this firm's floor where it is inherits the branch's own
@@ -477,18 +675,16 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       // floor must display the headroom that follows, or its proceed is unbacked.
       const unchangedFloor = d.simulatedFloorMinor === d.reserveFloorMinor;
       const simulatedHeadroom = d.simulatedHeadroomMinor ?? (unchangedFloor ? d.headroomMinor : null);
-      if (simulatedHeadroom === null || simulatedHeadroom < demo.requestAmountMinor) {
-        problems.push(`${at}: the policy-draft simulation renders proceed beside ${simulatedHeadroom ?? "no"} available after the drafted reserve, which does not cover the ${demo.requestAmountMinor} request`);
+      if (simulatedHeadroom === null || simulatedHeadroom < d.requestAmountMinor) {
+        problems.push(`${at}: the policy-draft simulation renders proceed beside ${simulatedHeadroom ?? "no"} available after the drafted reserve, which does not cover the ${d.requestAmountMinor} request`);
       }
     }
   }
   for (const candidates of candidatesByKey.values()) {
-    for (const candidate of candidates) {
-      if (!boundSourceIds.has(candidate.id)) {
-        problems.push(
-          `${candidate.id}: exact signed branch-and-firm authority is not represented by the demo`,
-        );
-      }
+    if (!candidates.some((candidate) => boundSourceIds.has(candidate.id))) {
+      problems.push(
+        `${candidates.map((candidate) => candidate.id).join("|")}: exact signed branch-and-firm authority is not represented by the demo`,
+      );
     }
   }
   return problems;
@@ -500,23 +696,34 @@ const TIMELINE_TIME_ZONES = [
   "Asia/Tokyo",
 ] as const;
 
-function localTimelineKey(instant: string, timeZone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("sv-SE", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(new Date(instant))
-      .filter(({ type }) => type !== "literal")
-      .map(({ type, value }) => [type, value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+function localTimelineKey(instant: string, timeZone: string): string | null {
+  const parsed = new Date(instant);
+  if (
+    !Number.isFinite(parsed.getTime()) ||
+    parsed.toISOString() !== instant
+  ) {
+    return null;
+  }
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("sv-SE", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      })
+        .formatToParts(parsed)
+        .filter(({ type }) => type !== "literal")
+        .map(({ type, value }) => [type, value]),
+    );
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  } catch {
+    return null;
+  }
 }
 
 function validateSourceTimelines(
@@ -682,9 +889,10 @@ function validateSourceTimelines(
       previous = instant;
     }
     for (const timeZone of TIMELINE_TIME_ZONES) {
-      const keys = timeline.events.map(({ instant }) =>
-        localTimelineKey(instant, timeZone),
-      );
+      const keys = timeline.events.flatMap(({ instant }) => {
+        const key = localTimelineKey(instant, timeZone);
+        return key === null ? [] : [key];
+      });
       if (keys.some((key, index) => index > 0 && key < keys[index - 1]!)) {
         problems.push(
           `${sourceId}: visible timeline is not monotonic when rendered in ${timeZone}`,
@@ -731,6 +939,7 @@ export function validateGoldenDemoSemantics(
   }
 
   problems.push(...validateDisplayedDecisions(cases, demo));
+  problems.push(...validateSignedCaseVariants(cases, demo));
   problems.push(...validateSourceTimelines(cases, demo));
 
   for (const [caseId, firmId] of canonicalCases) {
@@ -922,6 +1131,125 @@ export function validateGoldenDemoSemantics(
         `${guard.scenarioId}/${guard.firmId}: missing signed liquidity authority must expose no reservation, execution, or verification state`,
       );
     }
+    if (guard.sourceCaseId === null) continue;
+    const source = caseData(cases, guard.sourceCaseId);
+    const expected = isObj(source?.expectedExecutionEligibility)
+      ? source.expectedExecutionEligibility
+      : null;
+    const actual = guard.executionEligibility;
+    const expectedReservations = Array.isArray(expected?.reservations)
+      ? expected.reservations.filter(isObj)
+      : [];
+    const expectedPreconditions = Array.isArray(expected?.preconditions)
+      ? expected.preconditions.filter(isObj)
+      : [];
+    const eligibilityDrift =
+      !expected ||
+      !actual ||
+      actual.eligible !== expected.eligible ||
+      actual.reason !== expected.reason ||
+      actual.idempotencyKey !== expected.idempotencyKey ||
+      actual.reservations.length !== expectedReservations.length ||
+      expectedReservations.some((reservation, index) => {
+        const rendered = actual.reservations[index];
+        return (
+          !rendered ||
+          rendered.reservationId !== reservation.reservationId ||
+          rendered.expiresAfter !== reservation.expiresAfter ||
+          !sameMembers(
+            rendered.conflictKeys,
+            Array.isArray(reservation.conflictKeys)
+              ? reservation.conflictKeys.filter(isNonEmptyString)
+              : [],
+          )
+        );
+      }) ||
+      actual.preconditions.length !== expectedPreconditions.length ||
+      expectedPreconditions.some((precondition, index) => {
+        const rendered = actual.preconditions[index];
+        return (
+          !rendered ||
+          rendered.code !== precondition.code ||
+          rendered.mustStillHoldAtExecution !==
+            precondition.mustStillHoldAtExecution ||
+          !sameMembers(
+            rendered.requiredEvidence,
+            Array.isArray(precondition.requiredEvidence)
+              ? precondition.requiredEvidence.filter(isNonEmptyString)
+              : [],
+          )
+        );
+      });
+    if (eligibilityDrift) {
+      problems.push(
+        `${guard.sourceCaseId}: rendered execution eligibility drifts from its signed eligibility, refusal reason, idempotency key, reservations, expiry, conflict keys, or preconditions`,
+      );
+    }
+    if (
+      guard.polling?.state === "scheduled" &&
+      !(
+        new Date(guard.polling.nextPollAtIso ?? "").getTime() >
+        new Date(guard.polling.latestObservationAtIso).getTime()
+      )
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: scheduled next poll must follow the latest observed state`,
+      );
+    }
+    if (
+      guard.polling?.state === "stopped" &&
+      (guard.polling.nextPollAtIso !== null ||
+        guard.polling.reason !== "terminal-nigo-exception-opened")
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: terminal NIGO polling must stop with a typed reason and no next poll`,
+      );
+    }
+  }
+
+  const delayedNigo = demo.executionGuards.find(
+    (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
+  );
+  if (
+    delayedNigo?.polling?.state !== "stopped" ||
+    delayedNigo.exceptionDecision?.eventType !==
+      "ExceptionDecisionRequested" ||
+    delayedNigo.exceptionDecision.reason !== "delayed-nigo" ||
+    delayedNigo.exceptionDecision.triggeringLedgerEvent !== "StatusObserved" ||
+    !delayedNigo.verificationProves.some((proof) =>
+      proof.includes("signature date predates form version"),
+    ) ||
+    delayedNigo.verificationNotProvenYet.some((claim) =>
+      claim.includes("will not be returned"),
+    )
+  ) {
+    problems.push(
+      "GC-14 must render observed NIGO with the exact custodian reason, stop polling, and open a typed exception decision",
+    );
+  }
+
+  const ambiguous = demo.decisions.find(
+    (decision) => decision.sourceCaseId === "GC-08-ambiguous-household",
+  );
+  if (
+    ambiguous?.requestAt !== "2026-07-26T17:20:00.000Z" ||
+    ambiguous.decisiveEvidence.length !== 2 ||
+    !ambiguous.decisiveEvidence.some(
+      (evidence) =>
+        evidence.display.includes("Robert & Ana Smith") &&
+        evidence.display.includes("subject:smiths-robert-ana") &&
+        evidence.observedAt === "2026-07-26T17:20:00.000Z",
+    ) ||
+    !ambiguous.decisiveEvidence.some(
+      (evidence) =>
+        evidence.display.includes("Smith Family Trust") &&
+        evidence.display.includes("subject:smith-family-trust") &&
+        evidence.observedAt === "2026-07-26T17:20:00.000Z",
+    )
+  ) {
+    problems.push(
+      "GC-08 must render both signed household candidates at the signed 17:20Z evidence instant",
+    );
   }
 
   for (const { data } of cases) {
@@ -982,13 +1310,39 @@ export function validateGoldenDemoSemantics(
         !actual ||
         actual.stageId !== rawStage.stageId ||
         actual.order !== rawStage.order ||
+        actual.executionMode !== rawStage.executionMode ||
         !sameMembers(actual.eligibleRoleIds, expectedRoles) ||
         actual.approvalsRequired !== rawStage.approvalsRequired ||
         actual.distinctActorsRequired !== rawStage.distinctActorsRequired ||
-        actual.requesterMayApprove !== rawStage.requesterMayApprove
+        actual.requesterMayApprove !== rawStage.requesterMayApprove ||
+        actual.expiresAfter !== rawStage.expiresAfter
       ) {
         problems.push(
-          `${String(data.caseId)}: rendered authority stage ${index + 1} drifts from its signed id, order, eligible roles, quorum, or requester constraint`,
+          `${String(data.caseId)}: rendered authority stage ${index + 1} drifts from its signed id, order, execution mode, eligible roles, quorum, requester constraint, or expiry`,
+        );
+      }
+      const expectedEscalation = Array.isArray(rawStage.escalationPath)
+        ? rawStage.escalationPath.filter(isObj)
+        : [];
+      if (
+        actual?.escalationPath.length !== expectedEscalation.length ||
+        expectedEscalation.some((expected, escalationIndex) => {
+          const rendered = actual?.escalationPath[escalationIndex];
+          return (
+            !rendered ||
+            rendered.after !== expected.after ||
+            rendered.reasonCode !== expected.reasonCode ||
+            !sameMembers(
+              rendered.roleIds,
+              Array.isArray(expected.roleIds)
+                ? expected.roleIds.filter(isNonEmptyString)
+                : [],
+            )
+          );
+        })
+      ) {
+        problems.push(
+          `${String(data.caseId)}: rendered authority escalation path drifts from the signed delay, destination, or reason`,
         );
       }
       if (actual?.satisfied) {

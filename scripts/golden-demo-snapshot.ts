@@ -23,8 +23,11 @@ import {
   dispositionFor,
   firmById,
   liquidityAuthorityFor,
+  requestFor,
+  sourceCaseFor,
 } from "../src/app/demo/data";
 import { formatDemoInstant } from "../src/app/demo/timeline";
+import { SIGNED_CASE_VARIANTS } from "../src/app/demo/signed-cases";
 import type {
   DemoSemanticSnapshot,
   DisplayedDecision,
@@ -66,6 +69,22 @@ function displayedDecisions(): DisplayedDecision[] {
     Object.values(FIRMS).flatMap((firm) => {
       const simulated = draftSimulation(scenario.id, firm.id);
       const authority = liquidityAuthorityFor(scenario, firm.id);
+      const sourceCase = sourceCaseFor(scenario, firm.id);
+      const journey = getJourney(scenario.id, firm.id);
+      const decisiveEvidence = journey.evidence.rows.flatMap((row) =>
+        row.kind === "conflict"
+          ? [
+              {
+                display: row.a.display,
+                observedAt: row.a.provenance.asOf,
+              },
+              {
+                display: row.b.display,
+                observedAt: row.b.provenance.asOf,
+              },
+            ]
+          : [],
+      );
       const initial = authority.kind === "signed" ? authority.initialDecision : null;
       const revalidation = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
       const reserveFloor = reserveFloorMinor(firm);
@@ -74,8 +93,10 @@ function displayedDecisions(): DisplayedDecision[] {
         firmId: firm.id,
         decisionRole: "primary",
         disposition: dispositionFor(scenario, firm.id),
-        sourceCaseId: authority.kind === "signed" ? authority.sourceCaseId : null,
-        requestAt: authority.kind === "signed" ? authority.requestAt : null,
+        sourceCaseId: sourceCase?.caseId ?? null,
+        requestAt: sourceCase?.trigger.requestAt ?? null,
+        requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
+        decisiveEvidence,
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
@@ -97,6 +118,8 @@ function displayedDecisions(): DisplayedDecision[] {
                 disposition: decision.disposition,
                 sourceCaseId: decision.sourceCaseId,
                 requestAt: decision.requestAt,
+                requestAmountMinor: decision.requestAmountMinor,
+                decisiveEvidence: [],
                 liquidityAuthorityMissing: null,
                 availableCashMinor: decision.initialDecision.availableCashMinor,
                 pendingActivityMinor:
@@ -135,7 +158,8 @@ function sourceTimelines(): SourceTimeline[] {
   return SCENARIOS.flatMap((scenario) =>
     Object.values(FIRMS).flatMap((firm) => {
       const authority = liquidityAuthorityFor(scenario, firm.id);
-      if (authority.kind === "missing") return [];
+      const sourceCase = sourceCaseFor(scenario, firm.id);
+      if (!sourceCase) return [];
       const journey = getJourney(scenario.id, firm.id);
       const lifecycleEvents = journey.record.lifecycle.map((lifecycleEvent, index) =>
         event(
@@ -252,13 +276,17 @@ function sourceTimelines(): SourceTimeline[] {
             ],
           ];
       const primary: SourceTimeline = {
-        sourceCaseId: authority.sourceCaseId,
+        sourceCaseId: sourceCase.caseId,
         scenarioId: scenario.id,
         firmId: firm.id,
-        requestAt: authority.requestAt,
+        requestAt: sourceCase.trigger.requestAt,
         events: primaryEvents,
       };
-      const related = (authority.relatedDecisions ?? []).flatMap(
+      const related = (
+        authority.kind === "signed"
+          ? (authority.relatedDecisions ?? [])
+          : []
+      ).flatMap(
         (relatedAuthority) => {
           const relatedDecision = journey.safety?.checks.find(
             (check) =>
@@ -299,7 +327,7 @@ function sourceTimelines(): SourceTimeline[] {
 export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const firms = Object.values(FIRMS);
   const moneyMetrics = [
-    amountMetric(),
+    amountMetric(SCENARIOS.find((scenario) => scenario.id === "safe-proceed")!, FIRMS["firm-a"]!),
     ...firms.map((firm) => reserveFloorMetric(firm)),
     ...SCENARIOS.flatMap((scenario) =>
       firms.flatMap((firm) => {
@@ -359,10 +387,17 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         return {
           stageId: stage.stageId,
           order: stage.order,
+          executionMode: stage.executionMode,
           eligibleRoleIds: [...stage.eligibleRoleIds],
           approvalsRequired: stage.approvalsRequired,
           distinctActorsRequired: stage.distinctActorsRequired,
           requesterMayApprove: stage.requesterMayApprove,
+          expiresAfter: stage.expiresAfter,
+          escalationPath: stage.escalationPath.map((escalation) => ({
+            after: escalation.after,
+            roleIds: [...escalation.roleIds],
+            reasonCode: escalation.reasonCode,
+          })),
           satisfied: stage.satisfied,
           completedActorIds: completed.map((actor) => actor.actorId),
           completedRoleIds: completed.map((actor) => actor.roleId),
@@ -420,6 +455,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       reserveMonths: firm.reserveMonths,
       reserveFloorMinor: reserveFloorMinor(firm),
     })),
+    signedCaseVariants: SIGNED_CASE_VARIANTS.map((variant) => variant),
     decisions: displayedDecisions(),
     sourceTimelines: sourceTimelines(),
     draftedReserveMonths: DRAFT_RESERVE_MONTHS,
@@ -454,10 +490,73 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         return {
           scenarioId: scenario.id,
           firmId: firm.id,
+          sourceCaseId: sourceCaseFor(scenario, firm.id)?.caseId ?? null,
           signedLiquidityAuthority: authority.kind === "signed",
           reservationVisible: Boolean(journey.safety?.reservationId),
           executionReached: journey.execution !== null,
           verificationReached: journey.verification !== null,
+          executionEligibility: journey.safety?.executionEligibility
+            ? {
+                ...journey.safety.executionEligibility,
+                reservations:
+                  journey.safety.executionEligibility.reservations.map(
+                    (reservation) => ({
+                      ...reservation,
+                      conflictKeys: [...reservation.conflictKeys],
+                    }),
+                  ),
+                preconditions:
+                  journey.safety.executionEligibility.preconditions.map(
+                    (precondition) => ({
+                      ...precondition,
+                      requiredEvidence: [...precondition.requiredEvidence],
+                    }),
+                  ),
+              }
+            : sourceCaseFor(scenario, firm.id)?.executionEligibility
+              ? {
+                  ...sourceCaseFor(scenario, firm.id)!.executionEligibility,
+                  reservations: sourceCaseFor(
+                    scenario,
+                    firm.id,
+                  )!.executionEligibility.reservations.map((reservation) => ({
+                    ...reservation,
+                    conflictKeys: [...reservation.conflictKeys],
+                  })),
+                  preconditions: sourceCaseFor(
+                    scenario,
+                    firm.id,
+                  )!.executionEligibility.preconditions.map((precondition) => ({
+                    ...precondition,
+                    requiredEvidence: [...precondition.requiredEvidence],
+                  })),
+                }
+              : null,
+          polling: journey.verification
+            ? {
+                state: journey.verification.polling.state,
+                latestObservationAtIso:
+                  journey.verification.polling.latestObservationAtIso,
+                nextPollAtIso: journey.verification.polling.nextPollAtIso,
+                ...(journey.verification.polling.state === "stopped"
+                  ? { reason: journey.verification.polling.reason }
+                  : {}),
+              }
+            : null,
+          exceptionDecision: journey.verification?.exceptionDecision
+            ? {
+                eventType: journey.verification.exceptionDecision.eventType,
+                reason: journey.verification.exceptionDecision.reason,
+                triggeringLedgerEvent:
+                  journey.verification.exceptionDecision
+                    .triggeringLedgerEvent,
+              }
+            : null,
+          verificationProves:
+            journey.verification?.proves.map((proof) => proof.display) ?? [],
+          verificationNotProvenYet: [
+            ...(journey.verification?.notProvenYet ?? []),
+          ],
         };
       }),
     ),

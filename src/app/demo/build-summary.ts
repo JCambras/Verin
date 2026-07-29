@@ -30,15 +30,17 @@ import {
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
-  CANONICAL_REQUEST,
   DEMO_NOW,
   FIRMS,
   IDS,
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
+  executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
+  requestFor,
+  sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
@@ -62,9 +64,11 @@ export function buildComparison(
   const dispB = dispositionFor(scenario, b.id);
   const headroomA = headroomMetric(scenario, a, pass);
   const headroomB = headroomMetric(scenario, b, pass);
+  const amountA = amountMetric(scenario, a);
+  const amountB = amountMetric(scenario, b);
   const rows: ComparisonRowVM[] = [
     { dimension: "Household", a: { display: "The Smith Household" }, b: { display: "The Smith Household" }, differs: false },
-    { dimension: "Requested amount", a: { metric: amountMetric() }, b: { metric: amountMetric() }, differs: false },
+    { dimension: "Requested amount", a: { metric: amountA }, b: { metric: amountB }, differs: amountA.value !== amountB.value },
     {
       dimension: "Cash-reserve requirement",
       a: { metric: reserveFloorMetric(a) },
@@ -145,11 +149,12 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
       : "initial",
   );
   const disp = dispositionFor(scenario, firm.id);
+  const request = requestFor(scenario, firm.id);
   // The simulation's own arithmetic decides whether the request survives the drafted
   // floor. Asserting "still proceeds" as fixed copy is how surface 11 would come to
   // contradict the figure printed directly above it.
   const simulatedDisp: DispositionKind | null =
-    newHeadroom === null ? null : disp === "proceed" && newHeadroom < CANONICAL_REQUEST.amountMinor ? "blocked" : disp;
+    newHeadroom === null ? null : disp === "proceed" && newHeadroom < request.amountMinor ? "blocked" : disp;
   return {
     spine: buildSpine("Decision", { status: "pending", label: "Draft simulation" }),
     sentence: "Always preserve twelve months of planned withdrawals in cash.",
@@ -240,33 +245,90 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
   };
 }
 
-function invalidationLifecycle(
+function signedLifecycle(
   scenario: ScenarioData,
   firm: FirmData,
 ): RecordVM["lifecycle"] {
-  if (!hasSignedInvalidationAuthority(scenario, firm.id)) return [];
+  const sourceCase = sourceCaseFor(scenario, firm.id);
+  if (!sourceCase) return [];
   const timeline = timelineFor(scenario, firm);
-  const events = [
-    ["EvidenceSnapshotRecorded", timeline.requestAt, "Original evaluation snapshots pinned with no pending activity."],
-    ["DecisionRecorded", timeline.decisionAt, "Original proceed decision recorded against the original bundle."],
-    ["ApprovalRecorded", timeline.approvalOneAt, "First operations approval recorded against the original decision."],
-    ["ApprovalRecorded", timeline.approvalTwoAt, "Second distinct operations approval completed the original quorum."],
-    ["EvidenceSnapshotRecorded", timeline.revalidatedAt, "Revalidation recorded the new $15,000 pending distribution."],
-    ["ApprovalInvalidated", timeline.approvalInvalidatedAt, "Both original approvals were invalidated because material evidence changed."],
-    ["DecisionRecorded", timeline.derivedDecisionAt, "Derived proceed decision recorded against the refreshed bundle."],
-    ["ApprovalRecorded", timeline.freshApprovalOneAt, "First fresh approval recorded against the derived decision."],
-    ["ApprovalRecorded", timeline.freshApprovalTwoAt, "Second distinct fresh approval completed the derived quorum."],
-    ["ReservationCreated", timeline.reservationAt, "Liquidity reservation created for the re-approved decision."],
-    ["ExecutionStarted", timeline.executionAt, "One external instruction started under the stable idempotency key."],
-    ["ExecutionSucceeded", timeline.executionSucceededAt, "The external capability accepted the instruction."],
-    ["StatusObserved", timeline.statusObservedAt, "Returned status observed as submitted."],
-  ] as const;
-  return events.map(([type, timestampIso, note]) => ({
-    type,
+  if (hasSignedInvalidationAuthority(scenario, firm.id)) {
+    const instants = [
+      timeline.requestAt,
+      timeline.decisionAt,
+      timeline.approvalOneAt,
+      timeline.approvalTwoAt,
+      timeline.revalidatedAt,
+      timeline.approvalInvalidatedAt,
+      timeline.derivedDecisionAt,
+      timeline.freshApprovalOneAt,
+      timeline.freshApprovalTwoAt,
+      timeline.reservationAt,
+      timeline.executionAt,
+      timeline.executionSucceededAt,
+      timeline.statusObservedAt,
+    ];
+    return sourceCase.ledgerEvents.map((event, index) => ({
+      type: event.type,
+      timestampIso: instants[index]!,
+      display: formatDemoInstant(instants[index]!, undefined, true),
+      note: event.note,
+    }));
+  }
+  const approvalInstants = buildApprovals(scenario, firm).stages.flatMap(
+    (stage) =>
+      stage.actors.flatMap((actor) =>
+        actor.timestampIso ? [actor.timestampIso] : [],
+      ),
+  );
+  let evidenceIndex = 0;
+  let approvalIndex = 0;
+  let statusIndex = 0;
+  const instantFor = (type: string): string => {
+    if (type === "EvidenceSnapshotRecorded") {
+      const instant =
+        evidenceIndex === 0 ? timeline.requestAt : timeline.revalidatedAt;
+      evidenceIndex += 1;
+      return instant;
+    }
+    if (type === "DecisionRecorded") return timeline.decisionAt;
+    if (type === "ApprovalRecorded") {
+      const instant = approvalInstants[approvalIndex] ?? timeline.approvalOneAt;
+      approvalIndex += 1;
+      return instant;
+    }
+    if (type === "ApprovalStageEscalated") return timeline.escalatedAt;
+    if (type === "ApprovalStageExpired") return timeline.expiredAt;
+    if (type === "ReservationCreated") return timeline.reservationAt;
+    if (type === "ExecutionStarted") return timeline.executionAt;
+    if (
+      type === "ExecutionSucceeded" ||
+      type === "ExecutionPartiallySucceeded"
+    ) {
+      return timeline.executionSucceededAt;
+    }
+    if (type === "StatusObserved") {
+      const instant =
+        scenario.spec.partial || statusIndex > 0
+          ? timeline.delayedExceptionAt
+          : timeline.statusObservedAt;
+      statusIndex += 1;
+      return instant;
+    }
+    if (type === "ExceptionDecisionRequested") {
+      return timeline.exceptionDecisionRequestedAt;
+    }
+    return timeline.decisionAt;
+  };
+  return sourceCase.ledgerEvents.map((event) => {
+    const timestampIso = instantFor(event.type);
+    return {
+    type: event.type,
     timestampIso,
     display: formatDemoInstant(timestampIso, undefined, true),
-    note,
-  }));
+    note: event.note,
+    };
+  });
 }
 
 export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
@@ -337,10 +399,11 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
     approvalStages: approvals?.stages ?? null,
     authorityMode: approvals?.mode ?? null,
     automaticAuthority: approvals?.automaticAuthority ?? null,
+    executionEligibility: executionEligibilityFor(scenario, firm.id),
     safety: finalSafety,
     execution: execution?.rows ?? null,
     verification,
-    lifecycle: invalidationLifecycle(scenario, firm),
+    lifecycle: signedLifecycle(scenario, firm),
     stopNote,
     provenanceAppendix: provenance.derivedFrom,
   };

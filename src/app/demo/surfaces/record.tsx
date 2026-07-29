@@ -250,13 +250,17 @@ export function RecordSurface({
                           </li>
                         ))}
                       </ul>
-                      {s.expiry || s.escalation ? (
-                        <p className="text-xs text-slate-600">
-                          {s.expiry}
-                          {s.expiry && s.escalation ? " · " : ""}
-                          {s.escalation}
+                      <p className="text-xs text-slate-600">
+                        Execution mode {s.executionMode} · expires after {s.expiresAfter}
+                      </p>
+                      {s.escalationPath.map((escalation) => (
+                        <p
+                          key={`${s.stageId}-${escalation.after}-${escalation.reasonCode}`}
+                          className="text-xs text-slate-600"
+                        >
+                          Escalates after {escalation.after} to {escalation.roleIds.join(", ")} · {escalation.reasonCode}
                         </p>
-                      ) : null}
+                      ))}
                       {s.authorityEvents ? (
                         <ol className="flex flex-col gap-1 text-xs text-slate-600">
                           {s.authorityEvents.map((event) => (
@@ -272,6 +276,28 @@ export function RecordSurface({
               </DocSection>
 
               <DocSection n={6} title="Safety revalidation">
+                {vm.executionEligibility ? (
+                  <div className="flex flex-col gap-1 print-avoid-break">
+                    <p className="text-sm text-slate-700">
+                      Execution eligible: {vm.executionEligibility.eligible ? "yes" : "no"} · {vm.executionEligibility.reason}
+                    </p>
+                    {vm.executionEligibility.idempotencyKey ? (
+                      <p className="font-mono text-xs text-slate-600">
+                        Idempotency key {vm.executionEligibility.idempotencyKey}
+                      </p>
+                    ) : null}
+                    {vm.executionEligibility.reservations.map((reservation) => (
+                      <p key={reservation.reservationId} className="font-mono text-xs text-slate-600">
+                        Reservation {reservation.reservationId} · conflict keys {reservation.conflictKeys.join(", ")} · expires after {reservation.expiresAfter}
+                      </p>
+                    ))}
+                    {vm.executionEligibility.preconditions.map((precondition) => (
+                      <p key={precondition.code} className="font-mono text-xs text-slate-600">
+                        Precondition {precondition.code} · evidence {precondition.requiredEvidence.join(", ")} · must hold at execution {String(precondition.mustStillHoldAtExecution)}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
                 {vm.safety ? (
                   <>
                     <p className="text-sm text-slate-800">
@@ -285,7 +311,7 @@ export function RecordSurface({
                         </li>
                       ))}
                     </ul>
-                    {vm.safety.reservationId && vm.safety.idempotencyKey ? (
+                    {vm.safety.executionEligibility && !vm.executionEligibility ? (
                       <>
                         {vm.safety.reservationAt && vm.safety.reservationAtIso ? (
                           <p className="text-sm text-slate-700">
@@ -299,9 +325,24 @@ export function RecordSurface({
                             </time>
                           </p>
                         ) : null}
-                        <p className="font-mono text-xs text-slate-600">
-                          Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
+                        <p className="text-xs text-slate-700">
+                          Execution eligible: {vm.safety.executionEligibility.eligible ? "yes" : "no"} · {vm.safety.executionEligibility.reason}
                         </p>
+                        {vm.safety.executionEligibility.idempotencyKey ? (
+                          <p className="font-mono text-xs text-slate-600">
+                            Idempotency key {vm.safety.executionEligibility.idempotencyKey}
+                          </p>
+                        ) : null}
+                        {vm.safety.executionEligibility.reservations.map((reservation) => (
+                          <p key={reservation.reservationId} className="font-mono text-xs text-slate-600">
+                            Reservation {reservation.reservationId} · conflict keys {reservation.conflictKeys.join(", ")} · expires after {reservation.expiresAfter}
+                          </p>
+                        ))}
+                        {vm.safety.executionEligibility.preconditions.map((precondition) => (
+                          <p key={precondition.code} className="font-mono text-xs text-slate-600">
+                            Precondition {precondition.code} · evidence {precondition.requiredEvidence.join(", ")} · must hold at execution {String(precondition.mustStillHoldAtExecution)}
+                          </p>
+                        ))}
                       </>
                     ) : null}
                     {vm.safety.invalidation ? (
@@ -358,7 +399,7 @@ export function RecordSurface({
                         </li>
                       ))}
                     </ul>
-                    <p className="text-xs text-slate-600">{vm.verification.nextPoll}</p>
+                    <p className="text-xs text-slate-600">{vm.verification.polling.display}</p>
                     {vm.verification.appended.length > 0 ? (
                       <div className="flex flex-col gap-1">
                         <p className="text-sm font-medium text-slate-800">Later arrivals, appended to the same register</p>

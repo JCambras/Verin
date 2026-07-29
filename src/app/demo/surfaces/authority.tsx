@@ -69,8 +69,9 @@ export function AuthoritySurface({
                 title: s.title,
                 requirement: s.requirement,
                 actors: s.actors,
-                ...(s.expiry ? { expiry: s.expiry } : {}),
-                ...(s.escalation ? { escalation: s.escalation } : {}),
+                executionMode: s.executionMode,
+                expiresAfter: s.expiresAfter,
+                escalationPath: s.escalationPath,
                 ...(s.authorityEvents ? { authorityEvents: s.authorityEvents } : {}),
               }}
             />

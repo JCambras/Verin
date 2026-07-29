@@ -13,21 +13,38 @@ import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
 import {
   CAST,
-  IDS,
   RETRIEVED_AT,
+  executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
+  sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
 } from "./data";
 import { formatDemoInstant, relatedDecisionAt, timelineFor } from "./timeline";
 
-const IDENTIFIERS = [
-  { label: "Idempotency key", value: IDS.idempotencyKey },
-  { label: "Conflict keys", value: IDS.conflictKeys.join("  ·  ") },
-  { label: "Reservation", value: IDS.reservationId },
-];
+function executionIdentifiers(
+  scenario: ScenarioData,
+  firm: FirmData,
+) {
+  const eligibility = executionEligibilityFor(scenario, firm.id);
+  if (!eligibility) return [];
+  return [
+    ...(eligibility.idempotencyKey
+      ? [{ label: "Idempotency key", value: eligibility.idempotencyKey }]
+      : []),
+    ...eligibility.reservations.flatMap((reservation) => [
+      { label: "Reservation", value: reservation.reservationId },
+      { label: "Conflict keys", value: reservation.conflictKeys.join("  ·  ") },
+      { label: "Reservation expiry", value: reservation.expiresAfter },
+    ]),
+    ...eligibility.preconditions.map((precondition) => ({
+      label: `Precondition · ${precondition.code}`,
+      value: `${precondition.requiredEvidence.join("  ·  ")} · execution hold ${precondition.mustStillHoldAtExecution ? "required" : "not required"}`,
+    })),
+  ];
+}
 
 export function buildSafety(
   scenario: ScenarioData,
@@ -37,6 +54,7 @@ export function buildSafety(
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const eligibility = executionEligibilityFor(scenario, firm.id);
   const invalidationAuthority = hasSignedInvalidationAuthority(
     scenario,
     firm.id,
@@ -46,6 +64,7 @@ export function buildSafety(
   const invalidatedPass = invalidationAuthority && pass === "initial";
   const executionEligible =
     authority.kind === "signed" &&
+    eligibility?.eligible === true &&
     (!spec.invalidation ||
       (invalidationAuthority && pass === "revalidated"));
   const checks: SafetyCheckVM[] = authority.kind === "missing"
@@ -151,13 +170,23 @@ export function buildSafety(
     ),
     revalidatedAtIso: timeline.revalidatedAt,
     checks,
-    reservationId: executionEligible ? IDS.reservationId : null,
+    reservationId:
+      executionEligible
+        ? (eligibility?.reservations[0]?.reservationId ?? null)
+        : null,
     reservationAt: executionEligible
       ? formatDemoInstant(timeline.reservationAt, undefined, true)
       : null,
     reservationAtIso: executionEligible ? timeline.reservationAt : null,
-    conflictKeys: executionEligible ? IDS.conflictKeys : [],
-    idempotencyKey: executionEligible ? IDS.idempotencyKey : null,
+    conflictKeys:
+      executionEligible
+        ? (eligibility?.reservations.flatMap(
+            (reservation) => reservation.conflictKeys,
+          ) ?? [])
+        : [],
+    idempotencyKey:
+      executionEligible ? (eligibility?.idempotencyKey ?? null) : null,
+    executionEligibility: eligibility,
     invalidation: invalidatedPass && initial && refreshed
       ? {
           voidedActors: [
@@ -204,13 +233,16 @@ export function buildExecution(
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const eligibility = executionEligibilityFor(scenario, firm.id);
   if (
     authority.kind === "missing" ||
+    eligibility?.eligible !== true ||
     (spec.invalidation && pass !== "revalidated")
   ) {
     return null;
   }
   const rows: ExecutionRowVM[] = [];
+  const identifiers = executionIdentifiers(scenario, firm);
   if (spec.partial) {
     rows.push(
       {
@@ -221,7 +253,7 @@ export function buildExecution(
         timestamp: formatDemoInstant(timeline.executionAt),
         timestampIso: timeline.executionAt,
         honestyLine: "The external receipt confirms only that the instruction record was created.",
-        identifiers: IDENTIFIERS,
+        identifiers,
         fakeClass: "fake-adapter-response",
       },
       {
@@ -233,7 +265,7 @@ export function buildExecution(
         timestampIso: timeline.executionAt,
         honestyLine: "The external receipt does not confirm this part; the movement remains unknown and unconfirmed.",
         affordanceLabel: "Review the exception",
-        identifiers: IDENTIFIERS,
+        identifiers,
         fakeClass: "fake-adapter-response",
       },
     );
@@ -246,7 +278,7 @@ export function buildExecution(
       timestamp: formatDemoInstant(timeline.executionAt),
       timestampIso: timeline.executionAt,
       honestyLine: "Accepted for processing - settlement not yet confirmed.",
-      identifiers: IDENTIFIERS,
+      identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
@@ -259,7 +291,9 @@ export function buildExecution(
       timestamp: formatDemoInstant(timeline.retryAt),
       timestampIso: timeline.retryAt,
       plainClaim: "Already submitted once - Verin did not send it again.",
-      identifiers: [{ label: "Idempotency key (matches the original byte-for-byte)", value: IDS.idempotencyKey }],
+      identifiers: eligibility.idempotencyKey
+        ? [{ label: "Idempotency key (matches the original byte-for-byte)", value: eligibility.idempotencyKey }]
+        : [],
       fakeClass: "fake-adapter-response",
     });
   }
@@ -280,8 +314,11 @@ export function buildVerification(
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const eligibility = executionEligibilityFor(scenario, firm.id);
+  const sourceCase = sourceCaseFor(scenario, firm.id);
   if (
     authority.kind === "missing" ||
+    eligibility?.eligible !== true ||
     (spec.invalidation && pass !== "revalidated")
   ) {
     return null;
@@ -305,6 +342,11 @@ export function buildVerification(
     );
   }
   const appended: ExecutionRowVM[] = [];
+  const identifiers = executionIdentifiers(scenario, firm);
+  const nigoReason = sourceCase?.explanations
+    .find((entry) => entry.code === "delayed-nigo-ingested")
+    ?.summary.match(/NIGO return \(([^)]+)\)/)?.[1] ??
+    "signature date predates form version";
   if (spec.delayedNigo) {
     appended.push({
       step: "Returned NIGO (ingested Jul 28)",
@@ -313,9 +355,9 @@ export function buildVerification(
       statusLabel: "Returned NIGO",
       timestamp: formatDemoInstant(timeline.delayedExceptionAt),
       timestampIso: timeline.delayedExceptionAt,
-      honestyLine: "Returned - the bank letter of authorization is not in good order: signature missing.",
+      honestyLine: `Returned not in good order: ${nigoReason}.`,
       affordanceLabel: "Fix and resubmit the authorization",
-      identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
+      identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
@@ -329,39 +371,75 @@ export function buildVerification(
       timestampIso: timeline.delayedExceptionAt,
       honestyLine: "No status for two days - the stuck-state rule (forty-eight hours unconfirmed) fired.",
       affordanceLabel: "Escalate to operations",
-      identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
+      identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
   return {
     spine: buildSpine("Verification"),
-    proves,
+    proves: spec.delayedNigo
+      ? [
+          ...proves,
+          fact(
+            `Custodian returned the instruction NIGO: ${nigoReason}`,
+            "fake-adapter-response",
+            timeline.delayedExceptionAt,
+            formatDemoInstant(timeline.delayedExceptionAt),
+          ),
+        ]
+      : proves,
     notProvenYet: spec.partial
       ? [
           "Incomplete part: disbursement-scheduled",
           "Movement completion remains unknown and unconfirmed",
         ]
-      : [
+      : spec.delayedNigo
+        ? [
+            "Corrected paperwork has not been submitted",
+            "No replacement instruction has been accepted",
+          ]
+        : [
           "Settlement at the custodian",
           "Funds availability at the destination bank",
           "That the instruction will not be returned not-in-good-order",
         ],
-    nextPoll: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
+    polling:
+      timeline.nextPollAt === null
+        ? {
+            state: "stopped",
+            reason: "terminal-nigo-exception-opened",
+            latestObservationAtIso: timeline.delayedExceptionAt,
+            nextPollAtIso: null,
+            display:
+              "Status polling stopped after terminal NIGO; remediation is governed by the exception decision.",
+          }
+        : {
+            state: "scheduled",
+            interval: "PT12H",
+            latestObservationAtIso: spec.partial
+              ? timeline.delayedExceptionAt
+              : timeline.statusObservedAt,
+            nextPollAtIso: timeline.nextPollAt,
+            display: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
+          },
     appended,
-    exceptionDecision: spec.partial
+    exceptionDecision: spec.partial || spec.delayedNigo
       ? {
           eventType: "ExceptionDecisionRequested",
-          reason: "partial-execution",
+          reason: spec.delayedNigo ? "delayed-nigo" : "partial-execution",
           priorDecisionId: "dec-smiths-renovation-2026-0726",
-          triggeringLedgerEvent: "ExecutionPartiallySucceeded",
+          triggeringLedgerEvent: spec.delayedNigo
+            ? "StatusObserved"
+            : "ExecutionPartiallySucceeded",
           requestedAt: formatDemoInstant(
             timeline.exceptionDecisionRequestedAt,
             undefined,
             true,
           ),
           requestedAtIso: timeline.exceptionDecisionRequestedAt,
-          summary:
-            "The partial receipt opened a governed exception decision while the incomplete disbursement remains unknown and unconfirmed.",
+          summary: spec.delayedNigo
+            ? `The observed NIGO opened a governed exception decision with the custodian reason preserved: ${nigoReason}.`
+            : "The partial receipt opened a governed exception decision while the incomplete disbursement remains unknown and unconfirmed.",
         }
       : null,
     fakeClass: "fake-adapter-response",

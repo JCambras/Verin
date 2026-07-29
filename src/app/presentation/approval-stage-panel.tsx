@@ -22,8 +22,13 @@ export interface ApprovalStageProps {
   readonly title: string;
   readonly requirement: string;
   readonly actors: readonly ApprovalActorSlot[];
-  readonly expiry?: string;
-  readonly escalation?: string;
+  readonly executionMode: "sequential" | "parallel";
+  readonly expiresAfter: string;
+  readonly escalationPath: readonly {
+    readonly after: string;
+    readonly roleIds: readonly string[];
+    readonly reasonCode: string;
+  }[];
   readonly authorityEvents?: readonly {
     readonly type: string;
     readonly timestamp: string;
@@ -59,13 +64,14 @@ export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
           </li>
         ))}
       </ul>
-      {stage.expiry || stage.escalation ? (
-        <p className="text-xs text-slate-600">
-          {stage.expiry}
-          {stage.expiry && stage.escalation ? " · " : ""}
-          {stage.escalation}
-        </p>
-      ) : null}
+      <div className="flex flex-col gap-1 text-xs text-slate-600">
+        <p>Execution mode: {stage.executionMode} · expires after {stage.expiresAfter}</p>
+        {stage.escalationPath.map((escalation) => (
+          <p key={`${escalation.after}-${escalation.reasonCode}`}>
+            Escalates after {escalation.after} to {escalation.roleIds.join(", ")} · {escalation.reasonCode}
+          </p>
+        ))}
+      </div>
       {stage.authorityEvents ? (
         <ol className="flex flex-col gap-1 text-xs text-slate-700" data-testid="authority-event-order">
           {stage.authorityEvents.map((event) => (

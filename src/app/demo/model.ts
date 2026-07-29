@@ -219,11 +219,16 @@ export interface ApprovalStageVM {
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
   readonly requesterMayApprove: boolean;
+  readonly executionMode: "sequential" | "parallel";
+  readonly expiresAfter: string;
+  readonly escalationPath: readonly {
+    readonly after: string;
+    readonly roleIds: readonly string[];
+    readonly reasonCode: string;
+  }[];
   readonly satisfied: boolean;
   readonly stepState: StationState;
   readonly actors: readonly ActorSlotVM[];
-  readonly expiry?: string;
-  readonly escalation?: string;
   readonly authorityEvents?: readonly {
     readonly type: "ApprovalStageEscalated" | "ApprovalStageExpired";
     readonly timestamp: string;
@@ -286,6 +291,21 @@ export interface SafetyVM {
   readonly reservationAtIso: string | null;
   readonly conflictKeys: readonly string[];
   readonly idempotencyKey: string | null;
+  readonly executionEligibility: {
+    readonly eligible: boolean;
+    readonly reason: string;
+    readonly idempotencyKey: string | null;
+    readonly reservations: readonly {
+      readonly reservationId: string;
+      readonly conflictKeys: readonly string[];
+      readonly expiresAfter: string;
+    }[];
+    readonly preconditions: readonly {
+      readonly code: string;
+      readonly requiredEvidence: readonly string[];
+      readonly mustStillHoldAtExecution: boolean;
+    }[];
+  } | null;
   readonly invalidation: InvalidationVM | null;
   readonly fakeClass: FakeClass;
 }
@@ -316,9 +336,9 @@ export interface ExecutionVM {
 }
 export interface ExceptionDecisionVM {
   readonly eventType: "ExceptionDecisionRequested";
-  readonly reason: "partial-execution";
+  readonly reason: "partial-execution" | "delayed-nigo";
   readonly priorDecisionId: string;
-  readonly triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+  readonly triggeringLedgerEvent: "ExecutionPartiallySucceeded" | "StatusObserved";
   readonly requestedAt: string;
   readonly requestedAtIso: string;
   readonly summary: string;
@@ -327,7 +347,21 @@ export interface VerificationVM {
   readonly spine: DecisionSpineVM;
   readonly proves: readonly FactVM[];
   readonly notProvenYet: readonly string[];
-  readonly nextPoll: string;
+  readonly polling:
+    | {
+        readonly state: "scheduled";
+        readonly interval: "PT12H";
+        readonly latestObservationAtIso: string;
+        readonly nextPollAtIso: string;
+        readonly display: string;
+      }
+    | {
+        readonly state: "stopped";
+        readonly reason: "terminal-nigo-exception-opened";
+        readonly latestObservationAtIso: string;
+        readonly nextPollAtIso: null;
+        readonly display: string;
+      };
   readonly appended: readonly ExecutionRowVM[]; // delayed NIGO / stuck rows
   readonly exceptionDecision: ExceptionDecisionVM | null;
   readonly fakeClass: FakeClass;
@@ -408,6 +442,7 @@ export interface RecordVM {
   readonly approvalStages: readonly ApprovalStageVM[] | null;
   readonly authorityMode: ApprovalVM["mode"] | null;
   readonly automaticAuthority: AutomaticAuthorityVM | null;
+  readonly executionEligibility: SafetyVM["executionEligibility"];
   readonly safety: SafetyVM | null;
   readonly execution: readonly ExecutionRowVM[] | null;
   readonly verification: VerificationVM | null;

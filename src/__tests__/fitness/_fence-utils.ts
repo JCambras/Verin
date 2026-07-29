@@ -191,6 +191,22 @@ function classifySpecifier(
   return { kind: "local-unclassified" };
 }
 
+function isSignedGoldenCaseFixtureImport(
+  fromFile: string,
+  specifier: string,
+): boolean {
+  const sourceRoot = sourceRootOf(fromFile);
+  if (sourceRoot === null || !specifier.startsWith(".")) return false;
+  const importer = relative(sourceRoot, resolve(fromFile)).replace(/\\/g, "/");
+  if (importer !== "app/demo/signed-case-fixtures.ts") return false;
+  const repositoryRoot = dirname(sourceRoot);
+  const target = relative(
+    repositoryRoot,
+    resolve(dirname(fromFile), specifier),
+  ).replace(/\\/g, "/");
+  return /^fixtures\/golden\/GC-[\w-]+\.json$/.test(target);
+}
+
 export interface ModuleReference {
   specifier: string | null;
   line: number;
@@ -1218,6 +1234,12 @@ export function detectLayerViolations(project: Project): LayerViolation[] {
       const classification = classifySpecifier(project, filePath, ref.specifier);
       if (classification.kind === "external") continue;
       if (classification.kind === "local-unclassified") {
+        if (
+          fromLayer === "app" &&
+          isSignedGoldenCaseFixtureImport(filePath, ref.specifier)
+        ) {
+          continue;
+        }
         violations.push({
           file: relative(REPO_ROOT, filePath),
           line: ref.line,
