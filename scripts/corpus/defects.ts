@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { parseStrictJson } from "./strict-json";
 import { REPO_ROOT, SPEC_DIR, type CasesSpec } from "./world";
 
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
@@ -64,7 +65,12 @@ export function taxonomyProblems(taxonomy: Taxonomy, repoRoot: string = REPO_ROO
 }
 
 export function loadTaxonomy(dir: string = SPEC_DIR, repoRoot: string = REPO_ROOT): Taxonomy {
-  const taxonomy = TaxonomySchema.parse(JSON.parse(readFileSync(join(dir, "defect-taxonomy.json"), "utf8")));
+  const taxonomy = TaxonomySchema.parse(
+    parseStrictJson(
+      readFileSync(join(dir, "defect-taxonomy.json"), "utf8"),
+      "defect-taxonomy.json",
+    ),
+  );
   const problems = taxonomyProblems(taxonomy, repoRoot);
   if (problems.length > 0) {
     throw new Error(`corpus defect taxonomy has ${problems.length} problem(s):\n${problems.join("\n")}`);

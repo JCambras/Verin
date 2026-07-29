@@ -4693,3 +4693,27 @@ unmeasured headroom is introduced; the post-prompt-19 ratchet-down point remains
 **Why:** signed corpus truth cannot depend on a caller's label, a stale schema version string, permissive
 YAML recovery, a one-sided denominator, a sensitive filename, or a nondeterministic API spelling.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-085 · 2026-07-29 · captain-decision · Replay semantics, evidence, and funding are signed authorities
+
+The `verin-corpus/1.5.0` preimage binds the versioned
+`verin-real-derived-semantics/1.0.0` registry and exact digests of every executable authority that
+interprets replay topology, pending actions, freshness, evidence support, funding, and defect signatures.
+Both real-derived schemas advance to `1.1.0`. Every hand-owned corpus JSON document rejects duplicate
+keys before parsing or hashing.
+
+Replay references are entity-kind-scoped. Each material plane requires exactly one evidence record
+matching its kind, subject, and source. Request, household, account, instruction, owner, actor, grant, and
+policy relationships fail closed when disconnected. Funding is an explicit duplicate-free account set:
+each selection resolves once, belongs to the request household, shares an owner with the request source
+account, has a supported tax class, and contributes to aggregate sufficiency for the request, reserve, and
+reducing pending actions. Tax blindness is evaluated against exactly the selected set.
+
+The tooling ceiling rises from 4900 to 5900 against 5747 measured lines, leaving 153 lines of explicit
+headroom for the separated schema, semantic, topology, and parsing owners. The post-prompt-19 ratchet-down
+point remains unchanged. The real-derived partition stays deferred and empty, and captain signoff stays
+pending.
+
+**Why:** signed cases cannot change meaning under an unchanged digest, and disconnected evidence or
+implicit funding cannot substantiate either a defect label or a clean control.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

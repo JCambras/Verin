@@ -10,10 +10,8 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import {
-  PENDING_ACTION_KINDS,
-  PENDING_ACTION_STATES,
-} from "./pending-actions";
+import { PENDING_ACTION_KINDS, PENDING_ACTION_STATES } from "./pending-actions";
+import { parseStrictJson } from "./strict-json";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 export const CORPUS_DIR = join(REPO_ROOT, "fixtures/corpus");
@@ -22,7 +20,8 @@ export const SYNTHETIC_DIR = join(CORPUS_DIR, "synthetic");
 export const REAL_DERIVED_DIR = join(CORPUS_DIR, "real-derived");
 
 /** Every spec file that feeds `generatorDigest`, in canonical order. */
-export const SPEC_FILES = ["world.json", "cases.json", "defect-taxonomy.json"] as const;
+export const SPEC_FILES = ["world.json", "cases.json", "defect-taxonomy.json",
+  "real-derived-semantic-contract.json"] as const;
 
 const Instant = z.iso.datetime({ precision: 3 });
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
@@ -488,8 +487,10 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
 /** Parse + resolve the hand-owned spec. Throws with every problem listed. */
 export function loadSpec(dir: string = SPEC_DIR): LoadedSpec {
   const rawBytes = Object.fromEntries(SPEC_FILES.map((name) => [name, readSpecFile(name, dir)]));
-  const world = WorldSpecSchema.parse(JSON.parse(rawBytes["world.json"]!));
-  const cases = CasesSpecSchema.parse(JSON.parse(rawBytes["cases.json"]!));
+  const parsed = Object.fromEntries(SPEC_FILES.map((name) =>
+    [name, parseStrictJson(rawBytes[name]!, name)]));
+  const world = WorldSpecSchema.parse(parsed["world.json"]);
+  const cases = CasesSpecSchema.parse(parsed["cases.json"]);
   const problems = specReferenceProblems(world, cases);
   if (problems.length > 0) {
     throw new Error(`corpus spec has ${problems.length} unresolved reference(s):\n${problems.join("\n")}`);

@@ -52,14 +52,18 @@ enforced contract. In short, every case must carry:
   unanticipated string is REJECTED, so a scrubbing miss has nowhere to live;
 - canonical JSON bytes with unique object keys, canonical key order, and exactly one trailing newline;
 - a `caseId` of the form `RD-<16 hex>`, disjoint from `CS-` corpus ids and `GC-` signed golden ids.
-- the strict `verin-real-derived-replay/1.0.0` payload: typed destination and ownership, liquidity and
-  pending-action direction, authority, threshold and policy, tax review, instruction conflict, temporal
-  state, exact evidence references, reservations, and execution preconditions. Extra, absent, ambiguous,
-  or incompatible inputs are rejected;
+- the strict `verin-real-derived-replay/1.1.0` payload: entity-kind-scoped destination, ownership,
+  liquidity, pending-action direction, authority, threshold and policy, tax review, instruction conflict,
+  temporal state, reservations, and execution preconditions. The explicit funding set must resolve once,
+  stay within the request household and source-account ownership, and cover the request, reserve, and
+  reducing pending actions in aggregate. Extra, absent, ambiguous, or incompatible inputs are rejected;
+- exactly one matching evidence record by kind, subject, and source for every material replay plane;
 - `evaluation.asOf` plus freshness policy `verin-real-derived-freshness/1.0.0`; observed evidence must
   satisfy `observedAt <= retrievedAt <= evaluation.asOf` and match the derived per-kind freshness.
   `unknown` is legal only for the typed missing-observation state. The policy version and semantic digest
-  are bound into captain signoff through `corpusDigest`.
+  are bound into captain signoff through `corpusDigest`;
+- semantic contract `verin-real-derived-semantics/1.0.0`; its declarative bytes and the exact sources of
+  its executable cross-field authorities are bound into `corpusDigest`.
 
 Rejected values and unrecognized keys are never copied into validation output. Diagnostics contain only
 bounded safe field paths and redacted descriptions.

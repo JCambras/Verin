@@ -1,0 +1,49 @@
+{
+  "contractVersion": "verin-real-derived-semantics/1.0.0",
+  "defectRules": [
+    { "id": "authority-scope-error", "rule": "authority-not-effective" },
+    { "id": "blast-radius-underestimation", "rule": "resolved-conflict-multi-subject" },
+    { "id": "canonical-identity-defect", "rule": "canonical-identity-collision" },
+    { "id": "deadline-feasibility-error", "rule": "deadline-infeasible" },
+    { "id": "destination-integrity-defect", "rule": "destination-not-integral" },
+    { "id": "evidence-interval-collapse", "rule": "authority-lapses-during-evidence-interval" },
+    { "id": "evidence-staleness-unnoticed", "rule": "stale-evidence-present" },
+    { "id": "hold-scope-error", "rule": "position-hold-present" },
+    { "id": "identity-resolution-ambiguity", "rule": "identity-ambiguous" },
+    { "id": "instruction-conflict-unresolved", "rule": "instruction-conflict-present" },
+    { "id": "liquidity-reserve-miscalculation", "rule": "reserve-not-scalar" },
+    { "id": "pending-activity-miscount", "rule": "nonreducing-pending-action-present" },
+    { "id": "restriction-lifecycle-error", "rule": "restriction-not-in-force" },
+    { "id": "tax-consequence-blindness", "rule": "selected-retirement-source-unreviewed" },
+    { "id": "temporal-rendering-defect", "rule": "time-zone-boundary" },
+    { "id": "threshold-boundary-error", "rule": "threshold-equality" }
+  ],
+  "evidencePlanes": [
+    { "plane": "request", "evidenceKind": "request" },
+    { "plane": "identity", "evidenceKind": "identity-resolution" },
+    { "plane": "destination", "evidenceKind": "bank-instruction" },
+    { "plane": "liquidity-source", "evidenceKind": "balance" },
+    { "plane": "reserve", "evidenceKind": "planned-withdrawals" },
+    { "plane": "pending-action", "evidenceKind": "pending-actions" },
+    { "plane": "authority", "evidenceKind": "authority" },
+    { "plane": "policy", "evidenceKind": "policy" },
+    { "plane": "restriction", "evidenceKind": "restriction" },
+    { "plane": "legal-hold", "evidenceKind": "legal-hold" },
+    { "plane": "instruction-conflict", "evidenceKind": "household-instruction" },
+    { "plane": "recent-change", "evidenceKind": "recent-change" },
+    { "plane": "tax-review", "evidenceKind": "tax-review" },
+    { "plane": "temporal", "evidenceKind": "time-zone-rule" },
+    { "plane": "execution", "evidenceKind": "execution-precondition" }
+  ],
+  "funding": {
+    "selection": "explicit-account-reference-set",
+    "sufficiency": "selected-aggregate-covers-request-reserve-and-reducing-pending",
+    "taxRisk": "any-selected-retirement-source-requires-completed-review"
+  },
+  "topology": {
+    "referenceIdentity": "entity-kind-scoped",
+    "sourceAccount": "must-resolve-in-liquidity-sources",
+    "selectedFunding": "must-resolve-once-to-request-household-and-source-owner",
+    "materialEvidence": "kind-subject-source-exactly-once"
+  }
+}

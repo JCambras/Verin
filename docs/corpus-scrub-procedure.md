@@ -42,10 +42,12 @@ memo lines, reason text, correspondence, subject lines, ticket bodies. A real-de
 free text at all** - there is no "cleaned prose" tier, because reviewing prose for residual identifiers
 is exactly the control that fails silently.
 
-**Tokenized (`tok:<16 lowercase hex>`).** Every identifier of a person, household, entity, account,
-instruction, employee, or external party. Tokenization is deterministic within a delivery so relationships
-survive, and carries no reversible mapping into this repository. The mapping, if one is retained at all,
-stays with the accountable owner outside version control.
+**Tokenized.** Attestation identities use `tok:<16 lowercase hex>`. Replay identities use
+entity-kind-scoped forms such as `request:tok:...`, `household:tok:...`, `account:tok:...`,
+`instruction:tok:...`, `owner:tok:...`, `actor:tok:...`, `grant:tok:...`, and `policy:tok:...`.
+Evidence sources use `evidence-source:tok:...`. Tokenization is deterministic within a delivery so
+relationships survive, and carries no reversible mapping into this repository. The mapping, if one is
+retained at all, stays with the accountable owner outside version control.
 
 **May remain.** Instants in canonical UTC (`YYYY-MM-DDTHH:MM:SS.mmmZ`); integer counts and integer minor
 units; and members of the declared closed vocabularies - defect class ids, evidence kinds, conflict
@@ -122,25 +124,34 @@ provenance      "real-derived-fixture"
 label           {kind: "defect", defectClassId} | {kind: "clean-control", controlRationaleId}
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
-subjects        [tok:…]
-replayPayload   verin-real-derived-replay/1.0.0 closed payload
-evidence        [{id, evidenceKind, subjectRef, observationState, observedAt, retrievedAt, freshness}]
+subjects        [entity-kind:tok:…]
+replayPayload   verin-real-derived-replay/1.1.0 closed payload
+evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{family, conflictKey}]
 ```
 
 The replay payload contains only the typed inputs needed by the supported defect classes:
 
 - request, destination, ownership, discriminator, and identity-resolution state;
-- source liquidity, reserve shape, typed pending-action direction and treatment, and source tax class;
+- source liquidity, an explicit selected funding set, reserve shape, typed pending-action direction and
+  treatment, and source tax class;
 - approval grant, scope, lifecycle, policy version, threshold comparison, restriction, and legal-hold state;
 - tax-review and instruction-conflict state;
 - event time and pinned time-zone-rule identity;
 - exact evidence references, reservation keys, and execution preconditions.
 
 Absent, additional, ambiguous, or mutually incompatible fields fail. Request and destination identity,
-ownership, threshold comparison, pending-action treatment, authority lifecycle, evidence inventory,
-reservation inventory, and subject inventory are cross-checked rather than trusted. The payload carries
-no raw names, account numbers, institution names, unrelated balances, or unrelated household records.
+ownership, source-account resolution, selected-funding ownership and aggregate sufficiency, threshold
+comparison, pending-action treatment, authority lifecycle, evidence inventory, reservation inventory,
+and subject inventory are cross-checked rather than trusted. The payload carries no raw names, account
+numbers, institution names, unrelated balances, or unrelated household records.
+
+Every material replay plane has exactly one matching evidence kind, entity-kind-scoped subject, and
+opaque evidence-source reference. Evidence that supports no material plane is rejected. An authority
+interval must cite the payload's grant, destination evidence must cite its instruction, and balance
+evidence must cite the corresponding liquidity source. The selected funding set is explicit, unique,
+same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and reducing
+pending actions. Unknown source tax classes fail, and tax risk is derived from every selected source.
 
 Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
 `fresh | stale` value. Missing source observation uses `observationState: "missing"`,
@@ -173,8 +184,9 @@ incomplete, cannot enter inventory, cannot be signed, and cannot be measured.
    fence asserts it. Files delivered while the deferral is active fail validation.
 4. `pnpm corpus:validate` must pass. It runs the whole contract over the delivered files.
 5. The generated manifest inventories every real-derived case and binds its bytes into `corpusDigest`.
-   It also binds the exact bytes and semantic projections of both versioned intake schemas. The captain
-   re-signs the corpus version: the digest changes, which invalidates the prior signature by design
+   It also binds the exact bytes and semantic projections of both versioned intake schemas, plus the
+   declarative semantic contract and exact executable-authority digests. The captain re-signs the corpus
+   version: the digest changes, which invalidates the prior signature by design
    (see [`docs/corpus.md`](./corpus.md) §9).
 6. Update `fixtures/corpus/real-derived/README.md`, the `corpus_deferral` record in
    `config/demo/scenarios.yaml`, and ADR-0034's status to record that the deferral has been lifted.

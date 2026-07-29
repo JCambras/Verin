@@ -7237,3 +7237,83 @@ Received: none
 byte-identical with every rule holding.
 
 **Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 5).
+
+---
+
+## PF-100 · signed replay semantics, topology, evidence, funding, and strict JSON · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-085, ADR-0034):** the signed preimage changes with declarative or executable replay
+semantics; references are entity-kind-scoped; every material plane has exact evidence; selected funding
+is explicit, owner-aligned, sufficient in aggregate, and tax-evaluated as a set; and every hand-owned
+corpus JSON document rejects duplicate keys before interpretation.
+
+**Injection 1 - executable authority ignored.** Made the semantic binding reread committed source instead
+of hashing the supplied authority bytes.
+
+**Observed failure:**
+```
+semantic data or executable authority changes invalidate corpus signoff
+src/__tests__/fitness/corpus-provenance-split.test.ts:1419
+expected changedAuthority.digest not to be original.digest
+```
+
+**Injection 2 - material evidence disconnected.** Removed the evidence-support authority from replay
+topology validation.
+
+**Observed failure:**
+```
+a material replay plane requires evidence with matching kind, subject, and source
+src/__tests__/fitness/corpus-provenance-split.test.ts:1447
+expected '' to contain 'destination evidence'
+```
+
+**Injection 3 - entity identity de-scoped.** Weakened `requestRef` to a generic token and removed the
+subject and evidence topology guards that independently expose the mismatch.
+
+**Observed failure:**
+```
+entity-kind-scoped references prevent one token from satisfying the replay topology
+src/__tests__/fitness/corpus-provenance-split.test.ts:1459
+expected '' to contain 'schema validation failed'
+```
+
+**Injection 4 - aggregate tax risk reduced to per-account sufficiency.** Considered a retirement source
+only when it individually covered the full request and reserve.
+
+**Observed failure:**
+```
+selected funding is explicit and aggregate sufficiency drives tax risk
+src/__tests__/fitness/corpus-provenance-split.test.ts:1508
+expected '' to contain 'tax-consequence-blindness'
+```
+
+**Injection 5 - funding ownership disabled.** Removed the selected-funding authority, admitting a second
+same-household account with an owner unrelated to the request source account.
+
+**Observed failure:**
+```
+selected funding rejects an additional source owned outside the request source ownership
+src/__tests__/fitness/corpus-provenance-split.test.ts:1574
+expected '' to contain 'selected funding sources must share an owner with the request source account'
+```
+
+**Injection 6 - duplicate-key parser bypassed.** Sent hand-owned JSON directly to `JSON.parse`.
+
+**Observed failure:**
+```
+duplicate keys in hand-owned corpus schemas are rejected before parsing or hashing
+src/__tests__/fitness/corpus-provenance-split.test.ts:1799
+expected function to throw an error
+```
+
+**Standing companions:** source-account exact resolution; missing, duplicate, unsupported,
+cross-household, insufficient, and unknown-tax selections; exact kind, subject, and source evidence
+tuples; all 16 defect signatures; schema and semantic data digest mutation; every executable authority
+source digest; nested extra-field rejection; and duplicate probes against every hand-owned corpus JSON
+file.
+
+**Revert:** all six injections were reverted with patch edits. Canonical regeneration restored
+`corpusDigest` `e30aca83e8c443babbc32d765e3deff9de823a631270f7714ea3bfd48bfe0298`, and all six focused
+companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 6).

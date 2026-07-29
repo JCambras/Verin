@@ -4,7 +4,9 @@ Two ownership planes live here and must never be confused.
 
 | Path | Owner | Rule |
 |---|---|---|
-| `spec/world.json`, `spec/cases.json`, `spec/defect-taxonomy.json` | **hand-owned** | Reviewable input. Edit these, then regenerate. |
+| `spec/world.json`, `spec/cases.json`, `spec/defect-taxonomy.json` | **hand-owned** | Reviewable synthetic input. Edit these, then regenerate. |
+| `spec/real-derived-semantic-contract.json` | **hand-owned** | Versioned replay rules bound into captain signoff. |
+| `spec/real-derived-{case,replay}-schema.json` | **hand-owned** | Strict intake schemas bound into captain signoff. |
 | `spec/SIGNOFF.md` | **hand-owned, captain-only** | Agents never write a signature. |
 | `manifest.json`, `synthetic/*.json` | **generated** | `pnpm corpus:generate`. Never hand-edit: CI regenerates and byte-compares. |
 | `real-derived/` | **captain-gated intake** | Ships empty. See its README. |
@@ -42,7 +44,9 @@ deriving one from the other makes every long-standing fact stale, which is a def
 right (D-078). A control that carries any defect signature fails validation.
 
 Real-derived freshness uses the closed `verin-real-derived-freshness/1.0.0` per-kind policy. Its version
-and semantic digest are part of the captain-signed corpus preimage.
+and semantic digest are part of the captain-signed corpus preimage. The same preimage binds the strict
+schemas, `verin-real-derived-semantics/1.0.0` data, and exact executable authorities that enforce replay
+topology, evidence support, selected funding, and defect signatures.
 
 ## Honesty
 

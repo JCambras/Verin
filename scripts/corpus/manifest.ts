@@ -8,10 +8,16 @@ import {
   freshnessPolicySemanticDigest,
   REAL_DERIVED_FRESHNESS_POLICY_VERSION,
 } from "./real-derived-policy";
+import {
+  REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION,
+  realDerivedSemanticContractBinding,
+  type RealDerivedSemanticContractBinding,
+} from "./semantic-contract";
 import { CORPUS_SEED } from "./seed";
+import { parseStrictJson } from "./strict-json";
 import { SPEC_DIR, SPEC_FILES, type LoadedSpec } from "./world";
 
-export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.4.0";
+export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.5.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
 export const REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION = "verin-real-derived-schema-digest/1.0.0";
 export const REAL_DERIVED_SCHEMA_FILES = ["real-derived-case-schema.json", "real-derived-replay-schema.json"] as const;
@@ -44,7 +50,10 @@ export function realDerivedSchemaBindings(
   return REAL_DERIVED_SCHEMA_FILES.map((name) => {
     const bytes = rawBytes[name];
     if (bytes === undefined) throw new Error(`missing real-derived schema bytes for ${name}`);
-    const schema = JSON.parse(bytes) as JsonValue & { $id?: unknown };
+    const schema = parseStrictJson(
+      bytes,
+      name,
+    ) as JsonValue & { $id?: unknown };
     if (typeof schema.$id !== "string" || schema.$id.length === 0)
       throw new Error(`${name}: real-derived schema requires a non-empty $id`);
     const preimage: JsonValue = {
@@ -75,6 +84,8 @@ export function corpusDigest(
   entries: readonly CaseInventoryEntry[],
   freshnessPolicy: FreshnessPolicyBinding = currentFreshnessPolicyBinding(),
   realDerivedSchemas: readonly RealDerivedSchemaBinding[] = realDerivedSchemaBindings(),
+  semanticContract: RealDerivedSemanticContractBinding =
+    realDerivedSemanticContractBinding(),
 ): string {
   const preimage: JsonValue = {
     hashKind: "verin-corpus",
@@ -85,6 +96,15 @@ export function corpusDigest(
       taxonomyDigest,
       freshnessPolicy: { ...freshnessPolicy },
       realDerivedSchemas: realDerivedSchemas.map((schema) => ({ ...schema })),
+      realDerivedSemanticContract: {
+        version: semanticContract.version,
+        digest: semanticContract.digest,
+        dataDigest: semanticContract.dataDigest,
+        executableAuthorities:
+          semanticContract.executableAuthorities.map((entry) => ({
+            ...entry,
+          })),
+      },
       cases: [...entries]
         .sort((left, right) => (left.caseId < right.caseId ? -1 : left.caseId > right.caseId ? 1 : 0))
         .map((entry) => [
@@ -185,11 +205,17 @@ export function buildManifest(
   const taxonomyDigest = taxonomySemanticDigest(taxonomy);
   const freshnessPolicy = currentFreshnessPolicyBinding();
   const realDerivedSchemas = realDerivedSchemaBindings();
+  const semanticContract = realDerivedSemanticContractBinding();
   const value: JsonValue = {
     __generated: {
       generator: "scripts/corpus-generate.ts",
       command: "pnpm corpus:generate",
-      handOwnedInput: SPEC_FILES.map((name) => `fixtures/corpus/spec/${name}`),
+      handOwnedInput: [
+        ...SPEC_FILES.map((name) => `fixtures/corpus/spec/${name}`),
+        ...REAL_DERIVED_SCHEMA_FILES.map(
+          (name) => `fixtures/corpus/spec/${name}`,
+        ),
+      ],
       seed,
       generatorDigest: generator,
       corpusVersion: spec.world.corpusVersion,
@@ -206,6 +232,7 @@ export function buildManifest(
       inventory,
       freshnessPolicy,
       realDerivedSchemas,
+      semanticContract,
     ),
     taxonomyDigest,
     taxonomyDigestPreimageVersion: TAXONOMY_DIGEST_PREIMAGE_VERSION,
@@ -214,6 +241,13 @@ export function buildManifest(
     realDerivedSchemaDigestPreimageVersion:
       REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION,
     realDerivedSchemas: realDerivedSchemas.map((schema) => ({ ...schema })),
+    realDerivedSemanticContractDigestPreimageVersion:
+      REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION,
+    realDerivedSemanticContractVersion: semanticContract.version,
+    realDerivedSemanticContractDigest: semanticContract.digest,
+    realDerivedSemanticContractDataDigest: semanticContract.dataDigest,
+    realDerivedSemanticContractAuthorities:
+      semanticContract.executableAuthorities.map((entry) => ({ ...entry })),
     generatorDigest: generator,
     signoffRef: {
       file: "fixtures/corpus/spec/SIGNOFF.md",

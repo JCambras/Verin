@@ -43,8 +43,10 @@ them, `pnpm corpus:validate` regenerates and byte-compares (CI job `corpus`). De
 (`SHA-256(seed‖path‖field)`), so adding a household changes only that household's bytes. The real-derived
 partition ships EMPTY behind a fail-closed intake contract ([`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md));
 `detectionRate` is `null` with a reason code and is NEVER substituted by the synthetic figure, whose name
-is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest` - regeneration
-invalidates it, and agents never sign.
+is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest`, including exact case
+bytes and labels, schemas, taxonomy, freshness, and declarative plus executable replay semantics.
+Real-derived replay uses entity-kind-scoped references, exact kind/subject/source evidence, and explicit
+aggregate selected funding. Regeneration invalidates signoff, and agents never sign.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

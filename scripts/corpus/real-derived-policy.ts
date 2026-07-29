@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
-import { diffSeconds } from "./clock";
 
 export const REAL_DERIVED_FRESHNESS_POLICY_VERSION =
   "verin-real-derived-freshness/1.0.0";
@@ -8,6 +7,8 @@ export const REAL_DERIVED_FRESHNESS_POLICY_DIGEST_VERSION =
   "verin-real-derived-freshness-digest/1.0.0";
 
 export const REAL_DERIVED_EVIDENCE_KINDS = [
+  "request",
+  "identity-resolution",
   "balance",
   "bank-instruction",
   "household-instruction",
@@ -15,9 +16,12 @@ export const REAL_DERIVED_EVIDENCE_KINDS = [
   "pending-actions",
   "restriction",
   "authority",
-  "model-assignment",
   "legal-hold",
   "recent-change",
+  "policy",
+  "tax-review",
+  "time-zone-rule",
+  "execution-precondition",
 ] as const;
 
 export type RealDerivedEvidenceKind =
@@ -31,6 +35,8 @@ export interface RealDerivedFreshnessPolicy {
 export const REAL_DERIVED_FRESHNESS_POLICY: RealDerivedFreshnessPolicy = {
   version: REAL_DERIVED_FRESHNESS_POLICY_VERSION,
   freshnessWindowDays: {
+    request: 30,
+    "identity-resolution": 30,
     balance: 1,
     "bank-instruction": 30,
     "household-instruction": 90,
@@ -38,14 +44,19 @@ export const REAL_DERIVED_FRESHNESS_POLICY: RealDerivedFreshnessPolicy = {
     "pending-actions": 1,
     restriction: 90,
     authority: 90,
-    "model-assignment": 7,
     "legal-hold": 365,
     "recent-change": 7,
+    policy: 90,
+    "tax-review": 30,
+    "time-zone-rule": 365,
+    "execution-precondition": 1,
   },
 };
 
 const sha256 = (text: string): string =>
   createHash("sha256").update(text, "utf8").digest("hex");
+const diffSeconds = (later: string, earlier: string): number =>
+  (new Date(later).getTime() - new Date(earlier).getTime()) / 1000;
 
 export function freshnessPolicySemanticDigest(
   policy: RealDerivedFreshnessPolicy = REAL_DERIVED_FRESHNESS_POLICY,

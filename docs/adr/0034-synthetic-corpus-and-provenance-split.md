@@ -137,26 +137,35 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.0.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.1.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, and execution inputs needed by supported defect classes. Absent, extra,
 ambiguous, incompatible, or unversioned inputs fail. Raw names, account numbers, unrelated balances, and
 unrelated household data have no field in the contract.
 
-Delivery bytes must already equal canonical JSON plus one newline. That byte check rejects duplicate
-object keys before semantic parsing can admit a value. Diagnostics expose only bounded safe paths and
-redacted descriptions, never rejected prose or unrecognized key text. The contract runs over the empty
-partition in the blocking `corpus` CI job, and its companions drive it with unattested,
+Every hand-owned corpus JSON document passes one unique-key parser before semantic parsing or hashing.
+Delivery bytes must also equal canonical JSON plus one newline. Diagnostics expose only bounded safe
+paths and redacted descriptions, never rejected prose or unrecognized key text. The contract runs over
+the empty partition in the blocking `corpus` CI job, and its companions drive it with unattested,
 free-text-bearing, self-reviewed, duplicate-key, structurally incomplete, and mislabeled cases. This is
 what makes a shipped-but-unpopulated capability charter-#5-legal.
 
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed semantic registry derives every supported defect signature from the replay payload. A defect
-case is accepted only when its label names an actually present signature. A clean control is accepted
-only when every supported signature is absent. The registry is checked for exact equality with the signed
-taxonomy, so an unsupported class cannot enter either denominator by relabeling a structurally valid case.
+The closed `verin-real-derived-semantics/1.0.0` registry derives every supported defect signature from
+the replay payload. A defect case is accepted only when its label names an actually present signature.
+A clean control is accepted only when every supported signature is absent. The registry is checked for
+exact equality with the signed taxonomy, so an unsupported class cannot enter either denominator by
+relabeling a structurally valid case. Its declarative bytes and exact executable-authority source digests
+are part of `corpusDigest`, so changing a predicate or cross-field rule invalidates signoff.
+
+Replay references are entity-kind-scoped. Request, household, account, instruction, owner, actor, grant,
+policy, restriction, hold, pending-action, and time-zone identities cannot be satisfied by one generic
+token. Every material plane has exactly one evidence tuple matching kind, subject, and source. The
+request source account resolves in the liquidity collection, and the explicit selected funding set is
+unique, same-household, source-owner-aligned, supported, and sufficient in aggregate. Tax risk is
+evaluated against exactly that set, including every selected source's tax character.
 
 Each real-derived case records `evaluation.asOf` and the closed
 `verin-real-derived-freshness/1.0.0` policy version. The policy has one freshness window per supported
@@ -176,12 +185,13 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.4.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.5.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
-and citations, the real-derived freshness policy, and both versioned real-derived JSON Schemas. Schema
-bindings include identifiers, exact-byte digests, and canonical semantic projections. Relabeling
-inventory, redefining a class, changing a freshness window, or changing either schema's bytes or meaning
-invalidates prior signoff even if no case bytes change.
+and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
+declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
+and canonical semantic projections. Relabeling inventory, redefining a class, changing a freshness
+window, changing either schema's bytes or meaning, or changing a replay predicate or cross-field
+authority invalidates prior signoff even if no case bytes change.
 
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
 `signedAt` instant. Its hand-owned YAML is parsed fail-closed before those fields are read: parser errors,
@@ -212,7 +222,10 @@ generator's first post-prompt-19 simplification pass, once replay has shown whic
 is actually load-bearing. D-082 raises the ceiling from 4300 to 4900 for the inventory-bound report,
 recursive tree intake, direction-aware actions, referenced-household topology, generated-signature scan,
 and versioned real-derived freshness policy. D-084 records the completed review boundary at exactly 4900
-measured lines, with no unmeasured headroom and no ceiling increase.
+measured lines, with no unmeasured headroom and no ceiling increase. D-085 raises the ceiling to 5900
+against 5747 measured lines for signed executable semantics, recursive strict JSON intake,
+entity-kind-scoped topology, exact evidence support, and explicit selected funding. The 153-line buffer
+preserves readable ownership boundaries instead of forcing these rules back into one oversized validator.
 
 ## What this PR explicitly does NOT claim
 

@@ -33,6 +33,7 @@ fixtures/corpus/
   spec/world.json            hand-owned  world clock, roster, households, accounts, instructions
   spec/cases.json            hand-owned  the 21 awkward structures + every case
   spec/defect-taxonomy.json  hand-owned  the closed defect vocabulary
+  spec/real-derived-semantic-contract.json  hand-owned  signed replay rules
   spec/real-derived-case-schema.json    hand-owned  strict scrubbed-case envelope
   spec/real-derived-replay-schema.json  hand-owned  closed replay inputs
   spec/SIGNOFF.md            hand-owned  captain-only; agents never write it
@@ -95,6 +96,13 @@ reasons. Pending-action kind is closed and maps to typed direction and liquidity
 outgoing distributions or debits reduce effective liquidity; blocked, cancelled, rejected, incoming,
 credit, unknown, and unclassified actions do not, and incoming value cannot increase availability before
 settlement.
+
+Real-derived funding is never inferred from every available account. The payload names an explicit,
+duplicate-free `selectedFundingRefs` set. Each selected account resolves exactly once, belongs to the
+request household, shares an owner with the request source account, carries a supported tax class, and
+contributes to one aggregate sufficiency check over the request amount, required reserve, and any reducing
+pending action. Tax risk is evaluated over exactly that selected set, and any selected retirement source
+requires a completed tax review.
 
 ---
 
@@ -181,6 +189,12 @@ per-kind window. `unknown` requires `observationState: "missing"` and `observedA
 versions, unsupported kinds, impossible chronology, or inconsistent freshness fail before inventory.
 The policy version and semantic digest are included in the signed corpus preimage.
 
+Every material real-derived replay plane is backed by exactly one evidence tuple matching its closed
+kind, entity-kind-scoped subject, and opaque evidence-source reference. Request, identity, destination,
+each liquidity source, reserve, authority, policy, instruction state, tax review, time-zone rule, and
+execution preconditions are always supported. Pending actions, restrictions, legal holds, and
+multi-subject recent changes are supported when present. Unrelated evidence is rejected.
+
 ---
 
 ## 7. Conflict-key families
@@ -242,12 +256,14 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.4.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.5.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. Each schema binding covers its identifier, exact bytes, and canonical semantic projection.
-Relabeling an inventory entry, changing what a defect class means, changing a freshness window, or changing
-either schema therefore invalidates the prior captain signoff even when no case bytes change.
+JSON Schemas. It also binds `verin-real-derived-semantics/1.0.0`: the strict declarative rule registry,
+its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers
+its identifier, exact bytes, and canonical semantic projection. Relabeling an inventory entry, changing
+what a defect class means, changing a freshness window, changing either schema, or changing a replay
+predicate or topology rule therefore invalidates prior captain signoff even when no case bytes change.
 
 **Agents never sign.** No generated file contains a signature: the manifest holds a `signoffRef` pointer,
 validation recursively rejects `signedBy`, `signedAt`, and `signedDigest` keys in actual generated

@@ -35,6 +35,11 @@ import {
   REAL_DERIVED_FRESHNESS_POLICY,
 } from "../../../scripts/corpus/real-derived-policy";
 import {
+  REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+  realDerivedSemanticContractBinding,
+} from "../../../scripts/corpus/semantic-contract";
+import { parseStrictJson } from "../../../scripts/corpus/strict-json";
+import {
   realDerivedCollectionProblems,
 } from "../../../scripts/corpus/real-derived";
 import {
@@ -107,15 +112,71 @@ const reportExportProblems = (names: readonly string[]): string[] =>
 
 // ── shared fixtures for the companions ─────────────────────────────────────────
 
-const OPAQUE = "tok:0123456789abcdef";
-const OPAQUE_REVIEWER = "tok:fedcba9876543210";
+const TOKEN = "tok:0123456789abcdef";
+const TOKEN_ALT = "tok:fedcba9876543210";
+const OPAQUE = TOKEN;
+const OPAQUE_REVIEWER = TOKEN_ALT;
+const REQUEST_REF = `request:${TOKEN}`;
+const HOUSEHOLD_REF = `household:${TOKEN}`;
+const HOUSEHOLD_REF_ALT = `household:${TOKEN_ALT}`;
+const ACCOUNT_REF = `account:${TOKEN}`;
+const ACCOUNT_REF_ALT = `account:${TOKEN_ALT}`;
+const INSTRUCTION_REF = `instruction:${TOKEN}`;
+const INSTRUCTION_REF_ALT = `instruction:${TOKEN_ALT}`;
+const OWNER_REF = `owner:${TOKEN}`;
+const OWNER_REF_ALT = `owner:${TOKEN_ALT}`;
+const ACTOR_REF = `actor:${TOKEN}`;
+const ACTOR_REF_ALT = `actor:${TOKEN_ALT}`;
+const GRANT_REF = `grant:${TOKEN}`;
+const POLICY_REF = `policy:${TOKEN}`;
+const POLICY_VERSION_REF = `policy-version:${TOKEN}`;
+const RESTRICTION_REF = `restriction:${TOKEN}`;
+const LEGAL_HOLD_REF = `legal-hold:${TOKEN}`;
+const PENDING_ACTION_REF = `pending-action:${TOKEN}`;
+const TIME_ZONE_RULE_REF = `time-zone-rule:${TOKEN}`;
+const EVIDENCE_SOURCE_REF = `evidence-source:${TOKEN}`;
+const EVIDENCE_SOURCE_REF_ALT = `evidence-source:${TOKEN_ALT}`;
 const canonicalFixtureBytes = (value: unknown): string => {
   const result = canonicalJson(value as any);
   if (!result.ok) throw result.error;
   return `${result.value}\n`;
 };
 
-const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+const observedEvidence = (
+  evidenceKind: string,
+  subjectRef: string,
+  sourceRef: string = EVIDENCE_SOURCE_REF,
+  token: string = TOKEN,
+): Record<string, unknown> => ({
+  id: `evs:${token}:${evidenceKind}`,
+  evidenceKind,
+  subjectRef,
+  sourceRef,
+  observationState: "observed",
+  observedAt: "2026-04-28T05:00:00.000Z",
+  retrievedAt: "2026-04-28T13:00:04.000Z",
+  freshness: "fresh",
+});
+
+const baselineEvidence = (): Array<Record<string, unknown>> => [
+  observedEvidence("request", REQUEST_REF),
+  observedEvidence("identity-resolution", ACTOR_REF),
+  observedEvidence("bank-instruction", INSTRUCTION_REF),
+  observedEvidence("balance", ACCOUNT_REF),
+  observedEvidence("planned-withdrawals", HOUSEHOLD_REF),
+  observedEvidence("authority", GRANT_REF),
+  observedEvidence("policy", POLICY_VERSION_REF),
+  observedEvidence("household-instruction", HOUSEHOLD_REF),
+  observedEvidence("tax-review", REQUEST_REF),
+  observedEvidence("time-zone-rule", TIME_ZONE_RULE_REF),
+  observedEvidence("execution-precondition", REQUEST_REF),
+];
+
+const realDerivedCase = (
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const evidence = baselineEvidence();
+  return {
   caseId: "RD-00112233445566aa",
   corpusVersion: "2026.07.0",
   partition: "real-derived",
@@ -138,42 +199,62 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
     asOf: "2026-04-28T13:00:05.000Z",
     freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0",
   },
-  subjects: [OPAQUE],
+  subjects: [
+    REQUEST_REF,
+    HOUSEHOLD_REF,
+    ACCOUNT_REF,
+    INSTRUCTION_REF,
+    OWNER_REF,
+    ACTOR_REF,
+    GRANT_REF,
+    POLICY_REF,
+    POLICY_VERSION_REF,
+    TIME_ZONE_RULE_REF,
+  ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.0.0",
+    schemaVersion: "verin-real-derived-replay/1.1.0",
     request: {
-      requestRef: OPAQUE,
-      householdRef: OPAQUE,
-      sourceAccountRef: OPAQUE,
-      destinationRef: OPAQUE,
+      requestRef: REQUEST_REF,
+      householdRef: HOUSEHOLD_REF,
+      actorRef: ACTOR_REF,
+      sourceAccountRef: ACCOUNT_REF,
+      destinationRef: INSTRUCTION_REF,
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
       amountMinor: 10_000,
       currency: "USD",
       deadlineAt: "2026-04-30T13:00:00.000Z",
       settlementEarliestAt: "2026-04-29T13:00:00.000Z",
     },
     identity: {
-      subjectRef: OPAQUE,
+      subjectRef: ACTOR_REF,
       resolution: "unique",
-      candidateRefs: [OPAQUE],
+      candidateRefs: [ACTOR_REF],
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
     destination: {
-      instructionRef: OPAQUE,
-      householdRef: OPAQUE,
-      ownerRefs: [OPAQUE],
+      instructionRef: INSTRUCTION_REF,
+      householdRef: HOUSEHOLD_REF,
+      ownerRefs: [OWNER_REF],
       ownership: "same-household",
       verificationState: "verified",
       discriminatorState: "collision",
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
     liquidity: {
       sources: [
         {
-          accountRef: OPAQUE,
+          accountRef: ACCOUNT_REF,
+          householdRef: HOUSEHOLD_REF,
+          ownerRefs: [OWNER_REF],
+          evidenceSourceRef: EVIDENCE_SOURCE_REF,
           availableMinor: 20_000,
           sourceTaxClass: "taxable",
         },
       ],
+      selectedFundingRefs: [ACCOUNT_REF],
       reserveState: "modeled-scalar",
       reserveRequiredMinor: 1_000,
+      reserveEvidenceSourceRef: EVIDENCE_SOURCE_REF,
       withdrawalSegmentsMinor: [1_000],
       pendingAction: {
         actionRef: null,
@@ -182,61 +263,61 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
         direction: null,
         liquidityClass: null,
         amountMinor: null,
+        evidenceSourceRef: null,
         reducesEffectiveLiquidity: false,
         increasesAvailableLiquidity: false,
       },
     },
     authority: {
-      grantRef: OPAQUE,
-      actorRef: OPAQUE,
+      grantRef: GRANT_REF,
+      actorRef: ACTOR_REF,
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
       authorityScope: "distribution-request",
       authorityState: "effective",
       validFrom: "2026-04-01T13:00:00.000Z",
       validTo: null,
     },
     policy: {
-      policyRef: OPAQUE,
-      policyVersionRef: OPAQUE,
+      policyRef: POLICY_REF,
+      policyVersionRef: POLICY_VERSION_REF,
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
       thresholdMinor: 5_000,
       thresholdComparison: "above",
       restrictionRef: null,
+      restrictionEvidenceSourceRef: null,
       restrictionState: "absent",
       legalHoldRef: null,
+      legalHoldEvidenceSourceRef: null,
       legalHoldScope: "none",
     },
     taxReviewState: "completed",
+    taxReviewEvidenceSourceRef: EVIDENCE_SOURCE_REF,
     instructionConflict: {
       conflictState: "none",
       instructionRefs: [],
       impactedSubjectRefs: [],
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
     temporal: {
       eventAt: "2026-04-28T13:00:00.000Z",
-      timeZoneRuleRef: OPAQUE,
+      timeZoneRuleRef: TIME_ZONE_RULE_REF,
       transitionState: "daylight",
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
-    evidenceRefs: ["evs:tok:0123456789abcdef:balance"],
+    evidenceRefs: evidence.map((entry) => String(entry.id)),
     execution: {
       reservationKeys: [
         "conflict:tok:0123456789abcdef:liquidity",
       ],
       preconditions: ["evidence-fresh"],
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     },
   },
-  evidence: [
-    {
-      id: "evs:tok:0123456789abcdef:balance",
-      evidenceKind: "balance",
-      subjectRef: OPAQUE,
-      observationState: "observed",
-      observedAt: "2026-04-28T05:00:00.000Z",
-      retrievedAt: "2026-04-28T13:00:04.000Z",
-      freshness: "fresh",
-    },
-  ],
+  evidence,
   reservations: [{ family: "liquidity", conflictKey: "conflict:tok:0123456789abcdef:liquidity" }],
   ...overrides,
-});
+  };
+};
 
 const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> => {
   const item = realDerivedCase({
@@ -247,8 +328,8 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
   switch (defectClassId) {
     case "identity-resolution-ambiguity":
       payload.identity.resolution = "ambiguous";
-      payload.identity.candidateRefs.push(OPAQUE_REVIEWER);
-      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      payload.identity.candidateRefs.push(ACTOR_REF_ALT);
+      (item.subjects as string[]).push(ACTOR_REF_ALT);
       break;
     case "authority-scope-error":
       payload.authority.authorityScope = "other";
@@ -260,56 +341,78 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "instruction-conflict-unresolved":
       payload.instructionConflict = {
         conflictState: "present",
-        instructionRefs: [OPAQUE, OPAQUE_REVIEWER],
-        impactedSubjectRefs: [OPAQUE],
+        instructionRefs: [INSTRUCTION_REF, INSTRUCTION_REF_ALT],
+        impactedSubjectRefs: [ACCOUNT_REF],
+        evidenceSourceRef: EVIDENCE_SOURCE_REF,
       };
-      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      (item.subjects as string[]).push(INSTRUCTION_REF_ALT);
       break;
     case "liquidity-reserve-miscalculation":
       payload.liquidity.reserveState = "modeled-segmented";
       payload.liquidity.withdrawalSegmentsMinor = [500, 1_000];
       break;
     case "evidence-staleness-unnoticed":
-      (item.evidence as Array<Record<string, unknown>>)[0]!.observedAt =
+      (item.evidence as Array<Record<string, unknown>>).find(
+        (entry) => entry.evidenceKind === "balance",
+      )!.observedAt =
         "2026-04-26T05:00:00.000Z";
-      (item.evidence as Array<Record<string, unknown>>)[0]!.freshness = "stale";
+      (item.evidence as Array<Record<string, unknown>>).find(
+        (entry) => entry.evidenceKind === "balance",
+      )!.freshness = "stale";
       break;
     case "evidence-interval-collapse": {
       payload.authority.authorityState = "expired";
       payload.authority.validTo = "2026-04-28T10:00:00.000Z";
-      const evidence = (item.evidence as Array<Record<string, unknown>>)[0]!;
-      evidence.id = "evs:tok:0123456789abcdef:authority";
-      evidence.evidenceKind = "authority";
-      payload.evidenceRefs = [evidence.id];
       break;
     }
     case "restriction-lifecycle-error":
-      payload.policy.restrictionRef = OPAQUE;
+      payload.policy.restrictionRef = RESTRICTION_REF;
+      payload.policy.restrictionEvidenceSourceRef = EVIDENCE_SOURCE_REF;
       payload.policy.restrictionState = "expired";
+      (item.subjects as string[]).push(RESTRICTION_REF);
+      (item.evidence as Array<Record<string, unknown>>).push(
+        observedEvidence("restriction", RESTRICTION_REF),
+      );
+      payload.evidenceRefs = (item.evidence as Array<Record<string, unknown>>)
+        .map((entry) => entry.id);
       break;
     case "hold-scope-error":
-      payload.policy.legalHoldRef = OPAQUE;
+      payload.policy.legalHoldRef = LEGAL_HOLD_REF;
+      payload.policy.legalHoldEvidenceSourceRef = EVIDENCE_SOURCE_REF;
       payload.policy.legalHoldScope = "position";
+      (item.subjects as string[]).push(LEGAL_HOLD_REF);
+      (item.evidence as Array<Record<string, unknown>>).push(
+        observedEvidence("legal-hold", LEGAL_HOLD_REF),
+      );
+      payload.evidenceRefs = (item.evidence as Array<Record<string, unknown>>)
+        .map((entry) => entry.id);
       break;
     case "pending-activity-miscount":
       payload.liquidity.pendingAction = {
-        actionRef: OPAQUE,
+        actionRef: PENDING_ACTION_REF,
         actionKind: "outgoing-distribution",
         actionState: "blocked",
         direction: "outgoing",
         liquidityClass: "distribution",
         amountMinor: 500,
+        evidenceSourceRef: EVIDENCE_SOURCE_REF,
         reducesEffectiveLiquidity: false,
         increasesAvailableLiquidity: false,
       };
+      (item.subjects as string[]).push(PENDING_ACTION_REF);
+      (item.evidence as Array<Record<string, unknown>>).push(
+        observedEvidence("pending-actions", PENDING_ACTION_REF),
+      );
+      payload.evidenceRefs = (item.evidence as Array<Record<string, unknown>>)
+        .map((entry) => entry.id);
       break;
     case "temporal-rendering-defect":
       payload.temporal.transitionState = "boundary";
       break;
     case "canonical-identity-defect":
       payload.identity.resolution = "canonical-collision";
-      payload.identity.candidateRefs.push(OPAQUE_REVIEWER);
-      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      payload.identity.candidateRefs.push(ACTOR_REF_ALT);
+      (item.subjects as string[]).push(ACTOR_REF_ALT);
       break;
     case "threshold-boundary-error":
       payload.request.amountMinor = payload.policy.thresholdMinor;
@@ -321,21 +424,39 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "blast-radius-underestimation": {
       payload.instructionConflict = {
         conflictState: "resolved",
-        instructionRefs: [OPAQUE, OPAQUE_REVIEWER],
-        impactedSubjectRefs: [OPAQUE, OPAQUE_REVIEWER],
+        instructionRefs: [INSTRUCTION_REF, INSTRUCTION_REF_ALT],
+        impactedSubjectRefs: [ACCOUNT_REF, ACCOUNT_REF_ALT],
+        evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
       };
-      const evidence = {
-        id: "evs:tok:fedcba9876543210:recent-change",
-        evidenceKind: "recent-change",
-        subjectRef: OPAQUE_REVIEWER,
-        observationState: "observed",
-        observedAt: "2026-04-28T05:00:00.000Z",
-        retrievedAt: "2026-04-28T13:00:03.000Z",
-        freshness: "fresh",
-      };
-      (item.evidence as Array<Record<string, unknown>>).push(evidence);
-      payload.evidenceRefs.push(evidence.id);
-      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      const evidence = item.evidence as Array<Record<string, unknown>>;
+      const conflictEvidence = evidence.find(
+        (entry) => entry.evidenceKind === "household-instruction",
+      )!;
+      conflictEvidence.sourceRef = EVIDENCE_SOURCE_REF_ALT;
+      evidence.push(
+        {
+          ...observedEvidence(
+            "recent-change",
+            ACCOUNT_REF,
+            EVIDENCE_SOURCE_REF_ALT,
+          ),
+          retrievedAt: "2026-04-28T13:00:03.000Z",
+        },
+        {
+          ...observedEvidence(
+            "recent-change",
+            ACCOUNT_REF_ALT,
+            EVIDENCE_SOURCE_REF_ALT,
+            TOKEN_ALT,
+          ),
+          retrievedAt: "2026-04-28T13:00:03.000Z",
+        },
+      );
+      payload.evidenceRefs = evidence.map((entry) => entry.id);
+      (item.subjects as string[]).push(
+        INSTRUCTION_REF_ALT,
+        ACCOUNT_REF_ALT,
+      );
       break;
     }
     case "tax-consequence-blindness":
@@ -780,8 +901,8 @@ describe("corpus-provenance-split fence", () => {
     });
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
-      "verin-real-derived-case/1.0.0",
-      "verin-real-derived-replay/1.0.0",
+      "verin-real-derived-case/1.1.0",
+      "verin-real-derived-replay/1.1.0",
     ]);
     expect(
       corpusDigest(
@@ -1240,6 +1361,279 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
   });
 
+  it("the signed manifest binds the executable real-derived semantic contract", () => {
+    const manifest = real.manifest.value as Record<string, unknown>;
+    expect(manifest.realDerivedSemanticContractVersion).toBe(
+      "verin-real-derived-semantics/1.0.0",
+    );
+    expect(manifest.realDerivedSemanticContractDigest).toMatch(
+      /^[0-9a-f]{64}$/,
+    );
+    expect(
+      (
+        manifest.realDerivedSemanticContractAuthorities as Array<{
+          file: string;
+        }>
+      ).map((entry) => entry.file),
+    ).toEqual(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES);
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/pending-actions.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/real-derived-policy.ts",
+    );
+  });
+
+  it("semantic data or executable authority changes invalidate corpus signoff", () => {
+    const dataFile = join(
+      REPO_ROOT,
+      "fixtures/corpus/spec/real-derived-semantic-contract.json",
+    );
+    const dataBytes = readFileSync(dataFile, "utf8");
+    const authorityBytes = Object.fromEntries(
+      REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES.map((file) => [
+        file,
+        readFileSync(join(REPO_ROOT, file), "utf8"),
+      ]),
+    );
+    const original = realDerivedSemanticContractBinding(
+      dataBytes,
+      authorityBytes,
+    );
+    const changedData = realDerivedSemanticContractBinding(
+      dataBytes.replace(
+        '"authority-not-effective"',
+        '"authority-not-effective-v2"',
+      ),
+      authorityBytes,
+    );
+    const changedAuthority = realDerivedSemanticContractBinding(
+      dataBytes,
+      {
+        ...authorityBytes,
+        [REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES[0]]:
+          `${authorityBytes[REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES[0]]}\n`,
+      },
+    );
+    expect(changedData.digest).not.toBe(original.digest);
+    expect(changedAuthority.digest).not.toBe(original.digest);
+    expect(
+      corpusDigest(
+        real.spec.world.corpusVersion,
+        CORPUS_SEED,
+        taxonomySemanticDigest(real.taxonomy),
+        real.inventory,
+        currentFreshnessPolicyBinding(),
+        realDerivedSchemaBindings(),
+        changedAuthority,
+      ),
+    ).not.toBe(real.corpusDigest);
+  });
+
+  it("a material replay plane requires evidence with matching kind, subject, and source", () => {
+    const item = realDerivedCase();
+    item.evidence = (item.evidence as Array<Record<string, unknown>>).filter(
+      (entry) => entry.evidenceKind !== "bank-instruction",
+    );
+    (item.replayPayload as Record<string, any>).evidenceRefs = (
+      item.evidence as Array<Record<string, unknown>>
+    ).map((entry) => entry.id);
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-unsupported-destination.json",
+      ).join("\n"),
+    ).toContain("destination evidence");
+  });
+
+  it("entity-kind-scoped references prevent one token from satisfying the replay topology", () => {
+    const item = realDerivedCase();
+    (item.replayPayload as Record<string, any>).request.requestRef = OPAQUE;
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-token-reuse.json",
+      ).join("\n"),
+    ).toContain("schema validation failed");
+  });
+
+  it("selected funding is explicit and aggregate sufficiency drives tax risk", () => {
+    const control = realDerivedCase({
+      label: {
+        kind: "clean-control",
+        controlRationaleId: "defect-class-absent",
+      },
+    });
+    const payload = control.replayPayload as Record<string, any>;
+    payload.destination.discriminatorState = "unique";
+    payload.taxReviewState = "required-pending";
+    payload.liquidity.sources = [
+      {
+        accountRef: ACCOUNT_REF,
+        householdRef: HOUSEHOLD_REF,
+        ownerRefs: [OWNER_REF],
+        evidenceSourceRef: EVIDENCE_SOURCE_REF,
+        availableMinor: 6_000,
+        sourceTaxClass: "retirement",
+      },
+      {
+        accountRef: ACCOUNT_REF_ALT,
+        householdRef: HOUSEHOLD_REF,
+        ownerRefs: [OWNER_REF_ALT],
+        evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
+        availableMinor: 6_000,
+        sourceTaxClass: "retirement",
+      },
+    ];
+    payload.liquidity.selectedFundingRefs = [ACCOUNT_REF, ACCOUNT_REF_ALT];
+    (control.subjects as string[]).push(ACCOUNT_REF_ALT, OWNER_REF_ALT);
+    const evidence = control.evidence as Array<Record<string, unknown>>;
+    evidence.push(
+      observedEvidence(
+        "balance",
+        ACCOUNT_REF_ALT,
+        EVIDENCE_SOURCE_REF_ALT,
+        TOKEN_ALT,
+      ),
+    );
+    payload.evidenceRefs = evidence.map((entry) => entry.id);
+    expect(
+      realDerivedCaseProblems(
+        control,
+        classes,
+        "real-derived/RD-aggregate-funding.json",
+      ).join("\n"),
+    ).toContain("tax-consequence-blindness");
+  });
+
+  it("selected funding rejects missing, duplicate, unsupported, insufficient, cross-household, and unknown-tax selections", () => {
+    const invalid = [
+      (payload: Record<string, any>) => {
+        delete payload.liquidity.selectedFundingRefs;
+      },
+      (payload: Record<string, any>) => {
+        payload.liquidity.selectedFundingRefs.push(ACCOUNT_REF);
+      },
+      (payload: Record<string, any>) => {
+        payload.liquidity.selectedFundingRefs = [ACCOUNT_REF_ALT];
+      },
+      (payload: Record<string, any>) => {
+        payload.liquidity.sources[0].availableMinor = 10;
+      },
+      (payload: Record<string, any>) => {
+        payload.liquidity.sources[0].householdRef = HOUSEHOLD_REF_ALT;
+      },
+      (payload: Record<string, any>) => {
+        payload.liquidity.sources[0].sourceTaxClass = "unknown";
+      },
+    ];
+    for (const mutate of invalid) {
+      const item = realDerivedCase();
+      mutate(item.replayPayload as Record<string, any>);
+      expect(
+        realDerivedCaseProblems(
+          item,
+          classes,
+          "real-derived/RD-invalid-funding.json",
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("selected funding rejects an additional source owned outside the request source ownership", () => {
+    const item = realDerivedCase();
+    const payload = item.replayPayload as Record<string, any>;
+    payload.liquidity.sources.push({
+      accountRef: ACCOUNT_REF_ALT,
+      householdRef: HOUSEHOLD_REF,
+      ownerRefs: [OWNER_REF_ALT],
+      evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
+      availableMinor: 10_000,
+      sourceTaxClass: "taxable",
+    });
+    payload.liquidity.selectedFundingRefs.push(ACCOUNT_REF_ALT);
+    (item.subjects as string[]).push(ACCOUNT_REF_ALT, OWNER_REF_ALT);
+    (item.evidence as Array<Record<string, unknown>>).push(
+      observedEvidence(
+        "balance",
+        ACCOUNT_REF_ALT,
+        EVIDENCE_SOURCE_REF_ALT,
+        TOKEN_ALT,
+      ),
+    );
+    payload.evidenceRefs = (item.evidence as Array<Record<string, unknown>>)
+      .map((entry) => entry.id);
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-cross-owner.json",
+      ).join("\n"),
+    ).toContain(
+      "selected funding sources must share an owner with the request source account",
+    );
+  });
+
+  it("request source accounts and evidence tuples resolve at their exact ownership edges", () => {
+    const missingSource = realDerivedCase();
+    (missingSource.replayPayload as Record<string, any>).request.sourceAccountRef =
+      ACCOUNT_REF_ALT;
+    expect(
+      realDerivedCaseProblems(
+        missingSource,
+        classes,
+        "real-derived/RD-missing-source.json",
+      ).join("\n"),
+    ).toContain("sourceAccountRef resolves to 0");
+
+    for (const mutate of [
+      (evidence: Record<string, unknown>) => {
+        evidence.evidenceKind = "request";
+        evidence.id = `evs:${TOKEN}:request`;
+      },
+      (evidence: Record<string, unknown>) => {
+        evidence.subjectRef = INSTRUCTION_REF_ALT;
+      },
+      (evidence: Record<string, unknown>) => {
+        evidence.sourceRef = EVIDENCE_SOURCE_REF_ALT;
+      },
+    ]) {
+      const item = realDerivedCase();
+      const evidence = (
+        item.evidence as Array<Record<string, unknown>>
+      ).find((entry) => entry.evidenceKind === "bank-instruction")!;
+      mutate(evidence);
+      (item.replayPayload as Record<string, any>).evidenceRefs = (
+        item.evidence as Array<Record<string, unknown>>
+      ).map((entry) => entry.id);
+      if (evidence.subjectRef === INSTRUCTION_REF_ALT) {
+        (item.subjects as string[]).push(INSTRUCTION_REF_ALT);
+      }
+      expect(
+        realDerivedCaseProblems(
+          item,
+          classes,
+          "real-derived/RD-mismatched-evidence.json",
+        ).join("\n"),
+      ).toContain("destination evidence");
+    }
+
+    const authority = realDerivedCase();
+    (
+      authority.evidence as Array<Record<string, unknown>>
+    ).find((entry) => entry.evidenceKind === "authority")!.subjectRef =
+      ACTOR_REF;
+    expect(
+      realDerivedCaseProblems(
+        authority,
+        classes,
+        "real-derived/RD-wrong-authority-subject.json",
+      ).join("\n"),
+    ).toContain("authority evidence");
+  });
+
   it("the real-derived semantic registry exactly covers the signed taxonomy", () => {
     expect(realDerivedSemanticContractProblems(classes)).toEqual([]);
     const missing = new Set(classes);
@@ -1320,11 +1714,22 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       ).length,
     ).toBeGreaterThan(0);
 
+    const nestedExtra = realDerivedCase();
+    (nestedExtra.replayPayload as Record<string, any>).request.accountNumber =
+      "tok:1111222233334444";
+    expect(
+      realDerivedCaseProblems(
+        nestedExtra,
+        classes,
+        "real-derived/RD-extra-request.json",
+      ).length,
+    ).toBeGreaterThan(0);
+
     const ambiguous = realDerivedCase();
     (
       (ambiguous.replayPayload as Record<string, any>).identity
         .candidateRefs as string[]
-    ).push(OPAQUE_REVIEWER);
+    ).push(ACTOR_REF_ALT);
     expect(
       realDerivedCaseProblems(
         ambiguous,
@@ -1337,12 +1742,13 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     const pending = (mismatched.replayPayload as Record<string, any>).liquidity
       .pendingAction;
     Object.assign(pending, {
-      actionRef: OPAQUE,
+      actionRef: PENDING_ACTION_REF,
       actionKind: "incoming-transfer",
       actionState: "pending",
       direction: "outgoing",
       liquidityClass: "credit",
       amountMinor: 500,
+      evidenceSourceRef: EVIDENCE_SOURCE_REF,
     });
     expect(
       realDerivedCaseProblems(
@@ -1357,10 +1763,10 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       (payload) => { payload.liquidity.reserveState = "missing"; },
       (payload) => { payload.authority.authorityState = "missing"; },
       (payload) => { payload.instructionConflict.conflictState = "present"; },
-      (payload) => { payload.policy.restrictionRef = OPAQUE; },
-      (payload) => { payload.request.destinationRef = OPAQUE_REVIEWER; },
+      (payload) => { payload.policy.restrictionRef = RESTRICTION_REF; },
+      (payload) => { payload.request.destinationRef = INSTRUCTION_REF_ALT; },
       (payload) => { payload.policy.thresholdComparison = "below"; },
-      (payload) => { payload.destination.ownerRefs.push(OPAQUE); },
+      (payload) => { payload.destination.ownerRefs.push(OWNER_REF); },
     ];
     for (const mutate of incompatibleMutations) {
       const candidate = realDerivedCase();
@@ -1390,6 +1796,38 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       expect(delivery.problems.join("\n")).not.toContain("Robert Smith");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("duplicate keys in hand-owned corpus schemas are rejected before parsing or hashing", () => {
+    expect(() =>
+      realDerivedSchemaBindings({
+        "real-derived-case-schema.json":
+          '{"$id":"verin-real-derived-case/1.0.0","$id":"verin-real-derived-case/9.9.9"}',
+        "real-derived-replay-schema.json":
+          '{"$id":"verin-real-derived-replay/1.0.0"}',
+      }),
+    ).toThrow(/duplicate/i);
+    for (const name of [
+      "world.json",
+      "cases.json",
+      "defect-taxonomy.json",
+      "real-derived-semantic-contract.json",
+      ...REAL_DERIVED_SCHEMA_FILES,
+    ]) {
+      const bytes = readFileSync(
+        join(REPO_ROOT, "fixtures/corpus/spec", name),
+        "utf8",
+      );
+      expect(() =>
+        parseStrictJson(
+          bytes.replace(
+            /^\{/,
+            '{"duplicate-probe":1,"duplicate-probe":2,',
+          ),
+          name,
+        ),
+      ).toThrow(/duplicate/i);
     }
   });
 
@@ -1515,10 +1953,11 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         (problem) => problem.includes("does not match evidenceKind"),
       ),
     ).toBe(true);
-    const dangling = realDerivedCase({ subjects: ["tok:1111222233334444"] });
+    const dangling = realDerivedCase({ subjects: [REQUEST_REF] });
     expect(
       realDerivedCaseProblems(dangling, classes, "real-derived/RD-dangling.json").some(
-        (problem) => problem.includes("resolves to 0 subjects"),
+        (problem) => problem.includes("resolves to 0 subjects") ||
+          problem.includes("exactly inventory"),
       ),
     ).toBe(true);
   });

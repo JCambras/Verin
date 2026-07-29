@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.0.0",
+  "$id": "verin-real-derived-replay/1.1.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -13,31 +13,36 @@
     "authority",
     "policy",
     "taxReviewState",
+    "taxReviewEvidenceSourceRef",
     "instructionConflict",
     "temporal",
     "evidenceRefs",
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.0.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.1.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "requestRef",
         "householdRef",
+        "actorRef",
         "sourceAccountRef",
         "destinationRef",
+        "evidenceSourceRef",
         "amountMinor",
         "currency",
         "deadlineAt",
         "settlementEarliestAt"
       ],
       "properties": {
-        "requestRef": { "$ref": "#/$defs/opaque" },
-        "householdRef": { "$ref": "#/$defs/opaque" },
-        "sourceAccountRef": { "$ref": "#/$defs/opaque" },
-        "destinationRef": { "$ref": "#/$defs/opaque" },
+        "requestRef": { "$ref": "#/$defs/requestRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
+        "actorRef": { "$ref": "#/$defs/actorRef" },
+        "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+        "destinationRef": { "$ref": "#/$defs/instructionRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
         "amountMinor": { "$ref": "#/$defs/money" },
         "currency": { "const": "USD" },
         "deadlineAt": { "$ref": "#/$defs/nullableInstant" },
@@ -47,9 +52,14 @@
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["subjectRef", "resolution", "candidateRefs"],
+      "required": [
+        "subjectRef",
+        "resolution",
+        "candidateRefs",
+        "evidenceSourceRef"
+      ],
       "properties": {
-        "subjectRef": { "$ref": "#/$defs/opaque" },
+        "subjectRef": { "$ref": "#/$defs/actorRef" },
         "resolution": {
           "enum": ["unique", "ambiguous", "canonical-collision"]
         },
@@ -57,8 +67,9 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/opaque" }
-        }
+          "items": { "$ref": "#/$defs/actorRef" }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
     },
     "destination": {
@@ -70,16 +81,17 @@
         "ownerRefs",
         "ownership",
         "verificationState",
-        "discriminatorState"
+        "discriminatorState",
+        "evidenceSourceRef"
       ],
       "properties": {
-        "instructionRef": { "$ref": "#/$defs/opaque" },
-        "householdRef": { "$ref": "#/$defs/opaque" },
+        "instructionRef": { "$ref": "#/$defs/instructionRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
         "ownerRefs": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/opaque" }
+          "items": { "$ref": "#/$defs/ownerRef" }
         },
         "ownership": {
           "enum": ["same-household", "cross-household"]
@@ -89,7 +101,8 @@
         },
         "discriminatorState": {
           "enum": ["unique", "collision", "missing"]
-        }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
     },
     "liquidity": {
@@ -97,8 +110,10 @@
       "additionalProperties": false,
       "required": [
         "sources",
+        "selectedFundingRefs",
         "reserveState",
         "reserveRequiredMinor",
+        "reserveEvidenceSourceRef",
         "withdrawalSegmentsMinor",
         "pendingAction"
       ],
@@ -111,11 +126,24 @@
             "additionalProperties": false,
             "required": [
               "accountRef",
+              "householdRef",
+              "ownerRefs",
+              "evidenceSourceRef",
               "availableMinor",
               "sourceTaxClass"
             ],
             "properties": {
-              "accountRef": { "$ref": "#/$defs/opaque" },
+              "accountRef": { "$ref": "#/$defs/accountRef" },
+              "householdRef": { "$ref": "#/$defs/householdRef" },
+              "ownerRefs": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "$ref": "#/$defs/ownerRef" }
+              },
+              "evidenceSourceRef": {
+                "$ref": "#/$defs/evidenceSourceRef"
+              },
               "availableMinor": { "$ref": "#/$defs/money" },
               "sourceTaxClass": {
                 "enum": [
@@ -129,12 +157,21 @@
             }
           }
         },
+        "selectedFundingRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/accountRef" }
+        },
         "reserveState": {
           "enum": ["modeled-scalar", "modeled-segmented", "missing"]
         },
         "reserveRequiredMinor": {
           "type": ["integer", "null"],
           "minimum": 0
+        },
+        "reserveEvidenceSourceRef": {
+          "$ref": "#/$defs/evidenceSourceRef"
         },
         "withdrawalSegmentsMinor": {
           "type": "array",
@@ -149,14 +186,16 @@
       "required": [
         "grantRef",
         "actorRef",
+        "evidenceSourceRef",
         "authorityScope",
         "authorityState",
         "validFrom",
         "validTo"
       ],
       "properties": {
-        "grantRef": { "$ref": "#/$defs/nullableOpaque" },
-        "actorRef": { "$ref": "#/$defs/opaque" },
+        "grantRef": { "$ref": "#/$defs/nullableGrantRef" },
+        "actorRef": { "$ref": "#/$defs/actorRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
         "authorityScope": {
           "enum": ["distribution-request", "other", "missing"]
         },
@@ -179,25 +218,35 @@
       "required": [
         "policyRef",
         "policyVersionRef",
+        "evidenceSourceRef",
         "thresholdMinor",
         "thresholdComparison",
         "restrictionRef",
+        "restrictionEvidenceSourceRef",
         "restrictionState",
         "legalHoldRef",
+        "legalHoldEvidenceSourceRef",
         "legalHoldScope"
       ],
       "properties": {
-        "policyRef": { "$ref": "#/$defs/opaque" },
-        "policyVersionRef": { "$ref": "#/$defs/opaque" },
+        "policyRef": { "$ref": "#/$defs/policyRef" },
+        "policyVersionRef": { "$ref": "#/$defs/policyVersionRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
         "thresholdMinor": { "$ref": "#/$defs/money" },
         "thresholdComparison": {
           "enum": ["below", "equal", "above"]
         },
-        "restrictionRef": { "$ref": "#/$defs/nullableOpaque" },
+        "restrictionRef": { "$ref": "#/$defs/nullableRestrictionRef" },
+        "restrictionEvidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
+        },
         "restrictionState": {
           "enum": ["absent", "in-force", "expired", "future"]
         },
-        "legalHoldRef": { "$ref": "#/$defs/nullableOpaque" },
+        "legalHoldRef": { "$ref": "#/$defs/nullableLegalHoldRef" },
+        "legalHoldEvidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
+        },
         "legalHoldScope": {
           "enum": ["none", "account", "position"]
         }
@@ -211,38 +260,49 @@
         "unavailable"
       ]
     },
+    "taxReviewEvidenceSourceRef": {
+      "$ref": "#/$defs/evidenceSourceRef"
+    },
     "instructionConflict": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "conflictState",
         "instructionRefs",
-        "impactedSubjectRefs"
+        "impactedSubjectRefs",
+        "evidenceSourceRef"
       ],
       "properties": {
         "conflictState": { "enum": ["none", "present", "resolved"] },
         "instructionRefs": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/opaque" }
+          "items": { "$ref": "#/$defs/instructionRef" }
         },
         "impactedSubjectRefs": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/opaque" }
-        }
+          "items": { "$ref": "#/$defs/entityRef" }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
     },
     "temporal": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["eventAt", "timeZoneRuleRef", "transitionState"],
+      "required": [
+        "eventAt",
+        "timeZoneRuleRef",
+        "transitionState",
+        "evidenceSourceRef"
+      ],
       "properties": {
         "eventAt": { "$ref": "#/$defs/instant" },
-        "timeZoneRuleRef": { "$ref": "#/$defs/opaque" },
+        "timeZoneRuleRef": { "$ref": "#/$defs/timeZoneRuleRef" },
         "transitionState": {
           "enum": ["standard", "daylight", "boundary"]
-        }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
     },
     "evidenceRefs": {
@@ -254,7 +314,11 @@
     "execution": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["reservationKeys", "preconditions"],
+      "required": [
+        "reservationKeys",
+        "preconditions",
+        "evidenceSourceRef"
+      ],
       "properties": {
         "reservationKeys": {
           "type": "array",
@@ -276,7 +340,8 @@
               "reservation-available"
             ]
           }
-        }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
       }
     }
   },
@@ -295,7 +360,7 @@
                 "candidateRefs": {
                   "type": "array",
                   "maxItems": 1,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/actorRef" }
                 }
               }
             }
@@ -315,7 +380,7 @@
                 "candidateRefs": {
                   "type": "array",
                   "minItems": 2,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/actorRef" }
                 }
               }
             }
@@ -436,7 +501,7 @@
                 "validTo"
               ],
               "properties": {
-                "grantRef": { "$ref": "#/$defs/opaque" },
+                "grantRef": { "$ref": "#/$defs/grantRef" },
                 "authorityScope": {
                   "enum": ["distribution-request", "other"]
                 },
@@ -474,12 +539,12 @@
                 "instructionRefs": {
                   "type": "array",
                   "maxItems": 0,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/instructionRef" }
                 },
                 "impactedSubjectRefs": {
                   "type": "array",
                   "maxItems": 0,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/entityRef" }
                 }
               }
             }
@@ -501,12 +566,12 @@
                 "instructionRefs": {
                   "type": "array",
                   "minItems": 2,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/instructionRef" }
                 },
                 "impactedSubjectRefs": {
                   "type": "array",
                   "minItems": 1,
-                  "items": { "$ref": "#/$defs/opaque" }
+                  "items": { "$ref": "#/$defs/entityRef" }
                 }
               }
             }
@@ -538,7 +603,7 @@
               "type": "object",
               "required": ["restrictionRef", "restrictionState"],
               "properties": {
-                "restrictionRef": { "$ref": "#/$defs/opaque" },
+                "restrictionRef": { "$ref": "#/$defs/restrictionRef" },
                 "restrictionState": {
                   "enum": ["in-force", "expired", "future"]
                 }
@@ -572,7 +637,7 @@
               "type": "object",
               "required": ["legalHoldRef", "legalHoldScope"],
               "properties": {
-                "legalHoldRef": { "$ref": "#/$defs/opaque" },
+                "legalHoldRef": { "$ref": "#/$defs/legalHoldRef" },
                 "legalHoldScope": { "enum": ["account", "position"] }
               }
             }
@@ -582,13 +647,98 @@
     }
   ],
   "$defs": {
-    "opaque": {
+    "requestRef": {
       "type": "string",
-      "pattern": "^tok:[0-9a-f]{16}$"
+      "pattern": "^request:tok:[0-9a-f]{16}$"
     },
-    "nullableOpaque": {
+    "householdRef": {
+      "type": "string",
+      "pattern": "^household:tok:[0-9a-f]{16}$"
+    },
+    "accountRef": {
+      "type": "string",
+      "pattern": "^account:tok:[0-9a-f]{16}$"
+    },
+    "instructionRef": {
+      "type": "string",
+      "pattern": "^instruction:tok:[0-9a-f]{16}$"
+    },
+    "ownerRef": {
+      "type": "string",
+      "pattern": "^owner:tok:[0-9a-f]{16}$"
+    },
+    "actorRef": {
+      "type": "string",
+      "pattern": "^actor:tok:[0-9a-f]{16}$"
+    },
+    "grantRef": {
+      "type": "string",
+      "pattern": "^grant:tok:[0-9a-f]{16}$"
+    },
+    "nullableGrantRef": {
       "type": ["string", "null"],
-      "pattern": "^tok:[0-9a-f]{16}$"
+      "pattern": "^grant:tok:[0-9a-f]{16}$"
+    },
+    "policyRef": {
+      "type": "string",
+      "pattern": "^policy:tok:[0-9a-f]{16}$"
+    },
+    "policyVersionRef": {
+      "type": "string",
+      "pattern": "^policy-version:tok:[0-9a-f]{16}$"
+    },
+    "restrictionRef": {
+      "type": "string",
+      "pattern": "^restriction:tok:[0-9a-f]{16}$"
+    },
+    "nullableRestrictionRef": {
+      "type": ["string", "null"],
+      "pattern": "^restriction:tok:[0-9a-f]{16}$"
+    },
+    "legalHoldRef": {
+      "type": "string",
+      "pattern": "^legal-hold:tok:[0-9a-f]{16}$"
+    },
+    "nullableLegalHoldRef": {
+      "type": ["string", "null"],
+      "pattern": "^legal-hold:tok:[0-9a-f]{16}$"
+    },
+    "pendingActionRef": {
+      "type": "string",
+      "pattern": "^pending-action:tok:[0-9a-f]{16}$"
+    },
+    "nullablePendingActionRef": {
+      "type": ["string", "null"],
+      "pattern": "^pending-action:tok:[0-9a-f]{16}$"
+    },
+    "timeZoneRuleRef": {
+      "type": "string",
+      "pattern": "^time-zone-rule:tok:[0-9a-f]{16}$"
+    },
+    "evidenceSourceRef": {
+      "type": "string",
+      "pattern": "^evidence-source:tok:[0-9a-f]{16}$"
+    },
+    "nullableEvidenceSourceRef": {
+      "type": ["string", "null"],
+      "pattern": "^evidence-source:tok:[0-9a-f]{16}$"
+    },
+    "entityRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/requestRef" },
+        { "$ref": "#/$defs/householdRef" },
+        { "$ref": "#/$defs/accountRef" },
+        { "$ref": "#/$defs/instructionRef" },
+        { "$ref": "#/$defs/ownerRef" },
+        { "$ref": "#/$defs/actorRef" },
+        { "$ref": "#/$defs/grantRef" },
+        { "$ref": "#/$defs/policyRef" },
+        { "$ref": "#/$defs/policyVersionRef" },
+        { "$ref": "#/$defs/restrictionRef" },
+        { "$ref": "#/$defs/legalHoldRef" },
+        { "$ref": "#/$defs/pendingActionRef" },
+        { "$ref": "#/$defs/timeZoneRuleRef" }
+      ]
     },
     "instant": {
       "type": "string",
@@ -606,7 +756,7 @@
     },
     "evidenceId": {
       "type": "string",
-      "pattern": "^evs:tok:[0-9a-f]{16}:(balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|model-assignment|legal-hold|recent-change)$"
+      "pattern": "^evs:tok:[0-9a-f]{16}:(request|identity-resolution|balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|legal-hold|recent-change|policy|tax-review|time-zone-rule|execution-precondition)$"
     },
     "conflictKey": {
       "type": "string",
@@ -622,11 +772,12 @@
         "direction",
         "liquidityClass",
         "amountMinor",
+        "evidenceSourceRef",
         "reducesEffectiveLiquidity",
         "increasesAvailableLiquidity"
       ],
       "properties": {
-        "actionRef": { "$ref": "#/$defs/nullableOpaque" },
+        "actionRef": { "$ref": "#/$defs/nullablePendingActionRef" },
         "actionKind": {
           "type": ["string", "null"],
           "enum": [
@@ -668,6 +819,9 @@
         "amountMinor": {
           "type": ["integer", "null"],
           "minimum": 0
+        },
+        "evidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
         },
         "reducesEffectiveLiquidity": { "type": "boolean" },
         "increasesAvailableLiquidity": { "type": "boolean" }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-case/1.0.0",
+  "$id": "verin-real-derived-case/1.1.0",
   "title": "Verin scrubbed real-derived replay case",
   "type": "object",
   "additionalProperties": false,
@@ -122,7 +122,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "$ref": "#/$defs/opaque" }
+      "items": { "$ref": "#/$defs/entityRef" }
     },
     "replayPayload": { "type": "object" },
     "evidence": {
@@ -137,6 +137,7 @@
               "id",
               "evidenceKind",
               "subjectRef",
+              "sourceRef",
               "observationState",
               "observedAt",
               "retrievedAt",
@@ -145,7 +146,8 @@
             "properties": {
               "id": { "$ref": "#/$defs/evidenceId" },
               "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
-              "subjectRef": { "$ref": "#/$defs/opaque" },
+              "subjectRef": { "$ref": "#/$defs/entityRef" },
+              "sourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
               "observationState": { "const": "observed" },
               "observedAt": { "$ref": "#/$defs/instant" },
               "retrievedAt": { "$ref": "#/$defs/instant" },
@@ -159,6 +161,7 @@
               "id",
               "evidenceKind",
               "subjectRef",
+              "sourceRef",
               "observationState",
               "observedAt",
               "retrievedAt",
@@ -167,7 +170,8 @@
             "properties": {
               "id": { "$ref": "#/$defs/evidenceId" },
               "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
-              "subjectRef": { "$ref": "#/$defs/opaque" },
+              "subjectRef": { "$ref": "#/$defs/entityRef" },
+              "sourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
               "observationState": { "const": "missing" },
               "observedAt": { "type": "null" },
               "retrievedAt": { "$ref": "#/$defs/instant" },
@@ -205,6 +209,14 @@
       "type": "string",
       "pattern": "^tok:[0-9a-f]{16}$"
     },
+    "entityRef": {
+      "type": "string",
+      "pattern": "^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$"
+    },
+    "evidenceSourceRef": {
+      "type": "string",
+      "pattern": "^evidence-source:tok:[0-9a-f]{16}$"
+    },
     "instant": {
       "type": "string",
       "format": "date-time",
@@ -212,6 +224,8 @@
     },
     "evidenceKind": {
       "enum": [
+        "request",
+        "identity-resolution",
         "balance",
         "bank-instruction",
         "household-instruction",
@@ -219,14 +233,17 @@
         "pending-actions",
         "restriction",
         "authority",
-        "model-assignment",
         "legal-hold",
-        "recent-change"
+        "recent-change",
+        "policy",
+        "tax-review",
+        "time-zone-rule",
+        "execution-precondition"
       ]
     },
     "evidenceId": {
       "type": "string",
-      "pattern": "^evs:tok:[0-9a-f]{16}:(balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|model-assignment|legal-hold|recent-change)$"
+      "pattern": "^evs:tok:[0-9a-f]{16}:(request|identity-resolution|balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|legal-hold|recent-change|policy|tax-review|time-zone-rule|execution-precondition)$"
     },
     "conflictKey": {
       "type": "string",

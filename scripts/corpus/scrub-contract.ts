@@ -7,121 +7,168 @@ import {
 } from "../../src/contracts/decision-core/serialization";
 import type { GeneratedFile } from "./generate";
 import {
-  pendingActionLiquidityTreatment,
-  type PendingActionKind,
-  type PendingActionState,
-} from "./pending-actions";
-import {
   deriveRealDerivedFreshness,
-  type RealDerivedEvidenceKind,
 } from "./real-derived-policy";
+import {
+  pendingActionProblems,
+  realDerivedSemanticContractProblems,
+  realDerivedSemanticDefects,
+  realDerivedTopologyProblems,
+} from "./real-derived-semantics";
+import type {
+  RealDerivedCase,
+  ReplayPayload,
+} from "./real-derived-types";
+import { parseStrictJson } from "./strict-json";
 import { readTree } from "./tree";
 import { REAL_DERIVED_DIR, SPEC_DIR } from "./world";
 
-const OPAQUE_TOKEN = /^tok:[0-9a-f]{16}$/;
 const REPLAY_SCHEMA_FILE = "real-derived-replay-schema.json";
 
-type PendingReplay = {
-  actionRef: string | null; actionKind: PendingActionKind | null;
-  actionState: PendingActionState | null; amountMinor: number | null; direction: "outgoing" | "incoming" | "unknown" | null;
-  liquidityClass: "distribution" | "debit" | "credit" | "unclassified" | null;
-  reducesEffectiveLiquidity: boolean; increasesAvailableLiquidity: boolean;
-};
-type ReplayPayload = {
-  request: { householdRef: string; destinationRef: string; amountMinor: number; deadlineAt: string | null; settlementEarliestAt: string | null };
-  identity: { resolution: "unique" | "ambiguous" | "canonical-collision"; candidateRefs: string[] };
-  destination: { instructionRef: string; householdRef: string; ownerRefs: string[]; ownership: "same-household" | "cross-household"; verificationState: "verified" | "unverified" | "missing"; discriminatorState: "unique" | "collision" | "missing" };
-  liquidity: { sources: Array<{ accountRef: string; availableMinor: number; sourceTaxClass: "taxable" | "retirement" | "trust" | "entity" | "unknown" }>; reserveState: "modeled-scalar" | "modeled-segmented" | "missing"; reserveRequiredMinor: number | null; withdrawalSegmentsMinor: number[]; pendingAction: PendingReplay };
-  authority: { grantRef: string | null; authorityScope: "distribution-request" | "other" | "missing"; authorityState: "effective" | "expired" | "not-yet-effective" | "wrong-scope" | "missing"; validFrom: string | null; validTo: string | null };
-  policy: { thresholdMinor: number; thresholdComparison: "below" | "equal" | "above"; restrictionRef: string | null; restrictionState: "absent" | "in-force" | "expired" | "future"; legalHoldRef: string | null; legalHoldScope: "none" | "account" | "position" };
-  instructionConflict: { conflictState: "none" | "present" | "resolved"; instructionRefs: string[]; impactedSubjectRefs: string[] };
-  taxReviewState: "not-required" | "required-pending" | "completed" | "unavailable";
-  temporal: { eventAt: string; transitionState: "standard" | "daylight" | "boundary" };
-  evidenceRefs: string[];
-  execution: { reservationKeys: string[]; preconditions: string[] };
-};
-type RealDerivedCase = {
-  caseId: string; corpusVersion: string; occurredAt: string;
-  scrubAttestation: { extractedAt: string; extractedBy: string; scrubbedBy: string; scrubbedAt: string; reviewedBy: string; reviewedAt: string; recordsBefore: number; recordsAfter: number };
-  label: { kind: "defect"; defectClassId: string } | { kind: "clean-control"; controlRationaleId: string };
-  evaluation: { asOf: string; freshnessPolicyVersion: string };
-  subjects: string[]; replayPayload: ReplayPayload;
-  evidence: Array<
-    { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "observed"; observedAt: string; retrievedAt: string; freshness: "fresh" | "stale" } |
-    { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "missing"; observedAt: null; retrievedAt: string; freshness: "unknown" }>;
-  reservations: Array<{ family: string; conflictKey: string }>;
-};
 const schemaFromSpec = (name: string): Record<string, unknown> =>
-  JSON.parse(readFileSync(join(SPEC_DIR, name), "utf8")) as Record<string, unknown>;
-const ReplayPayloadSchema = z.fromJSONSchema(schemaFromSpec(REPLAY_SCHEMA_FILE)) as z.ZodType<ReplayPayload>;
-export const RealDerivedCaseSchema = z.fromJSONSchema(schemaFromSpec("real-derived-case-schema.json"))
+  parseStrictJson(
+    readFileSync(join(SPEC_DIR, name), "utf8"),
+    name,
+  ) as Record<string, unknown>;
+
+type JsonSchemaNode = {
+  readonly $ref?: unknown;
+  readonly additionalProperties?: unknown;
+  readonly items?: unknown;
+  readonly oneOf?: unknown;
+  readonly properties?: unknown;
+  readonly const?: unknown;
+};
+
+const caseJsonSchema = schemaFromSpec("real-derived-case-schema.json");
+const replayJsonSchema = schemaFromSpec(REPLAY_SCHEMA_FILE);
+
+function resolveSchema(
+  schema: JsonSchemaNode,
+  root: Record<string, unknown>,
+): JsonSchemaNode {
+  if (
+    typeof schema.$ref !== "string" ||
+    !schema.$ref.startsWith("#/$defs/")
+  ) {
+    return schema;
+  }
+  const name = schema.$ref.slice("#/$defs/".length);
+  const definitions = root.$defs;
+  if (
+    definitions === null ||
+    typeof definitions !== "object" ||
+    Array.isArray(definitions)
+  ) {
+    return schema;
+  }
+  return (definitions as Record<string, JsonSchemaNode>)[name] ?? schema;
+}
+
+function branchMatches(value: unknown, schema: JsonSchemaNode): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const properties =
+    schema.properties !== null &&
+    typeof schema.properties === "object" &&
+    !Array.isArray(schema.properties)
+      ? schema.properties as Record<string, JsonSchemaNode>
+      : {};
+  const discriminators = Object.entries(properties).filter(
+    ([, property]) => property.const !== undefined,
+  );
+  return discriminators.length > 0 &&
+    discriminators.every(
+      ([key, property]) =>
+        (value as Record<string, unknown>)[key] === property.const,
+    );
+}
+
+function closedSchemaPaths(
+  value: unknown,
+  unresolved: JsonSchemaNode,
+  root: Record<string, unknown>,
+  path: Array<string | number> = [],
+): Array<Array<string | number>> {
+  const schema = resolveSchema(unresolved, root);
+  if (Array.isArray(schema.oneOf)) {
+    const matches = (schema.oneOf as JsonSchemaNode[]).filter((branch) =>
+      branchMatches(value, branch),
+    );
+    return matches.length === 1
+      ? closedSchemaPaths(value, matches[0]!, root, path)
+      : [];
+  }
+  if (Array.isArray(value)) {
+    return schema.items !== null && typeof schema.items === "object"
+      ? value.flatMap((entry, index) =>
+          closedSchemaPaths(
+            entry,
+            schema.items as JsonSchemaNode,
+            root,
+            [...path, index],
+          ),
+        )
+      : [];
+  }
+  if (value === null || typeof value !== "object") return [];
+  const properties =
+    schema.properties !== null &&
+    typeof schema.properties === "object" &&
+    !Array.isArray(schema.properties)
+      ? schema.properties as Record<string, JsonSchemaNode>
+      : {};
+  const record = value as Record<string, unknown>;
+  const extra = schema.additionalProperties === false
+    ? Object.keys(record)
+        .filter((key) => properties[key] === undefined)
+        .map(() => [...path, "(redacted)"])
+    : [];
+  return [
+    ...extra,
+    ...Object.entries(properties).flatMap(([key, child]) =>
+      Object.hasOwn(record, key)
+        ? closedSchemaPaths(record[key], child, root, [...path, key])
+        : [],
+    ),
+  ];
+}
+
+const ReplayPayloadSchema = z.fromJSONSchema(replayJsonSchema) as z.ZodType<ReplayPayload>;
+const ParsedCaseSchema = z.fromJSONSchema(caseJsonSchema)
   .superRefine((value, context) => {
-    const replay = ReplayPayloadSchema.safeParse((value as { replayPayload?: unknown }).replayPayload);
+    const replayValue = (value as { replayPayload?: unknown }).replayPayload;
+    const replay = ReplayPayloadSchema.safeParse(replayValue);
     if (!replay.success) {
       for (const issue of replay.error.issues)
         context.addIssue({ ...issue, path: ["replayPayload", ...issue.path] });
     }
-  }) as unknown as z.ZodType<RealDerivedCase>;
+  });
+const ClosedRawCaseSchema = z.unknown().superRefine((value, context) => {
+  const paths = closedSchemaPaths(value, caseJsonSchema, caseJsonSchema);
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    paths.push(
+      ...closedSchemaPaths(
+        (value as Record<string, unknown>).replayPayload,
+        replayJsonSchema,
+        replayJsonSchema,
+        ["replayPayload"],
+      ),
+    );
+  }
+  for (const path of paths) {
+    context.addIssue({
+      code: "custom",
+      path,
+      message: "unrecognized field",
+    });
+  }
+});
+export const RealDerivedCaseSchema = ClosedRawCaseSchema
+  .pipe(ParsedCaseSchema) as unknown as z.ZodType<RealDerivedCase>;
 
-const hasEvidence = (item: RealDerivedCase, kind: RealDerivedEvidenceKind): boolean =>
-  item.evidence.some((evidence) => evidence.evidenceKind === kind);
-const intervalCollapse = (item: RealDerivedCase): boolean => {
-  const validTo = item.replayPayload.authority.validTo;
-  return validTo !== null && item.evidence.some((evidence) =>
-    evidence.evidenceKind === "authority" && evidence.observedAt !== null
-    && evidence.observedAt < validTo && validTo <= evidence.retrievedAt);
-};
-const pendingMiscount = (item: RealDerivedCase): boolean => {
-  const action = item.replayPayload.liquidity.pendingAction;
-  return action.actionRef !== null && (["blocked", "cancelled", "rejected"].includes(action.actionState ?? "")
-    || ["unknown", "unclassified"].includes(action.actionKind ?? ""));
-};
-const deadlineInfeasible = (item: RealDerivedCase): boolean => {
-  const request = item.replayPayload.request;
-  return request.deadlineAt !== null && (request.deadlineAt < item.evaluation.asOf
-    || (request.settlementEarliestAt !== null && request.deadlineAt < request.settlementEarliestAt));
-};
-const taxBlindness = (item: RealDerivedCase): boolean => {
-  const payload = item.replayPayload;
-  const action = payload.liquidity.pendingAction;
-  const required = payload.request.amountMinor + (payload.liquidity.reserveRequiredMinor ?? 0)
-    + (action.reducesEffectiveLiquidity ? action.amountMinor ?? 0 : 0);
-  const sufficient = payload.liquidity.sources.filter((source) => source.availableMinor >= required);
-  return sufficient.length > 0 && sufficient.every((source) => source.sourceTaxClass === "retirement")
-    && payload.taxReviewState !== "completed";
-};
-const defectSignatures: Readonly<Record<string, (item: RealDerivedCase) => boolean>> = {
-  "identity-resolution-ambiguity": (item) => item.replayPayload.identity.resolution === "ambiguous",
-  "authority-scope-error": (item) => item.replayPayload.authority.authorityState !== "effective",
-  "destination-integrity-defect": (item) => item.replayPayload.destination.ownership === "cross-household" ||
-    item.replayPayload.destination.verificationState !== "verified" ||
-    item.replayPayload.destination.discriminatorState !== "unique",
-  "instruction-conflict-unresolved": (item) => item.replayPayload.instructionConflict.conflictState === "present",
-  "liquidity-reserve-miscalculation": (item) => item.replayPayload.liquidity.reserveState !== "modeled-scalar",
-  "evidence-staleness-unnoticed": (item) => item.evidence.some((evidence) => evidence.freshness === "stale"),
-  "evidence-interval-collapse": intervalCollapse,
-  "restriction-lifecycle-error": (item) => ["expired", "future"].includes(item.replayPayload.policy.restrictionState),
-  "hold-scope-error": (item) => item.replayPayload.policy.legalHoldScope === "position",
-  "pending-activity-miscount": pendingMiscount,
-  "temporal-rendering-defect": (item) => item.replayPayload.temporal.transitionState === "boundary",
-  "canonical-identity-defect": (item) => item.replayPayload.identity.resolution === "canonical-collision",
-  "threshold-boundary-error": (item) => item.replayPayload.policy.thresholdComparison === "equal",
-  "deadline-feasibility-error": deadlineInfeasible,
-  "blast-radius-underestimation": (item) => hasEvidence(item, "recent-change") &&
-    item.replayPayload.instructionConflict.conflictState === "resolved" &&
-    item.replayPayload.instructionConflict.impactedSubjectRefs.length > 1,
-  "tax-consequence-blindness": taxBlindness,
-};
-
-export function realDerivedSemanticContractProblems(defectClassIds: ReadonlySet<string>): string[] {
-  const supported = new Set(Object.keys(defectSignatures));
-  return [
-    ...[...defectClassIds].filter((id) => !supported.has(id))
-      .map((id) => `real-derived replay semantics missing defect class "${id}"`),
-    ...[...supported].filter((id) => !defectClassIds.has(id))
-      .map((id) => `real-derived replay semantics reference unknown defect class "${id}"`),
-  ];
-}
+export { realDerivedSemanticContractProblems };
 
 export function realDerivedCaseProblems(
   value: unknown,
@@ -197,6 +244,7 @@ export function realDerivedCaseProblems(
       payload.identity.candidateRefs,
       payload.destination.ownerRefs,
       payload.liquidity.sources.map((source) => source.accountRef),
+      payload.liquidity.selectedFundingRefs,
       payload.instructionConflict.instructionRefs,
       payload.instructionConflict.impactedSubjectRefs,
       payload.evidenceRefs,
@@ -204,44 +252,12 @@ export function realDerivedCaseProblems(
       payload.execution.preconditions,
     ].some(duplicated),
   );
-  const liquidity = payload.liquidity;
-  const action = liquidity.pendingAction;
-  const actionValues = [
-    action.actionRef,
-    action.actionKind,
-    action.actionState,
-    action.direction,
-    action.liquidityClass,
-    action.amountMinor,
-  ];
-  const actionAbsent = actionValues.every((value) => value === null);
-  payloadProblem(
-    "liquidity.pendingAction",
-    actionAbsent
-      ? action.reducesEffectiveLiquidity || action.increasesAvailableLiquidity
-      : actionValues.some((value) => value === null),
-  );
-  if (!actionAbsent && actionValues.every((value) => value !== null)) {
-    const expected = pendingActionLiquidityTreatment(
-      action.actionKind!,
-      action.actionState!,
-    );
-    payloadProblem(
-      "liquidity.pendingAction treatment",
-      action.direction !== expected.direction ||
-        action.liquidityClass !== expected.liquidityClass ||
-        action.reducesEffectiveLiquidity !==
-          expected.reducesEffectiveLiquidity ||
-        action.increasesAvailableLiquidity !==
-          expected.increasesAvailableLiquidity,
-    );
+  for (const problem of pendingActionProblems(parsed.data)) {
+    reject(true, problem);
   }
-  payloadProblem("destination identity", payload.request.destinationRef !== payload.destination.instructionRef);
-  const expectedOwnership =
-    payload.request.householdRef === payload.destination.householdRef
-      ? "same-household"
-      : "cross-household";
-  payloadProblem("destination ownership", payload.destination.ownership !== expectedOwnership);
+  for (const problem of realDerivedTopologyProblems(parsed.data)) {
+    reject(true, problem);
+  }
   const expectedThreshold =
     payload.request.amountMinor < payload.policy.thresholdMinor
       ? "below"
@@ -284,27 +300,8 @@ export function realDerivedCaseProblems(
       [...emittedKeys].some((key) => !reservationKeys.has(key)),
     "replayPayload reservationKeys must exactly match reservations",
   );
-  const referencedSubjects = new Set(parsed.data.evidence.map((entry) => entry.subjectRef));
-  const pending: unknown[] = [payload];
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (typeof current === "string" && OPAQUE_TOKEN.test(current)) {
-      referencedSubjects.add(current);
-    } else if (Array.isArray(current)) {
-      pending.push(...current);
-    } else if (current !== null && typeof current === "object") {
-      pending.push(...Object.values(current));
-    }
-  }
-  reject(
-    referencedSubjects.size !== subjectCounts.size ||
-      [...referencedSubjects].some((ref) => subjectCounts.get(ref) !== 1),
-    "subjects must exactly inventory replay and evidence token references",
-  );
   reject(parsed.data.label.kind === "defect" && !defectClassIds.has(parsed.data.label.defectClassId), "label.defectClassId is not in the closed defect taxonomy");
-  const semanticDefects = Object.entries(defectSignatures)
-    .filter(([, matches]) => matches(parsed.data))
-    .map(([id]) => id);
+  const semanticDefects = realDerivedSemanticDefects(parsed.data);
   if (parsed.data.label.kind === "defect") {
     reject(
       !semanticDefects.includes(parsed.data.label.defectClassId),
@@ -348,7 +345,7 @@ export function loadRealDerivedDelivery(
       continue;
     }
     try {
-      const value = JSON.parse(entry.bytes) as JsonValue;
+      const value = parseStrictJson(entry.bytes, delivery) as JsonValue;
       const canonical = canonicalJson(value);
       if (!canonical.ok || entry.bytes !== `${canonical.value}\n`) {
         problems.push(
@@ -361,8 +358,12 @@ export function loadRealDerivedDelivery(
         bytes: entry.bytes,
         value,
       });
-    } catch {
-      problems.push(`${entry.relPath}: invalid JSON`);
+    } catch (error) {
+      problems.push(
+        error instanceof Error && error.message.includes("duplicate object key")
+          ? `${entry.relPath}: input must be canonical JSON with unique object keys`
+          : `${entry.relPath}: invalid JSON`,
+      );
     }
   }
   return {
