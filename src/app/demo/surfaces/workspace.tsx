@@ -12,7 +12,17 @@ import { EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type WorkspaceVM } from "../model";
 import { PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
-export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; scenarioId: string; firmId: string }) {
+export function WorkspaceSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: WorkspaceVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   return (
     <SurfaceShell
       title={vm.household.name}
@@ -73,7 +83,7 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
       <EmptyState
         title={vm.onRamp.title}
         description={vm.onRamp.description}
-        action={<PrimaryLink href={demoHref("intent", scenarioId, firmId)}>Ask Verin about this household</PrimaryLink>}
+        action={<PrimaryLink href={demoHref("intent", scenarioId, firmId, querySuffix)}>Ask Verin about this household</PrimaryLink>}
       />
     </SurfaceShell>
   );

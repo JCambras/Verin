@@ -157,53 +157,70 @@ function sourceTimelines(): SourceTimeline[] {
             ...lifecycleEvents,
           ]
         : [
-        event(
-          "request",
-          journey.intent.requestAt.provenance.asOf,
-          journey.intent.requestAt.display,
-        ),
-        event(
-          "decision-recorded",
-          journey.record.header.createdAtIso,
-          journey.record.header.createdAt,
-          true,
-        ),
-        ...(journey.record.approvalStages ?? []).flatMap((stage) => [
-          ...stage.actors.flatMap((actor) =>
-            actor.timestampIso
-              ? [
-                  event(
-                    "approval",
-                    actor.timestampIso,
-                    actor.statusLabel,
-                  ),
-                ]
-              : [],
-          ),
-          ...(stage.authorityEvents ?? []).map((authorityEvent) =>
             event(
-              authorityEvent.type,
-              authorityEvent.timestamp,
-              authorityEvent.display,
+              "request",
+              journey.intent.requestAt.provenance.asOf,
+              journey.intent.requestAt.display,
             ),
-          ),
-        ]),
-        ...(journey.safety
-          ? [
+            ...[
               event(
-                "revalidation",
-                journey.safety.revalidatedAtIso,
-                journey.safety.revalidatedAt.display,
+                "decision-recorded",
+                journey.record.header.createdAtIso,
+                journey.record.header.createdAt,
+                true,
               ),
-            ]
-          : []),
-        ...(journey.execution?.rows ?? []).map((row) =>
-          event("execution", row.timestampIso, row.timestamp),
-        ),
-        ...(journey.verification?.appended ?? []).map((row) =>
-          event("verification-appended", row.timestampIso, row.timestamp),
-        ),
-      ];
+              ...(journey.record.approvalStages ?? []).flatMap((stage) => [
+                ...stage.actors.flatMap((actor) =>
+                  actor.timestampIso
+                    ? [
+                        event(
+                          "approval",
+                          actor.timestampIso,
+                          actor.statusLabel,
+                        ),
+                      ]
+                    : [],
+                ),
+                ...(stage.authorityEvents ?? []).map((authorityEvent) =>
+                  event(
+                    authorityEvent.type,
+                    authorityEvent.timestamp,
+                    authorityEvent.display,
+                  ),
+                ),
+              ]),
+              ...(journey.safety
+                ? [
+                    event(
+                      "revalidation",
+                      journey.safety.revalidatedAtIso,
+                      journey.safety.revalidatedAt.display,
+                    ),
+                    ...(journey.safety.reservationAtIso &&
+                    journey.safety.reservationAt
+                      ? [
+                          event(
+                            "reservation",
+                            journey.safety.reservationAtIso,
+                            journey.safety.reservationAt,
+                            true,
+                          ),
+                        ]
+                      : []),
+                  ]
+                : []),
+              ...(journey.execution?.rows ?? []).map((row) =>
+                event("execution", row.timestampIso, row.timestamp),
+              ),
+              ...(journey.verification?.appended ?? []).map((row) =>
+                event("verification-appended", row.timestampIso, row.timestamp),
+              ),
+            ].sort(
+              (left, right) =>
+                new Date(left.instant).getTime() -
+                new Date(right.instant).getTime(),
+            ),
+          ];
       const primary: SourceTimeline = {
         sourceCaseId: authority.sourceCaseId,
         scenarioId: scenario.id,
@@ -279,6 +296,16 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     "firm-a",
     "revalidated",
   );
+  const unsupportedInvalidationJourney = getJourney(
+    "approval-invalidation",
+    "firm-b",
+  );
+  const refreshedEvidencePendingMinor =
+    revalidatedInvalidationJourney.evidence.rows.find(
+      (row) =>
+        row.kind === "metric" &&
+        row.label.includes("pending approved distribution"),
+    );
   const authorityPlan = (
     scenarioId: string,
     firmId: string,
@@ -289,6 +316,13 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       scenarioId,
       firmId,
       pass,
+      mode: journey.approvals?.mode ?? "staged",
+      automaticAuthorityVisible:
+        journey.approvals?.automaticAuthority !== null &&
+        journey.approvals?.automaticAuthority !== undefined,
+      bindingVisible:
+        journey.approvals?.binding !== null &&
+        journey.approvals?.binding !== undefined,
       satisfied: journey.approvals?.satisfied ?? false,
       stages: (journey.approvals?.stages ?? []).map((stage) => {
         const completed = stage.actors.filter((actor) => actor.status === "done");
@@ -317,6 +351,33 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
   const policyHeadroom = policyRows.find(
     (row) => row.label === DRAFT_HEADROOM_LABEL,
   );
+  const reservationCausality =
+    SCENARIOS.flatMap((scenario) =>
+      firms.flatMap((firm) => {
+        const authority = liquidityAuthorityFor(scenario, firm.id);
+        if (
+          authority.kind !== "signed" ||
+          !authority.relatedDecisions?.length
+        ) {
+          return [];
+        }
+        const journey = getJourney(scenario.id, firm.id);
+        const reservationAt = journey.safety?.reservationAtIso;
+        const executionAt = journey.execution?.rows[0]?.timestampIso;
+        if (!reservationAt || !executionAt) return [];
+        return authority.relatedDecisions.map((related) => ({
+          scenarioId: scenario.id,
+          firmId: firm.id,
+          sourceCaseId: authority.sourceCaseId,
+          requestAt: authority.requestAt,
+          decisionAt: journey.record.header.createdAtIso,
+          reservationAt,
+          executionAt,
+          relatedSourceCaseId: related.sourceCaseId,
+          relatedRequestAt: related.requestAt,
+        }));
+      }),
+    );
   return {
     requestAmountMinor: CANONICAL_REQUEST.amountMinor,
     plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
@@ -350,6 +411,11 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         typeof invalidation?.before.metric.value === "number" ? invalidation.before.metric.value : null,
       safetyAfterPendingMinor:
         typeof invalidation?.after.metric.value === "number" ? invalidation.after.metric.value : null,
+      refreshedEvidencePendingMinor:
+        refreshedEvidencePendingMinor?.kind === "metric" &&
+        typeof refreshedEvidencePendingMinor.metric.value === "number"
+          ? refreshedEvidencePendingMinor.metric.value
+          : null,
     },
     executionGuards: SCENARIOS.flatMap((scenario) =>
       firms.map((firm) => {
@@ -371,6 +437,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       ),
       authorityPlan("approval-invalidation", "firm-a", "revalidated"),
     ],
+    reservationCausality,
     approvalInvalidationLifecycle: {
       eventTypes: invalidationJourney.record.lifecycle.map((event) => event.type),
       eventInstants: invalidationJourney.record.lifecycle.map(
@@ -414,6 +481,15 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         revalidatedInvalidationJourney.verification?.proves.map(
           (proof) => proof.display,
         ) ?? [],
+      recordBindings: invalidationJourney.record.decisionBindings.map(
+        (binding) => ({ ...binding }),
+      ),
+      originalApprovalBinding:
+        invalidationJourney.approvals?.binding ?? null,
+      freshApprovalBinding:
+        revalidatedInvalidationJourney.approvals?.binding ?? null,
+      unsupportedFirmEventCount:
+        unsupportedInvalidationJourney.record.lifecycle.length,
     },
     partialReceipt: {
       completedParts:

@@ -17,6 +17,7 @@ import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summ
 import {
   dispositionFor,
   firmById,
+  hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   outcomeClassFor,
   scenarioById,
@@ -35,7 +36,9 @@ function reachOf(scenarioId: string, firmId: string, pass: JourneyPass) {
   const execution =
     safety &&
     liquidityAuthorityFor(scenario, firmId).kind === "signed" &&
-    (!scenario.spec.invalidation || pass === "revalidated");
+    (!scenario.spec.invalidation ||
+      (pass === "revalidated" &&
+        hasSignedInvalidationAuthority(scenario, firmId)));
   return { authority, safety, execution, approvals };
 }
 
@@ -59,6 +62,14 @@ export function getJourney(
 ): DecisionJourneyVM {
   const scenario = scenarioById(scenarioId);
   const firm = firmById(firmId);
+  if (
+    pass === "revalidated" &&
+    !hasSignedInvalidationAuthority(scenario, firm.id)
+  ) {
+    throw new Error(
+      `Revalidated pass has no exact signed authority for ${scenario.id}/${firm.id}`,
+    );
+  }
   const reached = reachOf(scenario.id, firm.id, pass);
   const stopNote = stopNoteOf(scenario.id, firm.id, pass);
   const safety = reached.safety ? buildSafety(scenario, firm, pass) : null;
@@ -70,9 +81,9 @@ export function getJourney(
     scenarioTitle: scenario.title,
     firmName: firm.name,
     outcomeClass: outcomeClassFor(scenario, firm.id),
-    workspace: buildWorkspace(scenario, firm),
+    workspace: buildWorkspace(scenario, firm, pass),
     intent: buildIntent(scenario, firm),
-    evidence: buildEvidence(scenario, firm),
+    evidence: buildEvidence(scenario, firm, pass),
     recommendation: buildRecommendation(scenario, firm, pass),
     policyTrace: buildPolicyTrace(scenario, firm, pass),
     approvals: reached.approvals,

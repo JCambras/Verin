@@ -39,34 +39,53 @@ export function AuthoritySurface({
     );
   }
   return (
-    <SurfaceShell spine={vm.spine} title="Authority" description="Who must approve this movement, in what order, and what their approval binds to.">
-      <div className="flex flex-col gap-2">
-        <ProgressSteps steps={vm.stages.map((s, i) => ({ id: `stage-${i}`, name: s.title, state: s.stepState }))} />
-        <p className="flex items-center gap-2 text-xs text-slate-600">
-          <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+    <SurfaceShell spine={vm.spine} title="Authority" description="The authority that governs whether this movement may continue.">
+      {vm.automaticAuthority ? (
+        <section
+          aria-label="Automatic authority"
+          className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4"
+          data-testid="automatic-authority"
+        >
+          <h2 className="text-base font-semibold text-slate-900">{vm.automaticAuthority.title}</h2>
+          <p className="text-sm text-slate-700">{vm.automaticAuthority.summary}</p>
+          <p className="font-mono text-xs text-slate-600">{vm.automaticAuthority.policyRef}</p>
+          <p className="flex items-center gap-2 text-xs text-slate-600">
+            <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+          </p>
+        </section>
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            <ProgressSteps steps={vm.stages.map((s, i) => ({ id: `stage-${i}`, name: s.title, state: s.stepState }))} />
+            <p className="flex items-center gap-2 text-xs text-slate-600">
+              <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+            </p>
+          </div>
+
+          {vm.stages.map((s) => (
+            <ApprovalStagePanel
+              key={s.title}
+              stage={{
+                title: s.title,
+                requirement: s.requirement,
+                actors: s.actors,
+                ...(s.expiry ? { expiry: s.expiry } : {}),
+                ...(s.escalation ? { escalation: s.escalation } : {}),
+                ...(s.authorityEvents ? { authorityEvents: s.authorityEvents } : {}),
+              }}
+            />
+          ))}
+        </>
+      )}
+
+      {vm.binding ? (
+        <p className="font-mono text-xs text-slate-500">
+          Approval binds to decision {shortHash(vm.binding.decisionHash)} · input bundle {shortHash(vm.binding.bundleHash)}
         </p>
-      </div>
-
-      {vm.stages.map((s) => (
-        <ApprovalStagePanel
-          key={s.title}
-          stage={{
-            title: s.title,
-            requirement: s.requirement,
-            actors: s.actors,
-            ...(s.expiry ? { expiry: s.expiry } : {}),
-            ...(s.escalation ? { escalation: s.escalation } : {}),
-            ...(s.authorityEvents ? { authorityEvents: s.authorityEvents } : {}),
-          }}
-        />
-      ))}
-
-      <p className="font-mono text-xs text-slate-500">
-        Approval binds to decision {shortHash(vm.binding.decisionHash)} · input bundle {shortHash(vm.binding.bundleHash)}
-      </p>
+      ) : null}
 
       {journeyContinues ? (
-        <section aria-label="Approve" className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-surface p-4">
+        <section aria-label={vm.mode === "automatic" ? "Continue" : "Approve"} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-surface p-4">
           <p className="text-sm text-slate-800">{vm.gate.restatement}</p>
           <dl className="flex flex-wrap gap-x-6 gap-y-2">
             {vm.gate.figures.map((f) => (

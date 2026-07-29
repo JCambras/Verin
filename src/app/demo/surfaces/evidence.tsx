@@ -7,6 +7,8 @@
  */
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } from "@app/presentation/evidence-row";
+import { FreshValue } from "@app/presentation/fresh-value";
+import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type EvidenceRowVM, type EvidenceVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
@@ -46,21 +48,42 @@ function Row({ row }: { row: EvidenceRowVM }) {
   }
 }
 
-export function EvidenceSurface({ vm, scenarioId, firmId }: { vm: EvidenceVM; scenarioId: string; firmId: string }) {
+export function EvidenceSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: EvidenceVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   return (
     <SurfaceShell
       spine={vm.spine}
       title="Evidence"
       description="Every item names its source, when it was observed, and when Verin retrieved it. Gaps and conflicts are stated, never hidden."
     >
+      {vm.refreshNotice ? (
+        <p
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-surface p-4 text-sm text-slate-800"
+          data-testid="refreshed-evidence"
+        >
+          <FreshValue provenance={vm.refreshNotice.fact.provenance}>
+            {vm.refreshNotice.fact.display}
+          </FreshValue>
+          <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.refreshNotice.fakeClass]} />
+        </p>
+      ) : null}
       <div className="flex flex-col divide-y divide-slate-100 rounded-lg border border-slate-200 bg-surface px-4 py-2">
         {vm.rows.map((row, i) => (
           <Row key={i} row={row} />
         ))}
       </div>
       <JourneyNav
-        back={{ href: demoHref("intent", scenarioId, firmId), label: "Back to the request" }}
-        forward={{ href: demoHref("decision", scenarioId, firmId), label: "View the recommendation" }}
+        back={{ href: demoHref("intent", scenarioId, firmId, querySuffix), label: "Back to the request" }}
+        forward={{ href: demoHref("decision", scenarioId, firmId, querySuffix), label: "View the recommendation" }}
       />
     </SurfaceShell>
   );

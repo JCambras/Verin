@@ -49,6 +49,8 @@ dated 2026-07-28 - are integrated as annotations. Nothing else is altered:
    acceptance checklist, the design language, the scenario matrix, or the demo's rendered statuses
    drift apart.
 
+Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
+
 This contract is amended only by captain decision, recorded in the PR that changes it.
 
 ---

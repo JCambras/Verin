@@ -3438,3 +3438,33 @@ uses the latest applicable liquidity snapshot.
 from `proceed` allowed unsupported branches and incomplete authority stages to look executable.
 **Revert path:** journey pass selection, structured approval stages, and downstream reach guards are
 confined to the demo fake-service and semantic snapshot.
+
+### D-068 · 2026-07-28 · reversible · Invalidation records preserve exact authority and causal bindings
+
+Review of D-067 found six presentation and fence gaps in the signed journey projection:
+
+- GC-15 lifecycle events were selected by the scenario flag alone. The shared authority predicate
+  now requires the exact `approval-invalidation` scenario, Firm A, and signed GC-15 source before a
+  revalidated pass or printable lifecycle can exist. Unsupported firms retain automatic authority
+  where their policy grants it, stop at missing liquidity, and print no borrowed lifecycle.
+- The GC-15 record printed only the original decision and input-bundle hashes beside fresh approvals
+  and execution. It now prints the original and derived decision bindings as separate pairs, and the
+  semantic fence requires them to match the corresponding approval pass.
+- An empty approval plan was treated as a satisfied set of recorded approvals. Automatic authority
+  is now an explicit authority mode with policy provenance, distinct copy, and no approval-binding
+  claim.
+- GC-10's reservation timestamp was after both its sibling request and its execution. The shared
+  timeline now commits the reservation after the primary decision and before the sibling request and
+  execution. The source-bound timeline includes that event and the companion checks the causal order.
+- Back navigation from the derived decision discarded the revalidated pass. The pass now persists
+  through Workspace, Intent, and Evidence, where the refreshed evidence bundle and pending
+  distribution remain visible before returning to the derived decision.
+- The normative status fence accepted required words anywhere in a document. Each normative document
+  now carries one designated canonical observed-status list, and the fence compares that list exactly
+  to the contract registry, including an adversarial extra-member case.
+
+**Why:** an examiner record must preserve the authority, evidence phase, identity bindings, and
+causal order that actually authorized execution. Presence-only checks and scenario-only selection
+could make contradictory records appear internally complete.
+**Revert path:** the authority predicate, timeline projection, view-model additions, navigation pass,
+and pure semantic checks are isolated to the demo fake-service and its fences.

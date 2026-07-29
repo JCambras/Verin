@@ -5640,3 +5640,31 @@ GC-13 displays the completed and incomplete receipt parts without a settled clai
 **Revert:** all adversarial mutations remain inside companion tests.
 
 **Date:** 2026-07-28 (review corrections, D-067).
+
+## F107 · exact invalidation bindings, automatic authority, and reservation causality
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** only the exact signed GC-15 scenario and firm may emit the invalidation lifecycle or
+enter its revalidated pass; the printable record preserves both decision and input-bundle bindings;
+automatic authority is not presented as approval; GC-10 reserves liquidity before the signed GC-11
+sibling request and execution; refreshed Evidence preserves the revalidated pass; and every
+normative status document states one exact canonical observed-status list.
+
+The semantic companions add a cross-firm lifecycle count, remove one printed decision binding,
+change GC-02 from automatic to staged presentation, move GC-10's reservation to the sibling request,
+remove the reservation-causality binding, suppress the refreshed pending amount, and append
+`queued` to each document's designated observed-status list. The shared validator rejects every
+mutation with its named authority, lifecycle, causal-order, evidence-phase, or exact-list
+diagnostic.
+
+Browser coverage proves Firm B has no GC-15 lifecycle and cannot request its revalidated pass, while
+its signed GC-02 route presents automatic authority without approval hashes or approval copy. Firm
+A's record prints both binding pairs and all thirteen signed events. The derived-decision back link
+lands on refreshed Evidence with `$15,000.00` still visible, and the forward link returns to the
+derived decision. GC-10 exposes a reservation instant that precedes the signed sibling request and
+execution. Axe checks the changed record and authority markup.
+
+**Revert:** all adversarial mutations remain inside companion tests.
+
+**Date:** 2026-07-28 (review corrections, D-068).

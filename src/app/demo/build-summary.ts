@@ -23,7 +23,6 @@ import {
   buildApprovals,
   buildDisposition,
   buildPolicyTrace,
-  buildStages,
   headroomMetric,
   reserveFloorMetric,
   DISPOSITION_BADGES,
@@ -38,6 +37,7 @@ import {
   OBSERVED_RECENT,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   dispositionFor,
+  hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   type FirmData,
   type ScenarioData,
@@ -240,7 +240,7 @@ function invalidationLifecycle(
   scenario: ScenarioData,
   firm: FirmData,
 ): RecordVM["lifecycle"] {
-  if (!scenario.spec.invalidation) return [];
+  if (!hasSignedInvalidationAuthority(scenario, firm.id)) return [];
   const timeline = timelineFor(scenario, firm);
   const events = [
     ["EvidenceSnapshotRecorded", timeline.requestAt, "Original evaluation snapshots pinned with no pending activity."],
@@ -272,14 +272,18 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
   );
   const timeline = timelineFor(scenario, firm);
   const proceed = dispositionFor(scenario, firm.id) === "proceed";
-  const pass = scenario.spec.invalidation ? "revalidated" : "initial";
+  const revalidated = hasSignedInvalidationAuthority(scenario, firm.id);
+  const pass = revalidated ? "revalidated" : "initial";
   const approvals = proceed ? buildApprovals(scenario, firm, pass) : null;
+  const originalApproval = revalidated
+    ? buildApprovals(scenario, firm, "initial")
+    : approvals;
   const safetyReached = approvals?.satisfied === true;
   const execution = safetyReached ? buildExecution(scenario, firm, pass) : null;
   const verification = execution ? buildVerification(scenario, firm, pass) : null;
   const safety = safetyReached ? buildSafety(scenario, firm, pass) : null;
   const finalSafety =
-    safety && scenario.spec.invalidation
+    safety && revalidated
       ? {
           ...safety,
           invalidation: buildSafety(scenario, firm, "initial").invalidation,
@@ -302,17 +306,33 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
     hashes: {
-      decisionHash: IDS.decisionHash,
-      bundleHash: IDS.bundleHash,
       policyVersion: firm.policyVersion,
       instructionVersion: "HH-INSTR-SMITH v3",
       auditPosition: IDS.auditPosition,
     },
+    decisionBindings: [
+      {
+        kind: "original",
+        decisionHash: originalApproval?.binding?.decisionHash ?? IDS.decisionHash,
+        bundleHash: originalApproval?.binding?.bundleHash ?? IDS.bundleHash,
+      },
+      ...(revalidated && approvals?.binding
+        ? [
+            {
+              kind: "derived" as const,
+              decisionHash: approvals.binding.decisionHash,
+              bundleHash: approvals.binding.bundleHash,
+            },
+          ]
+        : []),
+    ],
     intent: buildIntent(scenario, firm),
-    evidence: buildEvidence(scenario, firm).rows,
-    disposition: buildDisposition(scenario, firm),
-    precedence: buildPolicyTrace(scenario, firm).rows,
-    approvalStages: approvals ? buildStages(scenario, firm, "final", pass) : null,
+    evidence: buildEvidence(scenario, firm, pass).rows,
+    disposition: buildDisposition(scenario, firm, pass),
+    precedence: buildPolicyTrace(scenario, firm, pass).rows,
+    approvalStages: approvals?.stages ?? null,
+    authorityMode: approvals?.mode ?? null,
+    automaticAuthority: approvals?.automaticAuthority ?? null,
     safety: finalSafety,
     execution: execution?.rows ?? null,
     verification,

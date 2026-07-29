@@ -12,7 +12,17 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type IntentVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
-export function IntentSurface({ vm, scenarioId, firmId }: { vm: IntentVM; scenarioId: string; firmId: string }) {
+export function IntentSurface({
+  vm,
+  scenarioId,
+  firmId,
+  querySuffix,
+}: {
+  vm: IntentVM;
+  scenarioId: string;
+  firmId: string;
+  querySuffix?: string;
+}) {
   return (
     <SurfaceShell
       spine={vm.spine}
@@ -55,8 +65,8 @@ export function IntentSurface({ vm, scenarioId, firmId }: { vm: IntentVM; scenar
       </section>
 
       <JourneyNav
-        back={{ href: demoHref("workspace", scenarioId, firmId), label: "Back to the workspace" }}
-        forward={{ href: demoHref("evidence", scenarioId, firmId), label: "Gather evidence" }}
+        back={{ href: demoHref("workspace", scenarioId, firmId, querySuffix), label: "Back to the workspace" }}
+        forward={{ href: demoHref("evidence", scenarioId, firmId, querySuffix), label: "Gather evidence" }}
       />
     </SurfaceShell>
   );

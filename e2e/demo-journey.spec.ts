@@ -195,11 +195,25 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   const siblingDecisionAt = await sibling.getAttribute(
     "data-related-decision-instant",
   );
+  const reservationAt = await page
+    .getByTestId("reservation-commit-timestamp")
+    .getAttribute("data-event-instant");
   expect(Date.parse(siblingDecisionAt!)).toBeGreaterThan(
+    Date.parse(siblingRequestAt!),
+  );
+  expect(Date.parse(reservationAt!)).toBeLessThan(
     Date.parse(siblingRequestAt!),
   );
   await expect(sibling).toContainText(
     "GC-11-simultaneous-distributions-second",
+  );
+  await page.goto("/app/demo/execution?scenario=competing-liquidity&firm=firm-a");
+  const competingExecutionAt = await page
+    .getByTestId("timeline-event")
+    .first()
+    .getAttribute("data-event-instant");
+  expect(Date.parse(reservationAt!)).toBeLessThan(
+    Date.parse(competingExecutionAt!),
   );
 
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
@@ -243,7 +257,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await checkAxe(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");
   await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
-  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$15,000.00", { exact: true }).first()).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/app/demo/workspace?scenario=approval-invalidation&firm=firm-a");
@@ -330,6 +344,17 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.goto("/app/demo/verification?scenario=partial-salesforce-success&firm=firm-b");
   await expect(page.getByText("Verification not reached")).toBeVisible();
 
+  await page.goto("/app/demo/authority?scenario=safe-proceed&firm=firm-b");
+  await expect(page.getByTestId("automatic-authority")).toBeVisible();
+  await expect(page.getByText("Automatic authority", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Approval binds to decision/)).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Continue after recorded approvals" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Continue under automatic authority" }),
+  ).toBeVisible();
+
   await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a");
   await expect(page.getByText(/Approved ·/)).toHaveCount(2);
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
@@ -337,6 +362,12 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.getByRole("link", { name: "Re-evaluate with current evidence" }).click();
   await expect(page.getByTestId("derived-decision")).toBeVisible();
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Back to the evidence" }).click();
+  await expect(page).toHaveURL(/pass=revalidated/);
+  await expect(page.getByTestId("refreshed-evidence")).toBeVisible();
+  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "View the recommendation" }).click();
+  await expect(page.getByTestId("derived-decision")).toBeVisible();
   await page.getByRole("link", { name: "View the policy trace" }).click();
   await page.getByRole("link", { name: "Continue to authority" }).click();
   await expect(page.getByText("Fresh approval on derived decision")).toHaveCount(2);
@@ -353,6 +384,10 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a");
   const lifecycle = page.getByTestId("signed-lifecycle-event");
   await expect(lifecycle).toHaveCount(13);
+  await expect(page.getByTestId("decision-binding")).toHaveCount(2);
+  await expect(page.getByText("Original decision hash", { exact: true })).toBeVisible();
+  await expect(page.getByText("Derived decision hash", { exact: true })).toBeVisible();
+  await expect(page.getByText("Refreshed input-bundle hash", { exact: true })).toBeVisible();
   await expect(lifecycle.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-event-type")))).resolves.toEqual([
     "EvidenceSnapshotRecorded",
     "DecisionRecorded",
@@ -368,6 +403,20 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "ExecutionSucceeded",
     "StatusObserved",
   ]);
+  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-b");
+  await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(0);
+  await expect(page.getByTestId("automatic-authority")).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Execution" })
+      .getByText(
+        "This journey stopped at Safety because exact signed liquidity authority is unavailable.",
+      ),
+  ).toBeVisible();
+  const unsupportedRevalidation = await page.goto(
+    "/app/demo/evidence?scenario=approval-invalidation&firm=firm-b&pass=revalidated",
+  );
+  expect(unsupportedRevalidation?.status()).toBe(404);
 
   await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-a");
   const completedPart = page.getByTestId("timeline-event").filter({ hasText: "instruction-created" });

@@ -409,6 +409,8 @@ Added to `STATUS_STYLES` (built with surface #8, D-036), mapped onto the existin
 **blue = in progress, green = proven done, amber = waiting/unconfirmed, red = failed, slate =
 neutral**:
 
+Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
+
 | Status | Family (existing recipe) | Label | Rule |
 |---|---|---|---|
 | `submitted` | blue (`running`) | "Submitted" | NEVER green, never "complete". Wherever it headlines, an adjacent `text-xs text-slate-600` line states what remains unproven: "Accepted for processing - settlement not yet confirmed." |

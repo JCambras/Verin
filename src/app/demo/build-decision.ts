@@ -163,7 +163,7 @@ export function buildDisposition(scenario: ScenarioData, firm: FirmData, pass: J
   const authoritySummary = dualApproval
     ? "Requires two distinct operations approvers. The requester cannot satisfy both approvals." +
       (scenario.spec.bankChanged ? " The recent bank-instruction change adds a specialist-review stage." : "")
-    : "Below this firm's dual-approval threshold at this amount - a standard approval stage applies.";
+    : "Automatic authority applies because the amount is below this firm's dual-approval threshold; no approval stage is required.";
   return {
     kind,
     headline: `Move the requested amount from Smith Family Taxable to ${destinationFor(scenario)}.`,
@@ -267,6 +267,7 @@ export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: J
 }
 
 export function approvalPlanSatisfied(stages: readonly ApprovalStageVM[]): boolean {
+  if (stages.length === 0) return false;
   let previousOrder = 0;
   for (const stage of stages) {
     if (stage.order <= previousOrder || !stage.satisfied) return false;
@@ -436,21 +437,40 @@ export function buildApprovals(
   pass: JourneyPass = "initial",
 ): ApprovalVM {
   const stages = buildStages(scenario, firm, "gate", pass);
-  const satisfied = approvalPlanSatisfied(stages);
+  const mode = stages.length === 0 ? "automatic" : "staged";
+  const satisfied = mode === "automatic" || approvalPlanSatisfied(stages);
   const revalidated = scenario.spec.invalidation === true && pass === "revalidated";
   return {
     spine: buildSpine("Authority"),
+    mode,
     stages,
     satisfied,
     pass,
-    binding: {
-      decisionHash: revalidated ? IDS.derivedDecisionHash : IDS.decisionHash,
-      bundleHash: revalidated ? IDS.refreshedBundleHash : IDS.bundleHash,
-    },
+    automaticAuthority:
+      mode === "automatic"
+        ? {
+            title: "Automatic authority",
+            summary: "No approval stage is required because this request is below the firm's dual-approval threshold.",
+            policyRef: `${firm.policyVersion} §4`,
+          }
+        : null,
+    binding:
+      mode === "staged"
+        ? {
+            decisionHash: revalidated ? IDS.derivedDecisionHash : IDS.decisionHash,
+            bundleHash: revalidated ? IDS.refreshedBundleHash : IDS.bundleHash,
+          }
+        : null,
     gate: {
-      restatement: `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
+      restatement:
+        mode === "automatic"
+          ? `Continue moving the amount below from Smith Family Taxable to ${destinationFor(scenario)} under automatic authority.`
+          : `Approve moving the amount below from Smith Family Taxable to ${destinationFor(scenario)}.`,
       figures: [{ label: "Amount", metric: amountMetric() }],
-      primaryLabel: "Continue after recorded approvals",
+      primaryLabel:
+        mode === "automatic"
+          ? "Continue under automatic authority"
+          : "Continue after recorded approvals",
     },
     fakeClass: "synthetic-fixture",
   };

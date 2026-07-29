@@ -312,6 +312,19 @@ export function liquidityAuthorityFor(scenario: ScenarioData, firmId: string): L
     reason: `No captain-signed numeric liquidity case covers ${scenario.id} for ${firmId}`,
   };
 }
+export function hasSignedInvalidationAuthority(
+  scenario: ScenarioData,
+  firmId: string,
+): boolean {
+  const authority = liquidityAuthorityFor(scenario, firmId);
+  return (
+    scenario.id === "approval-invalidation" &&
+    firmId === "firm-a" &&
+    scenario.spec.invalidation === true &&
+    authority.kind === "signed" &&
+    authority.sourceCaseId === "GC-15-approval-invalidation"
+  );
+}
 export function launcherFirmFor(scenario: ScenarioData): string {
   return Object.keys(scenario.signedLiquidity ?? {})[0] ?? DEFAULT_FIRM;
 }

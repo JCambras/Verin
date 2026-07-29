@@ -133,6 +133,8 @@ Backing: `ExecutionStarted` (idempotency key), then exactly one of `ExecutionSuc
 
 Surface: **9 Verification state**.
 
+Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
+
 - [ ] `submitted` is never presented as final execution completion (contract annotation 3): the
       observed statuses are `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`,
       and only `completed` - with a status source that proves it - may be presented as done. There

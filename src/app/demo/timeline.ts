@@ -1,5 +1,6 @@
 import {
   DEMO_TIME_ZONE,
+  hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   type FirmData,
   type ScenarioData,
@@ -39,9 +40,10 @@ export interface DemoTimeline {
 export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimeline {
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const requestAt = authority.kind === "signed" ? authority.requestAt : DEFAULT_REQUEST_AT;
+  const decisionAt = add(requestAt, 10 * SECOND);
   const specialist =
     scenario.spec.bankChanged && firm.bankChangeHandling === "specialist-review";
-  const invalidation = scenario.spec.invalidation && authority.kind === "signed";
+  const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
   const approvalOneOffset = invalidation
     ? 6 * MINUTE
     : specialist
@@ -60,9 +62,14 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     authority.preExecutionRevalidationAt
       ? authority.preExecutionRevalidationAt
       : add(requestAt, revalidationOffset);
+  const reservationAt = invalidation
+    ? add(revalidatedAt, 10 * MINUTE)
+    : scenario.spec.competing
+      ? add(decisionAt, 5 * SECOND)
+      : add(revalidatedAt, MINUTE);
   return {
     requestAt,
-    decisionAt: add(requestAt, 10 * SECOND),
+    decisionAt,
     specialistReviewedAt: add(requestAt, 15 * MINUTE),
     approvalOneAt: add(requestAt, approvalOneOffset),
     approvalTwoAt: add(requestAt, approvalTwoOffset),
@@ -71,7 +78,7 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     derivedDecisionAt: add(revalidatedAt, 10 * SECOND),
     freshApprovalOneAt: add(revalidatedAt, 6 * MINUTE),
     freshApprovalTwoAt: add(revalidatedAt, 9 * MINUTE),
-    reservationAt: add(revalidatedAt, 10 * MINUTE),
+    reservationAt,
     executionAt,
     executionSucceededAt: add(executionAt, 10 * SECOND),
     statusObservedAt: add(executionAt, 20 * SECOND),

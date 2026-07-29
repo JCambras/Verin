@@ -91,7 +91,7 @@ export function RecommendationSurface({
       ) : null}
 
       <JourneyNav
-        back={{ href: demoHref("evidence", scenarioId, firmId), label: "Back to the evidence" }}
+        back={{ href: demoHref("evidence", scenarioId, firmId, querySuffix), label: "Back to the evidence" }}
         {...(d.kind === "proceed"
           ? { forward: { href: demoHref("policy-trace", scenarioId, firmId, querySuffix), label: "View the policy trace" } }
           : d.kind === "blocked"

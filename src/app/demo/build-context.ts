@@ -27,6 +27,7 @@ import {
   THIRD_PARTY_DESTINATION,
   liquidityAuthorityFor,
   type FirmData,
+  type JourneyPass,
   type ScenarioData,
 } from "./data";
 
@@ -36,10 +37,26 @@ export function destinationFor(scenario: ScenarioData): string {
   return scenario.spec.bankChanged ? BANK_INSTRUCTION.changed : BANK_INSTRUCTION.stable;
 }
 
-export function buildWorkspace(scenario: ScenarioData, firm: FirmData): WorkspaceVM {
+export function buildWorkspace(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): WorkspaceVM {
   const liquidityAsOf = scenario.spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  const liquidity = authority.kind === "signed" ? authority.initialDecision : null;
+  const timeline = timelineFor(scenario, firm);
+  const refreshed =
+    pass === "revalidated" && authority.kind === "signed"
+      ? authority.preExecutionRevalidation
+      : undefined;
+  const liquidity =
+    authority.kind === "signed"
+      ? (refreshed ?? authority.initialDecision)
+      : null;
+  const liquidityObservedAt = refreshed ? timeline.revalidatedAt : liquidityAsOf;
+  const liquidityRetrievedAt = refreshed
+    ? formatDemoInstant(timeline.revalidatedAt)
+    : RETRIEVED_AT;
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -56,11 +73,11 @@ export function buildWorkspace(scenario: ScenarioData, firm: FirmData): Workspac
       fakeClass: "synthetic-fixture",
     })),
     liquidity: liquidity
-      ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf)
+      ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt)
       : null,
     plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
     pendingActivity: liquidity
-      ? fact(liquidity.pendingNote, "synthetic-fixture", OBSERVED_RECENT, RETRIEVED_AT)
+      ? fact(liquidity.pendingNote, "synthetic-fixture", liquidityObservedAt, liquidityRetrievedAt)
       : null,
     liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
     onRamp: {
@@ -99,11 +116,27 @@ export function buildIntent(scenario: ScenarioData, firm: FirmData): IntentVM {
   };
 }
 
-export function buildEvidence(scenario: ScenarioData, firm: FirmData): EvidenceVM {
+export function buildEvidence(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+): EvidenceVM {
   const spec = scenario.spec;
   const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
   const authority = liquidityAuthorityFor(scenario, firm.id);
-  const liquidity = authority.kind === "signed" ? authority.initialDecision : null;
+  const timeline = timelineFor(scenario, firm);
+  const refreshed =
+    pass === "revalidated" && authority.kind === "signed"
+      ? authority.preExecutionRevalidation
+      : undefined;
+  const liquidity =
+    authority.kind === "signed"
+      ? (refreshed ?? authority.initialDecision)
+      : null;
+  const liquidityObservedAt = refreshed ? timeline.revalidatedAt : liquidityAsOf;
+  const liquidityRetrievedAt = refreshed
+    ? formatDemoInstant(timeline.revalidatedAt)
+    : RETRIEVED_AT;
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
@@ -138,17 +171,21 @@ export function buildEvidence(scenario: ScenarioData, firm: FirmData): EvidenceV
     rows.unshift(
       {
         kind: "metric",
-        label: "Available cash across household accounts",
-        metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityAsOf),
-        retrievedAt: RETRIEVED_AT,
+        label: refreshed
+          ? "Pre-execution revalidation · available cash across household accounts"
+          : "Available cash across household accounts",
+        metric: fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt),
+        retrievedAt: liquidityRetrievedAt,
         fakeClass: "synthetic-fixture",
       },
       liquidity.pendingActivityMinor > 0
         ? {
             kind: "metric",
-            label: "Pending approved distribution (not yet settled)",
-            metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
-            retrievedAt: RETRIEVED_AT,
+            label: refreshed
+              ? "Pre-execution revalidation · pending approved distribution"
+              : "Pending approved distribution (not yet settled)",
+            metric: fixtureMetric(liquidity.pendingActivityMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt),
+            retrievedAt: liquidityRetrievedAt,
             fakeClass: "synthetic-fixture",
             why: { reason: `${liquidity.pendingNote}.` },
           }
@@ -183,5 +220,19 @@ export function buildEvidence(scenario: ScenarioData, firm: FirmData): EvidenceV
     text: "Missing - planned-withdrawal schedule beyond twelve months unavailable from Verin CRM",
     fakeClass: "synthetic-fixture",
   });
-  return { spine: buildSpine("Evidence"), rows };
+  return {
+    spine: buildSpine("Evidence"),
+    rows,
+    refreshNotice: refreshed
+      ? {
+          fact: fact(
+            "Refreshed evidence bundle recorded after the material change",
+            "deterministic-engine-output",
+            timeline.revalidatedAt,
+            formatDemoInstant(timeline.revalidatedAt),
+          ),
+          fakeClass: "deterministic-engine-output",
+        }
+      : null,
+  };
 }

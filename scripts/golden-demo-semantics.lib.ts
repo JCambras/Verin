@@ -86,6 +86,7 @@ export interface DemoSemanticSnapshot {
     initialSurfaceMoneyMinor: number[];
     safetyBeforePendingMinor: number | null;
     safetyAfterPendingMinor: number | null;
+    refreshedEvidencePendingMinor: number | null;
   };
   executionGuards: Array<{
     scenarioId: string;
@@ -99,6 +100,9 @@ export interface DemoSemanticSnapshot {
     scenarioId: string;
     firmId: string;
     pass: "initial" | "revalidated";
+    mode: "automatic" | "staged";
+    automaticAuthorityVisible: boolean;
+    bindingVisible: boolean;
     satisfied: boolean;
     stages: Array<{
       stageId: string;
@@ -111,6 +115,17 @@ export interface DemoSemanticSnapshot {
       completedActorIds: string[];
       completedRoleIds: string[];
     }>;
+  }>;
+  reservationCausality: Array<{
+    scenarioId: string;
+    firmId: string;
+    sourceCaseId: string;
+    requestAt: string;
+    decisionAt: string;
+    reservationAt: string;
+    executionAt: string;
+    relatedSourceCaseId: string;
+    relatedRequestAt: string;
   }>;
   approvalInvalidationLifecycle: {
     eventTypes: string[];
@@ -126,6 +141,20 @@ export interface DemoSemanticSnapshot {
     revalidatedVerificationReached: boolean;
     revalidatedExecutionStatuses: string[];
     revalidatedVerificationProves: string[];
+    recordBindings: Array<{
+      kind: "original" | "derived";
+      decisionHash: string;
+      bundleHash: string;
+    }>;
+    originalApprovalBinding: {
+      decisionHash: string;
+      bundleHash: string;
+    } | null;
+    freshApprovalBinding: {
+      decisionHash: string;
+      bundleHash: string;
+    } | null;
+    unsupportedFirmEventCount: number;
   };
   partialReceipt: {
     completedParts: string[];
@@ -258,6 +287,7 @@ export function rendersAtCanonicalScale(money: RenderedMoney): boolean | null {
 export function validateStatusVocabularyDocs(docs: { path: string; text: string }[]): string[] {
   const problems: string[] = [];
   if (docs.length === 0) return ["no normative status document was supplied to fence (the fence went vacuous)"];
+  const canonicalPrefix = "Canonical observed-status ids:";
   const planes = [
     [VERIFICATION_PROJECTION_IDS, "verification projection"],
     [EXECUTION_RECEIPT_IDS, "execution receipt"],
@@ -268,8 +298,26 @@ export function validateStatusVocabularyDocs(docs: { path: string; text: string 
       problems.push(`${path}: normative status document is missing or empty`);
       continue;
     }
-    for (const id of OBSERVED_STATUS_IDS) {
-      if (!flat.includes(`\`${id}\``)) problems.push(`${path}: does not state the canonical observed status \`${id}\``);
+    const canonicalLines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith(canonicalPrefix));
+    if (canonicalLines.length !== 1) {
+      problems.push(
+        `${path}: must contain exactly one designated "${canonicalPrefix}" list`,
+      );
+    } else {
+      const stated = [...canonicalLines[0]!.matchAll(/`([^`]+)`/g)].map(
+        (match) => match[1]!,
+      );
+      if (
+        stated.length !== OBSERVED_STATUS_IDS.length ||
+        stated.some((id, index) => id !== OBSERVED_STATUS_IDS[index])
+      ) {
+        problems.push(
+          `${path}: canonical observed-status list must equal ${OBSERVED_STATUS_IDS.map((id) => `\`${id}\``).join(", ")}; got ${stated.map((id) => `\`${id}\``).join(", ") || "(empty)"}`,
+        );
+      }
     }
     for (const [ids, plane] of planes) {
       for (const id of ids) {
@@ -785,7 +833,9 @@ export function validateGoldenDemoSemantics(
     gc15RevalidationPending === null ||
     demo.approvalInvalidationPhases.initialSurfaceMoneyMinor.includes(gc15RevalidationPending) ||
     demo.approvalInvalidationPhases.safetyBeforePendingMinor !== gc15InitialPending ||
-    demo.approvalInvalidationPhases.safetyAfterPendingMinor !== gc15RevalidationPending
+    demo.approvalInvalidationPhases.safetyAfterPendingMinor !== gc15RevalidationPending ||
+    demo.approvalInvalidationPhases.refreshedEvidencePendingMinor !==
+      gc15RevalidationPending
   ) {
     problems.push(
       "GC-15 must keep revalidation pending activity off initial surfaces, then render initial and refreshed pending values in order",
@@ -820,6 +870,8 @@ export function validateGoldenDemoSemantics(
     const expectedStages = Array.isArray(expectedAuthority?.stages)
       ? expectedAuthority.stages
       : [];
+    const expectedMode =
+      expectedAuthority?.mode === "automatic" ? "automatic" : "staged";
     const plan = demo.authorityPlans.find(
       (candidate) =>
         candidate.scenarioId === data.scenarioRef &&
@@ -829,6 +881,21 @@ export function validateGoldenDemoSemantics(
     if (!plan) {
       problems.push(`${String(data.caseId)}: demo has no initial authority plan`);
       continue;
+    }
+    if (plan.mode !== expectedMode) {
+      problems.push(
+        `${String(data.caseId)}: rendered authority mode ${plan.mode} does not match signed mode ${String(expectedAuthority?.mode)}`,
+      );
+    }
+    if (
+      (expectedMode === "automatic" &&
+        (!plan.automaticAuthorityVisible || plan.bindingVisible)) ||
+      (expectedMode === "staged" &&
+        (plan.automaticAuthorityVisible || !plan.bindingVisible))
+    ) {
+      problems.push(
+        `${String(data.caseId)}: automatic authority must render explicitly without an approval binding, while staged authority must render its binding`,
+      );
     }
     if (plan.stages.length !== expectedStages.length) {
       problems.push(
@@ -883,12 +950,62 @@ export function validateGoldenDemoSemantics(
     }
   }
 
+  const gc10Reservation = demo.reservationCausality.filter(
+    ({ sourceCaseId, relatedSourceCaseId }) =>
+      sourceCaseId === "GC-10-simultaneous-distributions-first" &&
+      relatedSourceCaseId === "GC-11-simultaneous-distributions-second",
+  );
+  if (gc10Reservation.length !== 1) {
+    problems.push(
+      "GC-10 reservation causality must bind exactly once to the signed GC-11 sibling",
+    );
+  }
+  for (const causal of demo.reservationCausality) {
+    const request = new Date(causal.requestAt).getTime();
+    const decision = new Date(causal.decisionAt).getTime();
+    const reservation = new Date(causal.reservationAt).getTime();
+    const relatedRequest = new Date(causal.relatedRequestAt).getTime();
+    const execution = new Date(causal.executionAt).getTime();
+    const sourceTimeline = demo.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === causal.sourceCaseId,
+    );
+    if (
+      ![request, decision, reservation, relatedRequest, execution].every(
+        Number.isFinite,
+      ) ||
+      !(request < decision) ||
+      !(decision < reservation) ||
+      !(reservation < relatedRequest) ||
+      !(reservation < execution) ||
+      !sourceTimeline?.events.some(
+        ({ kind, instant }) =>
+          kind === "reservation" && instant === causal.reservationAt,
+      )
+    ) {
+      problems.push(
+        `${causal.sourceCaseId}: reservation must commit after its decision, before its signed sibling request and execution, and appear in the source-bound timeline`,
+      );
+    }
+  }
+
   const expectedGc15Types = Array.isArray(gc15?.expectedLedgerEvents)
     ? gc15.expectedLedgerEvents.flatMap((entry) =>
         isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
       )
     : [];
   const lifecycle = demo.approvalInvalidationLifecycle;
+  const originalRecordBinding = lifecycle.recordBindings[0];
+  const derivedRecordBinding = lifecycle.recordBindings[1];
+  const bindingMatches = (
+    left: { decisionHash: string; bundleHash: string } | null | undefined,
+    right: { decisionHash: string; bundleHash: string } | null | undefined,
+  ): boolean =>
+    Boolean(
+      left &&
+        right &&
+        left.decisionHash === right.decisionHash &&
+        left.bundleHash === right.bundleHash,
+    );
   if (
     expectedGc15Types.length === 0 ||
     lifecycle.eventTypes.length !== expectedGc15Types.length ||
@@ -911,10 +1028,21 @@ export function validateGoldenDemoSemantics(
     lifecycle.revalidatedExecutionStatuses.join(",") !== "submitted" ||
     !lifecycle.revalidatedVerificationProves.includes(
       "Submission accepted by the capability",
-    )
+    ) ||
+    lifecycle.recordBindings.length !== 2 ||
+    originalRecordBinding?.kind !== "original" ||
+    derivedRecordBinding?.kind !== "derived" ||
+    !bindingMatches(
+      originalRecordBinding,
+      lifecycle.originalApprovalBinding,
+    ) ||
+    !bindingMatches(derivedRecordBinding, lifecycle.freshApprovalBinding) ||
+    originalRecordBinding.decisionHash === derivedRecordBinding.decisionHash ||
+    originalRecordBinding.bundleHash === derivedRecordBinding.bundleHash ||
+    lifecycle.unsupportedFirmEventCount !== 0
   ) {
     problems.push(
-      "GC-15 visible lifecycle must preserve both approval passes, invalidation, reservation, execution, and submitted verification in signed order",
+      "GC-15 visible lifecycle must preserve exact firm authority, both decision bindings, approval passes, invalidation, reservation, execution, and submitted verification in signed order",
     );
   }
 

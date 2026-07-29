@@ -117,14 +117,33 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                       </time>
                     </dd>
                   </div>
-                  <div className="flex flex-col sm:col-span-2">
-                    <dt className="text-xs text-slate-600">Decision hash</dt>
-                    <dd className="font-mono text-xs break-all text-slate-800">{vm.hashes.decisionHash}</dd>
-                  </div>
-                  <div className="flex flex-col sm:col-span-2">
-                    <dt className="text-xs text-slate-600">Input-bundle hash</dt>
-                    <dd className="font-mono text-xs break-all text-slate-800">{vm.hashes.bundleHash}</dd>
-                  </div>
+                  {vm.decisionBindings.map((binding) => {
+                    const qualifier =
+                      vm.decisionBindings.length === 1
+                        ? ""
+                        : binding.kind === "original"
+                          ? "Original "
+                          : "Derived ";
+                    const bundleQualifier =
+                      vm.decisionBindings.length === 1
+                        ? ""
+                        : binding.kind === "original"
+                          ? "Original "
+                          : "Refreshed ";
+                    return (
+                      <div
+                        key={binding.kind}
+                        className="flex flex-col sm:col-span-2"
+                        data-testid="decision-binding"
+                        data-binding-kind={binding.kind}
+                      >
+                        <dt className="text-xs text-slate-600">{qualifier}decision hash</dt>
+                        <dd className="font-mono text-xs break-all text-slate-800">{binding.decisionHash}</dd>
+                        <dt className="mt-1 text-xs text-slate-600">{bundleQualifier}input-bundle hash</dt>
+                        <dd className="font-mono text-xs break-all text-slate-800">{binding.bundleHash}</dd>
+                      </div>
+                    );
+                  })}
                   <div className="flex flex-col">
                     <dt className="text-xs text-slate-600">Policy version</dt>
                     <dd className="font-mono text-xs text-slate-800">{vm.hashes.policyVersion}</dd>
@@ -202,7 +221,13 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
               </DocSection>
 
               <DocSection n={5} title="Authority and approvals">
-                {vm.approvalStages ? (
+                {vm.authorityMode === "automatic" && vm.automaticAuthority ? (
+                  <div className="flex flex-col gap-1 print-avoid-break" data-testid="automatic-authority">
+                    <p className="text-sm font-medium text-slate-800">{vm.automaticAuthority.title}</p>
+                    <p className="text-sm text-slate-700">{vm.automaticAuthority.summary}</p>
+                    <p className="font-mono text-xs text-slate-600">{vm.automaticAuthority.policyRef}</p>
+                  </div>
+                ) : vm.authorityMode === "staged" && vm.approvalStages ? (
                   vm.approvalStages.map((s) => (
                     <div key={s.title} className="flex flex-col gap-1 print-avoid-break">
                       <p className="text-sm font-medium text-slate-800">{s.title}</p>
@@ -251,9 +276,23 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                       ))}
                     </ul>
                     {vm.safety.reservationId && vm.safety.idempotencyKey ? (
-                      <p className="font-mono text-xs text-slate-600">
-                        Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
-                      </p>
+                      <>
+                        {vm.safety.reservationAt && vm.safety.reservationAtIso ? (
+                          <p className="text-sm text-slate-700">
+                            Reservation committed{" "}
+                            <time
+                              dateTime={vm.safety.reservationAtIso}
+                              data-testid="record-reservation-commit-timestamp"
+                              data-event-instant={vm.safety.reservationAtIso}
+                            >
+                              {vm.safety.reservationAt}
+                            </time>
+                          </p>
+                        ) : null}
+                        <p className="font-mono text-xs text-slate-600">
+                          Reservation {vm.safety.reservationId} · conflict keys {vm.safety.conflictKeys.join(", ")} · idempotency key {vm.safety.idempotencyKey}
+                        </p>
+                      </>
                     ) : null}
                     {vm.safety.invalidation ? (
                       <div className="flex flex-col gap-1">

@@ -653,6 +653,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     surfaceTiming.approvalInvalidationPhases.initialSurfaceMoneyMinor.push(1_500_000);
     surfaceTiming.approvalInvalidationPhases.safetyBeforePendingMinor = 1_500_000;
     surfaceTiming.approvalInvalidationPhases.safetyAfterPendingMinor = 0;
+    surfaceTiming.approvalInvalidationPhases.refreshedEvidencePendingMinor = 0;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, surfaceTiming).some((p) =>
         p.includes("keep revalidation pending activity off initial surfaces"),
@@ -692,6 +693,37 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
           problem.includes("ordered plan"),
       ),
     ).toBe(true);
+
+    const automaticDrift = demoClone();
+    const gc02 = automaticDrift.authorityPlans.find(
+      (plan) =>
+        plan.scenarioId === "safe-proceed" &&
+        plan.firmId === "firm-b" &&
+        plan.pass === "initial",
+    )!;
+    gc02.automaticAuthorityVisible = false;
+    gc02.bindingVisible = true;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, automaticDrift).some(
+        (problem) =>
+          problem.includes(
+            "automatic authority must render explicitly without an approval binding",
+          ),
+      ),
+    ).toBe(true);
+
+    const authorityModeDrift = demoClone();
+    authorityModeDrift.authorityPlans.find(
+      (plan) =>
+        plan.scenarioId === "safe-proceed" &&
+        plan.firmId === "firm-b" &&
+        plan.pass === "initial",
+    )!.mode = "staged";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, authorityModeDrift).some(
+        (problem) => problem.includes("rendered authority mode staged"),
+      ),
+    ).toBe(true);
   });
 
   it("flags incomplete invalidation, partial-receipt, and latest-snapshot projections", () => {
@@ -701,6 +733,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     incompleteLifecycle.approvalInvalidationLifecycle.initialReservationVisible = true;
     incompleteLifecycle.approvalInvalidationLifecycle.revalidatedExecutionStatuses =
       ["completed"];
+    incompleteLifecycle.approvalInvalidationLifecycle.recordBindings.pop();
+    incompleteLifecycle.approvalInvalidationLifecycle.unsupportedFirmEventCount =
+      13;
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, incompleteLifecycle).some(
         (problem) => problem.includes("GC-15 visible lifecycle"),
@@ -725,6 +760,34 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, staleSimulation).some(
         (problem) => problem.includes("latest pre-execution liquidity snapshot"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires a source-bound reservation before the competing request and execution", () => {
+    const lateReservation = demoClone();
+    const causal = lateReservation.reservationCausality.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId === "GC-10-simultaneous-distributions-first",
+    )!;
+    causal.reservationAt = causal.relatedRequestAt;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, lateReservation).some(
+        (problem) =>
+          problem.includes(
+            "reservation must commit after its decision, before its signed sibling request and execution",
+          ),
+      ),
+    ).toBe(true);
+
+    const missingReservation = demoClone();
+    missingReservation.reservationCausality = [];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, missingReservation).some(
+        (problem) =>
+          problem.includes(
+            "reservation causality must bind exactly once to the signed GC-11 sibling",
+          ),
       ),
     ).toBe(true);
   });
@@ -830,6 +893,25 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       validateStatusVocabularyDocs(planeless).some((p) => p.includes("`stuck`") && p.includes("verification projection")),
     ).toBe(true);
+
+    const extraObserved = realStatusDocs.map((doc) => ({
+      ...doc,
+      text: doc.text.replace(
+        "Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.",
+        "Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`, `queued`.",
+      ),
+    }));
+    const extraProblems = validateStatusVocabularyDocs(extraObserved);
+    for (const target of STATUS_VOCABULARY_DOCS) {
+      expect(
+        extraProblems.some(
+          (problem) =>
+            problem.startsWith(`${target}:`) &&
+            problem.includes("canonical observed-status list must equal"),
+        ),
+        target,
+      ).toBe(true);
+    }
 
     expect(validateStatusVocabularyDocs([]).some((p) => p.includes("went vacuous"))).toBe(true);
     expect(

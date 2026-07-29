@@ -15,6 +15,7 @@ import {
   CAST,
   IDS,
   RETRIEVED_AT,
+  hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
   type FirmData,
   type JourneyPass,
@@ -36,11 +37,17 @@ export function buildSafety(
   const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const invalidationAuthority = hasSignedInvalidationAuthority(
+    scenario,
+    firm.id,
+  );
   const initial = authority.kind === "signed" ? authority.initialDecision : null;
   const refreshed = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
-  const invalidatedPass = spec.invalidation === true && pass === "initial";
+  const invalidatedPass = invalidationAuthority && pass === "initial";
   const executionEligible =
-    authority.kind === "signed" && (!spec.invalidation || pass === "revalidated");
+    authority.kind === "signed" &&
+    (!spec.invalidation ||
+      (invalidationAuthority && pass === "revalidated"));
   const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
         {
@@ -65,7 +72,7 @@ export function buildSafety(
             detail: "The initial decision observed no pending activity. Pre-execution revalidation found the new distribution.",
           },
         ]
-      : spec.invalidation && pass === "revalidated" && refreshed
+      : invalidationAuthority && pass === "revalidated" && refreshed
         ? [
             {
               label: "Liquidity matches the refreshed derived decision",
@@ -100,7 +107,7 @@ export function buildSafety(
   } else {
     checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
   }
-  if (spec.invalidation && pass === "revalidated") {
+  if (invalidationAuthority && pass === "revalidated") {
     checks.push({
       label: "Two fresh approvals bind to the derived decision",
       status: "done",
@@ -145,6 +152,10 @@ export function buildSafety(
     revalidatedAtIso: timeline.revalidatedAt,
     checks,
     reservationId: executionEligible ? IDS.reservationId : null,
+    reservationAt: executionEligible
+      ? formatDemoInstant(timeline.reservationAt, undefined, true)
+      : null,
+    reservationAtIso: executionEligible ? timeline.reservationAt : null,
     conflictKeys: executionEligible ? IDS.conflictKeys : [],
     idempotencyKey: executionEligible ? IDS.idempotencyKey : null,
     invalidation: invalidatedPass && initial && refreshed

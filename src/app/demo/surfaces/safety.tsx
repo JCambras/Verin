@@ -74,13 +74,27 @@ export function SafetySurface({
       </section>
 
       {vm.reservationId && vm.idempotencyKey ? (
-        <TapToVerify
-          details={[
-            { label: "Reservation", value: vm.reservationId, mono: true },
-            { label: "Conflict keys", value: vm.conflictKeys.join("  ·  "), mono: true },
-            { label: "Idempotency key", value: vm.idempotencyKey, mono: true },
-          ]}
-        />
+        <>
+          {vm.reservationAt && vm.reservationAtIso ? (
+            <p className="text-sm text-slate-700">
+              Reservation committed{" "}
+              <time
+                dateTime={vm.reservationAtIso}
+                data-testid="reservation-commit-timestamp"
+                data-event-instant={vm.reservationAtIso}
+              >
+                {vm.reservationAt}
+              </time>
+            </p>
+          ) : null}
+          <TapToVerify
+            details={[
+              { label: "Reservation", value: vm.reservationId, mono: true },
+              { label: "Conflict keys", value: vm.conflictKeys.join("  ·  "), mono: true },
+              { label: "Idempotency key", value: vm.idempotencyKey, mono: true },
+            ]}
+          />
+        </>
       ) : null}
 
       {vm.invalidation ? (

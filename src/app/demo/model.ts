@@ -162,6 +162,10 @@ export type EvidenceRowVM =
 export interface EvidenceVM {
   readonly spine: DecisionSpineVM;
   readonly rows: readonly EvidenceRowVM[];
+  readonly refreshNotice: {
+    readonly fact: FactVM;
+    readonly fakeClass: FakeClass;
+  } | null;
 }
 
 // ── Surface 4: Recommendation and alternatives ──────────────────────────────────────
@@ -227,12 +231,19 @@ export interface ApprovalStageVM {
   }[];
   readonly expired?: boolean;
 }
+export interface AutomaticAuthorityVM {
+  readonly title: string;
+  readonly summary: string;
+  readonly policyRef: string;
+}
 export interface ApprovalVM {
   readonly spine: DecisionSpineVM;
+  readonly mode: "automatic" | "staged";
   readonly stages: readonly ApprovalStageVM[];
   readonly satisfied: boolean;
   readonly pass: "initial" | "revalidated";
-  readonly binding: { readonly decisionHash: string; readonly bundleHash: string };
+  readonly automaticAuthority: AutomaticAuthorityVM | null;
+  readonly binding: { readonly decisionHash: string; readonly bundleHash: string } | null;
   readonly gate: { readonly restatement: string; readonly figures: readonly DispositionFigureVM[]; readonly primaryLabel: string };
   readonly fakeClass: FakeClass;
 }
@@ -271,6 +282,8 @@ export interface SafetyVM {
   readonly revalidatedAtIso: string;
   readonly checks: readonly SafetyCheckVM[];
   readonly reservationId: string | null;
+  readonly reservationAt: string | null;
+  readonly reservationAtIso: string | null;
   readonly conflictKeys: readonly string[];
   readonly idempotencyKey: string | null;
   readonly invalidation: InvalidationVM | null;
@@ -367,12 +380,15 @@ export interface RecordVM {
     readonly watermark: string | null; // DEMO_WATERMARK when demonstration-derived
   };
   readonly hashes: {
-    readonly decisionHash: string;
-    readonly bundleHash: string;
     readonly policyVersion: string;
     readonly instructionVersion: string;
     readonly auditPosition: string;
   };
+  readonly decisionBindings: readonly {
+    readonly kind: "original" | "derived";
+    readonly decisionHash: string;
+    readonly bundleHash: string;
+  }[];
   readonly intent: IntentVM;
   readonly evidence: readonly EvidenceRowVM[];
   readonly disposition: DispositionVM;
@@ -380,6 +396,8 @@ export interface RecordVM {
   /** Sections the record never reached print as an explicit "not reached" line -
    * the paper record is as honest as the screen (§9). */
   readonly approvalStages: readonly ApprovalStageVM[] | null;
+  readonly authorityMode: ApprovalVM["mode"] | null;
+  readonly automaticAuthority: AutomaticAuthorityVM | null;
   readonly safety: SafetyVM | null;
   readonly execution: readonly ExecutionRowVM[] | null;
   readonly verification: VerificationVM | null;
