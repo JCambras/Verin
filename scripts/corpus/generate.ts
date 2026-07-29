@@ -308,7 +308,10 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
       timeZoneDataVersion: clock.timeZoneDataVersion,
     },
     request: {
+      firmRef: corpusCase.firmId,
+      requestRef: `request:${caseId}`,
       householdRef: subjectId(household.key),
+      action: corpusCase.request.action,
       sourceAccountRef: subjectId(corpusCase.request.sourceAccountRef),
       selectedFundingRefs: sortedBy(
         corpusCase.request.selectedFundingRefs,

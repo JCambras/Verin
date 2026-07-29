@@ -2,6 +2,7 @@ import type {
   PendingActionKind,
   PendingActionState,
 } from "./pending-actions";
+import type { InstructionTerm } from "./instruction-conflicts";
 import type { RealDerivedEvidenceKind } from "./real-derived-policy";
 
 export type PendingReplay = {
@@ -48,6 +49,7 @@ export type ReplayPayload = {
     firmRef: string;
     requestRef: string;
     householdRef: string;
+    action: "distribution";
     actorRef: string;
     sourceAccountRef: string;
     destinationRef: string;
@@ -114,7 +116,9 @@ export type ReplayPayload = {
     householdRef: string;
     instructions: Array<{
       instructionRef: string;
+      firmRef: string;
       householdRef: string;
+      term: InstructionTerm;
     }>;
     impactedSubjectRefs: string[];
     evidenceSourceRef: string;

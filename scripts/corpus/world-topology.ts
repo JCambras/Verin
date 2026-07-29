@@ -1,4 +1,5 @@
 import type { CasesSpec } from "./case-spec";
+import { restrictionReferenceProblems } from "./synthetic-instruction-topology";
 import type { WorldSpec } from "./world";
 
 const duplicates = (values: readonly string[]): string[] => [
@@ -52,7 +53,7 @@ export function specReferenceProblems(
   world: WorldSpec,
   cases: CasesSpec,
 ): string[] {
-  const problems: string[] = [];
+  const problems: string[] = [...restrictionReferenceProblems(world)];
   const keys = <T extends { key: string }>(
     rows: readonly T[],
   ): Set<string> => new Set(rows.map((row) => row.key));
@@ -238,36 +239,6 @@ export function specReferenceProblems(
       problems.push(
         `recentChanges[${change.key}].priorValueRef -> "${change.priorValueRef}" is not a prior version of "${change.subjectRef}"`,
       );
-    }
-  }
-  const householdMembers = new Set(
-    world.households.flatMap((household) => household.memberRefs),
-  );
-  for (const restriction of world.restrictions) {
-    const where = `restrictions[${restriction.key}].subjectRef`;
-    switch (restriction.scope) {
-      case "household":
-        need(households, restriction.subjectRef, where);
-        break;
-      case "party":
-        need(parties, restriction.subjectRef, where);
-        if (
-          parties.has(restriction.subjectRef) &&
-          !householdMembers.has(restriction.subjectRef)
-        ) {
-          problems.push(
-            `${where}: party "${restriction.subjectRef}" is a member of no household, so this restriction would reach no household subgraph`,
-          );
-        }
-        break;
-      case "account":
-        need(accounts, restriction.subjectRef, where);
-        break;
-      case "position":
-        problems.push(
-          `${where}: scope "position" has no modeled subject form - use a position-scoped legal hold, or extend the spec and the household subgraph together`,
-        );
-        break;
     }
   }
   for (const hold of world.legalHolds) {

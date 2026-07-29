@@ -61,8 +61,21 @@ export function walk(dir: string, filter: (f: string) => boolean): string[] {
   return out;
 }
 
+const EXECUTABLE_SOURCE_EXTENSION =
+  /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+export function isExecutableSourceFilePath(filePath: string): boolean {
+  return EXECUTABLE_SOURCE_EXTENSION.test(filePath);
+}
+
+export function toolingSourceFiles(
+  root: string = join(REPO_ROOT, "scripts"),
+): string[] {
+  return walk(root, isExecutableSourceFilePath);
+}
+
 export function isShippedSourceFilePath(filePath: string): boolean {
-  if (!/\.(ts|tsx)$/.test(filePath)) return false;
+  if (!isExecutableSourceFilePath(filePath)) return false;
   const pathFromRootTests = relative(join(SRC_ROOT, "__tests__"), resolve(filePath));
   return (
     pathFromRootTests === ".." ||

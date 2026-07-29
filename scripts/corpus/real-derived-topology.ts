@@ -1,218 +1,16 @@
+import { evidenceSupportProblems } from "./evidence-observation";
+import {
+  instructionConflictAnalysis,
+  type InstructionConflictAnalysis,
+} from "./instruction-conflicts";
 import type { RealDerivedEvidenceKind } from "./real-derived-policy";
-import { evidenceAllowsMissing } from "./evidence-observation";
 import type {
   LiquiditySource,
   RealDerivedCase,
-  RealDerivedEvidence,
 } from "./real-derived-types";
-
-type EvidenceRequirement = {
-  plane: string;
-  evidenceKind: RealDerivedEvidenceKind;
-  subjectRef: string;
-  sourceRef: string;
-  allowsMissing: boolean;
-};
 
 const ENTITY_REF =
   /^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$/;
-
-const requirement = (
-  item: RealDerivedCase,
-  evidenceKindByPlane: ReadonlyMap<string, RealDerivedEvidenceKind>,
-  plane: string,
-  subjectRef: string,
-  sourceRef: string,
-): EvidenceRequirement => {
-  const evidenceKind = evidenceKindByPlane.get(plane);
-  if (evidenceKind === undefined) {
-    throw new Error(`semantic contract has no evidence plane "${plane}"`);
-  }
-  return {
-    plane,
-    evidenceKind,
-    subjectRef,
-    sourceRef,
-    allowsMissing: evidenceAllowsMissing(item, plane),
-  };
-};
-
-function requiredEvidence(
-  item: RealDerivedCase,
-  evidenceKindByPlane: ReadonlyMap<string, RealDerivedEvidenceKind>,
-): EvidenceRequirement[] {
-  const payload = item.replayPayload;
-  const need = (
-    plane: string,
-    subjectRef: string,
-    sourceRef: string,
-  ): EvidenceRequirement =>
-    requirement(item, evidenceKindByPlane, plane, subjectRef, sourceRef);
-  const required = [
-    need(
-      "request",
-      payload.request.requestRef,
-      payload.request.evidenceSourceRef,
-    ),
-    need(
-      "identity",
-      payload.identity.subjectRef,
-      payload.identity.evidenceSourceRef,
-    ),
-    need(
-      "destination",
-      payload.destination.instructionRef,
-      payload.destination.evidenceSourceRef,
-    ),
-    ...payload.liquidity.sources.map((source) =>
-      need(
-        "liquidity-source",
-        source.accountRef,
-        source.evidenceSourceRef,
-      ),
-    ),
-    need(
-      "reserve",
-      payload.request.householdRef,
-      payload.liquidity.reserveEvidenceSourceRef,
-    ),
-    need(
-      "authority",
-      payload.authority.grantRef ?? payload.authority.actorRef,
-      payload.authority.evidenceSourceRef,
-    ),
-    need(
-      "policy",
-      payload.policy.policyVersionRef,
-      payload.policy.evidenceSourceRef,
-    ),
-    need(
-      "instruction-conflict",
-      payload.request.householdRef,
-      payload.instructionConflict.evidenceSourceRef,
-    ),
-    need(
-      "tax-review",
-      payload.request.requestRef,
-      payload.taxReviewEvidenceSourceRef,
-    ),
-    need(
-      "temporal",
-      payload.temporal.timeZoneRuleRef,
-      payload.temporal.evidenceSourceRef,
-    ),
-    need(
-      "execution",
-      payload.request.requestRef,
-      payload.execution.evidenceSourceRef,
-    ),
-  ];
-  const action = payload.liquidity.pendingAction;
-  if (action.actionRef !== null && action.evidenceSourceRef !== null) {
-    required.push(
-      need("pending-action", action.actionRef, action.evidenceSourceRef),
-    );
-  }
-  const policy = payload.policy;
-  if (
-    policy.restrictionRef !== null &&
-    policy.restrictionEvidenceSourceRef !== null
-  ) {
-    required.push(
-      need(
-        "restriction",
-        policy.restrictionRef,
-        policy.restrictionEvidenceSourceRef,
-      ),
-    );
-  }
-  if (
-    policy.legalHoldRef !== null &&
-    policy.legalHoldEvidenceSourceRef !== null
-  ) {
-    required.push(
-      need(
-        "legal-hold",
-        policy.legalHoldRef,
-        policy.legalHoldEvidenceSourceRef,
-      ),
-    );
-  }
-  if (
-    payload.instructionConflict.conflictState === "resolved" &&
-    payload.instructionConflict.impactedSubjectRefs.length > 1
-  ) {
-    required.push(
-      ...payload.instructionConflict.impactedSubjectRefs.map((subjectRef) =>
-        need(
-          "recent-change",
-          subjectRef,
-          payload.instructionConflict.evidenceSourceRef,
-        ),
-      ),
-    );
-  }
-  return required;
-}
-
-const sameEvidenceTuple = (
-  evidence: RealDerivedEvidence,
-  expected: EvidenceRequirement,
-): boolean =>
-  evidence.evidenceKind === expected.evidenceKind &&
-  evidence.subjectRef === expected.subjectRef &&
-  evidence.sourceRef === expected.sourceRef;
-
-const supportsRequirement = (
-  evidence: RealDerivedEvidence,
-  expected: EvidenceRequirement,
-): boolean =>
-  sameEvidenceTuple(evidence, expected) &&
-  (evidence.observationState === "observed" || expected.allowsMissing);
-
-function evidenceSupportProblems(
-  item: RealDerivedCase,
-  evidenceKindByPlane: ReadonlyMap<string, RealDerivedEvidenceKind>,
-): string[] {
-  const problems: string[] = [];
-  const required = requiredEvidence(item, evidenceKindByPlane);
-  for (const expected of required) {
-    const tupleMatches = item.evidence.filter((entry) =>
-      sameEvidenceTuple(entry, expected)
-    );
-    const count = tupleMatches.filter((entry) =>
-      supportsRequirement(entry, expected)
-    ).length;
-    if (count !== 1) {
-      if (
-        !expected.allowsMissing &&
-        tupleMatches.some(
-          (entry) => entry.observationState === "missing",
-        )
-      ) {
-        problems.push(
-          `${expected.plane} evidence requires observed support for concrete replay values`,
-        );
-      } else {
-        problems.push(
-          `${expected.plane} evidence resolves to ${count} matching kind, subject, source, and observation records, expected exactly one`,
-        );
-      }
-    }
-  }
-  for (const evidence of item.evidence) {
-    if (
-      !required.some((expected) =>
-        supportsRequirement(evidence, expected)
-      )
-    ) {
-      problems.push(
-        `evidence ${evidence.id} does not support a material replay plane`,
-      );
-    }
-  }
-  return problems;
-}
 
 export function selectedSources(item: RealDerivedCase): LiquiditySource[] {
   return item.replayPayload.liquidity.selectedFundingRefs.flatMap((ref) => {
@@ -221,6 +19,24 @@ export function selectedSources(item: RealDerivedCase): LiquiditySource[] {
     );
     return matches.length === 1 ? matches : [];
   });
+}
+
+export function realDerivedInstructionConflictAnalysis(
+  item: RealDerivedCase,
+): InstructionConflictAnalysis {
+  const payload = item.replayPayload;
+  return instructionConflictAnalysis(
+    {
+      firmRef: item.firmRef,
+      requestRef: payload.request.requestRef,
+      householdRef: payload.request.householdRef,
+      action: payload.request.action,
+      sourceAccountRef: payload.request.sourceAccountRef,
+      destinationRef: payload.request.destinationRef,
+      destinationSubjectRefs: payload.destination.ownerRefs,
+    },
+    payload.instructionConflict.instructions,
+  );
 }
 
 function fundingProblems(item: RealDerivedCase): string[] {
@@ -383,11 +199,21 @@ function relationshipProblems(item: RealDerivedCase): string[] {
   if (
     conflict.instructions.some(
       (instruction) =>
+        instruction.firmRef !== item.firmRef ||
         instruction.householdRef !== payload.request.householdRef,
     )
   ) {
     problems.push(
-      "instruction conflict instructions must belong to the request household",
+      "instruction conflict instructions must belong to the request firm and household",
+    );
+  }
+  const conflictAnalysis = realDerivedInstructionConflictAnalysis(item);
+  problems.push(...conflictAnalysis.problems);
+  if (
+    (conflict.conflictState === "none") === conflictAnalysis.present
+  ) {
+    problems.push(
+      "instruction conflict state does not match the signed typed instruction terms",
     );
   }
   const instructionRefs = conflict.instructions.map(

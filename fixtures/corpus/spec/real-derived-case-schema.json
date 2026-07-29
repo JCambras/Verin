@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-case/1.3.0",
+  "$id": "verin-real-derived-case/1.4.0",
   "title": "Verin scrubbed real-derived replay case",
   "type": "object",
   "additionalProperties": false,

@@ -137,7 +137,7 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.5.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.6.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
 supported defect classes. Pending actions carry account and household references bound to the request,
@@ -155,7 +155,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.5.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.6.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -188,9 +188,11 @@ evaluated against exactly that set, including every selected source's tax charac
 Aggregate sufficiency uses exact `bigint` arithmetic after rejecting any unsafe integer boundary.
 Each pending action names the request household and one selected account, and its action evidence matches
 the exact action identity and source.
-An instruction-conflict witness names the exact governed request and household. Every referenced
-instruction belongs to that household, and impacted subjects intersect the request source account or
-destination instruction.
+Instruction conflicts derive only from signed typed terms whose action and source match the exact
+request. Required terms conflict when their target does not match; forbidden terms conflict when their
+target does match. Every witness carries the exact firm, household, and instruction identity, every
+nonempty instruction set requires exact observed evidence, and impacted subjects intersect the request
+source account or destination instruction.
 
 Each real-derived case records `evaluation.asOf` and the closed
 `verin-real-derived-freshness/1.0.0` policy version. The policy has one freshness window per supported
@@ -210,7 +212,7 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.10.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.11.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
 and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
 declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
@@ -220,8 +222,8 @@ authority invalidates prior signoff even if no case bytes change.
 
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
 `signedAt` instant. Its hand-owned YAML is parsed fail-closed before those fields are read: parser errors,
-duplicate or unexpected keys, aliases, non-mapping shapes, missing keys, multiple blocks, and ambiguous
-values are rejected.
+warnings, tags, duplicate or unexpected keys, aliases, non-mapping shapes, missing keys, multiple blocks,
+and ambiguous values are rejected.
 
 **Agents never sign.** No generated file carries a signature: the manifest holds a `signoffRef`
 pointer, not a signature block, and validation recursively rejects `signedBy`, `signedAt`, or
@@ -267,6 +269,10 @@ in separate files under the unchanged 500-line file ceiling.
 D-090 raises the ceiling to 7300 against 7129 measured lines for typed synthetic identity inputs,
 single-firm generic-subject closure, and exact minor-unit funding arithmetic. The 171-line buffer keeps
 identity derivation separate from outcome and topology owners under the unchanged 500-line file ceiling.
+D-091 raises the ceiling to 7700 against 7541 measured lines for typed instruction terms, exact
+per-instruction evidence, executable-authority dependency closure, fail-closed signoff parsing,
+repository-contained citations, and complete executable source discovery. The 159-line buffer preserves
+separate evidence, semantic, topology, and fence owners under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

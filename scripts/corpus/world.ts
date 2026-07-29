@@ -9,6 +9,10 @@ import {
   PENDING_ACTION_KINDS,
   PENDING_ACTION_STATES,
 } from "./pending-actions";
+import {
+  GOVERNED_INSTRUCTION_ACTIONS,
+  INSTRUCTION_POLARITIES,
+} from "./instruction-conflicts";
 import { parseStrictJson } from "./strict-json";
 import { specReferenceProblems } from "./world-topology";
 
@@ -141,6 +145,7 @@ const PlannedWithdrawalSchema = z.strictObject({
 });
 const RestrictionSchema = z.strictObject({
   key: Slug,
+  householdRef: Slug,
   recordedAt: Instant,
   observedAt: ObservedAt,
   scope: z.enum(["household", "account", "position", "party"]),
@@ -149,6 +154,17 @@ const RestrictionSchema = z.strictObject({
   effectiveFrom: Instant,
   effectiveTo: Instant.nullable(),
   sourceRef: z.string().min(1),
+  term: z.strictObject({
+    governedAction: z.enum(GOVERNED_INSTRUCTION_ACTIONS),
+    sourceAccountRef: Slug,
+    targetKind: z.enum([
+      "source-account",
+      "destination-instruction",
+      "destination-subject",
+    ]),
+    targetRef: Slug,
+    polarity: z.enum(INSTRUCTION_POLARITIES),
+  }).optional(),
 });
 const RecentChangeSchema = z.strictObject({
   key: Slug,

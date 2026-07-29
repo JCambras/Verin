@@ -7678,3 +7678,50 @@ remains empty, signoff remains pending, path-keyed isolation passes, and all 195
 determinism, timestamp, budget, and file-size tests passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 12).
+
+---
+
+## PF-107 · instruction and signed-authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-091, ADR-0034):** instruction-conflict truth comes from request-bound typed terms and exact
+evidence; the signed executable inventory equals its runtime dependency closure; signoff YAML rejects
+warnings and tags; citations remain regular files inside the repository; and both tooling fences discover
+every supported TypeScript and JavaScript source extension.
+
+**Injection 1 - runtime authority omitted.** Removed `scripts/corpus/clock.ts` from the executable
+authority inventory.
+
+**Injection 2 - termless context accepted.** Treated every cited instruction record as a conflict without
+requiring a connected typed term.
+
+**Injection 3 - parser recovery accepted.** Ignored YAML warnings and explicit tags before conversion.
+
+**Injection 4 - citation escaped.** Removed the canonical repository-containment check while retaining
+the regular-file check.
+
+**Injection 5 - executable files hidden.** Reduced shared source discovery to `.ts` only.
+
+**Observed failure:**
+```
+Test Files  3 failed (3)
+Tests       6 failed | 158 skipped (164)
+missing executable authority dependency scripts/corpus/clock.ts
+expected '' to contain 'defect label lacks one matching expected-versus-observed treatment mismatch'
+expected '' to contain 'YAML warning'
+expected '' to contain 'is not a regular file contained in this repository'
+expected [ 'a.ts' ] to deeply equal [ 'a.ts', 'b.tsx', 'c.mts', ... ]
+expected discovered files to contain big.mjs
+```
+
+**Standing companions:** removing any runtime dependency fails the exact closure comparison; assumption
+labels, termless, expired, and source-unconnected restrictions cannot prove conflict; exact Mira
+targeting and correctly governed controls remain live; warnings and explicit tags invalidate signoff; traversal
+and symlink citation escapes fail; and `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, and `.cjs`
+all enter both tooling fences.
+
+**Revert:** all five weakenings were reverted. Canonical validation restored `corpusDigest`
+`4218a81abc15cd2f90cf20af3bad1c8982e5de27d87d096912a3ed304e89e9a5`. The real-derived partition
+remains empty, captain signoff remains pending, and all 164 focused corpus, budget, and file-size tests
+passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, D-091 review hardening).

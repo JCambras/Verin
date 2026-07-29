@@ -17,7 +17,7 @@ import { CORPUS_SEED } from "./seed";
 import { parseStrictJson } from "./strict-json";
 import { SPEC_DIR, SPEC_FILES, type LoadedSpec } from "./world";
 
-export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.10.0";
+export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.11.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
 export const REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION = "verin-real-derived-schema-digest/1.0.0";
 export const REAL_DERIVED_SCHEMA_FILES = ["real-derived-case-schema.json", "real-derived-replay-schema.json"] as const;

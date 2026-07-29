@@ -176,10 +176,13 @@ effective cross-household authority, correctly treated owner-beneficiary context
 reserves, valid holds, exact thresholds, and time-zone boundaries. Missing, duplicate, unknown, or
 context-free treatment assertions fail closed.
 
-Instruction-conflict context is also request-bound. Its witness names the exact request and household,
-each referenced instruction belongs to that household, and impacted subjects must intersect the
-request's source account or destination instruction. Same-household opaque references that do not
-connect to the governed request cannot substantiate either a label or a control.
+Instruction-conflict context is also request-bound. Typed terms name the governed action, source,
+target, and required or forbidden polarity. Required terms conflict when the request misses their exact
+target; forbidden terms conflict when the request matches it. Each witness carries the exact firm,
+household, and instruction identity, and every supplied instruction requires exact observed evidence.
+Impacted subjects must intersect the request's source account or destination instruction. Assumptions,
+termless records, and same-household opaque references that do not connect to the governed request cannot
+substantiate either a label or a control.
 
 ---
 
@@ -289,14 +292,15 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.10.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.11.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.5.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.6.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
-its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers
-its identifier, exact bytes, and canonical semantic projection. Relabeling an inventory entry, changing
+its exact bytes, and exact digests for the complete repository-local runtime dependency closure of the
+executable cross-field authorities. Each schema binding covers its identifier, exact bytes, and canonical
+semantic projection. Relabeling an inventory entry, changing
 what a defect class means, changing a freshness window, changing either schema, or changing a replay
 predicate or topology rule therefore invalidates prior captain signoff even when no case bytes change.
 

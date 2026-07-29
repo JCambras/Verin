@@ -107,6 +107,10 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       }
     }
     for (const row of item.records.referencedBankInstructions ?? []) {
+      requireOne(
+        row.titledTo,
+        `records.referencedBankInstructions.${row.id}.titledTo`,
+      );
       for (const ref of row.accountRefs ?? []) {
         requireOne(
           ref,
@@ -115,7 +119,21 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
       }
     }
     for (const row of item.records.restrictions ?? []) {
+      requireOne(
+        row.householdRef,
+        `records.restrictions.${row.id}.householdRef`,
+      );
       requireOne(row.subjectRef, `records.restrictions.${row.id}.subjectRef`);
+      if (row.term !== null) {
+        requireOne(
+          row.term.sourceAccountRef,
+          `records.restrictions.${row.id}.term.sourceAccountRef`,
+        );
+        requireOne(
+          row.term.targetRef,
+          `records.restrictions.${row.id}.term.targetRef`,
+        );
+      }
     }
     for (const row of item.records.modelAssignments ?? []) {
       requireOne(row.accountRef, `records.modelAssignments.${row.id}.accountRef`);

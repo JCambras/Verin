@@ -10,6 +10,7 @@ import {
   syntheticIdentityContext,
   type SyntheticIdentityInput,
 } from "./synthetic-identity";
+import { syntheticInstructionConflictAnalysis } from "./synthetic-instruction-topology";
 
 export interface EmittedEvidence {
   id: string;
@@ -61,6 +62,7 @@ export interface EmittedRecords {
   referencedBankInstructions: Array<{
     id: string;
     householdRef: string;
+    titledTo: string;
     accountRefs: string[];
   }>;
   plannedWithdrawals: Array<{
@@ -70,8 +72,20 @@ export interface EmittedRecords {
   }>;
   restrictions: Array<{
     id: string;
+    firmRef: string;
+    householdRef: string;
     subjectRef: string;
     inForceAtAsOf: boolean;
+    term: {
+      governedAction: "distribution";
+      sourceAccountRef: string;
+      targetKind:
+        | "source-account"
+        | "destination-instruction"
+        | "destination-subject";
+      targetRef: string;
+      polarity: "required" | "forbidden";
+    } | null;
   }>;
   modelAssignments: Array<{
     id: string;
@@ -110,7 +124,10 @@ export interface EmittedCase {
     asOfLocal: string;
   };
   request: {
+    firmRef: string;
+    requestRef: string;
     householdRef: string;
+    action: "distribution";
     sourceAccountRef: string;
     selectedFundingRefs: string[];
     destinationRef: string;
@@ -285,7 +302,7 @@ const CONTEXT_RULES: Readonly<
       );
   },
   "instruction-conflict-present": (item) =>
-    assumption(item, "AS-05") || assumption(item, "AS-08"),
+    syntheticInstructionConflictAnalysis(item).present,
   "reserve-not-scalar": (item) => reserveState(item) !== "modeled-scalar",
   "stale-evidence-present": (item) =>
     item.evidence.some((evidence) => evidence.freshness === "stale"),
@@ -362,6 +379,7 @@ export function syntheticSemanticProblems(
   const problems: string[] = [];
   for (const item of cases) {
     problems.push(...selectedFundingProblems(item));
+    problems.push(...syntheticInstructionConflictAnalysis(item).problems);
     problems.push(
       ...syntheticIdentityContext(item, {
         ambiguous: item.outcomes.some(

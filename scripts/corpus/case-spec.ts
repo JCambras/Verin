@@ -41,6 +41,7 @@ const CaseSchema = z.strictObject({
   assumptionIds: z.array(z.string().regex(/^AS-\d{2}$/)),
   label: LabelSchema,
   request: z.strictObject({
+    action: z.literal("distribution"),
     sourceAccountRef: Slug,
     selectedFundingRefs: z.array(Slug).min(1),
     destinationRef: Slug,

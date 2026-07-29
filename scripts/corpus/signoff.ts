@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isAlias, parseDocument, visit } from "yaml";
+import { isAlias, isNode, parseDocument, visit } from "yaml";
 import { SPEC_DIR } from "./world";
 
 export const SIGNOFF_PENDING = "pending-captain";
@@ -33,12 +33,18 @@ export function parseSignoff(text: string): CorpusSignoff {
     `expected exactly one YAML signoff block, found ${blocks.length}`,
   ]);
   const document = parseDocument(blocks[0]?.[1] ?? "", { strict: true, uniqueKeys: true });
-  const parseProblems = document.errors.map(() => "signoff YAML parse error");
+  const parseProblems = [
+    ...document.errors.map(() => "signoff YAML parse error"),
+    ...document.warnings.map(() => "signoff YAML warning"),
+  ];
   let hasAlias = false;
-  visit(document, {
-    Alias: (_key, node) => { if (isAlias(node)) hasAlias = true; },
+  let hasTag = false;
+  visit(document, (_key, node) => {
+    if (isAlias(node)) hasAlias = true;
+    if (isNode(node) && node.tag !== undefined) hasTag = true;
   });
   if (hasAlias) parseProblems.push("signoff YAML aliases are forbidden");
+  if (hasTag) parseProblems.push("signoff YAML tags are forbidden");
   if (parseProblems.length > 0) return emptySignoff(parseProblems);
   const data = document.toJS({ maxAliasCount: 0 }) as unknown;
   if (data === null || Array.isArray(data) || typeof data !== "object") {

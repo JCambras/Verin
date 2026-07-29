@@ -4839,3 +4839,28 @@ pending captain signoff, and the 500-line file ceiling remain unchanged.
 **Why:** signed defect context must be replayable from emitted inputs, tenant scope cannot enter a generic
 subject collection, and one-cent funding differences must survive aggregation.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-091 · 2026-07-29 · captain-decision · Instruction truth and signed authorities are closed
+
+The `verin-corpus/1.11.0` preimage binds `verin-real-derived-case/1.4.0`,
+`verin-real-derived-replay/1.6.0`, and `verin-real-derived-semantics/1.6.0`. Synthetic and real-derived
+instruction conflicts derive from one typed authority. Each term names its governed action, exact source,
+typed target, and required or forbidden polarity. Witnesses share the request firm and household.
+Assumption labels, termless records, and unconnected terms cannot substantiate conflict context, while a
+correctly governed request remains a clean control. Every nonempty real-derived instruction set requires
+exact observed evidence for each instruction identity.
+
+The executable semantic inventory equals the complete repository-local runtime dependency closure of its
+declared roots, including data imports. Signoff YAML rejects warnings and all tagged nodes before
+conversion. Taxonomy citations must resolve to regular files whose canonical paths remain inside the
+repository. Both tooling budgets use one executable-source extension predicate covering TypeScript and
+JavaScript variants.
+
+The tooling ceiling rises from 7300 to 7700 against 7541 measured lines, leaving 159 lines of explicit
+headroom across separate evidence, semantic, topology, and fence owners. The 500-line file ceiling,
+path-keyed isolation, generated-file ownership, empty deferred real-derived partition, and pending
+captain signoff remain unchanged.
+
+**Why:** signed replay meaning cannot change through an unbound runtime dependency, untyped conflict
+claim, parser recovery, host-dependent citation, or unmeasured executable file.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

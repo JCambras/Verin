@@ -498,6 +498,7 @@ function specWithInsertedHousehold(spec: LoadedSpec): LoadedSpec {
         assumptionIds: [],
         label: { kind: "clean-control", controlRationale: "Inserted to prove order independence." },
         request: {
+          action: "distribution",
           sourceAccountRef: "smiths-west-taxable",
           selectedFundingRefs: ["smiths-west-taxable"],
           destinationRef: "smiths-west-primary",

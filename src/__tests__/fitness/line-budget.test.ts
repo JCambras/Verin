@@ -1,6 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { shippedSourceFiles, REPO_ROOT, walk } from "./_fence-utils";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import {
+  shippedSourceFiles,
+  REPO_ROOT,
+  toolingSourceFiles,
+} from "./_fence-utils";
 import { join, relative } from "node:path";
 
 /**
@@ -64,7 +74,7 @@ const CEILINGS = {
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 7300,
+  tooling: 7700,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
@@ -80,8 +90,8 @@ function bucket(file: string): Bucket {
 }
 
 /** Build-time tooling files - the tree the platform fences never walked. */
-export function toolingFiles(): string[] {
-  return walk(join(REPO_ROOT, "scripts"), (f) => f.endsWith(".ts"));
+export function toolingFiles(root?: string): string[] {
+  return toolingSourceFiles(root);
 }
 
 export function measureBudgets(): Record<keyof typeof CEILINGS, number> {
@@ -139,6 +149,31 @@ describe("line-budget fence (per-layer)", () => {
       expect(totals.tooling).toBeGreaterThan(0);
       const v = budgetViolations({ ...totals, tooling: 0 });
       expect(v.some((m) => m.startsWith("tooling:") && m.includes("stale"))).toBe(true);
+    });
+    it("the tooling aggregate discovers every supported executable source extension", () => {
+      const dir = mkdtempSync(join(tmpdir(), "verin-tooling-budget-"));
+      try {
+        const names = [
+          "a.ts",
+          "b.tsx",
+          "c.mts",
+          "d.cts",
+          "e.js",
+          "f.jsx",
+          "g.mjs",
+          "h.cjs",
+        ];
+        for (const name of [...names, "ignored.txt"]) {
+          writeFileSync(join(dir, name), "// source\n");
+        }
+        expect(
+          toolingFiles(dir)
+            .map((file) => relative(dir, file))
+            .sort(),
+        ).toEqual(names.sort());
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 });

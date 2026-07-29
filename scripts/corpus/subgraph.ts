@@ -30,6 +30,19 @@ const evidenceKeys = (corpusCase: CaseSpec, kind: string): Set<string> =>
     }),
   );
 
+const instructionTargetRef = (
+  term: NonNullable<WorldSpec["restrictions"][number]["term"]>,
+): string => {
+  switch (term.targetKind) {
+    case "source-account":
+      return subjectId(term.targetRef);
+    case "destination-instruction":
+      return bankInstructionId(term.targetRef);
+    case "destination-subject":
+      return subjectId(term.targetRef);
+  }
+};
+
 export const REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS = [
   "identity-candidate",
   "owns-account",
@@ -99,7 +112,15 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
         party.key === household.advisorRef ||
         householdAccounts.some((account) => account.ownerRefs.includes(party.key)) ||
         beneficiaries.some((beneficiary) => beneficiary.partyRef === party.key) ||
-        bankInstructions.some((instruction) => instruction.titledTo === party.key) ||
+        selectedBankInstructions.some(
+          (instruction) => instruction.titledTo === party.key,
+        ) ||
+        world.restrictions.some(
+          (restriction) =>
+            restriction.householdRef === householdKey &&
+            restriction.term?.targetKind === "destination-subject" &&
+            restriction.term.targetRef === party.key,
+        ) ||
         world.authorizedSigners.some(
           (signer) =>
             householdAccountKeys.has(signer.accountRef) && signer.partyRef === party.key,
@@ -108,6 +129,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     (party) => party.key,
   );
   const restrictionInScope = (row: WorldSpec["restrictions"][number]): boolean => {
+    if (row.householdRef !== householdKey) return false;
     switch (row.scope) {
       case "household":
         return row.subjectRef === householdKey;
@@ -191,6 +213,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     referencedBankInstructions: referencedBankInstructions.map((row) => ({
       id: bankInstructionId(row.key),
       householdRef: subjectId(row.householdRef),
+      titledTo: subjectId(row.titledTo),
       accountRefs: sortedBy(row.accountRefs, (key) => key).map(subjectId),
     })),
     plannedWithdrawals: sortedBy(
@@ -208,6 +231,8 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     })),
     restrictions: sortedBy(world.restrictions.filter(restrictionInScope), (row) => row.key).map((row) => ({
       id: restrictionId(row.key),
+      firmRef: corpusCase.firmId,
+      householdRef: subjectId(row.householdRef),
       scope: row.scope,
       subjectRef: subjectId(row.subjectRef),
       kind: row.kind,
@@ -216,6 +241,15 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       effectiveFrom: row.effectiveFrom,
       effectiveTo: row.effectiveTo,
       sourceRef: row.sourceRef,
+      term: row.term === undefined
+        ? null
+        : {
+            governedAction: row.term.governedAction,
+            sourceAccountRef: subjectId(row.term.sourceAccountRef),
+            targetKind: row.term.targetKind,
+            targetRef: instructionTargetRef(row.term),
+            polarity: row.term.polarity,
+          },
       inForceAtAsOf:
         epochMs(row.effectiveFrom) <= epochMs(world.clock.asOf) &&
         (row.effectiveTo === null || epochMs(row.effectiveTo) > epochMs(world.clock.asOf)),

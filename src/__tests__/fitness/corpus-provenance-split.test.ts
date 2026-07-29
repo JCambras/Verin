@@ -5,15 +5,21 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import ts from "typescript";
 import { parseDocument } from "yaml";
 import { REPO_ROOT } from "./_fence-utils";
 import { canonicalJson } from "../../../src/contracts/decision-core/serialization";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
-import { defectClassIds, taxonomyExerciseProblems } from "../../../scripts/corpus/defects";
+import {
+  defectClassIds,
+  taxonomyExerciseProblems,
+  taxonomyProblems,
+} from "../../../scripts/corpus/defects";
 import { evidenceResolutionProblems } from "../../../scripts/corpus/graph";
 import {
   buildInventory,
@@ -37,6 +43,7 @@ import {
 } from "../../../scripts/corpus/real-derived-policy";
 import {
   REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+  REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
   loadRealDerivedSemanticContract,
   realDerivedSemanticContractBinding,
   semanticTreatment,
@@ -188,6 +195,133 @@ const canonicalFixtureBytes = (value: unknown): string => {
   return `${result.value}\n`;
 };
 
+const tsConfig = ts.readConfigFile(
+  join(REPO_ROOT, "tsconfig.json"),
+  ts.sys.readFile,
+);
+const compilerOptions = ts.parseJsonConfigFileContent(
+  tsConfig.config,
+  ts.sys,
+  REPO_ROOT,
+).options;
+
+const authorityClosureProblems = (
+  roots: readonly string[],
+  inventory: readonly string[],
+): string[] => {
+  const problems: string[] = [];
+  const closure = new Set<string>();
+  const pending = [...roots];
+  while (pending.length > 0) {
+    const file = pending.pop()!;
+    if (closure.has(file)) continue;
+    closure.add(file);
+    const absolute = join(REPO_ROOT, file);
+    const source = ts.createSourceFile(
+      absolute,
+      readFileSync(absolute, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const runtimeSpecifiers: string[] = [];
+    for (const statement of source.statements) {
+      if (
+        ts.isImportDeclaration(statement) &&
+        ts.isStringLiteral(statement.moduleSpecifier)
+      ) {
+        const clause = statement.importClause;
+        const runtime =
+          clause === undefined ||
+          (
+            !clause.isTypeOnly &&
+            (
+              clause.name !== undefined ||
+              clause.namedBindings === undefined ||
+              ts.isNamespaceImport(clause.namedBindings) ||
+              clause.namedBindings.elements.some(
+                (element) => !element.isTypeOnly,
+              )
+            )
+          );
+        if (runtime) runtimeSpecifiers.push(statement.moduleSpecifier.text);
+      }
+      if (
+        ts.isExportDeclaration(statement) &&
+        statement.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(statement.moduleSpecifier) &&
+        !statement.isTypeOnly &&
+        (
+          statement.exportClause === undefined ||
+          !ts.isNamedExports(statement.exportClause) ||
+          statement.exportClause.elements.some(
+            (element) => !element.isTypeOnly,
+          )
+        )
+      ) {
+        runtimeSpecifiers.push(statement.moduleSpecifier.text);
+      }
+    }
+    const visitRuntimeLoads = (node: ts.Node): void => {
+      if (ts.isCallExpression(node)) {
+        const runtimeLoad =
+          node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          (
+            ts.isIdentifier(node.expression) &&
+            node.expression.text === "require"
+          );
+        if (runtimeLoad) {
+          const argument = node.arguments[0];
+          if (
+            argument === undefined ||
+            !ts.isStringLiteralLike(argument)
+          ) {
+            problems.push(`${file}: non-literal runtime dependency`);
+          } else {
+            runtimeSpecifiers.push(argument.text);
+          }
+        }
+      }
+      ts.forEachChild(node, visitRuntimeLoads);
+    };
+    visitRuntimeLoads(source);
+    for (const specifier of runtimeSpecifiers) {
+      const resolved = ts.resolveModuleName(
+        specifier,
+        absolute,
+        compilerOptions,
+        ts.sys,
+      ).resolvedModule;
+      if (resolved === undefined) continue;
+      const target = resolve(resolved.resolvedFileName);
+      const pathFromRoot = relative(REPO_ROOT, target);
+      if (
+        pathFromRoot === ".." ||
+        pathFromRoot.startsWith(`..${sep}`) ||
+        isAbsolute(pathFromRoot) ||
+        pathFromRoot.split(/[\\/]/).includes("node_modules")
+      ) {
+        continue;
+      }
+      pending.push(pathFromRoot.replace(/\\/g, "/"));
+    }
+  }
+  const inventoried = new Set(inventory);
+  for (const file of closure) {
+    if (!inventoried.has(file)) {
+      problems.push(`missing executable authority dependency ${file}`);
+    }
+  }
+  for (const file of inventoried) {
+    if (!closure.has(file)) {
+      problems.push(`extraneous executable authority ${file}`);
+    }
+  }
+  if (inventoried.size !== inventory.length) {
+    problems.push("duplicate executable authority inventory entry");
+  }
+  return problems;
+};
+
 const observedEvidence = (
   evidenceKind: string,
   subjectRef: string,
@@ -269,11 +403,12 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.5.0",
+    schemaVersion: "verin-real-derived-replay/1.6.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
       householdRef: HOUSEHOLD_REF,
+      action: "distribution",
       actorRef: ACTOR_REF,
       sourceAccountRef: ACCOUNT_REF,
       destinationRef: INSTRUCTION_REF,
@@ -409,7 +544,7 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
     case "destination-integrity-defect":
       payload.destination.discriminatorState = "collision";
       break;
-    case "instruction-conflict-unresolved":
+    case "instruction-conflict-unresolved": {
       payload.instructionConflict = {
         conflictState: "present",
         requestRef: REQUEST_REF,
@@ -417,18 +552,50 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
         instructions: [
           {
             instructionRef: INSTRUCTION_REF,
+            firmRef: FIRM_REF,
             householdRef: HOUSEHOLD_REF,
+            term: {
+              governedAction: "distribution",
+              sourceAccountRef: ACCOUNT_REF,
+              targetKind: "destination-instruction",
+              targetRef: INSTRUCTION_REF,
+              polarity: "required",
+            },
           },
           {
             instructionRef: INSTRUCTION_REF_ALT,
+            firmRef: FIRM_REF,
             householdRef: HOUSEHOLD_REF,
+            term: {
+              governedAction: "distribution",
+              sourceAccountRef: ACCOUNT_REF,
+              targetKind: "destination-instruction",
+              targetRef: INSTRUCTION_REF,
+              polarity: "forbidden",
+            },
           },
         ],
         impactedSubjectRefs: [ACCOUNT_REF],
         evidenceSourceRef: EVIDENCE_SOURCE_REF,
       };
+      const unresolvedEvidence =
+        item.evidence as Array<Record<string, unknown>>;
+      const unresolvedConflictEvidence = unresolvedEvidence.find(
+        (entry) => entry.evidenceKind === "household-instruction",
+      )!;
+      unresolvedConflictEvidence.subjectRef = INSTRUCTION_REF;
+      unresolvedEvidence.push(
+        observedEvidence(
+          "household-instruction",
+          INSTRUCTION_REF_ALT,
+          EVIDENCE_SOURCE_REF,
+          TOKEN_ALT,
+        ),
+      );
+      payload.evidenceRefs = unresolvedEvidence.map((entry) => entry.id);
       (item.subjects as string[]).push(INSTRUCTION_REF_ALT);
       break;
+    }
     case "liquidity-reserve-miscalculation":
       payload.liquidity.reserveState = "modeled-segmented";
       payload.liquidity.withdrawalSegmentsMinor = [500, 1_000];
@@ -513,11 +680,27 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
         instructions: [
           {
             instructionRef: INSTRUCTION_REF,
+            firmRef: FIRM_REF,
             householdRef: HOUSEHOLD_REF,
+            term: {
+              governedAction: "distribution",
+              sourceAccountRef: ACCOUNT_REF,
+              targetKind: "destination-instruction",
+              targetRef: INSTRUCTION_REF,
+              polarity: "required",
+            },
           },
           {
             instructionRef: INSTRUCTION_REF_ALT,
+            firmRef: FIRM_REF,
             householdRef: HOUSEHOLD_REF,
+            term: {
+              governedAction: "distribution",
+              sourceAccountRef: ACCOUNT_REF,
+              targetKind: "destination-instruction",
+              targetRef: INSTRUCTION_REF,
+              polarity: "forbidden",
+            },
           },
         ],
         impactedSubjectRefs: [ACCOUNT_REF, ACCOUNT_REF_ALT],
@@ -527,8 +710,15 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
       const conflictEvidence = evidence.find(
         (entry) => entry.evidenceKind === "household-instruction",
       )!;
+      conflictEvidence.subjectRef = INSTRUCTION_REF;
       conflictEvidence.sourceRef = EVIDENCE_SOURCE_REF_ALT;
       evidence.push(
+        observedEvidence(
+          "household-instruction",
+          INSTRUCTION_REF_ALT,
+          EVIDENCE_SOURCE_REF_ALT,
+          TOKEN_ALT,
+        ),
         {
           ...observedEvidence(
             "recent-change",
@@ -722,6 +912,7 @@ describe("corpus-provenance-split fence", () => {
         id: "bank-instruction:mira-primary",
         householdRef: "subject:smith-mira",
         accountRefs: ["subject:mira-roth"],
+        titledTo: "subject:mira-smith",
       },
     ]);
     expect(crossHousehold.records.referencedHouseholds).toEqual([
@@ -934,6 +1125,35 @@ describe("corpus-provenance-split fence", () => {
     ).not.toBe(real.corpusDigest);
   });
 
+  it("taxonomy citations must resolve to regular files inside the repository", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-taxonomy-citations-"));
+    const repo = join(root, "repo");
+    const local = join(repo, "source.md");
+    const outside = join(root, "outside.md");
+    const escape = join(repo, "escape.md");
+    try {
+      mkdirSync(repo);
+      writeFileSync(local, "local\n");
+      writeFileSync(outside, "outside\n");
+      symlinkSync(outside, escape);
+      const taxonomy = structuredClone(real.taxonomy);
+      taxonomy.cleanControlLabel.sourceCitation.file = "source.md";
+      for (const entry of taxonomy.defectClasses) {
+        entry.sourceCitation.file = "source.md";
+      }
+      taxonomy.defectClasses[0]!.sourceCitation.file = "escape.md";
+      expect(taxonomyProblems(taxonomy, repo).join("\n")).toContain(
+        "is not a regular file contained in this repository",
+      );
+      taxonomy.defectClasses[0]!.sourceCitation.file = "../outside.md";
+      expect(taxonomyProblems(taxonomy, repo).join("\n")).toContain(
+        "is not a regular file contained in this repository",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("(d) enforces: the signed digest binds each case label beside its bytes", () => {
     const inventory = buildInventory(real.generated);
     const relabeled = inventory.map((entry, index) =>
@@ -997,8 +1217,8 @@ describe("corpus-provenance-split fence", () => {
     });
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
-      "verin-real-derived-case/1.3.0",
-      "verin-real-derived-replay/1.5.0",
+      "verin-real-derived-case/1.4.0",
+      "verin-real-derived-replay/1.6.0",
     ]);
     expect(
       corpusDigest(
@@ -1639,7 +1859,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.5.0",
+      "verin-real-derived-semantics/1.6.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1686,6 +1906,28 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/report.ts",
+    );
+  });
+
+  it("the executable authority inventory equals its complete runtime dependency closure", () => {
+    expect(
+      authorityClosureProblems(
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+      ),
+    ).toEqual([]);
+    expect(
+      authorityClosureProblems(
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES.filter(
+          (file) => file !== "scripts/corpus/clock.ts",
+        ),
+      ),
+    ).toContain(
+      "missing executable authority dependency scripts/corpus/clock.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/subgraph.ts",
     );
   });
 
@@ -1796,11 +2038,27 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     payload.instructionConflict.instructions = [
       {
         instructionRef: INSTRUCTION_REF_ALT,
+        firmRef: FIRM_REF,
         householdRef: HOUSEHOLD_REF,
+        term: {
+          governedAction: "distribution",
+          sourceAccountRef: ACCOUNT_REF,
+          targetKind: "destination-instruction",
+          targetRef: INSTRUCTION_REF,
+          polarity: "required",
+        },
       },
       {
         instructionRef: `instruction:tok:0011223344556677`,
+        firmRef: FIRM_REF,
         householdRef: HOUSEHOLD_REF,
+        term: {
+          governedAction: "distribution",
+          sourceAccountRef: ACCOUNT_REF,
+          targetKind: "destination-instruction",
+          targetRef: INSTRUCTION_REF,
+          polarity: "forbidden",
+        },
       },
     ];
     payload.instructionConflict.impactedSubjectRefs = [OWNER_REF_ALT];
@@ -1834,6 +2092,10 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
           HOUSEHOLD_REF_ALT;
         item.subjects.push(HOUSEHOLD_REF_ALT);
       },
+      (item) => {
+        item.replayPayload.instructionConflict.instructions[0].firmRef =
+          FIRM_REF_ALT;
+      },
     ];
     for (const mutate of mutations) {
       const item = realDerivedDefectCase(
@@ -1848,6 +2110,72 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         ).join("\n"),
       ).toContain("instruction conflict");
     }
+  });
+
+  it("real-derived instruction conflict truth requires connected typed terms", () => {
+    const termless = realDerivedDefectCase(
+      "instruction-conflict-unresolved",
+    ) as Record<string, any>;
+    delete termless.replayPayload.instructionConflict.instructions[0].term;
+    expect(
+      realDerivedCaseProblems(
+        termless,
+        classes,
+        "real-derived/RD-termless-conflict.json",
+      ).join("\n"),
+    ).toContain("instructionConflict.instructions.0.term");
+
+    const unconnected = realDerivedDefectCase(
+      "instruction-conflict-unresolved",
+    ) as Record<string, any>;
+    for (const instruction of unconnected.replayPayload
+      .instructionConflict.instructions) {
+      instruction.term.sourceAccountRef = ACCOUNT_REF_ALT;
+    }
+    unconnected.subjects.push(ACCOUNT_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        unconnected,
+        classes,
+        "real-derived/RD-unconnected-conflict.json",
+      ).join("\n"),
+    ).toContain(
+      "instruction conflict state does not match the signed typed instruction terms",
+    );
+
+    const governed = realDerivedCase({
+      label: {
+        kind: "clean-control",
+        controlRationaleId: "no-defect-present",
+      },
+    }) as Record<string, any>;
+    governed.replayPayload.destination.discriminatorState = "unique";
+    governed.replayPayload.instructionConflict.instructions = [{
+      instructionRef: INSTRUCTION_REF_ALT,
+      firmRef: FIRM_REF,
+      householdRef: HOUSEHOLD_REF,
+      term: {
+        governedAction: "distribution",
+        sourceAccountRef: ACCOUNT_REF,
+        targetKind: "destination-instruction",
+        targetRef: INSTRUCTION_REF,
+        polarity: "required",
+      },
+    }];
+    governed.subjects.push(INSTRUCTION_REF_ALT);
+    (governed.evidence as Array<Record<string, unknown>>).find(
+      (entry) => entry.evidenceKind === "household-instruction",
+    )!.subjectRef = INSTRUCTION_REF_ALT;
+    governed.replayPayload.outcomes = treatmentOutcomes(
+      governed.replayPayload,
+    );
+    expect(
+      realDerivedCaseProblems(
+        governed,
+        classes,
+        "real-derived/RD-governed-instruction.json",
+      ),
+    ).toEqual([]);
   });
 
   it("selected funding is explicit and aggregate sufficiency supports tax outcome attribution", () => {
@@ -2378,6 +2706,81 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(
       syntheticSemanticProblems([liveOutgoing]).join("\n"),
     ).toContain("selected funding");
+  });
+
+  it("synthetic instruction conflicts derive only from request-bound typed terms", () => {
+    const conflict = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-joint-owners-conflicting-instructions",
+      )!,
+    ) as any;
+    expect(syntheticSemanticProblems([conflict])).toEqual([]);
+
+    const assumptionOnly = structuredClone(conflict);
+    for (const restriction of assumptionOnly.records.restrictions) {
+      restriction.term = null;
+    }
+    expect(
+      syntheticSemanticProblems([assumptionOnly]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const unconnected = structuredClone(conflict);
+    for (const restriction of unconnected.records.restrictions) {
+      if (restriction.term !== null) {
+        restriction.term.sourceAccountRef = "subject:smiths-ira";
+      }
+    }
+    expect(
+      syntheticSemanticProblems([unconnected]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const expired = structuredClone(conflict);
+    for (const restriction of expired.records.restrictions) {
+      restriction.inForceAtAsOf = false;
+    }
+    expect(
+      syntheticSemanticProblems([expired]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
+
+    const governed = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-clean-in-force-instruction",
+      )!,
+    );
+    expect(syntheticSemanticProblems([governed])).toEqual([]);
+  });
+
+  it("the Mira prohibition resolves the exact request destination subject", () => {
+    const item = structuredClone(
+      real.cases.find(
+        (candidate) =>
+          candidate.caseId ===
+            "CS-beneficiary-versus-destination-restriction",
+      )!,
+    ) as any;
+    const restriction = item.records.restrictions.find(
+      (entry: any) => entry.id === "restriction:smiths-destination",
+    );
+    const destination = item.records.referencedBankInstructions.find(
+      (entry: any) => entry.id === item.request.destinationRef,
+    );
+    expect(restriction.term.targetRef).toBe("subject:mira-smith");
+    expect(destination.titledTo).toBe("subject:mira-smith");
+    expect(syntheticSemanticProblems([item])).toEqual([]);
+
+    restriction.term.targetRef = "subject:robert-smith";
+    expect(
+      syntheticSemanticProblems([item]).join("\n"),
+    ).toContain(
+      "defect label lacks one matching expected-versus-observed treatment mismatch",
+    );
   });
 
   it("synthetic tax semantics and defaults use all and only selected funding", () => {
@@ -3091,11 +3494,13 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toContain("canonical ISO-8601 UTC instant");
   });
 
-  it("signoff parsing rejects duplicate keys, aliases, unexpected keys, and multiple blocks", () => {
+  it("signoff parsing rejects warnings, tags, duplicate keys, aliases, unexpected keys, and multiple blocks", () => {
     const yaml = (body: string) => `\`\`\`yaml\n${body}\n\`\`\``;
     const malformed: Array<[string, string]> = [
       [yaml("corpusVersion: x\nstatus: signed\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null"), "parse error"],
       [yaml("corpusVersion: &v x\nstatus: pending-captain\nsignedBy: *v\nsignedAt: null\nsignedDigest: null"), "aliases are forbidden"],
+      [yaml("corpusVersion: !unresolved x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null"), "YAML warning"],
+      [yaml("corpusVersion: !!str x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null"), "tags are forbidden"],
       [yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\nextra: value"), "unexpected top-level keys"],
       [`${yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null")}\n${yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null")}`, "exactly one YAML signoff block"],
     ];

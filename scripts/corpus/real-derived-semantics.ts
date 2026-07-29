@@ -1,5 +1,6 @@
 import { pendingActionLiquidityTreatment } from "./pending-actions";
 import {
+  realDerivedInstructionConflictAnalysis,
   realDerivedTopologyProblems as topologyProblems,
   selectedSources,
 } from "./real-derived-topology";
@@ -72,7 +73,8 @@ const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>
     item.replayPayload.destination.verificationState !== "verified" ||
     item.replayPayload.destination.discriminatorState !== "unique",
   "instruction-conflict-present": (item) =>
-    item.replayPayload.instructionConflict.conflictState === "present",
+    item.replayPayload.instructionConflict.conflictState === "present" &&
+    realDerivedInstructionConflictAnalysis(item).present,
   "reserve-not-scalar": (item) =>
     item.replayPayload.liquidity.reserveState !== "modeled-scalar",
   "stale-evidence-present": (item) =>
@@ -94,6 +96,7 @@ const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>
   "deadline-infeasible": deadlineInfeasible,
   "resolved-conflict-multi-subject": (item) =>
     item.replayPayload.instructionConflict.conflictState === "resolved" &&
+    realDerivedInstructionConflictAnalysis(item).present &&
     item.replayPayload.instructionConflict.impactedSubjectRefs.length > 1,
   "selected-retirement-source-without-completed-review": (item) =>
     retirementFundingSelected(item) &&

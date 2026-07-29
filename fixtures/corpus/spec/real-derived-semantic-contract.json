@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.5.0",
+  "contractVersion": "verin-real-derived-semantics/1.6.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -88,7 +88,7 @@
     "pendingAction": "must-resolve-to-request-household-and-selected-funding",
     "pendingModel": "must-resolve-to-request-household-and-selected-funding",
     "materialEvidence": "kind-subject-source-observation-exactly-once",
-    "instructionConflict": "binds-request-household-instructions-and-impacted-subjects"
+    "instructionConflict": "derived-from-request-bound-typed-instruction-terms"
   },
   "outcomes": {
     "completeness": "one-expected-observed-treatment-per-defect-class",

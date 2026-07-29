@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.5.0",
+  "$id": "verin-real-derived-replay/1.6.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.5.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.6.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -29,6 +29,7 @@
         "firmRef",
         "requestRef",
         "householdRef",
+        "action",
         "actorRef",
         "sourceAccountRef",
         "destinationRef",
@@ -42,6 +43,7 @@
         "firmRef": { "$ref": "#/$defs/firmRef" },
         "requestRef": { "$ref": "#/$defs/requestRef" },
         "householdRef": { "$ref": "#/$defs/householdRef" },
+        "action": { "const": "distribution" },
         "actorRef": { "$ref": "#/$defs/actorRef" },
         "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
         "destinationRef": { "$ref": "#/$defs/instructionRef" },
@@ -292,10 +294,12 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["instructionRef", "householdRef"],
+            "required": ["instructionRef", "firmRef", "householdRef", "term"],
             "properties": {
               "instructionRef": { "$ref": "#/$defs/instructionRef" },
-              "householdRef": { "$ref": "#/$defs/householdRef" }
+              "firmRef": { "$ref": "#/$defs/firmRef" },
+              "householdRef": { "$ref": "#/$defs/householdRef" },
+              "term": { "$ref": "#/$defs/instructionTerm" }
             }
           }
         },
@@ -566,14 +570,21 @@
                 "conflictState": { "const": "none" },
                 "instructions": {
                   "type": "array",
-                  "maxItems": 0,
+                  "uniqueItems": true,
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["instructionRef", "householdRef"],
+                    "required": [
+                      "instructionRef",
+                      "firmRef",
+                      "householdRef",
+                      "term"
+                    ],
                     "properties": {
                       "instructionRef": { "$ref": "#/$defs/instructionRef" },
-                      "householdRef": { "$ref": "#/$defs/householdRef" }
+                      "firmRef": { "$ref": "#/$defs/firmRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" },
+                      "term": { "$ref": "#/$defs/instructionTerm" }
                     }
                   }
                 },
@@ -605,10 +616,17 @@
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["instructionRef", "householdRef"],
+                    "required": [
+                      "instructionRef",
+                      "firmRef",
+                      "householdRef",
+                      "term"
+                    ],
                     "properties": {
                       "instructionRef": { "$ref": "#/$defs/instructionRef" },
-                      "householdRef": { "$ref": "#/$defs/householdRef" }
+                      "firmRef": { "$ref": "#/$defs/firmRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" },
+                      "term": { "$ref": "#/$defs/instructionTerm" }
                     }
                   }
                 },
@@ -794,6 +812,82 @@
         { "$ref": "#/$defs/legalHoldRef" },
         { "$ref": "#/$defs/pendingActionRef" },
         { "$ref": "#/$defs/timeZoneRuleRef" }
+      ]
+    },
+    "instructionTerm": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "source-account" },
+            "targetRef": { "$ref": "#/$defs/accountRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "destination-instruction" },
+            "targetRef": { "$ref": "#/$defs/instructionRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "destination-subject" },
+            "targetRef": { "$ref": "#/$defs/ownerRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "request" },
+            "targetRef": { "$ref": "#/$defs/requestRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        }
       ]
     },
     "instant": {
