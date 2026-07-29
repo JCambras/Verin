@@ -752,6 +752,55 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
+  it("flags a verified bank-instruction claim without exact evidence", () => {
+    const inferred = demoClone();
+    const dualApproval = inferred.executionGuards.find(
+      ({ scenarioId, firmId }) =>
+        scenarioId === "dual-approval" && firmId === "firm-a",
+    )!;
+    expect(dualApproval.exactBankInstructionEvidence).toBe(false);
+    expect(dualApproval.safetyChecks.length).toBeGreaterThan(0);
+    dualApproval.safetyChecks = [
+      {
+        label: "Bank instruction unchanged since the decision",
+        status: "done",
+        statusLabel: "Verified",
+      },
+    ];
+    dualApproval.recordSafetyChecks = dualApproval.safetyChecks.map(
+      (check) => ({ ...check }),
+    );
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        inferred,
+      ).some((problem) =>
+        problem.includes(
+          "missing exact bank-instruction evidence must remain unavailable",
+        ),
+      ),
+    ).toBe(true);
+
+    const recordDrift = demoClone();
+    const recordGuard = recordDrift.executionGuards.find(
+      ({ scenarioId, firmId }) =>
+        scenarioId === "dual-approval" && firmId === "firm-a",
+    )!;
+    recordGuard.recordSafetyChecks = [];
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        recordDrift,
+      ).some((problem) =>
+        problem.includes(
+          "printable Record safety checks must preserve the fail-closed Safety claims",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("flags source-bound visible events that precede or misorder the signed request", () => {
     const beforeRequest = demoClone();
     const duplicate = beforeRequest.sourceTimelines.find(

@@ -181,6 +181,17 @@ export interface DemoSemanticSnapshot {
     firmId: string;
     sourceCaseId: string | null;
     signedLiquidityAuthority: boolean;
+    exactBankInstructionEvidence: boolean;
+    safetyChecks: Array<{
+      label: string;
+      status: string;
+      statusLabel: string;
+    }>;
+    recordSafetyChecks: Array<{
+      label: string;
+      status: string;
+      statusLabel: string;
+    }>;
     reservationVisible: boolean;
     executionReached: boolean;
     verificationReached: boolean;
@@ -1811,6 +1822,40 @@ export function validateGoldenDemoSemantics(
   }
 
   for (const guard of demo.executionGuards) {
+    if (
+      !guard.exactBankInstructionEvidence &&
+      guard.safetyChecks.length > 0
+    ) {
+      const unsupportedClaim = guard.safetyChecks.some((check) => {
+        const namesBankInstruction =
+          check.label.toLowerCase().includes("bank instruction") ||
+          check.label.toLowerCase().includes("bank-instruction");
+        return (
+          namesBankInstruction &&
+          (check.status === "done" ||
+            check.statusLabel.toLowerCase() === "verified")
+        );
+      });
+      const unavailableCheck = guard.safetyChecks.some(
+        (check) =>
+          check.label === "Bank-instruction check not evaluated" &&
+          check.status === "pending" &&
+          check.statusLabel === "Evidence unavailable",
+      );
+      if (unsupportedClaim || !unavailableCheck) {
+        problems.push(
+          `${guard.scenarioId}/${guard.firmId}: missing exact bank-instruction evidence must remain unavailable on Safety and cannot support a verified unchanged claim`,
+        );
+      }
+      if (
+        JSON.stringify(guard.recordSafetyChecks) !==
+        JSON.stringify(guard.safetyChecks)
+      ) {
+        problems.push(
+          `${guard.scenarioId}/${guard.firmId}: printable Record safety checks must preserve the fail-closed Safety claims`,
+        );
+      }
+    }
     if (
       !guard.signedLiquidityAuthority &&
       (guard.reservationVisible ||

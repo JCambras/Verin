@@ -737,17 +737,38 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     executionGuards: SCENARIOS.flatMap((scenario) =>
       firms.map((firm) => {
         const initialJourney = getJourney(scenario.id, firm.id);
+        const sourceCase = sourceCaseFor(scenario, firm.id);
         const journey =
           scenario.spec.invalidation &&
-          sourceCaseFor(scenario, firm.id)?.verification.reached === true
+          sourceCase?.verification.reached === true
             ? getJourney(scenario.id, firm.id, "revalidated")
             : initialJourney;
         const authority = liquidityAuthorityFor(scenario, firm.id);
         return {
           scenarioId: scenario.id,
           firmId: firm.id,
-          sourceCaseId: sourceCaseFor(scenario, firm.id)?.caseId ?? null,
+          sourceCaseId: sourceCase?.caseId ?? null,
           signedLiquidityAuthority: authority.kind === "signed",
+          exactBankInstructionEvidence:
+            sourceCase?.evidence.some(
+              (entry) => entry.evidenceKind === "bank-instruction",
+            ) ?? false,
+          safetyChecks:
+            journey.safety?.checks.map(
+              ({ label, status, statusLabel }) => ({
+                label,
+                status,
+                statusLabel,
+              }),
+            ) ?? [],
+          recordSafetyChecks:
+            journey.record.safety?.checks.map(
+              ({ label, status, statusLabel }) => ({
+                label,
+                status,
+                statusLabel,
+              }),
+            ) ?? [],
           reservationVisible: Boolean(journey.safety?.reservationId),
           executionReached: journey.execution !== null,
           verificationReached: journey.verification !== null,
@@ -769,20 +790,14 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
                     }),
                   ),
               }
-            : sourceCaseFor(scenario, firm.id)?.executionEligibility
+            : sourceCase?.executionEligibility
               ? {
-                  ...sourceCaseFor(scenario, firm.id)!.executionEligibility,
-                  reservations: sourceCaseFor(
-                    scenario,
-                    firm.id,
-                  )!.executionEligibility.reservations.map((reservation) => ({
+                  ...sourceCase.executionEligibility,
+                  reservations: sourceCase.executionEligibility.reservations.map((reservation) => ({
                     ...reservation,
                     conflictKeys: [...reservation.conflictKeys],
                   })),
-                  preconditions: sourceCaseFor(
-                    scenario,
-                    firm.id,
-                  )!.executionEligibility.preconditions.map((precondition) => ({
+                  preconditions: sourceCase.executionEligibility.preconditions.map((precondition) => ({
                     ...precondition,
                     requiredEvidence: [...precondition.requiredEvidence],
                   })),

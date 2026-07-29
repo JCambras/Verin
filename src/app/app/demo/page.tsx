@@ -8,13 +8,23 @@ import Link from "next/link";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import {
   SCENARIOS,
-  DEFAULT_FIRM,
   launcherVariantsFor,
   outcomeClassFor,
 } from "@app/demo/data";
-import { PrimaryLink, demoHref } from "@app/demo/surfaces/shared";
+import {
+  PrimaryLink,
+  demoHref,
+  type DemoRouteContext,
+} from "@app/demo/surfaces/shared";
 
 export const runtime = "nodejs";
+
+const QUICK_START_CONTEXT = {
+  scenarioId: "recent-bank-change-block",
+  firmId: "firm-a",
+  sourceCaseId: "GC-03-recent-bank-change-firm-a",
+  pass: "initial",
+} as const satisfies DemoRouteContext;
 
 export default function DemoLauncherPage() {
   const launcherEntries = SCENARIOS.flatMap((scenario) =>
@@ -39,12 +49,7 @@ export default function DemoLauncherPage() {
       </div>
 
       <PrimaryLink
-        href={demoHref("workspace", {
-          scenarioId: "recent-bank-change-block",
-          firmId: DEFAULT_FIRM,
-          sourceCaseId: null,
-          pass: "initial",
-        })}
+        href={demoHref("workspace", QUICK_START_CONTEXT)}
       >
         Run the seven-minute journey
       </PrimaryLink>

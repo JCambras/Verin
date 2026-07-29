@@ -57,6 +57,9 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
 
   // 1 - Household workspace (canonical journey: recent bank change under Firm A).
   await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
+  await expect(page).toHaveURL(
+    "/app/demo/workspace?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a",
+  );
   await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
   await expect(page.getByText("$8,000.00", { exact: true })).toBeVisible();
   await expectDevBadge(page);
@@ -811,6 +814,22 @@ test("the launcher exposes every exact signed firm and case variant", async ({ p
     "/app/demo/authority?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
   );
   await expect(page.getByText("Authority not reached")).toBeVisible();
+});
+
+test("missing bank-instruction evidence fails closed on Safety and Record", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const context = "scenario=dual-approval&firm=firm-a";
+
+  for (const station of ["safety", "record"]) {
+    await page.goto(`/app/demo/${station}?${context}`);
+    const surface = page.locator("main");
+    await expect(surface).toContainText("Evidence missing");
+    await expect(surface).toContainText("Bank-instruction check not evaluated");
+    await expect(surface).toContainText("Evidence unavailable");
+    await expect(surface).not.toContainText(
+      "Bank instruction unchanged since the decision",
+    );
+  }
 });
 
 test("exact demo route context survives every inspective and dead-end link", async ({ page }) => {

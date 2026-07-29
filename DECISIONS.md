@@ -3663,3 +3663,17 @@ timestamp, immutable hashes, evidence completeness, or causal explanation still 
 placeholder or an unsupported inference.
 **Revert path:** replace the demo hashing authority when real contract binding primitives land,
 provided they retain exact case and pass inputs and preserve the same fail-closed evidence claims.
+
+### D-078 · 2026-07-29 · reversible · Canonical routes and Safety claims require exact evidence
+
+The signed seven-minute quick start binds directly to the recent-bank-change scenario, Firm A,
+GC-03, and the initial lifecycle pass. It cannot select signed truth through scenario array order.
+
+Safety projects a verified unchanged bank-instruction check only when the exact selected case
+contains bank-instruction evidence. If that evidence is absent, Safety and the printable Record
+state that the check was not evaluated and the evidence is unavailable.
+
+**Why:** a signed route without case identity and a verified claim without source evidence both
+replace exact product truth with an unsupported default.
+**Revert path:** none while D-073 through D-077 require exact case identity and fail-closed evidence
+claims across every journey surface.

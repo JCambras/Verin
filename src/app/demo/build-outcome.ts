@@ -18,6 +18,7 @@ import type {
 import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
 import { buildVerificationProofs } from "./build-verification-proofs";
+import { buildBankInstructionSafetyCheck } from "./build-safety-check";
 import {
   CAST,
   decisionIdentityFor,
@@ -165,12 +166,9 @@ export function buildSafety(
       statusLabel: "Approval invalidated",
     } as (typeof checks)[number]);
   } else {
-    checks.push({
-      label: "Bank instruction unchanged since the decision",
-      status: "done",
-      statusLabel: "Verified",
-      detail: bankInstruction?.summary,
-    });
+    checks.push(
+      buildBankInstructionSafetyCheck(bankInstruction?.summary ?? null),
+    );
   }
   if (invalidationAuthority && pass === "revalidated") {
     checks.push({
