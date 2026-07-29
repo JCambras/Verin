@@ -6240,3 +6240,31 @@ with a constant, returned a null staged role, marked an operations actor as requ
 excluded, and hardcoded the lower-threshold impact summary. The focused semantic-truth
 run failed all four companions at lines 1674, 1840, 1910, and 2936. Reverting the
 injections returned the focused run to green.
+
+## PF-setup-37 · signed impact identity and rotating-session lineage
+
+**Date:** 2026-07-29.
+
+**Invariant:** a displayed impact is captain-signed only when its complete five-group
+configuration and bound case, scenario, phase, request, and evidence identity exactly
+match the signed input. Setup attestations and activated records remain owned by one
+logical login across credential-id rotation, while another login and logout stay
+isolated.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` varies each of the five
+selection groups independently for each firm and independently mutates phase, impact,
+case, scenario, request, and evidence before hashing.
+`src/__tests__/integration/session-lifecycle.test.ts` proves the credential id changes
+while the persisted lineage remains byte-identical, and proves two logins for one user
+receive distinct lineages. The setup store unit suites prove lineage-scoped access and
+the browser suite rotates twice, consumes the pre-rotation attestation, reads the
+pre-rotation activated record, then proves logout removes access.
+
+**Adversarial proof:** `isCaptainSignedImpact` was temporarily narrowed to the impact
+card's displayed group, recreating the reported partial-attribution defect. The focused
+semantic-truth run failed at line 2984 with `recent-bank:firm-a retained signed
+attribution after reserve changed`. Session resolution was then temporarily changed to
+expose the rotating credential id as the lineage. The focused real-PGlite lifecycle run
+failed at line 145 with expected `lineage-s-half`, received `s-half`. Both injections
+were reverted. The same focused commands returned green, and the two production-browser
+regressions passed.

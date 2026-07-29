@@ -45,6 +45,7 @@ export default defineConfig({
       VERIN_STORE_DRIVER: "pglite",
       VERIN_DATA_DIR: DATA_DIR,
       SESSION_SECRET: "e2e-only-session-secret-not-a-real-secret-000000",
+      SESSION_TTL_MINUTES: "1",
       ESIGN_WEBHOOK_SECRET: "e2e-only-webhook-secret-not-a-real-secret-000000",
       APP_URL: BASE_URL,
       FIRM_TIMEZONE: "America/New_York",

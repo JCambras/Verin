@@ -98,7 +98,8 @@ export default async function DemoStationPage({
           {
             orgId: session.value.orgId,
             userId: session.value.userId,
-            sessionId: session.value.sessionId,
+            sessionLineageId:
+              session.value.sessionLineageId,
             role: session.value.role,
           },
           activation,

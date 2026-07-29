@@ -37,6 +37,7 @@ export interface UserRow extends PIIBearing {
 
 export interface SessionRow {
   id: string;
+  lineage_id: string;
   user_id: string;
   org_id: string;
   role: Role;
@@ -201,11 +202,11 @@ export async function createSession(
   const now = new Date();
   const expires = new Date(now.getTime() + ttlMinutes * 60_000);
   const inserted = await db.query<SessionRow>(
-    `INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at)
-     SELECT $1, u.id, u.org_id, u.role, $2, $3, NULL
+    `INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at)
+     SELECT $1, $1, u.id, u.org_id, u.role, $2, $3, NULL
      FROM users u
      WHERE u.id = $4 AND u.org_id = $5 AND u.role = $6 AND u.status = 'active'
-     RETURNING id,user_id,org_id,role,created_at,expires_at,revoked_at`,
+     RETURNING id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at`,
     [id, now.toISOString(), expires.toISOString(), user.id, tenant.orgId, user.role],
   );
   const row = inserted.rows[0];
@@ -218,6 +219,7 @@ export async function createSession(
     role: row.role,
     actor: user.email,
     sessionId: row.id,
+    sessionLineageId: row.lineage_id,
   });
 }
 

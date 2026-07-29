@@ -545,9 +545,10 @@ What is deleted is the desktop table abstraction, not the doctrine.
   four widths. Figures still go through `Metric` / `FreshValue`, dispositions through the standard
   §5 badges. Established tokens only - the replacement introduces a layout, not a look.
 - **Signed-case authority.** An impact card carries `Captain-signed case` against the CASE, never
-  against a mutable outcome; if the operator's live selection diverges from the signed option the
-  card gains a `Varied from signed selection` badge and the affected firm card is labeled a
-  projection (`ImpactFirmCard`). A mutated outcome never retains a captain-signed badge.
+  against a mutable outcome. The current result retains that label only when its complete selected
+  policy configuration and bound scenario, phase, request, and evidence identity exactly match the
+  signed input. Any material mismatch replaces the case label with `Projection from signed case`,
+  labels the affected firm card `Projected outcome`, and removes every captain-signed outcome label.
 - **Three authority postures, never a signed/not-signed binary.** Every closed choice carries one of
   three states, and each renders as its own badge so they cannot be read as one another:
   `Captain-signed` (§5 done/green), `Recommended · not signed` (amber - a house recommendation the

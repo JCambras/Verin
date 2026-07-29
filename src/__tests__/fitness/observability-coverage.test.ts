@@ -16,7 +16,14 @@ import { registerTestSpanName } from "@domain/observability/safe-values";
 registerTestSpanName("test.op.ok");
 registerTestSpanName("test.op.fail");
 
-const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: "o", role: "advisor", actor: "a@t", sessionId: "s" });
+const advisorPrincipal = principalFromIdentity({
+  userId: "u1",
+  orgId: "o",
+  role: "advisor",
+  actor: "a@t",
+  sessionId: "s",
+  sessionLineageId: "lineage-s",
+});
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
 const advisor = advisorAuthorization.value;

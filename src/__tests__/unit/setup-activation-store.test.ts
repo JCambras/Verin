@@ -62,7 +62,7 @@ function scope(orgId = "org-demo"): SetupActivationScope {
   return {
     orgId,
     userId: `user-${scopeCounter}`,
-    sessionId: `session-${scopeCounter}`,
+    sessionLineageId: `lineage-${scopeCounter}`,
     role: "principal",
   };
 }
@@ -93,7 +93,7 @@ describe("activated setup snapshot registry", () => {
     const otherOrg = { ...owner, orgId: "org-other" };
     const otherSession = {
       ...owner,
-      sessionId: `${owner.sessionId}-other`,
+      sessionLineageId: `${owner.sessionLineageId}-other`,
     };
     const otherRole = { ...owner, role: "admin" as const };
     expect(activatedSetupSnapshot(otherUser, snapshot.snapshotHash)).toBeNull();
@@ -103,6 +103,26 @@ describe("activated setup snapshot registry", () => {
     ).toBeNull();
     expect(activatedSetupSnapshot(otherRole, snapshot.snapshotHash)).toBeNull();
     expect(activatedSetupSnapshot(owner, snapshot.snapshotHash)).toBe(snapshot);
+  });
+
+  it("keeps snapshots reachable across credential rotation in the same session lineage", () => {
+    const owner = scope();
+    const snapshot = snapshotAt(1);
+    registerActivatedSetupSnapshot(owner, snapshot);
+
+    const afterRotation = { ...owner };
+    expect(
+      activatedSetupSnapshot(afterRotation, snapshot.snapshotHash),
+    ).toBe(snapshot);
+    expect(
+      activatedSetupSnapshot(
+        {
+          ...afterRotation,
+          sessionLineageId: `${owner.sessionLineageId}-new-login`,
+        },
+        snapshot.snapshotHash,
+      ),
+    ).toBeNull();
   });
 
   it("bounds each principal: past the LRU limit the oldest activation is evicted", () => {

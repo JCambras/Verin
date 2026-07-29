@@ -3457,3 +3457,20 @@ unrepresentable within the bounded demo path.
 **Revert path:** replace these owners together only if a real persisted evidence bundle
 and policy evaluator provide equivalent phase identity, closed authority validation,
 and presentation-ready projections.
+
+### D-072 · 2026-07-29 · captain-decision · Signed attribution and setup ownership bind to complete identities
+
+Signed-impact attribution now requires an exact match between the preview and signed
+material-input identities plus the complete five-group selection key for the displayed
+firm. The material identity binds scenario, phase, request, evidence, case, and impact.
+A threshold, authority, policy, request, evidence, scenario, or phase deviation is a
+projection and carries no captain-signed outcome label.
+
+Session migration 3 adds one stable opaque lineage per login. Credential rotation changes
+the session row id but preserves its lineage. Setup attestations and activated snapshots
+scope to that lineage together with org, user, role, so renewal preserves access while
+revocation, logout, and another login remain isolated.
+
+**Why:** signedness is an exact input claim, and setup ownership belongs to the logical
+authenticated session rather than one rotating credential value.
+**Revert path:** none while signed previews remain interactive and session ids rotate.

@@ -24,6 +24,7 @@ export interface Principal extends PIIBearing {
   readonly role: Role;
   readonly actor: string;
   readonly sessionId: string;
+  readonly sessionLineageId: string;
   readonly [PrincipalBrand]: "Principal";
 }
 
@@ -35,6 +36,7 @@ export function principalFromIdentity(input: {
   readonly role: Role;
   readonly actor: string;
   readonly sessionId: string;
+  readonly sessionLineageId?: string;
 }): Principal {
   if (
     !input.userId ||
@@ -45,7 +47,10 @@ export function principalFromIdentity(input: {
   ) {
     throw appError("AUTH_FAILED", "Identity boundary returned an invalid principal.");
   }
-  const principal = { ...input };
+  const principal = {
+    ...input,
+    sessionLineageId: input.sessionLineageId ?? input.sessionId,
+  };
   PRINCIPALS.add(principal);
   return Object.freeze(principal) as unknown as Principal;
 }

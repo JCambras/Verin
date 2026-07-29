@@ -20,10 +20,11 @@ the first alternative provider), so a
 WorkOS/Auth0 swap later is an adapter change. Passwords hashed with Node `crypto.scrypt` (D-007). Sessions
 are server-side records keyed by an opaque id in a **secure, httpOnly, SameSite** cookie HMAC-signed
 with `SESSION_SECRET` (32+ chars, no fallback); sessions have server-enforced **expiry**, a **revocation**
-list (logout), and **sliding renewal with id rotation** (below). Identity is resolved in exactly one place
-(the shared session-row resolver, exposed as read-only `resolveSession` and rotating
-`resolveAndRenewSession`) from the cookie, never from a client-supplied role/identity header. Each
-`NextRequest` memoizes one in-flight principal resolution so a route that binds several grants cannot
+list (logout), and **sliding renewal with id rotation** (below). Each login also has a stable opaque
+`lineage_id` that survives those rotations while remaining distinct from every other login. Identity is
+resolved in exactly one place (the shared session-row resolver, exposed as read-only `resolveSession` and
+rotating `resolveAndRenewSession`) from the cookie, never from a client-supplied role/identity header.
+Each `NextRequest` memoizes one in-flight principal resolution so a route that binds several grants cannot
 re-read a cookie whose session id was already rotated. **RBAC is enforced server-side at the port**: the
 roles enum lives in `contracts/roles.ts`; ordinary CRUD gates use `requireRole`. Governed actions use
 `authorizeGovernedAction` to mint a sealed, action-specific `ActionGrant` from the authenticated human,
@@ -40,13 +41,16 @@ identity-read chokepoint now does all three:
   extended by a fresh full TTL and the cookie is re-set (`maxAge` refreshed). An active user never hits a
   hard 60-minute logout mid-workday; an idle one still expires on schedule. Half-TTL is the trigger:
   frequent enough to always stay ahead of expiry, rare enough that the vast majority of requests do zero
-  extra writes. The decision is driven off the already-selected `expires_at` + config TTL, so the pinned
-  identity-read SELECT is unchanged (the org-id-required reviewed escape holds without an edit).
+  extra writes. The decision is driven off the selected `expires_at` + config TTL.
 - **Rotation on renewal.** Each renewal issues a NEW opaque session id in one atomic `UPDATE` (id +
   `expires_at` together; nothing references `sessions.id`, so rotating the PK is safe), mitigating session
   fixation. `created_at` is preserved so the original login instant survives a rotation (a future
   absolute-lifetime cap). Login already mints a fresh id, so fixation at the privilege boundary was
   already covered; this satisfies the charter's periodic-rotation word.
+- **Stable lineage.** Session-owned state keys on `lineage_id`, never the rotating credential id.
+  Renewal preserves that value in the same row. Logout or revocation makes the lineage unreachable,
+  and a later login receives a different lineage, so setup attestations and activated records survive
+  normal renewal without becoming user-scoped or transferable across sessions.
 - **Where.** Read-only callers that cannot set a cookie (the server-component `/app` guard, logout) use
   `resolveSession` and never rotate. The mutating/API chokepoint (`requirePrincipal`) uses
   `resolveAndRenewSession`, which returns the rotated cookie for the app layer to persist on the response
@@ -77,7 +81,9 @@ identity-read chokepoint now does all three:
 Fences (Phase B/E): auth-enforcement (every exported HTTP handler AND Server Action resolves a session;
 no fallback role), no-client-role-header, org-id-required, and governed-actions (every governed request
 surface binds the exact per-action grant and threads it to the sink). Sliding renewal + rotation + cleanup are locked
-by `src/__tests__/integration/session-lifecycle.test.ts` (real PGlite; adversarial proof PF-022). Step-up
+by `src/__tests__/integration/session-lifecycle.test.ts` (real PGlite; adversarial proof PF-022).
+Stable lineage continuity and isolation are locked by that integration suite plus the setup store and
+browser suites (PF-setup-37). Step-up
 auth for sensitive actions is a later flow concern. SSO/OIDC adapter is deferred with a trigger.
 
 ## Deferred hardening (explicit, with triggers)

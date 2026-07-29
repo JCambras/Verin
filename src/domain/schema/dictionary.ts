@@ -63,6 +63,7 @@ export const DATA_DICTIONARY: Record<EntityName, Record<string, FieldSpec>> = {
   },
   Session: {
     id: s("EntityId", false, SYS),
+    lineageId: s("EntityId", false, SYS),
     userId: s("EntityId", false, SYS),
     orgId: s("EntityId", false, SYS),
     role: s("Role", false, SYS),

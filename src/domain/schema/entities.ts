@@ -62,6 +62,7 @@ export interface User extends PIIBearing {
 
 export interface Session {
   readonly id: EntityId;
+  readonly lineageId: EntityId;
   readonly userId: EntityId;
   readonly orgId: EntityId;
   readonly role: Role;

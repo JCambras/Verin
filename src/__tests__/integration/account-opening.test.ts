@@ -7,14 +7,28 @@ import { principalFromIdentity } from "@contracts/principal";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 
 const ORG = "org-1";
-const advisorPrincipal = principalFromIdentity({ userId: "u1", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s1" });
+const advisorPrincipal = principalFromIdentity({
+  userId: "u1",
+  orgId: ORG,
+  role: "advisor",
+  actor: "advisor@firm.test",
+  sessionId: "s1",
+  sessionLineageId: "lineage-s1",
+});
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
 const advisor = advisorAuthorization.value;
 const advisorPiiAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "pii.view");
 if (!advisorPiiAuthorization.ok) throw new Error("advisor should hold pii.view");
 const advisorPii = advisorPiiAuthorization.value;
-const cco = principalFromIdentity({ userId: "u-cco", orgId: ORG, role: "cco", actor: "cco@firm.test", sessionId: "s-cco" });
+const cco = principalFromIdentity({
+  userId: "u-cco",
+  orgId: ORG,
+  role: "cco",
+  actor: "cco@firm.test",
+  sessionId: "s-cco",
+  sessionLineageId: "lineage-s-cco",
+});
 
 async function seedOrg(db: SqlDb) {
   const now = new Date().toISOString();
@@ -441,7 +455,14 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     });
     expect(started.status).toBe("suspended");
 
-    const intruder = principalFromIdentity({ userId: "u2", orgId: "org-2", role: "advisor", actor: "eve@rival.test", sessionId: "s2" });
+    const intruder = principalFromIdentity({
+      userId: "u2",
+      orgId: "org-2",
+      role: "advisor",
+      actor: "eve@rival.test",
+      sessionId: "s2",
+      sessionLineageId: "lineage-s2",
+    });
     const intruderAuthorization = authorizeGovernedAction(actorRefOf(intruder), "execution.initiate");
     if (!intruderAuthorization.ok) throw new Error("intruder advisor should hold execution.initiate");
     const intruderPiiAuthorization = authorizeGovernedAction(actorRefOf(intruder), "pii.view");

@@ -75,13 +75,13 @@ describe("store schema hardening (integration)", () => {
       // Valid user, but a non-existent org: the newly-added sessions.org_id FK rejects it.
       await expect(
         db.query(
-          "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-orphan','u1','ghost-org','advisor',$1,$1,NULL)",
+          "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-orphan','lineage-orphan','u1','ghost-org','advisor',$1,$1,NULL)",
           [TS],
         ),
       ).rejects.toThrow(/foreign key|violates|constraint/i);
       await expect(
         db.query(
-          "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-ok','u1',$1,'advisor',$2,$2,NULL)",
+          "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-ok','lineage-ok','u1',$1,'advisor',$2,$2,NULL)",
           [ORG, TS],
         ),
       ).resolves.toBeDefined();
@@ -159,9 +159,37 @@ describe("store schema hardening (integration)", () => {
 
     it("creates the household_id / user_id lookup indexes the hardening added", async () => {
       const idx = await db.query<{ indexname: string }>(
-        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname IN ('contacts_household','financial_accounts_household','sessions_user')",
+        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname IN ('contacts_household','financial_accounts_household','sessions_user','sessions_lineage')",
       );
-      expect(new Set(idx.rows.map((r) => r.indexname))).toEqual(new Set(["contacts_household", "financial_accounts_household", "sessions_user"]));
+      expect(new Set(idx.rows.map((r) => r.indexname))).toEqual(new Set(["contacts_household", "financial_accounts_household", "sessions_user", "sessions_lineage"]));
+    });
+
+    it("backfills a stable unique lineage for sessions created before migration 3", async () => {
+      await db.exec(`
+        DROP INDEX IF EXISTS sessions_lineage;
+        ALTER TABLE sessions DROP COLUMN lineage_id;
+      `);
+      await db.query(
+        "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-legacy','u1',$1,'advisor',$2,$2,NULL)",
+        [ORG, TS],
+      );
+      await db.exec(MIGRATIONS[2]!.sql);
+      const lineage = await db.query<{
+        id: string;
+        lineage_id: string;
+      }>(
+        "SELECT id, lineage_id FROM sessions WHERE id = 's-legacy'",
+      );
+      expect(lineage.rows[0]).toEqual({
+        id: "s-legacy",
+        lineage_id: "s-legacy",
+      });
+      await expect(
+        db.query(
+          "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-duplicate-lineage','s-legacy','u1',$1,'advisor',$2,$2,NULL)",
+          [ORG, TS],
+        ),
+      ).rejects.toThrow(/unique|duplicate|constraint/i);
     });
   });
 });

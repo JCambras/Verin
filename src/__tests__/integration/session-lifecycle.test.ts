@@ -34,12 +34,21 @@ async function seed(db: SqlDb): Promise<void> {
 }
 
 /** Insert a session row with a controlled expiry/revocation so timing is deterministic. */
-async function insertSession(db: SqlDb, id: string, opts: { expiresInMs: number; revokedMsAgo?: number }): Promise<void> {
+async function insertSession(
+  db: SqlDb,
+  id: string,
+  opts: {
+    expiresInMs: number;
+    revokedMsAgo?: number;
+    lineageId?: string;
+  },
+): Promise<void> {
   const now = Date.now();
   await db.query(
-    "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,'advisor',$4,$5,$6)",
+    "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,$4,'advisor',$5,$6,$7)",
     [
       id,
+      opts.lineageId ?? `lineage-${id}`,
       userId,
       ORG,
       new Date(now - TTL_MINUTES * MIN).toISOString(),
@@ -50,7 +59,15 @@ async function insertSession(db: SqlDb, id: string, opts: { expiresInMs: number;
 }
 
 const sessionRow = (db: SqlDb, id: string) =>
-  db.query<{ id: string; expires_at: string; revoked_at: string | null }>("SELECT id, expires_at, revoked_at FROM sessions WHERE id = $1", [id]);
+  db.query<{
+    id: string;
+    lineage_id: string;
+    expires_at: string;
+    revoked_at: string | null;
+  }>(
+    "SELECT id, lineage_id, expires_at, revoked_at FROM sessions WHERE id = $1",
+    [id],
+  );
 
 describe("session lifecycle hardening (integration)", () => {
   let db: SqlDb;
@@ -72,6 +89,7 @@ describe("session lifecycle hardening (integration)", () => {
       expect((await sessionRow(db, "s-aging")).rows).toHaveLength(0);
       const after = (await sessionRow(db, renewed!.id)).rows[0]!;
       expect(after).toBeDefined();
+      expect(after.lineage_id).toBe(before.lineage_id);
       // Renewal EXTENDED expiry well past the old hard expiry (fresh full TTL).
       expect(new Date(after.expires_at).getTime()).toBeGreaterThan(new Date(before.expires_at).getTime());
       expect(new Date(after.expires_at).getTime()).toBeGreaterThan(Date.now() + (TTL_MINUTES - 1) * MIN);
@@ -128,6 +146,7 @@ describe("session lifecycle hardening (integration)", () => {
       expect(renewedCookie).not.toBeNull();
       // The principal's session id rotated away from the presented one.
       expect(principal.sessionId).not.toBe("s-half");
+      expect(principal.sessionLineageId).toBe("lineage-s-half");
       expect(principal.actor).toBe("advisor@firm.test");
       // The returned cookie is signed for the NEW id...
       expect(parseSignedCookie(renewedCookie!.value)).toBe(principal.sessionId);
@@ -135,6 +154,9 @@ describe("session lifecycle hardening (integration)", () => {
       // ...and it resolves cleanly on a follow-up request (the old id is gone).
       const followup = await resolveSession(db, renewedCookie!.value);
       expect(followup.ok && followup.value.sessionId).toBe(principal.sessionId);
+      expect(
+        followup.ok && followup.value.sessionLineageId,
+      ).toBe("lineage-s-half");
       const stale = await resolveSession(db, cookie);
       expect(stale.ok).toBe(false);
     });
@@ -144,6 +166,7 @@ describe("session lifecycle hardening (integration)", () => {
       const { principal, renewedCookie } = unwrap(await resolveAndRenewSession(db, signSessionCookie("s-fresh")));
       expect(renewedCookie).toBeNull();
       expect(principal.sessionId).toBe("s-fresh"); // untouched
+      expect(principal.sessionLineageId).toBe("lineage-s-fresh");
       expect((await sessionRow(db, "s-fresh")).rows).toHaveLength(1);
     });
 
@@ -166,6 +189,27 @@ describe("session lifecycle hardening (integration)", () => {
       const out = await resolveAndRenewSession(db, undefined);
       expect(out.ok).toBe(false);
       expect(!out.ok && out.error.code).toBe("AUTH_FAILED");
+    });
+
+    it("gives distinct logins distinct lineage identities for the same user", async () => {
+      await insertSession(db, "s-one", {
+        expiresInMs: 50 * MIN,
+        lineageId: "lineage-one",
+      });
+      await insertSession(db, "s-two", {
+        expiresInMs: 50 * MIN,
+        lineageId: "lineage-two",
+      });
+      const one = unwrap(
+        await resolveSession(db, signSessionCookie("s-one")),
+      );
+      const two = unwrap(
+        await resolveSession(db, signSessionCookie("s-two")),
+      );
+      expect(one.userId).toBe(two.userId);
+      expect(one.sessionLineageId).not.toBe(
+        two.sessionLineageId,
+      );
     });
   });
 });

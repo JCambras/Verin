@@ -333,6 +333,14 @@ ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
   FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
 `;
 
+// Version 4 adds a stable login lineage that survives credential-id rotation.
+const SESSION_LINEAGE_SQL = `
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lineage_id text;
+UPDATE sessions SET lineage_id = id WHERE lineage_id IS NULL;
+ALTER TABLE sessions ALTER COLUMN lineage_id SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_lineage ON sessions(lineage_id);
+`;
+
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
@@ -347,6 +355,7 @@ export const MIGRATIONS: readonly Migration[] = [
       sql: orphanProbeSql(e),
     })),
   },
+  { version: 4, name: "session-lineage", sql: SESSION_LINEAGE_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

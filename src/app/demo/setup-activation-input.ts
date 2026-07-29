@@ -286,6 +286,7 @@ function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
       facts: impact.facts,
       groupId: impact.groupId,
       universalEffect: impact.universalEffect ?? null,
+      attribution: impact.attribution ?? null,
       selectionEffects: impact.selectionEffects ?? null,
     })),
     evaluatorTables: {

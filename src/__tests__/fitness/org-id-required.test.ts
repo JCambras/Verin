@@ -52,7 +52,7 @@ export function unclassifiedTables(ddl: string, dataTables: readonly string[], n
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
   {
     sql:
-      "SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at, " +
+      "SELECT s.id AS session_id, s.lineage_id AS session_lineage_id, s.org_id, u.role, s.expires_at, s.revoked_at, " +
       "u.id AS user_id, u.email, u.status AS user_status " +
       "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1",
     why: "session resolution: the unguessable session id is the capability; org_id comes FROM this row",

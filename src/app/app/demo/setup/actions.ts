@@ -27,13 +27,13 @@ function activationScope(
   principal: {
     readonly orgId: string;
     readonly userId: string;
-    readonly sessionId: string;
+    readonly sessionLineageId: string;
   },
 ): SetupActivationScope {
   return {
     orgId: principal.orgId,
     userId: principal.userId,
-    sessionId: principal.sessionId,
+    sessionLineageId: principal.sessionLineageId,
     role: "principal",
   };
 }

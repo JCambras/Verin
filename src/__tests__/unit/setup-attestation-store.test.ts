@@ -17,7 +17,7 @@ function scope(): SetupAttestationScope {
   return {
     orgId: "org-demo",
     userId: `principal-${scopeSequence}`,
-    sessionId: `session-${scopeSequence}`,
+    sessionLineageId: `lineage-${scopeSequence}`,
     role: "principal",
   };
 }
@@ -63,7 +63,10 @@ describe("setup attestation registry", () => {
     });
     expect(
       consumeSetupAttestation(
-        { ...owner, sessionId: `${owner.sessionId}-other` },
+        {
+          ...owner,
+          sessionLineageId: `${owner.sessionLineageId}-other`,
+        },
         command(challenge.token),
         selectionsHash,
       ),
@@ -124,5 +127,21 @@ describe("setup attestation registry", () => {
     expect(
       consumeSetupAttestation(owner, command(challenge.token), selectionsHash),
     ).toBeNull();
+  });
+
+  it("consumes an attestation after credential rotation within one session lineage", () => {
+    const owner = scope();
+    const selectionsHash = "5".repeat(64);
+    const challenge = issueSetupAttestation(owner, {
+      generation: 4,
+      selectionsHash,
+    });
+    expect(
+      consumeSetupAttestation(
+        { ...owner },
+        command(challenge.token),
+        selectionsHash,
+      ),
+    ).toBe(challenge);
   });
 });

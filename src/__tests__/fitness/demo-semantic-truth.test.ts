@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
+import { signedImpactMaterialInputHash } from "@app/demo/build-setup-impacts";
 import {
   APPROVAL_CLOCKS,
   BANK_INSTRUCTION,
@@ -67,6 +68,7 @@ import {
   POSTURE_CONFIGURATION_LABEL,
   SETUP_POLICY_GROUP_IDS,
   configurationPosture,
+  isCaptainSignedImpact,
   type SetupActivatedSnapshotVM,
   type SetupAuthorityPosture,
   type SetupFirmId,
@@ -354,7 +356,7 @@ export function staleImpactViolations(
   now: string,
 ): string[] {
   const where = sourceRef(
-    "src/app/demo/build-setup.ts",
+    "src/app/demo/build-setup-impacts.ts",
     'id: "stale-withdrawals"',
   );
   const ageDays = ageDaysBetween(plannedWithdrawalsAsOf, now);
@@ -394,7 +396,7 @@ export function staleAgeViolations(
   const ageDays = ageDaysBetween(plannedWithdrawalsAsOf, now);
   const violations: string[] = [];
   const impactWhere = sourceRef(
-    "src/app/demo/build-setup.ts",
+    "src/app/demo/build-setup-impacts.ts",
     'id: "stale-withdrawals"',
   );
   if (!actual.impactFacts.includes(`${ageDays} days old`)) {
@@ -1080,7 +1082,7 @@ export function semanticTruthViolations(
     const dollars = (minor / 100).toLocaleString("en-US");
     if (!actual.lowHeadroomFacts.includes(`$${dollars}`)) {
       violations.push(
-        `${sourceRef("src/app/demo/build-setup.ts", "function factsLine")} :: the low-headroom card reads "${actual.lowHeadroomFacts}", which does not state the signed $${dollars} - the prose must be generated from the pinned basis`,
+        `${sourceRef("src/app/demo/build-setup-impacts.ts", "function factsLine")} :: the low-headroom card reads "${actual.lowHeadroomFacts}", which does not state the signed $${dollars} - the prose must be generated from the pinned basis`,
       );
     }
   }
@@ -2594,7 +2596,7 @@ describe("demo semantic-truth fence", () => {
       14,
     );
     expect(violations).toHaveLength(3);
-    expect(violations[0]).toContain("build-setup.ts:");
+    expect(violations[0]).toContain("build-setup-impacts.ts:");
     expect(violations[1]).toContain("build-decision.ts:");
     expect(violations[2]).toContain("14-day freshness window");
   });
@@ -2869,7 +2871,10 @@ describe("demo semantic-truth fence", () => {
     expect(compared.size).toBeGreaterThan(0);
     // Both owners are resolved on the GREEN path, so a renamed anchor fails loudly
     // instead of waiting for a violation to discover the fence went stale.
-    const cardsWhere = sourceRef("src/app/demo/build-setup.ts", "impacts: [");
+    const cardsWhere = sourceRef(
+      "src/app/demo/build-setup-impacts.ts",
+      "export function buildSetupImpacts",
+    );
     const effectWhere = sourceRef("src/app/demo/build-setup.ts", "signedCaseEffect");
     const violations: string[] = [];
     for (const group of vm.policyGroups) {
@@ -2947,6 +2952,82 @@ describe("demo semantic-truth fence", () => {
     expect(effectFor(dualApproval)?.detail).toContain(
       "$25,000 threshold",
     );
+  });
+
+  it("enforces: signed-impact attribution matches every material preview input exactly", () => {
+    const vm = buildMoneyMovementSetup();
+    const compared = vm.impacts.filter(
+      (impact) => impact.groupId !== null,
+    );
+    const defaults = setupSelections();
+    expect(compared.length).toBeGreaterThan(0);
+
+    for (const impact of compared) {
+      expect(impact.attribution).toBeDefined();
+      for (const firmId of ["firm-a", "firm-b"] as const) {
+        expect(
+          isCaptainSignedImpact(impact.attribution, firmId, defaults),
+          `${impact.id}:${firmId} must open on the exact captain-signed input`,
+        ).toBe(true);
+        for (const groupId of SETUP_POLICY_GROUP_IDS) {
+          const varied = structuredClone(defaults);
+          const group = vm.policyGroups.find(
+            (candidate) => candidate.id === groupId,
+          )!;
+          const firm = group.firms.find(
+            (candidate) => candidate.firmId === firmId,
+          )!;
+          const alternative = firm.options.find(
+            (option) =>
+              option.id !== varied[firmId][groupId],
+          )!;
+          varied[firmId][groupId] = alternative.id;
+          expect(
+            isCaptainSignedImpact(impact.attribution, firmId, varied),
+            `${impact.id}:${firmId} retained signed attribution after ${groupId} changed`,
+          ).toBe(false);
+        }
+      }
+
+      expect(
+        isCaptainSignedImpact(
+          {
+            ...impact.attribution!,
+            previewMaterialInputHash: "0".repeat(64),
+          },
+          "firm-a",
+          defaults,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("enforces: signed-impact identity binds every declared material input", () => {
+    const input = {
+      phase: "signed-impact-preview",
+      impactId: "recent-bank",
+      caseRef: "GC-03 / GC-04",
+      scenarioId: "recent-bank-change-block",
+      request: { amountMinor: 7_500_000 },
+      evidence: { ref: "evidence-signed" },
+    };
+    const signedHash = signedImpactMaterialInputHash(input);
+    const mutations = [
+      { ...input, phase: "activated-impact" },
+      { ...input, impactId: "verified-bank" },
+      { ...input, caseRef: "GC-01 / GC-02" },
+      { ...input, scenarioId: "safe-proceed" },
+      { ...input, request: { amountMinor: 10_000_000 } },
+      { ...input, evidence: { ref: "evidence-changed" } },
+    ];
+    expect(
+      new Set(mutations.map(signedImpactMaterialInputHash)).size,
+    ).toBe(mutations.length);
+    for (const mutation of mutations) {
+      expect(signedImpactMaterialInputHash(mutation)).not.toBe(
+        signedHash,
+      );
+    }
   });
 
   it("enforces: the dual-approval promise is derived from the signed request amount", () => {
@@ -3332,7 +3413,7 @@ describe("demo semantic-truth fence", () => {
         goldenSemanticTruth(),
       );
       expect(violations.some((violation) =>
-        violation.includes("build-setup.ts:") &&
+        violation.includes("build-setup-impacts.ts:") &&
         violation.includes("must be generated from the pinned basis"),
       )).toBe(true);
     });

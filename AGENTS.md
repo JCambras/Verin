@@ -107,7 +107,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   only in a Route Handler / Server Action. `resolveSession` is the read-only path (the server-component
   `/app` guard + logout, which CANNOT set a cookie) and must never rotate. Do not call `requirePrincipal`
   from a server component (it would throw on the cookie write). Renewal drives off the already-selected
-  `expires_at`, so the pinned org-id-required SELECT escape is unchanged.
+  `expires_at`. Session-owned state keys on the stable `lineage_id`, never the rotating session row id;
+  the pinned org-id-required SELECT escape includes both.
 - Tests must run on a non-UTC TZ (`vitest.config.ts` pins `America/New_York`); `src/__tests__/setup.ts`
   fails loudly if the clock is UTC.
 - ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API);

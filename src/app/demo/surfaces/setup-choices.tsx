@@ -3,7 +3,10 @@
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT } from "../model";
-import { setupFirmSelectionKey } from "../setup-model";
+import {
+  isCaptainSignedImpact,
+  setupFirmSelectionKey,
+} from "../setup-model";
 import type {
   ChoiceEffectVM,
   MoneyMovementSetupVM,
@@ -89,7 +92,13 @@ function ImpactFirmCard({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900">{firmLabel}</h3>
-        <StatusBadge status={effect.status.status} label={effect.status.label} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={effect.status.status} label={effect.status.label} />
+          <StatusBadge
+            status={signed ? "done" : "pending"}
+            label={signed ? "Captain-signed outcome" : "Projected outcome"}
+          />
+        </div>
       </div>
       <p className="mt-2 text-sm font-medium text-slate-900">{effect.summary}</p>
       <p className="mt-1 text-xs text-slate-600">{effect.detail}</p>
@@ -136,7 +145,27 @@ export function ImpactBody({
             selectionEffect("firm-a") ?? a?.signedCaseEffect;
           const effectB =
             selectionEffect("firm-b") ?? b?.signedCaseEffect;
-          const varied = (a !== null && a.truthLabel !== "Signed") || (b !== null && b.truthLabel !== "Signed");
+          const attribution = impact.attribution
+            ? {
+                previewMaterialInputHash:
+                  impact.attribution.previewMaterialInputHash,
+                signedMaterialInputHash:
+                  impact.attribution.signedMaterialInputHash,
+                signedSelectionKeys:
+                  impact.attribution.signedSelectionKeys,
+              }
+            : undefined;
+          const signedA = isCaptainSignedImpact(
+            attribution,
+            "firm-a",
+            selections,
+          );
+          const signedB = isCaptainSignedImpact(
+            attribution,
+            "firm-b",
+            selections,
+          );
+          const varied = impact.groupId !== null && (!signedA || !signedB);
           return (
             <section
               key={impact.id}
@@ -146,8 +175,14 @@ export function ImpactBody({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs text-slate-700">{impact.caseRef}</span>
-                <StatusBadge status="done" label="Captain-signed case" />
-                {varied ? <StatusBadge status="pending" label="Varied from signed selection" /> : null}
+                <StatusBadge
+                  status={varied ? "pending" : "done"}
+                  label={
+                    varied
+                      ? "Projection from signed case"
+                      : "Captain-signed case"
+                  }
+                />
               </div>
               <h2 id={`impact-${impact.id}-title`} className="mt-2 text-base font-semibold text-slate-900">
                 {impact.title}
@@ -156,7 +191,6 @@ export function ImpactBody({
               {group && a && b && effectA && effectB ? (
                 <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
                   {group.firms.map((firm) => {
-                    const option = firm.firmId === "firm-a" ? a : b;
                     const selectedEffect =
                       firm.firmId === "firm-a" ? effectA : effectB;
                     return (
@@ -165,7 +199,9 @@ export function ImpactBody({
                         firmId={firm.firmId}
                         firmLabel={firm.firmLabel}
                         effect={selectedEffect}
-                        signed={option.truthLabel === "Signed"}
+                        signed={
+                          firm.firmId === "firm-a" ? signedA : signedB
+                        }
                       />
                     );
                   })}

@@ -61,6 +61,7 @@ export function parseSignedCookie(value: string | undefined): string | null {
 /** PIIBearing: carries the user email for principal display. */
 interface JoinedRow extends PIIBearing {
   session_id: string;
+  session_lineage_id: string;
   org_id: string;
   role: Role;
   expires_at: string;
@@ -89,6 +90,7 @@ function principalFromRow(input: {
   readonly role: Role;
   readonly actor: string;
   readonly sessionId: string;
+  readonly sessionLineageId: string;
 }): Result<Principal, AppError> {
   try {
     return ok(principalFromIdentity(input));
@@ -102,9 +104,8 @@ function principalFromRow(input: {
  * The single identity read: map a signed session cookie to its server-side record,
  * enforcing revocation, account status, and expiry. Returns the principal AND the
  * expiry (the renewal orchestrator needs it) or a typed AppError — never a fallback
- * role. The SELECT is unchanged (an exact-match reviewed escape in the
- * org-id-required fence): `expires_at` was already projected, so sliding renewal
- * needs no new column and the fence holds without an edit.
+ * role. The exact-match org-id-required escape includes both the rotating
+ * credential id and the stable server-issued lineage id.
  */
 async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Promise<Result<ResolvedSession, AppError>> {
   const sessionId = parseSignedCookie(cookieValue);
@@ -113,7 +114,7 @@ async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Pr
   const res = await db.query<JoinedRow>(
     // role comes from the LIVE users row (u.role), not the session snapshot, so a
     // demotion/promotion takes effect on the next request (Vale V8), not at expiry.
-    `SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at,
+    `SELECT s.id AS session_id, s.lineage_id AS session_lineage_id, s.org_id, u.role, s.expires_at, s.revoked_at,
             u.id AS user_id, u.email, u.status AS user_status
      FROM sessions s
      JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id
@@ -133,6 +134,7 @@ async function resolveSessionRow(db: SqlDb, cookieValue: string | undefined): Pr
     role: row.role,
     actor: row.email,
     sessionId: row.session_id,
+    sessionLineageId: row.session_lineage_id,
   });
   if (!principal.ok) return principal;
 
@@ -190,6 +192,7 @@ export async function resolveAndRenewSession(
     role: resolved.value.principal.role,
     actor: resolved.value.principal.actor,
     sessionId: renewed.id,
+    sessionLineageId: resolved.value.principal.sessionLineageId,
   });
   if (!rotated.ok) return rotated;
 

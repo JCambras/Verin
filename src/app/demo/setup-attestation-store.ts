@@ -14,7 +14,7 @@ const ATTESTATION_TOKEN = /^[a-f0-9]{64}$/;
 export interface SetupAttestationScope {
   readonly orgId: string;
   readonly userId: string;
-  readonly sessionId: string;
+  readonly sessionLineageId: string;
   readonly role: Role;
 }
 
@@ -39,7 +39,7 @@ function scopeKey(scope: SetupAttestationScope): string {
   return JSON.stringify([
     scope.orgId,
     scope.userId,
-    scope.sessionId,
+    scope.sessionLineageId,
     scope.role,
   ]);
 }

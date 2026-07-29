@@ -40,6 +40,12 @@ export function setupFirmSelectionKey(
   ).join("|");
 }
 
+export interface SignedImpactAttributionVM {
+  readonly previewMaterialInputHash: string;
+  readonly signedMaterialInputHash: string;
+  readonly signedSelectionKeys: Readonly<Record<SetupFirmId, string>>;
+}
+
 export const SETUP_ATTESTATION_STATEMENT_VERSION =
   "money-movement-demo-attestation/1.0.0";
 
@@ -216,6 +222,7 @@ export interface SignedImpactVM {
   readonly facts: string;
   readonly groupId: SetupPolicyGroupVM["id"] | null;
   readonly universalEffect?: string;
+  readonly attribution?: SignedImpactAttributionVM;
   readonly selectionEffects?: Readonly<
     Record<
       SetupFirmId,
@@ -225,6 +232,20 @@ export interface SignedImpactVM {
       }[]
     >
   >;
+}
+
+export function isCaptainSignedImpact(
+  attribution: SignedImpactAttributionVM | undefined,
+  firmId: SetupFirmId,
+  selections: SetupSelections,
+): boolean {
+  return (
+    attribution !== undefined &&
+    attribution.previewMaterialInputHash ===
+      attribution.signedMaterialInputHash &&
+    setupFirmSelectionKey(selections[firmId]) ===
+      attribution.signedSelectionKeys[firmId]
+  );
 }
 
 export interface SetupFactVM {

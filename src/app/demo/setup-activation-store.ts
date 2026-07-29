@@ -35,7 +35,7 @@ export function isSetupActivationToken(value: string): boolean {
 export interface SetupActivationScope {
   readonly orgId: string;
   readonly userId: string;
-  readonly sessionId: string;
+  readonly sessionLineageId: string;
   readonly role: Role;
 }
 
@@ -60,7 +60,7 @@ function scopeKey(scope: SetupActivationScope): string {
   return JSON.stringify([
     scope.orgId,
     scope.userId,
-    scope.sessionId,
+    scope.sessionLineageId,
     scope.role,
   ]);
 }
