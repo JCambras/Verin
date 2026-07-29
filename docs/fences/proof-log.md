@@ -7575,3 +7575,56 @@ and canonical validation restored `corpusDigest`
 passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 10).
+
+---
+
+## PF-105 · tenant, observation, funding, and ownership closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-089, ADR-0034):** the AS-04 signer is outside the LLC household membership edge;
+bank-instruction and pending-action accounts belong to their declared households; selected-funding tax
+and pending semantics use all and only the explicit selected set; concrete replay values require observed
+evidence; every evidence plane has an observation-state authority; and real-derived case, request, and
+reservation scope is one exact opaque firm reference.
+
+**Injection 1 - contradictory AS-04 membership.** Added the cited LLC signer to the request household
+membership edge.
+
+**Injection 2 - contradictory owned edges.** Assigned a bank instruction and pending action to accounts
+owned by another household.
+
+**Injection 3 - selected funding ignored.** Added retirement funding beside a taxable request source and
+moved a cited live outgoing action to an unselected account.
+
+**Injection 4 - missing evidence accepted concrete values.** Changed request, balance, and identity
+evidence from observed to missing without changing their concrete replay payloads.
+
+**Injection 5 - tenant scope absent.** Passed a complete real-derived case with no firm reference on the
+case, request, or reservation.
+
+**Observed failure:**
+```
+Test Files  1 failed (1)
+Tests       8 failed | 136 passed (144)
+AS-04 outside-household signer
+bank instruction account belongs to household
+request evidence requires observed support
+liquidity-source evidence requires observed support
+identity evidence requires observed support
+firmRef
+selected funding
+active "tax-consequence-blindness" context lacks a typed treatment
+```
+
+**Standing companions:** the outside signer is emitted exactly once as a separate party; inside
+membership fails; bank-instruction and pending-action ownership mismatches fail; cited reducing and
+nonreducing actions reject unselected accounts; tax context and generator defaults use the same selected
+funding authority; concrete request, balance, and identity planes reject missing evidence; explicit
+missing reserve payloads accept typed missing evidence; an unclassified future evidence plane fails; and
+absent, mismatched-request, and cross-reservation firm scope each fail.
+
+**Revert:** all injected states remain only in companions. Canonical validation restored
+`corpusDigest` `81d8426eb9450b59b20880523aecf1deeec212607727e9d9616c842e66903967`.
+The real-derived partition remains empty, signoff remains pending, only the three Varn synthetic case
+files changed, and all 174 focused corpus, determinism, budget, and file-size tests passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 11).

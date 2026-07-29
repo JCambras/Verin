@@ -4788,3 +4788,31 @@ deferred, and captain signoff stays pending.
 **Why:** one signed label cannot hide multiple replay defects, one detector result cannot smuggle extra
 classes into coverage, and pending liquidity semantics cannot infer funding from unrelated accounts.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-089 · 2026-07-29 · captain-decision · Replay tenant, observation, funding, and ownership semantics are structural
+
+The `verin-corpus/1.9.0` preimage binds `verin-real-derived-case/1.2.0`,
+`verin-real-derived-replay/1.4.0`, and `verin-real-derived-semantics/1.4.0`. Each real-derived case has
+one opaque `firmRef`, and its replay request plus every reservation must carry that same exact value.
+Reservation identity is the tuple `firmRef` plus `conflictKey`; tenant scope is never inferred from
+household or display data.
+
+One centralized observation-state authority covers every semantic evidence plane. Missing evidence can
+support only an explicit absence or unavailable payload of the same typed plane. Concrete request,
+identity, balance, timestamp, status, reference, and other material values require observed evidence.
+Adding a later evidence plane without classifying its observation semantics fails closed.
+
+Synthetic tax context and generator defaults derive from all and only the explicit selected funding set
+through one shared authority. Every cited pending action binds to the request household and selected set
+before its reducing treatment is selected. Bank-instruction and pending-action account edges must match
+their declared households. AS-04 retains the outside-household LLC signer: the signer is emitted as one
+separate resolvable party and cannot also appear in the LLC household membership edge.
+
+The tooling ceiling rises from 6700 to 7000 against 6878 measured lines, leaving 122 lines of explicit
+headroom across separated schema, topology, evidence, and funding owners. The 500-line per-file ceiling,
+empty deferred real-derived partition, path-keyed isolation, generated-file ownership, and pending
+captain signoff remain unchanged.
+
+**Why:** signed replay truth cannot accept unsupported concrete values, tenant-ambiguous reservations,
+funding semantics from unselected accounts, or contradictory ownership edges.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

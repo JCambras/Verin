@@ -5,6 +5,7 @@ import {
   semanticTreatment,
   type SemanticDefectRule,
 } from "./semantic-contract";
+import { selectedFundingHasTaxClass } from "./selected-funding";
 
 export interface EmittedEvidence {
   id: string;
@@ -230,10 +231,6 @@ const selectedFundingProblems = (item: EmittedCase): string[] => {
   for (const row of item.records.pendingActions) {
     if (
       citedPending.has(row.id) &&
-      !pendingActionLiquidityTreatment(
-        row.kind,
-        row.state,
-      ).reducesEffectiveLiquidity &&
       (
         row.householdRef !== item.request.householdRef ||
         !selectedSet.has(row.accountRef)
@@ -327,10 +324,11 @@ const CONTEXT_RULES: Readonly<
       evidenceSubjects(item, "recent-change").has(row.id)
     ),
   "selected-retirement-source-without-completed-review": (item) =>
-    item.records.accounts.some(
-      (row) =>
-        row.id === item.request.sourceAccountRef &&
-        row.taxClass === "retirement",
+    selectedFundingHasTaxClass(
+      item.request.selectedFundingRefs,
+      item.records.accounts,
+      (account) => account.id,
+      "retirement",
     ) &&
     item.taxReviewState !== "completed",
 };

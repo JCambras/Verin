@@ -45,6 +45,7 @@ export type TreatmentOutcome = {
 
 export type ReplayPayload = {
   request: {
+    firmRef: string;
     requestRef: string;
     householdRef: string;
     actorRef: string;
@@ -161,6 +162,7 @@ export type RealDerivedEvidence =
 
 export type RealDerivedCase = {
   caseId: string;
+  firmRef: string;
   corpusVersion: string;
   occurredAt: string;
   scrubAttestation: {
@@ -180,5 +182,9 @@ export type RealDerivedCase = {
   subjects: string[];
   replayPayload: ReplayPayload;
   evidence: RealDerivedEvidence[];
-  reservations: Array<{ family: string; conflictKey: string }>;
+  reservations: Array<{
+    firmRef: string;
+    family: string;
+    conflictKey: string;
+  }>;
 };

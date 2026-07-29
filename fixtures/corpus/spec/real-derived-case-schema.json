@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-case/1.1.0",
+  "$id": "verin-real-derived-case/1.2.0",
   "title": "Verin scrubbed real-derived replay case",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "caseId",
+    "firmRef",
     "corpusVersion",
     "partition",
     "provenance",
@@ -23,6 +24,7 @@
       "type": "string",
       "pattern": "^RD-[0-9a-f]{16}$"
     },
+    "firmRef": { "$ref": "#/$defs/firmRef" },
     "corpusVersion": {
       "type": "string",
       "pattern": "^\\d{4}\\.\\d{2}\\.\\d+$"
@@ -187,8 +189,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["family", "conflictKey"],
+        "required": ["firmRef", "family", "conflictKey"],
         "properties": {
+          "firmRef": { "$ref": "#/$defs/firmRef" },
           "family": {
             "enum": [
               "liquidity",
@@ -210,9 +213,13 @@
       "type": "string",
       "pattern": "^tok:[0-9a-f]{16}$"
     },
+    "firmRef": {
+      "type": "string",
+      "pattern": "^firm:tok:[0-9a-f]{16}$"
+    },
     "entityRef": {
       "type": "string",
-      "pattern": "^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$"
+      "pattern": "^(firm|request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$"
     },
     "evidenceSourceRef": {
       "type": "string",

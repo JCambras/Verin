@@ -17,14 +17,17 @@ export const REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION =
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/semantic-contract.ts",
   "scripts/corpus/real-derived-semantics.ts",
+  "scripts/corpus/evidence-observation.ts",
   "scripts/corpus/synthetic-semantics.ts",
   "scripts/corpus/case-spec.ts",
   "scripts/corpus/world.ts",
+  "scripts/corpus/world-topology.ts",
   "scripts/corpus/graph.ts",
   "scripts/corpus/report.ts",
   "scripts/corpus/real-derived-topology.ts",
   "scripts/corpus/scrub-contract.ts",
   "scripts/corpus/pending-actions.ts",
+  "scripts/corpus/selected-funding.ts",
   "scripts/corpus/real-derived-policy.ts",
 ] as const;
 
@@ -43,7 +46,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.3.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.4.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -71,6 +74,9 @@ const SemanticContractSchema = z.strictObject({
   }),
   topology: z.strictObject({
     referenceIdentity: z.literal("entity-kind-scoped"),
+    tenantScope: z.literal(
+      "case-request-reservations-share-one-firm-reference",
+    ),
     sourceAccount: z.literal("must-resolve-in-liquidity-sources"),
     selectedFunding: z.literal(
       "must-resolve-once-to-request-household",
@@ -78,7 +84,9 @@ const SemanticContractSchema = z.strictObject({
     realDerivedSelectedFundingOwner: z.literal(
       "must-share-owner-with-request-source",
     ),
-    materialEvidence: z.literal("kind-subject-source-exactly-once"),
+    materialEvidence: z.literal(
+      "kind-subject-source-observation-exactly-once",
+    ),
     instructionConflict: z.literal(
       "binds-request-household-instructions-and-impacted-subjects",
     ),

@@ -38,6 +38,7 @@ import {
   subjectId,
 } from "./entities";
 import { CORPUS_SEED, deriveIntInRange, deriveToken } from "./seed";
+import { selectedFundingHasTaxClass } from "./selected-funding";
 import { caseSubgraph } from "./subgraph";
 import { type CaseSpec, type LoadedSpec, type WorldSpec } from "./world";
 
@@ -219,9 +220,6 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
   const clock = world.clock;
   const caseId = corpusCaseId(corpusCase.key);
   const household = byKey(world.households).get(corpusCase.householdRef)!;
-  const sourceAccount = byKey(world.accounts).get(
-    corpusCase.request.sourceAccountRef,
-  )!;
   const casePath = `case/${caseId}`;
   const settlementEarliest = addBusinessDays(clock.asOf, SETTLEMENT_BUSINESS_DAYS, clock.transitions);
 
@@ -328,7 +326,12 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
     thresholdPolicy: corpusCase.thresholdPolicy ?? null,
     taxReviewState:
       corpusCase.taxReviewState ??
-      (sourceAccount.taxClass === "retirement"
+      (selectedFundingHasTaxClass(
+        corpusCase.request.selectedFundingRefs,
+        world.accounts,
+        (account) => account.key,
+        "retirement",
+      )
         ? "completed"
         : "not-required"),
     outcomes: sortedBy(

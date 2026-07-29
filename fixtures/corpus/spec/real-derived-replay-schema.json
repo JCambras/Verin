@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.3.0",
+  "$id": "verin-real-derived-replay/1.4.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,11 +21,12 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.3.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.4.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "firmRef",
         "requestRef",
         "householdRef",
         "actorRef",
@@ -38,6 +39,7 @@
         "settlementEarliestAt"
       ],
       "properties": {
+        "firmRef": { "$ref": "#/$defs/firmRef" },
         "requestRef": { "$ref": "#/$defs/requestRef" },
         "householdRef": { "$ref": "#/$defs/householdRef" },
         "actorRef": { "$ref": "#/$defs/actorRef" },
@@ -688,6 +690,10 @@
     }
   ],
   "$defs": {
+    "firmRef": {
+      "type": "string",
+      "pattern": "^firm:tok:[0-9a-f]{16}$"
+    },
     "requestRef": {
       "type": "string",
       "pattern": "^request:tok:[0-9a-f]{16}$"
@@ -774,6 +780,7 @@
     },
     "entityRef": {
       "oneOf": [
+        { "$ref": "#/$defs/firmRef" },
         { "$ref": "#/$defs/requestRef" },
         { "$ref": "#/$defs/householdRef" },
         { "$ref": "#/$defs/accountRef" },

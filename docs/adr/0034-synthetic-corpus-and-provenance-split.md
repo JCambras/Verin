@@ -137,7 +137,7 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.3.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.4.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
 supported defect classes. Pending actions carry account and household references bound to the request,
@@ -155,7 +155,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.3.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.4.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -168,12 +168,16 @@ signed taxonomy, so an unsupported class cannot enter either denominator by rela
 valid case. Its declarative bytes and exact executable-authority source digests are part of
 `corpusDigest`, so changing a predicate or cross-field rule invalidates signoff.
 
-Replay references are entity-kind-scoped. Synthetic requests and real-derived payloads both carry an
+Replay references are entity-kind-scoped. Each real-derived case, request, and reservation carries the
+same exact opaque `firmRef`; reservation identity is the pair `(firmRef, conflictKey)`. Synthetic
+requests and real-derived payloads both carry an
 explicit duplicate-free selected funding set. Synthetic pending actions and pending model assignments
 used by semantics must name an account in that exact set and the request household. Request, household,
 account, instruction, owner, actor, grant,
 policy, restriction, hold, pending-action, and time-zone identities cannot be satisfied by one generic
-token. Every material plane has exactly one evidence tuple matching kind, subject, and source. The
+token. Every material plane has exactly one evidence tuple matching kind, subject, source, and permitted
+observation state. Missing evidence supports only an explicit absence or unavailable payload of the same
+typed plane; every concrete value requires observed evidence. The
 request source account resolves in the liquidity collection, and the explicit selected funding set is
 unique, same-household, source-owner-aligned, supported, and sufficient in aggregate. Tax risk is
 evaluated against exactly that set, including every selected source's tax character and review state.
@@ -201,7 +205,7 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.8.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.9.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
 and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
 declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
@@ -251,6 +255,10 @@ pending-action topology, and request source ownership. The 74-line buffer keeps 
 separate from generation and validation. D-088 raises the ceiling to 6700 against 6552 measured lines
 for exact label and attribution identity, explicit synthetic funding topology, and schedule-derived
 reserve state. The 148-line buffer keeps those validation owners separate.
+D-089 raises the ceiling to 7000 against 6878 measured lines for structural firm scope,
+observation-state evidence authority, complete selected-funding tax and pending-action semantics, and
+synthetic ownership topology. The 122-line buffer keeps schema, topology, evidence, and funding ownership
+in separate files under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

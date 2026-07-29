@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.3.0",
+  "contractVersion": "verin-real-derived-semantics/1.4.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -78,12 +78,13 @@
   },
   "topology": {
     "referenceIdentity": "entity-kind-scoped",
+    "tenantScope": "case-request-reservations-share-one-firm-reference",
     "sourceAccount": "must-resolve-in-liquidity-sources",
     "selectedFunding": "must-resolve-once-to-request-household",
     "realDerivedSelectedFundingOwner": "must-share-owner-with-request-source",
     "pendingAction": "must-resolve-to-request-household-and-selected-funding",
     "pendingModel": "must-resolve-to-request-household-and-selected-funding",
-    "materialEvidence": "kind-subject-source-exactly-once",
+    "materialEvidence": "kind-subject-source-observation-exactly-once",
     "instructionConflict": "binds-request-household-instructions-and-impacted-subjects"
   },
   "outcomes": {

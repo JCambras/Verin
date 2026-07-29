@@ -4,6 +4,9 @@ import {
   selectedSources,
 } from "./real-derived-topology";
 import {
+  evidenceObservationAuthorityProblems,
+} from "./evidence-observation";
+import {
   loadRealDerivedSemanticContract,
   semanticTreatment,
   TREATMENT_SELECTOR_VALUES,
@@ -221,6 +224,9 @@ export function realDerivedSemanticContractProblems(
     ...(planes.size === contract.evidencePlanes.length
       ? []
       : ["real-derived semantic contract has duplicate evidence planes"]),
+    ...evidenceObservationAuthorityProblems(
+      contract.evidencePlanes.map((entry) => entry.plane),
+    ),
     ...[...defectClassIds]
       .filter((id) => !configuredIds.has(id))
       .map(

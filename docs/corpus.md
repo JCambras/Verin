@@ -101,7 +101,8 @@ settlement.
 Funding is never inferred from available accounts in either partition. Every synthetic request and
 real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
 resolve exactly once to the request household, and every pending action or pending model assignment used
-by synthetic semantics names an account in that exact set. Each real-derived selected account resolves
+by synthetic semantics names an account in that exact set. Every cited pending action is bound before
+its reducing or nonreducing treatment is selected. Each real-derived selected account resolves
 exactly once, belongs to the
 request household, shares an owner with the request source account, carries a supported tax class, and
 contributes to one aggregate sufficiency check over the request amount, required reserve, and any reducing
@@ -115,8 +116,9 @@ exactly the selected funding set, and any selected retirement source requires a 
 
 Each structure exists to falsify a specific assumption, and is labeled with it in `spec/cases.json` so a
 later engine failure names the structure that broke it. `AS-01`…`AS-21` cover: surname and trust-name
-collision; one party in two households; a trust that both owns and inherits; an LLC signer outside the
-household; conflicting owner instructions on one joint account; a shared bank instruction; duplicate
+collision; one party in two households; a trust that both owns and inherits; an LLC signer emitted as a
+separate resolvable party outside the LLC household membership edge; conflicting owner instructions on
+one joint account; a shared bank instruction; duplicate
 last-four destinations; a beneficiary contradicting a destination restriction; authority lapsing inside
 the evidence interval; a pending rebalance during evaluation; a **segmented** withdrawal schedule; an
 **absent** schedule; expired-and-future restrictions; a position-scoped legal hold; a **blocked** pending
@@ -206,7 +208,10 @@ versions, unsupported kinds, impossible chronology, or inconsistent freshness fa
 The policy version and semantic digest are included in the signed corpus preimage.
 
 Every material real-derived replay plane is backed by exactly one evidence tuple matching its closed
-kind, entity-kind-scoped subject, and opaque evidence-source reference. Request, identity, destination,
+kind, entity-kind-scoped subject, opaque evidence-source reference, and permitted observation state.
+Missing evidence can support only an explicit absence or unavailable payload of the same typed plane.
+Every concrete amount, request value, identity value, timestamp, status, reference, and other material
+value requires observed evidence. Request, identity, destination,
 each liquidity source, reserve, authority, policy, instruction state, tax review, time-zone rule, and
 execution preconditions are always supported. Pending actions, restrictions, legal holds, and
 multi-subject recent changes are supported when present. Unrelated evidence is rejected.
@@ -224,10 +229,11 @@ Seven families: `liquidity`, `bank-instruction`, `account-registration`, `househ
 `external-submission` is **deliberately excluded**: an external submission attempted twice is an
 idempotency question, and giving it a conflict key would make a retry contend with itself.
 
-**Reservation identity is the pair `(firmId, conflictKey)`**, never the string alone. The signed literal
-carries no firm, and the demo runs one household under two firms - a string-keyed lookup would let Firm
-A's reservation block Firm B's request. Reservations land at prompt 23; prompt 11 records and fences the
-requirement.
+**Reservation identity is the pair `(firmRef, conflictKey)`**, never the string alone. Every real-derived
+case carries one opaque `firmRef`, and its request and every reservation must carry that same exact value.
+Tenant scope is never inferred from household or display data. The demo runs one household under two
+firms, so a string-keyed lookup could otherwise let Firm A's reservation block Firm B's request.
+Reservations land at prompt 23; prompt 11 records and fences the requirement.
 
 **Idempotency stays separate.** Seven of the eight signed idempotency literals share the facts
 `smiths-75000-2026-08-15`, so a facts-only key collapses seven distinct decisions onto one. The shipped
@@ -272,10 +278,10 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.8.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.9.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.3.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.4.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers

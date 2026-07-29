@@ -1,4 +1,5 @@
 import type { RealDerivedEvidenceKind } from "./real-derived-policy";
+import { evidenceAllowsMissing } from "./evidence-observation";
 import type {
   LiquiditySource,
   RealDerivedCase,
@@ -10,12 +11,14 @@ type EvidenceRequirement = {
   evidenceKind: RealDerivedEvidenceKind;
   subjectRef: string;
   sourceRef: string;
+  allowsMissing: boolean;
 };
 
 const ENTITY_REF =
-  /^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$/;
+  /^(firm|request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$/;
 
 const requirement = (
+  item: RealDerivedCase,
   evidenceKindByPlane: ReadonlyMap<string, RealDerivedEvidenceKind>,
   plane: string,
   subjectRef: string,
@@ -25,7 +28,13 @@ const requirement = (
   if (evidenceKind === undefined) {
     throw new Error(`semantic contract has no evidence plane "${plane}"`);
   }
-  return { plane, evidenceKind, subjectRef, sourceRef };
+  return {
+    plane,
+    evidenceKind,
+    subjectRef,
+    sourceRef,
+    allowsMissing: evidenceAllowsMissing(item, plane),
+  };
 };
 
 function requiredEvidence(
@@ -38,7 +47,7 @@ function requiredEvidence(
     subjectRef: string,
     sourceRef: string,
   ): EvidenceRequirement =>
-    requirement(evidenceKindByPlane, plane, subjectRef, sourceRef);
+    requirement(item, evidenceKindByPlane, plane, subjectRef, sourceRef);
   const required = [
     need(
       "request",
@@ -146,13 +155,20 @@ function requiredEvidence(
   return required;
 }
 
-const sameEvidence = (
+const sameEvidenceTuple = (
   evidence: RealDerivedEvidence,
   expected: EvidenceRequirement,
 ): boolean =>
   evidence.evidenceKind === expected.evidenceKind &&
   evidence.subjectRef === expected.subjectRef &&
   evidence.sourceRef === expected.sourceRef;
+
+const supportsRequirement = (
+  evidence: RealDerivedEvidence,
+  expected: EvidenceRequirement,
+): boolean =>
+  sameEvidenceTuple(evidence, expected) &&
+  (evidence.observationState === "observed" || expected.allowsMissing);
 
 function evidenceSupportProblems(
   item: RealDerivedCase,
@@ -161,17 +177,35 @@ function evidenceSupportProblems(
   const problems: string[] = [];
   const required = requiredEvidence(item, evidenceKindByPlane);
   for (const expected of required) {
-    const count = item.evidence.filter((entry) =>
-      sameEvidence(entry, expected),
+    const tupleMatches = item.evidence.filter((entry) =>
+      sameEvidenceTuple(entry, expected)
+    );
+    const count = tupleMatches.filter((entry) =>
+      supportsRequirement(entry, expected)
     ).length;
     if (count !== 1) {
-      problems.push(
-        `${expected.plane} evidence resolves to ${count} matching kind, subject, and source records, expected exactly one`,
-      );
+      if (
+        !expected.allowsMissing &&
+        tupleMatches.some(
+          (entry) => entry.observationState === "missing",
+        )
+      ) {
+        problems.push(
+          `${expected.plane} evidence requires observed support for concrete replay values`,
+        );
+      } else {
+        problems.push(
+          `${expected.plane} evidence resolves to ${count} matching kind, subject, source, and observation records, expected exactly one`,
+        );
+      }
     }
   }
   for (const evidence of item.evidence) {
-    if (!required.some((expected) => sameEvidence(evidence, expected))) {
+    if (
+      !required.some((expected) =>
+        supportsRequirement(evidence, expected)
+      )
+    ) {
       problems.push(
         `evidence ${evidence.id} does not support a material replay plane`,
       );
@@ -262,6 +296,26 @@ function fundingProblems(item: RealDerivedCase): string[] {
 function relationshipProblems(item: RealDerivedCase): string[] {
   const payload = item.replayPayload;
   const problems: string[] = [];
+  if (payload.request.firmRef !== item.firmRef) {
+    problems.push("request firmRef must equal the case firmRef");
+  }
+  if (
+    item.reservations.some(
+      (reservation) => reservation.firmRef !== item.firmRef,
+    )
+  ) {
+    problems.push("every reservation firmRef must equal the case firmRef");
+  }
+  const reservationIdentities = item.reservations.map(
+    (reservation) => `${reservation.firmRef}\u0000${reservation.conflictKey}`,
+  );
+  if (
+    new Set(reservationIdentities).size !== reservationIdentities.length
+  ) {
+    problems.push(
+      "reservation identity must be unique by firmRef and conflictKey",
+    );
+  }
   const sourceMatches = payload.liquidity.sources.filter(
     (source) => source.accountRef === payload.request.sourceAccountRef,
   ).length;

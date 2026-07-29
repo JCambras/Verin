@@ -25,6 +25,7 @@ import {
   realDerivedSchemaBindings,
   taxonomySemanticDigest,
 } from "../../../scripts/corpus/manifest";
+import { generateSyntheticCases } from "../../../scripts/corpus/generate";
 import {
   PENDING_ACTION_KINDS,
   PENDING_ACTION_STATES,
@@ -42,6 +43,9 @@ import {
   type SemanticDefectRule,
 } from "../../../scripts/corpus/semantic-contract";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";
+import {
+  evidenceObservationAuthorityProblems,
+} from "../../../scripts/corpus/evidence-observation";
 import {
   realDerivedCollectionProblems,
 } from "../../../scripts/corpus/real-derived";
@@ -120,6 +124,8 @@ const TOKEN = "tok:0123456789abcdef";
 const TOKEN_ALT = "tok:fedcba9876543210";
 const OPAQUE = TOKEN;
 const OPAQUE_REVIEWER = TOKEN_ALT;
+const FIRM_REF = `firm:${TOKEN}`;
+const FIRM_REF_ALT = `firm:${TOKEN_ALT}`;
 const REQUEST_REF = `request:${TOKEN}`;
 const HOUSEHOLD_REF = `household:${TOKEN}`;
 const HOUSEHOLD_REF_ALT = `household:${TOKEN_ALT}`;
@@ -228,6 +234,7 @@ const realDerivedCase = (
         : "destination-integrity-defect";
   const item = {
   caseId: "RD-00112233445566aa",
+  firmRef: FIRM_REF,
   corpusVersion: "2026.07.0",
   partition: "real-derived",
   provenance: "real-derived-fixture",
@@ -250,6 +257,7 @@ const realDerivedCase = (
     freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0",
   },
   subjects: [
+    FIRM_REF,
     REQUEST_REF,
     HOUSEHOLD_REF,
     ACCOUNT_REF,
@@ -262,8 +270,9 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.3.0",
+    schemaVersion: "verin-real-derived-replay/1.4.0",
     request: {
+      firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
       householdRef: HOUSEHOLD_REF,
       actorRef: ACTOR_REF,
@@ -370,7 +379,11 @@ const realDerivedCase = (
     },
   },
   evidence,
-  reservations: [{ family: "liquidity", conflictKey: "conflict:tok:0123456789abcdef:liquidity" }],
+  reservations: [{
+    firmRef: FIRM_REF,
+    family: "liquidity",
+    conflictKey: "conflict:tok:0123456789abcdef:liquidity",
+  }],
   ...overrides,
   };
   const payload = item.replayPayload as Record<string, any>;
@@ -985,8 +998,8 @@ describe("corpus-provenance-split fence", () => {
     });
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
-      "verin-real-derived-case/1.1.0",
-      "verin-real-derived-replay/1.3.0",
+      "verin-real-derived-case/1.2.0",
+      "verin-real-derived-replay/1.4.0",
     ]);
     expect(
       corpusDigest(
@@ -1143,6 +1156,44 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(specReferenceProblems(world, cases).join("\n")).toContain(
       `belongs to household "${foreignAccount.householdRef}", not request household "${corpusCase.householdRef}"`,
     );
+  });
+
+  it("AS-04 requires its cited signer to remain outside the request household membership", () => {
+    const world = structuredClone(real.spec.world);
+    const cases = structuredClone(real.spec.cases);
+    expect(specReferenceProblems(world, cases)).toEqual([]);
+    const emitted = real.cases.find(
+      (item) => item.caseId === "CS-llc-signer-outside-household",
+    )!;
+    expect(
+      emitted.records.parties.filter(
+        (party) => party.id === "subject:kessa-varn",
+      ),
+    ).toHaveLength(1);
+    expect(emitted.records.household.memberRefs).not.toContain(
+      "subject:kessa-varn",
+    );
+
+    world.households.find(
+      (household) => household.key === "varn",
+    )!.memberRefs.push("kessa-varn");
+    expect(specReferenceProblems(world, cases).join("\n")).toContain(
+      "AS-04 outside-household signer",
+    );
+  });
+
+  it("bank-instruction and pending-action account edges must match their declared households", () => {
+    const bankWorld = structuredClone(real.spec.world);
+    bankWorld.bankInstructions[0]!.householdRef = "smith-mira";
+    expect(
+      specReferenceProblems(bankWorld, real.spec.cases).join("\n"),
+    ).toContain("bank instruction account belongs to household");
+
+    const pendingWorld = structuredClone(real.spec.world);
+    pendingWorld.pendingActions[0]!.accountRef = "mira-roth";
+    expect(
+      specReferenceProblems(pendingWorld, real.spec.cases).join("\n"),
+    ).toContain("pending action account belongs to household");
   });
 
   it("a missing evidence collection, dangling subject, multi-resolving subject, and duplicate spec key are rejected", () => {
@@ -1589,7 +1640,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.3.0",
+      "verin-real-derived-semantics/1.4.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1606,6 +1657,15 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/real-derived-policy.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/evidence-observation.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/selected-funding.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/world-topology.ts",
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/real-derived-topology.ts",
@@ -1957,6 +2017,83 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toContain("authority evidence");
   });
 
+  it.each([
+    ["request", "request"],
+    ["balance", "liquidity-source"],
+    ["identity-resolution", "identity"],
+  ])(
+    "missing %s evidence cannot support a concrete replay plane",
+    (evidenceKind, plane) => {
+      const item = realDerivedCase();
+      const evidence = (
+        item.evidence as Array<Record<string, unknown>>
+      ).find((entry) => entry.evidenceKind === evidenceKind)!;
+      evidence.observationState = "missing";
+      evidence.observedAt = null;
+      evidence.freshness = "unknown";
+      expect(
+        realDerivedCaseProblems(
+          item,
+          classes,
+          "real-derived/RD-missing-material-evidence.json",
+        ).join("\n"),
+      ).toContain(`${plane} evidence requires observed support`);
+    },
+  );
+
+  it("real-derived cases require one exact firm scope across case, request, and reservations", () => {
+    const absent = realDerivedCase();
+    delete (absent as Record<string, unknown>).firmRef;
+    expect(
+      realDerivedCaseProblems(
+        absent,
+        classes,
+        "real-derived/RD-missing-firm.json",
+      ).join("\n"),
+    ).toContain("firmRef");
+
+    const mismatchedRequest = realDerivedCase();
+    (
+      mismatchedRequest.replayPayload as Record<string, any>
+    ).request.firmRef = FIRM_REF_ALT;
+    (mismatchedRequest.subjects as string[]).push(FIRM_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        mismatchedRequest,
+        classes,
+        "real-derived/RD-mismatched-request-firm.json",
+      ).join("\n"),
+    ).toContain("request firmRef must equal the case firmRef");
+
+    const crossFirmReservation = realDerivedCase();
+    (
+      crossFirmReservation.reservations as Array<Record<string, unknown>>
+    )[0]!.firmRef = FIRM_REF_ALT;
+    expect(
+      realDerivedCaseProblems(
+        crossFirmReservation,
+        classes,
+        "real-derived/RD-cross-firm-reservation.json",
+      ).join("\n"),
+    ).toContain("every reservation firmRef must equal the case firmRef");
+  });
+
+  it("every semantic evidence plane has an explicit observation-state authority", () => {
+    expect(
+      evidenceObservationAuthorityProblems(
+        semanticContract.evidencePlanes.map((entry) => entry.plane),
+      ),
+    ).toEqual([]);
+    expect(
+      evidenceObservationAuthorityProblems([
+        ...semanticContract.evidencePlanes.map((entry) => entry.plane),
+        "later-material-plane",
+      ]).join("\n"),
+    ).toContain(
+      'evidence plane "later-material-plane" has no observation-state authority',
+    );
+  });
+
   it("pending actions bind to the request household, selected account, and exact evidence", () => {
     const mutations: Array<(item: Record<string, any>) => void> = [
       (item) => {
@@ -2069,6 +2206,45 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(
       syntheticSemanticProblems([pendingModel]).join("\n"),
     ).toContain("selected funding");
+
+    const liveOutgoing = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-segmented-withdrawal-schedule",
+      )!,
+    );
+    liveOutgoing.records.pendingActions.find(
+      (row) => row.id === "pending:smiths-transfer",
+    )!.accountRef = "subject:smiths-ira";
+    expect(
+      syntheticSemanticProblems([liveOutgoing]).join("\n"),
+    ).toContain("selected funding");
+  });
+
+  it("synthetic tax semantics and defaults use all and only selected funding", () => {
+    const item = structuredClone(
+      real.cases.find(
+        (candidate) => candidate.caseId === "CS-cross-household-signer",
+      )!,
+    );
+    item.request.selectedFundingRefs.push("subject:smiths-ira");
+    item.taxReviewState = "not-required";
+    expect(
+      syntheticSemanticProblems([item]).join("\n"),
+    ).toContain(
+      'active "tax-consequence-blindness" context lacks a typed treatment',
+    );
+
+    const spec = structuredClone(real.spec);
+    const input = spec.cases.cases.find(
+      (candidate) => candidate.key === "cross-household-signer",
+    )!;
+    input.request.selectedFundingRefs.push("smiths-ira");
+    const generated = generateSyntheticCases(spec).find(
+      (file) => file.relPath ===
+        "synthetic/CS-cross-household-signer.json",
+    )!.value as Record<string, unknown>;
+    expect(generated.taxReviewState).toBe("completed");
   });
 
   it("synthetic missing reserve state comes from emitted schedule absence", () => {
@@ -2556,12 +2732,24 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
 
   it("freshness unknown requires the typed missing-observation state", () => {
     const missing = realDerivedCase();
-    (missing.evidence as Array<Record<string, unknown>>)[0] = {
-      ...(missing.evidence as Array<Record<string, unknown>>)[0],
+    const payload = missing.replayPayload as Record<string, any>;
+    payload.liquidity.reserveState = "missing";
+    payload.liquidity.reserveRequiredMinor = null;
+    payload.liquidity.withdrawalSegmentsMinor = [];
+    payload.outcomes = treatmentOutcomes(
+      payload,
+      "destination-integrity-defect",
+    );
+    const reserveEvidence = (
+      missing.evidence as Array<Record<string, unknown>>
+    ).find(
+      (entry) => entry.evidenceKind === "planned-withdrawals",
+    )!;
+    Object.assign(reserveEvidence, {
       observationState: "missing",
       observedAt: null,
       freshness: "unknown",
-    };
+    });
     expect(
       realDerivedCaseProblems(
         missing,

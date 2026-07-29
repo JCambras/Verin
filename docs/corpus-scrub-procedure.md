@@ -119,15 +119,16 @@ inverted chronology, and inconsistent freshness are each rejected without echoin
 
 ```
 caseId          RD-<16 lowercase hex>       disjoint from CS- (corpus) and GC- (signed golden)
+firmRef         firm:tok:<16 lowercase hex> one opaque tenant scope for the complete case
 partition       "real-derived"
 provenance      "real-derived-fixture"
 label           {kind: "defect", defectClassId} | {kind: "clean-control", controlRationaleId}
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.3.0 closed payload
+replayPayload   verin-real-derived-replay/1.4.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
-reservations    [{family, conflictKey}]
+reservations    [{firmRef, family, conflictKey}]
 ```
 
 The replay payload contains only the typed inputs needed by the supported defect classes:
@@ -148,7 +149,9 @@ and subject inventory are cross-checked rather than trusted. The payload carries
 numbers, institution names, unrelated balances, or unrelated household records.
 
 Every material replay plane has exactly one matching evidence kind, entity-kind-scoped subject, and
-opaque evidence-source reference. Evidence that supports no material plane is rejected. An authority
+opaque evidence-source reference with an allowed observation state. Missing evidence supports only an
+explicit absence or unavailable payload of the same typed plane. Every concrete material value requires
+observed evidence. Evidence that supports no material plane is rejected. An authority
 interval must cite the payload's grant, destination evidence must cite its instruction, and balance
 evidence must cite the corresponding liquidity source. The selected funding set is explicit, unique,
 same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and reducing
@@ -156,6 +159,10 @@ pending actions. Unknown source tax classes fail, and tax risk is derived from e
 An instruction-conflict witness must name the exact request and household, every referenced instruction
 must belong to that household, and impacted subjects must intersect the request source account or
 destination instruction.
+
+The top-level case, replay request, and every reservation carry one exact opaque `firmRef`. A missing or
+mismatched scope fails intake, and reservation identity is the pair `(firmRef, conflictKey)`. Household
+and display values never supply tenant scope.
 
 Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
 `fresh | stale` value. Missing source observation uses `observationState: "missing"`,
