@@ -1,6 +1,13 @@
 import { readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+const VITEST_TEST_KINDS = ["test", "spec"] as const;
+const VITEST_TEST_EXTENSIONS = ["ts", "tsx"] as const;
+
+export const VITEST_TEST_INCLUDE = `src/**/*.{${VITEST_TEST_KINDS.join(
+  ",",
+)}}.{${VITEST_TEST_EXTENSIONS.join(",")}}`;
+
 export interface FitnessTestResult {
   name: string;
   status: string;
@@ -18,6 +25,15 @@ function normalizedPath(path: string): string {
   return path.replace(/\\/g, "/");
 }
 
+export function isVitestTestFile(path: string): boolean {
+  const normalized = normalizedPath(path);
+  return VITEST_TEST_KINDS.some((kind) =>
+    VITEST_TEST_EXTENSIONS.some((extension) =>
+      normalized.endsWith(`.${kind}.${extension}`),
+    ),
+  );
+}
+
 export function fitnessTestFiles(root: string): string[] {
   const resolvedRoot = resolve(root);
   const fitnessDirectory = join(
@@ -30,7 +46,7 @@ export function fitnessTestFiles(root: string): string[] {
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) return visit(path);
-      return entry.isFile() && entry.name.endsWith(".test.ts")
+      return entry.isFile() && isVitestTestFile(entry.name)
         ? [normalizedPath(relative(resolvedRoot, path))]
         : [];
     });

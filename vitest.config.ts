@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { VITEST_TEST_INCLUDE } from "./scripts/fitness-tests.lib";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -144,7 +145,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "app",
-          include: ["src/**/*.{test,spec}.{ts,tsx}"],
+          include: [VITEST_TEST_INCLUDE],
           exclude: ["src/__tests__/fitness/**"],
         },
       },

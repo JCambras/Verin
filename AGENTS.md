@@ -186,8 +186,9 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
-The test job also runs `scripts/fitness-tests.ts`, which recursively enumerates the complete fitness
-inventory and requires a per-file result even if Vitest include or exclude configuration drifts.
+The test job also runs `scripts/fitness-tests.ts`, which recursively enumerates every Vitest-admitted
+fitness extension through the same matcher used by Vitest and requires a per-file result even if include
+or exclude configuration drifts.
 
 ## Sharp edges (hard-won — read before touching these areas)
 
@@ -270,12 +271,14 @@ inventory and requires a per-file result even if Vitest include or exclude confi
   authenticated, and demo route to its loaded-state
   scan. Required callbacks admit only their typed loops and canonical uninstrumented login call.
   Required specifications may register no Playwright hooks. The same hook and Axe-runtime prohibitions
-  cover their complete transitive runtime local import graph, including side-effect imports and TypeScript
-  path aliases; unresolved, unclassified, and non-literal runtime imports are non-evidence. Required route collections cannot be supplied
+  cover every named root and their complete runtime local import graph, including side-effect imports and
+  TypeScript path aliases; unresolved, unclassified, non-literal, and indirect CommonJS runtime imports
+  are non-evidence. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
   Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
   executable instrumentation. Charter-drift uses symbol-aware Vitest registration analysis for computed,
-  aliased, namespace, x-prefixed, todo, fails, skipIf, and runIf neutralizers.
+  aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
+  preserving locally shadowed application callables.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

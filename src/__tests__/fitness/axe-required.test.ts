@@ -23,7 +23,10 @@ import {
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
 import { reflectApplyTarget } from "./_callable-indirection";
-import { REPO_ROOT } from "./_fence-utils";
+import {
+  moduleReferences,
+  REPO_ROOT,
+} from "./_fence-utils";
 
 const AXE_HELPER_PATH = "e2e/axe.ts";
 const E2E_HELPERS_PATH = "e2e/helpers.ts";
@@ -235,6 +238,17 @@ function runtimeModuleReferences(sourceFile: SourceFile): RuntimeModuleReference
           }
         : { display: argument?.getText() ?? "<missing>" },
     );
+  }
+  for (const reference of moduleReferences(sourceFile)) {
+    if (
+      reference.kind !== "require-reference" &&
+      reference.kind !== "create-require"
+    ) {
+      continue;
+    }
+    references.push({
+      display: `<${reference.kind}>`,
+    });
   }
   return references;
 }
@@ -2103,9 +2117,6 @@ function importedAxeGraphProblems(
   }
   for (const path of reachable) {
     const sourceFile = sourceFiles.get(path)!;
-    if ((AXE_IMPORT_GRAPH_ROOTS as readonly string[]).includes(path)) {
-      continue;
-    }
     if (
       path !== AXE_HELPER_PATH &&
       runtimeModuleReferences(sourceFile).some((reference) =>
@@ -2372,6 +2383,69 @@ describe("axe-required fence", () => {
       );
     });
 
+    it("rejects Axe instrumentation and Playwright hooks in graph roots", () => {
+      const helperHook = completeSources();
+      helperHook[E2E_HELPERS_PATH] = VALID_LOGIN_HELPER.replace(
+        'import { expect, type Page } from "@playwright/test";',
+        `import { expect, test, type Page } from "@playwright/test";
+test.beforeEach(() => undefined);`,
+      );
+      expect(axeCoverageProblems(helperHook)).toContain(
+        `${E2E_HELPERS_PATH}:1 reachable local Axe evidence module must not register Playwright hooks`,
+      );
+
+      const helperRuntime = completeSources();
+      helperRuntime[E2E_HELPERS_PATH] =
+        VALID_LOGIN_HELPER.replace(
+          'import { expect, type Page } from "@playwright/test";',
+          `import Axe from "@axe-core/playwright";
+import { expect, type Page } from "@playwright/test";
+void Axe;`,
+        );
+      expect(axeCoverageProblems(helperRuntime)).toContain(
+        `${E2E_HELPERS_PATH}:1 reachable local Axe evidence module must not import the Axe runtime outside ${AXE_HELPER_PATH}`,
+      );
+
+      const axeHook = completeSources(
+        {},
+        VALID_HELPER.replace(
+          'import { expect, type Page } from "@playwright/test";',
+          `import { expect, test, type Page } from "@playwright/test";
+test.beforeAll(() => undefined);`,
+        ),
+      );
+      expect(axeCoverageProblems(axeHook)).toContain(
+        `${AXE_HELPER_PATH}:1 reachable local Axe evidence module must not register Playwright hooks`,
+      );
+
+      const specHook = completeSources({
+        "e2e/smoke.spec.ts": VALID_SPECS[
+          "e2e/smoke.spec.ts"
+        ].replace(
+          'test("axe"',
+          `test.beforeEach(() => undefined);
+test("axe"`,
+        ),
+      });
+      expect(axeCoverageProblems(specHook)).toContain(
+        "e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+      );
+
+      const specRuntime = completeSources({
+        "e2e/smoke.spec.ts": VALID_SPECS[
+          "e2e/smoke.spec.ts"
+        ].replace(
+          'import { expect, test } from "@playwright/test";',
+          `import { expect, test } from "@playwright/test";
+import Axe from "@axe-core/playwright";
+void Axe;`,
+        ),
+      });
+      expect(axeCoverageProblems(specRuntime)).toContain(
+        `e2e/smoke.spec.ts:1 reachable local Axe evidence module must not import the Axe runtime outside ${AXE_HELPER_PATH}`,
+      );
+    });
+
     it("fails closed on unresolved or non-literal runtime imports in the Axe evidence graph", () => {
       const unresolved = completeSources();
       unresolved["e2e/axe-routes.ts"] =
@@ -2396,6 +2470,42 @@ describe("axe-required fence", () => {
       expect(axeCoverageProblems(malformedConfig)).toContain(
         `${TSCONFIG_PATH}:1 must be a directly parseable local module-resolution configuration for Axe evidence`,
       );
+    });
+
+    it("fails closed on CommonJS loader aliases and member forms", () => {
+      const loaders = [
+        `const load = require;
+load("./axe-poison");`,
+        `module.require("./axe-poison");`,
+        `const runtime = module;
+runtime["require"]("./axe-poison");`,
+        `const { require: load } = module;
+load("./axe-poison");`,
+        `let load: typeof require;
+load = require;
+load("./axe-poison");`,
+      ];
+      for (const loader of loaders) {
+        const fixture = completeSources();
+        fixture["e2e/axe-routes.ts"] =
+          `${loader}\n${VALID_AXE_ROUTES}`;
+        fixture["e2e/axe-poison.ts"] =
+          `import Axe from "@axe-core/playwright";
+Axe.prototype.analyze = async () => ({ violations: [] } as never);`;
+        expect(
+          axeCoverageProblems(fixture),
+          loader,
+        ).toContain(
+          "e2e/axe-routes.ts:1 reachable Axe evidence modules require literal runtime module references",
+        );
+      }
+
+      const applicationMember = completeSources();
+      applicationMember["e2e/axe-routes.ts"] =
+        `const module = { require: (_specifier: string) => undefined };
+module.require("./application-operation");
+${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(applicationMember)).toEqual([]);
     });
 
     it("rejects an unclassified or unscanned Next page route", () => {
@@ -2565,10 +2675,26 @@ test("axe", async ({ page }) => {
         const overrides = Object.fromEntries(
           REQUIRED_AXE_SPECS.map((path) => [path, spec]),
         );
+        const problems = axeCoverageProblems(
+          completeSources(overrides),
+        );
+        for (const path of REQUIRED_AXE_SPECS) {
+          expect(problems, spec).toContain(
+            `${path}:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe`,
+          );
+        }
         expect(
-          axeCoverageProblems(completeSources(overrides)),
+          problems.filter(
+            (problem) =>
+              !problem.includes(
+                "must await the sanctioned Axe helper",
+              ) &&
+              !problem.includes(
+                "must not register Playwright hooks",
+              ),
+          ),
           spec,
-        ).toHaveLength(REQUIRED_AXE_SPECS.length);
+        ).toEqual([]);
       }
     });
 

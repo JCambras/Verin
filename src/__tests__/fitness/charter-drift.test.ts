@@ -21,6 +21,8 @@ import {
   completeTestRunArguments,
   fitnessInventoryProblems,
   fitnessTestFiles,
+  isVitestTestFile,
+  VITEST_TEST_INCLUDE,
 } from "../../../scripts/fitness-tests.lib";
 
 /**
@@ -437,6 +439,13 @@ interface VitestCallablePath {
   }>;
 }
 
+const VITEST_REGISTRATION_BASES = new Set([
+  "it",
+  "test",
+  "describe",
+  "suite",
+]);
+
 function vitestCallablePaths(
   node: Node,
   seen = new Set<Node>(),
@@ -526,6 +535,18 @@ function vitestCallablePaths(
     ...precedingRegistrationAssignments(normalized).flatMap((source) =>
       vitestCallablePaths(source, new Set(seen)),
     ),
+    ...(VITEST_REGISTRATION_BASES.has(normalized.getText()) &&
+    !declarations.some(
+      (declaration) =>
+        declaration.getSourceFile() === normalized.getSourceFile(),
+    )
+      ? [
+          {
+            members: [normalized.getText()],
+            conditions: [],
+          },
+        ]
+      : []),
   ];
 }
 
@@ -533,7 +554,6 @@ function disabledVitestRegistrationProblemsInFile(
   file: SourceFile,
   fileName: string,
 ): string[] {
-  const base = new Set(["it", "test", "describe"]);
   const disabled = new Set(["skip", "only", "todo", "fails"]);
   const xPrefixed = new Set(["xit", "xtest", "xdescribe"]);
   return file
@@ -548,7 +568,7 @@ function disabledVitestRegistrationProblemsInFile(
         );
         const isDisabled =
           (members.length === 1 && xPrefixed.has(members[0]!)) ||
-          (base.has(members[0]!) &&
+          (VITEST_REGISTRATION_BASES.has(members[0]!) &&
             (members.slice(1).some((member) => disabled.has(member)) ||
               members.slice(1).includes("*") ||
               conditionallyDisabled));
@@ -674,6 +694,11 @@ disabledSuite("disabled", () => {});`,
       `import { it } from "vitest";
 const unknown = Math.random() > 0.5;
 it.skipIf(unknown)("conditionally disabled", () => {});`,
+      `describe.skip("global suite disabled", () => {});`,
+      `suite["only"]("global suite focused", () => {});`,
+      `test.todo("global test disabled");`,
+      `import { suite } from "vitest";
+suite.skip("imported suite disabled", () => {});`,
     ];
     for (const source of disabled) {
       expect(
@@ -692,6 +717,19 @@ suite("enabled", () => { check("runs", () => {}); });`,
         `import { test } from "vitest";
 test.skipIf(false)("runs", () => {});
 test.runIf(true)("runs too", () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `const suite = { skip: (_name: string, fn: () => void) => fn() };
+suite.skip("application suite", () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `function register(describe: { skip: (name: string) => void }) {
+  describe.skip("application callback");
+}`,
       ),
     ).toEqual([]);
   });
@@ -740,17 +778,50 @@ test.runIf(true)("runs too", () => {});`,
       });
       writeFileSync(join(fixtureDirectory, "top.test.ts"), "");
       writeFileSync(
-        join(fixtureDirectory, "nested", "deeper", "nested.test.ts"),
+        join(fixtureDirectory, "nested", "deeper", "component.test.tsx"),
+        "",
+      );
+      writeFileSync(
+        join(fixtureDirectory, "nested", "deeper", "policy.spec.ts"),
+        "",
+      );
+      writeFileSync(
+        join(fixtureDirectory, "nested", "deeper", "surface.spec.tsx"),
         "",
       );
       writeFileSync(
         join(fixtureDirectory, "nested", "deeper", "helper.ts"),
         "",
       );
+      writeFileSync(
+        join(fixtureDirectory, "nested", "deeper", "legacy.test.js"),
+        "",
+      );
       expect(fitnessTestFiles(fixtureRoot)).toEqual([
-        "src/__tests__/fitness/nested/deeper/nested.test.ts",
+        "src/__tests__/fitness/nested/deeper/component.test.tsx",
+        "src/__tests__/fitness/nested/deeper/policy.spec.ts",
+        "src/__tests__/fitness/nested/deeper/surface.spec.tsx",
         "src/__tests__/fitness/top.test.ts",
       ]);
+      expect(
+        [
+          "rule.test.ts",
+          "component.test.tsx",
+          "policy.spec.ts",
+          "surface.spec.tsx",
+        ].every(isVitestTestFile),
+      ).toBe(true);
+      expect(
+        [
+          "helper.ts",
+          "legacy.test.js",
+          "rule.tests.ts",
+          "rule.spec.mts",
+        ].some(isVitestTestFile),
+      ).toBe(false);
+      expect(VITEST_TEST_INCLUDE).toBe(
+        "src/**/*.{test,spec}.{ts,tsx}",
+      );
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

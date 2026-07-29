@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, and the captain-approved cross-gate proof and imported Axe-graph review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, and the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -252,9 +252,12 @@ browser flow, and required specifications may register no Playwright hooks. `add
 replacement, or comparable caller-side page setup therefore cannot mask the surfaces before analysis.
 The fence follows every runtime local import reachable from the required specifications and sanctioned
 helpers, including side-effect imports, re-exports, configured TypeScript aliases, literal dynamic
-imports, and CommonJS imports. Every reachable local module is subject to the same prohibition on
-Playwright hook registration and may not import the Axe runtime outside the sanctioned helper.
-Unresolved local imports and non-literal runtime imports are non-evidence. Bare runtime imports must
+imports, and direct CommonJS imports. Indirect CommonJS loader provenance, including aliases of
+`require`, ambient `module.require` members, and destructured loader members, is non-evidence until the
+graph can resolve the invoked target completely. Every reachable local module, including every named
+graph root, is subject to the same prohibition on Playwright hook registration and may not import the
+Axe runtime outside the exact sanctioned helper. Unresolved local imports and non-literal runtime
+imports are non-evidence. Bare runtime imports must
 either resolve through the directly parseable TypeScript path configuration or belong to the exact
 Playwright/Axe dependency allowlist.
 Configuration property names are normalized across direct and computed literal syntax at the root and
@@ -366,6 +369,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Accept package-script names as owned entry points | A script body can become `true` while the workflow and every exact command mapping stay unchanged. Mapped controls invoke their binary or owned source entry point directly. |
 | Prove Axe from required spec source without parsing Playwright selection or route state | `testIgnore`, `testMatch`, `grep`, a wrong route, or a pre-load scan can leave source text intact while the required UI never gates. Configuration, route groups, and loaded markers are one structural proof. |
 | Inspect only the directly named Axe files | A side-effect import can patch `AxeBuilder.prototype.analyze` or register a Playwright hook before the required scan. The complete runtime local import graph is part of the evidence boundary. |
+| Exempt named Axe graph roots from imported-runtime and hook checks | The shared login helper is a root, but only its function body was pinned. A module-scope hook or Axe patch beside that function could still run before every required scan. |
+| Follow only direct CommonJS `require()` calls | `const load = require; load("./poison")` and ambient `module.require("./poison")` execute the same module while leaving the direct-call graph unchanged. Unresolved loader provenance must fail closed. |
+| Inventory only `.test.ts` fitness files | Vitest also admits `.test.tsx`, `.spec.ts`, and `.spec.tsx`; a second matcher silently drops those files from execution completeness, disabled-registration checks, and companion enforcement. |
+| Resolve disabled Vitest registrations only through imports | `globals: true` makes unshadowed `describe`, `suite`, `test`, and `it` registration authorities. Import-only provenance lets a global `suite.skip` disable a fence without detection. |
 
 ## Trade-offs and Costs
 
@@ -443,10 +450,11 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   invoke neutralizers, are followed transitively, while unresolved local callable indirection is
   non-evidence. Required route callbacks admit only their typed loops and stable canonical login call;
   the login helper itself is pinned to the uninstrumented browser flow, and required specifications may
-  register no Playwright hooks. The same prohibition extends through the complete runtime local import
-  graph of required specifications and sanctioned helpers. A transitive module may not import the Axe
-  runtime outside `e2e/axe.ts`, register a Playwright hook, hide behind a side-effect import, or depend
-  on an unresolved, unclassified, or non-literal runtime import.
+  register no Playwright hooks. The same prohibition applies to every named graph root and extends
+  through the complete runtime local import graph of required specifications and sanctioned helpers.
+  No reachable module may import the Axe runtime outside `e2e/axe.ts`, register a Playwright hook, hide
+  behind a side-effect import, or depend on an unresolved, unclassified, non-literal, or indirect
+  CommonJS runtime import.
   Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
   provenance, so neither a neutralizer nor a registered hook can hide behind reflective dispatch.
   Optional assertion messages must be structurally side-effect-free. The
@@ -454,14 +462,17 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   `pnpm exec tsx scripts/v3-invariants.ts`.
 - The blocking test job directly runs `scripts/fitness-tests.ts` as its single complete Vitest
   invocation. That command runs unit, integration, and fitness tests together, recursively enumerates
-  every fitness test file, supplies that one complete inventory to charter-drift disabled/orphan analysis
-  and the companion meta-fence, parses the per-file report, and fails when an expected file is missing,
-  duplicated, failed, or omitted by configuration.
+  every fitness test file through the same matcher and include glob consumed by Vitest, covering
+  `.test.ts`, `.test.tsx`, `.spec.ts`, and `.spec.tsx`. It supplies that one complete inventory to
+  charter-drift disabled/orphan analysis and the companion meta-fence, parses the per-file report, and
+  fails when an expected file is missing, duplicated, failed, or omitted by configuration.
   The charter map and mechanism ratchet pin the runner and its exact blocking command.
 - Vitest registration analysis follows computed and aliased `todo`, `fails`, `skipIf`, and `runIf`
-  chains. Unknown conditional state is non-evidence. The Axe helper admits no module-scope executable
-  statement that could replace its analysis method, and required specifications cannot import the Axe
-  runtime directly.
+  chains from imported authorities and the unshadowed `describe`, `suite`, `test`, and `it` globals
+  enabled by the repository configuration. Locally shadowed application callables remain outside the
+  Vitest provenance graph. Unknown conditional state is non-evidence. The Axe helper admits no
+  module-scope executable statement that could replace its analysis method, and required specifications
+  cannot import the Axe runtime directly.
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
   `Function.apply` layers before returning the invoked target, including stable aliases and bound
   callables invoked through `call` or `apply`. Gate 0 also requires `snap` and `snapLauncher` to remain
@@ -502,8 +513,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   and dynamic route into its public, login, authenticated, or demo scan group, and requires exact
   ownership in the frozen Axe collections. Adding a page without a loaded-state scan fails the fence.
 - Charter-drift disabled-fence detection parses Vitest registrations with symbol-aware AST provenance,
-  including computed members, namespace imports, imported aliases, assigned aliases, and x-prefixed
-  registrations. String mentions and unrelated local functions are not evidence.
+  including computed members, namespace imports, imported aliases, assigned aliases, unshadowed globals,
+  the `suite` alias, and x-prefixed registrations. String mentions and unrelated local functions are not
+  evidence.
 - The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
   Axe-specific charter proof is PF-031.
 - This does **not** change what invariant 3 requires, when prompt 10 runs, or the deferral of prompt 27
@@ -556,8 +568,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   owner gate's close without them, which would make the earlier gate's requirement illegal. If a future
   invariant genuinely has no single landing prompt, the proof-point model needs the partial-activation
   extension named in the first bullet above rather than a dropped field.
-- A required Axe specification or sanctioned helper needs a non-literal runtime local import: extend the
-  import-graph resolver with a complete, adversarially proven execution model before admitting it.
+- A required Axe specification or sanctioned helper needs a non-literal runtime local import or an
+  indirect CommonJS loader: extend the import-graph resolver with a complete, adversarially proven
+  execution model before admitting it.
 - A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
   PR and keep the required command in a dedicated simple step. The structural check reads the workflow,
   so a stale or compound form fails rather than silently matching.

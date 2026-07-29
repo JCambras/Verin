@@ -6458,6 +6458,17 @@ CommonJS imports. Every reachable local module rejects Playwright hook registrat
 access outside `e2e/axe.ts`; unresolved, unclassified, and non-literal runtime imports are non-evidence. PF-030 and
 PF-031 record the reproductions, companions, and restored proofs.
 
+The captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review (2026-07-29)
+amended ADR-0030 in place a twenty-fifth time: **(1)** the recursive fitness inventory and Vitest config
+consume one shared matcher that admits `.test.ts`, `.test.tsx`, `.spec.ts`, and `.spec.tsx`; **(2)**
+indirect CommonJS loader provenance, including aliases of `require` and ambient `module.require` member
+forms, fails closed in the Axe evidence graph; **(3)** Axe-runtime and Playwright-hook prohibitions apply
+to every named graph root and transitive local module, with only the exact Axe import in `e2e/axe.ts`
+allowed; and **(4)** charter-drift resolves disabled registrations through imported `suite` and the
+unshadowed `describe`, `suite`, `test`, and `it` globals enabled by Vitest while preserving locally
+shadowed application callables. PF-001 and PF-031 record the real red reproductions, non-vacuous
+companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

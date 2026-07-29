@@ -11530,3 +11530,70 @@ as well.
 run passed all 21 tests.
 
 **Date:** 2026-07-29.
+
+### PF-001 (continued) · complete Vitest extension and global registration coverage
+
+**Invariant (charter operating model):** every fitness file admitted by Vitest belongs to the recursive
+execution, disabled-registration, orphan, and companion inventories, and an unshadowed global Vitest
+registration cannot disable it.
+
+**Injection:** added
+`src/__tests__/fitness/review/nested-disabled.spec.tsx` with a global
+`suite.skip("disabled alternate-extension fence", ...)` registration, then ran the real charter-drift
+fence.
+
+**Observed failures (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/review/nested-disabled.spec.tsx:1 disabled/focused Vitest registration suite.skip
+
+fitness fences not referenced by charter-map.json (silently added?):
+src/__tests__/fitness/review/nested-disabled.spec.tsx
+```
+
+The pre-fix inventory ignored the same `.spec.tsx` file, and the pre-fix registration resolver returned
+no problem for either global `suite.skip` or imported `suite.skip`.
+
+**Companions added:** the recursive fixture contains all four Vitest-admitted TypeScript forms
+(`.test.ts`, `.test.tsx`, `.spec.ts`, `.spec.tsx`) plus excluded near-misses. The Vitest config and
+inventory consume one shared matcher. In-memory registration sources cover imported and global `suite`,
+global `describe` and `test`, aliases and conditional chains, and locally shadowed application callables.
+
+**Revert:** deleted the injected alternate-extension fence and its empty directory. The restored focused
+charter and Axe run passed all 37 tests.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · CommonJS provenance and graph-root enforcement
+
+**Invariant (charter #9 / ADR-0030):** every named root and transitive local module in the Axe evidence
+graph rejects Playwright hooks and unsanctioned Axe imports, and indirect CommonJS loader provenance
+cannot hide a module from that graph.
+
+**Injection 1 - register a hook in the shared login-helper root.** Added a module-scope
+`test.beforeEach` beside the unchanged canonical `login` function in `e2e/helpers.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2 - load through an alias of ambient `require`.** Added an unreachable runtime block to
+`e2e/axe-routes.ts` containing `const load = require; load("./axe-import-poison")`. The unreachable block
+prevented the load during the proof run while leaving the loader provenance visible to the source fence.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 reachable Axe evidence modules require literal runtime module references
+```
+
+The pre-fix graph skipped the login-helper root and returned no problem for the same `require` alias.
+
+**Companions added:** in-memory graphs reject hooks in the Axe helper, login helper, and required
+specification roots; reject Axe imports in required roots; and reject aliases of `require`,
+`module.require`, computed ambient members, destructured ambient members, and assigned loader aliases.
+A locally declared application object whose property is named `require` remains accepted.
+
+**Revert:** removed both real injections. The restored focused charter and Axe run passed all 37 tests.
+
+**Date:** 2026-07-29.

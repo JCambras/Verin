@@ -98,9 +98,10 @@ Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evi
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
 The blocking test job invokes a direct runner once for the complete unit, integration, and fitness suite.
-That runner recursively enumerates every fitness file and shares the inventory with charter
-disabled/orphan analysis and the companion meta-fence. Vitest include or exclude drift therefore cannot
-silently omit a fence or nested subtree, and no fitness file executes twice.
+That runner recursively enumerates every fitness file through the same matcher and include glob used by
+Vitest, covering `.test.ts`, `.test.tsx`, `.spec.ts`, and `.spec.tsx`, and shares the inventory with
+charter disabled/orphan analysis and the companion meta-fence. Vitest include or exclude drift therefore
+cannot silently omit a fence or nested subtree, and no fitness file executes twice.
 The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
 requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
@@ -156,15 +157,16 @@ indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
 login helper is pinned to the uninstrumented browser flow. Required specifications may register no
 Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. Their
-complete transitive runtime local import graph is inspected through side-effect imports, re-exports,
-configured aliases, literal dynamic imports, and CommonJS imports. Imported modules may not register
-Playwright hooks or import the Axe runtime outside the sanctioned helper, and unresolved or non-literal
-runtime imports are non-evidence. Bare runtime dependencies are restricted to configured local paths and
-the exact Playwright/Axe allowlist. The
+complete runtime local import graph, including the named roots, is inspected through side-effect imports,
+re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
+module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
+unresolved, non-literal, or indirect CommonJS loader provenance is non-evidence. Bare runtime dependencies
+are restricted to configured local paths and the exact Playwright/Axe allowlist. The
 sanctioned helper admits no module-scope executable statement that could replace its analysis method.
 Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
 disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
-members, aliases, `todo`, `fails`, `skipIf`, and `runIf`.
+members, aliases, the `suite` registration alias, unshadowed Vitest globals, `todo`, `fails`, `skipIf`,
+and `runIf`, while preserving locally shadowed application callables.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,
